@@ -1,0 +1,57 @@
+#!/usr/bin/env node
+
+const yargs = require('yargs');
+const { hideBin } = require('yargs/helpers');
+
+const argv = yargs(hideBin(process.argv))
+  .usage('Usage: $0 [options] [caption text]')
+  .option('url', {
+    alias: 'u',
+    type: 'string',
+    description: 'Base ingestion URL'
+  })
+  .option('yt-key', {
+    type: 'string',
+    description: 'YouTube stream key (appends ?cid=<key>)'
+  })
+  .option('key', {
+    alias: 'k',
+    type: 'string',
+    description: 'Generic service key (appended as-is)'
+  })
+  .option('interactive', {
+    alias: 'i',
+    type: 'boolean',
+    description: 'Interactive mode (read from stdin)',
+    default: false
+  })
+  .option('timestamp', {
+    alias: 't',
+    type: 'string',
+    description: 'Manual ISO timestamp override'
+  })
+  .option('reset', {
+    type: 'boolean',
+    description: 'Reset sequence counter to 0',
+    default: false
+  })
+  .option('config', {
+    alias: 'c',
+    type: 'string',
+    description: 'Config file path'
+  })
+  .option('verbose', {
+    alias: 'v',
+    type: 'boolean',
+    description: 'Enable verbose output',
+    default: false
+  })
+  .example('$0 --url "https://youtube.com/api/captions" --yt-key "ABC123"', 'Set YouTube key')
+  .example('$0 "Hello world"', 'Send a single caption')
+  .example('$0 --i', 'Start interactive mode')
+  .help('help')
+  .alias('help', 'h')
+  .version()
+  .argv;
+
+module.exports = { argv };
