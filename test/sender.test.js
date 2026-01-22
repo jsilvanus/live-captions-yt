@@ -1,7 +1,7 @@
-const { describe, it, mock, beforeEach } = require('node:test');
-const assert = require('node:assert');
-const { YoutubeLiveCaptionSender } = require('../src/sender');
-const { ConfigError, ValidationError, NetworkError } = require('../src/errors');
+import { describe, it, mock, beforeEach } from 'node:test';
+import assert from 'node:assert';
+import { YoutubeLiveCaptionSender } from '../src/sender.js';
+import { ConfigError, ValidationError, NetworkError } from '../src/errors.js';
 
 describe('YoutubeLiveCaptionSender', () => {
   describe('constructor', () => {

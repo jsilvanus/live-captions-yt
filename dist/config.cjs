@@ -1,16 +1,16 @@
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
-import { ConfigError } from './errors.js';
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { ConfigError } = require('./errors.cjs');
 
 const DEFAULT_CONFIG_FILENAME = '.lcyt-config.json';
-export const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
+const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
 
-export function getDefaultConfigPath() {
+function getDefaultConfigPath() {
   return path.join(os.homedir(), DEFAULT_CONFIG_FILENAME);
 }
 
-export function getDefaultConfig() {
+function getDefaultConfig() {
   return {
     baseUrl: DEFAULT_YOUTUBE_URL,
     streamKey: null,
@@ -20,7 +20,7 @@ export function getDefaultConfig() {
   };
 }
 
-export function loadConfig(configPath) {
+function loadConfig(configPath) {
   const filePath = configPath || getDefaultConfigPath();
 
   try {
@@ -43,7 +43,7 @@ export function loadConfig(configPath) {
   }
 }
 
-export function saveConfig(configPath, config) {
+function saveConfig(configPath, config) {
   const filePath = configPath || getDefaultConfigPath();
 
   try {
@@ -55,7 +55,7 @@ export function saveConfig(configPath, config) {
   }
 }
 
-export function buildIngestionUrl(config) {
+function buildIngestionUrl(config) {
   if (!config.streamKey) {
     return null;
   }
@@ -66,3 +66,5 @@ export function buildIngestionUrl(config) {
 
   return `${baseUrl}?cid=${config.streamKey}&reg=${region}&cue=${cue}`;
 }
+
+module.exports = { getDefaultConfigPath, getDefaultConfig, loadConfig, saveConfig, buildIngestionUrl, DEFAULT_YOUTUBE_URL };

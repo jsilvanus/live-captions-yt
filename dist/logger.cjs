@@ -2,34 +2,34 @@ const PREFIX = '[LCYT]';
 
 let verbose = false;
 
-export function setVerbose(value) {
+function setVerbose(value) {
   verbose = value;
 }
 
-export function info(message) {
+function info(message) {
   console.log(`${PREFIX} ${message}`);
 }
 
-export function success(message) {
+function success(message) {
   console.log(`${PREFIX} ✓ ${message}`);
 }
 
-export function error(message) {
+function error(message) {
   console.error(`${PREFIX} ✗ ${message}`);
 }
 
-export function warn(message) {
+function warn(message) {
   console.warn(`${PREFIX} ⚠ ${message}`);
 }
 
-export function debug(message) {
+function debug(message) {
   if (verbose) {
     console.log(`${PREFIX} [DEBUG] ${message}`);
   }
 }
 
 // Default export for convenience
-export default {
+module.exports = {
   setVerbose,
   info,
   success,

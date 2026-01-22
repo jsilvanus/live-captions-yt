@@ -2,13 +2,26 @@
   "name": "lcyt",
   "version": "1.0.0",
   "description": "Send live captions to YouTube Live streams and other caption ingestion services",
-  "main": "src/sender.js",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./src/sender.js",
+  "exports": {
+    ".": {
+      "import": "./src/sender.js",
+      "require": "./dist/index.cjs"
+    },
+    "./errors": {
+      "import": "./src/errors.js",
+      "require": "./dist/errors.cjs"
+    }
+  },
   "bin": {
     "lcyt": "bin/lcyt"
   },
   "scripts": {
     "start": "node bin/lcyt",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build-cjs.js"
   },
   "keywords": [
     "youtube",
@@ -25,6 +38,11 @@
   "dependencies": {
     "yargs": "^17.7.2"
   },
+  "files": [
+    "src/",
+    "dist/",
+    "bin/"
+  ],
   "engines": {
     "node": ">=18.0.0"
   },

@@ -1,8 +1,8 @@
-import http from 'http';
-import https from 'https';
-import { URL } from 'url';
-import { ConfigError, NetworkError, ValidationError } from './errors.js';
-import logger from './logger.js';
+const http = require('http');
+const https = require('https');
+const { URL } = require('url');
+const { ConfigError, NetworkError, ValidationError } = require('./errors.cjs');
+const logger = require('./logger.cjs');
 
 // Default YouTube Live caption ingestion URL base
 const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
@@ -424,4 +424,4 @@ class YoutubeLiveCaptionSender {
   }
 }
 
-export { YoutubeLiveCaptionSender, DEFAULT_YOUTUBE_URL };
+module.exports = { YoutubeLiveCaptionSender, DEFAULT_YOUTUBE_URL };

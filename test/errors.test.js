@@ -1,6 +1,6 @@
-const { describe, it } = require('node:test');
-const assert = require('node:assert');
-const { LCYTError, ConfigError, NetworkError, ValidationError } = require('../src/errors');
+import { describe, it } from 'node:test';
+import assert from 'node:assert';
+import { LCYTError, ConfigError, NetworkError, ValidationError } from '../src/errors.js';
 
 describe('Error Classes', () => {
   describe('LCYTError', () => {

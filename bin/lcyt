@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-const yargs = require('yargs');
-const { hideBin } = require('yargs/helpers');
-const { YoutubeLiveCaptionSender } = require('../src/sender');
-const { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } = require('../src/config');
-const logger = require('../src/logger');
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+import readline from 'readline';
+import { YoutubeLiveCaptionSender } from '../src/sender.js';
+import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from '../src/config.js';
+import logger from '../src/logger.js';
 
 const argv = yargs(hideBin(process.argv))
   .usage('Usage: $0 [options] [caption text]')
@@ -204,8 +205,6 @@ async function sendSingleCaption(sender, text, config, configPath, timestamp) {
 }
 
 async function runInteractiveMode(sender, config, configPath, defaultTimestamp) {
-  const readline = require('readline');
-
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout
