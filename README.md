@@ -16,10 +16,10 @@ npm install lcyt
 
 ## Quick Start
 
-1. **Set up your YouTube ingestion URL and stream key:**
+1. **Set up your YouTube stream key:**
 
 ```bash
-lcyt --url "http://upload.youtube.com/closedcaption" --yt-key "YOUR_STREAM_KEY"
+lcyt --stream-key "YOUR_STREAM_KEY"
 ```
 
 2. **Send a caption:**
@@ -40,9 +40,10 @@ lcyt -i
 
 | Option | Alias | Description |
 |--------|-------|-------------|
-| `--url <url>` | `-u` | Base ingestion URL |
-| `--yt-key <key>` | | YouTube stream key (appends `?cid=<key>`) |
-| `--key <key>` | `-k` | Generic service key (appended as-is) |
+| `--stream-key <key>` | `-k` | YouTube stream key (cid value) |
+| `--base-url <url>` | `-u` | Base ingestion URL (default: http://upload.youtube.com/closedcaption) |
+| `--region <reg>` | `-r` | Region identifier (default: reg1) |
+| `--cue <cue>` | | Cue identifier (default: cue1) |
 | `--interactive` | `-i` | Interactive mode (read from stdin) |
 | `--heartbeat` | | Send heartbeat to verify connection |
 | `--timestamp <iso>` | `-t` | Manual ISO timestamp override |
@@ -54,9 +55,9 @@ lcyt -i
 
 ### Examples
 
-**Set up YouTube key:**
+**Set up stream key:**
 ```bash
-lcyt --url "http://upload.youtube.com/closedcaption" --yt-key "ABC123"
+lcyt --stream-key "ABC123"
 ```
 
 **Send single caption:**
@@ -101,9 +102,7 @@ lcyt --reset
 const { YoutubeLiveCaptionSender } = require('lcyt');
 
 const sender = new YoutubeLiveCaptionSender({
-  ingestionUrl: 'http://upload.youtube.com/closedcaption?cid=YOUR_KEY',
-  lang: 'en',
-  name: 'LCYT'
+  streamKey: 'YOUR_STREAM_KEY'
 });
 
 sender.start();
@@ -138,9 +137,11 @@ sender.end();
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `ingestionUrl` | string | `null` | Caption ingestion endpoint URL |
-| `lang` | string | `'en'` | Language code |
-| `name` | string | `'LCYT'` | Track name |
+| `streamKey` | string | `null` | YouTube stream key (cid value) |
+| `baseUrl` | string | `'http://upload.youtube.com/closedcaption'` | Base ingestion URL |
+| `ingestionUrl` | string | `null` | Full pre-built URL (overrides streamKey/baseUrl) |
+| `region` | string | `'reg1'` | Region identifier |
+| `cue` | string | `'cue1'` | Cue identifier |
 | `sequence` | number | `0` | Starting sequence number |
 | `verbose` | boolean | `false` | Enable verbose logging |
 
@@ -233,7 +234,7 @@ LCYT implements Google's official YouTube Live caption format:
 ### Request Format
 - **Method:** POST
 - **Content-Type:** `text/plain`
-- **URL params:** `&seq=N`
+- **URL params:** `cid=<stream_key>&reg=<region>&cue=<cue>&seq=N`
 
 ### Body Format
 ```
@@ -245,7 +246,7 @@ ANOTHER CAPTION
 
 ### Example POST
 ```
-POST /closedcaption?cid=YOUR_KEY&seq=42
+POST /closedcaption?cid=YOUR_KEY&reg=reg1&cue=cue1&seq=42
 Content-Type: text/plain
 
 2024-01-15T12:00:06.873
@@ -266,20 +267,21 @@ LCYT stores configuration in `~/.lcyt-config.json`:
 
 ```json
 {
-  "url": "http://upload.youtube.com/closedcaption",
-  "ytKey": "YOUR_STREAM_KEY",
-  "key": null,
+  "baseUrl": "http://upload.youtube.com/closedcaption",
+  "streamKey": "YOUR_STREAM_KEY",
+  "region": "reg1",
+  "cue": "cue1",
   "sequence": 42
 }
 ```
 
 ### URL Construction
 
-The full ingestion URL is constructed based on your configuration:
+The full ingestion URL is constructed as:
 
-- **YouTube key**: `url + "?cid=" + ytKey`
-- **Generic key**: `url + key`
-- **No key**: `url` as-is
+```
+{baseUrl}?cid={streamKey}&reg={region}&cue={cue}&seq={sequence}
+```
 
 ## YouTube Setup
 

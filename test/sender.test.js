@@ -8,23 +8,58 @@ describe('YoutubeLiveCaptionSender', () => {
     it('should initialize with default values', () => {
       const sender = new YoutubeLiveCaptionSender();
       assert.strictEqual(sender.ingestionUrl, null);
-      assert.strictEqual(sender.lang, 'en');
-      assert.strictEqual(sender.name, 'LCYT');
+      assert.strictEqual(sender.streamKey, null);
+      assert.strictEqual(sender.region, 'reg1');
+      assert.strictEqual(sender.cue, 'cue1');
       assert.strictEqual(sender.sequence, 0);
       assert.strictEqual(sender.isStarted, false);
     });
 
-    it('should accept custom options', () => {
+    it('should accept custom options with ingestionUrl', () => {
       const sender = new YoutubeLiveCaptionSender({
         ingestionUrl: 'https://example.com/captions',
-        lang: 'es',
-        name: 'MyStream',
+        region: 'reg2',
+        cue: 'cue2',
         sequence: 10
       });
       assert.strictEqual(sender.ingestionUrl, 'https://example.com/captions');
-      assert.strictEqual(sender.lang, 'es');
-      assert.strictEqual(sender.name, 'MyStream');
+      assert.strictEqual(sender.region, 'reg2');
+      assert.strictEqual(sender.cue, 'cue2');
       assert.strictEqual(sender.sequence, 10);
+    });
+
+    it('should build ingestionUrl from streamKey', () => {
+      const sender = new YoutubeLiveCaptionSender({
+        streamKey: 'TEST_KEY_123'
+      });
+      assert.strictEqual(sender.streamKey, 'TEST_KEY_123');
+      assert.strictEqual(sender.ingestionUrl, 'http://upload.youtube.com/closedcaption?cid=TEST_KEY_123&reg=reg1&cue=cue1');
+    });
+
+    it('should build ingestionUrl with custom region and cue', () => {
+      const sender = new YoutubeLiveCaptionSender({
+        streamKey: 'MY_KEY',
+        region: 'reg2',
+        cue: 'cue3'
+      });
+      assert.strictEqual(sender.ingestionUrl, 'http://upload.youtube.com/closedcaption?cid=MY_KEY&reg=reg2&cue=cue3');
+    });
+
+    it('should allow custom baseUrl', () => {
+      const sender = new YoutubeLiveCaptionSender({
+        streamKey: 'MY_KEY',
+        baseUrl: 'https://custom.example.com/captions'
+      });
+      assert.strictEqual(sender.baseUrl, 'https://custom.example.com/captions');
+      assert.strictEqual(sender.ingestionUrl, 'https://custom.example.com/captions?cid=MY_KEY&reg=reg1&cue=cue1');
+    });
+
+    it('should use ingestionUrl over streamKey when both provided', () => {
+      const sender = new YoutubeLiveCaptionSender({
+        streamKey: 'MY_KEY',
+        ingestionUrl: 'https://override.example.com/full-url'
+      });
+      assert.strictEqual(sender.ingestionUrl, 'https://override.example.com/full-url');
     });
   });
 

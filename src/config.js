@@ -12,9 +12,10 @@ function getDefaultConfigPath() {
 
 function getDefaultConfig() {
   return {
-    url: DEFAULT_YOUTUBE_URL,
-    ytKey: null,
-    key: null,
+    baseUrl: DEFAULT_YOUTUBE_URL,
+    streamKey: null,
+    region: 'reg1',
+    cue: 'cue1',
     sequence: 0
   };
 }
@@ -55,19 +56,15 @@ function saveConfig(configPath, config) {
 }
 
 function buildIngestionUrl(config) {
-  if (!config.url) {
+  if (!config.streamKey) {
     return null;
   }
 
-  if (config.ytKey) {
-    return `${config.url}?cid=${config.ytKey}`;
-  }
+  const baseUrl = config.baseUrl || DEFAULT_YOUTUBE_URL;
+  const region = config.region || 'reg1';
+  const cue = config.cue || 'cue1';
 
-  if (config.key) {
-    return `${config.url}${config.key}`;
-  }
-
-  return config.url;
+  return `${baseUrl}?cid=${config.streamKey}&reg=${region}&cue=${cue}`;
 }
 
 module.exports = {

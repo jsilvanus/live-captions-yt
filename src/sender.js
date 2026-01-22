@@ -4,7 +4,7 @@ const { URL } = require('url');
 const { ConfigError, NetworkError, ValidationError } = require('./errors');
 const logger = require('./logger');
 
-// Default YouTube Live caption ingestion URL
+// Default YouTube Live caption ingestion URL base
 const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
 
 /**
@@ -12,7 +12,7 @@ const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
  * @class
  * @example
  * const sender = new YoutubeLiveCaptionSender({
- *   ingestionUrl: 'http://upload.youtube.com/closedcaption?cid=YOUR_KEY'
+ *   streamKey: 'YOUR_STREAM_KEY'
  * });
  * sender.start();
  * await sender.send('Hello, world!');
@@ -22,20 +22,32 @@ class YoutubeLiveCaptionSender {
   /**
    * Create a new YoutubeLiveCaptionSender instance.
    * @param {Object} [options={}] - Configuration options
-   * @param {string} [options.ingestionUrl=null] - Full YouTube caption ingestion URL with cid parameter
-   * @param {string} [options.lang='en'] - Language code for captions
-   * @param {string} [options.name='LCYT'] - Track name identifier
+   * @param {string} [options.streamKey=null] - YouTube stream key (cid value)
+   * @param {string} [options.baseUrl] - Base ingestion URL (defaults to YouTube's upload.youtube.com endpoint)
+   * @param {string} [options.ingestionUrl=null] - Full pre-built ingestion URL (overrides streamKey and baseUrl)
+   * @param {string} [options.region='reg1'] - Region identifier for captions
+   * @param {string} [options.cue='cue1'] - Cue identifier for captions
    * @param {number} [options.sequence=0] - Starting sequence number
    * @param {boolean} [options.verbose=false] - Enable verbose logging
    */
   constructor(options = {}) {
-    this.ingestionUrl = options.ingestionUrl || null;
-    this.lang = options.lang || 'en';
-    this.name = options.name || 'LCYT';
+    this.streamKey = options.streamKey || null;
+    this.baseUrl = options.baseUrl || DEFAULT_YOUTUBE_URL;
+    this.region = options.region || 'reg1';
+    this.cue = options.cue || 'cue1';
     this.sequence = options.sequence || 0;
     this.isStarted = false;
     this.verbose = options.verbose || false;
     this._queue = []; // Internal queue for construct/sendBatch pattern
+
+    // Build ingestion URL: use provided ingestionUrl, or build from streamKey + baseUrl
+    if (options.ingestionUrl) {
+      this.ingestionUrl = options.ingestionUrl;
+    } else if (this.streamKey) {
+      this.ingestionUrl = `${this.baseUrl}?cid=${this.streamKey}&reg=${this.region}&cue=${this.cue}`;
+    } else {
+      this.ingestionUrl = null;
+    }
 
     if (this.verbose) {
       logger.setVerbose(true);
@@ -130,7 +142,7 @@ class YoutubeLiveCaptionSender {
    */
   start() {
     this.isStarted = true;
-    logger.info(`Caption sender started (lang: ${this.lang}, name: ${this.name})`);
+    logger.info(`Caption sender started (region: ${this.region}, cue: ${this.cue})`);
     return this;
   }
 
