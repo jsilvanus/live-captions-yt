@@ -2,6 +2,9 @@
 
 const yargs = require('yargs');
 const { hideBin } = require('yargs/helpers');
+const { YoutubeLiveCaptionSender } = require('../src/sender');
+const { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } = require('../src/config');
+const logger = require('../src/logger');
 
 const argv = yargs(hideBin(process.argv))
   .usage('Usage: $0 [options] [caption text]')
@@ -54,4 +57,175 @@ const argv = yargs(hideBin(process.argv))
   .version()
   .argv;
 
-module.exports = { argv };
+async function main() {
+  const configPath = argv.config || getDefaultConfigPath();
+
+  if (argv.verbose) {
+    logger.setVerbose(true);
+  }
+
+  let config = loadConfig(configPath);
+  let configChanged = false;
+
+  if (argv.url !== undefined) {
+    config.url = argv.url;
+    configChanged = true;
+  }
+
+  if (argv['yt-key'] !== undefined) {
+    config.ytKey = argv['yt-key'];
+    config.key = null;
+    configChanged = true;
+  }
+
+  if (argv.key !== undefined) {
+    config.key = argv.key;
+    config.ytKey = null;
+    configChanged = true;
+  }
+
+  if (argv.reset) {
+    config.sequence = 0;
+    configChanged = true;
+    logger.info('Sequence counter reset to 0');
+  }
+
+  if (configChanged) {
+    saveConfig(configPath, config);
+    logger.info(`Configuration saved to ${configPath}`);
+  }
+
+  const captionText = argv._.join(' ');
+  const hasCaption = captionText.length > 0;
+  const isInteractive = argv.interactive;
+
+  if (!hasCaption && !isInteractive) {
+    displayConfig(config, configPath);
+    return;
+  }
+
+  const ingestionUrl = buildIngestionUrl(config);
+
+  if (!ingestionUrl) {
+    logger.error('No ingestion URL configured. Use --url to set one.');
+    process.exit(1);
+  }
+
+  const sender = new YoutubeLiveCaptionSender({
+    ingestionUrl,
+    sequence: config.sequence,
+    verbose: argv.verbose
+  });
+
+  sender.start();
+
+  if (isInteractive) {
+    await runInteractiveMode(sender, config, configPath, argv.timestamp);
+  } else {
+    await sendSingleCaption(sender, captionText, config, configPath, argv.timestamp);
+  }
+}
+
+function displayConfig(config, configPath) {
+  console.log('\n╔══════════════════════════════════════════════════════════════╗');
+  console.log('║                    LCYT Configuration                        ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log(`║  Config file: ${configPath.padEnd(45)}║`);
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log(`║  URL:         ${(config.url || '(not set)').padEnd(45)}║`);
+  console.log(`║  YT Key:      ${(config.ytKey || '(not set)').padEnd(45)}║`);
+  console.log(`║  Key:         ${(config.key || '(not set)').padEnd(45)}║`);
+  console.log(`║  Sequence:    ${String(config.sequence).padEnd(45)}║`);
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+
+  const fullUrl = buildIngestionUrl(config);
+  if (fullUrl) {
+    console.log(`║  Full URL:    ${fullUrl.substring(0, 45).padEnd(45)}║`);
+    if (fullUrl.length > 45) {
+      console.log(`║               ${fullUrl.substring(45, 90).padEnd(45)}║`);
+    }
+  } else {
+    console.log('║  Full URL:    (incomplete configuration)                     ║');
+  }
+  console.log('╚══════════════════════════════════════════════════════════════╝\n');
+
+  console.log('Usage:');
+  console.log('  lcyt "Your caption text"     Send a single caption');
+  console.log('  lcyt --i                     Start interactive mode');
+  console.log('  lcyt --help                  Show all options\n');
+}
+
+async function sendSingleCaption(sender, text, config, configPath, timestamp) {
+  try {
+    await sender.send(text, timestamp);
+    config.sequence = sender.getSequence();
+    saveConfig(configPath, config);
+    sender.end();
+  } catch (err) {
+    logger.error(err.message);
+    sender.end();
+    process.exit(1);
+  }
+}
+
+async function runInteractiveMode(sender, config, configPath, defaultTimestamp) {
+  const readline = require('readline');
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  console.log('\n╔══════════════════════════════════════════════════════════════╗');
+  console.log('║              LCYT Interactive Mode                           ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log('║  Type captions and press Enter to send.                      ║');
+  console.log('║  Format: "text" or "timestamp|text"                          ║');
+  console.log('║  Press Ctrl+C to exit.                                       ║');
+  console.log('╚══════════════════════════════════════════════════════════════╝\n');
+
+  rl.setPrompt('caption> ');
+  rl.prompt();
+
+  rl.on('line', async (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      rl.prompt();
+      return;
+    }
+
+    let text = trimmed;
+    let timestamp = defaultTimestamp;
+
+    if (trimmed.includes('|')) {
+      const parts = trimmed.split('|');
+      timestamp = parts[0].trim();
+      text = parts.slice(1).join('|').trim();
+    }
+
+    try {
+      await sender.send(text, timestamp);
+      config.sequence = sender.getSequence();
+    } catch (err) {
+      logger.error(err.message);
+    }
+
+    rl.prompt();
+  });
+
+  rl.on('close', () => {
+    saveConfig(configPath, config);
+    sender.end();
+    console.log('\nGoodbye!');
+    process.exit(0);
+  });
+
+  process.on('SIGINT', () => {
+    rl.close();
+  });
+}
+
+main().catch((err) => {
+  logger.error(err.message);
+  process.exit(1);
+});
