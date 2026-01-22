@@ -18,44 +18,37 @@ class YoutubeLiveCaptionSender {
     }
   }
 
-  start() {
-    this.isStarted = true;
-    logger.info(`Caption sender started (lang: ${this.lang}, name: ${this.name})`);
-    return this;
+  /**
+   * Format timestamp to Google's expected format: YYYY-MM-DDTHH:MM:SS.mmm
+   * (no 'Z' suffix, no timezone)
+   */
+  _formatTimestamp(timestamp) {
+    if (timestamp && !timestamp.endsWith('Z')) {
+      return timestamp;
+    }
+    const date = timestamp ? new Date(timestamp) : new Date();
+    const iso = date.toISOString();
+    return iso.slice(0, -1); // Remove the 'Z'
   }
 
-  send(text, timestamp) {
+  /**
+   * Build the request URL with seq and key params
+   */
+  _buildRequestUrl(seq) {
+    const parsedUrl = new URL(this.ingestionUrl);
+    parsedUrl.searchParams.set('seq', seq.toString());
+    parsedUrl.searchParams.set('key', 'yt_qc');
+    return parsedUrl;
+  }
+
+  /**
+   * Internal method to send POST request
+   */
+  _sendPost(body, seq) {
     return new Promise((resolve, reject) => {
-      if (!this.isStarted) {
-        reject(new ValidationError('Sender not started. Call start() first.', 'isStarted'));
-        return;
-      }
-
-      if (!this.ingestionUrl) {
-        reject(new ConfigError('No ingestion URL configured.'));
-        return;
-      }
-
-      if (!text || typeof text !== 'string') {
-        reject(new ValidationError('Caption text is required and must be a string.', 'text'));
-        return;
-      }
-
-      const ts = timestamp || new Date().toISOString();
-      const seq = this.sequence;
-
-      const params = new URLSearchParams();
-      params.append('seq', seq.toString());
-      params.append('lang', this.lang);
-      params.append('name', this.name);
-      params.append('text', text);
-      params.append('timestamp', ts);
-
-      const body = params.toString();
-
       let parsedUrl;
       try {
-        parsedUrl = new URL(this.ingestionUrl);
+        parsedUrl = this._buildRequestUrl(seq);
       } catch (err) {
         reject(new ConfigError(`Invalid ingestion URL: ${this.ingestionUrl}`));
         return;
@@ -70,12 +63,13 @@ class YoutubeLiveCaptionSender {
         path: parsedUrl.pathname + parsedUrl.search,
         method: 'POST',
         headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
+          'Content-Type': 'text/plain',
           'Content-Length': Buffer.byteLength(body)
         }
       };
 
-      logger.debug(`Sending to ${parsedUrl.hostname}${parsedUrl.pathname}`);
+      logger.debug(`POST to ${parsedUrl.hostname}${parsedUrl.pathname}${parsedUrl.search}`);
+      logger.debug(`Body:\n${body}`);
 
       const req = transport.request(requestOptions, (res) => {
         let data = '';
@@ -83,33 +77,170 @@ class YoutubeLiveCaptionSender {
           data += chunk;
         });
         res.on('end', () => {
-          this.sequence++;
-
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            logger.success(`Sent caption #${seq}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-          } else {
-            logger.warn(`Caption #${seq} sent with status ${res.statusCode}`);
-          }
-
-          logger.debug(`Response: ${data}`);
+          // Parse server timestamp from response (if present)
+          const serverTimestamp = data.trim() || null;
 
           resolve({
-            sequence: seq,
-            timestamp: ts,
             statusCode: res.statusCode,
-            response: data
+            response: data,
+            serverTimestamp
           });
         });
       });
 
       req.on('error', (err) => {
         logger.error(`Network error: ${err.message}`);
-        reject(new NetworkError(`Failed to send caption: ${err.message}`));
+        reject(new NetworkError(`Failed to send: ${err.message}`));
       });
 
       req.write(body);
       req.end();
     });
+  }
+
+  start() {
+    this.isStarted = true;
+    logger.info(`Caption sender started (lang: ${this.lang}, name: ${this.name})`);
+    return this;
+  }
+
+  /**
+   * Send a single caption
+   * @param {string} text - Caption text (use <br> for line breaks)
+   * @param {string} [timestamp] - ISO timestamp (auto-generated if not provided)
+   * @returns {Promise<{sequence, timestamp, statusCode, response, serverTimestamp}>}
+   */
+  async send(text, timestamp) {
+    if (!this.isStarted) {
+      throw new ValidationError('Sender not started. Call start() first.', 'isStarted');
+    }
+
+    if (!this.ingestionUrl) {
+      throw new ConfigError('No ingestion URL configured.');
+    }
+
+    if (!text || typeof text !== 'string') {
+      throw new ValidationError('Caption text is required and must be a string.', 'text');
+    }
+
+    const ts = this._formatTimestamp(timestamp);
+    const seq = this.sequence;
+
+    // Google format: timestamp on one line, text on next line
+    const body = `${ts}\n${text}`;
+
+    const result = await this._sendPost(body, seq);
+    this.sequence++;
+
+    if (result.statusCode >= 200 && result.statusCode < 300) {
+      logger.success(`Sent caption #${seq}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+    } else {
+      logger.warn(`Caption #${seq} sent with status ${result.statusCode}`);
+    }
+
+    return {
+      sequence: seq,
+      timestamp: ts,
+      statusCode: result.statusCode,
+      response: result.response,
+      serverTimestamp: result.serverTimestamp
+    };
+  }
+
+  /**
+   * Send multiple captions in a single POST request
+   * @param {Array<{text: string, timestamp?: string}>} captions - Array of caption objects
+   * @returns {Promise<{sequence, count, statusCode, response, serverTimestamp}>}
+   */
+  async sendBatch(captions) {
+    if (!this.isStarted) {
+      throw new ValidationError('Sender not started. Call start() first.', 'isStarted');
+    }
+
+    if (!this.ingestionUrl) {
+      throw new ConfigError('No ingestion URL configured.');
+    }
+
+    if (!Array.isArray(captions) || captions.length === 0) {
+      throw new ValidationError('Captions must be a non-empty array.', 'captions');
+    }
+
+    const seq = this.sequence;
+    const lines = [];
+
+    // Build body with alternating timestamp/text lines
+    for (let i = 0; i < captions.length; i++) {
+      const caption = captions[i];
+
+      if (!caption.text || typeof caption.text !== 'string') {
+        throw new ValidationError(`Caption at index ${i} must have a text string.`, 'captions');
+      }
+
+      // Auto-generate timestamp if not provided, spacing them 100ms apart
+      let ts;
+      if (caption.timestamp) {
+        ts = this._formatTimestamp(caption.timestamp);
+      } else {
+        const now = new Date();
+        now.setMilliseconds(now.getMilliseconds() + (i * 100));
+        ts = this._formatTimestamp(now.toISOString());
+      }
+
+      lines.push(ts);
+      lines.push(caption.text);
+    }
+
+    const body = lines.join('\n');
+    const result = await this._sendPost(body, seq);
+    this.sequence++;
+
+    if (result.statusCode >= 200 && result.statusCode < 300) {
+      logger.success(`Sent batch #${seq}: ${captions.length} caption(s)`);
+    } else {
+      logger.warn(`Batch #${seq} sent with status ${result.statusCode}`);
+    }
+
+    return {
+      sequence: seq,
+      count: captions.length,
+      statusCode: result.statusCode,
+      response: result.response,
+      serverTimestamp: result.serverTimestamp
+    };
+  }
+
+  /**
+   * Send a heartbeat (empty POST) to verify connection
+   * Can also be used for clock synchronization via returned server timestamp
+   * @returns {Promise<{sequence, statusCode, serverTimestamp}>}
+   */
+  async heartbeat() {
+    if (!this.isStarted) {
+      throw new ValidationError('Sender not started. Call start() first.', 'isStarted');
+    }
+
+    if (!this.ingestionUrl) {
+      throw new ConfigError('No ingestion URL configured.');
+    }
+
+    const seq = this.sequence;
+    const body = ''; // Empty body for heartbeat
+
+    const result = await this._sendPost(body, seq);
+    // Note: heartbeat does NOT increment sequence per Google's spec
+    // (only new caption data increments)
+
+    if (result.statusCode >= 200 && result.statusCode < 300) {
+      logger.success(`Heartbeat #${seq} OK`);
+    } else {
+      logger.warn(`Heartbeat #${seq} returned status ${result.statusCode}`);
+    }
+
+    return {
+      sequence: seq,
+      statusCode: result.statusCode,
+      serverTimestamp: result.serverTimestamp
+    };
   }
 
   end() {
