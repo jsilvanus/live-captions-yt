@@ -58,6 +58,27 @@ describe('YoutubeLiveCaptionSender', () => {
     });
   });
 
+  describe('_formatTimestamp()', () => {
+    it('should remove Z suffix from ISO timestamp', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const result = sender._formatTimestamp('2024-01-15T12:00:00.000Z');
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+
+    it('should keep timestamp without Z suffix as-is', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const result = sender._formatTimestamp('2024-01-15T12:00:00.000');
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+
+    it('should generate timestamp when none provided', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const result = sender._formatTimestamp();
+      assert.match(result, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
+      assert.ok(!result.endsWith('Z'));
+    });
+  });
+
   describe('send()', () => {
     it('should reject if sender not started', async () => {
       const sender = new YoutubeLiveCaptionSender({
@@ -130,6 +151,116 @@ describe('YoutubeLiveCaptionSender', () => {
         (err) => {
           assert(err instanceof ConfigError);
           assert.match(err.message, /Invalid ingestion URL/i);
+          return true;
+        }
+      );
+    });
+  });
+
+  describe('sendBatch()', () => {
+    it('should reject if sender not started', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+
+      await assert.rejects(
+        () => sender.sendBatch([{ text: 'Hello' }]),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /not started/i);
+          return true;
+        }
+      );
+    });
+
+    it('should reject if no ingestion URL configured', async () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.start();
+
+      await assert.rejects(
+        () => sender.sendBatch([{ text: 'Hello' }]),
+        (err) => {
+          assert(err instanceof ConfigError);
+          assert.match(err.message, /URL/i);
+          return true;
+        }
+      );
+    });
+
+    it('should reject if captions is not an array', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+      sender.start();
+
+      await assert.rejects(
+        () => sender.sendBatch('not an array'),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /non-empty array/i);
+          return true;
+        }
+      );
+    });
+
+    it('should reject if captions array is empty', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+      sender.start();
+
+      await assert.rejects(
+        () => sender.sendBatch([]),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /non-empty array/i);
+          return true;
+        }
+      );
+    });
+
+    it('should reject if caption in array has no text', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+      sender.start();
+
+      await assert.rejects(
+        () => sender.sendBatch([{ text: 'Hello' }, { notext: true }]),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /index 1/i);
+          return true;
+        }
+      );
+    });
+  });
+
+  describe('heartbeat()', () => {
+    it('should reject if sender not started', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+
+      await assert.rejects(
+        () => sender.heartbeat(),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /not started/i);
+          return true;
+        }
+      );
+    });
+
+    it('should reject if no ingestion URL configured', async () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.start();
+
+      await assert.rejects(
+        () => sender.heartbeat(),
+        (err) => {
+          assert(err instanceof ConfigError);
+          assert.match(err.message, /URL/i);
           return true;
         }
       );
