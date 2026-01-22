@@ -1,6 +1,8 @@
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
+const { ConfigError, NetworkError, ValidationError } = require('./errors');
+const logger = require('./logger');
 
 class YoutubeLiveCaptionSender {
   constructor(options = {}) {
@@ -9,28 +11,33 @@ class YoutubeLiveCaptionSender {
     this.name = options.name || 'LCYT';
     this.sequence = options.sequence || 0;
     this.isStarted = false;
+    this.verbose = options.verbose || false;
+
+    if (this.verbose) {
+      logger.setVerbose(true);
+    }
   }
 
   start() {
     this.isStarted = true;
-    console.log(`[LCYT] Caption sender started (lang: ${this.lang}, name: ${this.name})`);
+    logger.info(`Caption sender started (lang: ${this.lang}, name: ${this.name})`);
     return this;
   }
 
   send(text, timestamp) {
     return new Promise((resolve, reject) => {
       if (!this.isStarted) {
-        reject(new Error('Sender not started. Call start() first.'));
+        reject(new ValidationError('Sender not started. Call start() first.', 'isStarted'));
         return;
       }
 
       if (!this.ingestionUrl) {
-        reject(new Error('No ingestion URL configured.'));
+        reject(new ConfigError('No ingestion URL configured.'));
         return;
       }
 
       if (!text || typeof text !== 'string') {
-        reject(new Error('Caption text is required and must be a string.'));
+        reject(new ValidationError('Caption text is required and must be a string.', 'text'));
         return;
       }
 
@@ -45,7 +52,15 @@ class YoutubeLiveCaptionSender {
       params.append('timestamp', ts);
 
       const body = params.toString();
-      const parsedUrl = new URL(this.ingestionUrl);
+
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(this.ingestionUrl);
+      } catch (err) {
+        reject(new ConfigError(`Invalid ingestion URL: ${this.ingestionUrl}`));
+        return;
+      }
+
       const isHttps = parsedUrl.protocol === 'https:';
       const transport = isHttps ? https : http;
 
@@ -60,6 +75,8 @@ class YoutubeLiveCaptionSender {
         }
       };
 
+      logger.debug(`Sending to ${parsedUrl.hostname}${parsedUrl.pathname}`);
+
       const req = transport.request(requestOptions, (res) => {
         let data = '';
         res.on('data', (chunk) => {
@@ -67,7 +84,15 @@ class YoutubeLiveCaptionSender {
         });
         res.on('end', () => {
           this.sequence++;
-          console.log(`[LCYT] Sent caption #${seq}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            logger.success(`Sent caption #${seq}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
+          } else {
+            logger.warn(`Caption #${seq} sent with status ${res.statusCode}`);
+          }
+
+          logger.debug(`Response: ${data}`);
+
           resolve({
             sequence: seq,
             timestamp: ts,
@@ -78,7 +103,8 @@ class YoutubeLiveCaptionSender {
       });
 
       req.on('error', (err) => {
-        reject(new Error(`Failed to send caption: ${err.message}`));
+        logger.error(`Network error: ${err.message}`);
+        reject(new NetworkError(`Failed to send caption: ${err.message}`));
       });
 
       req.write(body);
@@ -88,7 +114,7 @@ class YoutubeLiveCaptionSender {
 
   end() {
     this.isStarted = false;
-    console.log(`[LCYT] Caption sender stopped. Total captions sent: ${this.sequence}`);
+    logger.info(`Caption sender stopped. Total captions sent: ${this.sequence}`);
     return this;
   }
 
