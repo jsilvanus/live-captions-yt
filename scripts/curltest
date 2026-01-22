@@ -1,0 +1,41 @@
+#!/bin/bash
+
+# YouTube Live Caption curl test script
+# Usage: ./scripts/curltest <stream-key>
+
+STREAM_KEY="${1:-}"
+
+if [ -z "$STREAM_KEY" ]; then
+  echo "Usage: $0 <stream-key>"
+  echo "Example: $0 xxxx-xxxx-xxxx-xxxx"
+  exit 1
+fi
+
+URL="http://upload.youtube.com/closedcaption?cid=${STREAM_KEY}&seq=9"
+
+# Generate current timestamps (must be within 60 seconds of server time)
+TS=$(date -u +"%Y-%m-%dT%H:%M:%S")
+
+# Create body file to avoid shell quoting issues
+TMPFILE=$(mktemp)
+cat > "$TMPFILE" << EOF
+${TS}.000 region:reg1#cue1
+HELLO
+${TS}.100 region:reg1#cue1
+WORLD
+EOF
+
+echo "=== Request ==="
+echo "POST $URL"
+echo "Content-Type: text/plain"
+echo ""
+cat "$TMPFILE"
+echo ""
+echo "=== Response ==="
+
+curl -v -X POST "$URL" \
+  -H "Content-Type: text/plain" \
+  --data-binary @"$TMPFILE"
+
+rm -f "$TMPFILE"
+echo ""

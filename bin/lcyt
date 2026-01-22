@@ -1,0 +1,367 @@
+#!/usr/bin/env node
+
+import yargs from 'yargs';
+import { hideBin } from 'yargs/helpers';
+import readline from 'readline';
+import { YoutubeLiveCaptionSender } from '../src/sender.js';
+import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from '../src/config.js';
+import logger from '../src/logger.js';
+
+const argv = yargs(hideBin(process.argv))
+  .usage('Usage: $0 [options] [caption text]')
+  .option('stream-key', {
+    alias: 'k',
+    type: 'string',
+    description: 'YouTube stream key (cid value)'
+  })
+  .option('base-url', {
+    alias: 'u',
+    type: 'string',
+    description: 'Base ingestion URL (default: http://upload.youtube.com/closedcaption)'
+  })
+  .option('region', {
+    alias: 'r',
+    type: 'string',
+    description: 'Region identifier (default: reg1)'
+  })
+  .option('cue', {
+    type: 'string',
+    description: 'Cue identifier (default: cue1)'
+  })
+  .option('use-region', {
+    type: 'boolean',
+    description: 'Include region/cue in caption body (format: "TIMESTAMP region:reg1#cue1")',
+    default: false
+  })
+  .option('interactive', {
+    alias: 'i',
+    type: 'boolean',
+    description: 'Interactive mode (read from stdin)',
+    default: false
+  })
+  .option('heartbeat', {
+    type: 'boolean',
+    description: 'Send a heartbeat to verify connection',
+    default: false
+  })
+  .option('test', {
+    type: 'boolean',
+    description: 'Send test payload from Google docs',
+    default: false
+  })
+  .option('timestamp', {
+    alias: 't',
+    type: 'string',
+    description: 'Manual ISO timestamp override'
+  })
+  .option('reset', {
+    type: 'boolean',
+    description: 'Reset sequence counter to 0',
+    default: false
+  })
+  .option('config', {
+    alias: 'c',
+    type: 'string',
+    description: 'Config file path'
+  })
+  .option('verbose', {
+    alias: 'v',
+    type: 'boolean',
+    description: 'Enable verbose output',
+    default: false
+  })
+  .example('$0 --stream-key "ABC123"', 'Set stream key')
+  .example('$0 "Hello world"', 'Send a single caption')
+  .example('$0 --i', 'Start interactive mode')
+  .example('$0 --heartbeat', 'Send heartbeat to verify connection')
+  .help('help')
+  .alias('help', 'h')
+  .version()
+  .argv;
+
+async function main() {
+  const configPath = argv.config || getDefaultConfigPath();
+
+  if (argv.verbose) {
+    logger.setVerbose(true);
+  }
+
+  let config = loadConfig(configPath);
+  let configChanged = false;
+
+  if (argv['stream-key'] !== undefined) {
+    config.streamKey = argv['stream-key'];
+    configChanged = true;
+  }
+
+  if (argv['base-url'] !== undefined) {
+    config.baseUrl = argv['base-url'];
+    configChanged = true;
+  }
+
+  if (argv.region !== undefined) {
+    config.region = argv.region;
+    configChanged = true;
+  }
+
+  if (argv.cue !== undefined) {
+    config.cue = argv.cue;
+    configChanged = true;
+  }
+
+  if (argv.reset) {
+    config.sequence = 0;
+    configChanged = true;
+    logger.info('Sequence counter reset to 0');
+  }
+
+  if (configChanged) {
+    saveConfig(configPath, config);
+    logger.info(`Configuration saved to ${configPath}`);
+  }
+
+  const captionText = argv._.join(' ');
+  const hasCaption = captionText.length > 0;
+  const isInteractive = argv.interactive;
+  const isHeartbeat = argv.heartbeat;
+  const isTest = argv.test;
+
+  // Show config if no action specified
+  if (!hasCaption && !isInteractive && !isHeartbeat && !isTest) {
+    displayConfig(config, configPath);
+    return;
+  }
+
+  const ingestionUrl = buildIngestionUrl(config);
+
+  if (!ingestionUrl) {
+    logger.error('No ingestion URL configured. Use --url to set one.');
+    process.exit(1);
+  }
+
+  const sender = new YoutubeLiveCaptionSender({
+    ingestionUrl,
+    region: config.region,
+    cue: config.cue,
+    useRegion: argv['use-region'],
+    sequence: config.sequence,
+    verbose: argv.verbose
+  });
+
+  sender.start();
+
+  if (isTest) {
+    await sendTest(sender);
+  } else if (isHeartbeat) {
+    await sendHeartbeat(sender);
+  } else if (isInteractive) {
+    await runInteractiveMode(sender, config, configPath, argv.timestamp);
+  } else {
+    await sendSingleCaption(sender, captionText, config, configPath, argv.timestamp);
+  }
+}
+
+async function sendTest(sender) {
+  try {
+    const result = await sender.sendTest();
+    logger.info(`Test result: ${result.statusCode}`);
+    sender.end();
+  } catch (err) {
+    logger.error(err.message);
+    sender.end();
+    process.exit(1);
+  }
+}
+
+function displayConfig(config, configPath) {
+  console.log('\n╔══════════════════════════════════════════════════════════════╗');
+  console.log('║                    LCYT Configuration                        ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log(`║  Config file: ${configPath.padEnd(45)}║`);
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log(`║  Stream Key:  ${(config.streamKey || '(not set)').padEnd(45)}║`);
+  console.log(`║  Base URL:    ${(config.baseUrl || '(default)').padEnd(45)}║`);
+  console.log(`║  Region:      ${(config.region || 'reg1').padEnd(45)}║`);
+  console.log(`║  Cue:         ${(config.cue || 'cue1').padEnd(45)}║`);
+  console.log(`║  Sequence:    ${String(config.sequence).padEnd(45)}║`);
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+
+  const fullUrl = buildIngestionUrl(config);
+  if (fullUrl) {
+    console.log(`║  Full URL:    ${fullUrl.substring(0, 45).padEnd(45)}║`);
+    if (fullUrl.length > 45) {
+      console.log(`║               ${fullUrl.substring(45, 90).padEnd(45)}║`);
+    }
+  } else {
+    console.log('║  Full URL:    (set stream key to generate)                  ║');
+  }
+  console.log('╚══════════════════════════════════════════════════════════════╝\n');
+
+  console.log('Usage:');
+  console.log('  lcyt --stream-key "KEY"      Set your YouTube stream key');
+  console.log('  lcyt "Your caption text"     Send a single caption');
+  console.log('  lcyt --i                     Start interactive mode');
+  console.log('  lcyt --heartbeat             Send heartbeat to verify connection');
+  console.log('  lcyt --help                  Show all options\n');
+}
+
+async function sendHeartbeat(sender) {
+  try {
+    const result = await sender.heartbeat();
+    if (result.serverTimestamp) {
+      logger.info(`Server timestamp: ${result.serverTimestamp}`);
+    }
+    sender.end();
+  } catch (err) {
+    logger.error(err.message);
+    sender.end();
+    process.exit(1);
+  }
+}
+
+async function sendSingleCaption(sender, text, config, configPath, timestamp) {
+  try {
+    await sender.send(text, timestamp);
+    config.sequence = sender.getSequence();
+    saveConfig(configPath, config);
+    sender.end();
+  } catch (err) {
+    logger.error(err.message);
+    sender.end();
+    process.exit(1);
+  }
+}
+
+async function runInteractiveMode(sender, config, configPath, defaultTimestamp) {
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  let batchMode = false;
+  let batchCaptions = [];
+
+  console.log('\n╔══════════════════════════════════════════════════════════════╗');
+  console.log('║              LCYT Interactive Mode                           ║');
+  console.log('╠══════════════════════════════════════════════════════════════╣');
+  console.log('║  Commands:                                                   ║');
+  console.log('║    <text>              Send single caption                   ║');
+  console.log('║    timestamp|text      Send with custom timestamp            ║');
+  console.log('║    /batch              Start batch mode (collect captions)   ║');
+  console.log('║    /send               Send collected batch                  ║');
+  console.log('║    /heartbeat          Send heartbeat                        ║');
+  console.log('║    /status             Show current status                   ║');
+  console.log('║    Ctrl+C              Exit                                  ║');
+  console.log('╚══════════════════════════════════════════════════════════════╝\n');
+
+  rl.setPrompt('caption> ');
+  rl.prompt();
+
+  rl.on('line', async (line) => {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      rl.prompt();
+      return;
+    }
+
+    // Handle commands
+    if (trimmed.startsWith('/')) {
+      const cmd = trimmed.toLowerCase();
+
+      if (cmd === '/batch') {
+        batchMode = true;
+        batchCaptions = [];
+        console.log('Batch mode started. Enter captions, then /send to send all.');
+        rl.setPrompt('batch> ');
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === '/send') {
+        if (batchCaptions.length === 0) {
+          logger.warn('No captions in batch to send.');
+        } else {
+          try {
+            await sender.sendBatch(batchCaptions);
+            config.sequence = sender.getSequence();
+            logger.info(`Batch of ${batchCaptions.length} captions sent.`);
+          } catch (err) {
+            logger.error(err.message);
+          }
+        }
+        batchMode = false;
+        batchCaptions = [];
+        rl.setPrompt('caption> ');
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === '/heartbeat') {
+        try {
+          const result = await sender.heartbeat();
+          if (result.serverTimestamp) {
+            logger.info(`Server timestamp: ${result.serverTimestamp}`);
+          }
+        } catch (err) {
+          logger.error(err.message);
+        }
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === '/status') {
+        console.log(`  Sequence: ${sender.getSequence()}`);
+        console.log(`  Batch mode: ${batchMode ? 'ON' : 'OFF'}`);
+        if (batchMode) {
+          console.log(`  Captions in batch: ${batchCaptions.length}`);
+        }
+        rl.prompt();
+        return;
+      }
+
+      logger.warn(`Unknown command: ${trimmed}`);
+      rl.prompt();
+      return;
+    }
+
+    // Parse caption (with optional timestamp)
+    let text = trimmed;
+    let timestamp = defaultTimestamp;
+
+    if (trimmed.includes('|')) {
+      const parts = trimmed.split('|');
+      timestamp = parts[0].trim();
+      text = parts.slice(1).join('|').trim();
+    }
+
+    if (batchMode) {
+      batchCaptions.push({ text, timestamp });
+      console.log(`  Added to batch (${batchCaptions.length} total)`);
+    } else {
+      try {
+        await sender.send(text, timestamp);
+        config.sequence = sender.getSequence();
+      } catch (err) {
+        logger.error(err.message);
+      }
+    }
+
+    rl.prompt();
+  });
+
+  rl.on('close', () => {
+    saveConfig(configPath, config);
+    sender.end();
+    console.log('\nGoodbye!');
+    process.exit(0);
+  });
+
+  process.on('SIGINT', () => {
+    rl.close();
+  });
+}
+
+main().catch((err) => {
+  logger.error(err.message);
+  process.exit(1);
+});
