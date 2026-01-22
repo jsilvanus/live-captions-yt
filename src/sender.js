@@ -4,6 +4,9 @@ const { URL } = require('url');
 const { ConfigError, NetworkError, ValidationError } = require('./errors');
 const logger = require('./logger');
 
+// Default YouTube Live caption ingestion URL
+const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
+
 class YoutubeLiveCaptionSender {
   constructor(options = {}) {
     this.ingestionUrl = options.ingestionUrl || null;
@@ -12,6 +15,7 @@ class YoutubeLiveCaptionSender {
     this.sequence = options.sequence || 0;
     this.isStarted = false;
     this.verbose = options.verbose || false;
+    this._queue = []; // Internal queue for construct/sendBatch pattern
 
     if (this.verbose) {
       logger.setVerbose(true);
@@ -32,12 +36,11 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
-   * Build the request URL with seq and key params
+   * Build the request URL with seq param
    */
   _buildRequestUrl(seq) {
     const parsedUrl = new URL(this.ingestionUrl);
     parsedUrl.searchParams.set('seq', seq.toString());
-    parsedUrl.searchParams.set('key', 'yt_qc');
     return parsedUrl;
   }
 
@@ -148,8 +151,44 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
+   * Add a caption to the internal queue for later batch sending
+   * @param {string} text - Caption text
+   * @param {string} [timestamp] - ISO timestamp (auto-generated at send time if not provided)
+   * @returns {number} Number of captions in queue
+   */
+  construct(text, timestamp) {
+    if (!text || typeof text !== 'string') {
+      throw new ValidationError('Caption text is required and must be a string.', 'text');
+    }
+
+    this._queue.push({ text, timestamp: timestamp || null });
+    logger.debug(`Queued caption: "${text.substring(0, 30)}..." (${this._queue.length} in queue)`);
+    return this._queue.length;
+  }
+
+  /**
+   * Get the current queue
+   * @returns {Array<{text: string, timestamp: string|null}>}
+   */
+  getQueue() {
+    return [...this._queue];
+  }
+
+  /**
+   * Clear the caption queue
+   * @returns {number} Number of captions that were cleared
+   */
+  clearQueue() {
+    const count = this._queue.length;
+    this._queue = [];
+    logger.debug(`Cleared ${count} caption(s) from queue`);
+    return count;
+  }
+
+  /**
    * Send multiple captions in a single POST request
-   * @param {Array<{text: string, timestamp?: string}>} captions - Array of caption objects
+   * If no captions provided, sends the internal queue built with construct()
+   * @param {Array<{text: string, timestamp?: string}>} [captions] - Array of caption objects (optional)
    * @returns {Promise<{sequence, count, statusCode, response, serverTimestamp}>}
    */
   async sendBatch(captions) {
@@ -161,16 +200,19 @@ class YoutubeLiveCaptionSender {
       throw new ConfigError('No ingestion URL configured.');
     }
 
-    if (!Array.isArray(captions) || captions.length === 0) {
-      throw new ValidationError('Captions must be a non-empty array.', 'captions');
+    // Use internal queue if no captions provided
+    const captionsToSend = captions || this._queue;
+
+    if (!Array.isArray(captionsToSend) || captionsToSend.length === 0) {
+      throw new ValidationError('No captions to send. Use construct() to queue captions first, or pass an array.', 'captions');
     }
 
     const seq = this.sequence;
     const lines = [];
 
     // Build body with alternating timestamp/text lines
-    for (let i = 0; i < captions.length; i++) {
-      const caption = captions[i];
+    for (let i = 0; i < captionsToSend.length; i++) {
+      const caption = captionsToSend[i];
 
       if (!caption.text || typeof caption.text !== 'string') {
         throw new ValidationError(`Caption at index ${i} must have a text string.`, 'captions');
@@ -194,15 +236,20 @@ class YoutubeLiveCaptionSender {
     const result = await this._sendPost(body, seq);
     this.sequence++;
 
+    // Clear queue if we used it
+    if (!captions) {
+      this._queue = [];
+    }
+
     if (result.statusCode >= 200 && result.statusCode < 300) {
-      logger.success(`Sent batch #${seq}: ${captions.length} caption(s)`);
+      logger.success(`Sent batch #${seq}: ${captionsToSend.length} caption(s)`);
     } else {
       logger.warn(`Batch #${seq} sent with status ${result.statusCode}`);
     }
 
     return {
       sequence: seq,
-      count: captions.length,
+      count: captionsToSend.length,
       statusCode: result.statusCode,
       response: result.response,
       serverTimestamp: result.serverTimestamp
@@ -259,4 +306,4 @@ class YoutubeLiveCaptionSender {
   }
 }
 
-module.exports = { YoutubeLiveCaptionSender };
+module.exports = { YoutubeLiveCaptionSender, DEFAULT_YOUTUBE_URL };

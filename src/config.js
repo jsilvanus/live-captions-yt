@@ -4,6 +4,7 @@ const os = require('os');
 const { ConfigError } = require('./errors');
 
 const DEFAULT_CONFIG_FILENAME = '.lcyt-config.json';
+const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
 
 function getDefaultConfigPath() {
   return path.join(os.homedir(), DEFAULT_CONFIG_FILENAME);
@@ -11,7 +12,7 @@ function getDefaultConfigPath() {
 
 function getDefaultConfig() {
   return {
-    url: null,
+    url: DEFAULT_YOUTUBE_URL,
     ytKey: null,
     key: null,
     sequence: 0

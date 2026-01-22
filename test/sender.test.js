@@ -197,7 +197,7 @@ describe('YoutubeLiveCaptionSender', () => {
         () => sender.sendBatch('not an array'),
         (err) => {
           assert(err instanceof ValidationError);
-          assert.match(err.message, /non-empty array/i);
+          assert.match(err.message, /No captions to send/i);
           return true;
         }
       );
@@ -213,7 +213,7 @@ describe('YoutubeLiveCaptionSender', () => {
         () => sender.sendBatch([]),
         (err) => {
           assert(err instanceof ValidationError);
-          assert.match(err.message, /non-empty array/i);
+          assert.match(err.message, /No captions to send/i);
           return true;
         }
       );
@@ -283,6 +283,105 @@ describe('YoutubeLiveCaptionSender', () => {
       const sender = new YoutubeLiveCaptionSender();
       const result = sender.setSequence(10);
       assert.strictEqual(result, sender);
+    });
+  });
+
+  describe('construct()', () => {
+    it('should add caption to queue and return queue length', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const count1 = sender.construct('First caption');
+      assert.strictEqual(count1, 1);
+      const count2 = sender.construct('Second caption');
+      assert.strictEqual(count2, 2);
+    });
+
+    it('should add caption with timestamp to queue', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.construct('Caption with ts', '2024-01-15T12:00:00.000');
+      const queue = sender.getQueue();
+      assert.strictEqual(queue[0].text, 'Caption with ts');
+      assert.strictEqual(queue[0].timestamp, '2024-01-15T12:00:00.000');
+    });
+
+    it('should store null timestamp when not provided', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.construct('No timestamp');
+      const queue = sender.getQueue();
+      assert.strictEqual(queue[0].timestamp, null);
+    });
+
+    it('should throw if text is empty', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      assert.throws(
+        () => sender.construct(''),
+        (err) => {
+          assert(err instanceof ValidationError);
+          return true;
+        }
+      );
+    });
+
+    it('should throw if text is not a string', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      assert.throws(
+        () => sender.construct(123),
+        (err) => {
+          assert(err instanceof ValidationError);
+          return true;
+        }
+      );
+    });
+  });
+
+  describe('getQueue()', () => {
+    it('should return empty array initially', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const queue = sender.getQueue();
+      assert.deepStrictEqual(queue, []);
+    });
+
+    it('should return copy of queue', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.construct('Test');
+      const queue = sender.getQueue();
+      queue.push({ text: 'Modified' });
+      assert.strictEqual(sender.getQueue().length, 1);
+    });
+  });
+
+  describe('clearQueue()', () => {
+    it('should clear all captions from queue', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.construct('One');
+      sender.construct('Two');
+      sender.clearQueue();
+      assert.strictEqual(sender.getQueue().length, 0);
+    });
+
+    it('should return number of cleared captions', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.construct('One');
+      sender.construct('Two');
+      const cleared = sender.clearQueue();
+      assert.strictEqual(cleared, 2);
+    });
+  });
+
+  describe('sendBatch() with queue', () => {
+    it('should reject if queue is empty and no captions provided', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+      sender.start();
+
+      await assert.rejects(
+        () => sender.sendBatch(),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /No captions to send/i);
+          return true;
+        }
+      );
     });
   });
 });

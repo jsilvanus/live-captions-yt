@@ -19,7 +19,7 @@ npm install lcyt
 1. **Set up your YouTube ingestion URL and stream key:**
 
 ```bash
-lcyt --url "https://www.youtube.com/api/closedcaption" --yt-key "YOUR_STREAM_KEY"
+lcyt --url "http://upload.youtube.com/closedcaption" --yt-key "YOUR_STREAM_KEY"
 ```
 
 2. **Send a caption:**
@@ -56,7 +56,7 @@ lcyt -i
 
 **Set up YouTube key:**
 ```bash
-lcyt --url "https://www.youtube.com/api/closedcaption" --yt-key "ABC123"
+lcyt --url "http://upload.youtube.com/closedcaption" --yt-key "ABC123"
 ```
 
 **Send single caption:**
@@ -101,7 +101,7 @@ lcyt --reset
 const { YoutubeLiveCaptionSender } = require('lcyt');
 
 const sender = new YoutubeLiveCaptionSender({
-  ingestionUrl: 'https://www.youtube.com/api/closedcaption?cid=YOUR_KEY',
+  ingestionUrl: 'http://upload.youtube.com/closedcaption?cid=YOUR_KEY',
   lang: 'en',
   name: 'LCYT'
 });
@@ -114,12 +114,18 @@ await sender.send('Hello, world!');
 // Send with custom timestamp
 await sender.send('Custom timestamp', '2024-01-15T12:00:00.000');
 
-// Send multiple captions in one batch
+// Send multiple captions in one batch (direct array)
 await sender.sendBatch([
   { text: 'First caption' },
   { text: 'Second caption' },
   { text: 'Third caption', timestamp: '2024-01-15T12:00:01.000' }
 ]);
+
+// Or use construct() to build a batch, then send
+sender.construct('First caption');
+sender.construct('Second caption');
+sender.construct('Third caption', '2024-01-15T12:00:01.000');
+await sender.sendBatch(); // Sends the queued captions
 
 // Send heartbeat to verify connection
 const result = await sender.heartbeat();
@@ -155,14 +161,45 @@ const result = await sender.send('Hello', '2024-01-15T12:00:00.000');
 // result: { sequence, timestamp, statusCode, response, serverTimestamp }
 ```
 
-#### `sendBatch(captions)`
-Send multiple captions in a single POST request.
+#### `construct(text, timestamp?)`
+Add a caption to the internal queue for later batch sending.
 
 ```javascript
+sender.construct('First caption');
+sender.construct('Second caption', '2024-01-15T12:00:00.500');
+console.log(sender.getQueue().length); // 2
+```
+
+#### `getQueue()`
+Get a copy of the current caption queue.
+
+```javascript
+const queue = sender.getQueue();
+// [{ text: 'First caption', timestamp: null }, { text: 'Second caption', timestamp: '...' }]
+```
+
+#### `clearQueue()`
+Clear all captions from the queue.
+
+```javascript
+const cleared = sender.clearQueue(); // Returns number of cleared captions
+```
+
+#### `sendBatch(captions?)`
+Send multiple captions in a single POST request. If no array is provided, sends the internal queue built with `construct()`.
+
+```javascript
+// Option 1: Pass array directly
 const result = await sender.sendBatch([
   { text: 'Caption 1' },
   { text: 'Caption 2', timestamp: '2024-01-15T12:00:00.500' }
 ]);
+
+// Option 2: Use construct() then sendBatch()
+sender.construct('Caption 1');
+sender.construct('Caption 2');
+const result = await sender.sendBatch(); // Sends queue and clears it
+
 // result: { sequence, count, statusCode, response, serverTimestamp }
 ```
 
@@ -196,7 +233,7 @@ LCYT implements Google's official YouTube Live caption format:
 ### Request Format
 - **Method:** POST
 - **Content-Type:** `text/plain`
-- **URL params:** `&seq=N&key=yt_qc`
+- **URL params:** `&seq=N`
 
 ### Body Format
 ```
@@ -208,7 +245,7 @@ ANOTHER CAPTION
 
 ### Example POST
 ```
-POST /closedcaption?cid=YOUR_KEY&seq=42&key=yt_qc
+POST /closedcaption?cid=YOUR_KEY&seq=42
 Content-Type: text/plain
 
 2024-01-15T12:00:06.873
@@ -229,7 +266,7 @@ LCYT stores configuration in `~/.lcyt-config.json`:
 
 ```json
 {
-  "url": "https://www.youtube.com/api/closedcaption",
+  "url": "http://upload.youtube.com/closedcaption",
   "ytKey": "YOUR_STREAM_KEY",
   "key": null,
   "sequence": 42
