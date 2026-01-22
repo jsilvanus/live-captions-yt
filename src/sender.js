@@ -7,7 +7,27 @@ const logger = require('./logger');
 // Default YouTube Live caption ingestion URL
 const DEFAULT_YOUTUBE_URL = 'http://upload.youtube.com/closedcaption';
 
+/**
+ * Client for sending live captions to YouTube Live streams using Google's closed caption API.
+ * @class
+ * @example
+ * const sender = new YoutubeLiveCaptionSender({
+ *   ingestionUrl: 'http://upload.youtube.com/closedcaption?cid=YOUR_KEY'
+ * });
+ * sender.start();
+ * await sender.send('Hello, world!');
+ * sender.end();
+ */
 class YoutubeLiveCaptionSender {
+  /**
+   * Create a new YoutubeLiveCaptionSender instance.
+   * @param {Object} [options={}] - Configuration options
+   * @param {string} [options.ingestionUrl=null] - Full YouTube caption ingestion URL with cid parameter
+   * @param {string} [options.lang='en'] - Language code for captions
+   * @param {string} [options.name='LCYT'] - Track name identifier
+   * @param {number} [options.sequence=0] - Starting sequence number
+   * @param {boolean} [options.verbose=false] - Enable verbose logging
+   */
   constructor(options = {}) {
     this.ingestionUrl = options.ingestionUrl || null;
     this.lang = options.lang || 'en';
@@ -101,6 +121,13 @@ class YoutubeLiveCaptionSender {
     });
   }
 
+  /**
+   * Start the caption sender. Must be called before sending captions.
+   * @returns {YoutubeLiveCaptionSender} The sender instance for chaining
+   * @throws {Error} If already started
+   * @example
+   * sender.start();
+   */
   start() {
     this.isStarted = true;
     logger.info(`Caption sender started (lang: ${this.lang}, name: ${this.name})`);
@@ -108,10 +135,24 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
-   * Send a single caption
-   * @param {string} text - Caption text (use <br> for line breaks)
-   * @param {string} [timestamp] - ISO timestamp (auto-generated if not provided)
-   * @returns {Promise<{sequence, timestamp, statusCode, response, serverTimestamp}>}
+   * Send a single caption to the YouTube Live stream.
+   * @param {string} text - Caption text (use <br> for line breaks within the caption)
+   * @param {string} [timestamp] - ISO timestamp in format YYYY-MM-DDTHH:MM:SS.mmm (auto-generated if not provided)
+   * @returns {Promise<Object>} Result object
+   * @returns {number} return.sequence - The sequence number used for this caption
+   * @returns {string} return.timestamp - The timestamp sent with the caption
+   * @returns {number} return.statusCode - HTTP status code from the server
+   * @returns {string} return.response - Raw response body from the server
+   * @returns {string|null} return.serverTimestamp - Server timestamp if returned
+   * @throws {ValidationError} If sender not started or text is invalid
+   * @throws {ConfigError} If no ingestion URL configured
+   * @throws {NetworkError} If the request fails
+   * @example
+   * const result = await sender.send('Hello, world!');
+   * console.log(result.sequence); // 0
+   * @example
+   * // With custom timestamp
+   * await sender.send('Custom time', '2024-01-15T12:00:00.000');
    */
   async send(text, timestamp) {
     if (!this.isStarted) {
@@ -151,10 +192,15 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
-   * Add a caption to the internal queue for later batch sending
-   * @param {string} text - Caption text
-   * @param {string} [timestamp] - ISO timestamp (auto-generated at send time if not provided)
-   * @returns {number} Number of captions in queue
+   * Add a caption to the internal queue for later batch sending with sendBatch().
+   * @param {string} text - Caption text (use <br> for line breaks within the caption)
+   * @param {string} [timestamp] - ISO timestamp in format YYYY-MM-DDTHH:MM:SS.mmm (auto-generated at send time if not provided)
+   * @returns {number} Number of captions currently in queue after adding
+   * @throws {ValidationError} If text is empty or not a string
+   * @example
+   * sender.construct('First caption');
+   * sender.construct('Second caption', '2024-01-15T12:00:00.500');
+   * await sender.sendBatch(); // Sends both captions
    */
   construct(text, timestamp) {
     if (!text || typeof text !== 'string') {
@@ -167,16 +213,26 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
-   * Get the current queue
-   * @returns {Array<{text: string, timestamp: string|null}>}
+   * Get a copy of the current caption queue.
+   * @returns {Array<{text: string, timestamp: string|null}>} Copy of the queue array
+   * @example
+   * sender.construct('Caption 1');
+   * sender.construct('Caption 2');
+   * const queue = sender.getQueue();
+   * console.log(queue.length); // 2
    */
   getQueue() {
     return [...this._queue];
   }
 
   /**
-   * Clear the caption queue
+   * Clear all captions from the internal queue.
    * @returns {number} Number of captions that were cleared
+   * @example
+   * sender.construct('Caption 1');
+   * sender.construct('Caption 2');
+   * const cleared = sender.clearQueue(); // Returns 2
+   * console.log(sender.getQueue().length); // 0
    */
   clearQueue() {
     const count = this._queue.length;
@@ -186,10 +242,29 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
-   * Send multiple captions in a single POST request
-   * If no captions provided, sends the internal queue built with construct()
-   * @param {Array<{text: string, timestamp?: string}>} [captions] - Array of caption objects (optional)
-   * @returns {Promise<{sequence, count, statusCode, response, serverTimestamp}>}
+   * Send multiple captions in a single POST request.
+   * If no captions array is provided, sends the internal queue built with construct() and clears it.
+   * @param {Array<{text: string, timestamp?: string}>} [captions] - Array of caption objects. If omitted, uses internal queue.
+   * @returns {Promise<Object>} Result object
+   * @returns {number} return.sequence - The sequence number used for this batch
+   * @returns {number} return.count - Number of captions sent
+   * @returns {number} return.statusCode - HTTP status code from the server
+   * @returns {string} return.response - Raw response body from the server
+   * @returns {string|null} return.serverTimestamp - Server timestamp if returned
+   * @throws {ValidationError} If sender not started or no captions to send
+   * @throws {ConfigError} If no ingestion URL configured
+   * @throws {NetworkError} If the request fails
+   * @example
+   * // Option 1: Pass array directly
+   * await sender.sendBatch([
+   *   { text: 'First caption' },
+   *   { text: 'Second caption', timestamp: '2024-01-15T12:00:00.500' }
+   * ]);
+   * @example
+   * // Option 2: Use construct() then sendBatch()
+   * sender.construct('First caption');
+   * sender.construct('Second caption');
+   * await sender.sendBatch(); // Sends queue and clears it
    */
   async sendBatch(captions) {
     if (!this.isStarted) {
@@ -257,9 +332,21 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
-   * Send a heartbeat (empty POST) to verify connection
-   * Can also be used for clock synchronization via returned server timestamp
-   * @returns {Promise<{sequence, statusCode, serverTimestamp}>}
+   * Send a heartbeat (empty POST) to verify the connection is working.
+   * Can also be used for clock synchronization via the returned server timestamp.
+   * Note: Heartbeat does NOT increment the sequence number per Google's spec.
+   * @returns {Promise<Object>} Result object
+   * @returns {number} return.sequence - The current sequence number (not incremented)
+   * @returns {number} return.statusCode - HTTP status code from the server
+   * @returns {string|null} return.serverTimestamp - Server timestamp for clock sync
+   * @throws {ValidationError} If sender not started
+   * @throws {ConfigError} If no ingestion URL configured
+   * @throws {NetworkError} If the request fails
+   * @example
+   * const result = await sender.heartbeat();
+   * if (result.statusCode === 200) {
+   *   console.log('Connection OK, server time:', result.serverTimestamp);
+   * }
    */
   async heartbeat() {
     if (!this.isStarted) {
@@ -290,16 +377,35 @@ class YoutubeLiveCaptionSender {
     };
   }
 
+  /**
+   * Stop the caption sender and cleanup.
+   * @returns {YoutubeLiveCaptionSender} The sender instance for chaining
+   * @example
+   * sender.end();
+   */
   end() {
     this.isStarted = false;
     logger.info(`Caption sender stopped. Total captions sent: ${this.sequence}`);
     return this;
   }
 
+  /**
+   * Get the current sequence number.
+   * @returns {number} Current sequence number
+   * @example
+   * const seq = sender.getSequence();
+   */
   getSequence() {
     return this.sequence;
   }
 
+  /**
+   * Set the sequence number manually.
+   * @param {number} seq - New sequence number
+   * @returns {YoutubeLiveCaptionSender} The sender instance for chaining
+   * @example
+   * sender.setSequence(100);
+   */
   setSequence(seq) {
     this.sequence = seq;
     return this;
