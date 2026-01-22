@@ -1,6 +1,6 @@
 # LCYT - Live Caption Tool for YouTube
 
-Send live captions to YouTube Live streams and other caption ingestion services.
+Send live captions to YouTube Live streams using Google's official closed caption API format.
 
 ## Installation
 
@@ -44,6 +44,7 @@ lcyt -i
 | `--yt-key <key>` | | YouTube stream key (appends `?cid=<key>`) |
 | `--key <key>` | `-k` | Generic service key (appended as-is) |
 | `--interactive` | `-i` | Interactive mode (read from stdin) |
+| `--heartbeat` | | Send heartbeat to verify connection |
 | `--timestamp <iso>` | `-t` | Manual ISO timestamp override |
 | `--reset` | | Reset sequence counter to 0 |
 | `--config <path>` | `-c` | Config file path |
@@ -58,28 +59,29 @@ lcyt -i
 lcyt --url "https://www.youtube.com/api/closedcaption" --yt-key "ABC123"
 ```
 
-**Set up generic service:**
-```bash
-lcyt --url "https://other-service.com/captions" --key "/MYKEY"
-```
-
 **Send single caption:**
 ```bash
 lcyt "Hello world"
 ```
 
-**Send with custom timestamp:**
+**Send heartbeat to verify connection:**
 ```bash
-lcyt -t "2024-01-15T12:00:00.000Z" "Caption with timestamp"
+lcyt --heartbeat
 ```
 
 **Interactive mode:**
 ```bash
 lcyt -i
-# Type captions line by line
-# Format: "text" or "timestamp|text"
-# Press Ctrl+C to exit
 ```
+
+Interactive mode commands:
+- `<text>` - Send single caption
+- `timestamp|text` - Send with custom timestamp
+- `/batch` - Start batch mode (collect multiple captions)
+- `/send` - Send collected batch
+- `/heartbeat` - Send heartbeat
+- `/status` - Show current status
+- `Ctrl+C` - Exit
 
 **View current config:**
 ```bash
@@ -106,11 +108,22 @@ const sender = new YoutubeLiveCaptionSender({
 
 sender.start();
 
-// Send a caption
+// Send a single caption
 await sender.send('Hello, world!');
 
 // Send with custom timestamp
-await sender.send('Custom timestamp', '2024-01-15T12:00:00.000Z');
+await sender.send('Custom timestamp', '2024-01-15T12:00:00.000');
+
+// Send multiple captions in one batch
+await sender.sendBatch([
+  { text: 'First caption' },
+  { text: 'Second caption' },
+  { text: 'Third caption', timestamp: '2024-01-15T12:00:01.000' }
+]);
+
+// Send heartbeat to verify connection
+const result = await sender.heartbeat();
+console.log('Server time:', result.serverTimestamp);
 
 sender.end();
 ```
@@ -135,11 +148,30 @@ sender.start();
 ```
 
 #### `send(text, timestamp?)`
-Send a caption. Returns a Promise.
+Send a single caption. Returns a Promise.
 
 ```javascript
-const result = await sender.send('Hello', '2024-01-15T12:00:00.000Z');
-// result: { sequence, timestamp, statusCode, response }
+const result = await sender.send('Hello', '2024-01-15T12:00:00.000');
+// result: { sequence, timestamp, statusCode, response, serverTimestamp }
+```
+
+#### `sendBatch(captions)`
+Send multiple captions in a single POST request.
+
+```javascript
+const result = await sender.sendBatch([
+  { text: 'Caption 1' },
+  { text: 'Caption 2', timestamp: '2024-01-15T12:00:00.500' }
+]);
+// result: { sequence, count, statusCode, response, serverTimestamp }
+```
+
+#### `heartbeat()`
+Send an empty POST to verify connection. Can be used for clock synchronization.
+
+```javascript
+const result = await sender.heartbeat();
+// result: { sequence, statusCode, serverTimestamp }
 ```
 
 #### `end()`
@@ -155,6 +187,40 @@ Get or set the current sequence number.
 ```javascript
 const seq = sender.getSequence();
 sender.setSequence(100);
+```
+
+## Google Caption Format
+
+LCYT implements Google's official YouTube Live caption format:
+
+### Request Format
+- **Method:** POST
+- **Content-Type:** `text/plain`
+- **URL params:** `&seq=N&key=yt_qc`
+
+### Body Format
+```
+YYYY-MM-DDTHH:MM:SS.mmm
+CAPTION TEXT
+YYYY-MM-DDTHH:MM:SS.mmm
+ANOTHER CAPTION
+```
+
+### Example POST
+```
+POST /closedcaption?cid=YOUR_KEY&seq=42&key=yt_qc
+Content-Type: text/plain
+
+2024-01-15T12:00:06.873
+Hello, this is my caption
+2024-01-15T12:00:07.500
+And here's another line
+```
+
+### Line Breaks
+Use `<br>` within caption text for line breaks:
+```javascript
+await sender.send('Line one<br>Line two');
 ```
 
 ## Configuration
