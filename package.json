@@ -1,0 +1,39 @@
+{
+  "name": "lcyt",
+  "version": "1.0.0",
+  "description": "Send live captions to YouTube Live streams and other caption ingestion services",
+  "main": "src/sender.js",
+  "bin": {
+    "lcyt": "bin/lcyt"
+  },
+  "scripts": {
+    "start": "node bin/lcyt",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "youtube",
+    "live",
+    "captions",
+    "subtitles",
+    "streaming",
+    "closed-captions",
+    "accessibility",
+    "live-stream"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "yargs": "^17.7.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/lcyt.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/lcyt/issues"
+  },
+  "homepage": "https://github.com/yourusername/lcyt#readme"
+}
