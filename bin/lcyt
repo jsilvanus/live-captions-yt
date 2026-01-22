@@ -28,6 +28,11 @@ const argv = yargs(hideBin(process.argv))
     description: 'Interactive mode (read from stdin)',
     default: false
   })
+  .option('heartbeat', {
+    type: 'boolean',
+    description: 'Send a heartbeat to verify connection',
+    default: false
+  })
   .option('timestamp', {
     alias: 't',
     type: 'string',
@@ -52,6 +57,7 @@ const argv = yargs(hideBin(process.argv))
   .example('$0 --url "https://youtube.com/api/captions" --yt-key "ABC123"', 'Set YouTube key')
   .example('$0 "Hello world"', 'Send a single caption')
   .example('$0 --i', 'Start interactive mode')
+  .example('$0 --heartbeat', 'Send heartbeat to verify connection')
   .help('help')
   .alias('help', 'h')
   .version()
@@ -98,8 +104,10 @@ async function main() {
   const captionText = argv._.join(' ');
   const hasCaption = captionText.length > 0;
   const isInteractive = argv.interactive;
+  const isHeartbeat = argv.heartbeat;
 
-  if (!hasCaption && !isInteractive) {
+  // Show config if no action specified
+  if (!hasCaption && !isInteractive && !isHeartbeat) {
     displayConfig(config, configPath);
     return;
   }
@@ -119,7 +127,9 @@ async function main() {
 
   sender.start();
 
-  if (isInteractive) {
+  if (isHeartbeat) {
+    await sendHeartbeat(sender);
+  } else if (isInteractive) {
     await runInteractiveMode(sender, config, configPath, argv.timestamp);
   } else {
     await sendSingleCaption(sender, captionText, config, configPath, argv.timestamp);
@@ -152,7 +162,22 @@ function displayConfig(config, configPath) {
   console.log('Usage:');
   console.log('  lcyt "Your caption text"     Send a single caption');
   console.log('  lcyt --i                     Start interactive mode');
+  console.log('  lcyt --heartbeat             Send heartbeat to verify connection');
   console.log('  lcyt --help                  Show all options\n');
+}
+
+async function sendHeartbeat(sender) {
+  try {
+    const result = await sender.heartbeat();
+    if (result.serverTimestamp) {
+      logger.info(`Server timestamp: ${result.serverTimestamp}`);
+    }
+    sender.end();
+  } catch (err) {
+    logger.error(err.message);
+    sender.end();
+    process.exit(1);
+  }
 }
 
 async function sendSingleCaption(sender, text, config, configPath, timestamp) {
@@ -176,12 +201,20 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
     output: process.stdout
   });
 
+  let batchMode = false;
+  let batchCaptions = [];
+
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
   console.log('║              LCYT Interactive Mode                           ║');
   console.log('╠══════════════════════════════════════════════════════════════╣');
-  console.log('║  Type captions and press Enter to send.                      ║');
-  console.log('║  Format: "text" or "timestamp|text"                          ║');
-  console.log('║  Press Ctrl+C to exit.                                       ║');
+  console.log('║  Commands:                                                   ║');
+  console.log('║    <text>              Send single caption                   ║');
+  console.log('║    timestamp|text      Send with custom timestamp            ║');
+  console.log('║    /batch              Start batch mode (collect captions)   ║');
+  console.log('║    /send               Send collected batch                  ║');
+  console.log('║    /heartbeat          Send heartbeat                        ║');
+  console.log('║    /status             Show current status                   ║');
+  console.log('║    Ctrl+C              Exit                                  ║');
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
   rl.setPrompt('caption> ');
@@ -194,6 +227,67 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
       return;
     }
 
+    // Handle commands
+    if (trimmed.startsWith('/')) {
+      const cmd = trimmed.toLowerCase();
+
+      if (cmd === '/batch') {
+        batchMode = true;
+        batchCaptions = [];
+        console.log('Batch mode started. Enter captions, then /send to send all.');
+        rl.setPrompt('batch> ');
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === '/send') {
+        if (batchCaptions.length === 0) {
+          logger.warn('No captions in batch to send.');
+        } else {
+          try {
+            await sender.sendBatch(batchCaptions);
+            config.sequence = sender.getSequence();
+            logger.info(`Batch of ${batchCaptions.length} captions sent.`);
+          } catch (err) {
+            logger.error(err.message);
+          }
+        }
+        batchMode = false;
+        batchCaptions = [];
+        rl.setPrompt('caption> ');
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === '/heartbeat') {
+        try {
+          const result = await sender.heartbeat();
+          if (result.serverTimestamp) {
+            logger.info(`Server timestamp: ${result.serverTimestamp}`);
+          }
+        } catch (err) {
+          logger.error(err.message);
+        }
+        rl.prompt();
+        return;
+      }
+
+      if (cmd === '/status') {
+        console.log(`  Sequence: ${sender.getSequence()}`);
+        console.log(`  Batch mode: ${batchMode ? 'ON' : 'OFF'}`);
+        if (batchMode) {
+          console.log(`  Captions in batch: ${batchCaptions.length}`);
+        }
+        rl.prompt();
+        return;
+      }
+
+      logger.warn(`Unknown command: ${trimmed}`);
+      rl.prompt();
+      return;
+    }
+
+    // Parse caption (with optional timestamp)
     let text = trimmed;
     let timestamp = defaultTimestamp;
 
@@ -203,11 +297,16 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
       text = parts.slice(1).join('|').trim();
     }
 
-    try {
-      await sender.send(text, timestamp);
-      config.sequence = sender.getSequence();
-    } catch (err) {
-      logger.error(err.message);
+    if (batchMode) {
+      batchCaptions.push({ text, timestamp });
+      console.log(`  Added to batch (${batchCaptions.length} total)`);
+    } else {
+      try {
+        await sender.send(text, timestamp);
+        config.sequence = sender.getSequence();
+      } catch (err) {
+        logger.error(err.message);
+      }
     }
 
     rl.prompt();
