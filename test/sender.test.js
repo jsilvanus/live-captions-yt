@@ -33,7 +33,7 @@ describe('YoutubeLiveCaptionSender', () => {
         streamKey: 'TEST_KEY_123'
       });
       assert.strictEqual(sender.streamKey, 'TEST_KEY_123');
-      assert.strictEqual(sender.ingestionUrl, 'http://upload.youtube.com/closedcaption?cid=TEST_KEY_123&reg=reg1&cue=cue1');
+      assert.strictEqual(sender.ingestionUrl, 'http://upload.youtube.com/closedcaption?cid=TEST_KEY_123');
     });
 
     it('should build ingestionUrl with custom region and cue', () => {
@@ -42,7 +42,9 @@ describe('YoutubeLiveCaptionSender', () => {
         region: 'reg2',
         cue: 'cue3'
       });
-      assert.strictEqual(sender.ingestionUrl, 'http://upload.youtube.com/closedcaption?cid=MY_KEY&reg=reg2&cue=cue3');
+      assert.strictEqual(sender.ingestionUrl, 'http://upload.youtube.com/closedcaption?cid=MY_KEY');
+      assert.strictEqual(sender.region, 'reg2');
+      assert.strictEqual(sender.cue, 'cue3');
     });
 
     it('should allow custom baseUrl', () => {
@@ -51,7 +53,7 @@ describe('YoutubeLiveCaptionSender', () => {
         baseUrl: 'https://custom.example.com/captions'
       });
       assert.strictEqual(sender.baseUrl, 'https://custom.example.com/captions');
-      assert.strictEqual(sender.ingestionUrl, 'https://custom.example.com/captions?cid=MY_KEY&reg=reg1&cue=cue1');
+      assert.strictEqual(sender.ingestionUrl, 'https://custom.example.com/captions?cid=MY_KEY');
     });
 
     it('should use ingestionUrl over streamKey when both provided', () => {

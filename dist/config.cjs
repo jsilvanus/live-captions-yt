@@ -61,10 +61,8 @@ function buildIngestionUrl(config) {
   }
 
   const baseUrl = config.baseUrl || DEFAULT_YOUTUBE_URL;
-  const region = config.region || 'reg1';
-  const cue = config.cue || 'cue1';
 
-  return `${baseUrl}?cid=${config.streamKey}&reg=${region}&cue=${cue}`;
+  return `${baseUrl}?cid=${config.streamKey}`;
 }
 
 module.exports = { getDefaultConfigPath, getDefaultConfig, loadConfig, saveConfig, buildIngestionUrl, DEFAULT_YOUTUBE_URL };

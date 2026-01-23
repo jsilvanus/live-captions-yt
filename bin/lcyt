@@ -28,6 +28,11 @@ const argv = yargs(hideBin(process.argv))
     type: 'string',
     description: 'Cue identifier (default: cue1)'
   })
+  .option('use-region', {
+    type: 'boolean',
+    description: 'Include region/cue in caption body (format: "TIMESTAMP region:reg1#cue1")',
+    default: false
+  })
   .option('interactive', {
     alias: 'i',
     type: 'boolean',
@@ -130,6 +135,9 @@ async function main() {
 
   const sender = new YoutubeLiveCaptionSender({
     ingestionUrl,
+    region: config.region,
+    cue: config.cue,
+    useRegion: argv['use-region'],
     sequence: config.sequence,
     verbose: argv.verbose
   });

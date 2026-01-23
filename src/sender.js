@@ -27,6 +27,7 @@ class YoutubeLiveCaptionSender {
    * @param {string} [options.ingestionUrl=null] - Full pre-built ingestion URL (overrides streamKey and baseUrl)
    * @param {string} [options.region='reg1'] - Region identifier for captions
    * @param {string} [options.cue='cue1'] - Cue identifier for captions
+   * @param {boolean} [options.useRegion=false] - Include region/cue in caption body
    * @param {number} [options.sequence=0] - Starting sequence number
    * @param {boolean} [options.verbose=false] - Enable verbose logging
    */
@@ -35,6 +36,7 @@ class YoutubeLiveCaptionSender {
     this.baseUrl = options.baseUrl || DEFAULT_YOUTUBE_URL;
     this.region = options.region || 'reg1';
     this.cue = options.cue || 'cue1';
+    this.useRegion = options.useRegion || false;
     this.sequence = options.sequence || 0;
     this.isStarted = false;
     this.verbose = options.verbose || false;
@@ -44,7 +46,7 @@ class YoutubeLiveCaptionSender {
     if (options.ingestionUrl) {
       this.ingestionUrl = options.ingestionUrl;
     } else if (this.streamKey) {
-      this.ingestionUrl = `${this.baseUrl}?cid=${this.streamKey}&reg=${this.region}&cue=${this.cue}`;
+      this.ingestionUrl = `${this.baseUrl}?cid=${this.streamKey}`;
     } else {
       this.ingestionUrl = null;
     }
@@ -74,6 +76,17 @@ class YoutubeLiveCaptionSender {
     const parsedUrl = new URL(this.ingestionUrl);
     parsedUrl.searchParams.set('seq', seq.toString());
     return parsedUrl;
+  }
+
+  /**
+   * Build caption body for a single caption.
+   * Format: timestamp (with optional region/cue) on one line, text on next line.
+   * Modify this method to change the caption format globally.
+   */
+  _buildCaptionBody(timestamp, text, useRegion = false) {
+    const ts = this._formatTimestamp(timestamp);
+    const regionCue = (useRegion && this.region && this.cue) ? ` region:${this.region}#${this.cue}` : '';
+    return `${ts}${regionCue}\n${text}`;
   }
 
   /**
@@ -142,7 +155,7 @@ class YoutubeLiveCaptionSender {
    */
   start() {
     this.isStarted = true;
-    logger.info(`Caption sender started (region: ${this.region}, cue: ${this.cue})`);
+    logger.info(`Caption sender started`);
     return this;
   }
 
@@ -182,8 +195,7 @@ class YoutubeLiveCaptionSender {
     const ts = this._formatTimestamp(timestamp);
     const seq = this.sequence;
 
-    // Google format: timestamp on one line, text on next line
-    const body = `${ts}\n${text}`;
+    const body = this._buildCaptionBody(timestamp, text, this.useRegion);
 
     const result = await this._sendPost(body, seq);
     this.sequence++;
@@ -297,7 +309,7 @@ class YoutubeLiveCaptionSender {
     const seq = this.sequence;
     const lines = [];
 
-    // Build body with alternating timestamp/text lines
+    // Build body with each caption
     for (let i = 0; i < captionsToSend.length; i++) {
       const caption = captionsToSend[i];
 
@@ -306,17 +318,14 @@ class YoutubeLiveCaptionSender {
       }
 
       // Auto-generate timestamp if not provided, spacing them 100ms apart
-      let ts;
-      if (caption.timestamp) {
-        ts = this._formatTimestamp(caption.timestamp);
-      } else {
+      let timestamp = caption.timestamp;
+      if (!timestamp) {
         const now = new Date();
         now.setMilliseconds(now.getMilliseconds() + (i * 100));
-        ts = this._formatTimestamp(now.toISOString());
+        timestamp = now.toISOString();
       }
 
-      lines.push(ts);
-      lines.push(caption.text);
+      lines.push(this._buildCaptionBody(timestamp, caption.text, this.useRegion));
     }
 
     const body = lines.join('\n');
