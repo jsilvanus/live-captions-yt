@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: initialize project with package.json\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)",
+      "Bash(node bin/lcyt:*)",
+      "Bash(npm test:*)",
+      "Bash(node scripts/build-cjs.js:*)",
+      "Bash(node -e:*)",
+      "Bash(node --test:*)",
+      "Bash(npm run build:*)"
+    ]
+  }
+}
