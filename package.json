@@ -1,6 +1,6 @@
 {
   "name": "lcyt",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Send live captions to YouTube Live streams and other caption ingestion services",
   "type": "module",
   "main": "./dist/index.cjs",
