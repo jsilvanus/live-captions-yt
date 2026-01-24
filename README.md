@@ -2,6 +2,8 @@
 
 Send live captions to YouTube Live streams using Google's official closed caption API format.
 
+The functionality has been tested.
+
 ## Installation
 
 ```bash
