@@ -34,6 +34,8 @@ lcyt "Hello, world!"
 lcyt -i
 ```
 
+> **Note:** The `--use-region` flag includes the `region:reg1#cue1` identifier in the caption body. This is optional but supported by YouTube.
+
 ## CLI Usage
 
 ### Options
@@ -44,6 +46,7 @@ lcyt -i
 | `--base-url <url>` | `-u` | Base ingestion URL (default: http://upload.youtube.com/closedcaption) |
 | `--region <reg>` | `-r` | Region identifier (default: reg1) |
 | `--cue <cue>` | | Cue identifier (default: cue1) |
+| `--use-region` | | Include region/cue in caption body (optional) |
 | `--interactive` | `-i` | Interactive mode (read from stdin) |
 | `--heartbeat` | | Send heartbeat to verify connection |
 | `--timestamp <iso>` | `-t` | Manual ISO timestamp override |
@@ -142,6 +145,7 @@ sender.end();
 | `ingestionUrl` | string | `null` | Full pre-built URL (overrides streamKey/baseUrl) |
 | `region` | string | `'reg1'` | Region identifier |
 | `cue` | string | `'cue1'` | Cue identifier |
+| `useRegion` | boolean | `false` | Include region/cue in caption body (optional) |
 | `sequence` | number | `0` | Starting sequence number |
 | `verbose` | boolean | `false` | Enable verbose logging |
 
@@ -234,24 +238,29 @@ LCYT implements Google's official YouTube Live caption format:
 ### Request Format
 - **Method:** POST
 - **Content-Type:** `text/plain`
-- **URL params:** `cid=<stream_key>&reg=<region>&cue=<cue>&seq=N`
+- **URL params:** `cid=<stream_key>&seq=N`
 
 ### Body Format
 ```
-YYYY-MM-DDTHH:MM:SS.mmm
+YYYY-MM-DDTHH:MM:SS.mmm region:reg1#cue1
 CAPTION TEXT
-YYYY-MM-DDTHH:MM:SS.mmm
+YYYY-MM-DDTHH:MM:SS.mmm region:reg1#cue1
 ANOTHER CAPTION
 ```
 
+> **Important Requirements:**
+> - **Timestamps must be within 60 seconds** of the server's current time
+> - **Body must end with a trailing newline** (`\n`)
+> - Region/cue identifier after timestamp is optional (`region:reg1#cue1`)
+
 ### Example POST
 ```
-POST /closedcaption?cid=YOUR_KEY&reg=reg1&cue=cue1&seq=42
+POST /closedcaption?cid=YOUR_KEY&seq=42
 Content-Type: text/plain
 
-2024-01-15T12:00:06.873
+2024-01-15T12:00:06.873 region:reg1#cue1
 Hello, this is my caption
-2024-01-15T12:00:07.500
+2024-01-15T12:00:07.500 region:reg1#cue1
 And here's another line
 ```
 
@@ -280,7 +289,7 @@ LCYT stores configuration in `~/.lcyt-config.json`:
 The full ingestion URL is constructed as:
 
 ```
-{baseUrl}?cid={streamKey}&reg={region}&cue={cue}&seq={sequence}
+{baseUrl}?cid={streamKey}&seq={sequence}
 ```
 
 ## YouTube Setup

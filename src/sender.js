@@ -1,5 +1,4 @@
 import http from 'http';
-import https from 'https';
 import { URL } from 'url';
 import { ConfigError, NetworkError, ValidationError } from './errors.js';
 import logger from './logger.js';
@@ -94,21 +93,18 @@ class YoutubeLiveCaptionSender {
    */
   _sendPost(body, seq) {
     return new Promise((resolve, reject) => {
-      let parsedUrl;
+      let url;
       try {
-        parsedUrl = this._buildRequestUrl(seq);
+        url = this._buildRequestUrl(seq);
       } catch (err) {
         reject(new ConfigError(`Invalid ingestion URL: ${this.ingestionUrl}`));
         return;
       }
 
-      const isHttps = parsedUrl.protocol === 'https:';
-      const transport = isHttps ? https : http;
-
-      const requestOptions = {
-        hostname: parsedUrl.hostname,
-        port: parsedUrl.port || (isHttps ? 443 : 80),
-        path: parsedUrl.pathname + parsedUrl.search,
+      const options = {
+        hostname: url.hostname,
+        port: url.port || 80,
+        path: url.pathname + url.search,
         method: 'POST',
         headers: {
           'Content-Type': 'text/plain',
@@ -116,18 +112,18 @@ class YoutubeLiveCaptionSender {
         }
       };
 
-      logger.debug(`POST to ${parsedUrl.hostname}${parsedUrl.pathname}${parsedUrl.search}`);
-      logger.debug(`Body:\n${body}`);
+      logger.debug(`POST ${options.path}`);
+      logger.debug(`Host: ${options.hostname}`);
+      logger.debug(`Content-Type: ${options.headers['Content-Type']}`);
+      logger.debug(`Content-Length: ${options.headers['Content-Length']}`);
+      logger.debug(`\n${body}`);
 
-      const req = transport.request(requestOptions, (res) => {
+      const req = http.request(options, (res) => {
         let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
+        res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
-          // Parse server timestamp from response (if present)
           const serverTimestamp = data.trim() || null;
-
+          logger.debug(`Response [${res.statusCode}]: ${data || '(empty)'}`);
           resolve({
             statusCode: res.statusCode,
             response: data,
@@ -180,35 +176,10 @@ class YoutubeLiveCaptionSender {
    * await sender.send('Custom time', '2024-01-15T12:00:00.000');
    */
   async send(text, timestamp) {
-    if (!this.isStarted) {
-      throw new ValidationError('Sender not started. Call start() first.', 'isStarted');
-    }
-
-    if (!this.ingestionUrl) {
-      throw new ConfigError('No ingestion URL configured.');
-    }
-
-    if (!text || typeof text !== 'string') {
-      throw new ValidationError('Caption text is required and must be a string.', 'text');
-    }
-
-    const ts = this._formatTimestamp(timestamp);
-    const seq = this.sequence;
-
-    const body = this._buildCaptionBody(timestamp, text, this.useRegion);
-
-    const result = await this._sendPost(body, seq);
-    this.sequence++;
-
-    if (result.statusCode >= 200 && result.statusCode < 300) {
-      logger.success(`Sent caption #${seq}: "${text.substring(0, 50)}${text.length > 50 ? '...' : ''}"`);
-    } else {
-      logger.warn(`Caption #${seq} sent with status ${result.statusCode}`);
-    }
-
+    const result = await this.sendBatch([{ text, timestamp }]);
     return {
-      sequence: seq,
-      timestamp: ts,
+      sequence: result.sequence,
+      timestamp: this._formatTimestamp(timestamp),
       statusCode: result.statusCode,
       response: result.response,
       serverTimestamp: result.serverTimestamp
@@ -328,9 +299,9 @@ class YoutubeLiveCaptionSender {
       lines.push(this._buildCaptionBody(timestamp, caption.text, this.useRegion));
     }
 
-    const body = lines.join('\n');
+    const body = lines.join('\n') + '\n';
+    logger.debug(`Batch body (${lines.length} captions):\n${body}`);
     const result = await this._sendPost(body, seq);
-    this.sequence++;
 
     // Clear queue if we used it
     if (!captions) {
@@ -338,6 +309,7 @@ class YoutubeLiveCaptionSender {
     }
 
     if (result.statusCode >= 200 && result.statusCode < 300) {
+      this.sequence++;
       logger.success(`Sent batch #${seq}: ${captionsToSend.length} caption(s)`);
     } else {
       logger.warn(`Batch #${seq} sent with status ${result.statusCode}`);
@@ -430,6 +402,42 @@ class YoutubeLiveCaptionSender {
   setSequence(seq) {
     this.sequence = seq;
     return this;
+  }
+
+  /**
+   * Test function that sends the exact example body from Google's docs.
+   */
+  async sendTest() {
+    if (!this.isStarted) {
+      throw new ValidationError('Sender not started. Call start() first.', 'isStarted');
+    }
+    if (!this.ingestionUrl) {
+      throw new ConfigError('No ingestion URL configured.');
+    }
+
+    // Generate current timestamps (must be within 60 seconds of server time)
+    const now = new Date();
+    const ts1 = this._formatTimestamp(now.toISOString());
+    now.setMilliseconds(now.getMilliseconds() + 100);
+    const ts2 = this._formatTimestamp(now.toISOString());
+
+    const body = `${ts1} region:reg1#cue1
+HELLO
+${ts2} region:reg1#cue1
+WORLD
+`;
+
+    const seq = this.sequence;
+    const result = await this._sendPost(body, seq);
+
+    if (result.statusCode >= 200 && result.statusCode < 300) {
+      this.sequence++;
+      logger.success(`Test sent #${seq}`);
+    } else {
+      logger.warn(`Test #${seq} sent with status ${result.statusCode}`);
+    }
+
+    return result;
   }
 }
 

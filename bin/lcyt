@@ -44,6 +44,11 @@ const argv = yargs(hideBin(process.argv))
     description: 'Send a heartbeat to verify connection',
     default: false
   })
+  .option('test', {
+    type: 'boolean',
+    description: 'Send test payload from Google docs',
+    default: false
+  })
   .option('timestamp', {
     alias: 't',
     type: 'string',
@@ -119,9 +124,10 @@ async function main() {
   const hasCaption = captionText.length > 0;
   const isInteractive = argv.interactive;
   const isHeartbeat = argv.heartbeat;
+  const isTest = argv.test;
 
   // Show config if no action specified
-  if (!hasCaption && !isInteractive && !isHeartbeat) {
+  if (!hasCaption && !isInteractive && !isHeartbeat && !isTest) {
     displayConfig(config, configPath);
     return;
   }
@@ -144,12 +150,26 @@ async function main() {
 
   sender.start();
 
-  if (isHeartbeat) {
+  if (isTest) {
+    await sendTest(sender);
+  } else if (isHeartbeat) {
     await sendHeartbeat(sender);
   } else if (isInteractive) {
     await runInteractiveMode(sender, config, configPath, argv.timestamp);
   } else {
     await sendSingleCaption(sender, captionText, config, configPath, argv.timestamp);
+  }
+}
+
+async function sendTest(sender) {
+  try {
+    const result = await sender.sendTest();
+    logger.info(`Test result: ${result.statusCode}`);
+    sender.end();
+  } catch (err) {
+    logger.error(err.message);
+    sender.end();
+    process.exit(1);
   }
 }
 
