@@ -1,7 +1,7 @@
 {
   "name": "lcyt",
-  "version": "0.9.3",
-  "description": "Send live captions to YouTube Live streams and other caption ingestion services",
+  "version": "1.0.0",
+  "description": "Send live captions to YouTube Live streams",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./src/sender.js",
@@ -48,10 +48,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/lcyt.git"
+    "url": "https://github.com/jsilvanus/live-captions-yt.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/lcyt/issues"
+    "url": "https://github.com/jsilvanus/live-captions-yt/issues"
   },
-  "homepage": "https://github.com/yourusername/lcyt#readme"
+  "homepage": "https://github.com/jsilvanus/live-captions-yt#readme"
 }
