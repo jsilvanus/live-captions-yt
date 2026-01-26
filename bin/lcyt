@@ -249,6 +249,7 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
   console.log('║    timestamp|text      Send with custom timestamp            ║');
   console.log('║    /batch              Start batch mode (collect captions)   ║');
   console.log('║    /send               Send collected batch                  ║');
+  console.log('║    <empty line>        Send batch (if any captions queued)   ║');
   console.log('║    /heartbeat          Send heartbeat                        ║');
   console.log('║    /status             Show current status                   ║');
   console.log('║    Ctrl+C              Exit                                  ║');
@@ -260,6 +261,19 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
   rl.on('line', async (line) => {
     const trimmed = line.trim();
     if (!trimmed) {
+      // Empty line sends the batch if one exists
+      if (batchCaptions.length > 0) {
+        try {
+          await sender.sendBatch(batchCaptions);
+          config.sequence = sender.getSequence();
+          logger.info(`Batch of ${batchCaptions.length} captions sent.`);
+        } catch (err) {
+          logger.error(err.message);
+        }
+        batchMode = false;
+        batchCaptions = [];
+        rl.setPrompt('caption> ');
+      }
       rl.prompt();
       return;
     }
