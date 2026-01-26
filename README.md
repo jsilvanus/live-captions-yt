@@ -85,6 +85,7 @@ Interactive mode commands:
 - `timestamp|text` - Send with custom timestamp
 - `/batch` - Start batch mode (collect multiple captions)
 - `/send` - Send collected batch
+- `<empty line>` - Send batch (if any captions queued)
 - `/heartbeat` - Send heartbeat
 - `/status` - Show current status
 - `Ctrl+C` - Exit
@@ -104,7 +105,7 @@ lcyt --reset
 ### Basic Usage
 
 ```javascript
-const { YoutubeLiveCaptionSender } = require('lcyt');
+import { YoutubeLiveCaptionSender } from 'lcyt';
 
 const sender = new YoutubeLiveCaptionSender({
   streamKey: 'YOUR_STREAM_KEY'
@@ -310,7 +311,7 @@ To get your YouTube Live caption ingestion URL and key:
 LCYT provides custom error classes for different error types:
 
 ```javascript
-const { ConfigError, NetworkError, ValidationError } = require('lcyt/src/errors');
+import { ConfigError, NetworkError, ValidationError } from 'lcyt/src/errors.js';
 
 try {
   await sender.send('Hello');
