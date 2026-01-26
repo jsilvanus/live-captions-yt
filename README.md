@@ -104,6 +104,8 @@ lcyt --reset
 
 ### Basic Usage
 
+**ESM (ES Modules):**
+
 ```javascript
 import { YoutubeLiveCaptionSender } from 'lcyt';
 
@@ -135,6 +137,23 @@ await sender.sendBatch(); // Sends the queued captions
 // Send heartbeat to verify connection
 const result = await sender.heartbeat();
 console.log('Server time:', result.serverTimestamp);
+
+sender.end();
+```
+
+**CommonJS:**
+
+```javascript
+const { YoutubeLiveCaptionSender } = require('lcyt');
+
+const sender = new YoutubeLiveCaptionSender({
+  streamKey: 'YOUR_STREAM_KEY'
+});
+
+sender.start();
+
+// Send a single caption
+await sender.send('Hello, world!');
 
 sender.end();
 ```
@@ -310,9 +329,21 @@ To get your YouTube Live caption ingestion URL and key:
 
 LCYT provides custom error classes for different error types:
 
+**ESM:**
+
 ```javascript
 import { ConfigError, NetworkError, ValidationError } from 'lcyt/src/errors.js';
+```
 
+**CommonJS:**
+
+```javascript
+const { ConfigError, NetworkError, ValidationError } = require('lcyt/src/errors');
+```
+
+**Usage:**
+
+```javascript
 try {
   await sender.send('Hello');
 } catch (err) {
