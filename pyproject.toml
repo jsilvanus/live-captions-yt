@@ -4,9 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lcyt"
-version = "1.0.0"
+version = "1.1.0"
 description = "Send live captions to YouTube streams"
-readme = "README.md"
+readme = "python/README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
@@ -32,4 +32,7 @@ Repository = "https://github.com/jsilvanus/live-captions-yt"
 Issues = "https://github.com/jsilvanus/live-captions-yt/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["lcyt"]
+packages = ["python"]
+
+[tool.hatch.build.targets.wheel.sources]
+"python" = "lcyt"
