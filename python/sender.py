@@ -202,13 +202,14 @@ class YoutubeLiveCaptionSender:
             body_parts.append(self._build_caption_body(ts, caption.text))
 
         body = "\n".join(body_parts) + "\n"
-        result = self._send_post(body, self._sequence)
+        sent_sequence = self._sequence
+        result = self._send_post(body, sent_sequence)
 
         if 200 <= result.status_code < 300:
             self._sequence += 1
 
         return SendResult(
-            sequence=self._sequence,
+            sequence=sent_sequence,
             count=len(captions),
             status_code=result.status_code,
             response=result.response,
@@ -310,7 +311,7 @@ class YoutubeLiveCaptionSender:
     def _format_timestamp(self, timestamp: str) -> str:
         """Format timestamp for YouTube API.
 
-        Removes 'Z' suffix and ensures correct format.
+        YouTube expects format: YYYY-MM-DDTHH:MM:SS.mmm (milliseconds, no timezone)
 
         Args:
             timestamp: ISO format timestamp.
@@ -324,6 +325,10 @@ class YoutubeLiveCaptionSender:
         # Remove +00:00 timezone if present
         if "+" in timestamp:
             timestamp = timestamp.split("+")[0]
+        # Truncate to milliseconds (3 decimal places) - YouTube can't parse microseconds
+        if "." in timestamp:
+            base, frac = timestamp.rsplit(".", 1)
+            timestamp = f"{base}.{frac[:3]}"
         return timestamp
 
     def _build_caption_body(self, timestamp: str, text: str) -> str:

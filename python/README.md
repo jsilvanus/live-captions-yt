@@ -1,6 +1,6 @@
-# LCYT Python - Live Caption Tool for YouTube
+# LCYT Python - Live Captions for Youtube Live
 
-Send live captions to YouTube Live streams using Google's official closed caption API format.
+Send live captions to YouTube Live streams using Google's official HTTP ingestion url. For more details, see ../README.md.
 
 ## Installation
 

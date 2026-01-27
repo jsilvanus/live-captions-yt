@@ -1,22 +1,26 @@
-# LCYT - Live Caption Tool for YouTube
+# LCYT - Live Captions for YouTube
 
-Send live captions to YouTube Live streams using Google's official closed caption API format.
+Send live captions to YouTube Live streams using Google's official closed caption ingestion url. 
 
-The functionality has been tested.
+To use this package, you first need to:
+1. Set up a live in Youtube, set it to 30 second delay and to receive captions via HTTP POST requests.
+2. Start the live and then send the captions with the stream key (and in correct sequence).
+3. ...
+4. Profit! (Captions are visible in the live!)
+
+You can use either Node.js package (src/ & dist/, also in npm lcyt) or python package (python/, also in pip lcyt). A CLI (using node) has been provided in bin/.
 
 ## Installation
-
-```bash
-npm install -g lcyt
-```
-
-Or install locally:
 
 ```bash
 npm install lcyt
 ```
 
-## Quick Start
+```bash
+pip install lcyt
+```
+
+## Quick Start with CLI (bin/lcyt)
 
 1. **Set up your YouTube stream key:**
 
@@ -24,21 +28,23 @@ npm install lcyt
 lcyt --stream-key "YOUR_STREAM_KEY"
 ```
 
-2. **Send a caption:**
+2. **Send heartbeat to verify connection: (optional)**
+```bash
+lcyt --heartbeat
+```
+
+
+3. **Send a caption:**
 
 ```bash
 lcyt "Hello, world!"
 ```
 
-3. **Or start interactive mode:**
+4. **Or start interactive mode:**
 
 ```bash
 lcyt -i
 ```
-
-> **Note:** The `--use-region` flag includes the `region:reg1#cue1` identifier in the caption body. This is optional but supported by YouTube.
-
-## CLI Usage
 
 ### Options
 
@@ -58,43 +64,23 @@ lcyt -i
 | `--help` | `-h` | Show help |
 | `--version` | | Show version number |
 
-### Examples
-
-**Set up stream key:**
-```bash
-lcyt --stream-key "ABC123"
-```
-
-**Send single caption:**
-```bash
-lcyt "Hello world"
-```
-
-**Send heartbeat to verify connection:**
-```bash
-lcyt --heartbeat
-```
-
-**Interactive mode:**
-```bash
-lcyt -i
-```
+### Interactive mode commands
 
 Interactive mode commands:
 - `<text>` - Send single caption
 - `timestamp|text` - Send with custom timestamp
 - `/batch` - Start batch mode (collect multiple captions)
-- `/send` - Send collected batch
+- `/send` - Send collected batch (also ENTER on empty line works)
 - `/heartbeat` - Send heartbeat
 - `/status` - Show current status
 - `Ctrl+C` - Exit
 
-**View current config:**
-```bash
-lcyt
-```
+### Sequence
+
+Youtube requires an incrementing sequence counter for each stream.
 
 **Reset sequence counter:**
+You will need this, if you have to restart the stream.
 ```bash
 lcyt --reset
 ```
@@ -242,18 +228,20 @@ LCYT implements Google's official YouTube Live caption format:
 - **Content-Type:** `text/plain`
 - **URL params:** `cid=<stream_key>&seq=N`
 
+Note: Do not to try to add charset in the Content-Type!
+
 ### Body Format
 ```
 YYYY-MM-DDTHH:MM:SS.mmm region:reg1#cue1
 CAPTION TEXT
-YYYY-MM-DDTHH:MM:SS.mmm region:reg1#cue1
+YYYY-MM-DDTHH:MM:SS.mmm
 ANOTHER CAPTION
 ```
 
 > **Important Requirements:**
 > - **Timestamps must be within 60 seconds** of the server's current time
 > - **Body must end with a trailing newline** (`\n`)
-> - Region/cue identifier after timestamp is optional (`region:reg1#cue1`)
+> - Region/cue identifier after timestamp is optional (`region:reg1#cue1`). The effects of the regions and cues is not documented and has not been tested.
 
 ### Example POST
 ```
@@ -303,7 +291,7 @@ To get your YouTube Live caption ingestion URL and key:
 3. Set up your stream settings
 4. Look for **Closed captions** in the stream settings
 5. Enable **POST captions to URL**
-6. Copy the ingestion URL and stream key
+6. Copy the ingestion URL (this is usually stable and has been added as a default) and stream key
 
 ## Error Handling
 
