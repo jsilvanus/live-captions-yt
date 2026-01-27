@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lcyt"
-version = "1.1.0"
+version = "1.1.1"
 description = "Send live captions to YouTube streams"
 readme = "python/README.md"
 license = "MIT"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["youtube", "live", "captions", "streaming", "closed-captions"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
