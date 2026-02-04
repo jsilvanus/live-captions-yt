@@ -22,6 +22,7 @@ When running `lcyt` (or `npx lcyt`) with no arguments:
 - Quick onboarding: prompt for stream key if not set
 - Default to interactive mode for immediate caption sending
 - Zero-friction experience for first-time users
+- **Direct setup via flag**: `npx lcyt --stream-key=xxxx` skips wizard, saves key, enters interactive mode
 
 ---
 
@@ -29,11 +30,15 @@ When running `lcyt` (or `npx lcyt`) with no arguments:
 
 ### Phase 1: Improve Default Behavior (No Arguments)
 
-#### Task 1.1: Add First-Run Detection
+#### Task 1.1: Add First-Run Detection & Direct Setup
 - [ ] Detect when running without arguments AND no stream key configured
 - [ ] Show a friendly welcome message with setup instructions
 - [ ] Prompt user to enter stream key interactively (using readline)
 - [ ] Save the stream key to config automatically
+- [ ] **Support direct setup**: `npx lcyt --stream-key=xxxx` (or `-k xxxx`)
+  - Skip the interactive wizard entirely
+  - Save the provided key to config
+  - Enter interactive mode immediately
 
 #### Task 1.2: Make Interactive Mode the Default
 - [ ] When no arguments provided AND stream key IS configured:
@@ -93,12 +98,14 @@ When running `lcyt` (or `npx lcyt`) with no arguments:
 - [ ] Update `--help` with npx-friendly examples:
   ```
   Quick Start:
-    npx lcyt                    # Interactive mode (after setup)
-    npx lcyt -k YOUR_KEY -i     # Start with stream key
+    npx lcyt                        # Interactive setup wizard (first run)
+    npx lcyt --stream-key=YOUR_KEY  # Skip wizard, save key, enter interactive mode
+    npx lcyt                        # Interactive mode (after setup)
 
   Examples:
-    npx lcyt "Hello world"      # Send single caption
-    npx lcyt --heartbeat        # Test connection
+    npx lcyt "Hello world"          # Send single caption
+    npx lcyt --heartbeat            # Test connection
+    npx lcyt -k NEW_KEY             # Update stream key and enter interactive mode
   ```
 
 ### Phase 4: Testing & Verification
@@ -145,6 +152,7 @@ When running `lcyt` (or `npx lcyt`) with no arguments:
 // Add at the top (after imports)
 const isFirstRun = !config.streamKey;
 const hasArgs = process.argv.length > 2;
+const onlyHasStreamKeyArg = /* check if only -k/--stream-key provided */;
 
 // Modify the main logic flow:
 if (!hasArgs) {
@@ -155,8 +163,15 @@ if (!hasArgs) {
     // Default to interactive mode
     await startInteractiveMode();
   }
+} else if (onlyHasStreamKeyArg) {
+  // Direct setup: npx lcyt --stream-key=xxxx
+  // Save the key and enter interactive mode
+  config.streamKey = argv.streamKey;
+  saveConfig(config, configPath);
+  console.log('✓ Stream key saved!');
+  await startInteractiveMode();
 } else {
-  // Existing argument handling...
+  // Existing argument handling (send caption, heartbeat, test, etc.)
 }
 ```
 
@@ -233,7 +248,8 @@ async function runSetupWizard() {
 ## Success Criteria
 
 - [ ] `npx lcyt` works without prior installation
-- [ ] First-time users are guided through setup
+- [ ] First-time users are guided through setup wizard
+- [ ] `npx lcyt --stream-key=xxxx` skips wizard and enters interactive mode
 - [ ] Configured users enter interactive mode immediately
 - [ ] All existing CLI functionality continues to work
 - [ ] Help text is clear and shows npx examples
@@ -247,7 +263,8 @@ async function runSetupWizard() {
    - Recommendation: Add `--show-config` flag, change default to interactive
 
 2. Should the setup wizard be skippable?
-   - Recommendation: Yes, via `--stream-key` flag or `LCYT_STREAM_KEY` env var
+   - **DECIDED**: Yes, via `--stream-key=xxxx` flag (or `-k xxxx`) or `LCYT_STREAM_KEY` env var
+   - Running `npx lcyt --stream-key=xxxx` saves the key and enters interactive mode directly
 
 3. Should we support environment variables for CI/CD usage?
    - Recommendation: Yes, add `LCYT_STREAM_KEY` environment variable support
