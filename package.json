@@ -1,6 +1,6 @@
 {
   "name": "lcyt",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Send live captions to YouTube Live streams",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -31,9 +31,10 @@
     "streaming",
     "closed-captions",
     "accessibility",
-    "live-stream"
+    "live-stream",
+    "cli"
   ],
-  "author": "",
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",
   "dependencies": {
     "blessed": "^0.1.81",
