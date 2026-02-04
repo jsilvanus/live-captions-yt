@@ -389,6 +389,27 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
 
   let batchMode = false;
   let batchCaptions = [];
+  let batchTimeout = 5; // Default 5 seconds
+  let batchTimer = null;
+
+  const sendBatch = async () => {
+    if (batchCaptions.length > 0) {
+      try {
+        await sender.sendBatch(batchCaptions);
+        config.sequence = sender.getSequence();
+        logger.info(`Batch of ${batchCaptions.length} captions sent.`);
+      } catch (err) {
+        logger.error(err.message);
+      }
+    }
+    batchMode = false;
+    batchCaptions = [];
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+      batchTimer = null;
+    }
+    rl.setPrompt('caption> ');
+  };
 
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
   console.log('║              LCYT Interactive Mode                           ║');
@@ -396,8 +417,8 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
   console.log('║  Commands:                                                   ║');
   console.log('║    <text>              Send single caption                   ║');
   console.log('║    timestamp|text      Send with custom timestamp            ║');
-  console.log('║    /batch              Start batch mode (collect captions)   ║');
-  console.log('║    /send               Send collected batch                  ║');
+  console.log('║    /batch [seconds]    Start auto-batch mode (default: 5s)   ║');
+  console.log('║    /send               Send collected batch immediately      ║');
   console.log('║    <empty line>        Send batch (if any captions queued)   ║');
   console.log('║    /heartbeat          Send heartbeat                        ║');
   console.log('║    /status             Show current status                   ║');
@@ -412,16 +433,7 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
     if (!trimmed) {
       // Empty line sends the batch if one exists
       if (batchCaptions.length > 0) {
-        try {
-          await sender.sendBatch(batchCaptions);
-          config.sequence = sender.getSequence();
-          logger.info(`Batch of ${batchCaptions.length} captions sent.`);
-        } catch (err) {
-          logger.error(err.message);
-        }
-        batchMode = false;
-        batchCaptions = [];
-        rl.setPrompt('caption> ');
+        await sendBatch();
       }
       rl.prompt();
       return;
@@ -429,12 +441,25 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
 
     // Handle commands
     if (trimmed.startsWith('/')) {
-      const cmd = trimmed.toLowerCase();
+      const cmdParts = trimmed.split(/\s+/);
+      const cmd = cmdParts[0].toLowerCase();
 
       if (cmd === '/batch') {
+        // Parse optional timeout parameter
+        if (cmdParts.length > 1) {
+          const seconds = parseInt(cmdParts[1], 10);
+          if (!isNaN(seconds) && seconds > 0) {
+            batchTimeout = seconds;
+          }
+        }
+
         batchMode = true;
         batchCaptions = [];
-        console.log('Batch mode started. Enter captions, then /send to send all.');
+        if (batchTimer) {
+          clearTimeout(batchTimer);
+          batchTimer = null;
+        }
+        console.log(`Batch mode started. Captions will auto-send after ${batchTimeout} seconds of first caption.`);
         rl.setPrompt('batch> ');
         rl.prompt();
         return;
@@ -443,18 +468,11 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
       if (cmd === '/send') {
         if (batchCaptions.length === 0) {
           logger.warn('No captions in batch to send.');
+          batchMode = false;
+          rl.setPrompt('caption> ');
         } else {
-          try {
-            await sender.sendBatch(batchCaptions);
-            config.sequence = sender.getSequence();
-            logger.info(`Batch of ${batchCaptions.length} captions sent.`);
-          } catch (err) {
-            logger.error(err.message);
-          }
+          await sendBatch();
         }
-        batchMode = false;
-        batchCaptions = [];
-        rl.setPrompt('caption> ');
         rl.prompt();
         return;
       }
@@ -477,6 +495,8 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
         console.log(`  Batch mode: ${batchMode ? 'ON' : 'OFF'}`);
         if (batchMode) {
           console.log(`  Captions in batch: ${batchCaptions.length}`);
+          console.log(`  Auto-send timeout: ${batchTimeout}s`);
+          console.log(`  Timer active: ${batchTimer ? 'YES' : 'NO'}`);
         }
         rl.prompt();
         return;
@@ -500,6 +520,16 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
     if (batchMode) {
       batchCaptions.push({ text, timestamp });
       console.log(`  Added to batch (${batchCaptions.length} total)`);
+
+      // Start timer on first caption
+      if (batchCaptions.length === 1 && !batchTimer) {
+        console.log(`  Timer started: batch will send in ${batchTimeout} seconds`);
+        batchTimer = setTimeout(async () => {
+          console.log('\n  Auto-sending batch...');
+          await sendBatch();
+          rl.prompt();
+        }, batchTimeout * 1000);
+      }
     } else {
       try {
         await sender.send(text, timestamp);
@@ -513,6 +543,9 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
   });
 
   rl.on('close', () => {
+    if (batchTimer) {
+      clearTimeout(batchTimer);
+    }
     saveConfig(configPath, config);
     sender.end();
     console.log('\nGoodbye!');

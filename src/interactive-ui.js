@@ -20,6 +20,12 @@ export class InteractiveUI {
     this.sentHistory = [];
     this.maxHistory = 10;
 
+    // Batch mode tracking
+    this.batchMode = false;
+    this.batchCaptions = [];
+    this.batchTimeout = 5; // Default 5 seconds
+    this.batchTimer = null;
+
     // UI components
     this.screen = null;
     this.textPreview = null;
@@ -109,20 +115,70 @@ export class InteractiveUI {
     const text = this.lines[this.currentLine];
     const lineNum = this.currentLine + 1;
 
-    try {
-      await this.sender.send(text, this.defaultTimestamp);
-      this.config.sequence = this.sender.getSequence();
+    if (this.batchMode) {
+      // Add to batch instead of sending immediately
+      this.batchCaptions.push({ text, timestamp: this.defaultTimestamp });
+      this.addToHistory(`[Line ${lineNum}] Added to batch (${this.batchCaptions.length} total)`, 'info');
 
-      this.addToHistory(`[Line ${lineNum}] Sent: ${text}`, 'success');
+      // Start timer on first caption
+      if (this.batchCaptions.length === 1 && !this.batchTimer) {
+        this.addToHistory(`Timer started: batch will send in ${this.batchTimeout}s`, 'info');
+        this.batchTimer = setTimeout(async () => {
+          await this.sendBatch();
+        }, this.batchTimeout * 1000);
+      }
 
       // Advance to next line
       if (this.currentLine < this.lines.length - 1) {
         this.currentLine++;
         this.updateTextPreview();
       }
-    } catch (err) {
-      this.addToHistory(`[Line ${lineNum}] Error: ${err.message}`, 'error');
+    } else {
+      // Normal mode: send immediately
+      try {
+        await this.sender.send(text, this.defaultTimestamp);
+        this.config.sequence = this.sender.getSequence();
+
+        this.addToHistory(`[Line ${lineNum}] Sent: ${text}`, 'success');
+
+        // Advance to next line
+        if (this.currentLine < this.lines.length - 1) {
+          this.currentLine++;
+          this.updateTextPreview();
+        }
+      } catch (err) {
+        this.addToHistory(`[Line ${lineNum}] Error: ${err.message}`, 'error');
+      }
     }
+
+    this.updateStatus();
+  }
+
+  /**
+   * Send batch of captions
+   */
+  async sendBatch() {
+    if (this.batchCaptions.length === 0) {
+      this.addToHistory('No captions in batch to send', 'warn');
+      return;
+    }
+
+    try {
+      await this.sender.sendBatch(this.batchCaptions);
+      this.config.sequence = this.sender.getSequence();
+      this.addToHistory(`Batch sent: ${this.batchCaptions.length} captions`, 'success');
+    } catch (err) {
+      this.addToHistory(`Batch error: ${err.message}`, 'error');
+    }
+
+    // Clear batch state
+    this.batchCaptions = [];
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+
+    this.updateStatus();
   }
 
   /**
@@ -325,11 +381,16 @@ export class InteractiveUI {
   /**
    * Update status bar
    */
-  updateStatus(message) {
+  updateStatus(message = 'Ready') {
     if (!this.statusBar) return;
 
     const seq = this.sender.getSequence();
-    const status = ` ${message} | Seq: ${seq}`;
+    let status = ` ${message} | Seq: ${seq}`;
+
+    if (this.batchMode) {
+      status += ` | BATCH MODE (${this.batchCaptions.length} queued, ${this.batchTimeout}s)`;
+    }
+
     this.statusBar.setContent(status);
     this.screen.render();
   }
@@ -460,12 +521,54 @@ export class InteractiveUI {
         }
         break;
 
+      case '/batch':
+      case 'batch':
+        // Parse optional timeout parameter
+        if (args.length > 0) {
+          const seconds = parseInt(args[0], 10);
+          if (!isNaN(seconds) && seconds > 0) {
+            this.batchTimeout = seconds;
+          }
+        }
+
+        this.batchMode = !this.batchMode;
+
+        if (this.batchMode) {
+          this.batchCaptions = [];
+          if (this.batchTimer) {
+            clearTimeout(this.batchTimer);
+            this.batchTimer = null;
+          }
+          this.addToHistory(`Batch mode ON. Auto-send after ${this.batchTimeout}s from first caption.`, 'info');
+        } else {
+          // Turning off batch mode
+          if (this.batchCaptions.length > 0) {
+            await this.sendBatch();
+          }
+          this.addToHistory('Batch mode OFF', 'info');
+        }
+        this.updateStatus();
+        break;
+
+      case '/send':
+      case 'send':
+        if (this.batchCaptions.length === 0) {
+          this.addToHistory('No captions in batch to send', 'warn');
+        } else {
+          await this.sendBatch();
+        }
+        break;
+
       case '/status':
       case 'status':
         const totalLines = this.lines.length;
         const current = this.currentLine + 1;
         const file = this.loadedFile || 'none';
-        this.addToHistory(`File: ${file} | Line: ${current}/${totalLines} | Seq: ${this.sender.getSequence()}`, 'info');
+        let statusMsg = `File: ${file} | Line: ${current}/${totalLines} | Seq: ${this.sender.getSequence()}`;
+        if (this.batchMode) {
+          statusMsg += ` | Batch: ON (${this.batchCaptions.length} queued, ${this.batchTimeout}s timeout)`;
+        }
+        this.addToHistory(statusMsg, 'info');
         break;
 
       case '/heartbeat':
@@ -534,13 +637,20 @@ export class InteractiveUI {
     q or Ctrl+C   Quit
 
   {cyan-fg}Available Commands (type : or / first):{/cyan-fg}
-    /load <file>  Load a text file
-    /reload       Reload the current file
-    /goto <N>     Jump to line number N
-    /status       Show current status
-    /heartbeat    Send heartbeat to server
-    +N            Shift pointer forward N lines
-    -N            Shift pointer backward N lines
+    /load <file>     Load a text file
+    /reload          Reload the current file
+    /goto <N>        Jump to line number N
+    /batch [secs]    Toggle batch mode (auto-send after N seconds, default 5)
+    /send            Send batch immediately
+    /status          Show current status
+    /heartbeat       Send heartbeat to server
+    +N               Shift pointer forward N lines
+    -N               Shift pointer backward N lines
+
+  {cyan-fg}Batch Mode:{/cyan-fg}
+    When batch mode is ON, pressing Enter adds lines to batch instead of
+    sending immediately. The batch auto-sends after the timeout (from first
+    caption). Use /send to send immediately or /batch to toggle off.
 
   {yellow-fg}Press ESC or q to close this help{/yellow-fg}
       `
@@ -572,6 +682,12 @@ export class InteractiveUI {
    * Cleanup and save state
    */
   cleanup() {
+    // Clear batch timer if active
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+      this.batchTimer = null;
+    }
+
     if (this.screen) {
       this.screen.destroy();
     }

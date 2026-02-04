@@ -97,11 +97,21 @@ The full-screen mode provides a rich terminal UI with:
 **Standard interactive mode (`-i`):**
 - `<text>` - Send single caption
 - `timestamp|text` - Send with custom timestamp
-- `/batch` - Start batch mode (collect multiple captions)
-- `/send` - Send collected batch (also ENTER on empty line works)
+- `/batch [seconds]` - Start auto-batch mode (default: 5s). Captions auto-send after timeout from first caption
+- `/send` - Send collected batch immediately (also ENTER on empty line works)
 - `/heartbeat` - Send heartbeat
 - `/status` - Show current status
 - `Ctrl+C` - Exit
+
+Example batch usage:
+```bash
+lcyt -i
+/batch 10        # Start batch mode with 10 second timeout
+Caption 1        # Timer starts here
+Caption 2        # Added to batch
+Caption 3        # Added to batch
+# ... after 10 seconds from first caption, batch auto-sends
+```
 
 **Full-screen interactive mode (`-f`):**
 
@@ -119,7 +129,9 @@ Commands (type `:` or `/` first):
 - `/load <file>` - Load a text file
 - `/reload` - Reload the current file
 - `/goto <N>` - Jump to line number N
-- `/status` - Show current status (line number, file, sequence)
+- `/batch [seconds]` - Toggle batch mode (auto-send after N seconds, default 5)
+- `/send` - Send batch immediately
+- `/status` - Show current status (line number, file, sequence, batch status)
 - `/heartbeat` - Send heartbeat to verify connection
 - `+N` - Shift pointer forward N lines (e.g., `+5` moves 5 lines down)
 - `-N` - Shift pointer backward N lines (e.g., `-3` moves 3 lines up)
@@ -135,6 +147,11 @@ lcyt -f
 # Navigate with arrow keys, press Enter to send each line
 # Or use +10 to skip forward 10 lines
 # Use /goto 50 to jump to line 50
+
+# Enable batch mode for rapid caption sending
+/batch 3         # Set 3 second auto-send timeout
+# Now press Enter multiple times to queue lines
+# They'll auto-send 3 seconds after the first one
 ```
 
 ### Sequence
