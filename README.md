@@ -1,6 +1,9 @@
 # LCYT - Live Captions for YouTube
 
-Send live captions to YouTube Live streams using Google's official closed caption ingestion url. 
+[![npm version](https://img.shields.io/npm/v/lcyt.svg)](https://www.npmjs.com/package/lcyt)
+[![PyPI version](https://img.shields.io/pypi/v/lcyt.svg)](https://pypi.org/project/lcyt/)
+
+Send live captions to YouTube Live streams using Google's official closed caption ingestion url.
 
 To use this package, you first need to:
 1. Set up a live in Youtube, set it to 30 second delay and to receive captions via HTTP POST requests.
@@ -8,7 +11,16 @@ To use this package, you first need to:
 3. ...
 4. Profit! (Captions are visible in the live!)
 
-You can use either Node.js package (src/ & dist/, also in npm lcyt) or python package (python/, also in pip lcyt). A CLI (using node) has been provided in bin/.
+## Available Packages
+
+| Package | Platform | Installation |
+|---------|----------|--------------|
+| **Node.js** | npm | `npm install lcyt` |
+| **Python** | PyPI | `pip install lcyt` |
+
+A CLI (using Node.js) is included in `bin/lcyt`.
+
+> **Python users:** See the [Python package documentation](python/README.md) for Python-specific API reference and examples.
 
 ## Installation
 
@@ -56,6 +68,7 @@ lcyt -i
 | `--cue <cue>` | | Cue identifier (default: cue1) |
 | `--use-region` | | Include region/cue in caption body (optional) |
 | `--interactive` | `-i` | Interactive mode (read from stdin) |
+| `--show-config` | | Show current configuration |
 | `--heartbeat` | | Send heartbeat to verify connection |
 | `--timestamp <iso>` | `-t` | Manual ISO timestamp override |
 | `--reset` | | Reset sequence counter to 0 |
