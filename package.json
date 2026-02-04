@@ -31,7 +31,8 @@
     "streaming",
     "closed-captions",
     "accessibility",
-    "live-stream"
+    "live-stream",
+    "cli"
   ],
   "author": "",
   "license": "MIT",
@@ -39,9 +40,11 @@
     "yargs": "^17.7.2"
   },
   "files": [
+    "bin/",
     "src/",
     "dist/",
-    "bin/"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=18.0.0"
