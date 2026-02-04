@@ -116,16 +116,23 @@ Caption 3        # Added to batch
 **Full-screen interactive mode (`-f`):**
 
 Keyboard shortcuts:
-- `Enter` - Send current line and advance to next
+- `Enter` - Send current file line and advance to next
+- `:` or `/` - Open prompt to type custom text or commands
 - `↑` / `k` - Move to previous line
 - `↓` / `j` - Move to next line
 - `PageUp` / `PageDown` - Move up/down 10 lines
 - `Tab` - Switch focus between text preview and history
-- `:` or `/` - Open command prompt
 - `h` - Show help
 - `q` or `Ctrl+C` - Quit
 
-Commands (type `:` or `/` first):
+**Custom Captions:**
+Press `:` or `/` to open the prompt. You can:
+- Type a command starting with `/` (e.g., `/load script.txt`)
+- Type plain text to send as a custom caption (e.g., `Hello world`)
+- Custom captions don't move the file pointer
+- Works with batch mode too!
+
+Commands (type `:` or `/` first, then the command):
 - `/load <file>` - Load a text file
 - `/reload` - Reload the current file
 - `/goto <N>` - Jump to line number N
@@ -141,16 +148,20 @@ Example workflow:
 # Start full-screen mode
 lcyt -f
 
-# In the UI, load a script file
-/load script.txt
+# In the UI, press : or / to open the prompt, then:
+/load script.txt      # Load a file
 
-# Navigate with arrow keys, press Enter to send each line
+# Navigate with arrow keys, press Enter to send file lines
 # Or use +10 to skip forward 10 lines
 # Use /goto 50 to jump to line 50
 
+# Send a custom caption (press : then type):
+Hello viewers!       # Sends custom text, pointer stays on same line
+
 # Enable batch mode for rapid caption sending
-/batch 3         # Set 3 second auto-send timeout
-# Now press Enter multiple times to queue lines
+/batch 3             # Set 3 second auto-send timeout
+# Now press Enter multiple times to queue file lines
+# Or press : to add custom captions to the batch
 # They'll auto-send 3 seconds after the first one
 ```
 
