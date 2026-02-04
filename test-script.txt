@@ -1,0 +1,15 @@
+Welcome to the live stream!
+Today we're going to learn about YouTube live captions.
+Let me show you how this works.
+First, we need to set up our stream key.
+Then we can start sending captions in real-time.
+The captions will appear on your live stream.
+This is line 7 of the test script.
+You can navigate up and down using arrow keys.
+Press Enter to send the current line.
+Use +N or -N to jump multiple lines.
+Type /goto followed by a line number to jump directly.
+The /reload command will reload this file.
+Type /status to see your current position.
+Press h for help at any time.
+This is the last line of the test script.

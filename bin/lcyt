@@ -6,6 +6,7 @@ import readline from 'readline';
 import { YoutubeLiveCaptionSender } from '../src/sender.js';
 import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from '../src/config.js';
 import logger from '../src/logger.js';
+import { InteractiveUI } from '../src/interactive-ui.js';
 
 // Detect if running via npx
 function isRunningViaNpx() {
@@ -50,6 +51,12 @@ const argv = yargs(hideBin(process.argv))
     description: 'Interactive mode (read from stdin)',
     default: false
   })
+  .option('fullscreen', {
+    alias: 'f',
+    type: 'boolean',
+    description: 'Full-screen interactive mode with file loading',
+    default: false
+  })
   .option('show-config', {
     type: 'boolean',
     description: 'Show current configuration',
@@ -90,6 +97,7 @@ const argv = yargs(hideBin(process.argv))
   .example('$0 --stream-key=YOUR_KEY', 'Set stream key')
   .example('$0 "Hello world"', 'Send a single caption')
   .example('$0 -i', 'Start interactive mode')
+  .example('$0 -f', 'Start full-screen interactive mode')
   .example('$0 --heartbeat', 'Send heartbeat to verify connection')
   .help('help')
   .alias('help', 'h')
@@ -143,6 +151,7 @@ async function main() {
   const captionText = argv._.join(' ');
   const hasCaption = captionText.length > 0;
   const isInteractive = argv.interactive;
+  const isFullscreen = argv.fullscreen;
   const isHeartbeat = argv.heartbeat;
   const isTest = argv.test;
   const showConfig = argv['show-config'];
@@ -157,7 +166,7 @@ async function main() {
   }
 
   // Determine if this is a "no action" scenario (no caption, no explicit flags)
-  const noActionSpecified = !hasCaption && !isInteractive && !isHeartbeat && !isTest;
+  const noActionSpecified = !hasCaption && !isInteractive && !isFullscreen && !isHeartbeat && !isTest;
 
   // Default behavior: show config or setup wizard (pipeline-friendly)
   if (noActionSpecified) {
@@ -194,6 +203,8 @@ async function main() {
     await sendTest(sender);
   } else if (isHeartbeat) {
     await sendHeartbeat(sender);
+  } else if (isFullscreen) {
+    await runFullscreenMode(sender, config, configPath, argv.timestamp);
   } else if (isInteractive) {
     await runInteractiveMode(sender, config, configPath, argv.timestamp);
   } else {
@@ -241,6 +252,7 @@ function displayConfig(config, configPath) {
   console.log('  lcyt --stream-key "KEY"      Set your YouTube stream key');
   console.log('  lcyt "Your caption text"     Send a single caption');
   console.log('  lcyt -i                      Start interactive mode');
+  console.log('  lcyt -f                      Start full-screen interactive mode');
   console.log('  lcyt --heartbeat             Send heartbeat to verify connection');
   console.log('  lcyt --help                  Show all options\n');
 }
@@ -510,6 +522,11 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
   process.on('SIGINT', () => {
     rl.close();
   });
+}
+
+async function runFullscreenMode(sender, config, configPath, defaultTimestamp) {
+  const ui = new InteractiveUI(sender, config, configPath, defaultTimestamp);
+  await ui.start();
 }
 
 main().catch((err) => {

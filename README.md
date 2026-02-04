@@ -58,6 +58,20 @@ lcyt "Hello, world!"
 lcyt -i
 ```
 
+5. **Or start full-screen interactive mode:**
+
+```bash
+lcyt -f
+```
+
+The full-screen mode provides a rich terminal UI with:
+- File loading capability (`/load <file>`)
+- Visual context display (2 previous + current + 5 next lines)
+- Sent history tracking
+- Easy navigation with arrow keys
+- Press Enter to send current line and advance
+- Use +N/-N commands to jump multiple lines
+
 ### Options
 
 | Option | Alias | Description |
@@ -68,6 +82,7 @@ lcyt -i
 | `--cue <cue>` | | Cue identifier (default: cue1) |
 | `--use-region` | | Include region/cue in caption body (optional) |
 | `--interactive` | `-i` | Interactive mode (read from stdin) |
+| `--fullscreen` | `-f` | Full-screen interactive mode with file loading |
 | `--show-config` | | Show current configuration |
 | `--heartbeat` | | Send heartbeat to verify connection |
 | `--timestamp <iso>` | `-t` | Manual ISO timestamp override |
@@ -79,7 +94,7 @@ lcyt -i
 
 ### Interactive mode commands
 
-Interactive mode commands:
+**Standard interactive mode (`-i`):**
 - `<text>` - Send single caption
 - `timestamp|text` - Send with custom timestamp
 - `/batch` - Start batch mode (collect multiple captions)
@@ -87,6 +102,40 @@ Interactive mode commands:
 - `/heartbeat` - Send heartbeat
 - `/status` - Show current status
 - `Ctrl+C` - Exit
+
+**Full-screen interactive mode (`-f`):**
+
+Keyboard shortcuts:
+- `Enter` - Send current line and advance to next
+- `↑` / `k` - Move to previous line
+- `↓` / `j` - Move to next line
+- `PageUp` / `PageDown` - Move up/down 10 lines
+- `Tab` - Switch focus between text preview and history
+- `:` or `/` - Open command prompt
+- `h` - Show help
+- `q` or `Ctrl+C` - Quit
+
+Commands (type `:` or `/` first):
+- `/load <file>` - Load a text file
+- `/reload` - Reload the current file
+- `/goto <N>` - Jump to line number N
+- `/status` - Show current status (line number, file, sequence)
+- `/heartbeat` - Send heartbeat to verify connection
+- `+N` - Shift pointer forward N lines (e.g., `+5` moves 5 lines down)
+- `-N` - Shift pointer backward N lines (e.g., `-3` moves 3 lines up)
+
+Example workflow:
+```bash
+# Start full-screen mode
+lcyt -f
+
+# In the UI, load a script file
+/load script.txt
+
+# Navigate with arrow keys, press Enter to send each line
+# Or use +10 to skip forward 10 lines
+# Use /goto 50 to jump to line 50
+```
 
 ### Sequence
 
