@@ -64,6 +64,13 @@ lcyt -i
 lcyt -f
 ```
 
+**Note:** When using `npx lcyt` without arguments, it defaults to full-screen mode (`-f`). To use standard interactive mode with npx, explicitly pass `-i`:
+
+```bash
+npx lcyt      # Defaults to full-screen mode
+npx lcyt -i   # Use standard interactive mode
+```
+
 The full-screen mode provides a rich terminal UI with:
 - File loading capability (`/load <file>`)
 - Visual context display (2 previous + current + 5 next lines)
