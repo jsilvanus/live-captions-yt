@@ -425,13 +425,12 @@ async function runInteractiveMode(sender, config, configPath, defaultTimestamp) 
         logger.error(err.message);
       }
     }
-    batchMode = false;
+    // Keep batch mode active, just clear the batch
     batchCaptions = [];
     if (batchTimer) {
       clearTimeout(batchTimer);
       batchTimer = null;
     }
-    rl.setPrompt('caption> ');
   };
 
   console.log('\n╔══════════════════════════════════════════════════════════════╗');
