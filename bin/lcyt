@@ -245,28 +245,40 @@ async function sendTest(sender) {
 }
 
 function displayConfig(config, configPath) {
-  console.log('\n╔══════════════════════════════════════════════════════════════╗');
-  console.log('║                    LCYT Configuration                        ║');
-  console.log('╠══════════════════════════════════════════════════════════════╣');
-  console.log(`║  Config file: ${configPath.padEnd(45)}║`);
-  console.log('╠══════════════════════════════════════════════════════════════╣');
-  console.log(`║  Stream Key:  ${(config.streamKey || '(not set)').padEnd(45)}║`);
-  console.log(`║  Base URL:    ${(config.baseUrl || '(default)').padEnd(45)}║`);
-  console.log(`║  Region:      ${(config.region || 'reg1').padEnd(45)}║`);
-  console.log(`║  Cue:         ${(config.cue || 'cue1').padEnd(45)}║`);
-  console.log(`║  Sequence:    ${String(config.sequence).padEnd(45)}║`);
-  console.log('╠══════════════════════════════════════════════════════════════╣');
+  const width = 74; // Total line width including borders
+  const contentWidth = 57; // Width for padded content (74 - 2 borders - 2 spaces - 13 for label)
+
+  const border = '═'.repeat(width - 2);
+
+  console.log(`\n╔${border}╗`);
+  console.log(`║${'LCYT Configuration'.padStart(37).padEnd(width - 2)}║`);
+  console.log(`╠${border}╣`);
+  console.log(`║  Config file: ${configPath.padEnd(contentWidth)}║`);
+  console.log(`╠${border}╣`);
+  console.log(`║  Stream Key:  ${(config.streamKey || '(not set)').padEnd(contentWidth)}║`);
+  console.log(`║  Base URL:    ${(config.baseUrl || '(default)').padEnd(contentWidth)}║`);
+  console.log(`║  Region:      ${(config.region || 'reg1').padEnd(contentWidth)}║`);
+  console.log(`║  Cue:         ${(config.cue || 'cue1').padEnd(contentWidth)}║`);
+  console.log(`║  Sequence:    ${String(config.sequence).padEnd(contentWidth)}║`);
+  console.log(`╠${border}╣`);
 
   const fullUrl = buildIngestionUrl(config);
   if (fullUrl) {
-    console.log(`║  Full URL:    ${fullUrl.substring(0, 45).padEnd(45)}║`);
-    if (fullUrl.length > 45) {
-      console.log(`║               ${fullUrl.substring(45, 90).padEnd(45)}║`);
+    if (fullUrl.length <= contentWidth) {
+      console.log(`║  Full URL:    ${fullUrl.padEnd(contentWidth)}║`);
+    } else {
+      // Split long URL across multiple lines
+      console.log(`║  Full URL:    ${fullUrl.substring(0, contentWidth)}║`);
+      let remaining = fullUrl.substring(contentWidth);
+      while (remaining.length > 0) {
+        console.log(`║               ${remaining.substring(0, contentWidth).padEnd(contentWidth)}║`);
+        remaining = remaining.substring(contentWidth);
+      }
     }
   } else {
-    console.log('║  Full URL:    (set stream key to generate)                  ║');
+    console.log(`║  Full URL:    ${'(set stream key to generate)'.padEnd(contentWidth)}║`);
   }
-  console.log('╚══════════════════════════════════════════════════════════════╝\n');
+  console.log(`╚${border}╝\n`);
 
   console.log('Usage:');
   console.log('  lcyt --stream-key "KEY"      Set your YouTube stream key');
