@@ -7,12 +7,23 @@ import { YoutubeLiveCaptionSender } from '../src/sender.js';
 import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from '../src/config.js';
 import logger from '../src/logger.js';
 
+// Detect if running via npx
+function isRunningViaNpx() {
+  const npmExecPath = process.env.npm_execpath || '';
+  const npmCommand = process.env.npm_command || '';
+  const npmLifecycleEvent = process.env.npm_lifecycle_event || '';
+
+  return npmExecPath.includes('npx') ||
+         npmCommand === 'exec' ||
+         npmLifecycleEvent === 'npx';
+}
+
 const argv = yargs(hideBin(process.argv))
   .usage('Usage: $0 [options] [caption text]')
   .option('stream-key', {
     alias: 'k',
     type: 'string',
-    description: 'YouTube stream key (cid value)'
+    description: 'YouTube stream key (cid value). When provided alone, saves and enters interactive mode.'
   })
   .option('base-url', {
     alias: 'u',
@@ -37,6 +48,17 @@ const argv = yargs(hideBin(process.argv))
     alias: 'i',
     type: 'boolean',
     description: 'Interactive mode (read from stdin)',
+    default: false
+  })
+  .option('script-mode', {
+    alias: 's',
+    type: 'boolean',
+    description: 'Script mode: disable automatic interactive mode (for CI/scripts)',
+    default: false
+  })
+  .option('show-config', {
+    type: 'boolean',
+    description: 'Show current configuration',
     default: false
   })
   .option('heartbeat', {
@@ -70,10 +92,12 @@ const argv = yargs(hideBin(process.argv))
     description: 'Enable verbose output',
     default: false
   })
-  .example('$0 --stream-key "ABC123"', 'Set stream key')
+  .example('$0', 'Setup wizard (first run) or interactive mode (after setup)')
+  .example('$0 --stream-key=YOUR_KEY', 'Set stream key and enter interactive mode')
   .example('$0 "Hello world"', 'Send a single caption')
-  .example('$0 --i', 'Start interactive mode')
+  .example('$0 -i', 'Start interactive mode')
   .example('$0 --heartbeat', 'Send heartbeat to verify connection')
+  .example('$0 --show-config', 'Display current configuration')
   .help('help')
   .alias('help', 'h')
   .version()
@@ -89,7 +113,10 @@ async function main() {
   let config = loadConfig(configPath);
   let configChanged = false;
 
-  if (argv['stream-key'] !== undefined) {
+  // Track if stream key was provided via argument
+  const streamKeyProvided = argv['stream-key'] !== undefined;
+
+  if (streamKeyProvided) {
     config.streamKey = argv['stream-key'];
     configChanged = true;
   }
@@ -125,17 +152,81 @@ async function main() {
   const isInteractive = argv.interactive;
   const isHeartbeat = argv.heartbeat;
   const isTest = argv.test;
+  const showConfig = argv['show-config'];
+  const scriptMode = argv['script-mode'];
 
-  // Show config if no action specified
-  if (!hasCaption && !isInteractive && !isHeartbeat && !isTest) {
+  // Detect first run (no stream key configured)
+  const isFirstRun = !config.streamKey;
+
+  // Check if only stream-key was provided (for direct setup flow)
+  const onlyStreamKeyProvided = streamKeyProvided && !hasCaption && !isHeartbeat && !isTest && !showConfig;
+
+  // Show config if explicitly requested
+  if (showConfig) {
     displayConfig(config, configPath);
+    return;
+  }
+
+  // Determine if this is a "no action" scenario (no caption, no explicit flags)
+  const noActionSpecified = !hasCaption && !isInteractive && !isHeartbeat && !isTest;
+
+  // NEW BEHAVIOR: Default to interactive mode or setup wizard
+  if (noActionSpecified && !streamKeyProvided) {
+    if (scriptMode) {
+      // --no-interactive: show config (old behavior for scripts/CI)
+      displayConfig(config, configPath);
+      return;
+    } else if (isFirstRun) {
+      // First run: show setup wizard
+      await runSetupWizard(config, configPath);
+      return;
+    } else {
+      // Stream key configured: default to interactive mode
+      const ingestionUrl = buildIngestionUrl(config);
+      if (!ingestionUrl) {
+        logger.error('No ingestion URL configured. Use --stream-key to set one.');
+        process.exit(1);
+      }
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl,
+        region: config.region,
+        cue: config.cue,
+        useRegion: argv['use-region'],
+        sequence: config.sequence,
+        verbose: argv.verbose
+      });
+      sender.start();
+      await runInteractiveMode(sender, config, configPath, argv.timestamp);
+      return;
+    }
+  }
+
+  // Direct setup: stream-key provided alone
+  if (onlyStreamKeyProvided) {
+    console.log('\n✓ Stream key saved!\n');
+    if (scriptMode) {
+      // Script mode: just save and exit (config already saved above)
+      return;
+    }
+    // Normal mode: enter interactive mode
+    const ingestionUrl = buildIngestionUrl(config);
+    const sender = new YoutubeLiveCaptionSender({
+      ingestionUrl,
+      region: config.region,
+      cue: config.cue,
+      useRegion: argv['use-region'],
+      sequence: config.sequence,
+      verbose: argv.verbose
+    });
+    sender.start();
+    await runInteractiveMode(sender, config, configPath, argv.timestamp);
     return;
   }
 
   const ingestionUrl = buildIngestionUrl(config);
 
   if (!ingestionUrl) {
-    logger.error('No ingestion URL configured. Use --url to set one.');
+    logger.error('No ingestion URL configured. Use --stream-key to set one.');
     process.exit(1);
   }
 
@@ -198,11 +289,122 @@ function displayConfig(config, configPath) {
   console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
   console.log('Usage:');
-  console.log('  lcyt --stream-key "KEY"      Set your YouTube stream key');
+  console.log('  lcyt                         Interactive mode (default)');
+  console.log('  lcyt --stream-key "KEY"      Set stream key and enter interactive mode');
   console.log('  lcyt "Your caption text"     Send a single caption');
-  console.log('  lcyt --i                     Start interactive mode');
   console.log('  lcyt --heartbeat             Send heartbeat to verify connection');
+  console.log('  lcyt --show-config           Show this configuration');
   console.log('  lcyt --help                  Show all options\n');
+}
+
+function showWelcomeBanner() {
+  const viaNpx = isRunningViaNpx();
+
+  console.log('\n┌──────────────────────────────────────────────────────────────┐');
+  console.log('│            LCYT - Live Captions for YouTube                  │');
+  console.log('│         Send real-time captions to your live stream         │');
+  console.log('└──────────────────────────────────────────────────────────────┘\n');
+
+  if (viaNpx) {
+    console.log('Running via npx. For faster startup, install globally:');
+    console.log('  npm install -g lcyt\n');
+  }
+}
+
+function question(rl, prompt) {
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      resolve(answer.trim());
+    });
+  });
+}
+
+async function runSetupWizard(config, configPath) {
+  showWelcomeBanner();
+  console.log('First-time setup required.\n');
+  console.log('To get your YouTube stream key:');
+  console.log('  1. Go to YouTube Studio (studio.youtube.com)');
+  console.log('  2. Click Create > Go Live');
+  console.log('  3. In stream settings, find "Closed captions"');
+  console.log('  4. Enable "POST captions to URL"');
+  console.log('  5. Copy the stream key (cid value)\n');
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+  });
+
+  try {
+    const streamKey = await question(rl, 'Enter your YouTube stream key: ');
+
+    if (!streamKey) {
+      console.log('\nNo stream key provided. Setup cancelled.');
+      console.log('Run again with: lcyt --stream-key=YOUR_KEY\n');
+      rl.close();
+      return;
+    }
+
+    // Basic validation
+    if (streamKey.length < 4) {
+      console.log('\nWarning: Stream key seems too short. Proceeding anyway...');
+    }
+
+    config.streamKey = streamKey;
+    saveConfig(configPath, config);
+    console.log('\n✓ Configuration saved!\n');
+
+    // Offer to test connection
+    const testConnection = await question(rl, 'Test connection with heartbeat? (Y/n): ');
+
+    if (testConnection.toLowerCase() !== 'n') {
+      console.log('\nSending heartbeat...');
+      const ingestionUrl = buildIngestionUrl(config);
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl,
+        region: config.region,
+        cue: config.cue,
+        sequence: config.sequence,
+        verbose: false
+      });
+      sender.start();
+
+      try {
+        const result = await sender.heartbeat();
+        if (result.serverTimestamp) {
+          console.log(`✓ Connection successful! Server time: ${result.serverTimestamp}\n`);
+        } else {
+          console.log('✓ Connection successful!\n');
+        }
+        sender.end();
+      } catch (err) {
+        console.log(`✗ Connection failed: ${err.message}`);
+        console.log('  Make sure your stream is live and accepting captions.\n');
+        sender.end();
+      }
+    }
+
+    // Ask if user wants to enter interactive mode
+    const enterInteractive = await question(rl, 'Enter interactive mode now? (Y/n): ');
+    rl.close();
+
+    if (enterInteractive.toLowerCase() !== 'n') {
+      const ingestionUrl = buildIngestionUrl(config);
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl,
+        region: config.region,
+        cue: config.cue,
+        sequence: config.sequence,
+        verbose: argv.verbose
+      });
+      sender.start();
+      await runInteractiveMode(sender, config, configPath, argv.timestamp);
+    } else {
+      console.log('\nSetup complete! Run lcyt to start sending captions.\n');
+    }
+  } catch (err) {
+    rl.close();
+    throw err;
+  }
 }
 
 async function sendHeartbeat(sender) {
