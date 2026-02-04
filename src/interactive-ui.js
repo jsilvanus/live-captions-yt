@@ -182,6 +182,43 @@ export class InteractiveUI {
   }
 
   /**
+   * Send a custom caption (doesn't move file pointer)
+   */
+  async sendCustomCaption(text) {
+    if (!text || text.trim() === '') {
+      this.addToHistory('Empty caption not sent', 'warn');
+      return;
+    }
+
+    const trimmedText = text.trim();
+
+    if (this.batchMode) {
+      // Add to batch instead of sending immediately
+      this.batchCaptions.push({ text: trimmedText, timestamp: this.defaultTimestamp });
+      this.addToHistory(`[Custom] Added to batch (${this.batchCaptions.length} total)`, 'info');
+
+      // Start timer on first caption
+      if (this.batchCaptions.length === 1 && !this.batchTimer) {
+        this.addToHistory(`Timer started: batch will send in ${this.batchTimeout}s`, 'info');
+        this.batchTimer = setTimeout(async () => {
+          await this.sendBatch();
+        }, this.batchTimeout * 1000);
+      }
+    } else {
+      // Normal mode: send immediately
+      try {
+        await this.sender.send(trimmedText, this.defaultTimestamp);
+        this.config.sequence = this.sender.getSequence();
+        this.addToHistory(`[Custom] Sent: ${trimmedText}`, 'success');
+      } catch (err) {
+        this.addToHistory(`[Custom] Error: ${err.message}`, 'error');
+      }
+    }
+
+    this.updateStatus();
+  }
+
+  /**
    * Add entry to sent history
    */
   addToHistory(message, type = 'info') {
@@ -271,7 +308,7 @@ export class InteractiveUI {
       left: 0,
       width: '100%',
       height: 3,
-      content: ' Commands: Enter=Send+Next | +N/-N=Shift | /load <file> | /goto <N> | q=Quit',
+      content: ' Enter=Send file line | :=Type text/commands | h=Help | q=Quit',
       style: {
         fg: 'white',
         bg: 'black'
@@ -437,7 +474,7 @@ export class InteractiveUI {
       this.screen.render();
     });
 
-    // Command input
+    // Command/text input
     this.screen.key([':', '/'], () => {
       this.promptCommand();
     });
@@ -449,7 +486,7 @@ export class InteractiveUI {
   }
 
   /**
-   * Prompt for command input
+   * Prompt for command/text input
    */
   promptCommand() {
     const prompt = blessed.prompt({
@@ -459,19 +496,28 @@ export class InteractiveUI {
       height: 'shrink',
       width: 'shrink',
       border: 'line',
-      label: ' Enter Command ',
+      label: ' Command or Custom Text ',
       tags: true,
       keys: true,
       vi: true
     });
 
-    prompt.input('Command:', '', async (err, value) => {
+    prompt.input('', '', async (err, value) => {
       if (err || !value) {
         this.screen.render();
         return;
       }
 
-      await this.handleCommand(value.trim());
+      const trimmed = value.trim();
+
+      // Check if it's a command (starts with /)
+      if (trimmed.startsWith('/')) {
+        await this.handleCommand(trimmed);
+      } else {
+        // It's plain text, send as custom caption
+        await this.sendCustomCaption(trimmed);
+      }
+
       this.screen.render();
     });
   }
@@ -623,16 +669,18 @@ export class InteractiveUI {
       content: `
   {bold}LCYT Interactive Mode - Keyboard Commands{/bold}
 
+  {cyan-fg}Sending Captions:{/cyan-fg}
+    Enter         Send current file line and advance pointer
+    : or /        Open prompt to type custom text or commands
+
   {cyan-fg}Navigation:{/cyan-fg}
-    Enter         Send current line and advance to next
     ↑ / k         Move to previous line
     ↓ / j         Move to next line
     PageUp        Move up 10 lines
     PageDown      Move down 10 lines
     Tab           Switch focus between text preview and history
 
-  {cyan-fg}Commands:{/cyan-fg}
-    : or /        Open command prompt
+  {cyan-fg}Quick Keys:{/cyan-fg}
     h             Show this help
     q or Ctrl+C   Quit
 
@@ -647,10 +695,21 @@ export class InteractiveUI {
     +N               Shift pointer forward N lines
     -N               Shift pointer backward N lines
 
+  {cyan-fg}Custom Captions:{/cyan-fg}
+    Press : or / to open the prompt. Type any text WITHOUT a leading /
+    to send it as a custom caption. The file pointer stays on the current
+    line. Custom captions work with batch mode too!
+
+    Examples:
+      /load script.txt    ← Command (loads file)
+      Hello world         ← Custom caption (sends text)
+      /batch 5            ← Command (starts batch mode)
+
   {cyan-fg}Batch Mode:{/cyan-fg}
-    When batch mode is ON, pressing Enter adds lines to batch instead of
-    sending immediately. The batch auto-sends after the timeout (from first
-    caption). Use /send to send immediately or /batch to toggle off.
+    When batch mode is ON, both Enter (file lines) and custom captions
+    are added to batch instead of sending immediately. The batch auto-sends
+    after the timeout (from first caption). Use /send to send immediately
+    or /batch to toggle off.
 
   {yellow-fg}Press ESC or q to close this help{/yellow-fg}
       `
