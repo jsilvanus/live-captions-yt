@@ -118,14 +118,15 @@ export class InteractiveUI {
     if (this.batchMode) {
       // Add to batch instead of sending immediately
       this.batchCaptions.push({ text, timestamp: this.defaultTimestamp });
-      this.addToHistory(`[Line ${lineNum}] Added to batch (${this.batchCaptions.length} total)`, 'info');
 
       // Start timer on first caption
       if (this.batchCaptions.length === 1 && !this.batchTimer) {
-        this.addToHistory(`Timer started: batch will send in ${this.batchTimeout}s`, 'info');
+        this.addToHistory(`[Line ${lineNum}] Added to batch (${this.batchCaptions.length} total) - auto-send in ${this.batchTimeout}s`, 'info');
         this.batchTimer = setTimeout(async () => {
           await this.sendBatch();
         }, this.batchTimeout * 1000);
+      } else {
+        this.addToHistory(`[Line ${lineNum}] Added to batch (${this.batchCaptions.length} total)`, 'info');
       }
 
       // Advance to next line
@@ -195,14 +196,15 @@ export class InteractiveUI {
     if (this.batchMode) {
       // Add to batch instead of sending immediately
       this.batchCaptions.push({ text: trimmedText, timestamp: this.defaultTimestamp });
-      this.addToHistory(`[Custom] Added to batch (${this.batchCaptions.length} total)`, 'info');
 
       // Start timer on first caption
       if (this.batchCaptions.length === 1 && !this.batchTimer) {
-        this.addToHistory(`Timer started: batch will send in ${this.batchTimeout}s`, 'info');
+        this.addToHistory(`[Custom] Added to batch (${this.batchCaptions.length} total) - auto-send in ${this.batchTimeout}s`, 'info');
         this.batchTimer = setTimeout(async () => {
           await this.sendBatch();
         }, this.batchTimeout * 1000);
+      } else {
+        this.addToHistory(`[Custom] Added to batch (${this.batchCaptions.length} total)`, 'info');
       }
     } else {
       // Normal mode: send immediately
@@ -356,7 +358,7 @@ export class InteractiveUI {
     } else {
       const context = this.getContextLines();
       const fileName = this.loadedFile || 'unknown';
-      content = `\n  File: {cyan-fg}${fileName}{/cyan-fg} | Line: {yellow-fg}${this.currentLine + 1}${/this.lines.length}{/yellow-fg}\n\n`;
+      content = `\n  File: {cyan-fg}${fileName}{/cyan-fg} | Line: {yellow-fg}${this.currentLine + 1}/${this.lines.length}{/yellow-fg}\n\n`;
 
       for (const line of context) {
         const prefix = line.isCurrent ? '{green-fg}{bold}►{/bold}{/green-fg}' : ' ';
