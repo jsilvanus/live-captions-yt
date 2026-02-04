@@ -174,6 +174,26 @@ async function main() {
       // First run with no stream key: show setup wizard
       await runSetupWizard(config, configPath);
       return;
+    } else if (isRunningViaNpx()) {
+      // Running via npx with no action specified: default to fullscreen mode
+      const ingestionUrl = buildIngestionUrl(config);
+      if (!ingestionUrl) {
+        logger.error('No ingestion URL configured. Use --stream-key to set one.');
+        process.exit(1);
+      }
+
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl,
+        region: config.region,
+        cue: config.cue,
+        useRegion: argv['use-region'],
+        sequence: config.sequence,
+        verbose: argv.verbose
+      });
+
+      sender.start();
+      await runFullscreenMode(sender, config, configPath, argv.timestamp);
+      return;
     } else {
       // Show config (default non-interactive behavior)
       displayConfig(config, configPath);
@@ -266,7 +286,10 @@ function showWelcomeBanner() {
   console.log('└──────────────────────────────────────────────────────────────┘\n');
 
   if (viaNpx) {
-    console.log('Running via npx. For faster startup, install globally:');
+    console.log('Running via npx.');
+    console.log('  • npx lcyt    - Launches full-screen mode (default)');
+    console.log('  • npx lcyt -i - Use standard interactive mode');
+    console.log('\nFor faster startup, install globally:');
     console.log('  npm install -g lcyt\n');
   }
 }
