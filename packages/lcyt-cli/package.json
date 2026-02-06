@@ -1,0 +1,47 @@
+{
+  "name": "lcyt-cli",
+  "version": "1.0.0",
+  "description": "CLI for sending live captions to YouTube Live streams",
+  "type": "module",
+  "bin": {
+    "lcyt": "bin/lcyt"
+  },
+  "scripts": {
+    "start": "node bin/lcyt",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "youtube",
+    "live",
+    "captions",
+    "subtitles",
+    "streaming",
+    "closed-captions",
+    "accessibility",
+    "live-stream",
+    "cli"
+  ],
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "dependencies": {
+    "blessed": "^0.1.81",
+    "lcyt": "^2.0.0",
+    "yargs": "^17.7.2"
+  },
+  "files": [
+    "bin/",
+    "src/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/jsilvanus/live-captions-yt/issues"
+  },
+  "homepage": "https://github.com/jsilvanus/live-captions-yt#readme"
+}

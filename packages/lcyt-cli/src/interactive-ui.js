@@ -1,8 +1,8 @@
 import blessed from 'blessed';
 import { readFileSync } from 'fs';
 import { resolve, basename } from 'path';
-import logger from './logger.js';
-import { saveConfig } from './config.js';
+import logger from 'lcyt/logger';
+import { saveConfig } from 'lcyt/config';
 
 export class InteractiveUI {
   constructor(sender, config, configPath, defaultTimestamp) {

@@ -1,50 +1,18 @@
 {
-  "name": "lcyt",
-  "version": "1.4.0",
-  "description": "Send live captions to YouTube Live streams",
-  "type": "module",
-  "main": "./dist/index.cjs",
-  "module": "./src/sender.js",
-  "exports": {
-    ".": {
-      "import": "./src/sender.js",
-      "require": "./dist/index.cjs"
-    },
-    "./errors": {
-      "import": "./src/errors.js",
-      "require": "./dist/errors.cjs"
-    }
-  },
-  "bin": {
-    "lcyt": "bin/lcyt"
-  },
-  "scripts": {
-    "start": "node bin/lcyt",
-    "test": "node --test test/*.test.js",
-    "build": "node scripts/build-cjs.js"
-  },
-  "keywords": [
-    "youtube",
-    "live",
-    "captions",
-    "subtitles",
-    "streaming",
-    "closed-captions",
-    "accessibility",
-    "live-stream",
-    "cli"
+  "name": "live-captions-yt",
+  "private": true,
+  "description": "Monorepo for LCYT - Live Captions for YouTube",
+  "workspaces": [
+    "packages/lcyt",
+    "packages/lcyt-cli"
   ],
+  "scripts": {
+    "test": "npm test --workspaces",
+    "build": "npm run build -w packages/lcyt",
+    "start": "npm start -w packages/lcyt-cli"
+  },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",
-  "dependencies": {
-    "blessed": "^0.1.81",
-    "yargs": "^17.7.2"
-  },
-  "files": [
-    "src/",
-    "dist/",
-    "bin/"
-  ],
   "engines": {
     "node": ">=18.0.0"
   },

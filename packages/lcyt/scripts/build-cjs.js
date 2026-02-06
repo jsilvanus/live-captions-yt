@@ -123,4 +123,4 @@ module.exports = sender;
 fs.writeFileSync(path.join(distDir, 'index.cjs'), indexContent, 'utf8');
 console.log('Created: index.cjs');
 
-console.log('\\nCJS build complete!');
+console.log('\nCJS build complete!');

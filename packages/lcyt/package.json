@@ -1,0 +1,58 @@
+{
+  "name": "lcyt",
+  "version": "2.0.0",
+  "description": "Send live captions to YouTube Live streams",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./src/sender.js",
+  "exports": {
+    ".": {
+      "import": "./src/sender.js",
+      "require": "./dist/index.cjs"
+    },
+    "./errors": {
+      "import": "./src/errors.js",
+      "require": "./dist/errors.cjs"
+    },
+    "./config": {
+      "import": "./src/config.js",
+      "require": "./dist/config.cjs"
+    },
+    "./logger": {
+      "import": "./src/logger.js",
+      "require": "./dist/logger.cjs"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "build": "node scripts/build-cjs.js"
+  },
+  "keywords": [
+    "youtube",
+    "live",
+    "captions",
+    "subtitles",
+    "streaming",
+    "closed-captions",
+    "accessibility",
+    "live-stream"
+  ],
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "files": [
+    "src/",
+    "dist/"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt"
+  },
+  "bugs": {
+    "url": "https://github.com/jsilvanus/live-captions-yt/issues"
+  },
+  "homepage": "https://github.com/jsilvanus/live-captions-yt#readme"
+}
