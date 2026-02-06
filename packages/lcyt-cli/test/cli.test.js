@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
-const CLI_PATH = path.join(process.cwd(), 'bin', 'lcyt');
+const CLI_PATH = path.join(import.meta.dirname, '..', 'bin', 'lcyt');
 
 // Helper to run CLI and capture output
 function runCLI(args = [], options = {}) {

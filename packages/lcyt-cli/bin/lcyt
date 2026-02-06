@@ -1,12 +1,18 @@
 #!/usr/bin/env node
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import readline from 'readline';
-import { YoutubeLiveCaptionSender } from '../src/sender.js';
-import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from '../src/config.js';
-import logger from '../src/logger.js';
+import { YoutubeLiveCaptionSender } from 'lcyt';
+import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from 'lcyt/config';
+import logger from 'lcyt/logger';
 import { InteractiveUI } from '../src/interactive-ui.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
 
 // Detect if running via npx
 function isRunningViaNpx() {
@@ -101,7 +107,7 @@ const argv = yargs(hideBin(process.argv))
   .example('$0 --heartbeat', 'Send heartbeat to verify connection')
   .help('help')
   .alias('help', 'h')
-  .version()
+  .version(pkg.version)
   .argv;
 
 async function main() {
@@ -299,10 +305,10 @@ function showWelcomeBanner() {
 
   if (viaNpx) {
     console.log('Running via npx.');
-    console.log('  • npx lcyt    - Launches full-screen mode (default)');
-    console.log('  • npx lcyt -i - Use standard interactive mode');
+    console.log('  • npx lcyt-cli    - Launches full-screen mode (default)');
+    console.log('  • npx lcyt-cli -i - Use standard interactive mode');
     console.log('\nFor faster startup, install globally:');
-    console.log('  npm install -g lcyt\n');
+    console.log('  npm install -g lcyt-cli\n');
   }
 }
 
