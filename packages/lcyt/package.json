@@ -25,7 +25,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js",
-    "build": "node scripts/build-cjs.js"
+    "build": "node scripts/build-cjs.js",
+    "prepack": "node scripts/build-cjs.js"
   },
   "keywords": [
     "youtube",

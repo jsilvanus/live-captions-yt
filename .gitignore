@@ -3,4 +3,3 @@ node_modules/
 *.log
 .env
 python/dist/
-packages/lcyt/dist/
