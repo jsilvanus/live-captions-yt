@@ -72,6 +72,17 @@ const argv = yargs(hideBin(process.argv))
     description: 'Send test payload from Google docs',
     default: false
   })
+  .option('batch', {
+    alias: 'b',
+    type: 'boolean',
+    description: 'Add caption to batch queue (stored in config, send with --send)',
+    default: false
+  })
+  .option('send', {
+    type: 'boolean',
+    description: 'Send all queued batch captions and clear the queue',
+    default: false
+  })
   .option('timestamp', {
     alias: 't',
     type: 'string',
@@ -99,6 +110,9 @@ const argv = yargs(hideBin(process.argv))
   .example('$0 -i', 'Start interactive mode')
   .example('$0 -f', 'Start full-screen interactive mode')
   .example('$0 --heartbeat', 'Send heartbeat to verify connection')
+  .example('$0 -b "Hello world"', 'Add caption to batch queue')
+  .example('$0 -b "Line 2" -t "2024-01-15T12:00:00.000"', 'Batch with timestamp')
+  .example('$0 --send', 'Send all queued batch captions')
   .help('help')
   .alias('help', 'h')
   .version()
@@ -154,6 +168,8 @@ async function main() {
   const isFullscreen = argv.fullscreen;
   const isHeartbeat = argv.heartbeat;
   const isTest = argv.test;
+  const isBatch = argv.batch;
+  const isSend = argv.send;
   const showConfig = argv['show-config'];
 
   // Detect first run (no stream key configured)
@@ -162,6 +178,64 @@ async function main() {
   // Show config if explicitly requested
   if (showConfig) {
     displayConfig(config, configPath);
+    return;
+  }
+
+  // Handle --batch: queue caption for later sending
+  if (isBatch) {
+    if (!hasCaption) {
+      logger.error('No caption text provided. Usage: lcyt --batch "Your caption"');
+      process.exit(1);
+    }
+
+    if (!config.batchQueue) {
+      config.batchQueue = [];
+    }
+
+    const timestamp = argv.timestamp || new Date().toISOString();
+    config.batchQueue.push({ text: captionText, timestamp });
+    saveConfig(configPath, config);
+    logger.info(`Added to batch queue (${config.batchQueue.length} total): "${captionText}"`);
+    return;
+  }
+
+  // Handle --send: send all queued batch captions
+  if (isSend) {
+    if (!config.batchQueue || config.batchQueue.length === 0) {
+      logger.warn('No captions in batch queue. Use --batch "text" to add captions first.');
+      return;
+    }
+
+    const ingestionUrl = buildIngestionUrl(config);
+    if (!ingestionUrl) {
+      logger.error('No ingestion URL configured. Use --stream-key to set one.');
+      process.exit(1);
+    }
+
+    const sender = new YoutubeLiveCaptionSender({
+      ingestionUrl,
+      region: config.region,
+      cue: config.cue,
+      useRegion: argv['use-region'],
+      sequence: config.sequence,
+      verbose: argv.verbose
+    });
+
+    sender.start();
+
+    try {
+      const count = config.batchQueue.length;
+      await sender.sendBatch(config.batchQueue);
+      config.sequence = sender.getSequence();
+      config.batchQueue = [];
+      saveConfig(configPath, config);
+      logger.info(`Batch of ${count} caption(s) sent successfully.`);
+      sender.end();
+    } catch (err) {
+      logger.error(err.message);
+      sender.end();
+      process.exit(1);
+    }
     return;
   }
 

@@ -305,6 +305,175 @@ describe('CLI', () => {
     });
   });
 
+  describe('--batch', () => {
+    it('should add caption to batch queue in config', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const { code, stdout } = await runCLI(['--batch', 'Hello batch', '--config', configPath]);
+        assert.strictEqual(code, 0);
+        assert.ok(stdout.includes('Added to batch queue'));
+        assert.ok(stdout.includes('1 total'));
+
+        const savedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(savedConfig.batchQueue.length, 1);
+        assert.strictEqual(savedConfig.batchQueue[0].text, 'Hello batch');
+        assert.ok(savedConfig.batchQueue[0].timestamp, 'Should have a timestamp');
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should accumulate multiple captions in batch queue', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        await runCLI(['--batch', 'First caption', '--config', configPath]);
+        await runCLI(['--batch', 'Second caption', '--config', configPath]);
+        const { code, stdout } = await runCLI(['--batch', 'Third caption', '--config', configPath]);
+
+        assert.strictEqual(code, 0);
+        assert.ok(stdout.includes('3 total'));
+
+        const savedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(savedConfig.batchQueue.length, 3);
+        assert.strictEqual(savedConfig.batchQueue[0].text, 'First caption');
+        assert.strictEqual(savedConfig.batchQueue[1].text, 'Second caption');
+        assert.strictEqual(savedConfig.batchQueue[2].text, 'Third caption');
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should use custom timestamp with -t', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const customTs = '2024-06-15T10:30:00.000';
+        const { code } = await runCLI(['--batch', 'Timed caption', '-t', customTs, '--config', configPath]);
+        assert.strictEqual(code, 0);
+
+        const savedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(savedConfig.batchQueue[0].timestamp, customTs);
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should error when --batch is used without caption text', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const { code, stderr } = await runCLI(['--batch', '--config', configPath]);
+        assert.strictEqual(code, 1);
+        assert.ok(stderr.includes('No caption text provided'));
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should accept -b alias', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const { code, stdout } = await runCLI(['-b', 'Alias caption', '--config', configPath]);
+        assert.strictEqual(code, 0);
+        assert.ok(stdout.includes('Added to batch queue'));
+
+        const savedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(savedConfig.batchQueue[0].text, 'Alias caption');
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+  });
+
+  describe('--send', () => {
+    it('should warn when batch queue is empty', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const { code, stderr } = await runCLI(['--send', '--config', configPath]);
+        assert.strictEqual(code, 0);
+        assert.ok(stderr.includes('No captions in batch queue'));
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should warn when batch queue is empty array', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0,
+        batchQueue: []
+      });
+
+      try {
+        const { code, stderr } = await runCLI(['--send', '--config', configPath]);
+        assert.strictEqual(code, 0);
+        assert.ok(stderr.includes('No captions in batch queue'));
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should fail gracefully when sending to non-existent server', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        baseUrl: 'http://localhost:99999/test',
+        sequence: 0,
+        batchQueue: [
+          { text: 'Caption 1', timestamp: '2024-01-15T12:00:00.000' },
+          { text: 'Caption 2', timestamp: '2024-01-15T12:00:01.000' }
+        ]
+      });
+
+      try {
+        const { code, stderr } = await runCLI(['--send', '--config', configPath], { timeout: 10000 });
+        assert.strictEqual(code, 1);
+        assert.ok(stderr.length > 0, 'Should have error output');
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should error when no stream key configured', async () => {
+      const configPath = createTempConfig({
+        streamKey: null,
+        sequence: 0,
+        batchQueue: [
+          { text: 'Caption 1', timestamp: '2024-01-15T12:00:00.000' }
+        ]
+      });
+
+      try {
+        const { code, stderr } = await runCLI(['--send', '--config', configPath]);
+        assert.strictEqual(code, 1);
+        assert.ok(stderr.includes('No ingestion URL configured'));
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+  });
+
   describe('npx detection', () => {
     it('should detect npx execution via npm_command env var', async () => {
       // This tests the isRunningViaNpx function indirectly
