@@ -4,13 +4,11 @@
 [![npm version](https://img.shields.io/npm/v/lcyt-cli.svg)](https://www.npmjs.com/package/lcyt-cli)
 [![PyPI version](https://img.shields.io/pypi/v/lcyt.svg)](https://pypi.org/project/lcyt/)
 
-Send live captions to YouTube Live streams using Google's official closed caption ingestion url.
+Send live captions to YouTube live streams using Google's official closed caption ingestion url (HTTP POST).
 
 To use this package, you first need to:
 1. Set up a live in Youtube, set it to 30 second delay and to receive captions via HTTP POST requests.
 2. Start the live and then send the captions with the stream key (and in correct sequence).
-3. ...
-4. Profit! (Captions are visible in the live!)
 
 ## Packages
 
@@ -49,6 +47,8 @@ npx lcyt-cli --heartbeat              # Test connection
 See the [lcyt-cli package](packages/lcyt-cli/) for full CLI documentation.
 
 ## Library Usage (Node.js)
+
+Both ESM and CJS are provided.
 
 ```bash
 npm install lcyt
@@ -132,11 +132,17 @@ To get your YouTube Live caption ingestion URL and key:
 
 ## Contributing
 
+You are welcome to contribute by opening issues and contributing code.
+
 1. Fork the repository
 2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Commit your changes (`git commit -m 'Add amazing feature'`)
 4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
+
+## Copyright
+
+Juha Itäleino (@jsilvanus), <jsilvanus@gmail.com>
 
 ## License
 
