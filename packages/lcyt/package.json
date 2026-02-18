@@ -1,24 +1,29 @@
 {
   "name": "lcyt",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Send live captions to YouTube Live streams via HTTP POST endpoint",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./src/sender.js",
+  "types": "./src/sender.d.ts",
   "exports": {
     ".": {
+      "types": "./src/sender.d.ts",
       "import": "./src/sender.js",
       "require": "./dist/index.cjs"
     },
     "./errors": {
+      "types": "./src/errors.d.ts",
       "import": "./src/errors.js",
       "require": "./dist/errors.cjs"
     },
     "./config": {
+      "types": "./src/config.d.ts",
       "import": "./src/config.js",
       "require": "./dist/config.cjs"
     },
     "./logger": {
+      "types": "./src/logger.d.ts",
       "import": "./src/logger.js",
       "require": "./dist/logger.cjs"
     }
