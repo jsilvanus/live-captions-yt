@@ -20,7 +20,7 @@ This is a monorepo containing the following packages:
 | [`lcyt-cli`](packages/lcyt-cli/) | npm | `npm install -g lcyt-cli` | CLI tool |
 | [`lcyt`](python/) | PyPI | `pip install lcyt` | Core Python library |
 
-### Breaking change in v2.0.0
+### Breaking change in lcyt v2.0.0
 
 The `lcyt` npm package no longer includes the CLI. The CLI has been moved to a separate [`lcyt-cli`](https://www.npmjs.com/package/lcyt-cli) package.
 
@@ -32,6 +32,10 @@ npx lcyt-cli              # One-off usage
 ```
 
 **If you were using the library**, no changes needed — `import { YoutubeLiveCaptionSender } from 'lcyt'` still works.
+
+### Current status of lcyt-cli
+
+There is currently some bugs in the -f version of lcyt-cli. Please use -i.
 
 ## Quick Start with CLI
 
