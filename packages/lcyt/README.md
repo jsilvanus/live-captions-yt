@@ -45,19 +45,25 @@ sender.send('Hello, world!').then(() => {
 ## Usage Examples
 
 ```javascript
-// Send with custom timestamp
+// Send with auto-generated timestamp
+await sender.send('Hello, world!');
+
+// Send with a Date object
+await sender.send('Custom timestamp', new Date());
+
+// Send with an ISO string timestamp
 await sender.send('Custom timestamp', '2024-01-15T12:00:00.000');
 
-// Send multiple captions in one batch
+// Send multiple captions in one batch (timestamps can be Date objects or strings)
 await sender.sendBatch([
   { text: 'First caption' },
-  { text: 'Second caption' },
+  { text: 'Second caption', timestamp: new Date() },
   { text: 'Third caption', timestamp: '2024-01-15T12:00:01.000' }
 ]);
 
 // Or use construct() to build a batch, then send
 sender.construct('First caption');
-sender.construct('Second caption');
+sender.construct('Second caption', new Date());
 sender.construct('Third caption', '2024-01-15T12:00:01.000');
 await sender.sendBatch(); // Sends the queued captions
 
@@ -87,18 +93,26 @@ Initialize the sender. Must be called before sending captions.
 ### `send(text, timestamp?)`
 Send a single caption. Returns a Promise.
 
+`timestamp` can be a `Date` object, an ISO string (`YYYY-MM-DDTHH:MM:SS.mmm`), or omitted (auto-generated). Must be within 60 seconds of the server's current time.
+
 ```javascript
+// ISO string
 const result = await sender.send('Hello', '2024-01-15T12:00:00.000');
+// Date object
+const result2 = await sender.send('Hello', new Date());
 // result: { sequence, timestamp, statusCode, response, serverTimestamp }
 ```
 
 ### `construct(text, timestamp?)`
 Add a caption to the internal queue for later batch sending.
 
+`timestamp` accepts the same formats as `send()` (Date object, ISO string, or omitted).
+
 ```javascript
 sender.construct('First caption');
-sender.construct('Second caption', '2024-01-15T12:00:00.500');
-console.log(sender.getQueue().length); // 2
+sender.construct('Second caption', new Date());
+sender.construct('Third caption', '2024-01-15T12:00:00.500');
+console.log(sender.getQueue().length); // 3
 ```
 
 ### `getQueue()` / `clearQueue()`
@@ -112,10 +126,13 @@ const cleared = sender.clearQueue(); // Returns number of cleared captions
 ### `sendBatch(captions?)`
 Send multiple captions in a single POST request. If no array is provided, sends and clears the internal queue built with `construct()`.
 
+Each caption's `timestamp` can be a `Date` object, an ISO string, or omitted (auto-generated 100ms apart).
+
 ```javascript
 const result = await sender.sendBatch([
   { text: 'Caption 1' },
-  { text: 'Caption 2', timestamp: '2024-01-15T12:00:00.500' }
+  { text: 'Caption 2', timestamp: new Date() },
+  { text: 'Caption 3', timestamp: '2024-01-15T12:00:00.500' }
 ]);
 // result: { sequence, count, statusCode, response, serverTimestamp }
 ```
@@ -191,9 +208,37 @@ LCYT implements Google's official YouTube Live caption format:
 
 - **Method:** POST to `{baseUrl}?cid={streamKey}&seq={sequence}`
 - **Content-Type:** `text/plain` (no charset!)
-- **Timestamps** must be within 60 seconds of server time
 - **Body** must end with a trailing newline
 - Use `<br>` for line breaks within caption text
+
+### Timestamp Format
+
+YouTube requires timestamps in the format:
+
+```
+YYYY-MM-DDTHH:MM:SS.mmm
+```
+
+- No trailing `Z`, no UTC offset — local wall-clock format with millisecond precision
+- Example: `2024-01-15T12:00:00.000`
+- **Must be within 60 seconds** of the server's current time
+
+LCYT accepts timestamps as:
+- A `Date` object (converted automatically)
+- An ISO string with trailing `Z` (e.g. `2024-01-15T12:00:00.000Z`) — `Z` is stripped automatically
+- A pre-formatted string (`YYYY-MM-DDTHH:MM:SS.mmm`) — used as-is
+- Omitted — current time is used
+
+### Body Format
+
+```
+YYYY-MM-DDTHH:MM:SS.mmm [region:reg1#cue1]
+CAPTION TEXT
+YYYY-MM-DDTHH:MM:SS.mmm
+ANOTHER CAPTION
+```
+
+The region/cue suffix is optional and controlled by the `useRegion` constructor option.
 
 ## License
 
