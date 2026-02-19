@@ -31,6 +31,12 @@ export class InteractiveUI {
     this.batchTimeout = 5; // seconds
     this.batchTimer = null;
 
+    // YouTube live status (opt-in via /api and /stream commands)
+    this.apiKey = null;         // Google API key loaded via /api <file.json>
+    this.watchVideoId = null;   // YouTube video ID set via /stream <url-or-id>
+    this.youtubeStatus = null;  // null = unknown, 'live', 'upcoming', 'offline'
+    this.youtubePoller = null;
+
     // UI widgets
     this.screen = null;
     this.textPreview = null;
@@ -433,6 +439,7 @@ export class InteractiveUI {
       width: '100%',
       height: 1,
       content: ' Ready',
+      tags: true,
       style: { fg: 'white', bg: 'blue' }
     });
 
@@ -444,6 +451,10 @@ export class InteractiveUI {
     this.screen.append(this.statusBar);
 
     this.setupKeyBindings();
+
+    // Re-render status bar on terminal resize to keep right-alignment correct
+    this.screen.on('resize', () => { this.updateStatus(); });
+
     this.screen.render();
   }
 
@@ -540,6 +551,13 @@ export class InteractiveUI {
     if (!this.statusBar) return;
 
     const seq = this.sender.getSequence();
+
+    // Stream key — show first 8 chars then ellipsis for brevity/privacy
+    const rawKey = this.config.streamKey || '';
+    const truncKey = rawKey.length > 10
+      ? rawKey.substring(0, 8) + '…'
+      : (rawKey || '(no key)');
+
     const lineInfo =
       this.lines.length > 0
         ? `  L:${this.currentLine + 1}/${this.lines.length}`
@@ -548,10 +566,111 @@ export class InteractiveUI {
       ? `  BATCH:${this.batchCaptions.length}/${this.batchTimeout}s`
       : '';
 
-    this.statusBar.setContent(
-      ` ${message}  Seq:${seq}${lineInfo}${batchInfo}`
-    );
+    const leftPart = ` ${message}  Key:${truncKey}  Seq:${seq}${lineInfo}${batchInfo}`;
+
+    // YouTube live indicator — only shown when /stream is configured
+    let rightPart = '';
+    let rightPartRaw = '';
+    if (this.watchVideoId) {
+      let ytTagged, ytRaw;
+      if (this.youtubeStatus === 'live') {
+        ytTagged = '{red-fg}●{/red-fg} Live';
+        ytRaw    = '● Live';
+      } else if (this.youtubeStatus === 'upcoming') {
+        ytTagged = '{yellow-fg}◑ Upcoming{/yellow-fg}';
+        ytRaw    = '◑ Upcoming';
+      } else if (this.youtubeStatus === 'offline') {
+        ytTagged = '○ Offline';
+        ytRaw    = '○ Offline';
+      } else {
+        ytTagged = '{gray-fg}…{/gray-fg}';
+        ytRaw    = '…';
+      }
+      rightPart    = `YouTube: ${ytTagged}  `;
+      rightPartRaw = `YouTube: ${ytRaw}  `;
+    }
+
+    const totalWidth = (this.screen && this.screen.width) ? this.screen.width : 80;
+    const padLen = Math.max(0, totalWidth - leftPart.length - rightPartRaw.length);
+
+    this.statusBar.setContent(leftPart + ' '.repeat(padLen) + rightPart);
     this.screen.render();
+  }
+
+  // ─── YouTube live status (opt-in via /api + /stream) ────────────────────
+
+  /**
+   * Parse a YouTube video ID from a URL or bare ID string.
+   * Accepts: watch?v=ID, youtu.be/ID, /live/ID, or an 11-char ID directly.
+   * Returns the video ID string, or null if unrecognisable.
+   */
+  _parseVideoId(input) {
+    const s = input.trim();
+    try {
+      const u = new URL(s);
+      if (u.hostname.includes('youtube.com')) {
+        if (u.searchParams.get('v')) return u.searchParams.get('v');
+        const m = u.pathname.match(/\/(?:live|embed|shorts|v)\/([a-zA-Z0-9_-]{11})/);
+        if (m) return m[1];
+      }
+      if (u.hostname === 'youtu.be') {
+        const id = u.pathname.slice(1).split('/')[0];
+        if (/^[a-zA-Z0-9_-]{11}$/.test(id)) return id;
+      }
+    } catch {
+      // Not a URL — fall through to bare-ID check
+    }
+    if (/^[a-zA-Z0-9_-]{11}$/.test(s)) return s;
+    return null;
+  }
+
+  /**
+   * Fetch live status from YouTube Data API v3 using the stored apiKey and
+   * watchVideoId.  Updates this.youtubeStatus and re-renders the status bar.
+   */
+  async _fetchYoutubeStatus() {
+    if (!this.apiKey || !this.watchVideoId) return;
+
+    try {
+      const url =
+        `https://www.googleapis.com/youtube/v3/videos` +
+        `?part=snippet&id=${encodeURIComponent(this.watchVideoId)}` +
+        `&key=${encodeURIComponent(this.apiKey)}`;
+
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+
+      if (!response.ok) {
+        this.youtubeStatus = null;
+        this.updateStatus();
+        return;
+      }
+
+      const data = await response.json();
+      const lbc = data.items?.[0]?.snippet?.liveBroadcastContent;
+      if (lbc === 'live')     this.youtubeStatus = 'live';
+      else if (lbc === 'upcoming') this.youtubeStatus = 'upcoming';
+      else                    this.youtubeStatus = 'offline';
+    } catch {
+      this.youtubeStatus = null;
+    }
+
+    this.updateStatus();
+  }
+
+  /**
+   * (Re)start periodic YouTube status polling.
+   * Safe to call multiple times — clears any existing interval first.
+   * No-op if apiKey or watchVideoId is not yet configured.
+   */
+  startYoutubeStatusPolling() {
+    if (this.youtubePoller) {
+      clearInterval(this.youtubePoller);
+      this.youtubePoller = null;
+    }
+    if (!this.apiKey || !this.watchVideoId) return;
+
+    this._fetchYoutubeStatus();
+    this.youtubePoller = setInterval(() => this._fetchYoutubeStatus(), 30000);
   }
 
   // ─── Key bindings ────────────────────────────────────────────────────────
@@ -721,6 +840,56 @@ export class InteractiveUI {
         break;
       }
 
+      // ── /api <file.json> ─────────────────────────────────────────────────
+      case '/api': {
+        if (args.length === 0) {
+          this.addToLog('Usage: /api <file.json>', 'warn');
+          break;
+        }
+        const apiFile = args.join(' ');
+        try {
+          const content = readFileSync(resolve(apiFile), 'utf-8');
+          const json = JSON.parse(content);
+          const key = json.api_key || json.apiKey || json.key || null;
+          if (!key) {
+            this.addToLog(
+              'No API key found in JSON (expected field: api_key, apiKey, or key)',
+              'error'
+            );
+            break;
+          }
+          this.apiKey = key;
+          this.addToLog('Google API key loaded', 'success');
+          this.startYoutubeStatusPolling();
+        } catch (err) {
+          this.addToLog(`/api error: ${err.message}`, 'error');
+        }
+        break;
+      }
+
+      // ── /stream <url-or-video-id> ─────────────────────────────────────────
+      case '/stream': {
+        if (args.length === 0) {
+          this.addToLog('Usage: /stream <youtube-url-or-video-id>', 'warn');
+          break;
+        }
+        const streamInput = args.join(' ');
+        const videoId = this._parseVideoId(streamInput);
+        if (!videoId) {
+          this.addToLog(
+            `Could not parse a YouTube video ID from: ${streamInput}`,
+            'error'
+          );
+          break;
+        }
+        this.watchVideoId = videoId;
+        this.youtubeStatus = null;
+        this.addToLog(`Stream set: ${videoId}`, 'success');
+        this.updateStatus();
+        this.startYoutubeStatusPolling();
+        break;
+      }
+
       // ── /status ──────────────────────────────────────────────────────────
       case '/status': {
         const file = this.loadedFile || 'none';
@@ -793,7 +962,7 @@ export class InteractiveUI {
   Left lower   Log — operational messages and send results
   Right        Sent Captions — history sent to YouTube (seq # on left)
   Bottom bar   Input field (always focused)
-  Status bar   Current sequence, line position, batch status
+  Status bar   Stream key (truncated), sequence, batch size, YouTube status
 
 {cyan-fg}Input Behaviour:{/cyan-fg}
   Enter (empty)    Send current file line → pointer advances to next line
@@ -815,10 +984,21 @@ export class InteractiveUI {
   /timestamps  /ts      Toggle timestamps in the Sent Captions panel
   /batch [secs]         Toggle batch mode (auto-send after N seconds)
   /send                 Flush the batch queue immediately
+  /api <file.json>      Load Google API key for YouTube live status
+  /stream <url-or-id>   Set YouTube video to monitor (enables live indicator)
   /status               Print current status to the Log panel
   /heartbeat            Send heartbeat to YouTube
   /help  /?             Show this help
   /quit  /exit          Exit
+
+{cyan-fg}YouTube Live Status (right side of status bar):{/cyan-fg}
+  Requires both /api and /stream to be configured.
+  {red-fg}●{/red-fg} Live       Stream is currently live
+  {yellow-fg}◑{/yellow-fg} Upcoming   Stream is scheduled but not yet started
+  ○ Offline    Stream is not live
+  … (gray)     Status unknown or still loading
+  Polls every 30 seconds via YouTube Data API v3 (no auth required).
+  The /api JSON file must contain one of: api_key, apiKey, or key.
 
 {cyan-fg}Sent Captions Panel (right):{/cyan-fg}
   Each sent caption shows:  #seq [HH:MM:SS] caption text
@@ -826,14 +1006,17 @@ export class InteractiveUI {
   #seq is the YouTube API sequence number used for that caption.
 
 {cyan-fg}Examples:{/cyan-fg}
-  /load script.txt        Load a file
-  /load script.txt 42     Load and jump to line 42
-  /fetch https://…        Fetch content from a URL
-  Hello world             Send custom caption (pointer unchanged)
-  +5                      Skip forward 5 lines
-  -2                      Go back 2 lines
-  /batch 10               Enable batch mode with 10-second auto-send
-  /ts                     Toggle timestamps in the captions panel
+  /load script.txt            Load a file
+  /load script.txt 42         Load and jump to line 42
+  /fetch https://…            Fetch content from a URL
+  /api ~/keys/google.json     Load Google API key
+  /stream dQw4w9WgXcQ         Monitor a video by ID
+  /stream https://youtu.be/…  Monitor a video by URL
+  Hello world                 Send custom caption (pointer unchanged)
+  +5                          Skip forward 5 lines
+  -2                          Go back 2 lines
+  /batch 10                   Enable batch mode with 10-second auto-send
+  /ts                         Toggle timestamps in the captions panel
 
 {yellow-fg}Press ESC or q to close this help{/yellow-fg}
       `
@@ -870,6 +1053,11 @@ export class InteractiveUI {
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
       this.batchTimer = null;
+    }
+
+    if (this.youtubePoller) {
+      clearInterval(this.youtubePoller);
+      this.youtubePoller = null;
     }
 
     if (this.screen) {
