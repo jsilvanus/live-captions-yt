@@ -3,7 +3,7 @@
 import http.client
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse, urlencode
 
@@ -18,7 +18,7 @@ class Caption:
     """A single caption with text and optional timestamp."""
 
     text: str
-    timestamp: str | None = None
+    timestamp: str | datetime | int | float | None = None
 
 
 @dataclass
@@ -124,12 +124,20 @@ class YoutubeLiveCaptionSender:
         logger.debug("Sender stopped")
         return self
 
-    def send(self, text: str, timestamp: str | None = None) -> SendResult:
+    def send(self, text: str, timestamp: str | datetime | int | float | None = None) -> SendResult:
         """Send a single caption.
 
         Args:
             text: Caption text to send.
-            timestamp: Optional ISO format timestamp. Auto-generated if not provided.
+            timestamp: Optional timestamp. Accepted forms:
+
+                - ``datetime`` object (timezone-aware or naive UTC)
+                - ``int``/``float`` >= 1000: Unix epoch in seconds (``time.time()`` style)
+                - ``int``/``float`` < 1000 or negative: relative offset in seconds from now
+                  (e.g. ``-2`` = 2 seconds ago, ``0`` = now)
+                - ISO string ``YYYY-MM-DDTHH:MM:SS.mmm`` (used as-is)
+                - ISO string with trailing ``Z`` or ``+00:00`` (auto-stripped)
+                - ``None``: auto-generated current time
 
         Returns:
             SendResult with sequence, status code, and response.
@@ -144,12 +152,12 @@ class YoutubeLiveCaptionSender:
 
         return self.send_batch([Caption(text=text, timestamp=timestamp)])
 
-    def construct(self, text: str, timestamp: str | None = None) -> int:
+    def construct(self, text: str, timestamp: str | datetime | int | float | None = None) -> int:
         """Queue a caption for batch sending.
 
         Args:
             text: Caption text to queue.
-            timestamp: Optional ISO format timestamp.
+            timestamp: Optional timestamp. Accepts the same forms as ``send()``.
 
         Returns:
             Current queue length.
@@ -308,17 +316,34 @@ class YoutubeLiveCaptionSender:
         if not self._started:
             raise ValidationError("Sender not started. Call start() first.")
 
-    def _format_timestamp(self, timestamp: str) -> str:
+    def _format_timestamp(self, timestamp: str | datetime | int | float) -> str:
         """Format timestamp for YouTube API.
 
         YouTube expects format: YYYY-MM-DDTHH:MM:SS.mmm (milliseconds, no timezone)
 
+        Accepted inputs:
+        - ``datetime`` object: converted via isoformat()
+        - ``int``/``float`` >= 1000: Unix epoch in seconds (time.time() style)
+        - ``int``/``float`` < 1000 or negative: relative offset in seconds from now
+        - ISO string with or without trailing 'Z' or '+00:00'
+
         Args:
-            timestamp: ISO format timestamp.
+            timestamp: Timestamp in any accepted form.
 
         Returns:
             Formatted timestamp string.
         """
+        if isinstance(timestamp, datetime):
+            timestamp = timestamp.isoformat()
+        elif isinstance(timestamp, (int, float)):
+            if timestamp < 1000:
+                # Relative offset in seconds from now
+                dt = datetime.now(timezone.utc) + timedelta(seconds=timestamp)
+            else:
+                # Unix epoch in seconds (time.time() convention)
+                dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            timestamp = dt.isoformat()
+
         # Remove 'Z' suffix if present (YouTube expects no timezone)
         if timestamp.endswith("Z"):
             timestamp = timestamp[:-1]

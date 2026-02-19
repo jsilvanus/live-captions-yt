@@ -58,11 +58,23 @@ class YoutubeLiveCaptionSender {
   /**
    * Format timestamp to Google's expected format: YYYY-MM-DDTHH:MM:SS.mmm
    * (no 'Z' suffix, no timezone offset).
-   * Accepts a Date object, an ISO string (with or without trailing 'Z'), or undefined (auto-generates current time).
+   *
+   * Accepts:
+   * - Date object — converted directly
+   * - number >= 1000 — Unix epoch in milliseconds (Date.now() style)
+   * - number < 1000 or negative — relative offset in seconds from current time
+   * - ISO string with or without trailing 'Z'
+   * - undefined — auto-generates current time
    */
   _formatTimestamp(timestamp) {
     if (timestamp instanceof Date) {
       return timestamp.toISOString().slice(0, -1); // Remove the 'Z'
+    }
+    if (typeof timestamp === 'number') {
+      const date = timestamp < 1000
+        ? new Date(Date.now() + timestamp * 1000) // relative offset in seconds
+        : new Date(timestamp);                     // epoch milliseconds
+      return date.toISOString().slice(0, -1);
     }
     if (timestamp && !timestamp.endsWith('Z')) {
       return timestamp;
@@ -162,8 +174,13 @@ class YoutubeLiveCaptionSender {
   /**
    * Send a single caption to the YouTube Live stream.
    * @param {string} text - Caption text (use <br> for line breaks within the caption)
-   * @param {string|Date} [timestamp] - Timestamp as a Date object, an ISO string (`YYYY-MM-DDTHH:MM:SS.mmm`),
-   *   or an ISO string with trailing 'Z' (auto-converted). Auto-generated if not provided.
+   * @param {string|Date|number} [timestamp] - Timestamp in one of these forms:
+   *   - `Date` object
+   *   - `number >= 1000`: Unix epoch in milliseconds (e.g. `Date.now()`)
+   *   - `number < 1000` or negative: relative offset in seconds from now (e.g. `-2` = 2 seconds ago)
+   *   - ISO string `YYYY-MM-DDTHH:MM:SS.mmm` (used as-is)
+   *   - ISO string with trailing `Z` (auto-stripped)
+   *   - Omitted: auto-generated current time
    *   Must be within 60 seconds of the server's current time.
    * @returns {Promise<Object>} Result object
    * @returns {number} return.sequence - The sequence number used for this caption
@@ -183,6 +200,12 @@ class YoutubeLiveCaptionSender {
    * @example
    * // With Date object
    * await sender.send('Custom time', new Date());
+   * @example
+   * // With epoch milliseconds (Date.now())
+   * await sender.send('Custom time', Date.now());
+   * @example
+   * // With relative offset: 2 seconds ago
+   * await sender.send('Custom time', -2);
    */
   async send(text, timestamp) {
     const result = await this.sendBatch([{ text, timestamp }]);
@@ -198,15 +221,17 @@ class YoutubeLiveCaptionSender {
   /**
    * Add a caption to the internal queue for later batch sending with sendBatch().
    * @param {string} text - Caption text (use <br> for line breaks within the caption)
-   * @param {string|Date} [timestamp] - Timestamp as a Date object, an ISO string (`YYYY-MM-DDTHH:MM:SS.mmm`),
-   *   or an ISO string with trailing 'Z' (auto-converted). Auto-generated at send time if not provided.
-   *   Must be within 60 seconds of the server's current time.
+   * @param {string|Date|number} [timestamp] - Accepts the same forms as `send()`:
+   *   Date object, epoch milliseconds (>= 1000), relative seconds offset (< 1000 or negative),
+   *   ISO string, or omitted (auto-generated at send time).
    * @returns {number} Number of captions currently in queue after adding
    * @throws {ValidationError} If text is empty or not a string
    * @example
    * sender.construct('First caption');
    * sender.construct('Second caption', '2024-01-15T12:00:00.500');
    * sender.construct('Third caption', new Date());
+   * sender.construct('Fourth caption', Date.now());
+   * sender.construct('Fifth caption', -2); // 2 seconds ago
    * await sender.sendBatch(); // Sends all queued captions
    */
   construct(text, timestamp) {
@@ -251,8 +276,8 @@ class YoutubeLiveCaptionSender {
   /**
    * Send multiple captions in a single POST request.
    * If no captions array is provided, sends the internal queue built with construct() and clears it.
-   * @param {Array<{text: string, timestamp?: string|Date}>} [captions] - Array of caption objects. If omitted, uses internal queue.
-   *   Each `timestamp` may be a Date object, an ISO string (`YYYY-MM-DDTHH:MM:SS.mmm`), or omitted (auto-generated, 100ms apart).
+   * @param {Array<{text: string, timestamp?: string|Date|number}>} [captions] - Array of caption objects. If omitted, uses internal queue.
+   *   Each `timestamp` accepts the same forms as `send()` (Date, epoch ms, relative seconds, ISO string, or omitted — auto-generated 100ms apart).
    * @returns {Promise<Object>} Result object
    * @returns {number} return.sequence - The sequence number used for this batch
    * @returns {number} return.count - Number of captions sent
@@ -263,11 +288,13 @@ class YoutubeLiveCaptionSender {
    * @throws {ConfigError} If no ingestion URL configured
    * @throws {NetworkError} If the request fails
    * @example
-   * // Option 1: Pass array directly (string or Date timestamps)
+   * // Option 1: Pass array directly (any supported timestamp form)
    * await sender.sendBatch([
    *   { text: 'First caption' },
    *   { text: 'Second caption', timestamp: '2024-01-15T12:00:00.500' },
-   *   { text: 'Third caption', timestamp: new Date() }
+   *   { text: 'Third caption', timestamp: new Date() },
+   *   { text: 'Fourth caption', timestamp: Date.now() },
+   *   { text: 'Fifth caption', timestamp: -1 } // 1 second ago
    * ]);
    * @example
    * // Option 2: Use construct() then sendBatch()

@@ -224,7 +224,9 @@ YYYY-MM-DDTHH:MM:SS.mmm
 - **Must be within 60 seconds** of the server's current time
 
 LCYT accepts timestamps as:
-- A `Date` object (converted automatically)
+- A `Date` object — converted automatically
+- A `number >= 1000` — Unix epoch in **milliseconds** (`Date.now()` style)
+- A `number < 1000` or negative — relative offset in **seconds** from now (e.g. `-2` = 2 seconds ago, `0` = now)
 - An ISO string with trailing `Z` (e.g. `2024-01-15T12:00:00.000Z`) — `Z` is stripped automatically
 - A pre-formatted string (`YYYY-MM-DDTHH:MM:SS.mmm`) — used as-is
 - Omitted — current time is used

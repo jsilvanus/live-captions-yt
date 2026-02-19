@@ -122,7 +122,7 @@ YYYY-MM-DDTHH:MM:SS.mmm
 - Example: `2024-01-15T12:00:00.000`
 - Must be within 60 seconds of the server's current time
 
-The Node.js library accepts timestamps as a `Date` object, an ISO string (with or without trailing `Z`), or omitted (auto-generated). See the [lcyt package docs](packages/lcyt/) for details.
+The libraries accept multiple timestamp forms — see the [lcyt package docs](packages/lcyt/) (Node.js) and [Python package docs](python/README.md) for the full list including `Date`/`datetime` objects, epoch numbers, and relative second offsets.
 
 ### Body Format
 ```

@@ -76,7 +76,14 @@ Send a single caption.
 
 ```python
 result = sender.send("Hello, world!")
-result = sender.send("Custom timestamp", "2024-01-15T12:00:00.000")
+result = sender.send("ISO string", "2024-01-15T12:00:00.000")
+
+import time
+from datetime import datetime, timezone
+result = sender.send("Epoch seconds", time.time())    # int/float >= 1000
+result = sender.send("Datetime object", datetime.now(timezone.utc))
+result = sender.send("2 seconds ago", -2)             # relative offset
+result = sender.send("Now", 0)                        # offset of 0 = now
 
 # Returns SendResult with:
 # - sequence: int
@@ -91,9 +98,11 @@ Queue a caption for batch sending.
 
 ```python
 sender.construct("First caption")
-sender.construct("Second caption")
-sender.construct("Third caption", "2024-01-15T12:00:01.000")
-print(len(sender.get_queue()))  # 3
+sender.construct("ISO string", "2024-01-15T12:00:01.000")
+sender.construct("Datetime", datetime.now(timezone.utc))
+sender.construct("Epoch seconds", time.time())
+sender.construct("2 seconds ago", -2)
+print(len(sender.get_queue()))  # 5
 ```
 
 #### `send_batch(captions=None)`
@@ -103,10 +112,13 @@ Send multiple captions in a single POST request. If no list is provided, sends t
 ```python
 from lcyt import Caption
 
-# Option 1: Pass list directly
+# Option 1: Pass list directly (any supported timestamp form)
 result = sender.send_batch([
     Caption(text="Caption 1"),
     Caption(text="Caption 2", timestamp="2024-01-15T12:00:00.500"),
+    Caption(text="Caption 3", timestamp=datetime.now(timezone.utc)),
+    Caption(text="Caption 4", timestamp=time.time()),
+    Caption(text="Caption 5", timestamp=-1),  # 1 second ago
 ])
 
 # Option 2: Use construct() then send_batch()
@@ -212,7 +224,7 @@ from lcyt import Caption
 
 caption = Caption(
     text="Hello, world!",
-    timestamp="2024-01-15T12:00:00.000",  # Optional
+    timestamp="2024-01-15T12:00:00.000",  # str | datetime | int | float | None
 )
 ```
 
@@ -257,6 +269,25 @@ With region (when `use_region=True`):
 YYYY-MM-DDTHH:MM:SS.mmm [region:reg1#cue1]
 CAPTION TEXT
 ```
+
+### Timestamp Format
+
+YouTube requires timestamps in the format:
+
+```
+YYYY-MM-DDTHH:MM:SS.mmm
+```
+
+- No trailing `Z`, no UTC offset — millisecond precision
+- Must be within 60 seconds of the server's current time
+
+LCYT (Python) accepts timestamps as:
+- `datetime` object (timezone-aware or naive UTC)
+- `int`/`float` >= 1000 — Unix epoch in **seconds** (`time.time()` style)
+- `int`/`float` < 1000 or negative — relative offset in **seconds** from now (e.g. `-2` = 2 seconds ago, `0` = now)
+- ISO string `YYYY-MM-DDTHH:MM:SS.mmm` — used as-is
+- ISO string with trailing `Z` or `+00:00` — auto-stripped
+- `None` — auto-generated current time
 
 ### Important Requirements
 
