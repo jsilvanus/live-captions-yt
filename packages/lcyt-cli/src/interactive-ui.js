@@ -11,41 +11,44 @@ export class InteractiveUI {
     this.configPath = configPath;
     this.defaultTimestamp = defaultTimestamp;
 
-    // File and line tracking
+    // File / URL content tracking
     this.loadedFile = null;
     this.lines = [];
     this.currentLine = 0;
 
-    // History tracking
-    this.sentHistory = [];
-    this.maxHistory = 10;
+    // Right panel: sent captions list
+    this.sentCaptions = [];
+    this.maxSentCaptions = 500;
+    this.showTimestamps = true;
 
-    // Batch mode tracking
+    // Left lower panel: operational log
+    this.logMessages = [];
+    this.maxLogMessages = 500;
+
+    // Batch mode
     this.batchMode = false;
     this.batchCaptions = [];
-    this.batchTimeout = 5; // Default 5 seconds
+    this.batchTimeout = 5; // seconds
     this.batchTimer = null;
 
-    // UI components
+    // UI widgets
     this.screen = null;
     this.textPreview = null;
-    this.historyBox = null;
+    this.logBox = null;
+    this.captionsBox = null;
     this.statusBar = null;
-    this.commandBar = null;
     this.inputField = null;
 
-    // Context display settings
-    this.prevLines = 2;
-    this.nextLines = 5;
-
-    // Route logger output to history box instead of console
+    // Route logger output to the log panel instead of stdout
     logger.setCallback((message, type) => {
-      this.addToHistory(message, type);
+      this.addToLog(message, type);
     });
   }
 
+  // ─── File / URL loading ──────────────────────────────────────────────────
+
   /**
-   * Load a text file and initialize line pointer
+   * Load a local text file and reset pointer to line 0.
    */
   loadFile(filepath) {
     try {
@@ -54,801 +57,791 @@ export class InteractiveUI {
       this.lines = content.split('\n');
       this.loadedFile = filepath;
       this.currentLine = 0;
-
-      this.addToHistory(`Loaded file: ${filepath} (${this.lines.length} lines)`, 'info');
+      this.addToLog(`Loaded: ${filepath} (${this.lines.length} lines)`, 'info');
       return true;
     } catch (err) {
-      this.addToHistory(`Error loading file: ${err.message}`, 'error');
+      this.addToLog(`Load error: ${err.message}`, 'error');
       return false;
     }
   }
 
   /**
-   * Get the context lines dynamically based on available box height
+   * Fetch text content from a URL (uses global fetch, Node ≥ 18).
+   */
+  async fetchUrl(url) {
+    try {
+      this.addToLog(`Fetching ${url} …`, 'info');
+      const response = await fetch(url);
+      if (!response.ok) {
+        this.addToLog(
+          `Fetch failed: HTTP ${response.status} ${response.statusText}`,
+          'error'
+        );
+        return false;
+      }
+      const text = await response.text();
+      this.lines = text.split('\n');
+      this.loadedFile = url;
+      this.currentLine = 0;
+      this.addToLog(`Fetched: ${url} (${this.lines.length} lines)`, 'success');
+      return true;
+    } catch (err) {
+      this.addToLog(`Fetch error: ${err.message}`, 'error');
+      return false;
+    }
+  }
+
+  // ─── Pointer navigation ──────────────────────────────────────────────────
+
+  /**
+   * Return the window of lines visible in the text preview box.
+   * Centres around currentLine; adapts to box height.
    */
   getContextLines() {
-    if (!this.textPreview || this.lines.length === 0) {
-      return [];
-    }
+    if (!this.textPreview || this.lines.length === 0) return [];
 
-    // Calculate how many lines can fit in the preview box
-    // Box height minus: border (2 rows for top/bottom lines)
     const boxHeight = this.textPreview.height;
-    const availableLines = Math.max(5, boxHeight - 2);
+    const visible = Math.max(5, boxHeight - 2); // subtract top+bottom border
 
-    // Calculate the window around the current line
-    // Try to center the current line, but adjust if near start/end
-    let start = Math.max(0, this.currentLine - Math.floor(availableLines / 2));
-    let end = Math.min(this.lines.length, start + availableLines);
+    let start = Math.max(0, this.currentLine - Math.floor(visible / 2));
+    let end = Math.min(this.lines.length, start + visible);
 
-    // Adjust start if we're near the end
-    if (end - start < availableLines && start > 0) {
-      start = Math.max(0, end - availableLines);
+    if (end - start < visible && start > 0) {
+      start = Math.max(0, end - visible);
     }
 
-    const context = [];
+    const result = [];
     for (let i = start; i < end; i++) {
-      const isCurrent = i === this.currentLine;
-      context.push({
+      result.push({
         lineNum: i + 1,
         text: this.lines[i] || '',
-        isCurrent
+        isCurrent: i === this.currentLine
       });
     }
-
-    return context;
+    return result;
   }
 
   /**
-   * Shift the current line pointer
+   * Move pointer by offset lines (positive = forward, negative = backward).
    */
   shiftPointer(offset) {
-    const newLine = this.currentLine + offset;
-    if (newLine >= 0 && newLine < this.lines.length) {
-      this.currentLine = newLine;
+    const target = this.currentLine + offset;
+    if (target >= 0 && target < this.lines.length) {
+      this.currentLine = target;
       this.updateTextPreview();
+      this.updateStatus();
       return true;
     }
     return false;
   }
 
   /**
-   * Go to a specific line number (1-indexed)
+   * Jump to a 1-indexed line number.
    */
   gotoLine(lineNum) {
-    const index = lineNum - 1;
-    if (index >= 0 && index < this.lines.length) {
-      this.currentLine = index;
+    const idx = lineNum - 1;
+    if (idx >= 0 && idx < this.lines.length) {
+      this.currentLine = idx;
       this.updateTextPreview();
+      this.updateStatus();
       return true;
     }
     return false;
   }
 
   /**
-   * Check if a line is sendable (not empty, not a heading)
+   * Return true if the line at lineIndex is sendable (non-empty, not a heading).
    */
   isSendableLine(lineIndex) {
-    if (lineIndex < 0 || lineIndex >= this.lines.length) {
-      return false;
-    }
+    if (lineIndex < 0 || lineIndex >= this.lines.length) return false;
     const line = this.lines[lineIndex].trim();
     return line.length > 0 && !line.startsWith('#');
   }
 
-  /**
-   * Find next sendable line starting from current position
-   */
-  findNextSendableLine() {
-    for (let i = this.currentLine; i < this.lines.length; i++) {
-      if (this.isSendableLine(i)) {
-        return i;
-      }
-    }
-    return -1;  // No sendable line found
-  }
+  // ─── Caption sending ─────────────────────────────────────────────────────
 
   /**
-   * Send the current line and advance pointer
+   * Send (or queue in batch mode) the current file line, then advance pointer.
+   * Called when the user presses Enter with an empty input field.
    */
   async sendCurrentLine() {
     if (this.lines.length === 0 || this.currentLine >= this.lines.length) {
-      this.addToHistory('No line to send', 'warn');
-      return;
-    }
-
-    // Check if current line is sendable (not empty, not a heading)
-    if (!this.isSendableLine(this.currentLine)) {
-      const line = this.lines[this.currentLine] || '';
-
-      if (line.trim().length === 0) {
-        this.addToHistory('Line at pointer is empty. Moving to next line.', 'warn');
-      } else if (line.trim().startsWith('#')) {
-        this.addToHistory('Skipping heading line. Moving to next line.', 'info');
-      }
-
-      // Just advance to next line (don't skip to sendable or send)
-      if (this.currentLine < this.lines.length - 1) {
-        this.currentLine++;
-        this.updateTextPreview();
-      }
+      this.addToLog('No content loaded', 'warn');
       return;
     }
 
     const text = this.lines[this.currentLine];
     const lineNum = this.currentLine + 1;
 
-    if (this.batchMode) {
-      // Add to batch instead of sending immediately
-      this.batchCaptions.push({ text, timestamp: this.defaultTimestamp });
-
-      // Start timer on first caption
-      if (this.batchCaptions.length === 1 && !this.batchTimer) {
-        this.addToHistory(`[Line ${lineNum}] Added to batch (${this.batchCaptions.length} total) - auto-send in ${this.batchTimeout}s`, 'info');
-        this.batchTimer = setTimeout(async () => {
-          await this.sendBatch();
-        }, this.batchTimeout * 1000);
+    if (!this.isSendableLine(this.currentLine)) {
+      if (text.trim().length === 0) {
+        this.addToLog(`Line ${lineNum}: empty — moving to next`, 'warn');
       } else {
-        this.addToHistory(`[Line ${lineNum}] Added to batch (${this.batchCaptions.length} total)`, 'info');
+        this.addToLog(`Line ${lineNum}: heading — skipping`, 'info');
       }
-
-      // Advance to next line
+      // Still advance pointer
       if (this.currentLine < this.lines.length - 1) {
         this.currentLine++;
         this.updateTextPreview();
+        this.updateStatus();
+      }
+      return;
+    }
+
+    if (this.batchMode) {
+      this.batchCaptions.push({ text, timestamp: this.defaultTimestamp });
+      if (this.batchCaptions.length === 1 && !this.batchTimer) {
+        this.addToLog(
+          `[L${lineNum}] Queued (1) — auto-send in ${this.batchTimeout}s`,
+          'info'
+        );
+        this.batchTimer = setTimeout(() => this.sendBatch(), this.batchTimeout * 1000);
+      } else {
+        this.addToLog(
+          `[L${lineNum}] Queued (${this.batchCaptions.length})`,
+          'info'
+        );
       }
     } else {
-      // Normal mode: send immediately
       try {
+        const seqUsed = this.sender.getSequence();
         await this.sender.send(text, this.defaultTimestamp);
         this.config.sequence = this.sender.getSequence();
-
-        this.addToHistory(`[Line ${lineNum}] Sent: ${text}`, 'success');
-
-        // Advance to next line
-        if (this.currentLine < this.lines.length - 1) {
-          this.currentLine++;
-          this.updateTextPreview();
-        }
+        this._recordSent(seqUsed, text);
+        this.addToLog(`[L${lineNum}] Sent: ${text}`, 'success');
       } catch (err) {
-        this.addToHistory(`[Line ${lineNum}] Error: ${err.message}`, 'error');
+        this.addToLog(`[L${lineNum}] Error: ${err.message}`, 'error');
       }
     }
 
+    // Advance pointer after send
+    if (this.currentLine < this.lines.length - 1) {
+      this.currentLine++;
+      this.updateTextPreview();
+    }
     this.updateStatus();
   }
 
   /**
-   * Send batch of captions
+   * Send (or queue) a custom caption typed by the user.
+   * Pointer does NOT advance — only file-line sends advance the pointer.
+   */
+  async sendCustomCaption(text) {
+    const trimmed = text.trim();
+    if (!trimmed) {
+      this.addToLog('Empty caption not sent', 'warn');
+      return;
+    }
+
+    if (this.batchMode) {
+      this.batchCaptions.push({ text: trimmed, timestamp: this.defaultTimestamp });
+      if (this.batchCaptions.length === 1 && !this.batchTimer) {
+        this.addToLog(
+          `[Custom] Queued (1) — auto-send in ${this.batchTimeout}s`,
+          'info'
+        );
+        this.batchTimer = setTimeout(() => this.sendBatch(), this.batchTimeout * 1000);
+      } else {
+        this.addToLog(`[Custom] Queued (${this.batchCaptions.length})`, 'info');
+      }
+    } else {
+      try {
+        const seqUsed = this.sender.getSequence();
+        await this.sender.send(trimmed, this.defaultTimestamp);
+        this.config.sequence = this.sender.getSequence();
+        this._recordSent(seqUsed, trimmed);
+        this.addToLog(`[Custom] Sent: ${trimmed}`, 'success');
+      } catch (err) {
+        this.addToLog(`[Custom] Error: ${err.message}`, 'error');
+      }
+    }
+
+    // NOTE: pointer deliberately not advanced for custom captions
+    this.updateStatus();
+  }
+
+  /**
+   * Flush the batch queue to YouTube.
    */
   async sendBatch() {
     if (this.batchCaptions.length === 0) {
-      this.addToHistory('No captions in batch to send', 'warn');
+      this.addToLog('Batch queue is empty', 'warn');
       return;
     }
 
     try {
+      const seqUsed = this.sender.getSequence();
+      const count = this.batchCaptions.length;
       await this.sender.sendBatch(this.batchCaptions);
       this.config.sequence = this.sender.getSequence();
-      this.addToHistory(`Batch sent: ${this.batchCaptions.length} captions`, 'success');
+      // Record each caption individually in the sent panel
+      this.batchCaptions.forEach((cap, i) => {
+        this._recordSent(seqUsed + i, cap.text);
+      });
+      this.addToLog(`Batch sent: ${count} caption(s) (seq ${seqUsed})`, 'success');
     } catch (err) {
-      this.addToHistory(`Batch error: ${err.message}`, 'error');
+      this.addToLog(`Batch error: ${err.message}`, 'error');
     }
 
-    // Clear batch state
     this.batchCaptions = [];
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
       this.batchTimer = null;
     }
-
     this.updateStatus();
   }
 
-  /**
-   * Send a custom caption (doesn't move file pointer)
-   */
-  async sendCustomCaption(text) {
-    if (!text || text.trim() === '') {
-      this.addToHistory('Empty caption not sent', 'warn');
-      return;
-    }
-
-    const trimmedText = text.trim();
-
-    if (this.batchMode) {
-      // Add to batch instead of sending immediately
-      this.batchCaptions.push({ text: trimmedText, timestamp: this.defaultTimestamp });
-
-      // Start timer on first caption
-      if (this.batchCaptions.length === 1 && !this.batchTimer) {
-        this.addToHistory(`[Custom] Added to batch (${this.batchCaptions.length} total) - auto-send in ${this.batchTimeout}s`, 'info');
-        this.batchTimer = setTimeout(async () => {
-          await this.sendBatch();
-        }, this.batchTimeout * 1000);
-      } else {
-        this.addToHistory(`[Custom] Added to batch (${this.batchCaptions.length} total)`, 'info');
-      }
-    } else {
-      // Normal mode: send immediately
-      try {
-        await this.sender.send(trimmedText, this.defaultTimestamp);
-        this.config.sequence = this.sender.getSequence();
-        this.addToHistory(`[Custom] Sent: ${trimmedText}`, 'success');
-      } catch (err) {
-        this.addToHistory(`[Custom] Error: ${err.message}`, 'error');
-      }
-    }
-
-    this.updateStatus();
-  }
+  // ─── Internal helpers ────────────────────────────────────────────────────
 
   /**
-   * Add entry to sent history
+   * Record a caption that was actually sent to the right panel.
    */
-  addToHistory(message, type = 'info') {
+  _recordSent(seq, text) {
     const timestamp = new Date().toLocaleTimeString();
-    this.sentHistory.push({ timestamp, message, type });
-
-    // Keep only last N entries
-    if (this.sentHistory.length > this.maxHistory) {
-      this.sentHistory.shift();
+    this.sentCaptions.push({ seq, timestamp, text });
+    if (this.sentCaptions.length > this.maxSentCaptions) {
+      this.sentCaptions.shift();
     }
-
-    if (this.historyBox) {
-      this.updateHistory();
+    if (this.captionsBox) {
+      this.updateCaptionsBox();
     }
   }
 
   /**
-   * Initialize blessed screen and widgets
+   * Append a message to the operational log (left lower panel).
+   */
+  addToLog(message, type = 'info') {
+    const timestamp = new Date().toLocaleTimeString();
+    this.logMessages.push({ timestamp, message, type });
+    if (this.logMessages.length > this.maxLogMessages) {
+      this.logMessages.shift();
+    }
+    if (this.logBox) {
+      this.updateLogBox();
+    }
+  }
+
+  // ─── Screen initialisation ───────────────────────────────────────────────
+
+  /**
+   * Build and display the full-screen blessed layout:
+   *
+   *   ┌──────────────────────────────── title (1 row) ──────────────────────┐
+   *   │ Text Preview (left ~60%)        │ Sent Captions (right ~40%)        │
+   *   │  loaded file / URL content      │  #seq [time] text                 │
+   *   │  ► pointer on current line      │                                   │
+   *   ├─────────────────────────────────┤                                   │
+   *   │ Log (left ~60%)                 │                                   │
+   *   │  operational messages           │                                   │
+   *   └─────────────────────────────────┴───────────────────────────────────┘
+   *   ┌─────────── Input (full width, 3 rows) ──────────────────────────────┐
+   *   └─────────── Status bar (full width, 1 row) ──────────────────────────┘
    */
   initScreen() {
     this.screen = blessed.screen({
       smartCSR: true,
-      title: 'LCYT Interactive Mode'
+      title: 'LCYT — Live Captions for YouTube'
     });
 
-    // Title bar
-    const title = blessed.box({
+    // ── Title bar ──────────────────────────────────────────────────────────
+    const titleBar = blessed.box({
       top: 0,
       left: 0,
       width: '100%',
       height: 1,
-      content: ' LCYT Interactive Fullscreen Mode',
-      style: {
-        fg: 'white',
-        bg: 'blue',
-        bold: true
-      }
+      content: ' LCYT — Live Captions for YouTube  |  h=help  q=quit',
+      style: { fg: 'white', bg: 'blue', bold: true }
     });
 
-    // Text preview box
+    // ── Left upper: text preview ───────────────────────────────────────────
     this.textPreview = blessed.box({
       top: 1,
       left: 0,
-      width: '100%',
+      width: '60%',
       height: '55%',
-      label: ' Text Preview ',
-      border: {
-        type: 'line'
-      },
+      label: ' Text ',
+      border: { type: 'line' },
       style: {
-        border: {
-          fg: 'cyan'
-        }
+        border: { fg: 'cyan' },
+        label: { fg: 'cyan' }
       },
       scrollable: true,
       alwaysScroll: true,
       keys: true,
-      vi: true,
       tags: true
     });
 
-    // History box - fills remaining space between preview and input
-    // bottom: 5 leaves a 1-row gap to avoid double-border with input box
-    this.historyBox = blessed.box({
+    // ── Left lower: operational log ────────────────────────────────────────
+    this.logBox = blessed.box({
       top: '55%',
       left: 0,
-      width: '100%',
-      bottom: 5,  // Leave room for gap (1) + input (3) + status bar (1)
-      label: ' Sent History ',
-      border: {
-        type: 'line'
-      },
+      width: '60%',
+      bottom: 5,
+      label: ' Log ',
+      border: { type: 'line' },
       style: {
-        border: {
-          fg: 'green'
-        },
-        label: {
-          fg: 'green'
-        }
+        border: { fg: 'yellow' },
+        label: { fg: 'yellow' }
       },
       scrollable: true,
       alwaysScroll: true,
       keys: true,
-      vi: true,
       tags: true
     });
 
-    // Input field for commands and captions
+    // ── Right: sent captions list ──────────────────────────────────────────
+    this.captionsBox = blessed.box({
+      top: 1,
+      left: '60%',
+      width: '40%',
+      bottom: 5,
+      label: ' Sent Captions ',
+      border: { type: 'line' },
+      style: {
+        border: { fg: 'green' },
+        label: { fg: 'green' }
+      },
+      scrollable: true,
+      alwaysScroll: true,
+      keys: true,
+      tags: true
+    });
+
+    // ── Bottom: input box ──────────────────────────────────────────────────
     this.inputField = blessed.textbox({
       bottom: 1,
       left: 0,
       width: '100%',
       height: 3,
-      label: ' Input (/ for commands) ',
-      border: {
-        type: 'line'
-      },
+      label: ' Input — Enter: send file line | text: custom caption | /cmd: command | +N/-N: move pointer ',
+      border: { type: 'line' },
       style: {
-        fg: 'white',  // White text for visibility
-        border: {
-          fg: 'red'
-        },
-        focus: {
-          fg: 'white',
-          border: {
-            fg: 'red'
-          }
-        }
+        fg: 'white',
+        border: { fg: 'red' },
+        focus: { fg: 'white', border: { fg: 'red' } }
       },
       inputOnFocus: true,
       keys: true,
       mouse: true,
-      vi: false  // Don't use vi mode to avoid j/k being captured
+      vi: false
     });
 
-    // Keep commandBar for backward compatibility (not appended)
-    this.commandBar = null;
-
-    // Status bar
+    // ── Status bar ─────────────────────────────────────────────────────────
     this.statusBar = blessed.box({
       bottom: 0,
       left: 0,
       width: '100%',
       height: 1,
       content: ' Ready',
-      style: {
-        fg: 'white',
-        bg: 'blue'
-      }
+      style: { fg: 'white', bg: 'blue' }
     });
 
-    // Add all widgets to screen
-    this.screen.append(title);
+    this.screen.append(titleBar);
     this.screen.append(this.textPreview);
-    this.screen.append(this.historyBox);
+    this.screen.append(this.logBox);
+    this.screen.append(this.captionsBox);
     this.screen.append(this.inputField);
     this.screen.append(this.statusBar);
 
-    // Set up key bindings
     this.setupKeyBindings();
-
-    // Initial render
     this.screen.render();
   }
 
-  /**
-   * Update text preview display
-   */
+  // ─── Widget update methods ───────────────────────────────────────────────
+
   updateTextPreview() {
     if (!this.textPreview) return;
 
-    let content = '';
-
     if (this.lines.length === 0) {
-      content = '\n  No file loaded. Use /load <filepath> to load a text file.';
-      this.textPreview.setLabel(' Text Preview ');
-    } else {
-      const context = this.getContextLines();
-      const fileName = this.loadedFile ? basename(this.loadedFile) : 'unknown';
+      this.textPreview.setLabel(' Text ');
+      this.textPreview.setContent(
+        '\n  No content loaded.\n  Use /load <file>  or  /fetch <url>'
+      );
+      this.screen.render();
+      return;
+    }
 
-      // Update label with filename and line position
-      this.textPreview.setLabel(` Text Preview - File: ${fileName} | Line ${this.currentLine + 1}/${this.lines.length} `);
+    const src = this.loadedFile ? basename(this.loadedFile) : 'unknown';
+    this.textPreview.setLabel(
+      ` Text — ${src}  L${this.currentLine + 1}/${this.lines.length} `
+    );
 
-      for (const line of context) {
-        const prefix = line.isCurrent ? '{green-fg}{bold}►{/bold}{/green-fg}' : ' ';
-        const numPadded = String(line.lineNum).padStart(4, ' ');
+    let content = '';
+    for (const line of this.getContextLines()) {
+      const pointer = line.isCurrent
+        ? '{green-fg}{bold}►{/bold}{/green-fg}'
+        : ' ';
+      const num = String(line.lineNum).padStart(4, ' ');
+      const isHeading = line.text.trim().startsWith('#');
 
-        // Check if line is a heading
-        const isHeading = line.text.trim().startsWith('#');
-
-        let lineStyle = '';
-        let lineStyleEnd = '';
-
-        if (line.isCurrent) {
-          // Current line gets highest priority styling
-          lineStyle = '{black-bg}{white-fg}{bold}';
-          lineStyleEnd = '{/bold}{/white-fg}{/black-bg}';
-        } else if (isHeading) {
-          // Headings shown in bold blue
-          lineStyle = '{blue-fg}{bold}';
-          lineStyleEnd = '{/bold}{/blue-fg}';
-        }
-
-        content += `  ${prefix} ${lineStyle}${numPadded}│ ${line.text}${lineStyleEnd}\n`;
+      let pre = '';
+      let post = '';
+      if (line.isCurrent) {
+        pre = '{black-bg}{white-fg}{bold}';
+        post = '{/bold}{/white-fg}{/black-bg}';
+      } else if (isHeading) {
+        pre = '{blue-fg}{bold}';
+        post = '{/bold}{/blue-fg}';
       }
+
+      content += `${pointer}${pre}${num}│ ${line.text}${post}\n`;
     }
 
     this.textPreview.setContent(content);
     this.screen.render();
   }
 
-  /**
-   * Update history display
-   */
-  updateHistory() {
-    if (!this.historyBox) return;
+  updateLogBox() {
+    if (!this.logBox) return;
 
-    let content = '\n';
-
-    if (this.sentHistory.length === 0) {
-      content += '  No history yet.';
-    } else {
-      for (const entry of this.sentHistory) {
-        let color = 'white';
-        let symbol = '·';
-
-        switch (entry.type) {
-          case 'success':
-            color = 'green';
-            symbol = '✓';
-            break;
-          case 'error':
-            color = 'red';
-            symbol = '✗';
-            break;
-          case 'warn':
-            color = 'yellow';
-            symbol = '!';
-            break;
-          case 'info':
-            color = 'cyan';
-            symbol = 'ℹ';
-            break;
-        }
-
-        content += `  {${color}-fg}${symbol}{/${color}-fg} [{gray-fg}${entry.timestamp}{/gray-fg}] ${entry.message}\n`;
-      }
+    let content = '';
+    for (const entry of this.logMessages) {
+      const { color, symbol } = _logStyle(entry.type);
+      content +=
+        `{${color}-fg}${symbol}{/${color}-fg} ` +
+        `{gray-fg}${entry.timestamp}{/gray-fg} ` +
+        `${entry.message}\n`;
     }
 
-    this.historyBox.setContent(content);
-    this.historyBox.scrollTo(this.sentHistory.length);
+    this.logBox.setContent(content);
+    this.logBox.scrollTo(this.logMessages.length);
     this.screen.render();
   }
 
-  /**
-   * Update status bar
-   */
+  updateCaptionsBox() {
+    if (!this.captionsBox) return;
+
+    const tsLabel = this.showTimestamps ? 'ts on' : 'ts off';
+    this.captionsBox.setLabel(` Sent Captions [${tsLabel}] `);
+
+    let content = '';
+    if (this.sentCaptions.length === 0) {
+      content = '\n  No captions sent yet.';
+    } else {
+      for (const c of this.sentCaptions) {
+        const seq = String(c.seq).padStart(3, ' ');
+        if (this.showTimestamps) {
+          content +=
+            `{yellow-fg}#${seq}{/yellow-fg} ` +
+            `{gray-fg}[${c.timestamp}]{/gray-fg} ` +
+            `${c.text}\n`;
+        } else {
+          content += `{yellow-fg}#${seq}{/yellow-fg} ${c.text}\n`;
+        }
+      }
+    }
+
+    this.captionsBox.setContent(content);
+    this.captionsBox.scrollTo(this.sentCaptions.length);
+    this.screen.render();
+  }
+
   updateStatus(message = 'Ready') {
     if (!this.statusBar) return;
 
     const seq = this.sender.getSequence();
-    let status = ` ${message} | Seq: ${seq}`;
+    const lineInfo =
+      this.lines.length > 0
+        ? `  L:${this.currentLine + 1}/${this.lines.length}`
+        : '';
+    const batchInfo = this.batchMode
+      ? `  BATCH:${this.batchCaptions.length}/${this.batchTimeout}s`
+      : '';
 
-    if (this.batchMode) {
-      status += ` | BATCH MODE (${this.batchCaptions.length} queued, ${this.batchTimeout}s)`;
-    }
-
-    this.statusBar.setContent(status);
+    this.statusBar.setContent(
+      ` ${message}  Seq:${seq}${lineInfo}${batchInfo}`
+    );
     this.screen.render();
   }
 
-  /**
-   * Set up keyboard bindings
-   */
+  // ─── Key bindings ────────────────────────────────────────────────────────
+
   setupKeyBindings() {
-    // IMPORTANT: Input field has keys:true and captures all events when focused
-    // We must bind navigation keys directly to the input field, not the screen
+    // Arrow navigation — always bound to input field (always focused)
+    this.inputField.key(['up'], () => { this.shiftPointer(-1); });
+    this.inputField.key(['down'], () => { this.shiftPointer(1); });
+    this.inputField.key(['pageup'], () => { this.shiftPointer(-10); });
+    this.inputField.key(['pagedown'], () => { this.shiftPointer(10); });
 
-    // Navigation - bind to input field since it's always focused
-    this.inputField.key(['up', 'k'], () => {
-      this.shiftPointer(-1);
-    });
+    // Quick keys
+    this.inputField.key(['h'], () => { this.showHelp(); });
+    this.inputField.key(['q'], () => { this.cleanup(); process.exit(0); });
+    this.inputField.key(['C-c'], () => { this.cleanup(); process.exit(0); });
 
-    this.inputField.key(['down', 'j'], () => {
-      this.shiftPointer(1);
-    });
-
-    this.inputField.key(['pageup'], () => {
-      this.shiftPointer(-10);
-    });
-
-    this.inputField.key(['pagedown'], () => {
-      this.shiftPointer(10);
-    });
-
-    // Help
-    this.inputField.key(['h'], () => {
-      this.showHelp();
-    });
-
-    // Quit
-    this.inputField.key(['q'], () => {
-      this.cleanup();
-      process.exit(0);
-    });
-
-    // Focus switching with Tab
-    this.inputField.key(['tab'], () => {
-      if (this.screen.focused === this.inputField) {
-        this.textPreview.focus();
-      } else {
-        this.inputField.focus();
-      }
-      this.screen.render();
-    });
-
-    // Handle input field submission
+    // Enter — the main action handler
     this.inputField.key(['enter'], async () => {
-      const value = this.inputField.getValue().trim();
-
-      // Clear input field first
+      const raw = this.inputField.getValue();
+      const value = raw.trim();
       this.inputField.clearValue();
 
       if (!value) {
-        // Empty input: send current file line and advance (backward compatibility)
+        // Empty input → send current file line + advance pointer
         await this.sendCurrentLine();
         this.inputField.focus();
         this.screen.render();
         return;
       }
 
-      // Check for +N/-N pattern (with or without / prefix)
+      // +N / -N (with or without leading /)
       const shiftMatch = value.match(/^\/?([+-])(\d+)$/);
       if (shiftMatch) {
-        // Route as command (handleCommand expects no / for +/-)
-        const cmd = shiftMatch[1] + shiftMatch[2];  // e.g., "+5" or "-3"
-        await this.handleCommand(cmd);
+        const dir = shiftMatch[1] === '+' ? 1 : -1;
+        const n = parseInt(shiftMatch[2], 10);
+        if (!this.shiftPointer(dir * n)) {
+          this.addToLog('Cannot move pointer out of bounds', 'warn');
+        }
       } else if (value.startsWith('/')) {
-        // Command: route to handler
         await this.handleCommand(value);
       } else {
-        // Plain text: send as caption
+        // Plain text → custom caption (pointer does NOT advance)
         await this.sendCustomCaption(value);
       }
 
-      // Re-focus input field to maintain cursor
       this.inputField.focus();
       this.screen.render();
     });
-
-    // Handle Ctrl+C in input field (prevents widget from capturing it)
-    this.inputField.key(['C-c'], () => {
-      this.cleanup();
-      process.exit(0);
-    });
   }
 
-  /**
-   * Handle command input
-   */
+  // ─── Command handler ─────────────────────────────────────────────────────
+
   async handleCommand(cmd) {
     const parts = cmd.split(/\s+/);
     const command = parts[0].toLowerCase();
     const args = parts.slice(1);
 
     switch (command) {
-      case '/load':
-      case 'load':
-        if (args.length === 0) {
-          this.addToHistory('Usage: /load <filepath> [linenumber]', 'warn');
-        } else {
-          // Check if last argument is a line number
-          const lastArg = args[args.length - 1];
-          const lineNum = parseInt(lastArg, 10);
 
-          if (!isNaN(lineNum) && args.length > 1) {
-            // Last arg is a valid number, treat it as line number
-            const filepath = args.slice(0, -1).join(' ');
-            if (this.loadFile(filepath)) {
-              if (this.gotoLine(lineNum)) {
-                this.addToHistory(`Jumped to line ${lineNum}`, 'info');
-              } else {
-                this.addToHistory(`Invalid line number: ${lineNum}`, 'warn');
-              }
-            }
-          } else {
-            // No line number, load file normally
-            this.loadFile(args.join(' '));
+      // ── /load <file> [line] ──────────────────────────────────────────────
+      case '/load': {
+        if (args.length === 0) {
+          this.addToLog('Usage: /load <filepath> [line_number]', 'warn');
+          break;
+        }
+        const last = args[args.length - 1];
+        const lineNum = parseInt(last, 10);
+        const hasLine = !isNaN(lineNum) && args.length > 1;
+        const filepath = hasLine ? args.slice(0, -1).join(' ') : args.join(' ');
+
+        if (this.loadFile(filepath)) {
+          if (hasLine) {
+            this.gotoLine(lineNum)
+              ? this.addToLog(`Jumped to line ${lineNum}`, 'info')
+              : this.addToLog(`Line ${lineNum} out of range`, 'warn');
           }
           this.updateTextPreview();
         }
         break;
+      }
 
-      case '/reload':
-      case 'reload':
-        if (this.loadedFile) {
+      // ── /fetch <url> ─────────────────────────────────────────────────────
+      case '/fetch': {
+        if (args.length === 0) {
+          this.addToLog('Usage: /fetch <url>', 'warn');
+          break;
+        }
+        const url = args.join(' ');
+        await this.fetchUrl(url);
+        this.updateTextPreview();
+        break;
+      }
+
+      // ── /reload ──────────────────────────────────────────────────────────
+      case '/reload': {
+        if (!this.loadedFile) {
+          this.addToLog('No content loaded', 'warn');
+          break;
+        }
+        const isUrl =
+          this.loadedFile.startsWith('http://') ||
+          this.loadedFile.startsWith('https://');
+        if (isUrl) {
+          await this.fetchUrl(this.loadedFile);
+        } else {
           this.loadFile(this.loadedFile);
-          this.updateTextPreview();
-        } else {
-          this.addToHistory('No file loaded', 'warn');
         }
+        this.updateTextPreview();
         break;
+      }
 
-      case '/goto':
-      case 'goto':
+      // ── /goto <N> ────────────────────────────────────────────────────────
+      case '/goto': {
         if (args.length === 0) {
-          this.addToHistory('Usage: /goto <line_number>', 'warn');
+          this.addToLog('Usage: /goto <line_number>', 'warn');
+          break;
+        }
+        const n = parseInt(args[0], 10);
+        if (isNaN(n)) {
+          this.addToLog(`Not a number: ${args[0]}`, 'warn');
+        } else if (!this.gotoLine(n)) {
+          this.addToLog(`Line ${n} out of range (1–${this.lines.length})`, 'warn');
         } else {
-          const lineNum = parseInt(args[0], 10);
-          if (!isNaN(lineNum)) {
-            if (this.gotoLine(lineNum)) {
-              this.addToHistory(`Jumped to line ${lineNum}`, 'info');
-            } else {
-              this.addToHistory(`Invalid line number: ${lineNum}`, 'warn');
-            }
-          }
+          this.addToLog(`Jumped to line ${n}`, 'info');
         }
         break;
+      }
 
-      case '/batch':
-      case 'batch':
-        // Parse optional timeout parameter
+      // ── /timestamps  /ts ─────────────────────────────────────────────────
+      case '/timestamps':
+      case '/ts': {
+        this.showTimestamps = !this.showTimestamps;
+        this.addToLog(
+          `Timestamps ${this.showTimestamps ? 'enabled' : 'disabled'} in sent captions panel`,
+          'info'
+        );
+        this.updateCaptionsBox();
+        break;
+      }
+
+      // ── /batch [seconds] ─────────────────────────────────────────────────
+      case '/batch': {
         if (args.length > 0) {
-          const seconds = parseInt(args[0], 10);
-          if (!isNaN(seconds) && seconds > 0) {
-            this.batchTimeout = seconds;
-          }
+          const secs = parseInt(args[0], 10);
+          if (!isNaN(secs) && secs > 0) this.batchTimeout = secs;
         }
-
         this.batchMode = !this.batchMode;
-
         if (this.batchMode) {
           this.batchCaptions = [];
-          if (this.batchTimer) {
-            clearTimeout(this.batchTimer);
-            this.batchTimer = null;
-          }
-          this.addToHistory(`Batch mode ON. Auto-send after ${this.batchTimeout}s from first caption.`, 'info');
+          if (this.batchTimer) { clearTimeout(this.batchTimer); this.batchTimer = null; }
+          this.addToLog(`Batch mode ON — auto-send after ${this.batchTimeout}s`, 'info');
         } else {
-          // Turning off batch mode
-          if (this.batchCaptions.length > 0) {
-            await this.sendBatch();
-          }
-          this.addToHistory('Batch mode OFF', 'info');
+          if (this.batchCaptions.length > 0) await this.sendBatch();
+          this.addToLog('Batch mode OFF', 'info');
         }
         this.updateStatus();
         break;
+      }
 
-      case '/send':
-      case 'send':
+      // ── /send ─────────────────────────────────────────────────────────────
+      case '/send': {
         if (this.batchCaptions.length === 0) {
-          this.addToHistory('No captions in batch to send', 'warn');
+          this.addToLog('Batch queue is empty', 'warn');
         } else {
           await this.sendBatch();
         }
         break;
+      }
 
-      case '/status':
-      case 'status':
-        const totalLines = this.lines.length;
-        const current = this.currentLine + 1;
+      // ── /status ──────────────────────────────────────────────────────────
+      case '/status': {
         const file = this.loadedFile || 'none';
-        let statusMsg = `File: ${file} | Line: ${current}/${totalLines} | Seq: ${this.sender.getSequence()}`;
-        if (this.batchMode) {
-          statusMsg += ` | Batch: ON (${this.batchCaptions.length} queued, ${this.batchTimeout}s timeout)`;
-        }
-        this.addToHistory(statusMsg, 'info');
+        const line = this.lines.length > 0 ? `${this.currentLine + 1}/${this.lines.length}` : '—';
+        const seq = this.sender.getSequence();
+        const batch = this.batchMode
+          ? `ON (${this.batchCaptions.length} queued, ${this.batchTimeout}s)`
+          : 'OFF';
+        this.addToLog(
+          `Source: ${file}  Line: ${line}  Seq: ${seq}  Batch: ${batch}`,
+          'info'
+        );
         break;
+      }
 
-      case '/heartbeat':
-      case 'heartbeat':
+      // ── /heartbeat ───────────────────────────────────────────────────────
+      case '/heartbeat': {
         try {
           const result = await this.sender.heartbeat();
-          if (result.serverTimestamp) {
-            this.addToHistory(`Heartbeat OK - Server time: ${result.serverTimestamp}`, 'success');
-          } else {
-            this.addToHistory('Heartbeat OK', 'success');
-          }
+          const ts = result.serverTimestamp ? `  Server: ${result.serverTimestamp}` : '';
+          this.addToLog(`Heartbeat OK${ts}`, 'success');
         } catch (err) {
-          this.addToHistory(`Heartbeat failed: ${err.message}`, 'error');
+          this.addToLog(`Heartbeat failed: ${err.message}`, 'error');
         }
         break;
+      }
 
+      // ── /help  /? ────────────────────────────────────────────────────────
       case '/help':
-      case 'help':
-      case '/?':
-      case '?':
+      case '/?': {
         this.showHelp();
         break;
+      }
 
+      // ── /quit  /exit ──────────────────────────────────────────────────────
       case '/quit':
-      case 'quit':
-      case '/exit':
-      case 'exit':
+      case '/exit': {
         this.cleanup();
         process.exit(0);
+        break;
+      }
 
       default:
-        // Check for +N or -N patterns
-        const shiftMatch = cmd.match(/^([+-])(\d+)$/);
-        if (shiftMatch) {
-          const direction = shiftMatch[1] === '+' ? 1 : -1;
-          const amount = parseInt(shiftMatch[2], 10);
-          const offset = direction * amount;
-
-          if (this.shiftPointer(offset)) {
-            this.addToHistory(`Shifted pointer by ${offset}`, 'info');
-          } else {
-            this.addToHistory('Cannot shift pointer out of bounds', 'warn');
-          }
-        } else {
-          this.addToHistory(`Unknown command: ${cmd}`, 'warn');
-        }
+        this.addToLog(`Unknown command: ${cmd}`, 'warn');
     }
   }
 
-  /**
-   * Show help dialog
-   */
+  // ─── Help dialog ─────────────────────────────────────────────────────────
+
   showHelp() {
     const helpBox = blessed.box({
       parent: this.screen,
       top: 'center',
       left: 'center',
-      width: '80%',
-      height: '80%',
+      width: '82%',
+      height: '85%',
       border: 'line',
-      label: ' Help ',
+      label: ' LCYT Help — ESC / q to close ',
       tags: true,
       keys: true,
       vi: true,
       scrollable: true,
+      alwaysScroll: true,
+      style: { border: { fg: 'white' } },
       content: `
-  {bold}LCYT Interactive Mode - Keyboard Commands{/bold}
+{bold}LCYT Fullscreen Mode{/bold}
 
-  {cyan-fg}Sending Captions:{/cyan-fg}
-    Type text in the input field at the bottom
-    Press Enter to send
-    Text starting with / is a command
-    Text without / is sent as a caption
-    Empty input + Enter = send current file line and advance
-    Empty lines and headings (#) are automatically skipped
+{cyan-fg}Screen Layout:{/cyan-fg}
+  Left upper   Text preview — loaded file or URL content with pointer
+  Left lower   Log — operational messages and send results
+  Right        Sent Captions — history sent to YouTube (seq # on left)
+  Bottom bar   Input field (always focused)
+  Status bar   Current sequence, line position, batch status
 
-  {cyan-fg}Navigation:{/cyan-fg}
-    ↑ / k         Move to previous line
-    ↓ / j         Move to next line
-    PageUp        Move up 10 lines
-    PageDown      Move down 10 lines
-    Tab           Switch focus between input and preview
+{cyan-fg}Input Behaviour:{/cyan-fg}
+  Enter (empty)    Send current file line → pointer advances to next line
+  text + Enter     Send as custom caption  (pointer does NOT advance)
+  /command         Execute a command
+  +N  or  -N       Move pointer forward / backward N lines (no / needed)
 
-  {cyan-fg}Quick Keys:{/cyan-fg}
-    h             Show this help
-    q or Ctrl+C   Quit
+{cyan-fg}Navigation Keys (active even while typing):{/cyan-fg}
+  ↑ / ↓           Move pointer one line
+  PageUp / Down   Move pointer 10 lines
+  h               Show this help
+  q  or  Ctrl+C   Quit
 
-  {cyan-fg}Available Commands (type in input, start with /):{/cyan-fg}
-    /help or /?          Show this help screen
-    /load <file> [line]  Load a text file, optionally jump to line number
-    /reload              Reload the current file
-    /goto <N>            Jump to line number N
-    /batch [secs]        Toggle batch mode (auto-send after N seconds)
-    /send                Send batch immediately
-    /status              Show current status
-    /heartbeat           Send heartbeat to server
-    /quit or /exit       Quit the application
-    +N or /+N            Shift pointer forward N lines
-    -N or /-N            Shift pointer backward N lines
+{cyan-fg}Commands:{/cyan-fg}
+  /load <file> [N]      Load a local text file; optionally jump to line N
+  /fetch <url>          Fetch plain text from a URL and load it
+  /reload               Reload current file or re-fetch current URL
+  /goto <N>             Jump pointer to line N (1-indexed)
+  /timestamps  /ts      Toggle timestamps in the Sent Captions panel
+  /batch [secs]         Toggle batch mode (auto-send after N seconds)
+  /send                 Flush the batch queue immediately
+  /status               Print current status to the Log panel
+  /heartbeat            Send heartbeat to YouTube
+  /help  /?             Show this help
+  /quit  /exit          Exit
 
-  {cyan-fg}Examples:{/cyan-fg}
-    /load script.txt 42  ← Load file and jump to line 42
-    Hello world          ← Send as caption
-    /batch 5             ← Enable batch mode with 5s timeout
-    +10                  ← Move forward 10 lines
+{cyan-fg}Sent Captions Panel (right):{/cyan-fg}
+  Each sent caption shows:  #seq [HH:MM:SS] caption text
+  Use /timestamps or /ts to toggle the [HH:MM:SS] timestamp column.
+  #seq is the YouTube API sequence number used for that caption.
 
-  {cyan-fg}Batch Mode:{/cyan-fg}
-    When batch mode is ON, all captions (from input or file lines)
-    are added to batch instead of sending immediately. The batch auto-sends
-    after the timeout (from first caption). Use /send to send immediately
-    or /batch to toggle off.
+{cyan-fg}Examples:{/cyan-fg}
+  /load script.txt        Load a file
+  /load script.txt 42     Load and jump to line 42
+  /fetch https://…        Fetch content from a URL
+  Hello world             Send custom caption (pointer unchanged)
+  +5                      Skip forward 5 lines
+  -2                      Go back 2 lines
+  /batch 10               Enable batch mode with 10-second auto-send
+  /ts                     Toggle timestamps in the captions panel
 
-  {yellow-fg}Press ESC or q to close this help{/yellow-fg}
+{yellow-fg}Press ESC or q to close this help{/yellow-fg}
       `
     });
 
     helpBox.key(['escape', 'q'], () => {
       helpBox.destroy();
+      this.inputField.focus();
       this.screen.render();
     });
 
@@ -856,27 +849,24 @@ export class InteractiveUI {
     this.screen.render();
   }
 
-  /**
-   * Start the interactive UI
-   */
+  // ─── Lifecycle ───────────────────────────────────────────────────────────
+
   async start() {
     this.initScreen();
     this.updateTextPreview();
-    this.updateHistory();
+    this.updateLogBox();
+    this.updateCaptionsBox();
     this.updateStatus('Ready');
-
     this.inputField.focus();
-    this.addToHistory('Interactive mode started. Type text or /command. Press h for help.', 'info');
+    this.addToLog(
+      'Ready — type text to send, /command to run a command, h for help.',
+      'info'
+    );
   }
 
-  /**
-   * Cleanup and save state
-   */
   cleanup() {
-    // Restore normal logger output (remove callback)
     logger.setCallback(null);
 
-    // Clear batch timer if active
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
       this.batchTimer = null;
@@ -886,9 +876,22 @@ export class InteractiveUI {
       this.screen.destroy();
     }
 
-    // Save config
     saveConfig(this.configPath, this.config);
-
     this.sender.end();
+  }
+}
+
+// ─── Module-level helpers ────────────────────────────────────────────────────
+
+/**
+ * Map a log entry type to a blessed colour + symbol.
+ */
+function _logStyle(type) {
+  switch (type) {
+    case 'success': return { color: 'green',  symbol: '✓' };
+    case 'error':   return { color: 'red',    symbol: '✗' };
+    case 'warn':    return { color: 'yellow', symbol: '!' };
+    case 'info':    return { color: 'cyan',   symbol: 'ℹ' };
+    default:        return { color: 'white',  symbol: '·' };
   }
 }
