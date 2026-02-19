@@ -114,6 +114,54 @@ describe('YoutubeLiveCaptionSender', () => {
       assert.match(result, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
       assert.ok(!result.endsWith('Z'));
     });
+
+    it('should accept a Date object', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const date = new Date('2024-01-15T12:00:00.000Z');
+      const result = sender._formatTimestamp(date);
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+
+    it('should treat number >= 1000 as epoch milliseconds', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const epochMs = new Date('2024-01-15T12:00:00.000Z').getTime(); // well above 1000
+      const result = sender._formatTimestamp(epochMs);
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+
+    it('should treat number < 1000 as relative seconds offset from now', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const before = Date.now();
+      const result = sender._formatTimestamp(-2); // 2 seconds ago
+      const after = Date.now();
+      const resultMs = new Date(result + 'Z').getTime();
+      assert.match(result, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
+      assert.ok(!result.endsWith('Z'));
+      assert.ok(resultMs >= before - 2000 - 50);
+      assert.ok(resultMs <= after - 2000 + 50);
+    });
+
+    it('should treat 0 as current time', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const before = Date.now();
+      const result = sender._formatTimestamp(0);
+      const after = Date.now();
+      const resultMs = new Date(result + 'Z').getTime();
+      assert.match(result, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
+      assert.ok(resultMs >= before - 50);
+      assert.ok(resultMs <= after + 50);
+    });
+
+    it('should treat positive number < 1000 as future offset in seconds', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const before = Date.now();
+      const result = sender._formatTimestamp(10); // 10 seconds from now
+      const after = Date.now();
+      const resultMs = new Date(result + 'Z').getTime();
+      assert.match(result, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
+      assert.ok(resultMs >= before + 10000 - 50);
+      assert.ok(resultMs <= after + 10000 + 50);
+    });
   });
 
   describe('send()', () => {

@@ -110,6 +110,20 @@ LCYT implements Google's official YouTube Live caption format:
 
 Note: Do not to try to add charset in the Content-Type!
 
+### Timestamp Format
+
+Timestamps use the format:
+
+```
+YYYY-MM-DDTHH:MM:SS.mmm
+```
+
+- No trailing `Z`, no UTC offset — millisecond precision
+- Example: `2024-01-15T12:00:00.000`
+- Must be within 60 seconds of the server's current time
+
+The libraries accept multiple timestamp forms — see the [lcyt package docs](packages/lcyt/) (Node.js) and [Python package docs](python/README.md) for the full list including `Date`/`datetime` objects, epoch numbers, and relative second offsets.
+
 ### Body Format
 ```
 YYYY-MM-DDTHH:MM:SS.mmm region:reg1#cue1
