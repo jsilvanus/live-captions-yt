@@ -31,6 +31,10 @@ export class InteractiveUI {
     this.batchTimeout = 5; // seconds
     this.batchTimer = null;
 
+    // YouTube live status polling
+    this.youtubeStatus = null; // null = unknown, 'live', 'offline'
+    this.youtubePoller = null;
+
     // UI widgets
     this.screen = null;
     this.textPreview = null;
@@ -433,6 +437,7 @@ export class InteractiveUI {
       width: '100%',
       height: 1,
       content: ' Ready',
+      tags: true,
       style: { fg: 'white', bg: 'blue' }
     });
 
@@ -444,6 +449,10 @@ export class InteractiveUI {
     this.screen.append(this.statusBar);
 
     this.setupKeyBindings();
+
+    // Re-render status bar on terminal resize to keep right-alignment correct
+    this.screen.on('resize', () => { this.updateStatus(); });
+
     this.screen.render();
   }
 
@@ -540,6 +549,13 @@ export class InteractiveUI {
     if (!this.statusBar) return;
 
     const seq = this.sender.getSequence();
+
+    // Stream key — show first 8 chars then ellipsis for brevity/privacy
+    const rawKey = this.config.streamKey || '';
+    const truncKey = rawKey.length > 10
+      ? rawKey.substring(0, 8) + '…'
+      : (rawKey || '(no key)');
+
     const lineInfo =
       this.lines.length > 0
         ? `  L:${this.currentLine + 1}/${this.lines.length}`
@@ -548,10 +564,71 @@ export class InteractiveUI {
       ? `  BATCH:${this.batchCaptions.length}/${this.batchTimeout}s`
       : '';
 
-    this.statusBar.setContent(
-      ` ${message}  Seq:${seq}${lineInfo}${batchInfo}`
-    );
+    const leftPart = ` ${message}  Key:${truncKey}  Seq:${seq}${lineInfo}${batchInfo}`;
+
+    // YouTube live indicator — derived from silent heartbeat probes
+    let ytTagged, ytRaw;
+    if (this.youtubeStatus === 'live') {
+      ytTagged = '{red-fg}●{/red-fg} Live';
+      ytRaw    = '● Live';
+    } else if (this.youtubeStatus === 'offline') {
+      ytTagged = '○ Offline';
+      ytRaw    = '○ Offline';
+    } else {
+      ytTagged = '{gray-fg}…{/gray-fg}';
+      ytRaw    = '…';
+    }
+    const rightPart    = `YouTube: ${ytTagged}  `;
+    const rightPartRaw = `YouTube: ${ytRaw}  `;
+
+    const totalWidth = (this.screen && this.screen.width) ? this.screen.width : 80;
+    const padLen = Math.max(0, totalWidth - leftPart.length - rightPartRaw.length);
+
+    this.statusBar.setContent(leftPart + ' '.repeat(padLen) + rightPart);
     this.screen.render();
+  }
+
+  // ─── YouTube live status polling ─────────────────────────────────────────
+
+  /**
+   * Silently probe the caption ingestion endpoint to determine live status.
+   * An empty POST (heartbeat) returns 200 when the stream is live.
+   * This uses fetch directly to avoid routing through the sender's logger.
+   */
+  async _pollYoutubeStatus() {
+    if (!this.sender.ingestionUrl) {
+      this.youtubeStatus = 'offline';
+      this.updateStatus();
+      return;
+    }
+
+    try {
+      const url = new URL(this.sender.ingestionUrl);
+      url.searchParams.set('seq', String(this.sender.getSequence()));
+
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain', 'Content-Length': '0' },
+        body: '',
+        signal: AbortSignal.timeout(8000)
+      });
+
+      this.youtubeStatus = response.ok ? 'live' : 'offline';
+    } catch {
+      // Network error or timeout — leave status unknown
+      this.youtubeStatus = null;
+    }
+
+    this.updateStatus();
+  }
+
+  /**
+   * Start periodic YouTube live status polling.
+   * Polls immediately (after a short settle delay), then every 30 seconds.
+   */
+  startYoutubeStatusPolling() {
+    setTimeout(() => this._pollYoutubeStatus(), 2000);
+    this.youtubePoller = setInterval(() => this._pollYoutubeStatus(), 30000);
   }
 
   // ─── Key bindings ────────────────────────────────────────────────────────
@@ -862,6 +939,7 @@ export class InteractiveUI {
       'Ready — type text to send, /command to run a command, h for help.',
       'info'
     );
+    this.startYoutubeStatusPolling();
   }
 
   cleanup() {
@@ -870,6 +948,11 @@ export class InteractiveUI {
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
       this.batchTimer = null;
+    }
+
+    if (this.youtubePoller) {
+      clearInterval(this.youtubePoller);
+      this.youtubePoller = null;
     }
 
     if (this.screen) {
