@@ -1,0 +1,35 @@
+{
+  "name": "lcyt-backend",
+  "version": "1.0.0",
+  "description": "CORS relay backend for YouTube Live caption ingestion",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "lcyt-backend-admin": "bin/lcyt-backend-admin"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21",
+    "jsonwebtoken": "^9.0",
+    "better-sqlite3": "^11.0",
+    "lcyt": "*"
+  },
+  "devDependencies": {},
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt-backend"
+  },
+  "bugs": {
+    "url": "https://github.com/jsilvanus/live-captions-yt/issues"
+  },
+  "homepage": "https://github.com/jsilvanus/live-captions-yt#readme"
+}

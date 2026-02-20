@@ -4,12 +4,14 @@
   "description": "Monorepo for LCYT - Live Captions for YouTube",
   "workspaces": [
     "packages/lcyt",
-    "packages/lcyt-cli"
+    "packages/lcyt-cli",
+    "packages/lcyt-backend"
   ],
   "scripts": {
     "test": "npm test --workspaces",
     "build": "npm run build -w packages/lcyt",
-    "start": "npm start -w packages/lcyt-cli"
+    "start": "npm start -w packages/lcyt-cli",
+    "start:backend": "npm start -w packages/lcyt-backend"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",
