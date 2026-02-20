@@ -6,6 +6,7 @@ export interface SenderOptions {
   cue?: string;
   useRegion?: boolean;
   sequence?: number;
+  useSyncOffset?: boolean;
   verbose?: boolean;
 }
 
@@ -36,6 +37,13 @@ export interface HeartbeatResult {
   serverTimestamp: string | null;
 }
 
+export interface SyncResult {
+  syncOffset: number;
+  roundTripTime: number;
+  serverTimestamp: string | null;
+  statusCode: number;
+}
+
 export declare class YoutubeLiveCaptionSender {
   streamKey: string | null;
   baseUrl: string;
@@ -44,6 +52,8 @@ export declare class YoutubeLiveCaptionSender {
   useRegion: boolean;
   sequence: number;
   isStarted: boolean;
+  syncOffset: number;
+  useSyncOffset: boolean;
   verbose: boolean;
   ingestionUrl: string | null;
 
@@ -60,10 +70,14 @@ export declare class YoutubeLiveCaptionSender {
   clearQueue(): number;
 
   heartbeat(): Promise<HeartbeatResult>;
+  sync(): Promise<SyncResult>;
   sendTest(): Promise<{ statusCode: number; response: string; serverTimestamp: string | null }>;
 
   getSequence(): number;
   setSequence(seq: number): this;
+
+  getSyncOffset(): number;
+  setSyncOffset(offset: number): this;
 }
 
 export declare const DEFAULT_YOUTUBE_URL: string;
