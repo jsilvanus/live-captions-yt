@@ -434,6 +434,164 @@ lcyt-backend-admin info <key>                    # Show details for a key
 
 ---
 
+## `BackendCaptionSender` — Client for `lcyt-backend` (in `packages/lcyt`)
+
+A new class in the `lcyt` library that mirrors the `YoutubeLiveCaptionSender` API but sends captions through an `lcyt-backend` instance instead of directly to YouTube. This lets browser/web clients use the same familiar interface.
+
+### File: `packages/lcyt/src/backend-sender.js`
+
+### Constructor
+
+```js
+new BackendCaptionSender({
+  backendUrl: string,         // e.g. "https://captions.example.com"
+  apiKey: string,             // API key (must exist in backend's SQLite db)
+  streamKey: string,          // YouTube stream key
+  domain?: string,            // CORS origin — defaults to globalThis.location?.origin || 'http://localhost'
+  sequence?: number,          // Starting sequence (default: 0, overridden by backend on start())
+  verbose?: boolean           // Enable verbose logging
+})
+```
+
+### API — Same shape as `YoutubeLiveCaptionSender`
+
+| Method | Behavior | Backend call |
+| --- | --- | --- |
+| `start()` | Register session, store JWT, update sequence/syncOffset from response. **Returns a Promise** (unlike the original which is sync). | `POST /live` |
+| `send(text, timestamp?)` | Send single caption via backend relay | `POST /captions` with `{ captions: [{ text, timestamp }] }` |
+| `sendBatch(captions?)` | Send multiple captions (or drain local queue) | `POST /captions` with `{ captions: [...] }` |
+| `construct(text, timestamp?)` | Queue locally (identical to original — no network) | — |
+| `getQueue()` | Return local queue copy | — |
+| `clearQueue()` | Clear local queue | — |
+| `sync()` | Trigger clock sync on the backend sender | `POST /sync` |
+| `heartbeat()` | Check session status, return sequence + syncOffset | `GET /live` |
+| `end()` | Tear down backend session, clear JWT | `DELETE /live` |
+| `getSequence()` | Return local sequence (updated from backend responses) | — |
+| `setSequence(seq)` | Set local sequence | — |
+| `getSyncOffset()` | Return local syncOffset (updated from backend responses) | — |
+| `setSyncOffset(offset)` | Set local syncOffset | — |
+
+### Key differences from `YoutubeLiveCaptionSender`
+
+1. **`start()` is async** — it must call `POST /live` to register. Returns `Promise<BackendCaptionSender>`.
+2. **No `ingestionUrl`/`baseUrl`/`region`/`cue`** — these are handled server-side.
+3. **No `sendTest()`** — test payloads are a YouTube-direct concern.
+4. **Uses `fetch()`** — works in browsers and Node 18+. No `http` module dependency.
+5. **Stores JWT** internally after `start()`, attaches as `Authorization: Bearer` header.
+6. **Sequence/syncOffset are synced** — updated from every backend response so the client always has current values.
+
+### Internal `_fetch` helper
+
+```js
+async _fetch(path, { method = 'GET', body, auth = true } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (auth && this._token) headers['Authorization'] = `Bearer ${this._token}`;
+  const res = await fetch(`${this.backendUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json();
+  if (!res.ok) throw new NetworkError(data.error || `HTTP ${res.status}`, res.status);
+  return data;
+}
+```
+
+### Type definitions: `packages/lcyt/src/backend-sender.d.ts`
+
+```ts
+export interface BackendSenderOptions {
+  backendUrl: string;
+  apiKey: string;
+  streamKey: string;
+  domain?: string;
+  sequence?: number;
+  verbose?: boolean;
+}
+
+export declare class BackendCaptionSender {
+  backendUrl: string;
+  apiKey: string;
+  streamKey: string;
+  domain: string;
+  sequence: number;
+  isStarted: boolean;
+  syncOffset: number;
+  verbose: boolean;
+
+  constructor(options: BackendSenderOptions);
+
+  start(): Promise<this>;
+  end(): Promise<this>;
+
+  send(text: string, timestamp?: string | Date | number): Promise<SendResult>;
+  sendBatch(captions?: CaptionItem[]): Promise<SendBatchResult>;
+
+  construct(text: string, timestamp?: string | Date | number): number;
+  getQueue(): CaptionItem[];
+  clearQueue(): number;
+
+  heartbeat(): Promise<{ sequence: number; syncOffset: number }>;
+  sync(): Promise<SyncResult>;
+
+  getSequence(): number;
+  setSequence(seq: number): this;
+  getSyncOffset(): number;
+  setSyncOffset(offset: number): this;
+}
+```
+
+### Export from `lcyt` package
+
+Add to `packages/lcyt/package.json` exports:
+
+```json
+"./backend": {
+  "types": "./src/backend-sender.d.ts",
+  "import": "./src/backend-sender.js",
+  "require": "./dist/backend-sender.cjs"
+}
+```
+
+Usage:
+
+```js
+import { BackendCaptionSender } from 'lcyt/backend';
+
+const sender = new BackendCaptionSender({
+  backendUrl: 'https://captions.example.com',
+  apiKey: 'a1b2c3d4-...',
+  streamKey: 'YOUR_YOUTUBE_KEY'
+});
+
+await sender.start();             // POST /live → registers, gets JWT
+await sender.send('Hello!');      // POST /captions → relayed to YouTube
+await sender.sync();              // POST /sync → NTP sync via backend
+const status = await sender.heartbeat(); // GET /live → { sequence, syncOffset }
+await sender.end();               // DELETE /live → tears down session
+```
+
+### Browser usage
+
+Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencies, it works directly in browsers. The `domain` defaults to `location.origin`, and CORS is handled by the backend's dynamic CORS middleware.
+
+```html
+<script type="module">
+  import { BackendCaptionSender } from 'lcyt/backend';
+
+  const sender = new BackendCaptionSender({
+    backendUrl: 'https://captions.example.com',
+    apiKey: 'my-api-key',
+    streamKey: 'YOUTUBE_STREAM_KEY'
+  });
+
+  await sender.start();
+  await sender.send('Live from the browser!');
+</script>
+```
+
+---
+
 ## Implementation Steps
 
 ### Step 1: Package scaffolding
@@ -501,14 +659,38 @@ lcyt-backend-admin info <key>                    # Show details for a key
 - `index.js`: Start server on `PORT` env var (default: 3000)
 - Export app for testing
 
-### Step 11: Tests
+### Step 11: `BackendCaptionSender` (`packages/lcyt/src/backend-sender.js`)
+
+- Implement class with `fetch()`-based `_fetch` helper
+- `start()` → `POST /live`, store JWT, update sequence/syncOffset
+- `send()` / `sendBatch()` → `POST /captions` with JWT auth
+- `construct()` / `getQueue()` / `clearQueue()` — local queue (same as original)
+- `sync()` → `POST /sync`
+- `heartbeat()` → `GET /live`
+- `end()` → `DELETE /live`
+- Update sequence/syncOffset from every backend response
+
+### Step 12: `BackendCaptionSender` types + exports
+
+- Create `packages/lcyt/src/backend-sender.d.ts`
+- Add `"./backend"` entry to `packages/lcyt/package.json` exports map
+- Update `packages/lcyt/scripts/build-cjs.js` to include `backend-sender.js` → `backend-sender.cjs`
+
+### Step 13: `BackendCaptionSender` tests
+
+- Unit tests in `packages/lcyt/test/backend-sender.test.js`
+- Mock `fetch()` globally to simulate backend responses
+- Test full lifecycle: start → send → sendBatch → sync → heartbeat → end
+- Test error cases: invalid API key, expired session, network failure
+
+### Step 14: Backend tests
 
 - Unit tests for `db.js` (using a temporary in-memory SQLite database)
 - Unit tests for `SessionStore`
 - Integration tests for each endpoint using Node's built-in test runner
 - Mock `YoutubeLiveCaptionSender` to avoid real HTTP calls
 
-### Step 12: Root workspace update
+### Step 15: Root workspace update
 
 - Add `packages/lcyt-backend` to root workspaces
 - Add `start:backend` script to root package.json
