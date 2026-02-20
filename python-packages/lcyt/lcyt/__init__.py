@@ -12,6 +12,7 @@ Example:
 """
 
 from .sender import YoutubeLiveCaptionSender, Caption, SendResult
+from .backend_sender import BackendCaptionSender
 from .errors import LCYTError, ConfigError, NetworkError, ValidationError
 from .config import (
     LCYTConfig,
@@ -22,10 +23,11 @@ from .config import (
     DEFAULT_BASE_URL,
 )
 
-__version__ = "1.1.1"
+__version__ = "1.2.0"
 __all__ = [
-    # Main class
+    # Main classes
     "YoutubeLiveCaptionSender",
+    "BackendCaptionSender",
     # Data classes
     "Caption",
     "SendResult",
