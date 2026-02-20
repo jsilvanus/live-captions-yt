@@ -1,0 +1,222 @@
+#!/usr/bin/env node
+import { initDb, getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey } from '../src/db.js';
+
+// ---------------------------------------------------------------------------
+// Argument parsing helpers
+// ---------------------------------------------------------------------------
+
+function parseArgs(argv) {
+  const args = { flags: {}, positional: [] };
+  let i = 0;
+  while (i < argv.length) {
+    const arg = argv[i];
+    if (arg.startsWith('--')) {
+      const name = arg.slice(2);
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        args.flags[name] = next;
+        i += 2;
+      } else {
+        args.flags[name] = true;
+        i++;
+      }
+    } else {
+      args.positional.push(arg);
+      i++;
+    }
+  }
+  return args;
+}
+
+function formatDate(str) {
+  if (!str) return 'never';
+  return str.slice(0, 10);
+}
+
+function padEnd(str, len) {
+  return String(str).padEnd(len);
+}
+
+// ---------------------------------------------------------------------------
+// Output formatting
+// ---------------------------------------------------------------------------
+
+function printKeyTable(keys) {
+  const header = [
+    padEnd('KEY', 38),
+    padEnd('OWNER', 16),
+    padEnd('ACTIVE', 8),
+    padEnd('EXPIRES', 14),
+    'CREATED'
+  ].join(' ');
+
+  console.log('  ' + header);
+
+  for (const k of keys) {
+    const active = k.active ? 'yes' : 'REVOKED';
+    const row = [
+      padEnd(k.key, 38),
+      padEnd(k.owner, 16),
+      padEnd(active, 8),
+      padEnd(formatDate(k.expires_at), 14),
+      formatDate(k.created_at)
+    ].join(' ');
+    console.log('  ' + row);
+  }
+}
+
+function printKey(k) {
+  if (!k) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+  console.log(`key:       ${k.key}`);
+  console.log(`owner:     ${k.owner}`);
+  console.log(`active:    ${k.active ? 'yes' : 'REVOKED'}`);
+  console.log(`expires:   ${formatDate(k.expires_at)}`);
+  console.log(`created:   ${formatDate(k.created_at)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Commands
+// ---------------------------------------------------------------------------
+
+function cmdList(db) {
+  const keys = getAllKeys(db);
+  if (keys.length === 0) {
+    console.log('No API keys found.');
+    return;
+  }
+  printKeyTable(keys);
+}
+
+function cmdAdd(db, flags) {
+  const { owner, key, expires } = flags;
+  if (!owner) {
+    console.error('Error: --owner is required');
+    process.exit(1);
+  }
+  const created = createKey(db, { key: key || undefined, owner, expiresAt: expires || undefined });
+  console.log('Created API key:');
+  printKey(created);
+}
+
+function cmdRevoke(db, positional) {
+  const key = positional[1];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  const ok = revokeKey(db, key);
+  if (!ok) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+  console.log(`Revoked: ${key}`);
+}
+
+function cmdDelete(db, positional) {
+  const key = positional[1];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  const ok = deleteKey(db, key);
+  if (!ok) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+  console.log(`Deleted: ${key}`);
+}
+
+function cmdRenew(db, positional, flags) {
+  const key = positional[1];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  const { expires } = flags;
+  if (!expires) {
+    console.error('Error: --expires is required');
+    process.exit(1);
+  }
+  const ok = renewKey(db, key, expires);
+  if (!ok) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+  const updated = getKey(db, key);
+  console.log('Renewed:');
+  printKey(updated);
+}
+
+function cmdInfo(db, positional) {
+  const key = positional[1];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  printKey(getKey(db, key));
+}
+
+function usage() {
+  console.log(`Usage: lcyt-backend-admin <command> [options]
+
+Commands:
+  list                              List all API keys
+  add --owner <name> [--key <key>] [--expires <date>]
+                                    Create a new API key
+  revoke <key>                      Revoke (soft-delete) a key
+  delete <key>                      Permanently remove a key
+  renew <key> --expires <date>      Extend key expiration
+  info <key>                        Show details for a key
+
+Options:
+  --db <path>    Path to the SQLite database (default: ./lcyt-backend.db or DB_PATH env var)
+  --help         Show this help message
+`);
+}
+
+// ---------------------------------------------------------------------------
+// Main
+// ---------------------------------------------------------------------------
+
+const parsed = parseArgs(process.argv.slice(2));
+const { flags, positional } = parsed;
+
+if (flags.help || positional.length === 0) {
+  usage();
+  process.exit(0);
+}
+
+const dbPath = flags.db || undefined;
+const db = initDb(dbPath);
+
+const command = positional[0];
+
+switch (command) {
+  case 'list':
+    cmdList(db);
+    break;
+  case 'add':
+    cmdAdd(db, flags);
+    break;
+  case 'revoke':
+    cmdRevoke(db, positional);
+    break;
+  case 'delete':
+    cmdDelete(db, positional);
+    break;
+  case 'renew':
+    cmdRenew(db, positional, flags);
+    break;
+  case 'info':
+    cmdInfo(db, positional);
+    break;
+  default:
+    console.error(`Unknown command: ${command}`);
+    usage();
+    process.exit(1);
+}
+
+db.close();
