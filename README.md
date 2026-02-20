@@ -18,7 +18,9 @@ This is a monorepo containing the following packages:
 |---------|----------|--------------|-------------|
 | [`lcyt`](packages/lcyt/) | npm | `npm install lcyt` | Core Node.js library |
 | [`lcyt-cli`](packages/lcyt-cli/) | npm | `npm install -g lcyt-cli` | CLI tool |
-| [`lcyt`](python/) | PyPI | `pip install lcyt` | Core Python library |
+| [`lcyt-backend`](packages/lcyt-backend/) | npm | — | Node.js Express backend relay |
+| [`lcyt`](python-packages/lcyt/) | PyPI | `pip install lcyt` | Core Python library |
+| [`lcyt-backend`](python-packages/lcyt-backend/) | pip | `pip install lcyt-backend` | Python/Flask backend relay (cPanel/Passenger) |
 
 ### Breaking change in lcyt v2.0.0
 
@@ -87,7 +89,7 @@ sender.send("Hello, world!")
 sender.end()
 ```
 
-See the [Python package documentation](python/README.md) for full API reference.
+See the [Python package documentation](python-packages/lcyt/README.md) for full API reference.
 
 ## Development
 
@@ -122,7 +124,7 @@ YYYY-MM-DDTHH:MM:SS.mmm
 - Example: `2024-01-15T12:00:00.000`
 - Must be within 60 seconds of the server's current time
 
-The libraries accept multiple timestamp forms — see the [lcyt package docs](packages/lcyt/) (Node.js) and [Python package docs](python/README.md) for the full list including `Date`/`datetime` objects, epoch numbers, and relative second offsets.
+The libraries accept multiple timestamp forms — see the [lcyt package docs](packages/lcyt/) (Node.js) and [Python package docs](python-packages/lcyt/README.md) for the full list including `Date`/`datetime` objects, epoch numbers, and relative second offsets.
 
 ### Body Format
 ```
@@ -131,6 +133,8 @@ CAPTION TEXT
 YYYY-MM-DDTHH:MM:SS.mmm
 ANOTHER CAPTION
 ```
+
+> **Note on numeric epoch values:** The Node.js library treats numbers >= 1000 as **milliseconds** (`Date.now()` convention); the Python library treats them as **seconds** (`time.time()` convention).
 
 > **Important Requirements:**
 > - **Timestamps must be within 60 seconds** of the server's current time
