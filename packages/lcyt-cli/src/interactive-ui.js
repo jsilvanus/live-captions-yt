@@ -910,9 +910,25 @@ export class InteractiveUI {
         try {
           const result = await this.sender.heartbeat();
           const ts = result.serverTimestamp ? `  Server: ${result.serverTimestamp}` : '';
-          this.addToLog(`Heartbeat OK${ts}`, 'success');
+          const offset = this.sender.getSyncOffset();
+          const offsetInfo = offset !== 0 ? `  Offset: ${offset}ms` : '';
+          this.addToLog(`Heartbeat OK${ts}${offsetInfo}`, 'success');
         } catch (err) {
           this.addToLog(`Heartbeat failed: ${err.message}`, 'error');
+        }
+        break;
+      }
+
+      // ── /sync ─────────────────────────────────────────────────────────────
+      case '/sync': {
+        try {
+          const result = await this.sender.sync();
+          this.addToLog(
+            `Synced: offset ${result.syncOffset}ms, RTT ${result.roundTripTime}ms`,
+            'success'
+          );
+        } catch (err) {
+          this.addToLog(`Sync failed: ${err.message}`, 'error');
         }
         break;
       }
@@ -988,6 +1004,7 @@ export class InteractiveUI {
   /stream <url-or-id>   Set YouTube video to monitor (enables live indicator)
   /status               Print current status to the Log panel
   /heartbeat            Send heartbeat to YouTube
+  /sync                 Sync clock with YouTube server
   /help  /?             Show this help
   /quit  /exit          Exit
 

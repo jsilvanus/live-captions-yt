@@ -28,6 +28,7 @@ class YoutubeLiveCaptionSender {
    * @param {string} [options.cue='cue1'] - Cue identifier for captions
    * @param {boolean} [options.useRegion=false] - Include region/cue in caption body
    * @param {number} [options.sequence=0] - Starting sequence number
+   * @param {boolean} [options.useSyncOffset=false] - Apply syncOffset to auto-generated timestamps
    * @param {boolean} [options.verbose=false] - Enable verbose logging
    */
   constructor(options = {}) {
@@ -38,6 +39,8 @@ class YoutubeLiveCaptionSender {
     this.useRegion = options.useRegion || false;
     this.sequence = options.sequence || 0;
     this.isStarted = false;
+    this.syncOffset = 0; // Clock offset in ms (positive = server ahead of local)
+    this.useSyncOffset = options.useSyncOffset || false;
     this.verbose = options.verbose || false;
     this._queue = []; // Internal queue for construct/sendBatch pattern
 
@@ -56,14 +59,38 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
+   * Get current time in ms, adjusted by syncOffset when useSyncOffset is enabled.
+   * @returns {number} Current time in epoch milliseconds (possibly offset-adjusted)
+   */
+  _now() {
+    return Date.now() + (this.useSyncOffset ? this.syncOffset : 0);
+  }
+
+  /**
    * Format timestamp to Google's expected format: YYYY-MM-DDTHH:MM:SS.mmm
-   * (no 'Z' suffix, no timezone)
+   * (no 'Z' suffix, no timezone offset).
+   *
+   * Accepts:
+   * - Date object — converted directly
+   * - number >= 1000 — Unix epoch in milliseconds (Date.now() style)
+   * - number < 1000 or negative — relative offset in seconds from current time
+   * - ISO string with or without trailing 'Z'
+   * - undefined — auto-generates current time (adjusted by syncOffset if enabled)
    */
   _formatTimestamp(timestamp) {
+    if (timestamp instanceof Date) {
+      return timestamp.toISOString().slice(0, -1); // Remove the 'Z'
+    }
+    if (typeof timestamp === 'number') {
+      const date = timestamp < 1000
+        ? new Date(this._now() + timestamp * 1000) // relative offset in seconds
+        : new Date(timestamp);                      // epoch milliseconds
+      return date.toISOString().slice(0, -1);
+    }
     if (timestamp && !timestamp.endsWith('Z')) {
       return timestamp;
     }
-    const date = timestamp ? new Date(timestamp) : new Date();
+    const date = timestamp ? new Date(timestamp) : new Date(this._now());
     const iso = date.toISOString();
     return iso.slice(0, -1); // Remove the 'Z'
   }
@@ -158,10 +185,17 @@ class YoutubeLiveCaptionSender {
   /**
    * Send a single caption to the YouTube Live stream.
    * @param {string} text - Caption text (use <br> for line breaks within the caption)
-   * @param {string} [timestamp] - ISO timestamp in format YYYY-MM-DDTHH:MM:SS.mmm (auto-generated if not provided)
+   * @param {string|Date|number} [timestamp] - Timestamp in one of these forms:
+   *   - `Date` object
+   *   - `number >= 1000`: Unix epoch in milliseconds (e.g. `Date.now()`)
+   *   - `number < 1000` or negative: relative offset in seconds from now (e.g. `-2` = 2 seconds ago)
+   *   - ISO string `YYYY-MM-DDTHH:MM:SS.mmm` (used as-is)
+   *   - ISO string with trailing `Z` (auto-stripped)
+   *   - Omitted: auto-generated current time
+   *   Must be within 60 seconds of the server's current time.
    * @returns {Promise<Object>} Result object
    * @returns {number} return.sequence - The sequence number used for this caption
-   * @returns {string} return.timestamp - The timestamp sent with the caption
+   * @returns {string} return.timestamp - The formatted timestamp sent with the caption
    * @returns {number} return.statusCode - HTTP status code from the server
    * @returns {string} return.response - Raw response body from the server
    * @returns {string|null} return.serverTimestamp - Server timestamp if returned
@@ -172,8 +206,17 @@ class YoutubeLiveCaptionSender {
    * const result = await sender.send('Hello, world!');
    * console.log(result.sequence); // 0
    * @example
-   * // With custom timestamp
+   * // With ISO string timestamp
    * await sender.send('Custom time', '2024-01-15T12:00:00.000');
+   * @example
+   * // With Date object
+   * await sender.send('Custom time', new Date());
+   * @example
+   * // With epoch milliseconds (Date.now())
+   * await sender.send('Custom time', Date.now());
+   * @example
+   * // With relative offset: 2 seconds ago
+   * await sender.send('Custom time', -2);
    */
   async send(text, timestamp) {
     const result = await this.sendBatch([{ text, timestamp }]);
@@ -189,13 +232,18 @@ class YoutubeLiveCaptionSender {
   /**
    * Add a caption to the internal queue for later batch sending with sendBatch().
    * @param {string} text - Caption text (use <br> for line breaks within the caption)
-   * @param {string} [timestamp] - ISO timestamp in format YYYY-MM-DDTHH:MM:SS.mmm (auto-generated at send time if not provided)
+   * @param {string|Date|number} [timestamp] - Accepts the same forms as `send()`:
+   *   Date object, epoch milliseconds (>= 1000), relative seconds offset (< 1000 or negative),
+   *   ISO string, or omitted (auto-generated at send time).
    * @returns {number} Number of captions currently in queue after adding
    * @throws {ValidationError} If text is empty or not a string
    * @example
    * sender.construct('First caption');
    * sender.construct('Second caption', '2024-01-15T12:00:00.500');
-   * await sender.sendBatch(); // Sends both captions
+   * sender.construct('Third caption', new Date());
+   * sender.construct('Fourth caption', Date.now());
+   * sender.construct('Fifth caption', -2); // 2 seconds ago
+   * await sender.sendBatch(); // Sends all queued captions
    */
   construct(text, timestamp) {
     if (!text || typeof text !== 'string') {
@@ -239,7 +287,8 @@ class YoutubeLiveCaptionSender {
   /**
    * Send multiple captions in a single POST request.
    * If no captions array is provided, sends the internal queue built with construct() and clears it.
-   * @param {Array<{text: string, timestamp?: string}>} [captions] - Array of caption objects. If omitted, uses internal queue.
+   * @param {Array<{text: string, timestamp?: string|Date|number}>} [captions] - Array of caption objects. If omitted, uses internal queue.
+   *   Each `timestamp` accepts the same forms as `send()` (Date, epoch ms, relative seconds, ISO string, or omitted — auto-generated 100ms apart).
    * @returns {Promise<Object>} Result object
    * @returns {number} return.sequence - The sequence number used for this batch
    * @returns {number} return.count - Number of captions sent
@@ -250,10 +299,13 @@ class YoutubeLiveCaptionSender {
    * @throws {ConfigError} If no ingestion URL configured
    * @throws {NetworkError} If the request fails
    * @example
-   * // Option 1: Pass array directly
+   * // Option 1: Pass array directly (any supported timestamp form)
    * await sender.sendBatch([
    *   { text: 'First caption' },
-   *   { text: 'Second caption', timestamp: '2024-01-15T12:00:00.500' }
+   *   { text: 'Second caption', timestamp: '2024-01-15T12:00:00.500' },
+   *   { text: 'Third caption', timestamp: new Date() },
+   *   { text: 'Fourth caption', timestamp: Date.now() },
+   *   { text: 'Fifth caption', timestamp: -1 } // 1 second ago
    * ]);
    * @example
    * // Option 2: Use construct() then sendBatch()
@@ -291,8 +343,7 @@ class YoutubeLiveCaptionSender {
       // Auto-generate timestamp if not provided, spacing them 100ms apart
       let timestamp = caption.timestamp;
       if (!timestamp) {
-        const now = new Date();
-        now.setMilliseconds(now.getMilliseconds() + (i * 100));
+        const now = new Date(this._now() + (i * 100));
         timestamp = now.toISOString();
       }
 
@@ -371,6 +422,68 @@ class YoutubeLiveCaptionSender {
   }
 
   /**
+   * Synchronize the local clock with YouTube's server clock using a heartbeat.
+   * Computes the offset between local time and server time (NTP-style midpoint
+   * estimation) and stores it as syncOffset. Automatically enables useSyncOffset.
+   * @returns {Promise<Object>} Result object
+   * @returns {number} return.syncOffset - Clock offset in ms (positive = server ahead)
+   * @returns {number} return.roundTripTime - HTTP round-trip time in ms
+   * @returns {string|null} return.serverTimestamp - Server timestamp if returned
+   * @returns {number} return.statusCode - HTTP status code from the server
+   * @throws {ValidationError} If sender not started
+   * @throws {ConfigError} If no ingestion URL configured
+   * @throws {NetworkError} If the request fails
+   * @example
+   * sender.start();
+   * const result = await sender.sync();
+   * console.log(`Offset: ${result.syncOffset}ms, RTT: ${result.roundTripTime}ms`);
+   */
+  async sync() {
+    const t1 = Date.now();
+    const result = await this.heartbeat();
+    const t2 = Date.now();
+    const roundTripTime = t2 - t1;
+
+    if (!result.serverTimestamp) {
+      logger.warn('No server timestamp in heartbeat response — syncOffset not updated');
+      return { syncOffset: this.syncOffset, roundTripTime, serverTimestamp: null, statusCode: result.statusCode };
+    }
+
+    // Parse server timestamp (format: YYYY-MM-DDTHH:MM:SS.mmm — no Z, treat as UTC)
+    const serverTime = new Date(result.serverTimestamp + 'Z').getTime();
+    const localEstimate = (t1 + t2) / 2;
+    this.syncOffset = Math.round(serverTime - localEstimate);
+    this.useSyncOffset = true;
+
+    logger.info(`Synced: offset ${this.syncOffset}ms, RTT ${roundTripTime}ms`);
+
+    return {
+      syncOffset: this.syncOffset,
+      roundTripTime,
+      serverTimestamp: result.serverTimestamp,
+      statusCode: result.statusCode
+    };
+  }
+
+  /**
+   * Get the current sync offset in milliseconds.
+   * @returns {number} Clock offset in ms (positive = server ahead of local)
+   */
+  getSyncOffset() {
+    return this.syncOffset;
+  }
+
+  /**
+   * Set the sync offset manually (e.g. to restore a previously computed offset).
+   * @param {number} offset - Clock offset in ms
+   * @returns {YoutubeLiveCaptionSender} The sender instance for chaining
+   */
+  setSyncOffset(offset) {
+    this.syncOffset = offset;
+    return this;
+  }
+
+  /**
    * Stop the caption sender and cleanup.
    * @returns {YoutubeLiveCaptionSender} The sender instance for chaining
    * @example
@@ -416,7 +529,7 @@ class YoutubeLiveCaptionSender {
     }
 
     // Generate current timestamps (must be within 60 seconds of server time)
-    const now = new Date();
+    const now = new Date(this._now());
     const ts1 = this._formatTimestamp(now.toISOString());
     now.setMilliseconds(now.getMilliseconds() + 100);
     const ts2 = this._formatTimestamp(now.toISOString());

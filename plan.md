@@ -1,108 +1,102 @@
-# Interactive Mode Enhancement Plan
+# Plan: YouTube Heartbeat Sync (syncOffset)
 
-## Goal
-Enhance the LCYT interactive mode to support loading text files and sending lines sequentially with a full-screen terminal UI that shows context and history.
+## Summary
 
-## Features to Implement
+Add an NTP-style clock synchronization mechanism to `YoutubeLiveCaptionSender` using the heartbeat's server timestamp. A new `sync()` method computes a `syncOffset` (ms) between local clock and YouTube's server clock. When `useSyncOffset` is enabled, all auto-generated timestamps are adjusted by this offset.
 
-### 1. File Loading
-- Add `/load <filepath>` command to load a text file
-- Parse file into array of lines
-- Initialize line pointer at first line
+## Changes
 
-### 2. Full-Screen Terminal UI
-**Layout:**
+### 1. `packages/lcyt/src/sender.js` — Core sync logic
+
+**Constructor (`options`):**
+- Add `this.syncOffset = 0` — clock offset in ms (positive = server ahead)
+- Add `this.useSyncOffset = options.useSyncOffset || false` — gate for applying the offset
+
+**New internal helper `_now()`:**
+- Returns `Date.now() + (this.useSyncOffset ? this.syncOffset : 0)`
+- Used everywhere "current time" is needed (replaces raw `Date.now()` / `new Date()`)
+
+**Apply `_now()` in four places:**
+1. `_formatTimestamp(undefined)` — line 82: `new Date()` → `new Date(this._now())`
+2. `_formatTimestamp(relativeSeconds)` — line 75: `Date.now()` → `this._now()`
+3. `sendBatch()` auto-timestamp — line 335: `new Date()` → `new Date(this._now())`
+4. `sendTest()` — line 460: `new Date()` → `new Date(this._now())`
+
+**New method `async sync()`:**
+```js
+async sync() {
+  const t1 = Date.now();
+  const result = await this.heartbeat();
+  const t2 = Date.now();
+
+  if (!result.serverTimestamp) {
+    return { syncOffset: 0, roundTripTime: t2 - t1, serverTimestamp: null, statusCode: result.statusCode };
+  }
+
+  // Parse server timestamp (format: YYYY-MM-DDTHH:MM:SS.mmm — no Z, treat as UTC)
+  const serverTime = new Date(result.serverTimestamp + 'Z').getTime();
+  const localEstimate = (t1 + t2) / 2;
+  this.syncOffset = Math.round(serverTime - localEstimate);
+  this.useSyncOffset = true;
+
+  return {
+    syncOffset: this.syncOffset,
+    roundTripTime: t2 - t1,
+    serverTimestamp: result.serverTimestamp,
+    statusCode: result.statusCode
+  };
+}
 ```
-┌─────────────────────────────────────────────────────────┐
-│ LCYT Interactive Mode - Loaded: script.txt             │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  TEXT PREVIEW (2 prev + current + 5 next):              │
-│    5│ This is line 5                                    │
-│    6│ This is line 6                                    │
-│ ►  7│ This is the current line                          │ ◄─ Highlighted
-│    8│ Next line                                         │
-│    9│ Another line                                      │
-│   10│ More text                                         │
-│   11│ Even more                                         │
-│   12│ Last preview line                                 │
-│                                                          │
-├─────────────────────────────────────────────────────────┤
-│                                                          │
-│  SENT HISTORY (last 5):                                 │
-│   [12:34:05] Line 4 sent successfully                   │
-│   [12:34:07] Line 5 sent successfully                   │
-│   [12:34:09] Line 6 sent successfully                   │
-│                                                          │
-├─────────────────────────────────────────────────────────┤
-│ Commands: Enter=Send+Next | +N/-N=Shift | /load=File   │
-└─────────────────────────────────────────────────────────┘
-```
 
-### 3. Line Navigation
-- **Enter**: Send current line and advance pointer to next line
-- **+N**: Shift pointer forward N lines (e.g., `+3` moves 3 lines down)
-- **-N**: Shift pointer backward N lines (e.g., `-2` moves 2 lines up)
-- Display 2 lines before and 5 lines after current line
+**New methods:**
+- `getSyncOffset()` — returns `this.syncOffset`
+- `setSyncOffset(offset)` — sets `this.syncOffset`, returns `this` for chaining
 
-### 4. Sent History
-- Show last 5-10 sent captions with timestamps
-- Scroll/auto-update as new captions are sent
-- Show success/error status for each send
+### 2. `packages/lcyt-cli/bin/lcyt` — CLI integration
 
-### 5. Commands
-- `/load <file>` - Load a text file
-- `/goto <N>` - Jump to line N
-- `/reload` - Reload the current file
-- `/status` - Show current status (line number, total lines, etc.)
-- `/heartbeat` - Send heartbeat (existing)
-- `/batch` - Start batch mode (existing)
-- `/send` - Send batch (existing)
-- `Ctrl+C` or `/quit` - Exit
+**After `sender.start()` in these flows, call `await sender.sync()`:**
+- `sendHeartbeat()` — after heartbeat, also display sync offset
+- `runFullscreenMode()` path (both npx default and `--fullscreen`)
+- `runInteractiveMode()` path
+- `sendSingleCaption()` path
+- `isSend` (batch send) path
+- Setup wizard heartbeat test
 
-## Technical Decisions
+For all these: wrap `sync()` in try/catch so sync failure doesn't block the primary action (just log a warning).
 
-### UI Library Choice
-**Options considered:**
-- **blessed** (837k weekly downloads, 11.7k stars) - Original, most popular, but unmaintained
-- **neo-blessed** (13k weekly downloads, 392 stars) - Maintained fork of blessed
-- **terminal-kit** (82k weekly downloads, 3.3k stars) - Alternative with different API
+**`--reset` path (line 160-164):** After resetting sequence, the next `sender.start()` + `sender.sync()` flow handles it naturally since the sender is freshly created.
 
-**Recommendation: blessed or neo-blessed**
-- Mature, well-documented API
-- Supports scrollable boxes, lists, and text areas
-- Good for complex layouts
-- neo-blessed is maintained if we need bug fixes
+### 3. `packages/lcyt-cli/src/interactive-ui.js` — UI integration
 
-Alternative: Start with Node.js built-in readline and ANSI escape codes for simpler implementation, then upgrade to blessed if needed.
+**Add `/sync` command:**
+- Calls `await this.sender.sync()`
+- Logs the offset and round-trip time
 
-## Implementation Tasks
+**Update `/heartbeat` command:**
+- Also display current `syncOffset` if non-zero
 
-### Phase 1: Core Functionality
-- [ ] Research and choose full-screen terminal UI library (blessed, terminal-kit, or ink)
-- [ ] Design the screen layout (text preview area, current line, sent history, status bar)
-- [ ] Implement file loading functionality (/load command)
-- [ ] Implement line pointer management (current line tracking)
-- [ ] Implement context display (2 previous, current, 5 next lines)
+**Update help text:**
+- Add `/sync` to the commands list
 
-### Phase 2: Interaction
-- [ ] Implement Enter key handler (send current line and advance pointer)
-- [ ] Implement -N/+N commands for shifting pointer
-- [ ] Implement sent history display area
-- [ ] Add keyboard shortcuts and command palette
+### 4. `packages/lcyt/test/sender.test.js` — Tests
 
-### Phase 3: Integration
-- [ ] Update existing interactive mode to use new full-screen UI
-- [ ] Test the enhanced interactive mode with sample text files
-- [ ] Update documentation/README for new interactive mode features
+**New test group `sync / syncOffset`:**
+- `_now()` returns `Date.now()` when `useSyncOffset` is false
+- `_now()` returns `Date.now() + syncOffset` when `useSyncOffset` is true
+- `getSyncOffset()` / `setSyncOffset()` work correctly
+- `_formatTimestamp(undefined)` uses syncOffset when enabled
+- `_formatTimestamp(relativeSeconds)` uses syncOffset when enabled
+- Constructor accepts `useSyncOffset` option
 
-## Notes
-- Maintain backward compatibility with existing interactive mode
-- Consider making full-screen mode opt-in via flag (e.g., `--fullscreen` or `-f`)
-- Handle edge cases: empty files, very long lines, file not found
-- Preserve existing features: batch mode, heartbeat, custom timestamps
+## Files touched
 
-## Resources
-- [blessed npm package](https://www.npmjs.com/package/blessed)
-- [neo-blessed (maintained fork)](https://github.com/blessedjs/neo-blessed)
-- [terminal-kit npm package](https://www.npmjs.com/package/terminal-kit)
+1. `packages/lcyt/src/sender.js` — core changes
+2. `packages/lcyt-cli/bin/lcyt` — CLI sync-on-startup
+3. `packages/lcyt-cli/src/interactive-ui.js` — `/sync` command + help
+4. `packages/lcyt/test/sender.test.js` — new tests
+
+## Not changed
+
+- `heartbeat()` method itself — unchanged, `sync()` wraps it
+- Explicit user-provided timestamps (Date objects, epoch ms, ISO strings) — untouched
+- Sequence number logic — unrelated
