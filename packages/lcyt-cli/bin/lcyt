@@ -228,6 +228,7 @@ async function main() {
     });
 
     sender.start();
+    await trySyncClock(sender);
 
     try {
       const count = config.batchQueue.length;
@@ -272,6 +273,7 @@ async function main() {
       });
 
       sender.start();
+      await trySyncClock(sender);
       await runFullscreenMode(sender, config, configPath, argv.timestamp);
       return;
     } else {
@@ -298,6 +300,7 @@ async function main() {
   });
 
   sender.start();
+  await trySyncClock(sender);
 
   if (isTest) {
     await sendTest(sender);
@@ -309,6 +312,20 @@ async function main() {
     await runInteractiveMode(sender, config, configPath, argv.timestamp);
   } else {
     await sendSingleCaption(sender, captionText, config, configPath, argv.timestamp);
+  }
+}
+
+/**
+ * Attempt to sync the sender's clock with YouTube. Non-fatal on failure.
+ */
+async function trySyncClock(sender) {
+  try {
+    const result = await sender.sync();
+    if (result.syncOffset !== 0) {
+      logger.info(`Clock synced: offset ${result.syncOffset}ms (RTT ${result.roundTripTime}ms)`);
+    }
+  } catch (err) {
+    logger.warn(`Clock sync failed: ${err.message} — using local time`);
   }
 }
 
@@ -446,10 +463,17 @@ async function runSetupWizard(config, configPath) {
       try {
         const result = await sender.heartbeat();
         if (result.serverTimestamp) {
-          console.log(`✓ Connection successful! Server time: ${result.serverTimestamp}\n`);
+          console.log(`✓ Connection successful! Server time: ${result.serverTimestamp}`);
         } else {
-          console.log('✓ Connection successful!\n');
+          console.log('✓ Connection successful!');
         }
+        try {
+          const syncResult = await sender.sync();
+          if (syncResult.syncOffset !== 0) {
+            console.log(`  Clock synced: offset ${syncResult.syncOffset}ms`);
+          }
+        } catch { /* sync failure is non-fatal */ }
+        console.log('');
         sender.end();
       } catch (err) {
         console.log(`✗ Connection failed: ${err.message}`);
@@ -474,6 +498,10 @@ async function sendHeartbeat(sender) {
     const result = await sender.heartbeat();
     if (result.serverTimestamp) {
       logger.info(`Server timestamp: ${result.serverTimestamp}`);
+    }
+    const offset = sender.getSyncOffset();
+    if (offset !== 0) {
+      logger.info(`Sync offset: ${offset}ms`);
     }
     sender.end();
   } catch (err) {

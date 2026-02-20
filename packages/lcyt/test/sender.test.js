@@ -452,6 +452,129 @@ describe('YoutubeLiveCaptionSender', () => {
     });
   });
 
+  describe('syncOffset / _now()', () => {
+    it('should initialize syncOffset to 0', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      assert.strictEqual(sender.syncOffset, 0);
+      assert.strictEqual(sender.useSyncOffset, false);
+    });
+
+    it('should accept useSyncOffset constructor option', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      assert.strictEqual(sender.useSyncOffset, true);
+    });
+
+    it('_now() should return approximately Date.now() when useSyncOffset is false', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.syncOffset = 5000; // set offset but don't enable
+      const before = Date.now();
+      const result = sender._now();
+      const after = Date.now();
+      assert.ok(result >= before);
+      assert.ok(result <= after);
+    });
+
+    it('_now() should apply syncOffset when useSyncOffset is true', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      sender.syncOffset = 5000;
+      const before = Date.now() + 5000;
+      const result = sender._now();
+      const after = Date.now() + 5000;
+      assert.ok(result >= before - 1);
+      assert.ok(result <= after + 1);
+    });
+
+    it('getSyncOffset() should return current syncOffset', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      assert.strictEqual(sender.getSyncOffset(), 0);
+      sender.syncOffset = 1234;
+      assert.strictEqual(sender.getSyncOffset(), 1234);
+    });
+
+    it('setSyncOffset() should set syncOffset and return sender for chaining', () => {
+      const sender = new YoutubeLiveCaptionSender();
+      const result = sender.setSyncOffset(500);
+      assert.strictEqual(sender.getSyncOffset(), 500);
+      assert.strictEqual(result, sender);
+    });
+
+    it('_formatTimestamp(undefined) should use syncOffset when enabled', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      sender.syncOffset = 60000; // +60 seconds
+      const before = Date.now() + 60000;
+      const result = sender._formatTimestamp();
+      const after = Date.now() + 60000;
+      const resultMs = new Date(result + 'Z').getTime();
+      assert.ok(resultMs >= before - 50);
+      assert.ok(resultMs <= after + 50);
+    });
+
+    it('_formatTimestamp(relativeSeconds) should use syncOffset when enabled', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      sender.syncOffset = 60000; // +60 seconds
+      const before = Date.now() + 60000 - 2000; // -2s relative
+      const result = sender._formatTimestamp(-2);
+      const after = Date.now() + 60000 - 2000;
+      const resultMs = new Date(result + 'Z').getTime();
+      assert.ok(resultMs >= before - 50);
+      assert.ok(resultMs <= after + 50);
+    });
+
+    it('_formatTimestamp(Date) should NOT apply syncOffset', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      sender.syncOffset = 60000;
+      const date = new Date('2024-01-15T12:00:00.000Z');
+      const result = sender._formatTimestamp(date);
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+
+    it('_formatTimestamp(epochMs) should NOT apply syncOffset', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      sender.syncOffset = 60000;
+      const epochMs = new Date('2024-01-15T12:00:00.000Z').getTime();
+      const result = sender._formatTimestamp(epochMs);
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+
+    it('_formatTimestamp(ISOString) should NOT apply syncOffset', () => {
+      const sender = new YoutubeLiveCaptionSender({ useSyncOffset: true });
+      sender.syncOffset = 60000;
+      const result = sender._formatTimestamp('2024-01-15T12:00:00.000');
+      assert.strictEqual(result, '2024-01-15T12:00:00.000');
+    });
+  });
+
+  describe('sync()', () => {
+    it('should reject if sender not started', async () => {
+      const sender = new YoutubeLiveCaptionSender({
+        ingestionUrl: 'https://example.com/captions'
+      });
+
+      await assert.rejects(
+        () => sender.sync(),
+        (err) => {
+          assert(err instanceof ValidationError);
+          assert.match(err.message, /not started/i);
+          return true;
+        }
+      );
+    });
+
+    it('should reject if no ingestion URL configured', async () => {
+      const sender = new YoutubeLiveCaptionSender();
+      sender.start();
+
+      await assert.rejects(
+        () => sender.sync(),
+        (err) => {
+          assert(err instanceof ConfigError);
+          assert.match(err.message, /URL/i);
+          return true;
+        }
+      );
+    });
+  });
+
   describe('sendBatch() with queue', () => {
     it('should reject if queue is empty and no captions provided', async () => {
       const sender = new YoutubeLiveCaptionSender({
