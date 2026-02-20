@@ -11,6 +11,9 @@ A small Node.js backend that acts as a **CORS relay** for YouTube Live caption i
 - JWT-based authentication for caption sending
 - Automatic sequence tracking and sync offset management
 - Dynamic CORS: each session specifies its allowed origin
+- Dedicated sync endpoint for NTP-style clock synchronization with YouTube
+- **SQLite database** for API key management (owners, expiration dates)
+- **Admin CLI** (`lcyt-backend-admin`) for managing API keys
 
 ---
 
@@ -21,7 +24,8 @@ A small Node.js backend that acts as a **CORS relay** for YouTube Live caption i
 | Choice     | Value        | Rationale                                               |
 | ---------- | ------------ | ------------------------------------------------------- |
 | Framework  | **Express**  | Lightweight, widely used, good fit for a small relay    |
-| Storage    | **In-memory** (Map) | Sessions are ephemeral; no persistence needed. Data resets on restart |
+| Sessions   | **In-memory** (Map) | Active sessions are ephemeral; reset on restart |
+| API Keys   | **SQLite** (better-sqlite3) | Persistent storage for API key registry with owners and expiration |
 | Auth       | **JWT** (jsonwebtoken) | Issued on registration, required for /captions |
 | Sender     | **lcyt** (workspace sibling) | Reuse existing `YoutubeLiveCaptionSender` |
 
@@ -30,19 +34,26 @@ A small Node.js backend that acts as a **CORS relay** for YouTube Live caption i
 ```
 packages/lcyt-backend/
 ├── package.json
+├── lcyt-backend.db        # SQLite database (created at runtime, gitignored)
+├── bin/
+│   └── lcyt-backend-admin # CLI for managing API keys (ESM, shebang script)
 ├── src/
 │   ├── server.js          # Express app setup, CORS, routes
 │   ├── routes/
 │   │   ├── live.js        # GET/POST/DELETE /live
-│   │   └── captions.js    # POST /captions
+│   │   ├── captions.js    # POST /captions
+│   │   └── sync.js        # POST /sync
 │   ├── middleware/
 │   │   ├── auth.js        # JWT verification middleware
 │   │   └── cors.js        # Dynamic CORS middleware
-│   ├── store.js           # In-memory session store
+│   ├── db.js              # SQLite database setup + API key queries
+│   ├── store.js           # In-memory session store (active sessions)
 │   └── index.js           # Entry point (start server)
 └── test/
     ├── live.test.js
     ├── captions.test.js
+    ├── sync.test.js
+    ├── db.test.js
     └── store.test.js
 ```
 
@@ -53,6 +64,7 @@ packages/lcyt-backend/
   "dependencies": {
     "express": "^4.21",
     "jsonwebtoken": "^9.0",
+    "better-sqlite3": "^11.0",
     "lcyt": "*"
   },
   "devDependencies": {}
@@ -63,7 +75,44 @@ packages/lcyt-backend/
 
 ## Data Model
 
-### Session Store (in-memory Map)
+### SQLite Database — API Keys (`src/db.js`)
+
+Persistent storage for registered API keys. The database file lives at `DB_PATH` env var or defaults to `./lcyt-backend.db` relative to the package root.
+
+**Table: `api_keys`**
+
+```sql
+CREATE TABLE api_keys (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  key         TEXT    NOT NULL UNIQUE,   -- the API key string (UUID or custom)
+  owner       TEXT    NOT NULL,          -- human-readable owner name / description
+  created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+  expires_at  TEXT,                      -- NULL = never expires
+  active      INTEGER NOT NULL DEFAULT 1 -- 1 = active, 0 = revoked
+);
+```
+
+**`db.js` exports:**
+
+```js
+initDb(dbPath?)                        // Create tables if not exist, return db instance
+validateApiKey(db, key) → { valid, owner, expiresAt } | { valid: false, reason }
+getAllKeys(db) → Array<ApiKeyRow>
+getKey(db, key) → ApiKeyRow | null
+createKey(db, { key?, owner, expiresAt? }) → ApiKeyRow  // auto-generates key if omitted
+revokeKey(db, key) → boolean
+deleteKey(db, key) → boolean
+renewKey(db, key, newExpiresAt) → boolean
+```
+
+**Validation logic (`validateApiKey`):**
+1. Look up key in `api_keys` table
+2. If not found → `{ valid: false, reason: "unknown_key" }`
+3. If `active = 0` → `{ valid: false, reason: "revoked" }`
+4. If `expires_at` is set and in the past → `{ valid: false, reason: "expired" }`
+5. Otherwise → `{ valid: true, owner, expiresAt }`
+
+### Session Store — Active Sessions (in-memory Map, `src/store.js`)
 
 ```
 Map<sessionId, Session>
@@ -74,7 +123,7 @@ Map<sessionId, Session>
 ```js
 {
   sessionId: string,          // composite key: apiKey:streamKey:domain
-  apiKey: string,             // client-provided API key (shared secret)
+  apiKey: string,             // validated API key (must exist in SQLite)
   streamKey: string,          // YouTube stream key (cid)
   domain: string,             // allowed CORS origin (e.g., "https://example.com")
   jwt: string,                // issued JWT for this session
@@ -112,14 +161,15 @@ Multiple sessions can share the same `apiKey` — enabling one client to send ca
 **Behavior:**
 
 1. Validate required fields
-2. Create composite session ID: `${apiKey}:${streamKey}:${domain}`
-3. If session already exists, return existing JWT (idempotent)
-4. Create a `YoutubeLiveCaptionSender` instance with `{ streamKey, sequence }`
-5. Call `sender.start()`
-6. Optionally call `sender.sync()` to get initial sync offset
-7. Generate JWT containing `{ sessionId, apiKey, streamKey, domain }`
-8. Store session in Map
-9. Return response
+2. **Validate API key against SQLite** — call `validateApiKey(db, apiKey)`. Reject with 401 if unknown, revoked, or expired.
+3. Create composite session ID: `${apiKey}:${streamKey}:${domain}`
+4. If session already exists, return existing JWT (idempotent)
+5. Create a `YoutubeLiveCaptionSender` instance with `{ streamKey, sequence }`
+6. Call `sender.start()`
+7. Optionally call `sender.sync()` to get initial sync offset
+8. Generate JWT containing `{ sessionId, apiKey, streamKey, domain }`
+9. Store session in Map
+10. Return response
 
 **Response (200):**
 
@@ -255,6 +305,48 @@ Content-Type: application/json
 
 ---
 
+### `POST /sync` — Clock Synchronization (Authenticated)
+
+Triggers an NTP-style clock sync between the backend and YouTube's server for the session's sender. This updates the `syncOffset` used for all subsequent caption timestamps.
+
+**Headers:**
+
+```
+Authorization: Bearer <jwt>
+```
+
+**Request body:** None required.
+
+**Behavior:**
+
+1. Verify JWT
+2. Look up session by `sessionId` from JWT payload
+3. Call `sender.sync()` — sends a heartbeat to YouTube, measures round-trip time, computes clock offset
+4. Update `session.syncOffset` with the new value
+5. Return sync result
+
+**Response (200):**
+
+```json
+{
+  "syncOffset": -15,
+  "roundTripTime": 42,
+  "serverTimestamp": "2026-02-20T12:00:00.000Z",
+  "statusCode": 200
+}
+```
+
+**Error (if YouTube unreachable):**
+
+```json
+{
+  "error": "Sync failed: YouTube server did not respond",
+  "statusCode": 502
+}
+```
+
+---
+
 ## Middleware
 
 ### Dynamic CORS (`middleware/cors.js`)
@@ -306,58 +398,117 @@ Browser (https://example.com)           lcyt-backend              YouTube
 
 ---
 
+## Admin CLI (`bin/lcyt-backend-admin`)
+
+A small CLI tool for managing the API key database. Registered as `lcyt-backend-admin` in `package.json` bin field.
+
+### Commands
+
+```bash
+lcyt-backend-admin list                          # List all API keys
+lcyt-backend-admin add --owner "Alice"           # Generate new key for owner
+lcyt-backend-admin add --owner "Bob" --key "custom-key-123"  # Use specific key
+lcyt-backend-admin add --owner "Eve" --expires "2026-12-31"  # Key with expiration
+lcyt-backend-admin revoke <key>                  # Deactivate key (soft delete)
+lcyt-backend-admin delete <key>                  # Permanently remove key
+lcyt-backend-admin renew <key> --expires "2027-06-30"  # Extend expiration
+lcyt-backend-admin info <key>                    # Show details for a key
+```
+
+### `list` output
+
+```
+  KEY                                   OWNER     ACTIVE  EXPIRES       CREATED
+  a1b2c3d4-e5f6-7890-abcd-ef1234567890 Alice     yes     never         2026-02-20
+  b2c3d4e5-f6a7-8901-bcde-f12345678901 Bob       yes     2026-12-31    2026-02-20
+  c3d4e5f6-a7b8-9012-cdef-123456789012 Eve       REVOKED 2026-12-31    2026-02-19
+```
+
+### Implementation
+
+- ESM script with shebang (`#!/usr/bin/env node`)
+- Uses `process.argv` for argument parsing (simple enough, no yargs needed)
+- Imports `db.js` for all database operations
+- Accepts `--db <path>` flag to override database path (default: `./lcyt-backend.db` or `DB_PATH` env var)
+- Auto-generates UUID v4 keys when `--key` is not provided (using `crypto.randomUUID()`)
+
+---
+
 ## Implementation Steps
 
 ### Step 1: Package scaffolding
 
 - Create `packages/lcyt-backend/` directory structure
-- Create `package.json` with workspace dependency on `lcyt`
+- Create `package.json` with workspace dependency on `lcyt`, `express`, `jsonwebtoken`, `better-sqlite3`
+- Add `bin` field: `{ "lcyt-backend-admin": "bin/lcyt-backend-admin" }`
 - Add `"packages/lcyt-backend"` to root `package.json` workspaces array
 - Set `"type": "module"` for ESM
 
-### Step 2: Session store (`src/store.js`)
+### Step 2: SQLite database layer (`src/db.js`)
+
+- `initDb(dbPath?)` — open/create database, run `CREATE TABLE IF NOT EXISTS`
+- `validateApiKey(db, key)` — check existence, active status, expiration
+- `createKey(db, { key?, owner, expiresAt? })` — insert new key, auto-generate UUID if not provided
+- `getAllKeys(db)`, `getKey(db, key)` — read operations
+- `revokeKey(db, key)` — set `active = 0`
+- `deleteKey(db, key)` — permanent removal
+- `renewKey(db, key, newExpiresAt)` — update expiration
+
+### Step 3: Admin CLI (`bin/lcyt-backend-admin`)
+
+- Parse `process.argv` for commands: `list`, `add`, `revoke`, `delete`, `renew`, `info`
+- Wire each command to `db.js` functions
+- Format output as aligned table for `list`
+
+### Step 4: Session store (`src/store.js`)
 
 - Implement `SessionStore` class with Map-based storage
 - Methods: `create(apiKey, streamKey, domain, sequence)`, `get(sessionId)`, `getByDomain(domain)`, `remove(sessionId)`, `has(sessionId)`
 - Each session holds a `YoutubeLiveCaptionSender` instance
 
-### Step 3: CORS middleware (`src/middleware/cors.js`)
+### Step 5: CORS middleware (`src/middleware/cors.js`)
 
-- Dynamic origin matching against registered domains
+- Dynamic origin matching against registered domains in the session store
 - Permissive for `POST /live` (registration endpoint)
 - Preflight (`OPTIONS`) support
 
-### Step 4: Auth middleware (`src/middleware/auth.js`)
+### Step 6: Auth middleware (`src/middleware/auth.js`)
 
 - JWT verification with `jsonwebtoken`
 - Secret from `JWT_SECRET` env var or auto-generated
 - Attaches decoded session info to `req.session`
 
-### Step 5: Routes — `/live` (`src/routes/live.js`)
+### Step 7: Routes — `/live` (`src/routes/live.js`)
 
-- `POST`: Validate input, create session + sender, generate JWT, return token
+- `POST`: Validate API key against SQLite, create session + sender, generate JWT, return token
 - `GET`: Auth required, return sequence + syncOffset
 - `DELETE`: Auth required, tear down sender, remove session
 
-### Step 6: Routes — `/captions` (`src/routes/captions.js`)
+### Step 8: Routes — `/captions` (`src/routes/captions.js`)
 
 - `POST`: Auth required, look up session, call `sender.send()` or `sender.sendBatch()`, return result
 
-### Step 7: Server entry point (`src/server.js` + `src/index.js`)
+### Step 9: Routes — `/sync` (`src/routes/sync.js`)
+
+- `POST`: Auth required, look up session, call `sender.sync()`, return sync result
+
+### Step 10: Server entry point (`src/server.js` + `src/index.js`)
 
 - Create Express app
+- Initialize SQLite database via `initDb()`
 - Mount middleware (JSON body parser, dynamic CORS)
-- Mount routes
+- Mount routes (pass `db` and `store` to route factories)
 - `index.js`: Start server on `PORT` env var (default: 3000)
 - Export app for testing
 
-### Step 8: Tests
+### Step 11: Tests
 
+- Unit tests for `db.js` (using a temporary in-memory SQLite database)
 - Unit tests for `SessionStore`
-- Integration tests for each endpoint using Node's built-in test runner (matching existing monorepo convention)
+- Integration tests for each endpoint using Node's built-in test runner
 - Mock `YoutubeLiveCaptionSender` to avoid real HTTP calls
 
-### Step 9: Root workspace update
+### Step 12: Root workspace update
 
 - Add `packages/lcyt-backend` to root workspaces
 - Add `start:backend` script to root package.json
@@ -367,26 +518,24 @@ Browser (https://example.com)           lcyt-backend              YouTube
 
 ## Environment Variables
 
-| Variable     | Default      | Description                              |
-| ------------ | ------------ | ---------------------------------------- |
-| `PORT`       | `3000`       | Server listen port                       |
-| `JWT_SECRET` | (auto-generated) | Secret for signing/verifying JWTs. If not set, a random secret is generated at startup (tokens won't survive restarts) |
+| Variable     | Default              | Description                              |
+| ------------ | -------------------- | ---------------------------------------- |
+| `PORT`       | `3000`               | Server listen port                       |
+| `JWT_SECRET` | (auto-generated)     | Secret for signing/verifying JWTs. If not set, a random secret is generated at startup (tokens won't survive restarts) |
+| `DB_PATH`    | `./lcyt-backend.db`  | Path to SQLite database file             |
 
 ---
 
 ## Open Questions / Decisions Needed
 
-1. **API key validation**: Should the backend validate API keys against a list, or accept any client-provided key as a shared secret (essentially a namespace)?
-   - *Current plan*: Accept any key — it's just used as a session namespace identifier. The JWT is the real auth.
-
-2. **Rate limiting**: Should we add rate limiting to prevent abuse?
+1. **Rate limiting**: Should we add rate limiting to prevent abuse?
    - *Current plan*: Not in v1. Can be added later via `express-rate-limit`.
 
-3. **HTTPS / Deployment**: Should the backend handle TLS, or sit behind a reverse proxy?
+2. **HTTPS / Deployment**: Should the backend handle TLS, or sit behind a reverse proxy?
    - *Current plan*: HTTP only — assume deployment behind nginx/Cloudflare/etc.
 
-4. **Session expiry**: Should sessions auto-expire after some idle time?
+3. **Session expiry**: Should sessions auto-expire after some idle time?
    - *Current plan*: No expiry in v1. Sessions live until explicitly deleted or server restart.
 
-5. **Sync endpoint**: Should there be a dedicated endpoint for clock sync (`sender.sync()`)?
-   - *Current plan*: Sync is done automatically on session creation. The sync offset is returned in `GET /live`. A dedicated sync endpoint could be added later.
+4. **Key format**: Should auto-generated API keys be UUID v4 or something shorter?
+   - *Current plan*: UUID v4 via `crypto.randomUUID()`. Can be overridden with `--key` in the CLI.
