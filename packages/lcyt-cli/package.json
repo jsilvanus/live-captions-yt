@@ -1,6 +1,6 @@
 {
   "name": "lcyt-cli",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "CLI for sending live captions to YouTube Live streams",
   "type": "module",
   "bin": {
