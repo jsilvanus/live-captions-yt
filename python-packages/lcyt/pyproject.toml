@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "lcyt"
 version = "1.1.1"
 description = "Send live captions to YouTube streams"
-readme = "python-packages/lcyt/README.md"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
@@ -31,11 +31,5 @@ Homepage = "https://github.com/jsilvanus/live-captions-yt"
 Repository = "https://github.com/jsilvanus/live-captions-yt"
 Issues = "https://github.com/jsilvanus/live-captions-yt/issues"
 
-# NOTE: The canonical pyproject.toml for the lcyt library is at
-# python-packages/lcyt/pyproject.toml
-# This root file allows `pip install .` from the repo root to work.
 [tool.hatch.build.targets.wheel]
-packages = ["python-packages/lcyt/lcyt"]
-
-[tool.hatch.build.targets.wheel.sources]
-"python-packages/lcyt/lcyt" = "lcyt"
+packages = ["lcyt"]

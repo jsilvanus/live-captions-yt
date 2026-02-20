@@ -1,0 +1,4 @@
+# Runtime dependencies for lcyt-backend
+# JWT is handled internally using Python stdlib (hmac + hashlib) — no PyJWT needed.
+flask>=3.0
+lcyt>=1.1.1

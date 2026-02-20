@@ -3,18 +3,18 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "lcyt"
-version = "1.1.1"
-description = "Send live captions to YouTube streams"
-readme = "python-packages/lcyt/README.md"
+name = "lcyt-backend"
+version = "1.0.0"
+description = "Flask backend for YouTube Live caption ingestion (cPanel/Passenger compatible)"
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
 authors = [
     { name = "jsilvanus" }
 ]
-keywords = ["youtube", "live", "captions", "streaming", "closed-captions"]
+keywords = ["youtube", "live", "captions", "streaming", "flask", "backend"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
@@ -22,8 +22,19 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Topic :: Multimedia :: Video",
-    "Topic :: Internet",
+    "Framework :: Flask",
+    "Topic :: Internet :: WWW/HTTP :: WSGI :: Application",
+]
+
+dependencies = [
+    "flask>=3.0",
+    "lcyt>=1.1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
 ]
 
 [project.urls]
@@ -31,11 +42,8 @@ Homepage = "https://github.com/jsilvanus/live-captions-yt"
 Repository = "https://github.com/jsilvanus/live-captions-yt"
 Issues = "https://github.com/jsilvanus/live-captions-yt/issues"
 
-# NOTE: The canonical pyproject.toml for the lcyt library is at
-# python-packages/lcyt/pyproject.toml
-# This root file allows `pip install .` from the repo root to work.
 [tool.hatch.build.targets.wheel]
-packages = ["python-packages/lcyt/lcyt"]
+packages = ["lcyt_backend"]
 
-[tool.hatch.build.targets.wheel.sources]
-"python-packages/lcyt/lcyt" = "lcyt"
+[tool.pytest.ini_options]
+testpaths = ["tests"]

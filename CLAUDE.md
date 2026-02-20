@@ -6,13 +6,34 @@ Monorepo: CLI tool and library for sending live captions to YouTube Live via Goo
 
 ## Structure
 
+### Node.js packages (`packages/`)
 - `packages/lcyt/` — Core Node.js library (published to npm as `lcyt`)
   - `src/` — ESM source (sender.js, config.js, logger.js, errors.js)
   - `dist/` — CJS build output
 - `packages/lcyt-cli/` — CLI tool (published to npm as `lcyt-cli`)
   - `bin/lcyt` — CLI entrypoint (ESM, shebang script)
   - `src/interactive-ui.js` — Full-screen blessed UI
-- `python/` — Python library (published to PyPI as `lcyt`)
+- `packages/lcyt-backend/` — Node.js Express backend
+
+### Python packages (`python-packages/`)
+- `python-packages/lcyt/` — Python library (published to PyPI as `lcyt`)
+  - `lcyt/` — Package source (sender.py, config.py, errors.py)
+  - `pyproject.toml` — Package config
+- `python-packages/lcyt-backend/` — Python/Flask backend (cPanel/Passenger compatible)
+  - `lcyt_backend/` — Package source
+    - `app.py` — Flask app factory
+    - `db.py` — SQLite operations
+    - `store.py` — In-memory session store
+    - `_jwt.py` — Stdlib-only HS256 JWT (no external crypto deps)
+    - `routes/` — live.py, captions.py, sync.py, keys.py
+    - `middleware/` — auth.py, admin.py, cors.py
+  - `passenger_wsgi.py` — cPanel Phusion Passenger entry point
+  - `run.py` — Development server
+  - `tests/` — pytest test suite
+  - `pyproject.toml` — Package config
+  - `requirements.txt` — pip requirements
+
+> **Note:** `python/` still exists as legacy source. The canonical Python packages are in `python-packages/`.
 
 ## Setup
 
@@ -54,3 +75,19 @@ Both ESM (`src/`) and CJS (`dist/`) are provided.
 - `packages/lcyt/scripts/build-cjs.js` — custom ESM→CJS transformer
 - `packages/lcyt-cli/bin/lcyt` — CLI entrypoint
 - `packages/lcyt-cli/src/interactive-ui.js` — full-screen blessed UI
+- `python-packages/lcyt-backend/passenger_wsgi.py` — cPanel entry point
+- `python-packages/lcyt-backend/run.py` — dev server
+
+## Python Backend Commands
+
+```bash
+# Install (from python-packages/lcyt-backend/)
+pip install -r requirements.txt
+# or: pip install -e ../lcyt -e .
+
+# Run dev server
+python run.py
+
+# Run tests
+pytest
+```
