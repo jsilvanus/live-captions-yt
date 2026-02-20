@@ -26,6 +26,11 @@
       "types": "./src/logger.d.ts",
       "import": "./src/logger.js",
       "require": "./dist/logger.cjs"
+    },
+    "./backend": {
+      "types": "./src/backend-sender.d.ts",
+      "import": "./src/backend-sender.js",
+      "require": "./dist/backend-sender.cjs"
     }
   },
   "scripts": {

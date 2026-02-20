@@ -21,7 +21,7 @@ if (!fs.existsSync(distDir)) {
 }
 
 // Files to convert
-const files = ['errors.js', 'logger.js', 'config.js', 'sender.js'];
+const files = ['errors.js', 'logger.js', 'config.js', 'sender.js', 'backend-sender.js'];
 
 function convertToCommonJS(content, filename) {
   let result = content;
