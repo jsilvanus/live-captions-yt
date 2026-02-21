@@ -393,11 +393,11 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 
 ---
 
-## Phase 2 — Browser/Hardware Audio Sources → Google STT → Captions
+## Phase 2 — Browser Audio → Google STT → Captions
 
 ### Overview
 
-Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser microphone or hardware audio source, stream it to Google Cloud Speech-to-Text (STT), receive transcript text, and send it to `lcyt-backend` as captions automatically. This is a significant architectural addition requiring new backend routes for audio relay and new frontend audio capture/streaming code.
+Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser microphone, stream it to Google Cloud Speech-to-Text (STT), receive transcript text, and send it to `lcyt-backend` as captions automatically. This is a significant architectural addition requiring new backend routes for audio relay and new frontend audio capture/streaming code.
 
 ---
 
@@ -518,36 +518,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 ---
 
-### P2-Milestone 5 — Hardware Audio Input (Backend Relay)
-
-**Goal:** Support non-browser audio sources (hardware capture cards, system audio, ALSA loopback) via backend relay.
-
-#### Steps
-
-1. Backend: add `POST /stt/ingest/:sttSessionId` route
-   - Accepts `audio/l16; rate=16000` or `audio/webm` binary POST body
-   - Pipes to existing STT stream
-   - Intended for local tools (ffmpeg, arecord) that POST audio chunks
-
-2. Document example commands:
-   ```bash
-   # arecord → curl
-   arecord -f S16_LE -r 16000 -c 1 | \
-     curl -X POST -H "Authorization: Bearer $TOKEN" \
-          -H "Content-Type: audio/l16; rate=16000" \
-          --data-binary @- http://localhost:3000/stt/ingest/$SESSION_ID
-
-   # ffmpeg from HDMI capture card
-   ffmpeg -f alsa -i hw:1 -ar 16000 -ac 1 -f s16le - | \
-     curl ...
-   ```
-
-3. Frontend: "Hardware source" option in audio source picker that shows the ingest URL and a copy button
-4. Backend stores ingest sessions alongside WebSocket STT sessions; same cleanup TTL
-
----
-
-### P2-Milestone 6 — STT Configuration & Quality Controls
+### P2-Milestone 5 — STT Configuration & Quality Controls
 
 **Goal:** Expose meaningful Google STT parameters in the UI.
 
@@ -562,7 +533,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
    - Word confidence: show per-word confidence in STT panel if > 1 alternative
 
 2. Confidence threshold slider (0.0–1.0, default 0.7)
-   - Interim results below threshold shown in red; not auto-sent
+   - Interim results below threshold shown in red; not auto-sent (see P2-Milestone 4, step 4)
    - Final results below threshold shown with warning indicator
 
 3. Transcript chunking settings:
@@ -573,7 +544,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 ---
 
-### P2-Milestone 7 — Audio Monitoring & Debug Panel
+### P2-Milestone 6 — Audio Monitoring & Debug Panel
 
 **Goal:** Operational visibility into the audio/STT pipeline for production use.
 

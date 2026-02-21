@@ -229,7 +229,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` skipped/de
 
 ---
 
-## Phase 2 — Browser/Hardware Audio → STT → Captions
+## Phase 2 — Browser Audio → STT → Captions
 
 ---
 
@@ -324,7 +324,7 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` skipped/de
   - `sttClient.on('final')` → debounce 500ms → concatenate pending finals → `session.send()`
   - Persist auto-send preference to localStorage
 - [ ] P2-M4-5: Confidence threshold filtering
-  - Skip auto-send if confidence < threshold (configurable, see P2-M6)
+  - Skip auto-send if confidence < threshold (configurable, see P2-M5)
   - Show low-confidence results in red in STT panel; still allow manual send
 - [ ] P2-M4-6: STT status indicator in status bar
   - Show 🎤 (recording) when capture active, — when idle
@@ -336,74 +336,50 @@ Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` skipped/de
 
 ---
 
-### P2-Milestone 5 — Hardware Audio Input (Backend Relay)
-
-**Deliverable:** External audio tools can POST PCM audio to backend STT session.
-
-- [ ] P2-M5-1: Node.js backend: add `POST /stt/ingest/:sttSessionId` route
-  - Accept `Content-Type: audio/l16; rate=16000` binary body (up to 64KB per request)
-  - Validate JWT via `Authorization: Bearer` header
-  - Pipe body to existing STT stream for that sttSessionId
-  - Return `{ ok: true, bytes: n }` on success
-- [ ] P2-M5-2: Python backend: mirror `POST /stt/ingest/<stt_session_id>` route
-- [ ] P2-M5-3: Document example commands in `packages/lcyt-web/HARDWARE_AUDIO.md`
-  - arecord + curl example
-  - ffmpeg from ALSA device example
-  - ffmpeg from HDMI capture card example
-  - Include obtaining token via `POST /live` and `POST /stt/start`
-- [ ] P2-M5-4: Frontend: "Hardware source" option in audio source picker
-  - When selected: show read-only ingest URL (`http://<backend>/stt/ingest/<id>`)
-  - Copy button for URL
-  - Show ingest byte counter (request from backend via `GET /stt/status/:id`)
-- [ ] P2-M5-5: Backend: `GET /stt/status/:sttSessionId` (JWT required)
-  - Return `{ bytesReceived, chunksReceived, lastActivityAt, transcriptCount }`
-
----
-
-### P2-Milestone 6 — STT Configuration & Quality Controls
+### P2-Milestone 5 — STT Configuration & Quality Controls
 
 **Deliverable:** Configurable STT parameters exposed in UI.
 
-- [ ] P2-M6-1: Expand audio settings tab with STT configuration section
-- [ ] P2-M6-2: Language code selector
+- [ ] P2-M5-1: Expand audio settings tab with STT configuration section
+- [ ] P2-M5-2: Language code selector
   - Type-to-filter `<input>` over curated list of ~30 common language codes with display names
   - Persist to localStorage as `lcyt-stt-lang`
-- [ ] P2-M6-3: Enable automatic punctuation checkbox (default: on)
-- [ ] P2-M6-4: Profanity filter checkbox (default: off)
-- [ ] P2-M6-5: STT model selector: `latest_long`, `latest_short`, `telephony`, `video`, `medical_dictation`
-- [ ] P2-M6-6: Confidence threshold slider (0.0–1.0, step 0.05, default 0.7)
+- [ ] P2-M5-3: Enable automatic punctuation checkbox (default: on)
+- [ ] P2-M5-4: Profanity filter checkbox (default: off)
+- [ ] P2-M5-5: STT model selector: `latest_long`, `latest_short`, `telephony`, `video`, `medical_dictation`
+- [ ] P2-M5-6: Confidence threshold slider (0.0–1.0, step 0.05, default 0.7)
   - Visual indicator showing current threshold value
   - Apply to auto-send filtering (see P2-M4-5)
-- [ ] P2-M6-7: Max caption length input (default 80 chars)
+- [ ] P2-M5-7: Max caption length input (default 80 chars)
   - Split long final results by sentence boundary first, then by char limit
   - Sentence split regex: `/(?<=[.!?])\s+/` (lookbehind, or manual split for compat)
   - Each chunk sent as separate `session.send()` call with 200ms delay between
-- [ ] P2-M6-8: All STT config serialized into `POST /stt/start` request body; backend passes to Google STT `StreamingRecognitionConfig`
+- [ ] P2-M5-8: All STT config serialized into `POST /stt/start` request body; backend passes to Google STT `StreamingRecognitionConfig`
 
 ---
 
-### P2-Milestone 7 — Audio Monitoring & Debug Panel
+### P2-Milestone 6 — Audio Monitoring & Debug Panel
 
 **Deliverable:** Operational visibility tools for production use.
 
-- [ ] P2-M7-1: Expandable debug drawer (collapsed by default)
+- [ ] P2-M6-1: Expandable debug drawer (collapsed by default)
   - Toggle button in status bar: "Debug ▾"
   - Slides up from bottom, above input-bar
-- [ ] P2-M7-2: Raw STT response viewer
+- [ ] P2-M6-2: Raw STT response viewer
   - Last 20 STT response JSON objects, pretty-printed
   - Clear button
-- [ ] P2-M7-3: Audio pipeline metrics
+- [ ] P2-M6-3: Audio pipeline metrics
   - Chunks sent per second (rolling 5s average)
   - Bytes sent total
   - STT latency per utterance (chunk-send timestamp to final-result timestamp)
   - Display as simple text table in debug drawer
-- [ ] P2-M7-4: STT latency in status bar: `STT: 450ms` (rolling average of last 5 utterances)
-- [ ] P2-M7-5: Auto-reconnect for STT WebSocket
+- [ ] P2-M6-4: STT latency in status bar: `STT: 450ms` (rolling average of last 5 utterances)
+- [ ] P2-M6-5: Auto-reconnect for STT WebSocket
   - On `close` event (non-intentional): exponential backoff reconnect (1s, 2s, 4s, 8s, max 30s)
   - Re-POST `/stt/start` to get new sttSessionId, then reconnect WebSocket
   - Show reconnect attempt count in status bar during backoff
   - Stop retrying after 5 consecutive failures; show error toast
-- [ ] P2-M7-6: WebSocket uptime and reconnect counter in debug drawer
-- [ ] P2-M7-7: Export transcript button
+- [ ] P2-M6-6: WebSocket uptime and reconnect counter in debug drawer
+- [ ] P2-M6-7: Export transcript button
   - Dump entire `sttPanel` final-result history as plaintext `.txt` file
   - Browser `<a download>` trick with `URL.createObjectURL(blob)`
