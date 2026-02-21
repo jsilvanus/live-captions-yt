@@ -5,13 +5,17 @@
   "workspaces": [
     "packages/lcyt",
     "packages/lcyt-cli",
-    "packages/lcyt-backend"
+    "packages/lcyt-backend",
+    "packages/lcyt-web"
   ],
   "scripts": {
     "test": "npm test --workspaces",
     "build": "npm run build -w packages/lcyt",
     "start": "npm start -w packages/lcyt-cli",
-    "start:backend": "npm start -w packages/lcyt-backend"
+    "start:backend": "npm start -w packages/lcyt-backend",
+    "web": "npm run dev -w packages/lcyt-web",
+    "build:web": "npm run build -w packages/lcyt-web",
+    "preview:web": "npm run preview -w packages/lcyt-web"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",

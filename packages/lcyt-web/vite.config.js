@@ -1,0 +1,30 @@
+import { defineConfig } from 'vite';
+import { resolve } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
+
+export default defineConfig({
+  root: '.',
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
+  resolve: {
+    // Array form ensures more-specific sub-path aliases match before 'lcyt'
+    alias: [
+      { find: 'lcyt/backend', replacement: resolve(__dirname, '../lcyt/src/backend-sender.js') },
+      { find: 'lcyt/errors',  replacement: resolve(__dirname, '../lcyt/src/errors.js') },
+      { find: 'lcyt/config',  replacement: resolve(__dirname, '../lcyt/src/config.js') },
+      { find: 'lcyt/logger',  replacement: resolve(__dirname, '../lcyt/src/logger.js') },
+      { find: 'lcyt',         replacement: resolve(__dirname, '../lcyt/src/sender.js') },
+    ]
+  },
+  server: {
+    proxy: {
+      '/live': 'http://localhost:3000',
+      '/captions': 'http://localhost:3000',
+      '/sync': 'http://localhost:3000',
+    }
+  }
+});

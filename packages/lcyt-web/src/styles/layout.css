@@ -1,0 +1,141 @@
+/* CSS custom properties — dark theme (default) */
+:root {
+  --color-bg: #0f1117;
+  --color-surface: #1a1d27;
+  --color-surface-elevated: #22263a;
+  --color-border: #2e3250;
+  --color-accent: #4f8ef7;
+  --color-accent-dim: #2d5ab0;
+  --color-success: #3fb950;
+  --color-warning: #e3b341;
+  --color-error: #f85149;
+  --color-text: #e6edf3;
+  --color-text-dim: #7d8590;
+  --color-text-muted: #484f58;
+  --color-active-line: #1f3a5f;
+  --color-active-line-border: #4f8ef7;
+  --color-sent-flash: #1a3a1f;
+
+  --header-height: 44px;
+  --footer-height: 52px;
+  --tab-height: 36px;
+  --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', 'Menlo', monospace;
+  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Light theme override */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --color-bg: #ffffff;
+    --color-surface: #f6f8fa;
+    --color-surface-elevated: #ffffff;
+    --color-border: #d0d7de;
+    --color-accent: #0969da;
+    --color-accent-dim: #218bff;
+    --color-success: #1a7f37;
+    --color-warning: #9a6700;
+    --color-error: #cf222e;
+    --color-text: #1f2328;
+    --color-text-dim: #57606a;
+    --color-text-muted: #8c959f;
+    --color-active-line: #dbeafe;
+    --color-active-line-border: #0969da;
+    --color-sent-flash: #dcfce7;
+  }
+}
+
+/* Manual light theme */
+:root[data-theme="light"] {
+  --color-bg: #ffffff;
+  --color-surface: #f6f8fa;
+  --color-surface-elevated: #ffffff;
+  --color-border: #d0d7de;
+  --color-accent: #0969da;
+  --color-accent-dim: #218bff;
+  --color-success: #1a7f37;
+  --color-warning: #9a6700;
+  --color-error: #cf222e;
+  --color-text: #1f2328;
+  --color-text-dim: #57606a;
+  --color-text-muted: #8c959f;
+  --color-active-line: #dbeafe;
+  --color-active-line-border: #0969da;
+  --color-sent-flash: #dcfce7;
+}
+
+/* ─── App shell ─────────────────────────────────────────── */
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+#app {
+  display: grid;
+  grid-template-rows: var(--header-height) 1fr var(--footer-height);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── Header ────────────────────────────────────────────── */
+
+#header {
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  gap: 12px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+/* ─── Main two-column layout ────────────────────────────── */
+
+#main {
+  display: grid;
+  grid-template-columns: 60fr 40fr;
+  overflow: hidden;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.panel--left {
+  border-right: 1px solid var(--color-border);
+}
+
+/* ─── Footer / input bar ────────────────────────────────── */
+
+#footer {
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  gap: 8px;
+}
+
+/* ─── Responsive: hide sent panel below 768px ───────────── */
+
+@media (max-width: 768px) {
+  #main {
+    grid-template-columns: 1fr;
+  }
+
+  .panel--right {
+    display: none;
+    position: fixed;
+    inset: var(--header-height) 0 var(--footer-height) 0;
+    background: var(--color-bg);
+    z-index: 50;
+  }
+
+  .panel--right.panel--right-visible {
+    display: flex;
+  }
+}
