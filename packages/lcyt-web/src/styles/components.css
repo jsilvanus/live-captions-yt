@@ -223,6 +223,36 @@
   background: transparent;
 }
 
+/* Spacer pushes the Audio tab to the right end of the tab bar */
+.file-tabs__spacer {
+  flex: 1;
+}
+
+/* Audio tab — special right-aligned tab */
+.file-tab--audio {
+  border-right: none;
+  border-left: 1px solid var(--color-border);
+  gap: 5px;
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.file-tab--audio:hover {
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+}
+
+.file-tab--audio.file-tab--active {
+  color: var(--color-text);
+  background: var(--color-bg);
+  border-bottom: 2px solid #e3b341; /* amber — distinct from the blue file-tab accent */
+}
+
+.file-tab__audio-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
 /* ─── Caption view ──────────────────────────────────────── */
 
 .caption-view {
@@ -758,4 +788,220 @@
   background: rgba(227, 179, 65, 0.15);
   border: 1px solid var(--color-warning);
   color: var(--color-warning);
+}
+
+/* ─── Audio panel ───────────────────────────────────────── */
+
+.audio-panel {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.audio-panel__scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.audio-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.audio-section__title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-dim);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 6px;
+  margin: 0;
+}
+
+.audio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.audio-field__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+}
+
+.audio-field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.audio-field__select {
+  flex: 1;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--color-text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.audio-field__select:focus {
+  border-color: var(--color-accent);
+}
+
+.audio-field__input {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: var(--color-text);
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+
+.audio-field__input:focus {
+  border-color: var(--color-accent);
+}
+
+.audio-field__input--short {
+  width: 100px;
+}
+
+.audio-field__range {
+  width: 100%;
+  accent-color: var(--color-accent);
+}
+
+.audio-field__hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.audio-field--actions {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Permission status badge */
+.audio-perm-status {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.audio-perm-status--unknown,
+.audio-perm-status--prompt {
+  background: var(--color-surface-elevated);
+  color: var(--color-text-dim);
+}
+
+.audio-perm-status--granted {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--color-success);
+}
+
+.audio-perm-status--denied {
+  background: rgba(248, 81, 73, 0.15);
+  color: var(--color-error);
+}
+
+/* Audio level meter canvas */
+.audio-meter {
+  width: 100%;
+  height: 20px;
+  border-radius: 4px;
+  display: block;
+  background: var(--color-surface-elevated);
+}
+
+/* Listening status label */
+.audio-listen-status {
+  font-size: 12px;
+  color: var(--color-text-dim);
+}
+
+.audio-listen-status--active {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+/* Language typeahead */
+.audio-lang-wrap {
+  position: relative;
+}
+
+.audio-lang-list {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 10;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
+
+.audio-lang-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.audio-lang-option:last-child {
+  border-bottom: none;
+}
+
+.audio-lang-option:hover {
+  background: var(--color-surface-elevated);
+}
+
+.audio-lang-code {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Checkbox rows inside audio settings */
+.audio-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--color-text);
+  user-select: none;
+}
+
+.audio-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
 }
