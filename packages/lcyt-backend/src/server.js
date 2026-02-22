@@ -60,6 +60,19 @@ app.use((req, res, next) => {
 app.use(createCorsMiddleware(store));
 
 // ---------------------------------------------------------------------------
+// Static file serving (optional)
+// ---------------------------------------------------------------------------
+
+// If STATIC_DIR is set, serve a built lcyt-web bundle from that directory.
+// Example: STATIC_DIR=../lcyt-web/dist node src/index.js
+if (process.env.STATIC_DIR) {
+  const { resolve } = await import('node:path');
+  const staticDir = resolve(process.env.STATIC_DIR);
+  app.use(express.static(staticDir));
+  console.info(`✓ Serving static client from: ${staticDir}`);
+}
+
+// ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
 
