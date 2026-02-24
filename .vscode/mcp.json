@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "lcyt-mcp": {
+      "command": "docker",
+      "args": ["run", "-i", "--rm", "lcyt-mcp"]
+    }
+  }
+}

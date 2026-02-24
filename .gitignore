@@ -5,3 +5,6 @@ node_modules/
 python/dist/
 __pycache__/
 *.pyc
+
+# Claude- Claude's files
+claude/
