@@ -1,0 +1,39 @@
+{
+  "name": "lcyt-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for sending live captions to YouTube Live streams",
+  "type": "module",
+  "main": "src/server.js",
+  "bin": {
+    "lcyt-mcp": "src/server.js"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "youtube",
+    "live",
+    "captions",
+    "mcp",
+    "model-context-protocol"
+  ],
+  "author": "jsilvanus",
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "lcyt": "*"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/jsilvanus/live-captions-yt/issues"
+  },
+  "homepage": "https://github.com/jsilvanus/live-captions-yt#readme"
+}

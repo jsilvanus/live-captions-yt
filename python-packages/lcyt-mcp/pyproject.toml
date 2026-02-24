@@ -1,0 +1,40 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lcyt-mcp"
+version = "0.1.0"
+description = "MCP server for sending live captions to YouTube Live streams"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "jsilvanus" }
+]
+keywords = ["youtube", "live", "captions", "mcp", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+    "mcp>=1.0",
+    "lcyt>=1.1.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/jsilvanus/live-captions-yt"
+Repository = "https://github.com/jsilvanus/live-captions-yt"
+Issues = "https://github.com/jsilvanus/live-captions-yt/issues"
+
+[project.scripts]
+lcyt-mcp = "lcyt_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lcyt_mcp"]
