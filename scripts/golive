@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") STREAM_KEY [VIDEO_DEVICE] [AUDIO_DEVICE] [RESOLUTION] [FPS] [BITRATE]
+
+Sends your webcam (video + microphone) to YouTube Live via ffmpeg.
+
+Notes:
+- On Linux the default video device is /dev/video0 and audio is ALSA "default".
+- On macOS the script uses avfoundation indexes (video:audio) like "0:0" when passed as VIDEO_DEVICE.
+- On Windows you should pass dshow device names (see ffmpeg -list_devices true -f dshow -i dummy).
+
+Example (Linux):
+  $(basename "$0") abcd-1234-efgh-5678 /dev/video0 default 1280x720 30 2500k
+EOF
+  exit 1
+}
+
+STREAM_KEY=${1-}
+VIDEO_DEV=${2-}
+AUDIO_DEV=${3-}
+RESOLUTION=${4-1280x720}
+FPS=${5-30}
+BITRATE=${6-2500k}
+
+if [ -z "$STREAM_KEY" ]; then
+  usage
+fi
+
+FFMPEG=$(command -v ffmpeg || true)
+if [ -z "$FFMPEG" ]; then
+  echo "ffmpeg not found in PATH" >&2
+  exit 2
+fi
+
+OS=$(uname -s 2>/dev/null || echo Windows)
+case "$OS" in
+  Linux*)
+    VIDEO_INPUT="-f v4l2 -framerate ${FPS} -video_size ${RESOLUTION} -i ${VIDEO_DEV:-/dev/video0}"
+    AUDIO_INPUT="-f alsa -i ${AUDIO_DEV:-default}"
+    ;;
+  Darwin*)
+    # avfoundation: indexes like 0:0 or device names
+    VIDEO_INPUT="-f avfoundation -framerate ${FPS} -video_size ${RESOLUTION} -i ${VIDEO_DEV:-0:0}"
+    AUDIO_INPUT=""
+    ;;
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    if [ -z "$VIDEO_DEV" ]; then
+      echo "On Windows you must pass dshow device names. Run: ffmpeg -list_devices true -f dshow -i dummy" >&2
+      exit 3
+    fi
+    # VIDEO_DEV should be like 'video=Integrated Camera'
+    if [ -n "$AUDIO_DEV" ]; then
+      VIDEO_INPUT="-f dshow -i video=${VIDEO_DEV}:audio=${AUDIO_DEV}"
+    else
+      VIDEO_INPUT="-f dshow -i video=${VIDEO_DEV}"
+    fi
+    AUDIO_INPUT=""
+    ;;
+  *)
+    echo "Unsupported OS: $OS" >&2; exit 4
+    ;;
+esac
+
+exec "$FFMPEG" -re ${VIDEO_INPUT} ${AUDIO_INPUT} \
+  -c:v libx264 -preset veryfast -tune zerolatency -b:v ${BITRATE} -maxrate ${BITRATE} -bufsize 5000k -g $((FPS*2)) -pix_fmt yuv420p \
+  -c:a aac -b:a 128k -ar 44100 \
+  -f flv "rtmp://a.rtmp.youtube.com/live2/${STREAM_KEY}"

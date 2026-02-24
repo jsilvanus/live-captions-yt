@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") STREAM_KEY [RESOLUTION] [FPS] [BITRATE]
+
+Sends a black video + silent audio to YouTube Live via ffmpeg.
+
+Example:
+  $(basename "$0") abcd-1234-efgh-5678 1280x720 30 2500k
+EOF
+  exit 1
+}
+
+STREAM_KEY=${1-}
+RESOLUTION=${2-1280x720}
+FPS=${3-30}
+BITRATE=${4-2500k}
+
+if [ -z "$STREAM_KEY" ]; then
+  usage
+fi
+
+FFMPEG=$(command -v ffmpeg || true)
+if [ -z "$FFMPEG" ]; then
+  echo "ffmpeg not found in PATH" >&2
+  exit 2
+fi
+
+# Build and run ffmpeg: color video + silent audio
+exec "$FFMPEG" -re \
+  -f lavfi -i "color=size=${RESOLUTION}:rate=${FPS}:color=black" \
+  -f lavfi -i "anullsrc=channel_layout=stereo:sample_rate=44100" \
+  -c:v libx264 -preset veryfast -tune zerolatency -b:v ${BITRATE} -maxrate ${BITRATE} -bufsize 5000k -g $((FPS*2)) -pix_fmt yuv420p \
+  -c:a aac -b:a 128k -ar 44100 \
+  -f flv "rtmp://a.rtmp.youtube.com/live2/${STREAM_KEY}"
