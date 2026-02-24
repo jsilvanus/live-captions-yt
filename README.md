@@ -52,6 +52,20 @@ npx lcyt-cli --heartbeat              # Test connection
 
 See the [lcyt-cli package](packages/lcyt-cli/) for full CLI documentation.
 
+## Logging to stderr (MCP friendliness)
+
+When running `lcyt-cli` under MCP or other protocol parsers, human-friendly log lines must not appear on stdout (they can break parsers). Use the `--log-stderr` flag or the `LCYT_LOG_STDERR=1` environment variable to route human logs to `stderr` while keeping protocol messages on `stdout`:
+
+```bash
+# using flag
+npx lcyt-cli --heartbeat --log-stderr --stream-key YOUR_KEY
+
+# using environment variable
+LCYT_LOG_STDERR=1 npx lcyt-cli --heartbeat --stream-key YOUR_KEY
+```
+
+If you're running a Dockerized MCP server, rebuild and redeploy the image after updating this repository so the container picks up the new CLI behavior (see Development section).
+
 ## Library Usage (Node.js)
 
 Both ESM and CJS are provided.

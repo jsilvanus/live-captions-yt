@@ -110,6 +110,11 @@ const argv = yargs(hideBin(process.argv))
     description: 'Enable verbose output',
     default: false
   })
+  .option('log-stderr', {
+    type: 'boolean',
+    description: 'Write human logs to stderr instead of stdout (env: LCYT_LOG_STDERR=1)',
+    default: process.env.LCYT_LOG_STDERR === '1' || false
+  })
   .example('$0', 'Show config (or setup wizard on first run)')
   .example('$0 --stream-key=YOUR_KEY', 'Set stream key')
   .example('$0 "Hello world"', 'Send a single caption')
@@ -129,6 +134,9 @@ async function main() {
 
   if (argv.verbose) {
     logger.setVerbose(true);
+  }
+  if (argv['log-stderr']) {
+    logger.setUseStderr(true);
   }
 
   let config = loadConfig(configPath);

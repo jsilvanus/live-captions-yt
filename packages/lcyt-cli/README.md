@@ -69,6 +69,7 @@ When running via `npx lcyt-cli` without arguments, it defaults to full-screen mo
 | `--verbose` | `-v` | Enable verbose output |
 | `--help` | `-h` | Show help |
 | `--version` | | Show version number |
+| `--log-stderr` | | Write human logs to `stderr` instead of `stdout` (env: `LCYT_LOG_STDERR=1`) |
 
 ## Interactive Mode (`-i`)
 
@@ -188,6 +189,20 @@ Use a custom config file:
 ```bash
 lcyt --config /path/to/config.json
 ```
+
+## Docker / MCP notes
+
+If you run the MCP host or a relay in Docker, rebuild the image after pulling changes so the container picks up the updated CLI behavior (logger stderr option):
+
+```bash
+# from repo root
+docker build -t lcyt-mcp ./packages/lcyt-mcp
+# restart your container using the new image
+docker rm -f lcyt-mcp-container || true
+docker run -d --name lcyt-mcp-container lcyt-mcp
+```
+
+Adjust image name and container commands to match your deployment.
 
 ## License
 
