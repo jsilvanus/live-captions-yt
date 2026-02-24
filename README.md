@@ -18,7 +18,8 @@ This is a monorepo containing the following packages:
 |---------|----------|--------------|-------------|
 | [`lcyt`](packages/lcyt/) | npm | `npm install lcyt` | Core Node.js library |
 | [`lcyt-cli`](packages/lcyt-cli/) | npm | `npm install -g lcyt-cli` | CLI tool |
-| [`lcyt-backend`](packages/lcyt-backend/) | npm | — | Node.js Express backend relay |
+| [`lcyt-backend`](packages/lcyt-backend/) | — | — | Node.js Express backend relay |
+| [`lcyt-mcp`](packages/lcyt-mcp/) | — | `docker build --no-cache -t lcyt-mcp:latest ./packages/lcyt-mcp` | Node.js Express MCP backend |
 | [`lcyt`](python-packages/lcyt/) | PyPI | `pip install lcyt` | Core Python library |
 | [`lcyt-backend`](python-packages/lcyt-backend/) | pip | `pip install lcyt-backend` | Python/Flask backend relay (cPanel/Passenger) |
 
@@ -63,8 +64,6 @@ npx lcyt-cli --heartbeat --log-stderr --stream-key YOUR_KEY
 # using environment variable
 LCYT_LOG_STDERR=1 npx lcyt-cli --heartbeat --stream-key YOUR_KEY
 ```
-
-If you're running a Dockerized MCP server, rebuild and redeploy the image after updating this repository so the container picks up the new CLI behavior (see Development section).
 
 ## Library Usage (Node.js)
 
