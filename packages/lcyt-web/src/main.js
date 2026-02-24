@@ -3,6 +3,7 @@ import './styles/layout.css';
 import './styles/components.css';
 
 import * as session from './session.js';
+import * as fileStore from './file-store.js';
 import { createStatusBar } from './ui/status-bar.js';
 import { createSettingsModal } from './ui/settings-modal.js';
 import { createDropZone } from './ui/drop-zone.js';
@@ -10,6 +11,7 @@ import { createFileTabs } from './ui/file-tabs.js';
 import { createCaptionView } from './ui/caption-view.js';
 import { createSentPanel } from './ui/sent-panel.js';
 import { createInputBar } from './ui/input-bar.js';
+import { createAudioPanel } from './ui/audio-panel.js';
 
 // ─── Settings modal ─────────────────────────────────────
 
@@ -31,12 +33,35 @@ createStatusBar(header, {
 
 const leftPanel = document.getElementById('left-panel');
 
-// File tabs (hidden until files loaded)
-const { triggerFilePicker } = createDropZone(leftPanel);
-const fileTabs = createFileTabs(leftPanel, { triggerFilePicker });
+// Drop zone — hidden when files are loaded, also suppressed when audio view is active
+const dropZone = createDropZone(leftPanel);
+const { triggerFilePicker } = dropZone;
 
-// Caption view
+// Tab bar — always visible (contains file tabs + Audio tab)
+createFileTabs(leftPanel, { triggerFilePicker });
+
+// Caption view — shown when captions view is active
 const captionView = createCaptionView(leftPanel);
+
+// Audio panel — shown when Audio tab is active
+const audioPanel = createAudioPanel(leftPanel);
+
+// Toggle between caption-view and audio-panel based on current view.
+// Also suppress the drop-zone when audio view is active.
+window.addEventListener('lcyt:view-changed', (e) => {
+  const { view } = e.detail;
+  if (view === 'audio') {
+    dropZone.element.style.display = 'none';
+    captionView.element.style.display = 'none';
+    audioPanel.show();
+  } else {
+    // Restore normal file view; drop-zone visibility is driven by file count
+    const hasFiles = fileStore.getAll().length > 0;
+    dropZone.element.style.display = hasFiles ? 'none' : '';
+    captionView.element.style.display = '';
+    audioPanel.hide();
+  }
+});
 
 // ─── Right panel ─────────────────────────────────────────
 
@@ -48,8 +73,6 @@ const footer = document.getElementById('footer');
 createInputBar(footer, { captionView });
 
 // ─── Keyboard navigation (global) ────────────────────────
-
-import * as fileStore from './file-store.js';
 
 document.addEventListener('keydown', (e) => {
   // Don't intercept when a text input or dialog is focused
