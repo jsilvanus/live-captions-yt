@@ -6,7 +6,8 @@
     "packages/lcyt",
     "packages/lcyt-cli",
     "packages/lcyt-backend",
-    "packages/lcyt-web"
+    "packages/lcyt-web",
+    "packages/lcyt-mcp"
   ],
   "scripts": {
     "test": "npm test --workspaces",
