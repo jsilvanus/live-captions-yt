@@ -29,11 +29,9 @@ export function createDropZone(container) {
   }
 
   async function handleFiles(files) {
-    let hadError = false;
     for (const file of files) {
       if (!file.name.endsWith('.txt') && !file.type.startsWith('text/')) {
         showError(`Only .txt files supported (skipped: ${file.name})`);
-        hadError = true;
         continue;
       }
       try {
@@ -72,17 +70,18 @@ export function createDropZone(container) {
 
   container.appendChild(el);
 
-  // Show/hide based on whether files are loaded
-  function update() {
-    const hasFiles = fileStore.getAll().length > 0;
-    el.style.display = hasFiles ? 'none' : '';
-  }
+  let visible = true;
 
-  window.addEventListener('lcyt:files-changed', update);
-  update();
+  function toggle() {
+    visible = !visible;
+    el.style.display = visible ? '' : 'none';
+    window.dispatchEvent(new CustomEvent('lcyt:drop-zone-visibility-changed'));
+  }
 
   return {
     element: el,
     triggerFilePicker: () => { fileInput.value = ''; fileInput.click(); },
+    toggle,
+    isVisible: () => visible,
   };
 }

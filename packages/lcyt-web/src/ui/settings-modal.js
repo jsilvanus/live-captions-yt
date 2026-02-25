@@ -15,6 +15,7 @@ export function createSettingsModal() {
 
       <div class="settings-modal__tabs">
         <button class="settings-tab settings-tab--active" data-tab="connection">Connection</button>
+        <button class="settings-tab" data-tab="captions">Captions</button>
         <button class="settings-tab" data-tab="status">Status</button>
         <button class="settings-tab" data-tab="actions">Actions</button>
       </div>
@@ -61,6 +62,21 @@ export function createSettingsModal() {
           </div>
 
           <div id="sm-error" class="settings-error" style="display:none"></div>
+        </div>
+
+        <!-- Captions tab -->
+        <div class="settings-panel" data-panel="captions">
+          <div class="settings-field">
+            <label class="settings-field__label" for="sm-batch-interval">
+              Batch window: <span id="sm-batch-display">Off</span>
+            </label>
+            <input id="sm-batch-interval" class="settings-field__input" type="range"
+              min="0" max="20" step="1" value="0" style="padding:0; cursor:pointer" />
+          </div>
+          <p style="font-size:12px; color:var(--color-text-dim); margin:0; line-height:1.5">
+            0 = send each caption immediately.<br>
+            1–20 s = collect captions over the window, then send as a single batch (one HTTP request).
+          </p>
         </div>
 
         <!-- Status tab -->
@@ -162,6 +178,21 @@ export function createSettingsModal() {
 
   overlay.querySelector('#sm-eye-stream').addEventListener('click', () => {
     streamKeyInput.type = streamKeyInput.type === 'password' ? 'text' : 'password';
+  });
+
+  // ─── Batch interval ────────────────────────────────────
+
+  const batchSlider = overlay.querySelector('#sm-batch-interval');
+  const batchDisplay = overlay.querySelector('#sm-batch-display');
+
+  function updateBatchDisplay(value) {
+    batchDisplay.textContent = value === 0 ? 'Off' : `${value}s`;
+  }
+
+  batchSlider.addEventListener('input', () => {
+    const v = parseInt(batchSlider.value, 10);
+    updateBatchDisplay(v);
+    try { localStorage.setItem('lcyt-batch-interval', String(v)); } catch {}
   });
 
   // ─── Theme selector ────────────────────────────────────
@@ -313,6 +344,10 @@ export function createSettingsModal() {
     if (cfg.apiKey) apiKeyInput.value = cfg.apiKey;
     if (cfg.streamKey) streamKeyInput.value = cfg.streamKey;
     autoConnectCheck.checked = session.getAutoConnect();
+
+    const savedBatch = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+    batchSlider.value = String(savedBatch);
+    updateBatchDisplay(savedBatch);
 
     clearError();
     updateStatus();

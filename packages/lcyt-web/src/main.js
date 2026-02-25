@@ -38,7 +38,11 @@ const dropZone = createDropZone(leftPanel);
 const { triggerFilePicker } = dropZone;
 
 // Tab bar — always visible (contains file tabs + Audio tab)
-createFileTabs(leftPanel, { triggerFilePicker });
+createFileTabs(leftPanel, {
+  triggerFilePicker,
+  toggleDropZone: () => dropZone.toggle(),
+  isDropZoneVisible: () => dropZone.isVisible(),
+});
 
 // Caption view — shown when captions view is active
 const captionView = createCaptionView(leftPanel);
@@ -55,9 +59,7 @@ window.addEventListener('lcyt:view-changed', (e) => {
     captionView.element.style.display = 'none';
     audioPanel.show();
   } else {
-    // Restore normal file view; drop-zone visibility is driven by file count
-    const hasFiles = fileStore.getAll().length > 0;
-    dropZone.element.style.display = hasFiles ? 'none' : '';
+    dropZone.element.style.display = dropZone.isVisible() ? '' : 'none';
     captionView.element.style.display = '';
     audioPanel.hide();
   }
@@ -70,7 +72,7 @@ createSentPanel(rightPanel);
 // ─── Footer / input bar ───────────────────────────────────
 
 const footer = document.getElementById('footer');
-createInputBar(footer, { captionView });
+const inputBar = createInputBar(footer, { captionView });
 
 // ─── Keyboard navigation (global) ────────────────────────
 
@@ -85,6 +87,11 @@ document.addEventListener('keydown', (e) => {
   if (!file) return;
 
   switch (e.key) {
+    case 'Enter':
+      e.preventDefault();
+      inputBar.triggerSend();
+      inputBar.focus();
+      return;
     case 'ArrowUp':
       e.preventDefault();
       fileStore.setPointer(file.id, file.pointer - 1);

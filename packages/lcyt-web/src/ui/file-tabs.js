@@ -12,7 +12,7 @@ export function setView(view) {
   window.dispatchEvent(new CustomEvent('lcyt:view-changed', { detail: { view } }));
 }
 
-export function createFileTabs(container, { triggerFilePicker } = {}) {
+export function createFileTabs(container, { triggerFilePicker, toggleDropZone, isDropZoneVisible } = {}) {
   const el = document.createElement('div');
   el.className = 'file-tabs';
 
@@ -82,10 +82,23 @@ export function createFileTabs(container, { triggerFilePicker } = {}) {
     });
     el.appendChild(addTab);
 
-    // Spacer to push Audio tab to the right
+    // Spacer to push right-side controls to the right
     const spacer = document.createElement('div');
     spacer.className = 'file-tabs__spacer';
     el.appendChild(spacer);
+
+    // Drop zone toggle button — to the left of the Audio tab
+    if (toggleDropZone) {
+      const dzBtn = document.createElement('button');
+      const dzVisible = isDropZoneVisible ? isDropZoneVisible() : true;
+      dzBtn.className = 'file-tab file-tab--dz-toggle' + (dzVisible ? ' file-tab--dz-toggle-on' : '');
+      dzBtn.title = dzVisible ? 'Hide drop zone' : 'Show drop zone';
+      dzBtn.textContent = '⇩';
+      dzBtn.addEventListener('click', () => {
+        toggleDropZone();
+      });
+      el.appendChild(dzBtn);
+    }
 
     // "Audio" special tab — always visible on the right
     const audioTab = document.createElement('button');
@@ -102,6 +115,7 @@ export function createFileTabs(container, { triggerFilePicker } = {}) {
   window.addEventListener('lcyt:active-changed', render);
   window.addEventListener('lcyt:pointer-changed', render);
   window.addEventListener('lcyt:view-changed', render);
+  window.addEventListener('lcyt:drop-zone-visibility-changed', render);
 
   container.appendChild(el);
   render();

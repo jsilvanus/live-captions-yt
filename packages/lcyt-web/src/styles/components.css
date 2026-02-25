@@ -80,13 +80,13 @@
 /* ─── Drop zone ─────────────────────────────────────────── */
 
 .drop-zone {
-  flex: 1;
+  height: 10vh;
+  min-height: 64px;
+  flex-shrink: 0;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 32px;
-  gap: 12px;
+  padding: 6px 16px;
   cursor: pointer;
   transition: background 0.15s;
 }
@@ -94,15 +94,15 @@
 .drop-zone__inner {
   border: 2px dashed var(--color-border);
   border-radius: 8px;
-  padding: 48px 32px;
+  padding: 8px 24px;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 10px;
   transition: border-color 0.15s, background 0.15s;
   pointer-events: none;
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
 }
 
 .drop-zone--active .drop-zone__inner,
@@ -112,26 +112,25 @@
 }
 
 .drop-zone__icon {
-  font-size: 36px;
+  font-size: 22px;
   opacity: 0.5;
+  flex-shrink: 0;
 }
 
 .drop-zone__title {
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text);
 }
 
 .drop-zone__sub {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text-dim);
-  text-align: center;
 }
 
 .drop-zone__error {
   font-size: 12px;
   color: var(--color-error);
-  margin-top: 4px;
 }
 
 /* ─── File tabs ─────────────────────────────────────────── */
@@ -228,6 +227,25 @@
   flex: 1;
 }
 
+/* Drop zone toggle button */
+.file-tab--dz-toggle {
+  border-right: none;
+  font-size: 14px;
+  color: var(--color-text-dim);
+  opacity: 0.5;
+}
+
+.file-tab--dz-toggle:hover {
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+  opacity: 1;
+}
+
+.file-tab--dz-toggle-on {
+  opacity: 1;
+  color: var(--color-accent);
+}
+
 /* Audio tab — special right-aligned tab */
 .file-tab--audio {
   border-right: none;
@@ -304,6 +322,20 @@
 
 .caption-line--active:hover {
   background: var(--color-active-line);
+}
+
+.caption-line--heading {
+  cursor: default;
+  font-weight: 700;
+  color: var(--color-accent);
+  font-family: var(--font-ui);
+  padding-top: 8px;
+  padding-bottom: 4px;
+  border-left-color: transparent !important;
+}
+
+.caption-line--heading:hover {
+  background: transparent;
 }
 
 .caption-line--sent {
@@ -409,6 +441,25 @@
   opacity: 0.8;
 }
 
+.sent-item__ticks {
+  font-size: 10px;
+  flex-shrink: 0;
+  min-width: 18px;
+  text-align: right;
+}
+
+.sent-item__ticks--pending {
+  color: var(--color-text-muted);
+}
+
+.sent-item__ticks--confirmed {
+  color: var(--color-accent);
+}
+
+.sent-item__ticks--error {
+  color: var(--color-error);
+}
+
 .sent-panel__empty {
   padding: 32px;
   color: var(--color-text-dim);
@@ -462,6 +513,18 @@
 .input-bar__input:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.input-bar__batch-badge {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+  border-radius: 10px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .input-bar__send {
