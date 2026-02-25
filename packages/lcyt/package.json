@@ -1,6 +1,6 @@
 {
   "name": "lcyt",
-  "version": "2.1.1",
+  "version": "2.3.0",
   "description": "Send live captions to YouTube Live streams via HTTP POST endpoint",
   "type": "module",
   "main": "./dist/index.cjs",
