@@ -1,13 +1,14 @@
 import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
+import { realpathSync } from 'fs';
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url));
+const __dirname = realpathSync(fileURLToPath(new URL('.', import.meta.url)));
 
 export default defineConfig({
-  root: '.',
+  root: __dirname,
   build: {
-    outDir: 'dist',
+    outDir: resolve(__dirname, 'dist'),
     emptyOutDir: true,
   },
   resolve: {

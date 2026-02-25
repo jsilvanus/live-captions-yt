@@ -2,6 +2,7 @@
   "name": "lcyt-web",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "description": "Browser-based GUI client for sending live captions to YouTube via lcyt-backend",
   "scripts": {
     "dev": "vite",
