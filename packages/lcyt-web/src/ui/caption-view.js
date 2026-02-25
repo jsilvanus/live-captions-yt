@@ -57,14 +57,27 @@ export function createCaptionView(container) {
 
       const isActive = i === pointer;
       const wasSent = lastFileId === id && i === lastSentIndex;
+      const isHeading = lines[i].startsWith('#');
 
       if (isActive) li.classList.add('caption-line--active');
       if (wasSent) li.classList.add('caption-line--sent');
+      if (isHeading) li.classList.add('caption-line--heading');
 
-      li.innerHTML = `
-        <span class="caption-line__gutter">${isActive ? '►' : ''}</span>
-        <span class="caption-line__text">${escapeHtml(lines[i])}</span>
-      `;
+      if (isHeading) {
+        const displayText = escapeHtml(lines[i].replace(/^#+\s*/, ''));
+        li.innerHTML = `
+          <span class="caption-line__gutter">${isActive ? '►' : ''}</span>
+          <span class="caption-line__text">${displayText}</span>
+        `;
+      } else {
+        li.innerHTML = `
+          <span class="caption-line__gutter">${isActive ? '►' : ''}</span>
+          <span class="caption-line__text">${escapeHtml(lines[i])}</span>
+        `;
+        li.addEventListener('dblclick', () => {
+          window.dispatchEvent(new CustomEvent('lcyt:line-send', { detail: { text: lines[i], fileId: id, lineIndex: i } }));
+        });
+      }
 
       li.addEventListener('click', () => {
         fileStore.setPointer(id, i);
@@ -78,10 +91,15 @@ export function createCaptionView(container) {
       eofBar.style.display = '';
     }
 
-    // Scroll active line into view
+    // Scroll active line into view only if it's outside the visible area
     const activeEl = list.querySelector('.caption-line--active');
     if (activeEl) {
-      activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const elRect = activeEl.getBoundingClientRect();
+      const containerRect = el.getBoundingClientRect();
+      const isVisible = elRect.top >= containerRect.top && elRect.bottom <= containerRect.bottom;
+      if (!isVisible) {
+        activeEl.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
     }
   }
 

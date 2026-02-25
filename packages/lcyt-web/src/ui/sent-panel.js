@@ -31,21 +31,43 @@ export function createSentPanel(container) {
       return;
     }
 
-    // Rebuild — entries are already newest-first
     list.innerHTML = '';
-    entries.slice(0, 500).forEach(entry => {
+    const visible = entries.slice(0, 500);
+    visible.forEach((entry, i) => {
+      // Batch grouping: entries with the same requestId as the previous entry
+      // are continuations — they show no seq or ticks (those appear on the first/top item only)
+      const prevEntry = i > 0 ? visible[i - 1] : null;
+      const isBatchContinuation = prevEntry && entry.requestId && entry.requestId === prevEntry.requestId;
+
       const li = document.createElement('li');
-      const seqLabel = entry.pending ? '…' : entry.error ? '✕' : `#${entry.sequence}`;
-      li.className = `sent-item${entry.pending ? ' sent-item--pending' : entry.error ? ' sent-item--error' : ''}`;
-      li.innerHTML = `
-        <span class="sent-item__seq">${seqLabel}</span>
-        <span class="sent-item__time">${formatTime(entry.timestamp)}</span>
-        <span class="sent-item__text" title="${entry.text.replace(/"/g, '&quot;')}">${entry.text}</span>
-      `;
+
+      if (isBatchContinuation) {
+        li.className = `sent-item sent-item--continuation${entry.pending ? ' sent-item--pending' : entry.error ? ' sent-item--error' : ''}`;
+        li.innerHTML = `
+          <span class="sent-item__seq"></span>
+          <span class="sent-item__ticks"></span>
+          <span class="sent-item__time">${formatTime(entry.timestamp)}</span>
+          <span class="sent-item__text" title="${entry.text.replace(/"/g, '&quot;')}">${entry.text}</span>
+        `;
+      } else {
+        const seqLabel = entry.pending ? '?' : entry.error ? '✕' : `#${entry.sequence}`;
+        const ticksLabel = entry.pending ? '✓' : entry.error ? '✗' : '✓✓';
+        const ticksClass = entry.pending ? 'sent-item__ticks--pending'
+          : entry.error ? 'sent-item__ticks--error'
+          : 'sent-item__ticks--confirmed';
+
+        li.className = `sent-item${entry.pending ? ' sent-item--pending' : entry.error ? ' sent-item--error' : ''}`;
+        li.innerHTML = `
+          <span class="sent-item__seq">${seqLabel}</span>
+          <span class="sent-item__ticks ${ticksClass}">${ticksLabel}</span>
+          <span class="sent-item__time">${formatTime(entry.timestamp)}</span>
+          <span class="sent-item__text" title="${entry.text.replace(/"/g, '&quot;')}">${entry.text}</span>
+        `;
+      }
+
       list.appendChild(li);
     });
 
-    // Scroll to top (newest first is already at top)
     list.scrollTop = 0;
   }
 

@@ -70,7 +70,7 @@ createSentPanel(rightPanel);
 // ─── Footer / input bar ───────────────────────────────────
 
 const footer = document.getElementById('footer');
-createInputBar(footer, { captionView });
+const inputBar = createInputBar(footer, { captionView });
 
 // ─── Keyboard navigation (global) ────────────────────────
 
@@ -85,6 +85,10 @@ document.addEventListener('keydown', (e) => {
   if (!file) return;
 
   switch (e.key) {
+    case 'Enter':
+      e.preventDefault();
+      inputBar.focus();
+      return;
     case 'ArrowUp':
       e.preventDefault();
       fileStore.setPointer(file.id, file.pointer - 1);

@@ -306,6 +306,20 @@
   background: var(--color-active-line);
 }
 
+.caption-line--heading {
+  cursor: default;
+  font-weight: 700;
+  color: var(--color-accent);
+  font-family: var(--font-ui);
+  padding-top: 8px;
+  padding-bottom: 4px;
+  border-left-color: transparent !important;
+}
+
+.caption-line--heading:hover {
+  background: transparent;
+}
+
 .caption-line--sent {
   animation: sent-flash 1.5s ease-out forwards;
 }
@@ -409,6 +423,25 @@
   opacity: 0.8;
 }
 
+.sent-item__ticks {
+  font-size: 10px;
+  flex-shrink: 0;
+  min-width: 18px;
+  text-align: right;
+}
+
+.sent-item__ticks--pending {
+  color: var(--color-text-muted);
+}
+
+.sent-item__ticks--confirmed {
+  color: var(--color-accent);
+}
+
+.sent-item__ticks--error {
+  color: var(--color-error);
+}
+
 .sent-panel__empty {
   padding: 32px;
   color: var(--color-text-dim);
@@ -462,6 +495,18 @@
 .input-bar__input:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.input-bar__batch-badge {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--color-warning);
+  border: 1px solid var(--color-warning);
+  border-radius: 10px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .input-bar__send {

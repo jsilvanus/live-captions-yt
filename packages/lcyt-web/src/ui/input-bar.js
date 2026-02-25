@@ -14,11 +14,55 @@ export function createInputBar(container, { captionView } = {}) {
       placeholder="Enter: send current line | Type: send custom text"
       disabled
     />
+    <span class="input-bar__batch-badge" id="batch-badge" style="display:none">0</span>
     <button class="input-bar__send" id="send-btn" disabled>▶</button>
   `;
 
   const input = el.querySelector('#caption-input');
   const sendBtn = el.querySelector('#send-btn');
+  const batchBadge = el.querySelector('#batch-badge');
+
+  // ─── Batch buffer ───────────────────────────────────────
+
+  let batchBuffer = [];   // Array<{ text, requestId }>
+  let batchTimer = null;
+
+  function getBatchIntervalMs() {
+    try {
+      const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+      return Math.min(20, Math.max(0, v)) * 1000;
+    } catch { return 0; }
+  }
+
+  function updateBatchBadge() {
+    if (batchBuffer.length > 0) {
+      batchBadge.textContent = batchBuffer.length;
+      batchBadge.style.display = '';
+    } else {
+      batchBadge.style.display = 'none';
+    }
+  }
+
+  async function flushBatch() {
+    const items = batchBuffer.slice();
+    batchBuffer = [];
+    batchTimer = null;
+    updateBatchBadge();
+
+    if (!items.length) return;
+
+    try {
+      const data = await session.sendBatch(items.map(i => i.text));
+      // Remap each temp requestId to the real server requestId so SSE can confirm them
+      items.forEach(item => sentLog.updateRequestId(item.requestId, data.requestId));
+    } catch (err) {
+      // Mark all buffered items as failed
+      items.forEach(item => sentLog.markError(item.requestId));
+      handleSendError(err);
+    }
+  }
+
+  // ─── UI helpers ─────────────────────────────────────────
 
   function setEnabled(enabled) {
     input.disabled = !enabled;
@@ -33,6 +77,27 @@ export function createInputBar(container, { captionView } = {}) {
   function flashSuccess() {
     sendBtn.classList.add('input-bar__send--flash');
     setTimeout(() => sendBtn.classList.remove('input-bar__send--flash'), 300);
+  }
+
+  // ─── Send logic ─────────────────────────────────────────
+
+  async function doSend(text) {
+    if (!text?.trim()) return;
+    if (getBatchIntervalMs() > 0) {
+      // Add to sentLog immediately with a temp ID — will be remapped on flush
+      const tempId = 'q-' + Math.random().toString(36).slice(2);
+      sentLog.add({ requestId: tempId, text, pending: true });
+      batchBuffer.push({ text, requestId: tempId });
+      updateBatchBadge();
+      if (!batchTimer) {
+        batchTimer = setTimeout(flushBatch, getBatchIntervalMs());
+      }
+      flashSuccess();
+      return;
+    }
+    const data = await session.send(text);
+    sentLog.add({ requestId: data.requestId, text, pending: true });
+    flashSuccess();
   }
 
   async function handleSend() {
@@ -52,24 +117,31 @@ export function createInputBar(container, { captionView } = {}) {
         return;
       }
 
+      // If on a heading or blank line, advance past it and don't send
+      // (getActive() returns a shallow copy, so compute target index locally)
+      const isSkippable = line => !line?.trim() || line.startsWith('#');
+      if (isSkippable(file.lines[file.pointer])) {
+        let targetPointer = file.pointer + 1;
+        while (targetPointer < file.lines.length && isSkippable(file.lines[targetPointer])) {
+          targetPointer++;
+        }
+        fileStore.setPointer(file.id, Math.min(targetPointer, file.lines.length - 1));
+        return;
+      }
+
       const lineText = file.lines[file.pointer];
       const prevPointer = file.pointer;
 
       try {
-        const data = await session.send(lineText);
-        sentLog.add({ requestId: data.requestId, text: lineText, pending: true });
+        await doSend(lineText);
 
-        // Flash sent animation on the previous active line
         captionView && captionView.flashSent(file.id, prevPointer);
 
-        // Advance pointer (unless at end)
         if (file.pointer < file.lines.length - 1) {
           fileStore.advancePointer(file.id);
         } else {
           showToast('End of file reached', 'info', 2500);
         }
-
-        flashSuccess();
       } catch (err) {
         handleSendError(err);
       }
@@ -77,10 +149,8 @@ export function createInputBar(container, { captionView } = {}) {
       // Send-custom mode
       const customText = text.trim();
       try {
-        const data = await session.send(customText);
-        sentLog.add({ requestId: data.requestId, text: customText, pending: true });
+        await doSend(customText);
         input.value = '';
-        flashSuccess();
       } catch (err) {
         handleSendError(err);
       }
@@ -97,9 +167,11 @@ export function createInputBar(container, { captionView } = {}) {
     } else {
       window.dispatchEvent(new CustomEvent('lcyt:error', { detail: { message: msg } }));
     }
+    flashError();
   }
 
-  // Enter key or button click
+  // ─── Events ─────────────────────────────────────────────
+
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -116,6 +188,16 @@ export function createInputBar(container, { captionView } = {}) {
   });
 
   sendBtn.addEventListener('click', handleSend);
+
+  // Double-click send from caption-view
+  window.addEventListener('lcyt:line-send', async (e) => {
+    if (!session.state.connected) { flashError(); return; }
+    try {
+      await doSend(e.detail.text);
+    } catch (err) {
+      handleSendError(err);
+    }
+  });
 
   // Enable/disable based on connection
   window.addEventListener('lcyt:connected', () => setEnabled(true));

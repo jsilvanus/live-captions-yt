@@ -145,6 +145,14 @@ export async function send(text) {
   return sender.send(text);
 }
 
+export async function sendBatch(texts) {
+  if (!sender || !state.connected) {
+    throw new Error('Not connected');
+  }
+
+  return sender.sendBatch(texts.map(text => ({ text })));
+}
+
 // ─── Sync ─────────────────────────────────────────────────
 
 export async function sync() {

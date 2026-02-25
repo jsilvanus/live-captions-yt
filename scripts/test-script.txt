@@ -1,10 +1,12 @@
+# Introduction
 Welcome to the live stream!
 Today we're going to learn about YouTube live captions.
 Let me show you how this works.
 First, we need to set up our stream key.
 Then we can start sending captions in real-time.
 The captions will appear on your live stream.
-This is line 7 of the test script.
+
+# Navigation
 You can navigate up and down using arrow keys.
 Press Enter to send the current line.
 Use +N or -N to jump multiple lines.
@@ -12,4 +14,69 @@ Type /goto followed by a line number to jump directly.
 The /reload command will reload this file.
 Type /status to see your current position.
 Press h for help at any time.
-This is the last line of the test script.
+
+# Caption Tips
+Let's talk about what makes a good live caption.
+Short, clear sentences work best.
+Try to keep each caption under ten words.
+Captions should match the speaker's pace.
+Timing matters just as much as accuracy.
+A well-timed caption is easier to follow.
+
+# Long Lines Test
+Now let's try some longer lines to test wrapping.
+This sentence is intentionally a bit longer than the others to see how the caption view handles it.
+Back to short lines now.
+Easy to read.
+Quick to send.
+Good for rapid-fire content.
+
+# Punctuation & Special Characters
+Let's test some punctuation: commas, colons, and semicolons.
+What about question marks? They work fine too.
+Exclamation points add energy!
+Ellipses can imply a pause...
+A dash — like this — adds emphasis.
+"Quoted text" should display correctly.
+Numbers look like this: 1, 2, 3, 42, 100.
+Percentages: 50%, 75%, 100% complete.
+Currencies: $9.99, €14.00, £7.50.
+Temperatures: 72°F or 22°C.
+URLs are sometimes read aloud: example dot com.
+Hashtags are popular: pound sign LiveCaptions.
+At-mentions too: at username.
+
+# Pangrams
+The quick brown fox jumps over the lazy dog.
+Pack my box with five dozen liquor jugs.
+How vexingly quick daft zebras jump.
+The five boxing wizards jump quickly.
+Sphinx of black quartz, judge my vow.
+Those were pangrams — sentences using every letter of the alphabet.
+Useful for testing font rendering.
+
+# Technical Terms
+Ingestion URL, stream key, sequence number.
+HTTP POST request with caption payload.
+NTP clock synchronisation offset.
+Server-Sent Events for async delivery.
+JSON Web Token bearer authentication.
+SQLite database for API key storage.
+
+# Filler Lines
+So anyway, where were we?
+Right, we were testing the caption system.
+It seems to be working pretty well.
+Let's keep going and see what happens.
+Almost at the end now.
+Just a few more lines to go.
+
+# Closing
+Double-clicking a line will move the pointer and send it immediately.
+Single-clicking just moves the pointer.
+Lines beginning with # are headings and cannot be sent.
+Press Enter on an empty input to send the current line and advance.
+Type something in the input bar to send custom text.
+That covers most of the features.
+Thanks for testing the LCYT caption system!
+End of test script.
