@@ -10,43 +10,6 @@ import { createAuthMiddleware } from '../src/middleware/auth.js';
 const JWT_SECRET = 'test-captions-secret';
 
 // ---------------------------------------------------------------------------
-// Mock sender factory
-// ---------------------------------------------------------------------------
-
-function makeMockSender({ sendResult, sendBatchResult, sendError } = {}) {
-  const calls = { send: [], sendBatch: [] };
-  return {
-    calls,
-    sequence: 0,
-    send: async (text, timestamp) => {
-      calls.send.push({ text, timestamp });
-      if (sendError) throw new Error(sendError);
-      const result = sendResult || {
-        sequence: 1,
-        timestamp: timestamp instanceof Date ? timestamp.toISOString() : (timestamp || '2026-02-20T12:00:00.000'),
-        statusCode: 200,
-        serverTimestamp: '2026-02-20T12:00:00.000Z'
-      };
-      this_sender.sequence = result.sequence;
-      return result;
-    },
-    sendBatch: async (captions) => {
-      calls.sendBatch.push(captions);
-      if (sendError) throw new Error(sendError);
-      const result = sendBatchResult || {
-        sequence: captions.length,
-        count: captions.length,
-        statusCode: 200,
-        serverTimestamp: '2026-02-20T12:00:00.000Z'
-      };
-      this_sender.sequence = result.sequence;
-      return result;
-    },
-    end: async () => {}
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Test app setup
 // ---------------------------------------------------------------------------
 
@@ -73,7 +36,6 @@ after(() => new Promise((resolve) => {
 }));
 
 beforeEach(() => {
-  // Clear all sessions
   for (const session of [...store.all()]) {
     store.remove(session.sessionId);
   }
@@ -95,6 +57,7 @@ function createMockSession({ sendError } = {}) {
     sequence: 0,
     send: async (text, timestamp) => {
       if (sendError) throw new Error(sendError);
+      sender.sequence = 1;
       return {
         sequence: 1,
         timestamp: timestamp instanceof Date
@@ -106,6 +69,7 @@ function createMockSession({ sendError } = {}) {
     },
     sendBatch: async (captions) => {
       if (sendError) throw new Error(sendError);
+      sender.sequence = captions.length;
       return {
         sequence: captions.length,
         count: captions.length,
@@ -116,7 +80,7 @@ function createMockSession({ sendError } = {}) {
     end: async () => {}
   };
 
-  const session = store.create({
+  return store.create({
     apiKey: 'test-key',
     streamKey: 'test-stream',
     domain: 'https://test.com',
@@ -125,11 +89,6 @@ function createMockSession({ sendError } = {}) {
     syncOffset: 0,
     sender
   });
-
-  // Attach the real sender ref for sequence updates
-  sender._session = session;
-
-  return session;
 }
 
 async function postCaptions(token, body) {
@@ -140,6 +99,20 @@ async function postCaptions(token, body) {
       'Authorization': `Bearer ${token}`
     },
     body: JSON.stringify(body)
+  });
+}
+
+// Wait for a named event on a session emitter (with timeout)
+function waitForEvent(session, eventName, timeout = 500) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`Timed out waiting for session emitter event: ${eventName}`)),
+      timeout
+    );
+    session.emitter.once(eventName, (data) => {
+      clearTimeout(timer);
+      resolve(data);
+    });
   });
 }
 
@@ -190,24 +163,39 @@ describe('POST /captions', () => {
     assert.ok(data.error);
   });
 
-  it('should send single caption and return sequence, timestamp, statusCode', async () => {
+  it('should return 202 with ok and requestId for a single caption', async () => {
     const session = createMockSession();
     const token = makeToken(session.sessionId);
 
     const res = await postCaptions(token, { captions: [{ text: 'Hello world' }] });
     const data = await res.json();
 
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(typeof data.sequence, 'number');
-    assert.ok(data.timestamp || data.timestamp === '');
-    assert.strictEqual(data.statusCode, 200);
-    assert.ok('serverTimestamp' in data);
+    assert.strictEqual(res.status, 202);
+    assert.strictEqual(data.ok, true);
+    assert.strictEqual(typeof data.requestId, 'string');
+    assert.ok(data.requestId.length > 0);
   });
 
-  it('should send batch captions and return sequence, count, statusCode', async () => {
+  it('should emit caption_result with sequence and statusCode after single caption send', async () => {
     const session = createMockSession();
     const token = makeToken(session.sessionId);
 
+    const eventPromise = waitForEvent(session, 'caption_result');
+    const res = await postCaptions(token, { captions: [{ text: 'Hello world' }] });
+    const data = await res.json();
+
+    const event = await eventPromise;
+    assert.strictEqual(event.requestId, data.requestId);
+    assert.strictEqual(typeof event.sequence, 'number');
+    assert.strictEqual(event.statusCode, 200);
+    assert.ok('serverTimestamp' in event);
+  });
+
+  it('should return 202 and emit caption_result with count for batch captions', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const eventPromise = waitForEvent(session, 'caption_result');
     const res = await postCaptions(token, {
       captions: [
         { text: 'Caption one' },
@@ -216,21 +204,22 @@ describe('POST /captions', () => {
     });
     const data = await res.json();
 
-    assert.strictEqual(res.status, 200);
-    assert.strictEqual(data.count, 2);
-    assert.strictEqual(data.statusCode, 200);
-    assert.ok('serverTimestamp' in data);
+    assert.strictEqual(res.status, 202);
+    assert.strictEqual(data.ok, true);
+
+    const event = await eventPromise;
+    assert.strictEqual(event.requestId, data.requestId);
+    assert.strictEqual(event.count, 2);
+    assert.strictEqual(event.statusCode, 200);
   });
 
   it('should resolve relative time fields to absolute timestamps', async () => {
     const session = createMockSession();
     const token = makeToken(session.sessionId);
 
-    // session.startedAt is set in store.create, session.syncOffset is 0
     const startedAt = session.startedAt;
     const relativeTime = 5000;
 
-    // We need to verify the sender receives a Date for the timestamp
     let capturedTimestamp;
     const origSend = session.sender.send;
     session.sender.send = async (text, timestamp) => {
@@ -238,11 +227,10 @@ describe('POST /captions', () => {
       return origSend(text, timestamp);
     };
 
-    await postCaptions(token, {
-      captions: [{ text: 'Relative', time: relativeTime }]
-    });
+    const eventPromise = waitForEvent(session, 'caption_result');
+    await postCaptions(token, { captions: [{ text: 'Relative', time: relativeTime }] });
+    await eventPromise; // wait for background send to complete
 
-    // The route should have resolved time → new Date(startedAt + relativeTime + syncOffset)
     assert.ok(capturedTimestamp instanceof Date);
     const expectedMs = startedAt + relativeTime + 0; // syncOffset = 0
     assert.ok(Math.abs(capturedTimestamp.getTime() - expectedMs) < 100);
@@ -259,21 +247,30 @@ describe('POST /captions', () => {
       return origSend(text, timestamp);
     };
 
+    const eventPromise = waitForEvent(session, 'caption_result');
     await postCaptions(token, {
       captions: [{ text: 'Both', timestamp: '2026-02-20T12:00:00.000', time: 5000 }]
     });
+    await eventPromise;
 
-    // timestamp should be used as-is (not resolved via time)
     assert.strictEqual(capturedTimestamp, '2026-02-20T12:00:00.000');
   });
 
-  it('should return 502 when sender throws', async () => {
+  it('should emit caption_error (not reject the HTTP request) when sender throws', async () => {
     const session = createMockSession({ sendError: 'YouTube connection failed' });
     const token = makeToken(session.sessionId);
 
+    const eventPromise = waitForEvent(session, 'caption_error');
     const res = await postCaptions(token, { captions: [{ text: 'Fail' }] });
     const data = await res.json();
-    assert.strictEqual(res.status, 502);
-    assert.ok(data.error);
+
+    // HTTP response is still 202 — error travels via SSE
+    assert.strictEqual(res.status, 202);
+    assert.strictEqual(data.ok, true);
+
+    const event = await eventPromise;
+    assert.strictEqual(event.requestId, data.requestId);
+    assert.ok(event.error);
+    assert.strictEqual(event.statusCode, 502);
   });
 });

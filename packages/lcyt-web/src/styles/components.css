@@ -392,6 +392,23 @@
   flex: 1;
 }
 
+.sent-item--pending .sent-item__seq {
+  opacity: 0.4;
+}
+
+.sent-item--pending .sent-item__text {
+  opacity: 0.6;
+}
+
+.sent-item--error .sent-item__seq {
+  color: var(--color-error, #e05252);
+}
+
+.sent-item--error .sent-item__text {
+  color: var(--color-error, #e05252);
+  opacity: 0.8;
+}
+
 .sent-panel__empty {
   padding: 32px;
   color: var(--color-text-dim);

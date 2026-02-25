@@ -6,6 +6,7 @@ import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createLiveRouter } from './routes/live.js';
 import { createCaptionsRouter } from './routes/captions.js';
+import { createEventsRouter } from './routes/events.js';
 import { createSyncRouter } from './routes/sync.js';
 import { createKeysRouter } from './routes/keys.js';
 
@@ -90,6 +91,7 @@ const auth = createAuthMiddleware(jwtSecret);
 
 app.use('/live', createLiveRouter(db, store, jwtSecret));
 app.use('/captions', createCaptionsRouter(store, auth));
+app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));
 

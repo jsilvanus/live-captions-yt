@@ -248,24 +248,21 @@ describe('BackendCaptionSender send()', () => {
     await sender.start();
   });
 
-  it('should POST to /captions with single caption and update sequence', async () => {
+  it('should POST to /captions with single caption and return requestId', async () => {
     const calls = setupFetch([
       {
         ok: true,
-        data: {
-          sequence: 1,
-          timestamp: '2026-02-20T12:00:00.000',
-          statusCode: 200,
-          serverTimestamp: '2026-02-20T12:00:00.000Z'
-        }
+        status: 202,
+        data: { ok: true, requestId: 'mock-request-id' }
       }
     ]);
 
     const result = await sender.send('Hello world');
 
-    assert.strictEqual(sender.sequence, 1);
-    assert.strictEqual(result.sequence, 1);
-    assert.strictEqual(result.statusCode, 200);
+    // Sequence is now server-side only — not updated locally by send()
+    assert.strictEqual(sender.sequence, 0);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.requestId, 'mock-request-id');
 
     // Verify request
     assert.strictEqual(calls.length, 1);
@@ -329,7 +326,7 @@ describe('BackendCaptionSender sendBatch()', () => {
 
   it('should POST to /captions with multiple captions', async () => {
     const calls = setupFetch([
-      { ok: true, data: { sequence: 2, count: 2, statusCode: 200, serverTimestamp: null } }
+      { ok: true, status: 202, data: { ok: true, requestId: 'mock-batch-id' } }
     ]);
 
     const captions = [
@@ -339,8 +336,10 @@ describe('BackendCaptionSender sendBatch()', () => {
 
     const result = await sender.sendBatch(captions);
 
-    assert.strictEqual(sender.sequence, 2);
-    assert.strictEqual(result.count, 2);
+    // Sequence is now server-side only — not updated locally by sendBatch()
+    assert.strictEqual(sender.sequence, 0);
+    assert.strictEqual(result.ok, true);
+    assert.strictEqual(result.requestId, 'mock-batch-id');
 
     const body = JSON.parse(calls[0].options.body);
     assert.strictEqual(body.captions.length, 2);

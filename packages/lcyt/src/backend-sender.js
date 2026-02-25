@@ -142,7 +142,7 @@ export class BackendCaptionSender {
    *   - Absolute timestamp (string/Date/epoch ms) — passed as `timestamp`
    *   - `{ time: number }` — milliseconds since session start, resolved server-side
    *   - Omit for auto-generated timestamp
-   * @returns {Promise<object>} Backend response: { sequence, timestamp, statusCode, serverTimestamp }
+   * @returns {Promise<{ok: boolean, requestId: string}>} Immediate ack; delivery result arrives via GET /events SSE stream
    */
   async send(text, timestampOrOptions) {
     const caption = { text };
@@ -159,13 +159,10 @@ export class BackendCaptionSender {
       }
     }
 
-    const data = await this._fetch('/captions', {
+    return this._fetch('/captions', {
       method: 'POST',
       body: { captions: [caption] }
     });
-
-    this.sequence = data.sequence;
-    return data;
   }
 
   /**
@@ -173,7 +170,7 @@ export class BackendCaptionSender {
    * If no array is provided, drains and sends the internal queue (built with construct()).
    *
    * @param {Array<{text: string, timestamp?: string|Date|number, time?: number}>} [captions]
-   * @returns {Promise<object>} Backend response: { sequence, count, statusCode, serverTimestamp }
+   * @returns {Promise<{ok: boolean, requestId: string}>} Immediate ack; delivery result arrives via GET /events SSE stream
    */
   async sendBatch(captions) {
     const items = captions !== undefined ? captions : [...this._queue];
@@ -181,13 +178,10 @@ export class BackendCaptionSender {
       this._queue = [];
     }
 
-    const data = await this._fetch('/captions', {
+    return this._fetch('/captions', {
       method: 'POST',
       body: { captions: items }
     });
-
-    this.sequence = data.sequence;
-    return data;
   }
 
   // ---------------------------------------------------------------------------

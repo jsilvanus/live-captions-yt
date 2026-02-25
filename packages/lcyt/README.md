@@ -202,15 +202,27 @@ const sender = new BackendCaptionSender({
 });
 
 await sender.start();
-await sender.send('Hello!');
+
+// send() and sendBatch() return immediately with { ok, requestId }.
+// YouTube delivery happens asynchronously on the backend.
+// Subscribe to GET /events on the backend to receive the real outcome.
+const { requestId } = await sender.send('Hello!');
 await sender.send('With session time', { time: 5000 }); // 5s since session start
 await sender.sync();
 await sender.end();
 ```
 
+### Async delivery
+
+Unlike `YoutubeLiveCaptionSender`, `BackendCaptionSender.send()` and `sendBatch()` do **not** block until YouTube responds. They return `{ ok: true, requestId: string }` as soon as the backend acknowledges the request (`202 Accepted`). The actual delivery result — sequence number, YouTube status code, server timestamp — arrives later on the backend's `GET /events` SSE stream.
+
+The backend serialises concurrent sends per session internally, so sequence numbers always stay monotonically increasing even when sends are fired in rapid succession.
+
 `BackendCaptionSender` exposes the same interface as `YoutubeLiveCaptionSender`
 (`send`, `sendBatch`, `construct`, `getQueue`, `clearQueue`, `sync`, `heartbeat`,
 `getSequence`, `setSequence`, `getSyncOffset`, `setSyncOffset`) plus `getStartedAt()`.
+Note: `getSequence()` reflects the last server-confirmed value (updated via `heartbeat()`),
+not the in-flight value.
 
 ## Error Handling
 

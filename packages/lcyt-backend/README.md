@@ -19,6 +19,7 @@ An Express.js HTTP relay server that bridges web clients to YouTube Live's capti
   - [GET /live](#get-live)
   - [DELETE /live](#delete-live)
   - [POST /captions](#post-captions)
+  - [GET /events](#get-events)
   - [POST /sync](#post-sync)
   - [GET /health](#get-health)
   - [Admin: GET /keys](#admin-get-keys)
@@ -61,7 +62,8 @@ packages/lcyt-backend/
 │   │   └── cors.js             # Dynamic CORS policy enforcement
 │   └── routes/
 │       ├── live.js             # Session registration, status, teardown
-│       ├── captions.js         # Caption transmission (single + batch)
+│       ├── captions.js         # Caption queuing → 202 + async YouTube delivery
+│       ├── events.js           # GET /events SSE stream for delivery results
 │       ├── sync.js             # Clock synchronization
 │       └── keys.js             # Admin CRUD for API keys
 ├── test/                       # Node built-in test runner suite
@@ -73,6 +75,7 @@ packages/lcyt-backend/
 
 - **Session IDs** are a 16-char SHA-256 hex hash of `apiKey:streamKey:domain`, so raw credentials are never stored in JWTs or exposed in logs.
 - **In-memory sessions** with configurable TTL; no session DB is required for operation.
+- **Async caption delivery:** `POST /captions` returns `202 { ok, requestId }` immediately. The YouTube HTTP call is serialised per session via a per-session Promise queue (so sequence numbers stay monotonic) and the result is pushed to `GET /events` via an `EventEmitter` on the session.
 - **Admin routes** (`/keys`) are never exposed to CORS—they must be called from the server's local network.
 - **SQLite** (via `better-sqlite3`) stores API keys persistently across restarts.
 
@@ -343,36 +346,72 @@ Send one or more captions to YouTube.
 
 If neither `timestamp` nor `time` is provided, the current server time is used.
 
-**Single caption response `200 OK`:**
+**Response `202 Accepted`** (always, for valid auth + session):
 
 ```json
 {
-  "sequence":        6,
-  "timestamp":       "2024-01-01T12:00:00.000Z",
-  "statusCode":      200,
-  "serverTimestamp": "2024-01-01T12:00:00.042Z"
+  "ok":        true,
+  "requestId": "550e8400-e29b-41d4-a716-446655440000"
 }
 ```
 
-**Batch response `200 OK`** (when `captions` has more than one item):
+The YouTube HTTP call happens in the background. The actual delivery result — sequence number, status code, and server timestamp — is pushed to the client on the `GET /events` SSE stream. Use `requestId` to correlate the ack with the eventual result event.
 
-```json
-{
-  "sequence":        8,
-  "count":           3,
-  "statusCode":      200,
-  "serverTimestamp": "2024-01-01T12:00:01.100Z"
-}
-```
-
-**Error responses:**
+**Error responses (before queuing):**
 
 | Status | Reason |
 |---|---|
 | `400` | `captions` field missing or empty array |
 | `401` | Missing or invalid JWT |
 | `404` | Session not found |
-| `502` | YouTube returned an error; includes YouTube's HTTP status code |
+
+Delivery failures (YouTube errors, network errors) arrive as `caption_error` events on the SSE stream — they do **not** affect the HTTP status of the original `POST /captions` call.
+
+---
+
+### GET /events
+
+Subscribe to the real-time SSE stream of caption delivery results for the current session.
+
+**Auth:** `Authorization: Bearer <token>` **or** `?token=<jwt>` query parameter. The query-parameter form is required for browser `EventSource` connections, which cannot set custom headers.
+
+**CORS:** Dynamic (same policy as other session-scoped routes).
+
+**Response:** `text/event-stream` (Server-Sent Events). The connection stays open until the client closes it or the session is torn down.
+
+**Events:**
+
+| Event | When | Data |
+|---|---|---|
+| `connected` | Immediately on subscribe | `{ "sessionId": "..." }` |
+| `caption_result` | YouTube accepted the caption(s) | `{ "requestId": "...", "sequence": 6, "statusCode": 200, "serverTimestamp": "...", ["count": 3] }` |
+| `caption_error` | YouTube rejected or a network error occurred | `{ "requestId": "...", "error": "...", "statusCode": 401, ["sequence": 6] }` |
+| `session_closed` | Session expired or was deleted server-side | `{}` |
+
+**Example (browser):**
+
+```javascript
+const es = new EventSource(`https://captions.example.com/events?token=${encodeURIComponent(jwt)}`);
+
+es.addEventListener('caption_result', (e) => {
+  const { requestId, sequence, statusCode } = JSON.parse(e.data);
+  console.log(`Caption #${sequence} delivered (${statusCode})`);
+});
+
+es.addEventListener('caption_error', (e) => {
+  const { requestId, error } = JSON.parse(e.data);
+  console.error('Delivery failed:', error);
+});
+
+es.addEventListener('session_closed', () => es.close());
+```
+
+**Error responses (before streaming begins):**
+
+| Status | Reason |
+|---|---|
+| `401` | Missing, invalid, or expired token |
+| `404` | Session not found |
 
 ---
 
@@ -586,16 +625,22 @@ Client                          lcyt-backend                    YouTube
   │                                  │── runs initial sync ────────>│
   │<── {token, sessionId, ...} ──── │<─── sync response ───────────│
   │                                  │                              │
+  │── GET /events?token=... ───────> │                              │
+  │<── text/event-stream open ────── │                              │
+  │<── event: connected ──────────── │                              │
+  │                                  │                              │
   │── POST /captions ──────────────> │                              │
-  │   Authorization: Bearer <token>  │── sender.send() ────────────>│
-  │<── {sequence, statusCode} ────── │<─── 200 OK ─────────────────│
+  │   Authorization: Bearer <token>  │                              │
+  │<── 202 {ok, requestId} ───────── │                              │
+  │                                  │── sender.send() ────────────>│  (async)
+  │<── event: caption_result ─────── │<─── 200 OK ─────────────────│
   │                                  │                              │
   │── POST /sync ──────────────────> │                              │
   │<── {syncOffset, rtt} ─────────── │── sender.sync() ───────────>│
   │                                  │                              │
   │── DELETE /live ────────────────> │                              │
   │<── {removed: true} ─────────── │── sender.end() ─────────────>│
-  │                                  │── session removed from memory│
+  │<── event: session_closed ─────── │── session removed from memory│
 ```
 
 Sessions expire automatically after `SESSION_TTL` milliseconds of inactivity (default: 2 hours). A background sweep runs every `CLEANUP_INTERVAL` milliseconds (default: 5 minutes) to clean up expired sessions and call `sender.end()` on them.

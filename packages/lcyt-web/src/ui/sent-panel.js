@@ -35,9 +35,10 @@ export function createSentPanel(container) {
     list.innerHTML = '';
     entries.slice(0, 500).forEach(entry => {
       const li = document.createElement('li');
-      li.className = 'sent-item';
+      const seqLabel = entry.pending ? '…' : entry.error ? '✕' : `#${entry.sequence}`;
+      li.className = `sent-item${entry.pending ? ' sent-item--pending' : entry.error ? ' sent-item--error' : ''}`;
       li.innerHTML = `
-        <span class="sent-item__seq">#${entry.sequence}</span>
+        <span class="sent-item__seq">${seqLabel}</span>
         <span class="sent-item__time">${formatTime(entry.timestamp)}</span>
         <span class="sent-item__text" title="${entry.text.replace(/"/g, '&quot;')}">${entry.text}</span>
       `;

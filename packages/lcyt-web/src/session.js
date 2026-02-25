@@ -1,9 +1,11 @@
 import { BackendCaptionSender } from 'lcyt/backend';
+import * as sentLog from './sent-log.js';
 
 const CONFIG_KEY = 'lcyt-config';
 const AUTO_CONNECT_KEY = 'lcyt-autoconnect';
 
 let sender = null;
+let eventSource = null;
 
 export const state = {
   connected: false,
@@ -54,6 +56,39 @@ function emit(name, detail = {}) {
   window.dispatchEvent(new CustomEvent(name, { detail }));
 }
 
+// ─── SSE ─────────────────────────────────────────────────
+
+function openEventSource(backendUrl, token) {
+  const url = `${backendUrl}/events?token=${encodeURIComponent(token)}`;
+  eventSource = new EventSource(url);
+
+  eventSource.addEventListener('caption_result', (e) => {
+    const data = JSON.parse(e.data);
+    sentLog.confirm(data.requestId, data);
+    state.sequence = data.sequence;
+    emit('lcyt:sequence-updated', { sequence: state.sequence });
+  });
+
+  eventSource.addEventListener('caption_error', (e) => {
+    const data = JSON.parse(e.data);
+    sentLog.markError(data.requestId);
+    emit('lcyt:error', { message: data.error || 'Caption delivery failed' });
+  });
+
+  eventSource.addEventListener('session_closed', () => {
+    disconnect();
+  });
+
+  // EventSource auto-reconnects on error; no extra handling needed
+}
+
+function closeEventSource() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+}
+
 // ─── Connect / Disconnect ─────────────────────────────────
 
 export async function connect({ backendUrl, apiKey, streamKey }) {
@@ -74,6 +109,8 @@ export async function connect({ backendUrl, apiKey, streamKey }) {
 
   saveConfig({ backendUrl, apiKey, streamKey });
 
+  openEventSource(backendUrl, sender._token);
+
   emit('lcyt:connected', {
     sequence: state.sequence,
     syncOffset: state.syncOffset,
@@ -83,6 +120,8 @@ export async function connect({ backendUrl, apiKey, streamKey }) {
 
 export async function disconnect() {
   if (!sender) return;
+
+  closeEventSource();
 
   try {
     await sender.end();
@@ -102,12 +141,8 @@ export async function send(text) {
     throw new Error('Not connected');
   }
 
-  const data = await sender.send(text);
-  state.sequence = sender.sequence;
-
-  emit('lcyt:sequence-updated', { sequence: state.sequence });
-
-  return data;
+  // Returns { ok: true, requestId } immediately — YouTube delivery is async
+  return sender.send(text);
 }
 
 // ─── Sync ─────────────────────────────────────────────────

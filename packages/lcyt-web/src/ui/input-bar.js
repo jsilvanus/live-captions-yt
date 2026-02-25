@@ -57,7 +57,7 @@ export function createInputBar(container, { captionView } = {}) {
 
       try {
         const data = await session.send(lineText);
-        sentLog.add({ sequence: data.sequence, text: lineText });
+        sentLog.add({ requestId: data.requestId, text: lineText, pending: true });
 
         // Flash sent animation on the previous active line
         captionView && captionView.flashSent(file.id, prevPointer);
@@ -78,7 +78,7 @@ export function createInputBar(container, { captionView } = {}) {
       const customText = text.trim();
       try {
         const data = await session.send(customText);
-        sentLog.add({ sequence: data.sequence, text: customText });
+        sentLog.add({ requestId: data.requestId, text: customText, pending: true });
         input.value = '';
         flashSuccess();
       } catch (err) {

@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 
 /**
  * Factory for the /captions router.
  *
- * POST /captions — Send one or more captions through the session's sender.
- * Requires JWT auth (passed as middleware).
+ * POST /captions — Queue a caption send and return 202 immediately.
+ * The actual YouTube delivery is serialised per session and the result
+ * is pushed to the client via the GET /events SSE stream.
  *
  * @param {import('../store.js').SessionStore} store
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
@@ -41,50 +43,49 @@ export function createCaptionsRouter(store, auth) {
       return caption;
     });
 
-    try {
+    const requestId = randomUUID();
+
+    // Chain onto the session's send queue so concurrent POST /captions requests
+    // are serialised and sequence numbers stay monotonically increasing.
+    session._sendQueue = session._sendQueue.then(async () => {
       let result;
-      if (resolvedCaptions.length === 1) {
-        const { text, timestamp } = resolvedCaptions[0];
-        result = await session.sender.send(text, timestamp);
-      } else {
-        result = await session.sender.sendBatch(resolvedCaptions);
-      }
-
-      // Update session sequence from sender (incremented on success inside sendBatch)
-      session.sequence = session.sender.sequence;
-      store.touch(sessionId);
-
-      if (result.statusCode >= 200 && result.statusCode < 300) {
+      try {
         if (resolvedCaptions.length === 1) {
-          return res.status(200).json({
+          const { text, timestamp } = resolvedCaptions[0];
+          result = await session.sender.send(text, timestamp);
+        } else {
+          result = await session.sender.sendBatch(resolvedCaptions);
+        }
+
+        session.sequence = session.sender.sequence;
+        store.touch(sessionId);
+
+        if (result.statusCode >= 200 && result.statusCode < 300) {
+          session.emitter.emit('caption_result', {
+            requestId,
             sequence: result.sequence,
-            timestamp: result.timestamp,
+            ...(result.count !== undefined && { count: result.count }),
             statusCode: result.statusCode,
-            serverTimestamp: result.serverTimestamp
+            serverTimestamp: result.serverTimestamp,
           });
         } else {
-          return res.status(200).json({
-            sequence: result.sequence,
-            count: result.count,
+          session.emitter.emit('caption_error', {
+            requestId,
+            error: `YouTube returned status ${result.statusCode}`,
             statusCode: result.statusCode,
-            serverTimestamp: result.serverTimestamp
+            sequence: result.sequence,
           });
         }
-      } else {
-        // YouTube returned a non-2xx status — pass it through
-        return res.status(result.statusCode).json({
-          error: `YouTube returned status ${result.statusCode}`,
-          statusCode: result.statusCode,
-          sequence: result.sequence
+      } catch (err) {
+        session.emitter.emit('caption_error', {
+          requestId,
+          error: err.message || 'Failed to send captions',
+          statusCode: err.statusCode || 502,
         });
       }
-    } catch (err) {
-      // Network or validation errors
-      return res.status(502).json({
-        error: err.message || 'Failed to send captions',
-        statusCode: 502
-      });
-    }
+    });
+
+    return res.status(202).json({ ok: true, requestId });
   });
 
   return router;

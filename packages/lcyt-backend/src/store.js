@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { EventEmitter } from 'node:events';
 
 const DEFAULT_SESSION_TTL = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000; // 2 hours
 const DEFAULT_CLEANUP_INTERVAL = Number(process.env.CLEANUP_INTERVAL) || 5 * 60 * 1000; // 5 minutes
@@ -69,7 +70,9 @@ export class SessionStore {
       sender,
       startedAt: Date.now(),
       createdAt: now,
-      lastActivityAt: now
+      lastActivityAt: now,
+      emitter: new EventEmitter(),
+      _sendQueue: Promise.resolve(),
     };
     this._sessions.set(sessionId, session);
     return session;
@@ -109,7 +112,11 @@ export class SessionStore {
    */
   remove(sessionId) {
     const session = this._sessions.get(sessionId);
-    if (session) this._sessions.delete(sessionId);
+    if (session) {
+      session.emitter.emit('session:closed');
+      session.emitter.removeAllListeners();
+      this._sessions.delete(sessionId);
+    }
     return session;
   }
 
@@ -153,6 +160,8 @@ export class SessionStore {
     const cutoff = Date.now() - this._sessionTtl;
     for (const [sessionId, session] of this._sessions) {
       if (session.lastActivityAt.getTime() < cutoff) {
+        session.emitter.emit('session:closed');
+        session.emitter.removeAllListeners();
         this._sessions.delete(sessionId);
         try {
           await session.sender.end();

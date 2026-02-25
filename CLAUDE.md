@@ -64,7 +64,7 @@ Published to npm. Dual ESM/CJS package.
 
 **Source files (`src/`):**
 - `sender.js` — `YoutubeLiveCaptionSender` class. HTTP caption ingestion, sequence tracking, NTP-style clock sync, batch send.
-- `backend-sender.js` — `BackendCaptionSender` class. Routes captions through the relay backend using `fetch()`.
+- `backend-sender.js` — `BackendCaptionSender` class. Routes captions through the relay backend using `fetch()`. **Async delivery:** `send()`/`sendBatch()` return `{ ok, requestId }` immediately (202); the real YouTube outcome arrives on the `GET /events` SSE stream.
 - `config.js` — `loadConfig()`, `saveConfig()`, `buildIngestionUrl()`. Config stored at `~/.lcyt-config.json`.
 - `logger.js` — Pluggable logger with `info/success/error/warn/debug`. Supports `setCallback()`, `setVerbose()`, `setSilent()`, `setUseStderr()`. Set `LCYT_LOG_STDERR=1` to route logs to stderr (MCP-friendly).
 - `errors.js` — Typed error hierarchy: `LCYTError` → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`).
@@ -132,14 +132,15 @@ GET  /health              — uptime, session count
 POST /live                — register session → returns JWT
 GET  /live                — session status (Bearer token)
 DELETE /live              — tear down session (Bearer token)
-POST /captions            — send caption(s) (Bearer token)
+POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token)
+GET  /events              — SSE stream of caption delivery results (Bearer token or ?token=)
 POST /sync                — NTP clock sync (Bearer token)
 GET/POST/PATCH/DELETE /keys — admin CRUD (X-Admin-Key header)
 ```
 
 **Key internals:**
 - `src/db.js` — `better-sqlite3` (synchronous). Single table `api_keys` (key, owner, active, expires, createdAt).
-- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, token, startedAt, lastActivity, sequence, syncOffset }`. Auto-cleanup on TTL.
+- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
 - `src/middleware/auth.js` — JWT Bearer verification.
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
@@ -314,7 +315,8 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-cli/bin/lcyt` | CLI entrypoint |
 | `packages/lcyt-cli/src/interactive-ui.js` | Full-screen blessed terminal UI |
 | `packages/lcyt-backend/src/server.js` | Express app factory |
-| `packages/lcyt-backend/src/store.js` | In-memory session store |
+| `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue per session) |
+| `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream |
 | `packages/lcyt-backend/src/db.js` | SQLite API key store |
 | `packages/lcyt-mcp/src/server.js` | MCP server (Node.js) |
 | `python-packages/lcyt/lcyt/sender.py` | Core caption sender (Python) |
