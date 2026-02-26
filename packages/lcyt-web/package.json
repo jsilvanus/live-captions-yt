@@ -10,9 +10,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "lcyt": "*"
+    "lcyt": "*",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
+    "@vitejs/plugin-react": "^4.0.0",
     "vite": "^5.0.0"
   }
 }

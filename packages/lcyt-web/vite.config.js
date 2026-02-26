@@ -2,10 +2,12 @@ import { defineConfig } from 'vite';
 import { resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { realpathSync } from 'fs';
+import react from '@vitejs/plugin-react';
 
 const __dirname = realpathSync(fileURLToPath(new URL('.', import.meta.url)));
 
 export default defineConfig({
+  plugins: [react()],
   root: __dirname,
   build: {
     outDir: resolve(__dirname, 'dist'),
