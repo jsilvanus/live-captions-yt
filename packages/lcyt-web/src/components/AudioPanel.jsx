@@ -71,7 +71,14 @@ export function AudioPanel({ visible }) {
     if (!text) return;
     if (session?.connected) {
       try {
-        await session.send(text);
+        // Honor batching: if batch interval > 0, queue via construct
+        const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+        const intervalMs = Math.min(20, Math.max(0, v)) * 1000;
+        if (intervalMs > 0) {
+          await session.construct(text);
+        } else {
+          await session.send(text);
+        }
         setCloudError('');
       } catch (err) {
         console.error('Failed to send caption', err);
@@ -137,7 +144,7 @@ export function AudioPanel({ visible }) {
       try {
         const s = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: selectedDeviceId } } });
         meterStreamRef.current = s;
-        try { attachMeter(s); } catch (err) { console.debug('attachMeter failed', err); }
+        try { attachMeter(s); } catch (err) { }
       } catch (err) {
         console.warn('getUserMedia for selected device failed', err);
         // Surface a readable message for the user
@@ -162,11 +169,10 @@ export function AudioPanel({ visible }) {
         else interim += t;
       }
       setInterimText(interim);
-      try { console.debug('WebKit onresult', { interim, final }); } catch {}
       if (final) pushFinalTranscript(final);
     };
 
-    recognition.onstart = () => { try { console.debug('WebKit recognition started'); } catch {} };
+    recognition.onstart = () => { }; 
 
     recognition.onend = () => {
       // Auto-restart so continuous mode survives silence pauses
@@ -260,7 +266,7 @@ export function AudioPanel({ visible }) {
     }
 
     const transcript = data.results?.[0]?.alternatives?.[0]?.transcript;
-    console.debug('Cloud STT transcript', transcript, data);
+    
     if (transcript) {
       pushFinalTranscript(transcript);
     }

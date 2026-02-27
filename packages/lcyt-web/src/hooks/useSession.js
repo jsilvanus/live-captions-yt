@@ -184,7 +184,7 @@ export function useSession({
     if (!senderRef.current) throw new Error('Not connected');
 
     try {
-      console.debug(`[useSession] flushBatch: sending ${items.length} item(s)`);
+      const data = await senderRef.current.sendBatch(); // drains sender queue
       const data = await senderRef.current.sendBatch(); // drains sender queue
       // Notify host that the temp ids now map to the real requestId
       cbs.current.onBatchSent?.({ tempIds: items.map(i => i.requestId), requestId: data.requestId, count: data.count });
@@ -216,7 +216,6 @@ export function useSession({
     batchBufferRef.current.push({ text, requestId: tempId });
 
     if (!batchTimerRef.current) {
-      console.debug(`[useSession] construct: scheduling flush in ${intervalMs}ms`);
       batchTimerRef.current = setTimeout(() => { flushBatch().catch(() => {}); }, intervalMs);
     }
 
