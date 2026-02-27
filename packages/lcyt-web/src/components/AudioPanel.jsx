@@ -1,101 +1,92 @@
 import { useState, useEffect, useRef } from 'react';
+import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
+import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
 
-const STORAGE_KEY_STT_LANG = 'lcyt-stt-lang';
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const COMMON_LANGUAGES = [
-  { code: 'en-US', label: 'English (US)' },
-  { code: 'en-GB', label: 'English (UK)' },
-  { code: 'es-ES', label: 'Spanish (Spain)' },
-  { code: 'es-MX', label: 'Spanish (Mexico)' },
-  { code: 'fr-FR', label: 'French' },
-  { code: 'de-DE', label: 'German' },
-  { code: 'it-IT', label: 'Italian' },
-  { code: 'pt-BR', label: 'Portuguese (Brazil)' },
-  { code: 'pt-PT', label: 'Portuguese (Portugal)' },
-  { code: 'ja-JP', label: 'Japanese' },
-  { code: 'ko-KR', label: 'Korean' },
-  { code: 'zh-CN', label: 'Chinese (Simplified)' },
-  { code: 'zh-TW', label: 'Chinese (Traditional)' },
-  { code: 'ar-SA', label: 'Arabic' },
-  { code: 'hi-IN', label: 'Hindi' },
-  { code: 'ru-RU', label: 'Russian' },
-  { code: 'nl-NL', label: 'Dutch' },
-  { code: 'pl-PL', label: 'Polish' },
-  { code: 'sv-SE', label: 'Swedish' },
-  { code: 'da-DK', label: 'Danish' },
-  { code: 'fi-FI', label: 'Finnish' },
-  { code: 'nb-NO', label: 'Norwegian' },
-  { code: 'tr-TR', label: 'Turkish' },
-  { code: 'id-ID', label: 'Indonesian' },
-  { code: 'th-TH', label: 'Thai' },
-  { code: 'vi-VN', label: 'Vietnamese' },
-  { code: 'uk-UA', label: 'Ukrainian' },
-  { code: 'cs-CZ', label: 'Czech' },
-  { code: 'ro-RO', label: 'Romanian' },
-  { code: 'hu-HU', label: 'Hungarian' },
-];
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export function AudioPanel({ visible }) {
-  const savedLang = localStorage.getItem(STORAGE_KEY_STT_LANG) || 'en-US';
-  const savedLangEntry = COMMON_LANGUAGES.find(l => l.code === savedLang);
-
   const [listening, setListening] = useState(false);
-  const [langQuery, setLangQuery] = useState(savedLangEntry ? savedLangEntry.label : savedLang);
-  const [langCode, setLangCode] = useState(savedLang);
-  const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [finalText, setFinalText] = useState('');
-  const [supported, setSupported] = useState(true);
+  const [engine, setEngine] = useState(getSttEngine);
+  const [credLoaded, setCredLoaded] = useState(!!getGoogleCredential());
+  const [webkitSupported] = useState(
+    () => !!(window.SpeechRecognition || window.webkitSpeechRecognition),
+  );
+  const [cloudError, setCloudError] = useState('');
 
+  // WebKit refs
   const recognitionRef = useRef(null);
 
-  useEffect(() => {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    setSupported(!!SpeechRecognition);
-  }, []);
+  // Cloud STT refs
+  const streamRef    = useRef(null);   // MediaStream
+  const recorderRef  = useRef(null);   // current MediaRecorder
+  const oauthRef     = useRef(null);   // { token, expires }
 
-  // Stop recognition when component unmounts
+  // ── Sync engine/credential from settings events ──────────────────────────
   useEffect(() => {
+    function onCfgChange()  { setEngine(getSttEngine()); }
+    function onCredChange() { setCredLoaded(!!getGoogleCredential()); }
+    window.addEventListener('lcyt:stt-config-changed',     onCfgChange);
+    window.addEventListener('lcyt:stt-credential-changed', onCredChange);
     return () => {
-      const rec = recognitionRef.current;
-      recognitionRef.current = null;
-      if (rec) try { rec.stop(); } catch {}
+      window.removeEventListener('lcyt:stt-config-changed',     onCfgChange);
+      window.removeEventListener('lcyt:stt-credential-changed', onCredChange);
     };
   }, []);
 
-  function startListening() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) return;
+  // ── Cleanup on unmount ───────────────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      stopWebkit();
+      stopCloud();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    const recognition = new SpeechRecognition();
-    recognition.continuous = true;
+  // ─── WebKit engine ────────────────────────────────────────────────────────
+
+  function startWebkit() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return;
+
+    const recognition = new SR();
+    recognition.continuous     = true;
     recognition.interimResults = true;
-    recognition.lang = langCode;
+    recognition.lang           = getSttLang();
 
-    recognition.onresult = function(event) {
+    recognition.onresult = (event) => {
       let interim = '';
-      let final = '';
+      let final   = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          final += transcript;
-        } else {
-          interim += transcript;
-        }
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) final += t;
+        else interim += t;
       }
       if (final) setFinalText(prev => prev + final + ' ');
       setInterimText(interim);
     };
 
-    recognition.onend = function() {
-      // Auto-restart to keep continuous listening (browser may stop on silence)
+    recognition.onend = () => {
+      // Auto-restart so continuous mode survives silence pauses
       if (recognitionRef.current) {
         try { recognition.start(); } catch {}
       }
     };
 
-    recognition.onerror = function(event) {
-      if (event.error === 'no-speech') return;
+    recognition.onerror = (e) => {
+      if (e.error === 'no-speech') return;
       recognitionRef.current = null;
       setListening(false);
       setInterimText('');
@@ -108,7 +99,7 @@ export function AudioPanel({ visible }) {
     setFinalText('');
   }
 
-  function stopListening() {
+  function stopWebkit() {
     const rec = recognitionRef.current;
     recognitionRef.current = null;
     if (rec) try { rec.stop(); } catch {}
@@ -116,83 +107,167 @@ export function AudioPanel({ visible }) {
     setInterimText('');
   }
 
-  function toggleSpeechRecognition() {
+  // ─── Cloud STT engine ─────────────────────────────────────────────────────
+
+  async function getToken() {
+    const now = Math.floor(Date.now() / 1000);
+    if (oauthRef.current && oauthRef.current.expires > now + 60) {
+      return oauthRef.current.token;
+    }
+    const cred = getGoogleCredential();
+    if (!cred) throw new Error('No Google credential loaded');
+    const tokenData = await fetchOAuthToken(cred);
+    oauthRef.current = tokenData;
+    return tokenData.token;
+  }
+
+  async function recognizeChunk(blob) {
+    const base64 = await blobToBase64(blob);
+    const cfg    = getSttCloudConfig();
+    const token  = await getToken();
+
+    const res = await fetch('https://speech.googleapis.com/v1/speech:recognize', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        config: {
+          encoding:                   'WEBM_OPUS',
+          sampleRateHertz:            48000,
+          languageCode:               getSttLang(),
+          model:                      cfg.model || 'latest_long',
+          enableAutomaticPunctuation: cfg.punctuation !== false,
+          profanityFilter:            !!cfg.profanity,
+        },
+        audio: { content: base64 },
+      }),
+    });
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'Cloud STT error');
+
+    const transcript = data.results?.[0]?.alternatives?.[0]?.transcript;
+    if (transcript) setFinalText(prev => prev + transcript + ' ');
+  }
+
+  function scheduleNextChunk(stream) {
+    // Don't schedule if we've stopped
+    if (!streamRef.current) return;
+
+    const recorder = new MediaRecorder(stream);
+    const chunks   = [];
+    recorderRef.current = recorder;
+
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+
+    recorder.onstop = async () => {
+      if (!streamRef.current) return; // user stopped
+      const blob = new Blob(chunks, { type: recorder.mimeType });
+      try {
+        await recognizeChunk(blob);
+        setCloudError('');
+      } catch (err) {
+        setCloudError(err.message);
+      }
+      scheduleNextChunk(stream);
+    };
+
+    recorder.start();
+    setTimeout(() => { if (recorder.state === 'recording') recorder.stop(); }, 5000);
+  }
+
+  async function startCloud() {
+    setCloudError('');
+
+    const cred = getGoogleCredential();
+    if (!cred) {
+      setCloudError('Load a Google service account key in Settings → STT / Audio first.');
+      return;
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setCloudError('Microphone access denied.');
+      return;
+    }
+
+    // Pre-fetch the OAuth token so any auth error surfaces before we start recording
+    try {
+      await getToken();
+    } catch (err) {
+      stream.getTracks().forEach(t => t.stop());
+      setCloudError(`Auth error: ${err.message}`);
+      return;
+    }
+
+    streamRef.current = stream;
+    setListening(true);
+    setInterimText('');
+    setFinalText('');
+    scheduleNextChunk(stream);
+  }
+
+  function stopCloud() {
+    streamRef.current?.getTracks().forEach(t => t.stop());
+    streamRef.current = null;
+    if (recorderRef.current?.state === 'recording') {
+      try { recorderRef.current.stop(); } catch {}
+    }
+    recorderRef.current = null;
+    setListening(false);
+    setInterimText('');
+  }
+
+  // ─── Toggle ───────────────────────────────────────────────────────────────
+
+  function toggle() {
     if (listening) {
-      stopListening();
+      if (engine === 'webkit') stopWebkit();
+      else stopCloud();
     } else {
-      startListening();
+      if (engine === 'webkit') startWebkit();
+      else startCloud();
     }
   }
 
-  function onLangInput(value) {
-    setLangQuery(value);
-    setLangDropdownOpen(value.trim().length > 0);
-  }
+  // ─── Derived state ────────────────────────────────────────────────────────
 
-  function selectLang(entry) {
-    setLangQuery(entry.label);
-    setLangCode(entry.code);
-    setLangDropdownOpen(false);
-    try { localStorage.setItem(STORAGE_KEY_STT_LANG, entry.code); } catch {}
-  }
+  const isWebkit = engine === 'webkit';
+  const canStart = isWebkit ? webkitSupported : credLoaded;
 
-  const langMatches = langDropdownOpen
-    ? COMMON_LANGUAGES.filter(l =>
-        l.label.toLowerCase().includes(langQuery.toLowerCase()) ||
-        l.code.toLowerCase().includes(langQuery.toLowerCase())
-      )
-    : [];
+  const hint = listening ? null
+    : isWebkit && !webkitSupported ? 'Web Speech API not supported — try Chrome or Edge.'
+    : !isWebkit && !credLoaded     ? 'Load a Google service account key in Settings → STT / Audio.'
+    : null;
+
+  const engineLabel = isWebkit ? 'Web Speech API' : 'Google Cloud STT';
 
   if (!visible) return null;
 
   return (
     <div className="audio-panel">
       <div className="audio-panel__scroll">
-
         <section className="audio-section">
           <h3 className="audio-section__title">Speech to Text</h3>
 
-          {!supported && (
-            <p className="audio-field__hint">
-              Web Speech API is not supported in this browser. Try Chrome or Edge.
-            </p>
-          )}
-
-          <div className="audio-field">
-            <label className="audio-field__label">Language</label>
-            <div className="audio-lang-wrap">
-              <input
-                className="audio-field__input"
-                type="text"
-                placeholder="Type to filter…"
-                autoComplete="off"
-                spellCheck={false}
-                value={langQuery}
-                onChange={e => onLangInput(e.target.value)}
-                onBlur={() => setTimeout(() => setLangDropdownOpen(false), 150)}
-              />
-              {langDropdownOpen && langMatches.length > 0 && (
-                <div className="audio-lang-list">
-                  {langMatches.map(l => (
-                    <button
-                      key={l.code}
-                      className="audio-lang-option"
-                      onMouseDown={() => selectLang(l)}
-                    >
-                      {l.label} <span className="audio-lang-code">{l.code}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <span className="audio-field__hint">{langCode}</span>
+          <div className={`audio-engine-badge audio-engine-badge--${engine}`}>
+            {engineLabel}
+            {!isWebkit && credLoaded && <span className="audio-engine-badge__sub"> · credential loaded</span>}
+            {!isWebkit && !credLoaded && <span className="audio-engine-badge__sub audio-engine-badge__sub--warn"> · no credential</span>}
           </div>
+
+          {hint && <p className="audio-field__hint">{hint}</p>}
+          {cloudError && <p className="audio-field__hint audio-field__hint--error">{cloudError}</p>}
 
           <div className="audio-field">
             <button
               className={`btn audio-caption-btn${listening ? ' audio-caption-btn--active' : ' btn--primary'}`}
-              disabled={!supported}
-              onClick={toggleSpeechRecognition}
+              disabled={!canStart}
+              onClick={toggle}
             >
               {listening ? '⏹ Stop Captioning' : '🎙 Click to Caption'}
             </button>
@@ -201,17 +276,18 @@ export function AudioPanel({ visible }) {
           {listening && (
             <div className="audio-caption-live">
               {!finalText && !interimText ? (
-                <span className="audio-caption-placeholder">Listening for speech…</span>
+                <span className="audio-caption-placeholder">
+                  {isWebkit ? 'Listening for speech…' : 'Sending audio to Google Cloud STT…'}
+                </span>
               ) : (
                 <>
-                  {finalText && <span className="audio-caption-final">{finalText}</span>}
+                  {finalText   && <span className="audio-caption-final">{finalText}</span>}
                   {interimText && <span className="audio-caption-interim">{interimText}</span>}
                 </>
               )}
             </div>
           )}
         </section>
-
       </div>
     </div>
   );

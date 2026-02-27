@@ -1068,6 +1068,131 @@
   font-family: var(--font-mono);
 }
 
+/* ─── STT engine selector (in Settings modal) ────────────── */
+
+.stt-engine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stt-engine-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  user-select: none;
+}
+
+.stt-engine-option:hover {
+  border-color: var(--color-text-dim);
+  background: var(--color-surface-elevated);
+}
+
+.stt-engine-option--active {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.stt-engine-option__radio {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--color-accent);
+}
+
+.stt-engine-option__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stt-engine-option__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.stt-engine-option__desc {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+/* ─── Credential status row ─────────────────────────────── */
+
+.stt-cred-loaded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: rgba(63, 185, 80, 0.08);
+  border: 1px solid rgba(63, 185, 80, 0.3);
+  border-radius: 6px;
+}
+
+.stt-cred-loaded__check {
+  color: var(--color-success);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.stt-cred-loaded__email {
+  flex: 1;
+  font-size: 12px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
+
+/* ─── Engine badge in AudioPanel ────────────────────────── */
+
+.audio-engine-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border);
+  width: fit-content;
+}
+
+.audio-engine-badge--cloud {
+  border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.audio-engine-badge__sub {
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.audio-engine-badge__sub--warn {
+  color: var(--color-warning, #e3b341);
+  opacity: 1;
+}
+
+.audio-field__hint--error {
+  color: var(--color-error);
+}
+
+.settings-field__hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
 /* Speech-to-text toggle button */
 .audio-caption-btn {
   width: 100%;
