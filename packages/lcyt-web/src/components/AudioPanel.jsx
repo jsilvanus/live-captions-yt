@@ -20,7 +20,6 @@ function blobToBase64(blob) {
 export function AudioPanel({ visible }) {
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState('');
-  const [finalText, setFinalText] = useState('');
   const [engine, setEngine] = useState(getSttEngine);
   const [credLoaded, setCredLoaded] = useState(!!getGoogleCredential());
   const [devices, setDevices] = useState([]);
@@ -31,7 +30,6 @@ export function AudioPanel({ visible }) {
     () => !!(window.SpeechRecognition || window.webkitSpeechRecognition),
   );
   const [cloudError, setCloudError] = useState('');
-  const [recentFinals, setRecentFinals] = useState([]);
 
   // WebKit refs
   const recognitionRef = useRef(null);
@@ -65,7 +63,7 @@ export function AudioPanel({ visible }) {
   function pushFinalTranscript(text) {
     const t = String(text || '').trim();
     if (!t) return;
-    setRecentFinals(prev => [t, ...prev].slice(0, 10));
+    // Do not render finalized words in the audio panel UI; just send them.
     sendTranscript(t);
   }
 
@@ -113,6 +111,16 @@ export function AudioPanel({ visible }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Respond to toggle requests from FileTabs: if not currently listening, allow hiding the panel.
+  useEffect(() => {
+    function onToggleRequest() {
+      const allowed = !listening;
+      try { window.dispatchEvent(new CustomEvent('lcyt:audio-toggle-response', { detail: { allowed } })); } catch {}
+    }
+    window.addEventListener('lcyt:audio-toggle-request', onToggleRequest);
+    return () => window.removeEventListener('lcyt:audio-toggle-request', onToggleRequest);
+  }, [listening]);
+
   // ─── WebKit engine ────────────────────────────────────────────────────────
 
   async function startWebkit() {
@@ -153,7 +161,6 @@ export function AudioPanel({ visible }) {
         if (event.results[i].isFinal) final += t;
         else interim += t;
       }
-      if (final) setFinalText(prev => prev + final + ' ');
       setInterimText(interim);
       try { console.debug('WebKit onresult', { interim, final }); } catch {}
       if (final) pushFinalTranscript(final);
@@ -181,7 +188,6 @@ export function AudioPanel({ visible }) {
     recognition.start();
     setListening(true);
     setInterimText('');
-    setFinalText('');
   }
 
   function stopWebkit() {
@@ -256,7 +262,6 @@ export function AudioPanel({ visible }) {
     const transcript = data.results?.[0]?.alternatives?.[0]?.transcript;
     console.debug('Cloud STT transcript', transcript, data);
     if (transcript) {
-      setFinalText(prev => prev + transcript + ' ');
       pushFinalTranscript(transcript);
     }
   }
@@ -321,7 +326,6 @@ export function AudioPanel({ visible }) {
     try { attachMeter(streamRef.current); } catch {}
     setListening(true);
     setInterimText('');
-    setFinalText('');
     scheduleNextChunk(stream);
   }
 
@@ -467,16 +471,7 @@ export function AudioPanel({ visible }) {
             </div>
           </div>
 
-          {/* Recent final transcripts (most recent first) */}
-          {recentFinals.length > 0 && (
-            <div className="audio-field audio-field--recent">
-              <ul className="audio-final-list">
-                {recentFinals.map((t, i) => (
-                  <li key={`${i}-${t.slice(0,20)}`} className="audio-final-item">{t}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* Finalized transcripts are not shown here; they are sent directly. */}
 
           <div className="audio-field">
             <button
@@ -490,13 +485,12 @@ export function AudioPanel({ visible }) {
 
           {listening && (
             <div className="audio-caption-live">
-              {!finalText && !interimText ? (
+              {!interimText ? (
                 <span className="audio-caption-placeholder">
                   {isWebkit ? 'Listening for speech…' : 'Sending audio to Google Cloud STT…'}
                 </span>
               ) : (
                 <>
-                  {finalText   && <span className="audio-caption-final">{finalText}</span>}
                   {interimText && <span className="audio-caption-interim">{interimText}</span>}
                 </>
               )}
@@ -507,3 +501,6 @@ export function AudioPanel({ visible }) {
     </div>
   );
 }
+
+// Respond to toggle requests from the FileTabs: if not currently listening, allow the panel to be hidden.
+// We add the listener at module scope inside the component via effect below.

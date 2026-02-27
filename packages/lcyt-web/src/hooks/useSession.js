@@ -24,6 +24,7 @@ export function useSession({
   onCaptionError,
   onSyncUpdated,
   onError,
+  onBatchSent,
 } = {}) {
   const [connected, setConnected] = useState(false);
   const [sequence, setSequence] = useState(0);
@@ -38,7 +39,7 @@ export function useSession({
 
   // Keep all callbacks in a ref so SSE handlers always see the latest version
   const cbs = useRef({});
-  cbs.current = { onConnected, onDisconnected, onCaptionSent, onCaptionResult, onCaptionError, onSyncUpdated, onError };
+  cbs.current = { onConnected, onDisconnected, onCaptionSent, onCaptionResult, onCaptionError, onSyncUpdated, onError, onBatchSent };
 
   // Close EventSource on unmount
   useEffect(() => () => { esRef.current?.close(); }, []);
@@ -142,14 +143,14 @@ export function useSession({
   async function send(text) {
     if (!senderRef.current) throw new Error('Not connected');
     const data = await senderRef.current.send(text);
-    cbs.current.onCaptionSent?.({ requestId: data.requestId, text });
+    cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true });
     return data;
   }
 
   async function sendBatch(texts) {
     if (!senderRef.current) throw new Error('Not connected');
     const data = await senderRef.current.sendBatch(texts.map(text => ({ text })));
-    texts.forEach(text => cbs.current.onCaptionSent?.({ requestId: data.requestId, text }));
+    texts.forEach(text => cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true }));
     return data;
   }
 
@@ -158,10 +159,72 @@ export function useSession({
   async function sync() {
     if (!senderRef.current) throw new Error('Not connected');
     const data = await senderRef.current.sync();
-    const newOffset = senderRef.current.syncOffset;
-    setSyncOffset(newOffset);
-    cbs.current.onSyncUpdated?.({ syncOffset: newOffset, roundTripTime: data.roundTripTime });
+    setSyncOffset(senderRef.current.syncOffset);
     return data;
+  }
+
+  // ─── Batch/Construct Logic ──────────────────────────────
+
+  const batchBufferRef = useRef([]); // [{ text, requestId }]
+  const batchTimerRef = useRef(null);
+
+  function getBatchIntervalMs() {
+    try {
+      const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+      return Math.min(20, Math.max(0, v)) * 1000;
+    } catch { return 0; }
+  }
+
+  async function flushBatch() {
+    const items = batchBufferRef.current.slice();
+    batchBufferRef.current = [];
+    if (batchTimerRef.current) { clearTimeout(batchTimerRef.current); batchTimerRef.current = null; }
+    if (!items.length) return;
+
+    if (!senderRef.current) throw new Error('Not connected');
+
+    try {
+      console.debug(`[useSession] flushBatch: sending ${items.length} item(s)`);
+      const data = await senderRef.current.sendBatch(); // drains sender queue
+      // Notify host that the temp ids now map to the real requestId
+      cbs.current.onBatchSent?.({ tempIds: items.map(i => i.requestId), requestId: data.requestId, count: data.count });
+      return data;
+    } catch (err) {
+      // Mark entries as errored via callback
+      items.forEach(i => cbs.current.onCaptionError?.({ requestId: i.requestId, error: err.message }));
+      throw err;
+    }
+  }
+
+  // Add a caption to the server-side batch queue (sender.construct)
+  async function construct(text) {
+    if (!text || typeof text !== 'string') return 0;
+    if (!senderRef.current) throw new Error('Not connected');
+
+    const intervalMs = getBatchIntervalMs();
+    // Immediate send if batching is disabled
+    if (intervalMs === 0) {
+      const data = await send(text);
+      return data;
+    }
+
+    const tempId = 'q-' + Math.random().toString(36).slice(2);
+    // Tell host a pending item exists
+    cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true });
+    // Push into sender queue
+    senderRef.current.construct(text);
+    batchBufferRef.current.push({ text, requestId: tempId });
+
+    if (!batchTimerRef.current) {
+      console.debug(`[useSession] construct: scheduling flush in ${intervalMs}ms`);
+      batchTimerRef.current = setTimeout(() => { flushBatch().catch(() => {}); }, intervalMs);
+    }
+
+    return { tempId };
+  }
+
+  function getQueuedCount() {
+    return batchBufferRef.current.length;
   }
 
   async function heartbeat() {
@@ -174,9 +237,17 @@ export function useSession({
     return { ...data, roundTripTime };
   }
 
+  // Update session fields on the backend (e.g. sequence)
+  async function updateSequence(seq) {
+    if (!senderRef.current) throw new Error('Not connected');
+    await senderRef.current.updateSession({ sequence: seq });
+    // Mirror locally
+    setSequence(Number(seq));
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
-    connect, disconnect, send, sendBatch, sync, heartbeat,
+    connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

@@ -18,10 +18,14 @@ function SentItem({ entry, isBatchContinuation }) {
 
   if (isBatchContinuation) {
     const cls = `sent-item sent-item--continuation${entry.pending ? ' sent-item--pending' : entry.error ? ' sent-item--error' : ''}`;
+    const ticksLabel = entry.pending ? '✓' : entry.error ? '✗' : '✓✓';
+    const ticksCls = entry.pending ? 'sent-item__ticks--pending'
+      : entry.error ? 'sent-item__ticks--error'
+      : 'sent-item__ticks--confirmed';
     return (
       <li className={cls}>
         <span className="sent-item__seq" />
-        <span className="sent-item__ticks" />
+        <span className={`sent-item__ticks ${ticksCls}`}>{ticksLabel}</span>
         <span className="sent-item__time">{formatTime(entry.timestamp)}</span>
         <span className="sent-item__text" title={entry.text}>{entry.text}</span>
       </li>

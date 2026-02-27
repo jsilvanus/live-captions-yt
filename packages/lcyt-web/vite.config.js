@@ -29,5 +29,10 @@ export default defineConfig({
       '/captions': 'http://localhost:3000',
       '/sync': 'http://localhost:3000',
     }
+    ,
+    fs: {
+      // Allow Vite to access the monorepo root so symlinked packages resolve correctly.
+      allow: [__dirname, resolve(__dirname, '..', '..')]
+    }
   }
 });

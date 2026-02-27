@@ -73,7 +73,7 @@ export function useFileStore({
           .map(l => l.trim())
           .filter(l => l.length > 0);
 
-        const id = crypto.randomUUID();
+        const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : uuidv4();
         const pointers = loadPointers();
         const savedPointer = pointers[file.name] ?? 0;
         const pointer = Math.min(savedPointer, Math.max(0, lines.length - 1));

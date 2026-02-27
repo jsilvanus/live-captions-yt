@@ -21,14 +21,28 @@ export function useSentLog() {
     setEntries(prev => [entry, ...prev].slice(0, MAX_ENTRIES));
   }
 
-  function confirm(requestId, { sequence, serverTimestamp } = {}) {
-    setEntries(prev =>
-      prev.map(e =>
-        e.requestId === requestId
-          ? { ...e, pending: false, sequence, serverTimestamp }
-          : e
-      )
-    );
+  function confirm(requestIdOrObj, details = {}) {
+    let requestId = requestIdOrObj;
+    let { sequence, serverTimestamp, count } = details || {};
+    if (requestIdOrObj && typeof requestIdOrObj === 'object') {
+      requestId = requestIdOrObj.requestId;
+      sequence = requestIdOrObj.sequence;
+      serverTimestamp = requestIdOrObj.serverTimestamp;
+      count = requestIdOrObj.count;
+    }
+
+    setEntries(prev => {
+      let assigned = 0;
+      return prev.map(e => {
+        if (e.requestId !== requestId) return e;
+        let seq = sequence;
+        if (typeof count === 'number' && count > 0 && Number.isFinite(sequence)) {
+          seq = sequence + (count - 1 - assigned);
+          assigned += 1;
+        }
+        return { ...e, pending: false, sequence: seq, serverTimestamp };
+      });
+    });
   }
 
   function markError(requestId) {

@@ -8,3 +8,8 @@ __pycache__/
 
 # Claude- Claude's files
 claude/
+ 
+# Ignore build output directories
+dist/
+**/dist/
+packages/lcyt-web/dist/index.html

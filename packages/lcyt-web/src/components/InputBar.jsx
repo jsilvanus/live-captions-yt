@@ -14,10 +14,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const [errorFlash, setErrorFlash] = useState(false);
   const [sendFlash, setSendFlash] = useState(false);
   const [batchCount, setBatchCount] = useState(0);
-
   const inputRef = useRef(null);
-  const batchBufferRef = useRef([]);  // Array<{ text, requestId }>
-  const batchTimerRef = useRef(null);
 
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
@@ -51,41 +48,19 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     setTimeout(() => setSendFlash(false), 300);
   }
 
-  async function flushBatch() {
-    const items = batchBufferRef.current.slice();
-    batchBufferRef.current = [];
-    batchTimerRef.current = null;
-    setBatchCount(0);
-
-    if (!items.length) return;
-
-    try {
-      const data = await session.sendBatch(items.map(i => i.text));
-      items.forEach(item => sentLog.updateRequestId(item.requestId, data.requestId));
-    } catch (err) {
-      items.forEach(item => sentLog.markError(item.requestId));
-      handleSendError(err);
-    }
-  }
-
   async function doSend(text) {
     if (!text?.trim()) return;
-
     const intervalMs = getBatchIntervalMs();
     if (intervalMs > 0) {
-      const tempId = 'q-' + Math.random().toString(36).slice(2);
-      sentLog.add({ requestId: tempId, text, pending: true });
-      batchBufferRef.current.push({ text, requestId: tempId });
-      setBatchCount(batchBufferRef.current.length);
-      if (!batchTimerRef.current) {
-        batchTimerRef.current = setTimeout(flushBatch, intervalMs);
-      }
+      await session.construct(text);
+      // Update badge from session queue length
+      try { setBatchCount(session.getQueuedCount()); } catch {}
       flashSuccess();
       return;
     }
 
     const data = await session.send(text);
-    sentLog.add({ requestId: data.requestId, text, pending: true });
+    // session.send triggers onCaptionSent in the session hook; sentLog.add handled in AppProviders
     flashSuccess();
   }
 

@@ -19,6 +19,10 @@ export function AppProviders({ children }) {
   const session = useSession({
     onCaptionResult: sentLog.confirm,
     onCaptionError: sentLog.markError,
+    onCaptionSent: sentLog.add,
+    onBatchSent: ({ tempIds, requestId }) => {
+      tempIds.forEach(id => sentLog.updateRequestId(id, requestId));
+    }
   });
 
   return (

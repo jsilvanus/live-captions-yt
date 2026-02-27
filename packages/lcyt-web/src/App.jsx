@@ -108,9 +108,7 @@ function AppLayout() {
       <main id="main">
         {/* Left panel */}
         <div id="left-panel" className="panel panel--left">
-          {currentView !== 'audio' && (
-            <DropZone visible={dropZoneVisible} />
-          )}
+          <DropZone visible={dropZoneVisible} />
           <FileTabs
             currentView={currentView}
             onViewChange={setCurrentView}

@@ -71,7 +71,24 @@ export function FileTabs({ currentView, onViewChange, dropZoneVisible, onToggleD
       <button
         className={`file-tab file-tab--audio${currentView === 'audio' ? ' file-tab--active' : ''}`}
         title="Audio & STT Settings"
-        onClick={() => onViewChange('audio')}
+        onClick={() => {
+          if (currentView === 'audio') {
+            // Request audio panel to allow closing (it may be actively captioning).
+            let responded = false;
+            function onResponse(e) {
+              responded = true;
+              window.removeEventListener('lcyt:audio-toggle-response', onResponse);
+              if (e?.detail?.allowed) onViewChange('captions');
+            }
+            window.addEventListener('lcyt:audio-toggle-response', onResponse);
+            // Dispatch the request; AudioPanel will respond immediately.
+            try { window.dispatchEvent(new CustomEvent('lcyt:audio-toggle-request')); } catch {}
+            // Safety timeout to clean up the listener if no response.
+            setTimeout(() => { if (!responded) try { window.removeEventListener('lcyt:audio-toggle-response', onResponse); } catch {} }, 500);
+          } else {
+            onViewChange('audio');
+          }
+        }}
       >
         <span className="file-tab__audio-icon">&#127908;</span> Audio
       </button>

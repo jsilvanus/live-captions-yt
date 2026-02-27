@@ -166,6 +166,16 @@ export function SettingsModal({ isOpen, onClose }) {
     }
   }
 
+  async function handleResetSequence() {
+    if (!session.connected) { showToast('Not connected', 'warning'); return; }
+    try {
+      await session.updateSequence(0);
+      showToast('Sequence reset to 0', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to reset sequence', 'error');
+    }
+  }
+
   function handleClearConfig() {
     session.clearPersistedConfig();
     setBackendUrl('');
@@ -558,6 +568,7 @@ export function SettingsModal({ isOpen, onClose }) {
               <div className="settings-modal__actions">
                 <button className="btn btn--secondary btn--sm" onClick={handleSync}>⟳ Sync Now</button>
                 <button className="btn btn--secondary btn--sm" onClick={handleHeartbeat}>♥ Heartbeat</button>
+                <button className="btn btn--secondary btn--sm" onClick={handleResetSequence}>↺ Reset sequence</button>
               </div>
               {hbResult && (
                 <div className="settings-status-row">
