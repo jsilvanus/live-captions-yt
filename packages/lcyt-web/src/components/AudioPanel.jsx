@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { useSessionContext } from '../contexts/SessionContext';
+import { useSentLogContext } from '../contexts/SentLogContext';
 import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
 
@@ -21,13 +23,23 @@ export function AudioPanel({ visible }) {
   const [finalText, setFinalText] = useState('');
   const [engine, setEngine] = useState(getSttEngine);
   const [credLoaded, setCredLoaded] = useState(!!getGoogleCredential());
+  const [devices, setDevices] = useState([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState(() => {
+    try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; }
+  });
   const [webkitSupported] = useState(
     () => !!(window.SpeechRecognition || window.webkitSpeechRecognition),
   );
   const [cloudError, setCloudError] = useState('');
+  const [recentFinals, setRecentFinals] = useState([]);
 
   // WebKit refs
   const recognitionRef = useRef(null);
+  const meterStreamRef = useRef(null); // MediaStream used for analyser when WebKit is active
+  const audioCtxRef     = useRef(null);
+  const analyserRef     = useRef(null);
+  const meterAnimRef    = useRef(null);
+  const meterCanvasRef  = useRef(null);
 
   // Cloud STT refs
   const streamRef    = useRef(null);   // MediaStream
@@ -46,6 +58,52 @@ export function AudioPanel({ visible }) {
     };
   }, []);
 
+  // Session / sent log
+  const session = useSessionContext();
+  const sentLog = useSentLogContext();
+
+  function pushFinalTranscript(text) {
+    const t = String(text || '').trim();
+    if (!t) return;
+    setRecentFinals(prev => [t, ...prev].slice(0, 10));
+    sendTranscript(t);
+  }
+
+  async function sendTranscript(text) {
+    if (!text) return;
+    if (session?.connected) {
+      try {
+        await session.send(text);
+        setCloudError('');
+      } catch (err) {
+        console.error('Failed to send caption', err);
+        setCloudError(err?.message || 'Failed to send caption');
+        // add to sent log as pending fallback
+        try { sentLog?.add({ requestId: `local-${Date.now()}`, text, pending: true }); } catch {}
+      }
+    } else {
+      // Not connected — add to sent log as a local pending entry so it appears in SentPanel
+      try { sentLog?.add({ requestId: `local-${Date.now()}`, text, pending: true }); } catch {}
+    }
+  }
+
+  // ── Enumerate audio input devices and track selection ─────────────────
+  async function enumerateDevices() {
+    if (!navigator?.mediaDevices?.enumerateDevices) return;
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const inputs = list.filter(d => d.kind === 'audioinput');
+      setDevices(inputs);
+    } catch {}
+  }
+
+  useEffect(() => {
+    enumerateDevices();
+    const onChange = () => enumerateDevices();
+    navigator?.mediaDevices?.addEventListener?.('devicechange', onChange);
+    return () => navigator?.mediaDevices?.removeEventListener?.('devicechange', onChange);
+  }, []);
+
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -57,9 +115,30 @@ export function AudioPanel({ visible }) {
 
   // ─── WebKit engine ────────────────────────────────────────────────────────
 
-  function startWebkit() {
+  async function startWebkit() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
+    // Try to pre-select the device by requesting permission for the chosen device.
+    // Await the permission so failures surface and we can show a helpful message.
+    if (selectedDeviceId && navigator?.mediaDevices?.getUserMedia) {
+      // stop any existing meter stream first
+      if (meterStreamRef.current) {
+        try { meterStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+        meterStreamRef.current = null;
+      }
+      try {
+        const s = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: selectedDeviceId } } });
+        meterStreamRef.current = s;
+        try { attachMeter(s); } catch (err) { console.debug('attachMeter failed', err); }
+      } catch (err) {
+        console.warn('getUserMedia for selected device failed', err);
+        // Surface a readable message for the user
+        if (err && err.name === 'NotAllowedError') setCloudError('Microphone access denied for selected device.');
+        else if (err && (err.name === 'NotFoundError' || err.name === 'OverconstrainedError')) setCloudError('Selected microphone not found.');
+        else setCloudError('Unable to open selected microphone.');
+        // Continue — some browsers allow SpeechRecognition even without a successful getUserMedia
+      }
+    }
 
     const recognition = new SR();
     recognition.continuous     = true;
@@ -76,7 +155,11 @@ export function AudioPanel({ visible }) {
       }
       if (final) setFinalText(prev => prev + final + ' ');
       setInterimText(interim);
+      try { console.debug('WebKit onresult', { interim, final }); } catch {}
+      if (final) pushFinalTranscript(final);
     };
+
+    recognition.onstart = () => { try { console.debug('WebKit recognition started'); } catch {} };
 
     recognition.onend = () => {
       // Auto-restart so continuous mode survives silence pauses
@@ -87,6 +170,8 @@ export function AudioPanel({ visible }) {
 
     recognition.onerror = (e) => {
       if (e.error === 'no-speech') return;
+      console.error('WebKit recognition error', e);
+      setCloudError(`WebKit STT error: ${e.error || 'unknown'}`);
       recognitionRef.current = null;
       setListening(false);
       setInterimText('');
@@ -103,6 +188,12 @@ export function AudioPanel({ visible }) {
     const rec = recognitionRef.current;
     recognitionRef.current = null;
     if (rec) try { rec.stop(); } catch {}
+    // Stop meter stream if we opened one for WebKit
+    if (meterStreamRef.current) {
+      try { meterStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+      meterStreamRef.current = null;
+    }
+    detachMeter();
     setListening(false);
     setInterimText('');
   }
@@ -144,12 +235,30 @@ export function AudioPanel({ visible }) {
         audio: { content: base64 },
       }),
     });
+    let data;
+    try {
+      data = await res.json();
+    } catch (err) {
+      console.error('Failed parsing STT response', err);
+      throw new Error('Invalid STT response');
+    }
 
-    const data = await res.json();
-    if (data.error) throw new Error(data.error.message || 'Cloud STT error');
+    if (!res.ok) {
+      console.error('Cloud STT error', res.status, data);
+      throw new Error(data?.error?.message || `STT HTTP ${res.status}`);
+    }
+
+    if (data.error) {
+      console.error('Cloud STT returned error', data.error);
+      throw new Error(data.error.message || 'Cloud STT error');
+    }
 
     const transcript = data.results?.[0]?.alternatives?.[0]?.transcript;
-    if (transcript) setFinalText(prev => prev + transcript + ' ');
+    console.debug('Cloud STT transcript', transcript, data);
+    if (transcript) {
+      setFinalText(prev => prev + transcript + ' ');
+      pushFinalTranscript(transcript);
+    }
   }
 
   function scheduleNextChunk(stream) {
@@ -189,9 +298,12 @@ export function AudioPanel({ visible }) {
 
     let stream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      setCloudError('Microphone access denied.');
+      const audioConstraint = selectedDeviceId
+        ? { deviceId: { exact: selectedDeviceId } }
+        : true;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint });
+    } catch (err) {
+      setCloudError(err?.name === 'NotAllowedError' ? 'Microphone access denied.' : 'Failed to open microphone.');
       return;
     }
 
@@ -205,6 +317,8 @@ export function AudioPanel({ visible }) {
     }
 
     streamRef.current = stream;
+    // Attach meter to the active cloud stream
+    try { attachMeter(streamRef.current); } catch {}
     setListening(true);
     setInterimText('');
     setFinalText('');
@@ -218,8 +332,70 @@ export function AudioPanel({ visible }) {
       try { recorderRef.current.stop(); } catch {}
     }
     recorderRef.current = null;
+    detachMeter();
     setListening(false);
     setInterimText('');
+  }
+
+  // ── Audio meter helpers ─────────────────────────────────────────────────
+  function attachMeter(stream) {
+    if (!stream) return;
+    if (analyserRef.current) return; // already attached
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = audioCtxRef.current || new AudioCtx();
+      audioCtxRef.current = ctx;
+      const src = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      src.connect(analyser);
+      analyserRef.current = analyser;
+
+      const canvas = meterCanvasRef.current;
+      const data = new Float32Array(analyser.fftSize);
+
+      function draw() {
+        analyser.getFloatTimeDomainData(data);
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+        const rms = Math.sqrt(sum / data.length);
+        const level = Math.min(1, rms * 3); // scale for visibility
+
+        if (canvas) {
+          const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
+          const h = canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
+          const ctx2 = canvas.getContext('2d');
+          ctx2.clearRect(0, 0, w, h);
+          ctx2.fillStyle = '#0b8';
+          ctx2.fillRect(0, 0, Math.round(w * level), h);
+        }
+
+        meterAnimRef.current = requestAnimationFrame(draw);
+      }
+
+      draw();
+    } catch {}
+  }
+
+  function detachMeter() {
+    if (meterAnimRef.current) {
+      cancelAnimationFrame(meterAnimRef.current);
+      meterAnimRef.current = null;
+    }
+    if (analyserRef.current) {
+      try { analyserRef.current.disconnect(); } catch {}
+      analyserRef.current = null;
+    }
+    if (audioCtxRef.current) {
+      try { audioCtxRef.current.close(); } catch {}
+      audioCtxRef.current = null;
+    }
+    const canvas = meterCanvasRef.current;
+    if (canvas) {
+      const ctx2 = canvas.getContext('2d');
+      ctx2.clearRect(0, 0, canvas.width, canvas.height);
+    }
   }
 
   // ─── Toggle ───────────────────────────────────────────────────────────────
@@ -262,6 +438,45 @@ export function AudioPanel({ visible }) {
 
           {hint && <p className="audio-field__hint">{hint}</p>}
           {cloudError && <p className="audio-field__hint audio-field__hint--error">{cloudError}</p>}
+
+          <div className="audio-field">
+            <label className="audio-field__label">Microphone</label>
+            <div className="audio-field__control" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <select
+                value={selectedDeviceId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setSelectedDeviceId(id);
+                  try { localStorage.setItem('lcyt:audioDeviceId', id); } catch {}
+                  window.dispatchEvent(new Event('lcyt:stt-config-changed'));
+                }}
+                style={{ minWidth: 180 }}
+              >
+                <option value="">Default device</option>
+                {devices.map(d => (
+                  <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
+                ))}
+              </select>
+              <button type="button" className="btn" onClick={enumerateDevices}>Refresh</button>
+              <canvas
+                ref={meterCanvasRef}
+                className="audio-meter"
+                aria-hidden="true"
+                style={{ width: 80, height: 18, borderRadius: 3, background: '#222' }}
+              />
+            </div>
+          </div>
+
+          {/* Recent final transcripts (most recent first) */}
+          {recentFinals.length > 0 && (
+            <div className="audio-field audio-field--recent">
+              <ul className="audio-final-list">
+                {recentFinals.map((t, i) => (
+                  <li key={`${i}-${t.slice(0,20)}`} className="audio-final-item">{t}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="audio-field">
             <button
