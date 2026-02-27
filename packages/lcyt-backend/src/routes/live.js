@@ -11,7 +11,8 @@ import { createAuthMiddleware } from '../middleware/auth.js';
  * POST   /live  — Register a new session (or return existing JWT, idempotent)
  * GET    /live  — Get current session status (sequence + syncOffset)
  * DELETE /live  — Tear down session and clean up sender
- *
+ * PATCH  /live  — Update session fields (e.g. sequence)
+ * 
  * @param {import('better-sqlite3').Database} db
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
@@ -105,6 +106,39 @@ export function createLiveRouter(db, store, jwtSecret) {
       sequence: session.sequence,
       syncOffset: session.syncOffset
     });
+  });
+
+  // PATCH /live — Update session fields (e.g. sequence)
+  router.patch('/', auth, (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    const { sequence, domain } = req.body || {};
+
+    if (sequence !== undefined) {
+      const seq = Number(sequence);
+      if (!Number.isFinite(seq) || seq < 0) {
+        return res.status(400).json({ error: 'sequence must be a non-negative number' });
+      }
+      try {
+        if (typeof session.sender.setSequence === 'function') {
+          session.sender.setSequence(seq);
+        }
+      } catch (err) {
+        // Ignore sender errors but continue to update session value
+      }
+      session.sequence = seq;
+      store.touch(sessionId);
+    }
+
+    // Echo CORS allow-origin for clients that expect it (domain comes from the JWT)
+    if (session.domain) res.setHeader('Access-Control-Allow-Origin', session.domain);
+
+    return res.status(200).json({ sequence: session.sequence });
   });
 
   // DELETE /live — Remove session
