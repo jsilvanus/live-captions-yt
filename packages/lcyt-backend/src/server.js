@@ -31,6 +31,12 @@ if (!process.env.ADMIN_KEY) {
   console.info('  Set ADMIN_KEY in your environment to enable API key management via HTTP.');
 }
 
+if (process.env.FREE_APIKEY_ACTIVE !== '1') {
+  console.info('ℹ FREE_APIKEY_ACTIVE is not set — POST /keys?freetier is disabled.');
+} else {
+  console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
+}
+
 // ---------------------------------------------------------------------------
 // Database and session store
 // ---------------------------------------------------------------------------
@@ -90,7 +96,7 @@ app.get('/health', (req, res) => {
 const auth = createAuthMiddleware(jwtSecret);
 
 app.use('/live', createLiveRouter(db, store, jwtSecret));
-app.use('/captions', createCaptionsRouter(store, auth));
+app.use('/captions', createCaptionsRouter(store, auth, db));
 app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));

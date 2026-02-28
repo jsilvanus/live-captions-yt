@@ -1,3 +1,4 @@
+#Basic stuff
 node_modules/
 .DS_Store
 *.log
@@ -13,3 +14,9 @@ claude/
 dist/
 **/dist/
 packages/lcyt-web/dist/index.html
+
+# Ignore database files, all .db files globally
+*.db
+*.db-shm
+*.db-wal
+

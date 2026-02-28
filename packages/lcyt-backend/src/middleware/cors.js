@@ -13,6 +13,17 @@ export function createCorsMiddleware(store) {
     const path = req.path;
     const method = req.method;
 
+    // Free-tier key signup — any origin, POST only (must check before the /keys block)
+    if (method === 'POST' && path === '/keys' && 'freetier' in req.query) {
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
+      return next();
+    }
+
     // Admin endpoints — no CORS headers at all
     if (path.startsWith('/keys')) {
       if (method === 'OPTIONS') {

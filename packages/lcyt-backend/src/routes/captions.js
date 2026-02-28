@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { checkAndIncrementUsage } from '../db.js';
 
 /**
  * Factory for the /captions router.
@@ -12,7 +13,7 @@ import { randomUUID } from 'node:crypto';
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @returns {Router}
  */
-export function createCaptionsRouter(store, auth) {
+export function createCaptionsRouter(store, auth, db) {
   const router = Router();
 
   // POST /captions — Send captions (auth required)
@@ -29,6 +30,12 @@ export function createCaptionsRouter(store, auth) {
     const session = store.get(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // Enforce per-key usage limits (no-op for keys with null limits)
+    const usage = checkAndIncrementUsage(db, session.apiKey);
+    if (!usage.allowed) {
+      return res.status(429).json({ error: usage.reason });
     }
 
     // Resolve relative `time` fields to absolute timestamps.
