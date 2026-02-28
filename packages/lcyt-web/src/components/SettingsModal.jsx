@@ -280,7 +280,7 @@ export function SettingsModal({ isOpen, onClose }) {
                 <input
                   className="settings-field__input"
                   type="url"
-                  placeholder="http://localhost:3000"
+                  placeholder="https://api.lcyt.fi"
                   autoComplete="off"
                   value={backendUrl}
                   onChange={e => setBackendUrl(e.target.value)}
