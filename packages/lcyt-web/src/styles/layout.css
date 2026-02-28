@@ -123,7 +123,12 @@ body {
 /* ─── Responsive: hide sent panel below 768px ───────────── */
 
 @media (max-width: 768px) {
-  /* Stack the main panels vertically on narrow / mobile screens */
+  /* Stack the main panels vertically on narrow / mobile screens
+     and allow the header to grow to accommodate wrapped status content. */
+  #app {
+    grid-template-rows: auto 1fr var(--footer-height);
+  }
+
   #main {
     display: flex;
     flex-direction: column;
@@ -160,5 +165,12 @@ body {
   /* Reduce footer height a bit for cramped screens */
   #footer {
     padding: 6px 8px;
+  }
+  
+  /* Allow header to expand and show wrapped status lines */
+  #header {
+    align-items: flex-start;
+    padding: 8px 12px;
+    overflow: visible;
   }
 }
