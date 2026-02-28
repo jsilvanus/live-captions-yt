@@ -101,6 +101,11 @@ export function useSession({
 
     const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk });
     await sender.start();
+
+    // Auto-sync clock with YouTube immediately after connecting.
+    // Failure is non-fatal — connection proceeds with syncOffset=0.
+    try { await sender.sync(); } catch {}
+
     senderRef.current = sender;
 
     setConnected(true);
@@ -140,9 +145,9 @@ export function useSession({
 
   // ─── Caption sending ────────────────────────────────────
 
-  async function send(text) {
+  async function send(text, timestamp) {
     if (!senderRef.current) throw new Error('Not connected');
-    const data = await senderRef.current.send(text);
+    const data = await senderRef.current.send(text, timestamp);
     cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true });
     return data;
   }
@@ -185,7 +190,6 @@ export function useSession({
 
     try {
       const data = await senderRef.current.sendBatch(); // drains sender queue
-      const data = await senderRef.current.sendBatch(); // drains sender queue
       // Notify host that the temp ids now map to the real requestId
       cbs.current.onBatchSent?.({ tempIds: items.map(i => i.requestId), requestId: data.requestId, count: data.count });
       return data;
@@ -197,14 +201,14 @@ export function useSession({
   }
 
   // Add a caption to the server-side batch queue (sender.construct)
-  async function construct(text) {
+  async function construct(text, timestamp) {
     if (!text || typeof text !== 'string') return 0;
     if (!senderRef.current) throw new Error('Not connected');
 
     const intervalMs = getBatchIntervalMs();
     // Immediate send if batching is disabled
     if (intervalMs === 0) {
-      const data = await send(text);
+      const data = await send(text, timestamp);
       return data;
     }
 
@@ -212,7 +216,7 @@ export function useSession({
     // Tell host a pending item exists
     cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true });
     // Push into sender queue
-    senderRef.current.construct(text);
+    senderRef.current.construct(text, timestamp);
     batchBufferRef.current.push({ text, requestId: tempId });
 
     if (!batchTimerRef.current) {

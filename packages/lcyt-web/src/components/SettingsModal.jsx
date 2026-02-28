@@ -36,6 +36,7 @@ export function SettingsModal({ isOpen, onClose }) {
   const [autoConnect, setAutoConnect] = useState(false);
   const [theme, setTheme] = useState('auto');
   const [batchInterval, setBatchInterval] = useState(0);
+  const [transcriptionOffset, setTranscriptionOffset] = useState(0);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showStreamKey, setShowStreamKey] = useState(false);
   const [error, setError] = useState('');
@@ -83,6 +84,8 @@ export function SettingsModal({ isOpen, onClose }) {
     setAutoConnect(session.getAutoConnect());
     const savedBatch = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
     setBatchInterval(savedBatch);
+    const savedOffset = parseFloat(localStorage.getItem('lcyt:transcription-offset') || '0');
+    setTranscriptionOffset(isNaN(savedOffset) ? 0 : savedOffset);
     setError('');
     // Re-sync STT state in case it changed outside
     setSttEngineState(getSttEngine());
@@ -119,6 +122,12 @@ export function SettingsModal({ isOpen, onClose }) {
     const v = parseInt(value, 10);
     setBatchInterval(v);
     try { localStorage.setItem('lcyt-batch-interval', String(v)); } catch {}
+  }
+
+  function onTranscriptionOffsetChange(value) {
+    const v = parseFloat(value);
+    setTranscriptionOffset(v);
+    try { localStorage.setItem('lcyt:transcription-offset', String(v)); } catch {}
   }
 
   async function handleConnect() {
@@ -345,6 +354,24 @@ export function SettingsModal({ isOpen, onClose }) {
               <p style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, lineHeight: 1.5 }}>
                 0 = send each caption immediately.<br />
                 1–20 s = collect captions over the window, then send as a single batch.
+              </p>
+              <div className="settings-field" style={{ marginTop: 16 }}>
+                <label className="settings-field__label">
+                  Transcription offset: <span>{transcriptionOffset === 0 ? '0 s (none)' : `${transcriptionOffset > 0 ? '+' : ''}${Number(transcriptionOffset).toFixed(1)} s`}</span>
+                </label>
+                <input
+                  className="settings-field__input"
+                  type="range"
+                  min="-30" max="10" step="0.1"
+                  value={transcriptionOffset}
+                  onChange={e => onTranscriptionOffsetChange(e.target.value)}
+                  style={{ padding: 0, cursor: 'pointer' }}
+                />
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, lineHeight: 1.5 }}>
+                Shifts the caption timestamp relative to when the transcription arrives.<br />
+                Use a <strong>negative</strong> value (e.g. −5 s) to compensate for transcription processing delay,
+                so captions line up with the moment the speaker started talking in the YouTube stream.
               </p>
             </div>
           )}
