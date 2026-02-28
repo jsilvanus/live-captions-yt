@@ -73,7 +73,12 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "==> Installing Node dependencies"
-npm install --prefix "$REPO_DIR" --omit=dev 2>&1 | tail -5
+npm install \
+  --prefix "$REPO_DIR" \
+  --workspace packages/lcyt \
+  --workspace packages/lcyt-web \
+  --workspace packages/lcyt-backend \
+  --omit=dev 2>&1 | tail -5
 
 # ---------------------------------------------------------------------------
 # Step 3: Build the web UI
