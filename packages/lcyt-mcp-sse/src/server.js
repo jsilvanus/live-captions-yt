@@ -1,10 +1,20 @@
 #!/usr/bin/env node
 /**
- * MCP server for lcyt — sends live captions to YouTube Live streams.
+ * MCP server for lcyt — HTTP SSE transport.
+ * Exposes the same tools as lcyt-mcp-stdio over HTTP Server-Sent Events.
+ *
+ * GET  /sse       — open SSE stream (MCP client connects here)
+ * POST /messages  — send messages to an active SSE session (?sessionId=...)
+ *
+ * All HTTP connections share one session map, so caption sessions (identified
+ * by session_id) survive reconnects.
+ *
+ * Port: process.env.PORT (default 3001)
  */
 
+import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -13,11 +23,10 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { YoutubeLiveCaptionSender } from "lcyt";
 import { randomBytes } from "node:crypto";
-import { fileURLToPath } from "node:url";
 
-// ── Tool definitions ─────────────────────────────────────────────────────────
+// ── Tool definitions ──────────────────────────────────────────────────────────
 
-export const TOOLS = [
+const TOOLS = [
   {
     name: "start",
     description: "Create a caption sender and start a session. Returns a session_id.",
@@ -107,7 +116,7 @@ export const TOOLS = [
   },
 ];
 
-// ── Handler factory (exported for testing with a fake sender) ────────────────
+// ── Handler factory ───────────────────────────────────────────────────────────
 
 /**
  * Creates isolated handler functions backed by their own sessions map.
@@ -115,7 +124,7 @@ export const TOOLS = [
  *
  * @param {typeof YoutubeLiveCaptionSender} SenderClass
  */
-export function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
+function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
   /** @type {Map<string, InstanceType<typeof SenderClass>>} */
   const sessions = new Map();
   /** @type {Map<string, {startedAt: string}>} */
@@ -221,52 +230,70 @@ export function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
     }
   }
 
-  return {
-    sessions,
-    sessionMeta,
-    handleListTools,
-    handleListResources,
-    handleReadResource,
-    handleCallTool,
-  };
+  return { handleListTools, handleListResources, handleReadResource, handleCallTool };
 }
 
-// ── Default handlers (used by the MCP server) ────────────────────────────────
+// ── Shared handlers (all HTTP connections share one session map) ──────────────
 
-export const {
-  sessions,
-  sessionMeta,
-  handleListTools,
-  handleListResources,
-  handleReadResource,
-  handleCallTool,
-} = createHandlers();
+const { handleListTools, handleListResources, handleReadResource, handleCallTool } =
+  createHandlers();
 
-// ── MCP server wiring ─────────────────────────────────────────────────────────
+// ── MCP server factory (one Server per SSE connection) ────────────────────────
 
-const server = new Server(
-  { name: "lcyt-mcp", version: "0.1.0" },
-  { capabilities: { tools: {}, resources: {} } }
-);
+function createMcpServer() {
+  const server = new Server(
+    { name: "lcyt-mcp-sse", version: "0.1.0" },
+    { capabilities: { tools: {}, resources: {} } }
+  );
 
-server.setRequestHandler(ListToolsRequestSchema, () => handleListTools());
+  server.setRequestHandler(ListToolsRequestSchema, () => handleListTools());
 
-server.setRequestHandler(ListResourcesRequestSchema, () => handleListResources());
+  server.setRequestHandler(ListResourcesRequestSchema, () => handleListResources());
 
-server.setRequestHandler(ReadResourceRequestSchema, ({ params: { uri } }) =>
-  handleReadResource(uri).then((text) => ({
-    contents: [{ uri, mimeType: "application/json", text }],
-  }))
-);
+  server.setRequestHandler(ReadResourceRequestSchema, ({ params: { uri } }) =>
+    handleReadResource(uri).then((text) => ({
+      contents: [{ uri, mimeType: "application/json", text }],
+    }))
+  );
 
-server.setRequestHandler(CallToolRequestSchema, ({ params: { name, arguments: args } }) =>
-  handleCallTool(name, args)
-);
+  server.setRequestHandler(CallToolRequestSchema, ({ params: { name, arguments: args } }) =>
+    handleCallTool(name, args)
+  );
 
-// ── Entry point (only when run directly) ─────────────────────────────────────
+  return server;
+}
 
-const isMain = process.argv[1] === fileURLToPath(import.meta.url);
-if (isMain) {
-  const transport = new StdioServerTransport();
+// ── Express app ───────────────────────────────────────────────────────────────
+
+const app = express();
+app.use(express.json());
+
+/** @type {Map<string, SSEServerTransport>} */
+const transports = new Map();
+
+app.get("/sse", async (req, res) => {
+  const transport = new SSEServerTransport("/messages", res);
+  const server = createMcpServer();
+
+  transports.set(transport.sessionId, transport);
+  res.on("close", () => transports.delete(transport.sessionId));
+
   await server.connect(transport);
-}
+});
+
+app.post("/messages", async (req, res) => {
+  const sessionId = req.query.sessionId;
+  const transport = transports.get(sessionId);
+  if (!transport) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+  await transport.handlePostMessage(req, res);
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.error(`lcyt-mcp-sse listening on port ${PORT}`);
+});

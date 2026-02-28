@@ -1,8 +1,11 @@
 {
   "servers": {
-    "lcyt-mcp": {
+    "lcyt-mcp-stdio": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "lcyt-mcp"]
+      "args": ["run", "-i", "--rm", "lcyt-mcp-stdio"]
+    },
+    "lcyt-mcp-sse": {
+      "url": "http://localhost:3001/sse"
     }
   }
 }
