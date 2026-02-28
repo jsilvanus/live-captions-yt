@@ -357,12 +357,12 @@ export function SettingsModal({ isOpen, onClose }) {
               </p>
               <div className="settings-field" style={{ marginTop: 16 }}>
                 <label className="settings-field__label">
-                  Transcription offset: <span>{transcriptionOffset === 0 ? '0 s (none)' : `${transcriptionOffset > 0 ? '+' : ''}${transcriptionOffset} s`}</span>
+                  Transcription offset: <span>{transcriptionOffset === 0 ? '0 s (none)' : `${transcriptionOffset > 0 ? '+' : ''}${Number(transcriptionOffset).toFixed(1)} s`}</span>
                 </label>
                 <input
                   className="settings-field__input"
                   type="range"
-                  min="-30" max="10" step="0.5"
+                  min="-30" max="10" step="0.1"
                   value={transcriptionOffset}
                   onChange={e => onTranscriptionOffsetChange(e.target.value)}
                   style={{ padding: 0, cursor: 'pointer' }}
