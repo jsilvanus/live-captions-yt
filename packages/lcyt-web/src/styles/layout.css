@@ -123,19 +123,42 @@ body {
 /* ─── Responsive: hide sent panel below 768px ───────────── */
 
 @media (max-width: 768px) {
+  /* Stack the main panels vertically on narrow / mobile screens */
   #main {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
   }
 
+  /* Right panel becomes a normal stacked section below the left panel
+     (shows by default so users can scroll to it). Keep a modest min-height. */
   .panel--right {
-    display: none;
-    position: fixed;
-    inset: var(--header-height) 0 var(--footer-height) 0;
+    display: flex;
+    position: static;
+    inset: auto;
+    height: auto;
+    min-height: 28vh;
+    border-top: 1px solid var(--color-border);
     background: var(--color-bg);
-    z-index: 50;
+    z-index: 1;
   }
 
   .panel--right.panel--right-visible {
     display: flex;
+  }
+
+  /* Ensure left panel doesn't keep an unnecessary right border when stacked */
+  .panel--left {
+    border-right: none;
+  }
+
+  /* Hide the InputBar on small vertical screens (keep privacy button accessible) */
+  #footer .input-bar {
+    display: none;
+  }
+
+  /* Reduce footer height a bit for cramped screens */
+  #footer {
+    padding: 6px 8px;
   }
 }
