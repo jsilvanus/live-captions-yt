@@ -50,19 +50,22 @@ export function StatusBar({ onSettingsOpen, onToggleRightPanel }) {
       <span className="status-bar__value">{connected ? `${syncOffset}ms` : '—'}</span>
       {error && <span className="status-bar__error">{error}</span>}
       <span className="status-bar__spacer" />
-      <button className="status-bar__btn" onClick={handleSync} title="Clock sync">⟳ Sync</button>
-      {isMobile && (
+
+      <div className="status-bar__actions">
+        <button className="status-bar__btn" onClick={handleSync} title="Clock sync">⟳ Sync</button>
+        {isMobile && (
+          <button
+            className="status-bar__btn status-bar__btn--icon"
+            onClick={onToggleRightPanel}
+            title="Toggle sent panel"
+          >▦</button>
+        )}
         <button
           className="status-bar__btn status-bar__btn--icon"
-          onClick={onToggleRightPanel}
-          title="Toggle sent panel"
-        >▦</button>
-      )}
-      <button
-        className="status-bar__btn status-bar__btn--icon"
-        onClick={onSettingsOpen}
-        title="Settings (Ctrl+,)"
-      >⚙</button>
+          onClick={onSettingsOpen}
+          title="Settings (Ctrl+,)"
+        >⚙</button>
+      </div>
     </header>
   );
 }

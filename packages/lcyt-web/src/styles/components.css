@@ -77,6 +77,14 @@
     flex-basis: 100%;
     height: 0;
   }
+
+  /* Actions row (buttons) should break onto its own row on narrow screens */
+  .status-bar__actions {
+    flex-basis: 100%;
+    justify-content: flex-end;
+    margin-top: 6px;
+    padding-left: 4px;
+  }
 }
 
 .status-bar__spacer {
@@ -104,6 +112,13 @@
   font-size: 16px;
   border: none;
   padding: 4px 6px;
+}
+
+.status-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* ─── Drop zone ─────────────────────────────────────────── */
