@@ -40,7 +40,7 @@ export function StatusBar({ onSettingsOpen, onToggleRightPanel }) {
   }
 
   return (
-    <header className="status-bar">
+    <header id="header" className="status-bar">
       <span className="status-bar__brand">lcyt-web</span>
       <span className={`status-bar__dot${connected ? ' status-bar__dot--connected' : ''}`} />
       <span className="status-bar__label">{connected ? 'Connected' : 'Disconnected'}</span>
