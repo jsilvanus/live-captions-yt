@@ -668,7 +668,13 @@
   padding: 0 20px;
   margin-top: 12px;
   gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  white-space: nowrap;
 }
+
+.settings-modal__tabs::-webkit-scrollbar { display: none; }
 
 .settings-tab {
   padding: 8px 12px;
@@ -677,6 +683,8 @@
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   transition: color 0.15s;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .settings-tab:hover {
