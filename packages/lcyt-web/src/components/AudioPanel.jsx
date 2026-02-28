@@ -69,8 +69,10 @@ export function AudioPanel({ visible }) {
 
   function getTimestampWithOffset() {
     const offsetSec = parseFloat(localStorage.getItem('lcyt:transcription-offset') || '0');
-    if (!offsetSec) return undefined; // let backend use its own clock
-    const ms = Date.now() + Math.round(offsetSec * 1000);
+    const offsetMs = Math.round(offsetSec * 1000);
+    const syncOffsetMs = session.syncOffset || 0;
+    if (!offsetMs && !syncOffsetMs) return undefined; // let backend use its own clock
+    const ms = Date.now() + offsetMs + syncOffsetMs;
     // Format as YYYY-MM-DDTHH:MM:SS.mmm (no trailing Z — YouTube API format)
     return new Date(ms).toISOString().replace('Z', '');
   }
