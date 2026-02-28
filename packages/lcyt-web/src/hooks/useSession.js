@@ -101,6 +101,11 @@ export function useSession({
 
     const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk });
     await sender.start();
+
+    // Auto-sync clock with YouTube immediately after connecting.
+    // Failure is non-fatal — connection proceeds with syncOffset=0.
+    try { await sender.sync(); } catch {}
+
     senderRef.current = sender;
 
     setConnected(true);
