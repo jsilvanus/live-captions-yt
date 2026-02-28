@@ -67,17 +67,26 @@ export function AudioPanel({ visible }) {
     sendTranscript(t);
   }
 
+  function getTimestampWithOffset() {
+    const offsetSec = parseFloat(localStorage.getItem('lcyt:transcription-offset') || '0');
+    if (!offsetSec) return undefined; // let backend use its own clock
+    const ms = Date.now() + Math.round(offsetSec * 1000);
+    // Format as YYYY-MM-DDTHH:MM:SS.mmm (no trailing Z — YouTube API format)
+    return new Date(ms).toISOString().replace('Z', '');
+  }
+
   async function sendTranscript(text) {
     if (!text) return;
     if (session?.connected) {
+      const timestamp = getTimestampWithOffset();
       try {
         // Honor batching: if batch interval > 0, queue via construct
         const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
         const intervalMs = Math.min(20, Math.max(0, v)) * 1000;
         if (intervalMs > 0) {
-          await session.construct(text);
+          await session.construct(text, timestamp);
         } else {
-          await session.send(text);
+          await session.send(text, timestamp);
         }
         setCloudError('');
       } catch (err) {
