@@ -36,6 +36,8 @@ export class SessionStore {
     this._sessionTtl = sessionTtl;
     this._cleanupInterval = cleanupInterval;
     this._timer = null;
+    /** @type {((session: object, reason: string) => void)|null} */
+    this.onSessionEnd = null;
     this._startCleanup();
   }
 
@@ -71,6 +73,8 @@ export class SessionStore {
       startedAt: Date.now(),
       createdAt: now,
       lastActivityAt: now,
+      captionsSent: 0,
+      captionsFailed: 0,
       emitter: new EventEmitter(),
       _sendQueue: Promise.resolve(),
     };
@@ -160,6 +164,7 @@ export class SessionStore {
     const cutoff = Date.now() - this._sessionTtl;
     for (const [sessionId, session] of this._sessions) {
       if (session.lastActivityAt.getTime() < cutoff) {
+        this.onSessionEnd?.(session, 'ttl');
         session.emitter.emit('session:closed');
         session.emitter.removeAllListeners();
         this._sessions.delete(sessionId);

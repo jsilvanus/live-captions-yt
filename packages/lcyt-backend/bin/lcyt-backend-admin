@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { initDb, getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey } from '../src/db.js';
+import { initDb, getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey } from '../src/db.js';
 
 // ---------------------------------------------------------------------------
 // Argument parsing helpers
@@ -26,6 +26,13 @@ function parseArgs(argv) {
     }
   }
   return args;
+}
+
+function parseLimit(val) {
+  if (val === undefined) return undefined;
+  if (val === 'none') return null;
+  const n = parseInt(val, 10);
+  return Number.isFinite(n) && n >= 0 ? n : undefined;
 }
 
 function formatDate(str) {
@@ -70,11 +77,15 @@ function printKey(k) {
     console.error('Key not found.');
     process.exit(1);
   }
-  console.log(`key:       ${k.key}`);
-  console.log(`owner:     ${k.owner}`);
-  console.log(`active:    ${k.active ? 'yes' : 'REVOKED'}`);
-  console.log(`expires:   ${formatDate(k.expires_at)}`);
-  console.log(`created:   ${formatDate(k.created_at)}`);
+  console.log(`key:             ${k.key}`);
+  console.log(`owner:           ${k.owner}`);
+  console.log(`email:           ${k.email || '—'}`);
+  console.log(`active:          ${k.active ? 'yes' : 'REVOKED'}`);
+  console.log(`expires:         ${formatDate(k.expires_at)}`);
+  console.log(`daily limit:     ${k.daily_limit ?? 'unlimited'}`);
+  console.log(`lifetime limit:  ${k.lifetime_limit ?? 'unlimited'}`);
+  console.log(`lifetime used:   ${k.lifetime_used ?? 0}`);
+  console.log(`created:         ${formatDate(k.created_at)}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -96,9 +107,42 @@ function cmdAdd(db, flags) {
     console.error('Error: --owner is required');
     process.exit(1);
   }
-  const created = createKey(db, { key: key || undefined, owner, expiresAt: expires || undefined });
+  const created = createKey(db, {
+    key: key || undefined,
+    owner,
+    expiresAt: expires || undefined,
+    daily_limit: parseLimit(flags['daily-limit']),
+    lifetime_limit: parseLimit(flags['lifetime-limit']),
+  });
   console.log('Created API key:');
   printKey(created);
+}
+
+function cmdUpdate(db, positional, flags) {
+  const key = positional[1];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  if (!getKey(db, key)) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+
+  const updates = {};
+  if (flags.owner !== undefined) updates.owner = flags.owner;
+  if (flags.expires !== undefined) updates.expiresAt = flags.expires || null;
+  if ('daily-limit' in flags) updates.daily_limit = parseLimit(flags['daily-limit']);
+  if ('lifetime-limit' in flags) updates.lifetime_limit = parseLimit(flags['lifetime-limit']);
+
+  if (Object.keys(updates).length === 0) {
+    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, or --lifetime-limit');
+    process.exit(1);
+  }
+
+  updateKey(db, key, updates);
+  console.log('Updated:');
+  printKey(getKey(db, key));
 }
 
 function cmdRevoke(db, positional) {
@@ -165,7 +209,11 @@ function usage() {
 Commands:
   list                              List all API keys
   add --owner <name> [--key <key>] [--expires <date>]
+      [--daily-limit <n>] [--lifetime-limit <n>]
                                     Create a new API key
+  update <key> [--owner <name>] [--expires <date>]
+      [--daily-limit <n|none>] [--lifetime-limit <n|none>]
+                                    Update key fields (use 'none' to remove a limit)
   revoke <key>                      Revoke (soft-delete) a key
   delete <key>                      Permanently remove a key
   renew <key> --expires <date>      Extend key expiration
@@ -200,6 +248,9 @@ switch (command) {
     break;
   case 'add':
     cmdAdd(db, flags);
+    break;
+  case 'update':
+    cmdUpdate(db, positional, flags);
     break;
   case 'revoke':
     cmdRevoke(db, positional);

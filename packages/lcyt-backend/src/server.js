@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { initDb } from './db.js';
+import { initDb, writeSessionStat } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
@@ -9,6 +9,7 @@ import { createCaptionsRouter } from './routes/captions.js';
 import { createEventsRouter } from './routes/events.js';
 import { createSyncRouter } from './routes/sync.js';
 import { createKeysRouter } from './routes/keys.js';
+import { createStatsRouter } from './routes/stats.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -43,6 +44,21 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
 
 const db = initDb();
 const store = new SessionStore();
+
+store.onSessionEnd = (session) => {
+  writeSessionStat(db, {
+    sessionId: session.sessionId,
+    apiKey: session.apiKey,
+    domain: session.domain,
+    startedAt: new Date(session.startedAt).toISOString(),
+    endedAt: new Date().toISOString(),
+    durationMs: Date.now() - session.startedAt,
+    captionsSent: session.captionsSent,
+    captionsFailed: session.captionsFailed,
+    finalSequence: session.sequence,
+    endedBy: 'ttl',
+  });
+};
 
 // ---------------------------------------------------------------------------
 // Express app
@@ -100,6 +116,7 @@ app.use('/captions', createCaptionsRouter(store, auth, db));
 app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));
+app.use('/stats', createStatsRouter(db, auth));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

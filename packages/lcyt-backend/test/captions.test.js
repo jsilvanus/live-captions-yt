@@ -3,6 +3,7 @@ import assert from 'node:assert';
 import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { initDb, createKey } from '../src/db.js';
 import { SessionStore, makeSessionId } from '../src/store.js';
 import { createCaptionsRouter } from '../src/routes/captions.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
@@ -13,15 +14,19 @@ const JWT_SECRET = 'test-captions-secret';
 // Test app setup
 // ---------------------------------------------------------------------------
 
-let server, baseUrl, store;
+let server, baseUrl, store, db;
 
 before(() => new Promise((resolve) => {
+  db = initDb(':memory:');
+  // Create the test API key with no limits so usage checks pass
+  createKey(db, { key: 'test-key', owner: 'Test User' });
+
   store = new SessionStore({ cleanupInterval: 0 });
   const auth = createAuthMiddleware(JWT_SECRET);
 
   const app = express();
   app.use(express.json({ limit: '64kb' }));
-  app.use('/captions', createCaptionsRouter(store, auth));
+  app.use('/captions', createCaptionsRouter(store, auth, db));
 
   server = createServer(app);
   server.listen(0, () => {
@@ -32,6 +37,7 @@ before(() => new Promise((resolve) => {
 
 after(() => new Promise((resolve) => {
   store.stopCleanup();
+  db.close();
   server.close(resolve);
 }));
 

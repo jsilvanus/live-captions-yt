@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
@@ -34,6 +34,7 @@ export function createLiveRouter(db, store, jwtSecret) {
     // Validate API key against SQLite
     const validation = validateApiKey(db, apiKey);
     if (!validation.valid) {
+      writeAuthEvent(db, { apiKey, eventType: validation.reason, domain });
       const status = validation.reason === 'expired' ? 401 : 401;
       return res.status(status).json({ error: `API key ${validation.reason}` });
     }
@@ -156,7 +157,21 @@ export function createLiveRouter(db, store, jwtSecret) {
       // Best-effort cleanup
     }
 
-    store.remove(sessionId);
+    const removed = store.remove(sessionId);
+    if (removed) {
+      writeSessionStat(db, {
+        sessionId: removed.sessionId,
+        apiKey: removed.apiKey,
+        domain: removed.domain,
+        startedAt: new Date(removed.startedAt).toISOString(),
+        endedAt: new Date().toISOString(),
+        durationMs: Date.now() - removed.startedAt,
+        captionsSent: removed.captionsSent,
+        captionsFailed: removed.captionsFailed,
+        finalSequence: removed.sequence,
+        endedBy: 'client',
+      });
+    }
     return res.status(200).json({ removed: true, sessionId });
   });
 

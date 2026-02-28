@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { checkAndIncrementUsage } from '../db.js';
+import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent } from '../db.js';
 
 /**
  * Factory for the /captions router.
@@ -35,6 +35,7 @@ export function createCaptionsRouter(store, auth, db) {
     // Enforce per-key usage limits (no-op for keys with null limits)
     const usage = checkAndIncrementUsage(db, session.apiKey);
     if (!usage.allowed) {
+      writeAuthEvent(db, { apiKey: session.apiKey, eventType: usage.reason, domain: session.domain });
       return res.status(429).json({ error: usage.reason });
     }
 
@@ -68,6 +69,7 @@ export function createCaptionsRouter(store, auth, db) {
         store.touch(sessionId);
 
         if (result.statusCode >= 200 && result.statusCode < 300) {
+          session.captionsSent++;
           session.emitter.emit('caption_result', {
             requestId,
             sequence: result.sequence,
@@ -76,6 +78,14 @@ export function createCaptionsRouter(store, auth, db) {
             serverTimestamp: result.serverTimestamp,
           });
         } else {
+          session.captionsFailed++;
+          writeCaptionError(db, {
+            apiKey: session.apiKey,
+            sessionId,
+            errorCode: result.statusCode,
+            errorMsg: `YouTube returned status ${result.statusCode}`,
+            batchSize: resolvedCaptions.length,
+          });
           session.emitter.emit('caption_error', {
             requestId,
             error: `YouTube returned status ${result.statusCode}`,
@@ -84,6 +94,14 @@ export function createCaptionsRouter(store, auth, db) {
           });
         }
       } catch (err) {
+        session.captionsFailed++;
+        writeCaptionError(db, {
+          apiKey: session.apiKey,
+          sessionId,
+          errorCode: err.statusCode || 502,
+          errorMsg: err.message || 'Failed to send captions',
+          batchSize: resolvedCaptions.length,
+        });
         session.emitter.emit('caption_error', {
           requestId,
           error: err.message || 'Failed to send captions',
