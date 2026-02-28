@@ -1263,3 +1263,69 @@
   font-style: italic;
   font-size: 13px;
 }
+
+/* ── Privacy link / modal ─────────────────────────────────────────── */
+
+.privacy-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+.privacy-btn:hover {
+  opacity: 1;
+  color: var(--color-text);
+}
+
+.privacy-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.privacy-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.privacy-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.privacy-body p {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.privacy-list {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.5;
+}
+
+.privacy-body code {
+  font-family: monospace;
+  font-size: 12px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 4px;
+}

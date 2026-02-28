@@ -4,6 +4,7 @@ import { useSessionContext } from './contexts/SessionContext';
 import { useFileContext } from './contexts/FileContext';
 import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
+import { PrivacyModal } from './components/PrivacyModal';
 import { DropZone } from './components/DropZone';
 import { FileTabs } from './components/FileTabs';
 import { CaptionView } from './components/CaptionView';
@@ -18,6 +19,7 @@ function AppLayout() {
   const fileStore = useFileContext();
 
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
   const [currentView, setCurrentView] = useState('captions');
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
   const [rightPanelVisible, setRightPanelVisible] = useState(false);
@@ -130,9 +132,11 @@ function AppLayout() {
 
       <footer id="footer">
         <InputBar ref={inputBarRef} />
+        <button className="privacy-btn" onClick={() => setPrivacyOpen(true)}>Privacy</button>
       </footer>
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <PrivacyModal isOpen={privacyOpen} onClose={() => setPrivacyOpen(false)} />
       <ToastContainer />
     </div>
   );
