@@ -14,8 +14,9 @@ live-captions-yt/
 │   ├── lcyt/                   # Core library (published to npm as `lcyt`)
 │   ├── lcyt-cli/               # CLI tool (published to npm as `lcyt-cli`)
 │   ├── lcyt-backend/           # Express.js HTTP relay backend
-│   ├── lcyt-mcp/               # Model Context Protocol (MCP) server
-│   └── lcyt-web/               # Browser-based web UI (Vite)
+│   ├── lcyt-mcp-stdio/         # MCP server (stdio transport)
+│   ├── lcyt-mcp-sse/           # MCP server (HTTP SSE transport)
+│   └── lcyt-web/               # Browser-based web UI (Vite + React)
 ├── python-packages/            # Python packages
 │   ├── lcyt/                   # Core Python library (published to PyPI as `lcyt`)
 │   ├── lcyt-backend/           # Flask backend (cPanel/Passenger compatible)
@@ -58,16 +59,18 @@ npm run web            # Run lcyt-web Vite dev server
 
 ## Node.js Packages
 
-### `packages/lcyt` — Core Library (v2.1.1)
+### `packages/lcyt` — Core Library (v2.3.0)
 
 Published to npm. Dual ESM/CJS package.
 
 **Source files (`src/`):**
-- `sender.js` — `YoutubeLiveCaptionSender` class. HTTP caption ingestion, sequence tracking, NTP-style clock sync, batch send.
-- `backend-sender.js` — `BackendCaptionSender` class. Routes captions through the relay backend using `fetch()`. **Async delivery:** `send()`/`sendBatch()` return `{ ok, requestId }` immediately (202); the real YouTube outcome arrives on the `GET /events` SSE stream.
-- `config.js` — `loadConfig()`, `saveConfig()`, `buildIngestionUrl()`. Config stored at `~/.lcyt-config.json`.
-- `logger.js` — Pluggable logger with `info/success/error/warn/debug`. Supports `setCallback()`, `setVerbose()`, `setSilent()`, `setUseStderr()`. Set `LCYT_LOG_STDERR=1` to route logs to stderr (MCP-friendly).
-- `errors.js` — Typed error hierarchy: `LCYTError` → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`).
+- `sender.js` / `sender.d.ts` — `YoutubeLiveCaptionSender` class. HTTP caption ingestion, sequence tracking, NTP-style clock sync, batch send.
+- `backend-sender.js` / `backend-sender.d.ts` — `BackendCaptionSender` class. Routes captions through the relay backend using `fetch()`. **Async delivery:** `send()`/`sendBatch()` return `{ ok, requestId }` immediately (202); the real YouTube outcome arrives on the `GET /events` SSE stream.
+- `config.js` / `config.d.ts` — `loadConfig()`, `saveConfig()`, `buildIngestionUrl()`. Config stored at `~/.lcyt-config.json`.
+- `logger.js` / `logger.d.ts` — Pluggable logger with `info/success/error/warn/debug`. Supports `setCallback()`, `setVerbose()`, `setSilent()`, `setUseStderr()`. Set `LCYT_LOG_STDERR=1` to route logs to stderr (MCP-friendly).
+- `errors.js` / `errors.d.ts` — Typed error hierarchy: `LCYTError` → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`).
+
+TypeScript declaration files (`.d.ts`) are included alongside each source file.
 
 **Exports map:**
 ```
@@ -121,10 +124,15 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 |---|---|---|
 | `JWT_SECRET` | HS256 signing key | auto-generated (warns) |
 | `ADMIN_KEY` | Admin endpoint auth | none (disables admin) |
-| `DB_PATH` | SQLite file path | in-memory |
+| `DB_PATH` | SQLite file path | `./lcyt-backend.db` |
 | `SESSION_TTL` | Session timeout (ms) | 7200000 (2h) |
+| `CLEANUP_INTERVAL` | Session cleanup sweep interval (ms) | 300000 (5m) |
 | `PORT` | HTTP port | 3000 |
 | `STATIC_DIR` | Serve static files | none |
+| `REVOKED_KEY_TTL_DAYS` | Days before revoked keys are purged | 30 |
+| `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval (ms) | 86400000 (24h) |
+| `ALLOWED_DOMAINS` | Comma-separated domains for /usage CORS filter | `lcyt.fi,www.lcyt.fi` |
+| `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
 
 **API routes:**
 ```
@@ -135,15 +143,21 @@ DELETE /live              — tear down session (Bearer token)
 POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token)
 GET  /events              — SSE stream of caption delivery results (Bearer token or ?token=)
 POST /sync                — NTP clock sync (Bearer token)
+GET  /stats               — per-key usage stats (Bearer token)
+DELETE /stats             — GDPR right-to-erasure: anonymise key and delete personal data (Bearer token)
+GET  /usage               — per-domain caption stats (public if USAGE_PUBLIC, else X-Admin-Key)
+POST /mic                 — claim/release soft mic lock for collaborative sessions (Bearer token)
 GET/POST/PATCH/DELETE /keys — admin CRUD (X-Admin-Key header)
 ```
 
 **Key internals:**
-- `src/db.js` — `better-sqlite3` (synchronous). Single table `api_keys` (key, owner, active, expires, createdAt).
-- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
+- `src/db.js` — `better-sqlite3` (synchronous). Tables: `api_keys` (key, owner, active, email, daily_limit, lifetime_limit, lifetime_used, revoked_at, expires_at, created_at), `caption_usage` (per-key daily count), `session_stats` (per-session telemetry), `caption_errors` (delivery failure log). Additive migrations run on startup.
+- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue, micHolder }`. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
 - `src/middleware/auth.js` — JWT Bearer verification.
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
+
+**SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`.
 
 **Admin CLI:** `bin/lcyt-backend-admin` — local key management.
 
@@ -153,30 +167,45 @@ GET/POST/PATCH/DELETE /keys — admin CRUD (X-Admin-Key header)
 
 ---
 
-### `packages/lcyt-mcp` — MCP Server (v0.1.0)
+### `packages/lcyt-mcp-stdio` — MCP Server, stdio transport (v0.1.0)
 
-Model Context Protocol server enabling AI assistants (e.g. Claude) to send live captions.
+Model Context Protocol server enabling AI assistants (e.g. Claude) to send live captions via stdio.
 
 **Entry:** `src/server.js`
 **Transport:** stdio (no HTTP port)
 **Tools exposed:** `start`, `send_caption`, `send_batch`, `sync_clock`, `status`
 
-**Docker:** `Dockerfile` — node:20-slim, `--ignore-scripts`, stdio transport.
+**Run:** `node packages/lcyt-mcp-stdio/src/server.js`
 
-**Tests:** `packages/lcyt-mcp/test/`.
+---
+
+### `packages/lcyt-mcp-sse` — MCP Server, HTTP SSE transport (v0.1.0)
+
+Same tools as `lcyt-mcp-stdio`, but exposed over HTTP Server-Sent Events for remote AI client connections.
+
+**Entry:** `src/server.js`
+**Transport:** HTTP SSE — `GET /sse` opens the stream, `POST /messages?sessionId=...` sends messages.
+**Port:** `process.env.PORT` (default 3001)
+**Tools exposed:** `start`, `send_caption`, `send_batch`, `sync_clock`, `status`
+
+**Run:** `node packages/lcyt-mcp-sse/src/server.js`
 
 ---
 
 ### `packages/lcyt-web` — Web UI (v1.0.0, private)
 
-Browser-based GUI using Vite. Sends captions via the `lcyt-backend` relay.
+Browser-based React app using Vite. Sends captions via the `lcyt-backend` relay.
 
 **Build:** `npm run build -w packages/lcyt-web` → `dist/`
 **Dev:** `npm run web`
 
 **Source (`src/`):**
-- `main.js` — app entry
-- `ui/` — component modules (audio-panel, caption-view, drop-zone, file-tabs, input-bar, sent-panel, settings-modal, status-bar, toast)
+- `main.jsx` — React entry point
+- `App.jsx` — root component
+- `components/` — React JSX components: AudioPanel, CaptionView, DropZone, FileTabs, InputBar, PrivacyModal, SentPanel, SettingsModal, StatsModal, StatusBar, ToastContainer
+- `contexts/` — React context providers: AppProviders, FileContext, SentLogContext, SessionContext, ToastContext
+- `hooks/` — Custom React hooks: useSession, useFileStore, useSentLog, useToast
+- `lib/` — Utilities: googleCredential.js, sttConfig.js
 - `styles/` — reset.css, layout.css, components.css
 
 ---
@@ -308,17 +337,23 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 | File | Purpose |
 |---|---|
-| `package.json` | Root workspace (workspaces: all `packages/*`) |
+| `package.json` | Root workspace (workspaces: `packages/lcyt`, `packages/lcyt-cli`, `packages/lcyt-backend`, `packages/lcyt-web`, `packages/lcyt-mcp-stdio`, `packages/lcyt-mcp-sse`) |
 | `packages/lcyt/src/sender.js` | Core caption sender (Node.js) |
 | `packages/lcyt/src/errors.js` | Error classes (Node.js) |
 | `packages/lcyt/scripts/build-cjs.js` | ESM→CJS build transformer |
 | `packages/lcyt-cli/bin/lcyt` | CLI entrypoint |
 | `packages/lcyt-cli/src/interactive-ui.js` | Full-screen blessed terminal UI |
 | `packages/lcyt-backend/src/server.js` | Express app factory |
-| `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue per session) |
+| `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + micHolder per session) |
 | `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream |
-| `packages/lcyt-backend/src/db.js` | SQLite API key store |
-| `packages/lcyt-mcp/src/server.js` | MCP server (Node.js) |
+| `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
+| `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
+| `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |
+| `packages/lcyt-backend/src/db.js` | SQLite store: api_keys, caption_usage, session_stats, caption_errors |
+| `packages/lcyt-mcp-stdio/src/server.js` | MCP server — stdio transport |
+| `packages/lcyt-mcp-sse/src/server.js` | MCP server — HTTP SSE transport |
+| `packages/lcyt-web/src/main.jsx` | React entry point |
+| `packages/lcyt-web/src/hooks/useSession.js` | BackendCaptionSender session lifecycle hook |
 | `python-packages/lcyt/lcyt/sender.py` | Core caption sender (Python) |
 | `python-packages/lcyt-backend/lcyt_backend/app.py` | Flask app factory |
 | `python-packages/lcyt-backend/lcyt_backend/_jwt.py` | Stdlib-only HS256 JWT |

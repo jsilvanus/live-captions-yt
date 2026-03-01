@@ -21,6 +21,10 @@ An Express.js HTTP relay server that bridges web clients to YouTube Live's capti
   - [POST /captions](#post-captions)
   - [GET /events](#get-events)
   - [POST /sync](#post-sync)
+  - [GET /stats](#get-stats)
+  - [DELETE /stats](#delete-stats)
+  - [GET /usage](#get-usage)
+  - [POST /mic](#post-mic)
   - [GET /health](#get-health)
   - [Admin: GET /keys](#admin-get-keys)
   - [Admin: POST /keys](#admin-post-keys)
@@ -77,7 +81,8 @@ packages/lcyt-backend/
 - **In-memory sessions** with configurable TTL; no session DB is required for operation.
 - **Async caption delivery:** `POST /captions` returns `202 { ok, requestId }` immediately. The YouTube HTTP call is serialised per session via a per-session Promise queue (so sequence numbers stay monotonic) and the result is pushed to `GET /events` via an `EventEmitter` on the session.
 - **Admin routes** (`/keys`) are never exposed to CORS—they must be called from the server's local network.
-- **SQLite** (via `better-sqlite3`) stores API keys persistently across restarts.
+- **SQLite** (via `better-sqlite3`) stores API keys, per-day caption counts, session telemetry, and caption error logs persistently across restarts. Additive column migrations run safely on existing databases at startup.
+- **Revoked key cleanup** — a background timer periodically purges key rows that were revoked more than `REVOKED_KEY_TTL_DAYS` days ago.
 
 ---
 
@@ -109,10 +114,14 @@ All configuration is done via environment variables (12-factor style). No config
 |---|---|---|---|
 | `PORT` | No | `3000` | HTTP port the server listens on |
 | `JWT_SECRET` | **Yes** | Random (warns on startup) | Secret used to sign and verify session JWTs. Must be set in production. |
-| `ADMIN_KEY` | No | *(unset)* | Secret for admin endpoints (`/keys`). If unset, admin routes return `503`. |
+| `ADMIN_KEY` | No | *(unset)* | Secret for admin endpoints (`/keys`, `/usage`). If unset, admin routes return `503`. |
 | `DB_PATH` | No | `./lcyt-backend.db` | Path to the SQLite database file |
 | `SESSION_TTL` | No | `7200000` (2 hours) | Session idle timeout in milliseconds |
 | `CLEANUP_INTERVAL` | No | `300000` (5 minutes) | How often to sweep and expire stale sessions (ms) |
+| `REVOKED_KEY_TTL_DAYS` | No | `30` | Days after revocation before a key row is purged from the database |
+| `REVOKED_KEY_CLEANUP_INTERVAL` | No | `86400000` (24 hours) | How often to sweep and delete expired revoked keys (ms) |
+| `ALLOWED_DOMAINS` | No | `lcyt.fi,www.lcyt.fi` | Comma-separated list of domains shown in `/usage` stats. Use `*` for all. |
+| `USAGE_PUBLIC` | No | *(unset)* | If set, the `/usage` endpoint requires no authentication |
 | `NODE_ENV` | No | *(unset)* | Set to `production` to suppress development warnings |
 
 **Example `.env`:**
@@ -387,6 +396,7 @@ Subscribe to the real-time SSE stream of caption delivery results for the curren
 | `caption_result` | YouTube accepted the caption(s) | `{ "requestId": "...", "sequence": 6, "statusCode": 200, "serverTimestamp": "...", ["count": 3] }` |
 | `caption_error` | YouTube rejected or a network error occurred | `{ "requestId": "...", "error": "...", "statusCode": 401, ["sequence": 6] }` |
 | `session_closed` | Session expired or was deleted server-side | `{}` |
+| `mic_state` | A `POST /mic` claim/release changed the holder | `{ "holder": "tab-abc123" }` or `{ "holder": null }` |
 
 **Example (browser):**
 
@@ -447,6 +457,130 @@ Perform an NTP-style clock synchronization with the YouTube caption server. Upda
 | `401` | Missing or invalid JWT |
 | `404` | Session not found |
 | `502` | YouTube sync request failed |
+
+---
+
+### GET /stats
+
+Return usage statistics for the authenticated API key.
+
+**Auth:** `Authorization: Bearer <token>`
+
+**CORS:** Dynamic.
+
+**Response `200 OK`:**
+
+```json
+{
+  "apiKey": "550e8400-...",
+  "owner": "Alice",
+  "email": "alice@example.com",
+  "expires": "2027-01-01T00:00:00.000Z",
+  "usage": {
+    "lifetimeUsed": 1500,
+    "dailyUsed": 42,
+    "dailyLimit": 1000,
+    "lifetimeLimit": null
+  },
+  "sessions": 10,
+  "captionErrors": 2,
+  "authEvents": 5
+}
+```
+
+**Error responses:** `401` (invalid token), `404` (key not found).
+
+---
+
+### DELETE /stats
+
+GDPR right-to-erasure. Anonymises the API key record and deletes all associated personal data. The session is torn down immediately. Email is retained until key expiry for fraud prevention.
+
+**Auth:** `Authorization: Bearer <token>`
+
+**CORS:** Dynamic.
+
+**Response `200 OK`:**
+
+```json
+{
+  "ok": true,
+  "message": "Account data erased. Email retained until key expiry for fraud prevention."
+}
+```
+
+**Error responses:** `401` (invalid token), `404` (key not found).
+
+---
+
+### GET /usage
+
+Return per-domain caption and session statistics. Useful for dashboards.
+
+**Auth:**
+- If `USAGE_PUBLIC` env var is set: no authentication required.
+- Otherwise: `X-Admin-Key: <admin-key>` header required.
+
+**CORS:** Permissive (when public) or none (when admin-only).
+
+**Query parameters:**
+
+| Parameter | Description | Default |
+|---|---|---|
+| `from` | Start date `YYYY-MM-DD`, inclusive | today |
+| `to` | End date `YYYY-MM-DD`, inclusive | today |
+| `granularity` | `hour` or `day` | `day` |
+| `domain` | Filter to a specific domain | all |
+
+**Response `200 OK`:**
+
+```json
+{
+  "from": "2024-01-01",
+  "to": "2024-01-07",
+  "granularity": "day",
+  "public": false,
+  "data": [
+    { "domain": "example.com", "date": "2024-01-01", "count": 150 }
+  ]
+}
+```
+
+**Error responses:** `400` (invalid date), `401`/`403` (auth), `503` (admin key not configured).
+
+---
+
+### POST /mic
+
+Claim or release the advisory "mic lock" for a session. Used in collaborative setups where multiple browser tabs share one stream and only one should hold the active microphone at a time. The lock is soft (advisory only) — any client can claim it.
+
+**Auth:** `Authorization: Bearer <token>`
+
+**CORS:** Dynamic.
+
+**Request body:**
+
+```json
+{
+  "action": "claim",
+  "clientId": "tab-abc123"
+}
+```
+
+| Field | Description |
+|---|---|
+| `action` | `"claim"` — take the lock; `"release"` — release if held |
+| `clientId` | Unique identifier for the caller (e.g. browser tab ID) |
+
+**Response `200 OK`:**
+
+```json
+{ "ok": true, "holder": "tab-abc123" }
+```
+
+`holder` is `null` if no client holds the lock. After every mutation a `mic_state` SSE event is broadcast to all `GET /events` subscribers for the session.
+
+**Error responses:** `400` (invalid action or missing clientId), `401`, `404`.
 
 ---
 
