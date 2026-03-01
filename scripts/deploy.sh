@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# deploy.sh — Clone or pull the repo, build the web UI, and start the backend.
+# deploy.sh — Clone or pull the repo, build the web UI, and start the lcyt-site container.
+#
+# The container runs lcyt-backend (port 3000) and lcyt-mcp-sse (port 3001).
+# lcyt-web is built on the host and served by nginx via a symlink to
+# packages/lcyt-web/dist/ — it is NOT included in the Docker image.
 #
 # Usage:
 #   ./scripts/deploy.sh [REPO_DIR]
@@ -9,16 +13,16 @@
 #
 # Required environment variables (can also be set in a .env file next to
 # the script, or exported before running):
-#   REPO_URL   Git remote URL  (e.g. git@github.com:you/live-captions-yt.git)
+#   REPO_URL    Git remote URL  (e.g. git@github.com:you/live-captions-yt.git)
 #   JWT_SECRET  Required by the backend
 #
 # Optional environment variables:
 #   GIT_BRANCH           Branch to check out (default: main)
 #   FREE_APIKEY_ACTIVE   Set to 1 to enable free-tier sign-up (default: 0)
+#   MCP_REQUIRE_API_KEY  Set to 1 to require X-Api-Key on MCP SSE connections
 #
-# After the first deploy, symlink your web root once:
-#   ln -sfn /path/to/REPO_DIR/packages/lcyt-web/dist /var/www/html/lcyt
-# Subsequent deploys update dist/ in-place; the symlink needs no changes.
+# nginx symlink (run once after first deploy):
+#   ln -sfn ~/lcyt/packages/lcyt-web/dist /var/www/html/lcyt
 
 set -euo pipefail
 
@@ -69,36 +73,25 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2: Install Node dependencies
+# Step 2: Build lcyt-web on the host (served by nginx, not included in Docker)
 # ---------------------------------------------------------------------------
 
-echo "==> Installing Node dependencies (production)"
-npm install \
-  --prefix "$REPO_DIR" \
-  --workspace packages/lcyt \
-  --workspace packages/lcyt-backend \
-  --omit=dev 2>&1 | tail -5
-
-echo "==> Installing lcyt-web dependencies (includes dev for build)"
+echo "==> Installing lcyt-web dependencies (includes devDependencies for Vite build)"
 npm install \
   --prefix "$REPO_DIR" \
   --workspace packages/lcyt-web 2>&1 | tail -5
-
-# ---------------------------------------------------------------------------
-# Step 3: Build the web UI
-# ---------------------------------------------------------------------------
 
 echo "==> Building lcyt-web"
 npm run build -w packages/lcyt-web --prefix "$REPO_DIR"
 echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
 
 # ---------------------------------------------------------------------------
-# Step 4: Start / restart the backend via Docker Compose
+# Step 3: Start / restart the site container via Docker Compose
 # ---------------------------------------------------------------------------
 
-COMPOSE_DIR="$REPO_DIR/packages/lcyt-backend"
+COMPOSE_DIR="$REPO_DIR/packages/lcyt-site"
 
-echo "==> Starting backend (docker compose up -d)"
+echo "==> Starting lcyt-site (docker compose up -d)"
 docker compose \
   --project-directory "$COMPOSE_DIR" \
   -f "$COMPOSE_DIR/docker-compose.yml" \
@@ -111,7 +104,6 @@ docker compose \
 echo ""
 echo "Deploy complete."
 echo "  Backend:  http://localhost:3000/health"
-echo "  Web dist: $REPO_DIR/packages/lcyt-web/dist"
+echo "  MCP SSE:  http://localhost:3001/sse"
+echo "  Web UI:   http://localhost:3000  (served by backend STATIC_DIR)"
 echo ""
-echo "To serve the web UI, symlink your web root once:"
-echo "  ln -sfn $REPO_DIR/packages/lcyt-web/dist /var/www/html/lcyt"
