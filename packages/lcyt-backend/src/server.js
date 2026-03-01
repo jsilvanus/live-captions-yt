@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { initDb, writeSessionStat } from './db.js';
+import { initDb, writeSessionStat, incrementDomainHourlySessionEnd } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
@@ -11,6 +11,7 @@ import { createSyncRouter } from './routes/sync.js';
 import { createKeysRouter } from './routes/keys.js';
 import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
+import { createUsageRouter } from './routes/usage.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -33,6 +34,12 @@ if (!process.env.ADMIN_KEY) {
   console.info('  Set ADMIN_KEY in your environment to enable API key management via HTTP.');
 }
 
+if (process.env.USAGE_PUBLIC) {
+  console.info('✓ GET /usage is public (USAGE_PUBLIC is set).');
+} else {
+  console.info('ℹ GET /usage requires X-Admin-Key (set USAGE_PUBLIC to make it public).');
+}
+
 if (process.env.FREE_APIKEY_ACTIVE !== '1') {
   console.info('ℹ FREE_APIKEY_ACTIVE is not set — POST /keys?freetier is disabled.');
 } else {
@@ -47,18 +54,20 @@ const db = initDb();
 const store = new SessionStore();
 
 store.onSessionEnd = (session) => {
+  const durationMs = Date.now() - session.startedAt;
   writeSessionStat(db, {
     sessionId: session.sessionId,
     apiKey: session.apiKey,
     domain: session.domain,
     startedAt: new Date(session.startedAt).toISOString(),
     endedAt: new Date().toISOString(),
-    durationMs: Date.now() - session.startedAt,
+    durationMs,
     captionsSent: session.captionsSent,
     captionsFailed: session.captionsFailed,
     finalSequence: session.sequence,
     endedBy: 'ttl',
   });
+  incrementDomainHourlySessionEnd(db, session.domain, durationMs);
 };
 
 // ---------------------------------------------------------------------------
@@ -119,6 +128,7 @@ app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));
 app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
+app.use('/usage', createUsageRouter(db));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

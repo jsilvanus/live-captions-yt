@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
@@ -83,6 +83,8 @@ export function createLiveRouter(db, store, jwtSecret) {
       sender
     });
 
+    incrementDomainHourlySessionStart(db, domain, store.size());
+
     res.setHeader('Access-Control-Allow-Origin', domain);
     return res.status(200).json({
       token,
@@ -159,18 +161,20 @@ export function createLiveRouter(db, store, jwtSecret) {
 
     const removed = store.remove(sessionId);
     if (removed) {
+      const durationMs = Date.now() - removed.startedAt;
       writeSessionStat(db, {
         sessionId: removed.sessionId,
         apiKey: removed.apiKey,
         domain: removed.domain,
         startedAt: new Date(removed.startedAt).toISOString(),
         endedAt: new Date().toISOString(),
-        durationMs: Date.now() - removed.startedAt,
+        durationMs,
         captionsSent: removed.captionsSent,
         captionsFailed: removed.captionsFailed,
         finalSequence: removed.sequence,
         endedBy: 'client',
       });
+      incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
     }
     return res.status(200).json({ removed: true, sessionId });
   });
