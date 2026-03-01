@@ -3,6 +3,16 @@ import { timingSafeEqual } from 'node:crypto';
 import { getDomainUsageStats } from '../db.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi';
+
+/**
+ * Parse ALLOWED_DOMAINS env var.
+ * @returns {'*' | string[]}
+ */
+function parseAllowedDomains() {
+  const raw = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
+  return raw === '*' ? '*' : raw.split(',').map(d => d.trim()).filter(Boolean);
+}
 
 /**
  * Factory for the /usage router.
@@ -56,14 +66,21 @@ export function createUsageRouter(db) {
       return res.status(400).json({ error: 'from must be <= to' });
     }
 
+    // Enforce ALLOWED_DOMAINS on the stats view
+    const allowedDomains = parseAllowedDomains();
+    if (domain && allowedDomains !== '*' && !allowedDomains.includes(domain)) {
+      return res.status(403).json({ error: 'Domain not allowed' });
+    }
+
     const rows = getDomainUsageStats(db, { from, to, granularity, domain });
+    const data = allowedDomains === '*' ? rows : rows.filter(r => allowedDomains.includes(r.domain));
 
     return res.status(200).json({
       from,
       to,
       granularity,
       public: Boolean(process.env.USAGE_PUBLIC),
-      data: rows,
+      data,
     });
   });
 
