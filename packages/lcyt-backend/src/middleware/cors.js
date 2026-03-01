@@ -37,6 +37,7 @@ export function createCorsMiddleware(store) {
     const isPermissive =
       (method === 'POST' && path === '/live') ||
       (method === 'GET' && path === '/health') ||
+      (method === 'GET' && path === '/contact') ||
       method === 'OPTIONS';
 
     if (isPermissive && origin) {

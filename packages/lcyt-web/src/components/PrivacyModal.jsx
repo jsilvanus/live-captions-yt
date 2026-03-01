@@ -14,6 +14,9 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
   const [statsData, setStatsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
+  const [contactLoading, setContactLoading] = useState(false);
+  const [contactData, setContactData] = useState(null); // null | object | 'not-configured'
+
   // Countdown timer (10s) for first-visit acceptance
   const [countdown, setCountdown] = useState(0);
   const canClose = !requireAcceptance || countdown <= 0;
@@ -27,6 +30,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
       setDeleting(false);
       setStatsOpen(false);
       setStatsData(null);
+      setContactData(null);
     }
   }, [isOpen, requireAcceptance]);
 
@@ -85,6 +89,20 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
     }
   }
 
+  async function handleContact() {
+    setContactLoading(true);
+    try {
+      const res = await fetch(`${session.backendUrl}/contact`);
+      if (res.status === 404) { setContactData('not-configured'); return; }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setContactData(await res.json());
+    } catch (err) {
+      showToast(err.message || 'Failed to load contact info', 'error');
+    } finally {
+      setContactLoading(false);
+    }
+  }
+
   const isFreeTier = statsData
     ? (statsData.usage?.dailyLimit !== null || statsData.usage?.lifetimeLimit !== null)
     : false;
@@ -96,7 +114,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
         <div className="settings-modal__box">
 
           <div className="settings-modal__header">
-            <span className="settings-modal__title" id="privacy-title">Privacy &amp; Data</span>
+            <span className="settings-modal__title" id="privacy-title">Privacy &amp; Terms &amp; Data</span>
             {!requireAcceptance && (
               <button className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
             )}
@@ -116,8 +134,14 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
 
               <section className="privacy-section">
                 <h3 className="privacy-heading">What this app does</h3>
-                <p>lcyt-web is a browser-based tool that forwards caption text to YouTube Live via a relay backend. <strong>Caption text is not stored</strong> — it is processed in memory of the relay and sent immediately to YouTube.</p>
+                <p><strong>lcyt-web</strong> is a browser-based tool that forwards caption text to YouTube Live via a relay backend. <strong>Caption text is not stored</strong> — it is processed in memory of the relay and sent immediately to YouTube.</p>
               </section>
+
+              <section className="privacy-section">
+                <h3 className="privacy-heading">Disclaimer</h3>
+                <p>This service is provided <strong>as-is, without any warranty</strong>, express or implied. The operator of the backend instance you are connected to accepts no liability for any direct, indirect, or consequential damages arising from your use of this service, including but not limited to data loss, service interruptions, or errors in caption delivery.</p>
+              </section>
+
 
               <section className="privacy-section">
                 <h3 className="privacy-heading">Data stored by the relay backend</h3>
@@ -129,7 +153,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                   <li><strong>Auth event logs</strong> — timestamps and origin domain when authentication fails or a usage limit is exceeded.</li>
                   <li><strong>Anonymous usage statistics</strong> — aggregate caption and session counts per origin domain and time bucket (hour/day). No caption text, no user identifiers.</li>
                 </ul>
-                <p>The <strong>data controller</strong> is whoever operates the backend instance you are connected to. Contact them for data requests. This web client can query for contact details with the button at the bottom.</p>
+                <p>The <strong>data controller</strong> is whoever operates the backend instance you are connected to. Contact them for data requests. Use the <strong>Contact operator</strong> button at the bottom to query their contact details.</p>
               </section>
 
               <section className="privacy-section">
@@ -165,6 +189,21 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                   </ul>
                 )}
               </section>
+
+              {contactData && contactData !== 'not-configured' && (
+                <section className="privacy-section">
+                  <h3 className="privacy-heading">Operator contact</h3>
+                  <p><strong>{contactData.name}</strong></p>
+                  <p><a href={`mailto:${contactData.email}`}>{contactData.email}</a></p>
+                  {contactData.phone && <p>{contactData.phone}</p>}
+                  {contactData.website && <p><a href={contactData.website} target="_blank" rel="noopener noreferrer">{contactData.website}</a></p>}
+                </section>
+              )}
+              {contactData === 'not-configured' && (
+                <section className="privacy-section">
+                  <div className="privacy-notice privacy-notice--info">The backend operator has not published contact details.</div>
+                </section>
+              )}
 
             </div>
           )}
@@ -212,6 +251,13 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                       onClick={() => setView('deleteConfirm')}
                     >
                       Delete my data
+                    </button>
+                    <button
+                      className="btn btn--secondary btn--sm"
+                      onClick={handleContact}
+                      disabled={contactLoading}
+                    >
+                      {contactLoading ? 'Loading…' : 'Contact operator'}
                     </button>
                   </>
                 )}

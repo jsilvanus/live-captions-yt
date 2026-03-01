@@ -125,6 +125,27 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Contact info — no auth required
+const _contactInfo = (() => {
+  const name = process.env.CONTACT_NAME;
+  const email = process.env.CONTACT_EMAIL;
+  if (name && email) {
+    console.info(`✓ Contact info configured: ${name} <${email}>`);
+    return {
+      name, email,
+      ...(process.env.CONTACT_PHONE ? { phone: process.env.CONTACT_PHONE } : {}),
+      ...(process.env.CONTACT_WEBSITE ? { website: process.env.CONTACT_WEBSITE } : {}),
+    };
+  }
+  console.info('ℹ CONTACT_NAME/CONTACT_EMAIL not set — GET /contact will return 404.');
+  return null;
+})();
+
+app.get('/contact', (req, res) => {
+  if (!_contactInfo) return res.status(404).json({ error: 'Contact information not configured' });
+  res.status(200).json(_contactInfo);
+});
+
 // Auth middleware instance shared by captions and sync routers
 const auth = createAuthMiddleware(jwtSecret);
 
