@@ -1419,6 +1419,25 @@
   font-size: 13px;
 }
 
+/* ── Privacy acceptance banner (first-visit countdown) ───────────── */
+
+.privacy-acceptance-banner {
+  margin: 0 20px 4px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: rgba(250, 180, 0, 0.12);
+  border: 1px solid rgba(250, 180, 0, 0.4);
+  color: var(--color-text-secondary);
+  transition: background 0.3s, border-color 0.3s;
+}
+
+.privacy-acceptance-banner--ready {
+  background: rgba(52, 199, 89, 0.1);
+  border-color: rgba(52, 199, 89, 0.4);
+}
+
 /* ── Privacy link / modal ─────────────────────────────────────────── */
 
 .privacy-btn {
