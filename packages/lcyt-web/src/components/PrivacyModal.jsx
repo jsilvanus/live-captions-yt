@@ -3,6 +3,9 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { StatsModal } from './StatsModal';
 
+// Cached per page-load — contact info only changes on server restart.
+let _contactCache = null;
+
 export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAccept }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
@@ -90,12 +93,15 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
   }
 
   async function handleContact() {
+    if (_contactCache) { setContactData(_contactCache); return; }
     setContactLoading(true);
     try {
       const res = await fetch(`${session.backendUrl}/contact`);
-      if (res.status === 404) { setContactData('not-configured'); return; }
+      if (res.status === 404) { _contactCache = 'not-configured'; setContactData('not-configured'); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setContactData(await res.json());
+      const data = await res.json();
+      _contactCache = data;
+      setContactData(data);
     } catch (err) {
       showToast(err.message || 'Failed to load contact info', 'error');
     } finally {

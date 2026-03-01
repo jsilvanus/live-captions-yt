@@ -99,6 +99,12 @@ app.use((req, res, next) => {
 // Dynamic CORS middleware
 app.use(createCorsMiddleware(store));
 
+// Default: never cache any response. Cacheable routes override this explicitly.
+app.use((_req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 // ---------------------------------------------------------------------------
 // Static file serving (optional)
 // ---------------------------------------------------------------------------
@@ -143,6 +149,7 @@ const _contactInfo = (() => {
 
 app.get('/contact', (req, res) => {
   if (!_contactInfo) return res.status(404).json({ error: 'Contact information not configured' });
+  res.set('Cache-Control', 'public, max-age=3600');
   res.status(200).json(_contactInfo);
 });
 

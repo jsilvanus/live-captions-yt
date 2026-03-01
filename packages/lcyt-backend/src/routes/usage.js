@@ -75,6 +75,13 @@ export function createUsageRouter(db) {
     const rows = getDomainUsageStats(db, { from, to, granularity, domain });
     const data = allowedDomains === '*' ? rows : rows.filter(r => allowedDomains.includes(r.domain));
 
+    // Historical windows (entirely in the past) are immutable — safe to cache.
+    // Any window touching today changes constantly, so must not be cached.
+    if (to < today) {
+      res.set('Cache-Control', 'public, max-age=1800, stale-while-revalidate=3600');
+    }
+    // else: global no-store default from server middleware applies
+
     return res.status(200).json({
       from,
       to,

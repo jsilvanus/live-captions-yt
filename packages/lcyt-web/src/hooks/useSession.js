@@ -122,7 +122,7 @@ export function useSession({
     try {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 5000);
-      const res = await fetch(`${target}/health`, { signal: ac.signal });
+      const res = await fetch(`${target}/health`, { signal: ac.signal, cache: 'no-store' });
       clearTimeout(timer);
       setHealthStatus(res.ok ? 'ok' : 'unreachable');
       return res.ok;
