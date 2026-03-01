@@ -35,7 +35,7 @@ function SendLineFAB({ inputBarRef }) {
 }
 
 // Persistent banner shown when the backend cannot be reached
-function NetworkBanner() {
+function NetworkBanner({ privacyPending }) {
   const { healthStatus, checkHealth, connected, getAutoConnect, getPersistedConfig, connect } = useSessionContext();
 
   const retry = useCallback(async () => {
@@ -46,12 +46,12 @@ function NetworkBanner() {
     }
   }, [checkHealth, getAutoConnect, getPersistedConfig, connect]);
 
-  // Auto-retry every 30 s while unreachable
+  // Auto-retry every 30 s while unreachable (only after privacy modal is accepted)
   useEffect(() => {
-    if (healthStatus !== 'unreachable') return;
+    if (healthStatus !== 'unreachable' || privacyPending) return;
     const id = setInterval(retry, 30_000);
     return () => clearInterval(id);
-  }, [healthStatus, retry]);
+  }, [healthStatus, retry, privacyPending]);
 
   if (connected || healthStatus !== 'unreachable') return null;
 
@@ -179,7 +179,7 @@ function AppLayout() {
         onSettingsOpen={() => setSettingsOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
       />
-      <NetworkBanner />
+      <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
 
       <main id="main">
         {/* Left panel */}
