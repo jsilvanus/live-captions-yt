@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { initDb, getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey } from '../src/db.js';
+import { initDb, getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey, cleanRevokedKeys } from '../src/db.js';
 
 // ---------------------------------------------------------------------------
 // Argument parsing helpers
@@ -203,6 +203,23 @@ function cmdInfo(db, positional) {
   printKey(getKey(db, key));
 }
 
+function cmdClean(db, flags) {
+  const days = flags.days !== undefined ? Number(flags.days) : 30;
+  if (!Number.isFinite(days) || days < 0) {
+    console.error('Error: --days must be a non-negative number');
+    process.exit(1);
+  }
+  const dryRun = flags['dry-run'] === true;
+  const { count, deleted } = cleanRevokedKeys(db, days, dryRun);
+  if (count === 0) {
+    console.log(`No revoked keys older than ${days} day(s) found.`);
+  } else if (dryRun) {
+    console.log(`Would purge ${count} revoked key(s) older than ${days} day(s). Re-run without --dry-run to delete.`);
+  } else {
+    console.log(`Purged ${count} revoked key(s) older than ${days} day(s).`);
+  }
+}
+
 function usage() {
   console.log(`Usage: lcyt-backend-admin <command> [options]
 
@@ -218,6 +235,7 @@ Commands:
   delete <key>                      Permanently remove a key
   renew <key> --expires <date>      Extend key expiration
   info <key>                        Show details for a key
+  clean [--days 30] [--dry-run]     Purge revoked keys older than N days
 
 Options:
   --db <path>    Path to the SQLite database (default: ./lcyt-backend.db or DB_PATH env var)
@@ -263,6 +281,9 @@ switch (command) {
     break;
   case 'info':
     cmdInfo(db, positional);
+    break;
+  case 'clean':
+    cmdClean(db, flags);
     break;
   default:
     console.error(`Unknown command: ${command}`);

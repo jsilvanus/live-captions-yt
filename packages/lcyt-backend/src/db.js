@@ -39,6 +39,10 @@ export function initDb(dbPath) {
   if (!existingCols.has('daily_limit'))    db.exec('ALTER TABLE api_keys ADD COLUMN daily_limit INTEGER');
   if (!existingCols.has('lifetime_limit')) db.exec('ALTER TABLE api_keys ADD COLUMN lifetime_limit INTEGER');
   if (!existingCols.has('lifetime_used'))  db.exec('ALTER TABLE api_keys ADD COLUMN lifetime_used INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('revoked_at')) {
+    db.exec('ALTER TABLE api_keys ADD COLUMN revoked_at TEXT');
+    db.exec("UPDATE api_keys SET revoked_at = datetime('now') WHERE active = 0");
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -318,8 +322,34 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
  * @returns {boolean} true if a row was updated
  */
 export function revokeKey(db, key) {
-  const result = db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(key);
+  const result = db.prepare("UPDATE api_keys SET active = 0, revoked_at = datetime('now') WHERE key = ?").run(key);
   return result.changes > 0;
+}
+
+/**
+ * Permanently delete all revoked keys older than N days, along with their associated data.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} olderThanDays
+ * @param {boolean} [dryRun=false] - If true, returns count without deleting
+ * @returns {{ count: number, deleted: boolean }}
+ */
+export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
+  const keys = db.prepare(
+    `SELECT key FROM api_keys WHERE active = 0 AND revoked_at < datetime('now', ?)`
+  ).all(`-${Math.floor(olderThanDays)} days`).map(r => r.key);
+
+  if (dryRun || keys.length === 0) return { count: keys.length, deleted: false };
+
+  db.transaction(() => {
+    const placeholders = keys.map(() => '?').join(',');
+    db.prepare(`DELETE FROM caption_errors WHERE api_key IN (${placeholders})`).run(...keys);
+    db.prepare(`DELETE FROM session_stats WHERE api_key IN (${placeholders})`).run(...keys);
+    db.prepare(`DELETE FROM caption_usage WHERE api_key IN (${placeholders})`).run(...keys);
+    db.prepare(`DELETE FROM auth_events WHERE api_key IN (${placeholders})`).run(...keys);
+    db.prepare(`DELETE FROM api_keys WHERE key IN (${placeholders})`).run(...keys);
+  })();
+
+  return { count: keys.length, deleted: true };
 }
 
 /**
