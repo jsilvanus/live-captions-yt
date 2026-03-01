@@ -22,10 +22,6 @@ export function AudioPanel({ visible }) {
   const [interimText, setInterimText] = useState('');
   const [engine, setEngine] = useState(getSttEngine);
   const [credLoaded, setCredLoaded] = useState(!!getGoogleCredential());
-  const [devices, setDevices] = useState([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState(() => {
-    try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; }
-  });
   const [webkitSupported] = useState(
     () => !!(window.SpeechRecognition || window.webkitSpeechRecognition),
   );
@@ -111,23 +107,6 @@ export function AudioPanel({ visible }) {
     }
   }
 
-  // ── Enumerate audio input devices and track selection ─────────────────
-  async function enumerateDevices() {
-    if (!navigator?.mediaDevices?.enumerateDevices) return;
-    try {
-      const list = await navigator.mediaDevices.enumerateDevices();
-      const inputs = list.filter(d => d.kind === 'audioinput');
-      setDevices(inputs);
-    } catch {}
-  }
-
-  useEffect(() => {
-    enumerateDevices();
-    const onChange = () => enumerateDevices();
-    navigator?.mediaDevices?.addEventListener?.('devicechange', onChange);
-    return () => navigator?.mediaDevices?.removeEventListener?.('devicechange', onChange);
-  }, []);
-
   // ── Cleanup on unmount ───────────────────────────────────────────────────
   useEffect(() => {
     return () => {
@@ -163,6 +142,7 @@ export function AudioPanel({ visible }) {
   async function startWebkit() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
+    const selectedDeviceId = (() => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } })();
     // Try to pre-select the device by requesting permission for the chosen device.
     // Await the permission so failures surface and we can show a helpful message.
     if (selectedDeviceId && navigator?.mediaDevices?.getUserMedia) {
@@ -337,6 +317,7 @@ export function AudioPanel({ visible }) {
       return;
     }
 
+    const selectedDeviceId = (() => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } })();
     let stream;
     try {
       const audioConstraint = selectedDeviceId
@@ -483,96 +464,58 @@ export function AudioPanel({ visible }) {
     : !isWebkit && !credLoaded     ? 'Load a Google service account key in Settings → STT / Audio.'
     : null;
 
-  const engineLabel = isWebkit ? 'Web Speech API' : 'Google Cloud STT';
-
-  if (!visible) return null;
-
   return (
-    <div className="audio-panel">
-      <div className="audio-panel__scroll">
-        <section className="audio-section">
-          <h3 className="audio-section__title">Speech to Text</h3>
+    <div className={`audio-panel${visible ? ' audio-panel--open' : ' audio-panel--hidden'}`}>
+      <div className="audio-panel__row">
+        {/* Toggle / locked button */}
+        {otherHasMic ? (
+          <button
+            className={`btn audio-caption-btn audio-caption-btn--locked${isHolding ? ' audio-caption-btn--holding' : ''}`}
+            disabled={!canStart}
+            onPointerDown={onHoldStart}
+            onPointerUp={onHoldEnd}
+            onPointerLeave={onHoldEnd}
+            onPointerCancel={onHoldEnd}
+          >
+            {isHolding ? '🎙 Hold…' : '🔒 Another mic is active'}
+          </button>
+        ) : (
+          <button
+            className={`btn audio-caption-btn${listening ? ' audio-caption-btn--active' : ' btn--primary'}`}
+            disabled={!canStart}
+            onClick={toggle}
+          >
+            {listening ? '⏹ Stop' : '🎙 Caption'}
+          </button>
+        )}
 
-          <div className={`audio-engine-badge audio-engine-badge--${engine}`}>
-            {engineLabel}
-            {!isWebkit && credLoaded && <span className="audio-engine-badge__sub"> · credential loaded</span>}
-            {!isWebkit && !credLoaded && <span className="audio-engine-badge__sub audio-engine-badge__sub--warn"> · no credential</span>}
-          </div>
-
-          {hint && <p className="audio-field__hint">{hint}</p>}
-          {cloudError && <p className="audio-field__hint audio-field__hint--error">{cloudError}</p>}
-
-          <div className="audio-field">
-            <label className="audio-field__label">Microphone</label>
-            <div className="audio-field__control" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <select
-                value={selectedDeviceId}
-                onChange={(e) => {
-                  const id = e.target.value;
-                  setSelectedDeviceId(id);
-                  try { localStorage.setItem('lcyt:audioDeviceId', id); } catch {}
-                  window.dispatchEvent(new Event('lcyt:stt-config-changed'));
-                }}
-                style={{ minWidth: 180 }}
-              >
-                <option value="">Default device</option>
-                {devices.map(d => (
-                  <option key={d.deviceId} value={d.deviceId}>{d.label || d.deviceId}</option>
-                ))}
-              </select>
-              <button type="button" className="btn" onClick={enumerateDevices}>Refresh</button>
-              <canvas
-                ref={meterCanvasRef}
-                className="audio-meter"
-                aria-hidden="true"
-                style={{ width: 80, height: 18, borderRadius: 3, background: '#222' }}
-              />
-            </div>
-          </div>
-
-          {/* Finalized transcripts are not shown here; they are sent directly. */}
-
-          <div className="audio-field">
-            {otherHasMic ? (
-              <button
-                className={`btn audio-caption-btn audio-caption-btn--locked${isHolding ? ' audio-caption-btn--holding' : ''}`}
-                disabled={!canStart}
-                onPointerDown={onHoldStart}
-                onPointerUp={onHoldEnd}
-                onPointerLeave={onHoldEnd}
-                onPointerCancel={onHoldEnd}
-              >
-                {isHolding ? '🎙 Hold…' : '🔒 Another mic is active'}
-              </button>
-            ) : (
-              <button
-                className={`btn audio-caption-btn${listening ? ' audio-caption-btn--active' : ' btn--primary'}`}
-                disabled={!canStart}
-                onClick={toggle}
-              >
-                {listening ? '⏹ Stop Captioning' : '🎙 Click to Caption'}
-              </button>
-            )}
-          </div>
-
-          {listening && (
-            <div className="audio-caption-live">
-              {!interimText ? (
-                <span className="audio-caption-placeholder">
-                  {isWebkit ? 'Listening for speech…' : 'Sending audio to Google Cloud STT…'}
-                </span>
-              ) : (
-                <>
-                  {interimText && <span className="audio-caption-interim">{interimText}</span>}
-                </>
-              )}
-            </div>
-          )}
-        </section>
+        {/* Level meter — always visible when panel is open */}
+        <canvas
+          ref={meterCanvasRef}
+          className="audio-meter"
+          aria-hidden="true"
+        />
       </div>
+
+      {/* Hint / error line */}
+      {(hint || cloudError) && (
+        <p className={`audio-panel__hint${cloudError ? ' audio-panel__hint--error' : ''}`}>
+          {cloudError || hint}
+        </p>
+      )}
+
+      {/* Live transcription box — hidden on mobile via CSS */}
+      {listening && (
+        <div className="audio-caption-live audio-caption-live--compact">
+          {interimText
+            ? <span className="audio-caption-interim">{interimText}</span>
+            : <span className="audio-caption-placeholder">
+                {isWebkit ? 'Listening…' : 'Sending to Google Cloud STT…'}
+              </span>
+          }
+        </div>
+      )}
     </div>
   );
 }
 
-// Respond to toggle requests from the FileTabs: if not currently listening, allow the panel to be hidden.
-// We add the listener at module scope inside the component via effect below.

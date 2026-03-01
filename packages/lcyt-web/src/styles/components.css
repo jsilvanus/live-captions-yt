@@ -924,21 +924,99 @@
 
 /* ─── Audio panel ───────────────────────────────────────── */
 
-.audio-panel {
-  flex: 1;
-  overflow: hidden;
+.audio-panel__row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 10px;
 }
 
-.audio-panel__scroll {
+/* Compact button in the panel row */
+.audio-panel .audio-caption-btn {
   flex: 1;
-  overflow-y: auto;
-  padding: 16px 16px 24px;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+  padding: 8px 12px;
+  font-size: 14px;
 }
+
+/* Meter fills remaining horizontal space */
+.audio-panel .audio-meter {
+  flex: 1;
+  max-width: 120px;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--color-surface-elevated);
+}
+
+.audio-panel__hint {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  margin: 0;
+}
+
+.audio-panel__hint--error {
+  color: var(--color-error);
+}
+
+/* ─── Footer audio toggle button ────────────────────────── */
+
+.footer__audio-btn {
+  flex-shrink: 0;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text-dim);
+  font-size: 18px;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.footer__audio-btn:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.footer__audio-btn--active {
+  border-color: var(--color-warning);
+  color: var(--color-warning);
+}
+
+/* Mobile audio bar button (full-width on mobile) */
+#mobile-audio-bar .footer__audio-btn {
+  flex: 1;
+  width: auto;
+  font-size: 14px;
+  gap: 8px;
+}
+
+/* ─── FAB ───────────────────────────────────────────────── */
+
+/* Desktop: FAB hidden */
+.send-fab {
+  display: none;
+}
+
+@media (max-width: 768px) {
+  .send-fab {
+    display: flex;
+    background: var(--color-accent);
+    border: none;
+    color: #fff;
+    font-size: 18px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.1s, background 0.15s;
+  }
+
+  .send-fab:active {
+    transform: scale(0.92);
+    background: var(--color-accent-dim);
+  }
+}
+
+/* ─── Legacy audio section (preserved for any remaining references) ─ */
 
 .audio-section {
   display: flex;

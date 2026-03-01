@@ -52,6 +52,13 @@ export function SettingsModal({ isOpen, onClose }) {
 
   const [sttEngine, setSttEngineState] = useState(getSttEngine);
   const [sttLangQuery, setSttLangQuery] = useState(savedLangEntry ? savedLangEntry.label : savedLang);
+  const [micDevices, setMicDevices] = useState([]);
+  const [selectedMicId, setSelectedMicId] = useState(
+    () => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } }
+  );
+  const [fabSide, setFabSide] = useState(
+    () => { try { return localStorage.getItem('lcyt:fabSide') || 'right'; } catch { return 'right'; } }
+  );
   const [sttLang, setSttLangState] = useState(savedLang);
   const [sttLangDropdownOpen, setSttLangDropdownOpen] = useState(false);
   const [sttModel, setSttModel] = useState(cloudCfg.model || 'latest_long');
@@ -73,6 +80,17 @@ export function SettingsModal({ isOpen, onClose }) {
   useEffect(() => {
     if (session.connected) setLastConnectedTime(Date.now());
   }, [session.connected]);
+
+  async function refreshMics() {
+    if (!navigator?.mediaDevices?.enumerateDevices) return;
+    try {
+      const list = await navigator.mediaDevices.enumerateDevices();
+      setMicDevices(list.filter(d => d.kind === 'audioinput'));
+    } catch {}
+  }
+
+  // Enumerate on open
+  useEffect(() => { if (isOpen) refreshMics(); }, [isOpen]);
 
   // Load persisted values when modal opens
   useEffect(() => {
@@ -373,6 +391,32 @@ export function SettingsModal({ isOpen, onClose }) {
                 Use a <strong>negative</strong> value (e.g. −5 s) to compensate for transcription processing delay,
                 so captions line up with the moment the speaker started talking in the YouTube stream.
               </p>
+              <div className="settings-field" style={{ marginTop: 16 }}>
+                <label className="settings-field__label">Send-line button side (mobile)</label>
+                <div className="stt-engine-list">
+                  {[
+                    { value: 'right', label: 'Right' },
+                    { value: 'left',  label: 'Left'  },
+                  ].map(opt => (
+                    <label key={opt.value}
+                      className={`stt-engine-option${fabSide === opt.value ? ' stt-engine-option--active' : ''}`}
+                    >
+                      <input type="radio" name="fab-side" value={opt.value}
+                        checked={fabSide === opt.value}
+                        onChange={() => {
+                          setFabSide(opt.value);
+                          try { localStorage.setItem('lcyt:fabSide', opt.value); } catch {}
+                          window.dispatchEvent(new Event('lcyt:stt-config-changed'));
+                        }}
+                        className="stt-engine-option__radio"
+                      />
+                      <div className="stt-engine-option__body">
+                        <span className="stt-engine-option__name">{opt.label}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -406,6 +450,31 @@ export function SettingsModal({ isOpen, onClose }) {
                       </div>
                     </label>
                   ))}
+                </div>
+              </div>
+
+              {/* Microphone device */}
+              <div className="settings-field">
+                <label className="settings-field__label">Microphone</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <select
+                    className="settings-field__input"
+                    style={{ appearance: 'auto', flex: 1 }}
+                    value={selectedMicId}
+                    onChange={e => {
+                      setSelectedMicId(e.target.value);
+                      try { localStorage.setItem('lcyt:audioDeviceId', e.target.value); } catch {}
+                      window.dispatchEvent(new Event('lcyt:stt-config-changed'));
+                    }}
+                  >
+                    <option value="">Default device</option>
+                    {micDevices.map(d => (
+                      <option key={d.deviceId} value={d.deviceId}>
+                        {d.label || d.deviceId}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn" onClick={refreshMics}>Refresh</button>
                 </div>
               </div>
 

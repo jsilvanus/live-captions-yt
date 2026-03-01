@@ -1,5 +1,6 @@
 /* CSS custom properties — dark theme (default) */
 :root {
+  --mobile-bar-height: 52px;
   --color-bg: #0f1117;
   --color-surface: #1a1d27;
   --color-surface-elevated: #22263a;
@@ -120,23 +121,89 @@ body {
   gap: 8px;
 }
 
-/* ─── Responsive: hide sent panel below 768px ───────────── */
+/* ─── Audio panel docked at bottom of left column (desktop) ─ */
+
+.audio-panel {
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Hidden state on desktop: remove from flow */
+.audio-panel--hidden {
+  display: none;
+}
+
+/* Footer audio toggle button */
+.footer__audio-btn {
+  flex-shrink: 0;
+}
+
+/* ─── Responsive: mobile layout (< 768px) ───────────────── */
 
 @media (max-width: 768px) {
-  /* Stack the main panels vertically on narrow / mobile screens
-     and allow the header to grow to accommodate wrapped status content. */
+  /* App grid: header auto, main flex:1, footer hidden (height 0) */
   #app {
-    grid-template-rows: auto 1fr var(--footer-height);
+    grid-template-rows: auto 1fr 0;
   }
 
+  /* Desktop footer hidden on mobile; replaced by #mobile-audio-bar */
+  #footer {
+    display: none;
+  }
+
+  /* Main area scrolls vertically */
   #main {
     display: flex;
     flex-direction: column;
-    overflow: auto;
+    overflow-y: auto;
   }
 
-  /* Right panel becomes a normal stacked section below the left panel
-     (shows by default so users can scroll to it). Keep a modest min-height. */
+  /* Left panel: normal flow, no fixed height */
+  .panel--left {
+    flex-shrink: 0;
+    border-right: none;
+  }
+
+  /* Caption view capped on mobile */
+  #left-panel .caption-view {
+    max-height: 30vh;
+  }
+
+  /* Audio panel becomes a fixed bottom sheet on mobile */
+  .audio-panel {
+    position: fixed;
+    bottom: var(--mobile-bar-height, 52px);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    transform: translateY(100%);
+    transition: transform 0.25s ease;
+    border-top: 1px solid var(--color-border);
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,0.3);
+  }
+
+  /* On mobile, use transform for show/hide (not display:none) */
+  .audio-panel--hidden {
+    display: flex;
+    transform: translateY(100%);
+  }
+
+  .audio-panel--open {
+    transform: translateY(0);
+  }
+
+  /* Live text box hidden on mobile */
+  .audio-caption-live--compact {
+    display: none;
+  }
+
+  /* Right panel: normal flow in scroll area */
   .panel--right {
     display: flex;
     position: static;
@@ -148,25 +215,42 @@ body {
     z-index: 1;
   }
 
-  .panel--right.panel--right-visible {
+  /* Pad main content so it doesn't hide behind the fixed bar */
+  #main {
+    padding-bottom: var(--mobile-bar-height, 52px);
+  }
+
+  /* Fixed bottom audio bar */
+  #mobile-audio-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: var(--mobile-bar-height, 52px);
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
     display: flex;
+    align-items: center;
+    padding: 0 12px;
+    z-index: 60;
   }
 
-  /* Ensure left panel doesn't keep an unnecessary right border when stacked */
-  .panel--left {
-    border-right: none;
+  /* FAB — visible only on mobile */
+  .send-fab {
+    position: fixed;
+    bottom: calc(var(--mobile-bar-height, 52px) + 16px);
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    z-index: 70;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  /* Hide the InputBar on small vertical screens (keep privacy button accessible) */
-  #footer .input-bar {
-    display: none;
-  }
+  .send-fab--right { right: 16px; }
+  .send-fab--left  { left:  16px; }
 
-  /* Reduce footer height a bit for cramped screens */
-  #footer {
-    padding: 6px 8px;
-  }
-  
   /* Allow header to expand and show wrapped status lines */
   #header {
     align-items: flex-start;

@@ -5,7 +5,7 @@ function truncate(name, max = 20) {
   return name.length > max ? name.slice(0, max - 1) + '…' : name;
 }
 
-export function FileTabs({ currentView, onViewChange, dropZoneVisible, onToggleDropZone }) {
+export function FileTabs({ dropZoneVisible, onToggleDropZone }) {
   const { files, activeId, loadFile, setActive, removeFile } = useFileContext();
   const fileInputRef = useRef(null);
 
@@ -24,7 +24,7 @@ export function FileTabs({ currentView, onViewChange, dropZoneVisible, onToggleD
   return (
     <div className="file-tabs">
       {files.map(file => {
-        const isActive = currentView === 'captions' && activeId === file.id;
+        const isActive = activeId === file.id;
         const isEnd = file.lines.length > 0 && file.pointer >= file.lines.length - 1;
         const isEmpty = file.lines.length === 0;
 
@@ -33,10 +33,7 @@ export function FileTabs({ currentView, onViewChange, dropZoneVisible, onToggleD
             key={file.id}
             className={`file-tab${isActive ? ' file-tab--active' : ''}`}
             title={file.name}
-            onClick={() => {
-              onViewChange('captions');
-              setActive(file.id);
-            }}
+            onClick={() => setActive(file.id)}
           >
             <span className="file-tab__name">{truncate(file.name)}</span>
             {isEmpty && <span className="file-tab__badge file-tab__badge--empty">empty</span>}
@@ -67,31 +64,6 @@ export function FileTabs({ currentView, onViewChange, dropZoneVisible, onToggleD
         title={dropZoneVisible ? 'Hide drop zone' : 'Show drop zone'}
         onClick={onToggleDropZone}
       >⇩</button>
-
-      <button
-        className={`file-tab file-tab--audio${currentView === 'audio' ? ' file-tab--active' : ''}`}
-        title="Audio & STT Settings"
-        onClick={() => {
-          if (currentView === 'audio') {
-            // Request audio panel to allow closing (it may be actively captioning).
-            let responded = false;
-            function onResponse(e) {
-              responded = true;
-              window.removeEventListener('lcyt:audio-toggle-response', onResponse);
-              if (e?.detail?.allowed) onViewChange('captions');
-            }
-            window.addEventListener('lcyt:audio-toggle-response', onResponse);
-            // Dispatch the request; AudioPanel will respond immediately.
-            try { window.dispatchEvent(new CustomEvent('lcyt:audio-toggle-request')); } catch {}
-            // Safety timeout to clean up the listener if no response.
-            setTimeout(() => { if (!responded) try { window.removeEventListener('lcyt:audio-toggle-response', onResponse); } catch {} }, 500);
-          } else {
-            onViewChange('audio');
-          }
-        }}
-      >
-        <span className="file-tab__audio-icon">&#127908;</span> Audio
-      </button>
 
       <input
         ref={fileInputRef}
