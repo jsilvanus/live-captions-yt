@@ -117,7 +117,7 @@ app.use('/captions', createCaptionsRouter(store, auth, db));
 app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));
-app.use('/stats', createStatsRouter(db, auth));
+app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 
 // ---------------------------------------------------------------------------

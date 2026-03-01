@@ -333,6 +333,27 @@ export function renewKey(db, key, newExpiresAt) {
 }
 
 /**
+ * Anonymize a key for GDPR erasure: clears owner, revokes the key, and deletes all
+ * associated usage/session/error data. Retains email and expires_at for legitimate
+ * interest (preventing free-tier abuse until the original expiry).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @returns {boolean} true if the key existed
+ */
+export function anonymizeKey(db, key) {
+  const existing = getKey(db, key);
+  if (!existing) return false;
+  db.transaction(() => {
+    db.prepare("UPDATE api_keys SET owner = '', active = 0 WHERE key = ?").run(key);
+    db.prepare('DELETE FROM session_stats WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
+  })();
+  return true;
+}
+
+/**
  * Update owner and/or expires_at for a key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key

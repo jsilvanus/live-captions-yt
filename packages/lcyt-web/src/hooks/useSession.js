@@ -37,6 +37,8 @@ export function useSession({
   const [streamKey, setStreamKey] = useState('');
   const [startedAt, setStartedAt] = useState(null);
   const [micHolder, setMicHolder] = useState(null);
+  // 'unknown' | 'checking' | 'ok' | 'unreachable'
+  const [healthStatus, setHealthStatus] = useState('unknown');
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
@@ -111,6 +113,25 @@ export function useSession({
     });
   }
 
+  // ─── Health check ────────────────────────────────────────
+
+  async function checkHealth(url) {
+    const target = url ?? backendUrlRef.current;
+    if (!target) { setHealthStatus('unknown'); return false; }
+    setHealthStatus('checking');
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 5000);
+      const res = await fetch(`${target}/health`, { signal: ac.signal });
+      clearTimeout(timer);
+      setHealthStatus(res.ok ? 'ok' : 'unreachable');
+      return res.ok;
+    } catch {
+      setHealthStatus('unreachable');
+      return false;
+    }
+  }
+
   // ─── Connect / Disconnect ───────────────────────────────
 
   async function connect({ backendUrl: url, apiKey: key, streamKey: sk }) {
@@ -127,6 +148,7 @@ export function useSession({
     backendUrlRef.current = url;
 
     setConnected(true);
+    setHealthStatus('ok');
     setBackendUrl(url);
     setApiKey(key);
     setStreamKey(sk);
@@ -289,11 +311,45 @@ export function useSession({
     setSequence(Number(seq));
   }
 
+  // ─── Self-service account management ────────────────────
+
+  async function getStats() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to load stats (${res.status})`);
+    return res.json();
+  }
+
+  /**
+   * GDPR right-to-erasure: anonymises the API key on the backend, disconnects locally,
+   * and clears all persisted config from localStorage.
+   */
+  async function eraseSelf() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stats`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Erasure failed (${res.status})`);
+    // Disconnect locally (SSE already closed by server) and clear saved credentials
+    await disconnect();
+    clearPersistedConfig();
+    return res.json();
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
+    healthStatus, checkHealth,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
     claimMic, releaseMic,
+    getStats, eraseSelf,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

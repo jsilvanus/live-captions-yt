@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { AppProviders } from './contexts/AppProviders';
 import { useSessionContext } from './contexts/SessionContext';
 import { useFileContext } from './contexts/FileContext';
@@ -31,6 +31,36 @@ function SendLineFAB({ inputBarRef }) {
       onClick={() => inputBarRef.current?.triggerSend()}
       title="Send current line"
     >►</button>
+  );
+}
+
+// Persistent banner shown when the backend cannot be reached
+function NetworkBanner() {
+  const { healthStatus, checkHealth, connected, getAutoConnect, getPersistedConfig, connect } = useSessionContext();
+
+  const retry = useCallback(async () => {
+    const cfg = getPersistedConfig();
+    const ok = await checkHealth(cfg.backendUrl);
+    if (ok && getAutoConnect() && cfg.backendUrl && cfg.apiKey && cfg.streamKey) {
+      connect(cfg).catch(() => {});
+    }
+  }, [checkHealth, getAutoConnect, getPersistedConfig, connect]);
+
+  // Auto-retry every 30 s while unreachable
+  useEffect(() => {
+    if (healthStatus !== 'unreachable') return;
+    const id = setInterval(retry, 30_000);
+    return () => clearInterval(id);
+  }, [healthStatus, retry]);
+
+  if (connected || healthStatus !== 'unreachable') return null;
+
+  return (
+    <div className="network-banner" role="alert">
+      <span className="network-banner__icon">⚠</span>
+      <span className="network-banner__msg">Backend cannot be reached — check your network connection</span>
+      <button className="network-banner__btn" onClick={retry}>Retry</button>
+    </div>
   );
 }
 
@@ -105,14 +135,15 @@ function AppLayout() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [fileStore]);
 
-  // Auto-connect on startup
+  // Health check on startup; auto-connect only if backend is reachable
   useEffect(() => {
-    if (session.getAutoConnect()) {
-      const cfg = session.getPersistedConfig();
-      if (cfg.backendUrl && cfg.apiKey && cfg.streamKey) {
+    const cfg = session.getPersistedConfig();
+    if (!cfg.backendUrl) return;
+    session.checkHealth(cfg.backendUrl).then(ok => {
+      if (ok && session.getAutoConnect() && cfg.apiKey && cfg.streamKey) {
         session.connect(cfg).catch(() => {});
       }
-    }
+    });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -126,6 +157,7 @@ function AppLayout() {
         onSettingsOpen={() => setSettingsOpen(true)}
         onPrivacyOpen={() => setPrivacyOpen(true)}
       />
+      <NetworkBanner />
 
       <main id="main">
         {/* Left panel */}
