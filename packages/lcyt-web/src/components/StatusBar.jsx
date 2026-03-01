@@ -2,18 +2,11 @@ import { useState, useEffect } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 
-export function StatusBar({ onSettingsOpen, onToggleRightPanel }) {
+export function StatusBar({ onSettingsOpen, onPrivacyOpen }) {
   const { connected, sequence, syncOffset, sync } = useSessionContext();
   const { showToast } = useToastContext();
   const [error, setError] = useState(null);
   const [errorTimer, setErrorTimer] = useState(null);
-  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
-
-  useEffect(() => {
-    function checkWidth() { setIsMobile(window.innerWidth <= 768); }
-    window.addEventListener('resize', checkWidth);
-    return () => window.removeEventListener('resize', checkWidth);
-  }, []);
 
   // Clear error when we connect
   useEffect(() => {
@@ -53,13 +46,7 @@ export function StatusBar({ onSettingsOpen, onToggleRightPanel }) {
 
       <div className="status-bar__actions">
         <button className="status-bar__btn" onClick={handleSync} title="Clock sync">⟳ Sync</button>
-        {isMobile && (
-          <button
-            className="status-bar__btn status-bar__btn--icon"
-            onClick={onToggleRightPanel}
-            title="Toggle sent panel"
-          >▦</button>
-        )}
+        <button className="status-bar__btn" onClick={onPrivacyOpen} title="Privacy">Privacy</button>
         <button
           className="status-bar__btn status-bar__btn--icon"
           onClick={onSettingsOpen}

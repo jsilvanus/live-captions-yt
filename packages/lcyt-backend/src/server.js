@@ -10,6 +10,7 @@ import { createEventsRouter } from './routes/events.js';
 import { createSyncRouter } from './routes/sync.js';
 import { createKeysRouter } from './routes/keys.js';
 import { createStatsRouter } from './routes/stats.js';
+import { createMicRouter } from './routes/mic.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -117,6 +118,7 @@ app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));
 app.use('/stats', createStatsRouter(db, auth));
+app.use('/mic', createMicRouter(store, auth));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
