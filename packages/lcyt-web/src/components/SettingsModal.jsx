@@ -30,7 +30,7 @@ export function SettingsModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('connection');
 
   // ── Connection tab ────────────────────────────────────────
-  const [backendUrl, setBackendUrl] = useState('');
+  const [backendUrl, setBackendUrl] = useState('https://api.lcyt.fi');
   const [apiKey, setApiKey] = useState('');
   const [streamKey, setStreamKey] = useState('');
   const [autoConnect, setAutoConnect] = useState(false);
