@@ -116,19 +116,20 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
 
               <section className="privacy-section">
                 <h3 className="privacy-heading">What this app does</h3>
-                <p>lcyt-web is a browser-based tool that forwards caption text to YouTube Live via a relay backend. <strong>Caption text is not stored</strong> — it is processed in memory and sent immediately to YouTube.</p>
+                <p>lcyt-web is a browser-based tool that forwards caption text to YouTube Live via a relay backend. <strong>Caption text is not stored</strong> — it is processed in memory of the relay and sent immediately to YouTube.</p>
               </section>
 
               <section className="privacy-section">
                 <h3 className="privacy-heading">Data stored by the relay backend</h3>
-                <p>The backend you connect to stores the following data associated with your API key:</p>
+                <p>The backend you connect to stores anonymous usage statistics. It also stores the following data associated with your API key:</p>
                 <ul className="privacy-list">
                   <li><strong>API key record</strong> — owner name, email address (if provided), key creation date, expiry date, and cumulative caption counts.</li>
                   <li><strong>Session records</strong> — origin domain, session start/end times, duration, and counts of captions sent and failed. Caption text is not included.</li>
                   <li><strong>Error logs</strong> — error codes and messages when caption delivery to YouTube fails.</li>
                   <li><strong>Auth event logs</strong> — timestamps and origin domain when authentication fails or a usage limit is exceeded.</li>
+                  <li><strong>Anonymous usage statistics</strong> — aggregate caption and session counts per origin domain and time bucket (hour/day). No caption text, no user identifiers.</li>
                 </ul>
-                <p>The <strong>data controller</strong> is whoever operates the backend instance you are connected to. Contact them for data requests.</p>
+                <p>The <strong>data controller</strong> is whoever operates the backend instance you are connected to. Contact them for data requests. This web client can query for contact details with the button at the bottom.</p>
               </section>
 
               <section className="privacy-section">
@@ -147,8 +148,8 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                 <h3 className="privacy-heading">Third-party services</h3>
                 <ul className="privacy-list">
                   <li><strong>YouTube Live</strong> — caption text and timestamps are sent to YouTube's caption ingestion API. Google's privacy policy applies.</li>
-                  <li><strong>Web Speech API</strong> (browser built-in, optional) — if enabled, audio is processed locally by your browser's speech recognition engine. On Chrome and Edge this is handled by Google's servers. No audio data passes through the relay backend. Google's privacy policy applies.</li>
-                  <li><strong>Google Cloud Speech-to-Text</strong> (optional) — if enabled, audio is sent directly from your browser to Google for transcription using your own service account. Google's privacy policy applies.</li>
+                  <li><strong>Web Speech API</strong> (browser built-in, optional) — if enabled, audio is processed by your browser's speech recognition engine. On Chrome and Edge this is handled by Google's servers. No audio data passes through the relay backend. Google's privacy policy applies.</li>
+                  <li><strong>Google Cloud Speech-to-Text</strong> (optional) — if enabled, audio is sent directly from your browser to Google for transcription using your own service account. Credentials are saved only in your memory. Google's privacy policy applies.</li>
                 </ul>
               </section>
 
@@ -178,7 +179,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                   <li>All session records</li>
                   <li>All caption error logs</li>
                   <li>All auth event logs</li>
-                  <li>All usage counters</li>
+                  <li>All usage statistics linked to the API key</li>
                 </ul>
 
                 {isFreeTier && statsData?.email && (
