@@ -289,11 +289,44 @@ export function useSession({
     setSequence(Number(seq));
   }
 
+  // ─── Self-service account management ────────────────────
+
+  async function getStats() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stats`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to load stats (${res.status})`);
+    return res.json();
+  }
+
+  /**
+   * GDPR right-to-erasure: anonymises the API key on the backend, disconnects locally,
+   * and clears all persisted config from localStorage.
+   */
+  async function eraseSelf() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stats`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Erasure failed (${res.status})`);
+    // Disconnect locally (SSE already closed by server) and clear saved credentials
+    await disconnect();
+    clearPersistedConfig();
+    return res.json();
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
     claimMic, releaseMic,
+    getStats, eraseSelf,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }
