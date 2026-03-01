@@ -23,6 +23,65 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { YoutubeLiveCaptionSender } from "lcyt";
 import { randomBytes } from "node:crypto";
+import {
+  initDb, validateApiKey, checkAndIncrementUsage, anonymizeKey,
+  writeAuthEvent, writeSessionStat, writeCaptionError,
+  incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd,
+  incrementDomainHourlyCaptions,
+} from "lcyt-backend/src/db.js";
+
+// ── Auth database (optional) ──────────────────────────────────────────────────
+
+const DB_PATH = process.env.DB_PATH || null;
+const REQUIRE_API_KEY = process.env.MCP_REQUIRE_API_KEY === "1";
+
+const db = DB_PATH ? initDb(DB_PATH) : null;
+
+if (db && REQUIRE_API_KEY) {
+  console.error(`[lcyt-mcp-sse] Auth required (DB_PATH=${DB_PATH})`);
+} else if (db) {
+  console.error(`[lcyt-mcp-sse] DB connected (DB_PATH=${DB_PATH}), auth optional — X-Api-Key enables logging`);
+} else {
+  console.error("[lcyt-mcp-sse] No DB — set DB_PATH to enable logging; MCP_REQUIRE_API_KEY=1 to enforce auth");
+}
+
+/**
+ * Tracks in-flight MCP sessions for DB logging.
+ * Keyed by MCP session_id (from `start` tool).
+ * @type {Map<string, { apiKey: string, startedAt: number, captionsSent: number, captionsFailed: number, lastSequence: number }>}
+ */
+const mcpStats = new Map();
+
+// ── Privacy notice (returned by `privacy` tool) ───────────────────────────────
+
+const PRIVACY_NOTICE = `\
+Privacy & Data Notice — lcyt-mcp-sse
+
+WHAT THIS SERVICE DOES
+lcyt-mcp-sse forwards caption text to YouTube Live via the lcyt relay backend.
+Caption text is NOT stored — it is processed in memory and sent immediately to YouTube.
+
+DATA STORED BY THE RELAY BACKEND
+When an API key is associated with your connection, the following is stored:
+  - API key record: owner name, email (if provided), creation date, expiry, caption counts.
+  - Session records: session start/end times, duration, captions sent/failed. No caption text.
+  - Error logs: error codes and messages when YouTube delivery fails.
+  - Auth event logs: timestamps when authentication fails or usage limits are exceeded.
+  - Anonymous usage statistics: aggregate caption/session counts per domain and time bucket.
+
+THIRD-PARTY SERVICES
+  - YouTube Live: caption text and timestamps are sent to YouTube's caption ingestion API.
+    Google's privacy policy applies.
+
+YOUR RIGHTS
+Depending on your jurisdiction (e.g. GDPR, CCPA) you may have rights to access, correct,
+export, or delete your data. Use the privacy_deletion tool to erase all records associated
+with your API key. Contact the backend operator for other data requests.
+
+DISCLAIMER
+This service is provided as-is, without any warranty. The backend operator accepts no
+liability for data loss, service interruptions, or errors in caption delivery.
+`.trim();
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 
@@ -113,6 +172,19 @@ const TOOLS = [
       },
       required: ["session_id"],
     },
+  },
+  {
+    name: "privacy",
+    description: "Return the privacy notice and data-processing information for this service.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "privacy_deletion",
+    description:
+      "Permanently erase all data associated with your API key: owner name, session records, " +
+      "error logs, auth events, and usage statistics. The key is revoked immediately. " +
+      "Email (if any) may be retained briefly to prevent free-tier abuse. This cannot be undone.",
+    inputSchema: { type: "object", properties: {} },
   },
 ];
 
@@ -225,6 +297,17 @@ function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
         return { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
       }
 
+      case "privacy": {
+        return { content: [{ type: "text", text: PRIVACY_NOTICE }] };
+      }
+
+      case "privacy_deletion": {
+        // Intercepted upstream in createMcpServer() when db + apiKey are available.
+        throw new Error(
+          "privacy_deletion requires an authenticated connection (X-Api-Key + DB_PATH configured)"
+        );
+      }
+
       default:
         throw new Error(`Unknown tool: ${JSON.stringify(name)}`);
     }
@@ -240,7 +323,7 @@ const { handleListTools, handleListResources, handleReadResource, handleCallTool
 
 // ── MCP server factory (one Server per SSE connection) ────────────────────────
 
-function createMcpServer() {
+function createMcpServer(apiKey = null) {
   const server = new Server(
     { name: "lcyt-mcp-sse", version: "0.1.0" },
     { capabilities: { tools: {}, resources: {} } }
@@ -256,9 +339,104 @@ function createMcpServer() {
     }))
   );
 
-  server.setRequestHandler(CallToolRequestSchema, ({ params: { name, arguments: args } }) =>
-    handleCallTool(name, args)
-  );
+  server.setRequestHandler(CallToolRequestSchema, async ({ params: { name, arguments: args } }) => {
+    // privacy_deletion needs db + apiKey from connection closure — handle before dispatch
+    if (name === "privacy_deletion") {
+      if (!db || !apiKey) {
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: "No authenticated API key on this connection" }) }],
+          isError: true,
+        };
+      }
+      anonymizeKey(db, apiKey);
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, message: "Your data has been erased. The API key is now revoked." }) }],
+      };
+    }
+
+    // Pre-call: usage limit check for send operations
+    if (db && apiKey && (name === "send_caption" || name === "send_batch")) {
+      const usage = checkAndIncrementUsage(db, apiKey);
+      if (!usage.allowed) {
+        console.error(`[lcyt-mcp-sse] Usage limit hit for key ${apiKey.slice(0, 8)}...: ${usage.reason}`);
+        writeAuthEvent(db, { apiKey, eventType: usage.reason, domain: "mcp" });
+        return {
+          content: [{ type: "text", text: JSON.stringify({ ok: false, error: usage.reason }) }],
+          isError: true,
+        };
+      }
+    }
+
+    // Dispatch
+    let result;
+    try {
+      result = await handleCallTool(name, args);
+    } catch (err) {
+      if (db && apiKey && (name === "send_caption" || name === "send_batch")) {
+        const stat = mcpStats.get(args.session_id);
+        if (stat) {
+          stat.captionsFailed++;
+          writeCaptionError(db, {
+            apiKey: stat.apiKey,
+            sessionId: args.session_id,
+            errorCode: err.statusCode ?? 502,
+            errorMsg: err.message ?? "Failed to send captions",
+            batchSize: name === "send_batch" ? (args.captions?.length ?? 1) : 1,
+          });
+          incrementDomainHourlyCaptions(db, "mcp", { failed: 1 });
+        }
+      }
+      throw err;
+    }
+
+    // Post-call logging
+    if (db && apiKey) {
+      if (name === "start") {
+        const sid = JSON.parse(result.content[0].text).session_id;
+        mcpStats.set(sid, { apiKey, startedAt: Date.now(), captionsSent: 0, captionsFailed: 0, lastSequence: 0 });
+        writeAuthEvent(db, { apiKey, eventType: "login", domain: "mcp" });
+        incrementDomainHourlySessionStart(db, "mcp", mcpStats.size);
+
+      } else if (name === "send_caption") {
+        const stat = mcpStats.get(args.session_id);
+        if (stat) {
+          stat.captionsSent++;
+          stat.lastSequence = JSON.parse(result.content[0].text).sequence ?? stat.lastSequence;
+          incrementDomainHourlyCaptions(db, "mcp", { sent: 1 });
+        }
+
+      } else if (name === "send_batch") {
+        const stat = mcpStats.get(args.session_id);
+        if (stat) {
+          stat.captionsSent++;
+          stat.lastSequence = JSON.parse(result.content[0].text).sequence ?? stat.lastSequence;
+          incrementDomainHourlyCaptions(db, "mcp", { sent: 1, batches: 1 });
+        }
+
+      } else if (name === "stop") {
+        const stat = mcpStats.get(args.session_id);
+        if (stat) {
+          const durationMs = Date.now() - stat.startedAt;
+          writeSessionStat(db, {
+            sessionId: args.session_id,
+            apiKey: stat.apiKey,
+            domain: "mcp",
+            startedAt: new Date(stat.startedAt).toISOString(),
+            endedAt: new Date().toISOString(),
+            durationMs,
+            captionsSent: stat.captionsSent,
+            captionsFailed: stat.captionsFailed,
+            finalSequence: stat.lastSequence,
+            endedBy: "client",
+          });
+          incrementDomainHourlySessionEnd(db, "mcp", durationMs);
+          mcpStats.delete(args.session_id);
+        }
+      }
+    }
+
+    return result;
+  });
 
   return server;
 }
@@ -272,8 +450,29 @@ app.use(express.json());
 const transports = new Map();
 
 app.get("/sse", async (req, res) => {
+  let apiKey = null;
+
+  const provided = db ? req.headers["x-api-key"] : null;
+
+  if (provided) {
+    // Key voluntarily provided — validate regardless of REQUIRE_API_KEY
+    const result = validateApiKey(db, provided);
+    if (!result.valid) {
+      console.error(`[lcyt-mcp-sse] 403 — key ${provided.slice(0, 8)}... rejected: ${result.reason}`);
+      writeAuthEvent(db, { apiKey: provided, eventType: result.reason, domain: "mcp" });
+      res.status(403).json({ error: result.reason });
+      return;
+    }
+    apiKey = provided;
+    console.error(`[lcyt-mcp-sse] Accepted key ${apiKey.slice(0, 8)}... (owner: ${result.owner})`);
+  } else if (REQUIRE_API_KEY) {
+    console.error("[lcyt-mcp-sse] 401 — X-Api-Key header missing");
+    res.status(401).json({ error: "X-Api-Key header required" });
+    return;
+  }
+
   const transport = new SSEServerTransport("/messages", res);
-  const server = createMcpServer();
+  const server = createMcpServer(apiKey);
 
   transports.set(transport.sessionId, transport);
   res.on("close", () => transports.delete(transport.sessionId));
