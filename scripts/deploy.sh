@@ -60,7 +60,7 @@ fi
 
 if [[ -d "$REPO_DIR/.git" ]]; then
   echo "==> Pulling latest ($GIT_BRANCH) into $REPO_DIR"
-  git -C "$REPO_DIR" fetch --prune origin
+  git -C "$REPO_DIR" fetch origin "$GIT_BRANCH"
   git -C "$REPO_DIR" checkout "$GIT_BRANCH"
   git -C "$REPO_DIR" reset --hard "origin/$GIT_BRANCH"
 else
