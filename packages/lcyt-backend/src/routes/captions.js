@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent } from '../db.js';
+import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions } from '../db.js';
 
 /**
  * Factory for the /captions router.
@@ -55,6 +55,8 @@ export function createCaptionsRouter(store, auth, db) {
 
     // Chain onto the session's send queue so concurrent POST /captions requests
     // are serialised and sequence numbers stay monotonically increasing.
+    const isBatch = resolvedCaptions.length > 1;
+
     session._sendQueue = session._sendQueue.then(async () => {
       let result;
       try {
@@ -70,6 +72,7 @@ export function createCaptionsRouter(store, auth, db) {
 
         if (result.statusCode >= 200 && result.statusCode < 300) {
           session.captionsSent++;
+          incrementDomainHourlyCaptions(db, session.domain, { sent: 1, batches: isBatch ? 1 : 0 });
           session.emitter.emit('caption_result', {
             requestId,
             sequence: result.sequence,
@@ -79,6 +82,7 @@ export function createCaptionsRouter(store, auth, db) {
           });
         } else {
           session.captionsFailed++;
+          incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
           writeCaptionError(db, {
             apiKey: session.apiKey,
             sessionId,
@@ -95,6 +99,7 @@ export function createCaptionsRouter(store, auth, db) {
         }
       } catch (err) {
         session.captionsFailed++;
+        incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
         writeCaptionError(db, {
           apiKey: session.apiKey,
           sessionId,
