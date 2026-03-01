@@ -3,7 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { StatsModal } from './StatsModal';
 
-export function PrivacyModal({ isOpen, onClose }) {
+export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAccept }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
 
@@ -14,29 +14,49 @@ export function PrivacyModal({ isOpen, onClose }) {
   const [statsData, setStatsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
 
+  // Countdown timer (10s) for first-visit acceptance
+  const [countdown, setCountdown] = useState(0);
+  const canClose = !requireAcceptance || countdown <= 0;
+
   // Reset state when modal is opened/closed
   useEffect(() => {
-    if (!isOpen) {
+    if (isOpen) {
+      setCountdown(requireAcceptance ? 10 : 0);
+    } else {
       setView('main');
       setDeleting(false);
       setStatsOpen(false);
       setStatsData(null);
     }
-  }, [isOpen]);
+  }, [isOpen, requireAcceptance]);
 
-  // Close on Escape
+  // Tick countdown
+  useEffect(() => {
+    if (!isOpen || !requireAcceptance || countdown <= 0) return;
+    const id = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(id);
+  }, [isOpen, requireAcceptance, countdown]);
+
+  // Close on Escape (blocked during countdown in acceptance mode)
   useEffect(() => {
     if (!isOpen) return;
     function onKeyDown(e) {
       if (e.key === 'Escape') {
+        if (!canClose) return;
         if (statsOpen) { setStatsOpen(false); return; }
         if (view === 'deleteConfirm') { setView('main'); return; }
-        onClose();
+        requireAcceptance ? onAccept?.() : onClose();
       }
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose, view, statsOpen]);
+  }, [isOpen, onClose, onAccept, view, statsOpen, canClose, requireAcceptance]);
+
+  function handleBackdropClick() {
+    if (!canClose) return;
+    if (view === 'deleteConfirm') { setView('main'); return; }
+    requireAcceptance ? onAccept?.() : onClose();
+  }
 
   if (!isOpen) return null;
 
@@ -72,13 +92,24 @@ export function PrivacyModal({ isOpen, onClose }) {
   return (
     <>
       <div className="settings-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
-        <div className="settings-modal__backdrop" onClick={view === 'deleteConfirm' ? () => setView('main') : onClose} />
+        <div className="settings-modal__backdrop" onClick={handleBackdropClick} />
         <div className="settings-modal__box">
 
           <div className="settings-modal__header">
             <span className="settings-modal__title" id="privacy-title">Privacy &amp; Data</span>
-            <button className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
+            {!requireAcceptance && (
+              <button className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
+            )}
           </div>
+
+          {requireAcceptance && (
+            <div className={`privacy-acceptance-banner${canClose ? ' privacy-acceptance-banner--ready' : ''}`}>
+              {countdown > 0
+                ? <>Please read the policy below. You may close this in <strong>{countdown}</strong> second{countdown !== 1 ? 's' : ''}.</>
+                : 'You may now close and accept data processing.'
+              }
+            </div>
+          )}
 
           {view === 'main' && (
             <div className="settings-modal__body privacy-body">
@@ -183,7 +214,21 @@ export function PrivacyModal({ isOpen, onClose }) {
                     </button>
                   </>
                 )}
-                <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>Close</button>
+                {requireAcceptance ? (
+                  <button
+                    className="btn btn--primary"
+                    onClick={onAccept}
+                    disabled={!canClose}
+                    style={{ marginLeft: 'auto' }}
+                    title={canClose ? undefined : `Available in ${countdown}s`}
+                  >
+                    {canClose
+                      ? 'Close and accept data processing'
+                      : `Close and accept (${countdown}s)`}
+                  </button>
+                ) : (
+                  <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>Close</button>
+                )}
               </div>
             )}
 

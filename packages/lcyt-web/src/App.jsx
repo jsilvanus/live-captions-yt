@@ -71,6 +71,7 @@ function AppLayout() {
 
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [audioOpen, setAudioOpen] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
 
@@ -135,6 +136,16 @@ function AppLayout() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [fileStore]);
 
+  // Auto-open privacy modal on first visit (before user has accepted)
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('lcyt:privacyAccepted')) {
+        setPrivacyOpen(true);
+        setPrivacyRequireAcceptance(true);
+      }
+    } catch {}
+  }, []);
+
   // Health check on startup; auto-connect only if backend is reachable
   useEffect(() => {
     const cfg = session.getPersistedConfig();
@@ -147,6 +158,17 @@ function AppLayout() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  function handlePrivacyOpen() {
+    setPrivacyRequireAcceptance(false);
+    setPrivacyOpen(true);
+  }
+
+  function handlePrivacyAccept() {
+    try { localStorage.setItem('lcyt:privacyAccepted', '1'); } catch {}
+    setPrivacyRequireAcceptance(false);
+    setPrivacyOpen(false);
+  }
+
   function handleLineSend(text, fileId, lineIndex) {
     inputBarRef.current?.sendText(text, fileId, lineIndex);
   }
@@ -155,7 +177,7 @@ function AppLayout() {
     <div id="app">
       <StatusBar
         onSettingsOpen={() => setSettingsOpen(true)}
-        onPrivacyOpen={() => setPrivacyOpen(true)}
+        onPrivacyOpen={handlePrivacyOpen}
       />
       <NetworkBanner />
 
@@ -197,7 +219,12 @@ function AppLayout() {
       </div>
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      <PrivacyModal isOpen={privacyOpen} onClose={() => setPrivacyOpen(false)} />
+      <PrivacyModal
+        isOpen={privacyOpen}
+        onClose={() => setPrivacyOpen(false)}
+        requireAcceptance={privacyRequireAcceptance}
+        onAccept={handlePrivacyAccept}
+      />
       <ToastContainer />
       <SendLineFAB inputBarRef={inputBarRef} />
     </div>
