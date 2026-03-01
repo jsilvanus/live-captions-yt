@@ -12,6 +12,7 @@ import jwt from 'jsonwebtoken';
  *   connected      — fired once on subscribe: { sessionId }
  *   caption_result — YouTube accepted:  { requestId, sequence, statusCode, serverTimestamp, [count] }
  *   caption_error  — YouTube rejected:  { requestId, error, statusCode, [sequence] }
+ *   mic_state      — soft mic lock changed: { holder: clientId | null }
  *   session_closed — session was torn down server-side
  *
  * @param {import('../store.js').SessionStore} store
@@ -60,11 +61,12 @@ export function createEventsRouter(store, jwtSecret) {
       res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
     }
 
-    // Confirm subscription is live
-    send('connected', { sessionId });
+    // Confirm subscription is live; include current mic holder so latecomers sync immediately
+    send('connected', { sessionId, micHolder: session.micHolder ?? null });
 
     function onResult(data) { send('caption_result', data); }
     function onError(data) { send('caption_error', data); }
+    function onMicState(data) { send('mic_state', data); }
     function onClosed() {
       send('session_closed', {});
       res.end();
@@ -74,11 +76,13 @@ export function createEventsRouter(store, jwtSecret) {
     function cleanup() {
       session.emitter.off('caption_result', onResult);
       session.emitter.off('caption_error', onError);
+      session.emitter.off('mic_state', onMicState);
       session.emitter.off('session:closed', onClosed);
     }
 
     session.emitter.on('caption_result', onResult);
     session.emitter.on('caption_error', onError);
+    session.emitter.on('mic_state', onMicState);
     session.emitter.once('session:closed', onClosed);
 
     // Client closed the connection

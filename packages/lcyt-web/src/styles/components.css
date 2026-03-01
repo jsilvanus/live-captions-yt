@@ -1237,6 +1237,31 @@
   color: var(--color-error);
 }
 
+/* Locked state — another mic is active; hold 2s to take over */
+.audio-caption-btn--locked {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
+  cursor: pointer;
+  touch-action: none; /* prevent scroll interference during hold on mobile */
+  user-select: none;
+}
+
+.audio-caption-btn--locked:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Fill animation runs for exactly 2s while the user holds — matches the JS setTimeout */
+.audio-caption-btn--holding {
+  animation: mic-hold-fill 2s linear forwards;
+}
+
+@keyframes mic-hold-fill {
+  from { background: var(--color-surface-elevated); }
+  to   { background: color-mix(in srgb, var(--color-accent) 35%, var(--color-surface-elevated)); }
+}
+
 /* Live caption display */
 .audio-caption-live {
   min-height: 80px;

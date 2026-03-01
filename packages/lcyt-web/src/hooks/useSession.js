@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
 
+// Stable per-tab client ID for the soft mic lock
+const CLIENT_ID = crypto.randomUUID();
+
 const CONFIG_KEY = 'lcyt-config';
 const AUTO_CONNECT_KEY = 'lcyt-autoconnect';
 
@@ -33,9 +36,12 @@ export function useSession({
   const [apiKey, setApiKey] = useState('');
   const [streamKey, setStreamKey] = useState('');
   const [startedAt, setStartedAt] = useState(null);
+  const [micHolder, setMicHolder] = useState(null);
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
+  // Keep backendUrl in a ref so claimMic/releaseMic always have the current value
+  const backendUrlRef = useRef('');
 
   // Keep all callbacks in a ref so SSE handlers always see the latest version
   const cbs = useRef({});
@@ -77,6 +83,12 @@ export function useSession({
     const es = new EventSource(`${url}/events?token=${encodeURIComponent(token)}`);
     esRef.current = es;
 
+    es.addEventListener('connected', (e) => {
+      const data = JSON.parse(e.data);
+      // Sync mic lock state immediately on SSE connection
+      setMicHolder(data.micHolder ?? null);
+    });
+
     es.addEventListener('caption_result', (e) => {
       const data = JSON.parse(e.data);
       setSequence(data.sequence);
@@ -87,6 +99,11 @@ export function useSession({
       const data = JSON.parse(e.data);
       cbs.current.onCaptionError?.(data);
       cbs.current.onError?.(data.error || 'Caption delivery failed');
+    });
+
+    es.addEventListener('mic_state', (e) => {
+      const data = JSON.parse(e.data);
+      setMicHolder(data.holder ?? null);
     });
 
     es.addEventListener('session_closed', () => {
@@ -107,6 +124,7 @@ export function useSession({
     try { await sender.sync(); } catch {}
 
     senderRef.current = sender;
+    backendUrlRef.current = url;
 
     setConnected(true);
     setBackendUrl(url);
@@ -134,11 +152,13 @@ export function useSession({
 
     try { await senderRef.current.end(); } catch {}
     senderRef.current = null;
+    backendUrlRef.current = '';
 
     setConnected(false);
     setSequence(0);
     setSyncOffset(0);
     setStartedAt(null);
+    setMicHolder(null);
 
     cbs.current.onDisconnected?.();
   }
@@ -230,6 +250,27 @@ export function useSession({
     return batchBufferRef.current.length;
   }
 
+  // ─── Mic soft lock ──────────────────────────────────────
+
+  async function _postMic(action) {
+    const token = senderRef.current?._token;
+    const url = backendUrlRef.current;
+    if (!token || !url) return;
+    try {
+      await fetch(`${url}/mic`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action, clientId: CLIENT_ID }),
+      });
+    } catch { /* soft lock — ignore network errors */ }
+  }
+
+  function claimMic() { return _postMic('claim'); }
+  function releaseMic() { return _postMic('release'); }
+
   async function heartbeat() {
     if (!senderRef.current) throw new Error('Not connected');
     const t0 = Date.now();
@@ -250,7 +291,9 @@ export function useSession({
 
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
+    micHolder, clientId: CLIENT_ID,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
+    claimMic, releaseMic,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }
