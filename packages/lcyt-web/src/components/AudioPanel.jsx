@@ -44,6 +44,10 @@ export function AudioPanel({ visible }) {
   const recorderRef  = useRef(null);   // current MediaRecorder
   const oauthRef     = useRef(null);   // { token, expires }
 
+  // Mic soft lock — hold-to-steal state
+  const [isHolding, setIsHolding] = useState(false);
+  const holdTimerRef = useRef(null);
+
   // ── Sync engine/credential from settings events ──────────────────────────
   useEffect(() => {
     function onCfgChange()  { setEngine(getSttEngine()); }
@@ -59,6 +63,10 @@ export function AudioPanel({ visible }) {
   // Session / sent log
   const session = useSessionContext();
   const sentLog = useSentLogContext();
+
+  const { micHolder, clientId, claimMic, releaseMic, connected } = session;
+  const iHaveMic    = micHolder === clientId;
+  const otherHasMic = micHolder !== null && !iHaveMic;
 
   function pushFinalTranscript(text) {
     const t = String(text || '').trim();
@@ -125,9 +133,20 @@ export function AudioPanel({ visible }) {
     return () => {
       stopWebkit();
       stopCloud();
+      if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // ── Auto-stop when another client steals the mic lock ────────────────────
+  useEffect(() => {
+    if (listening && otherHasMic) {
+      if (engine === 'webkit') stopWebkit();
+      else stopCloud();
+      // Don't releaseMic — the other client already holds it
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [micHolder]);
 
   // Respond to toggle requests from FileTabs: if not currently listening, allow hiding the panel.
   useEffect(() => {
@@ -421,14 +440,37 @@ export function AudioPanel({ visible }) {
 
   // ─── Toggle ───────────────────────────────────────────────────────────────
 
-  function toggle() {
+  async function toggle() {
     if (listening) {
       if (engine === 'webkit') stopWebkit();
       else stopCloud();
+      if (connected) releaseMic().catch(() => {});
     } else {
+      if (connected) claimMic().catch(() => {});
       if (engine === 'webkit') startWebkit();
       else startCloud();
     }
+  }
+
+  // ─── Hold-to-steal handlers ──────────────────────────────────────────────
+
+  function onHoldStart(e) {
+    e.preventDefault();
+    setIsHolding(true);
+    holdTimerRef.current = setTimeout(async () => {
+      setIsHolding(false);
+      if (connected) claimMic().catch(() => {});
+      if (engine === 'webkit') startWebkit();
+      else startCloud();
+    }, 2000);
+  }
+
+  function onHoldEnd() {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    setIsHolding(false);
   }
 
   // ─── Derived state ────────────────────────────────────────────────────────
@@ -491,13 +533,26 @@ export function AudioPanel({ visible }) {
           {/* Finalized transcripts are not shown here; they are sent directly. */}
 
           <div className="audio-field">
-            <button
-              className={`btn audio-caption-btn${listening ? ' audio-caption-btn--active' : ' btn--primary'}`}
-              disabled={!canStart}
-              onClick={toggle}
-            >
-              {listening ? '⏹ Stop Captioning' : '🎙 Click to Caption'}
-            </button>
+            {otherHasMic ? (
+              <button
+                className={`btn audio-caption-btn audio-caption-btn--locked${isHolding ? ' audio-caption-btn--holding' : ''}`}
+                disabled={!canStart}
+                onPointerDown={onHoldStart}
+                onPointerUp={onHoldEnd}
+                onPointerLeave={onHoldEnd}
+                onPointerCancel={onHoldEnd}
+              >
+                {isHolding ? '🎙 Hold…' : '🔒 Another mic is active'}
+              </button>
+            ) : (
+              <button
+                className={`btn audio-caption-btn${listening ? ' audio-caption-btn--active' : ' btn--primary'}`}
+                disabled={!canStart}
+                onClick={toggle}
+              >
+                {listening ? '⏹ Stop Captioning' : '🎙 Click to Caption'}
+              </button>
+            )}
           </div>
 
           {listening && (
