@@ -37,6 +37,8 @@ export function useSession({
   const [streamKey, setStreamKey] = useState('');
   const [startedAt, setStartedAt] = useState(null);
   const [micHolder, setMicHolder] = useState(null);
+  // 'unknown' | 'checking' | 'ok' | 'unreachable'
+  const [healthStatus, setHealthStatus] = useState('unknown');
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
@@ -111,6 +113,25 @@ export function useSession({
     });
   }
 
+  // ─── Health check ────────────────────────────────────────
+
+  async function checkHealth(url) {
+    const target = url ?? backendUrlRef.current;
+    if (!target) { setHealthStatus('unknown'); return false; }
+    setHealthStatus('checking');
+    try {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 5000);
+      const res = await fetch(`${target}/health`, { signal: ac.signal });
+      clearTimeout(timer);
+      setHealthStatus(res.ok ? 'ok' : 'unreachable');
+      return res.ok;
+    } catch {
+      setHealthStatus('unreachable');
+      return false;
+    }
+  }
+
   // ─── Connect / Disconnect ───────────────────────────────
 
   async function connect({ backendUrl: url, apiKey: key, streamKey: sk }) {
@@ -127,6 +148,7 @@ export function useSession({
     backendUrlRef.current = url;
 
     setConnected(true);
+    setHealthStatus('ok');
     setBackendUrl(url);
     setApiKey(key);
     setStreamKey(sk);
@@ -324,6 +346,7 @@ export function useSession({
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
+    healthStatus, checkHealth,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
     claimMic, releaseMic,
     getStats, eraseSelf,

@@ -1639,3 +1639,41 @@
   text-overflow: ellipsis;
   color: var(--color-text-dim);
 }
+
+/* ─── Network banner ─────────────────────────────────────── */
+
+.network-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: #7a4800;
+  color: #ffd27a;
+  font-size: 13px;
+  border-bottom: 1px solid #a06200;
+  flex-shrink: 0;
+}
+
+.network-banner__icon {
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.network-banner__msg {
+  flex: 1;
+}
+
+.network-banner__btn {
+  background: rgba(255, 210, 122, 0.15);
+  border: 1px solid rgba(255, 210, 122, 0.4);
+  color: #ffd27a;
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.network-banner__btn:hover {
+  background: rgba(255, 210, 122, 0.25);
+}
