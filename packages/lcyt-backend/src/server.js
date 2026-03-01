@@ -34,6 +34,13 @@ if (!process.env.ADMIN_KEY) {
   console.info('  Set ADMIN_KEY in your environment to enable API key management via HTTP.');
 }
 
+const _allowedDomains = process.env.ALLOWED_DOMAINS ?? 'lcyt.fi,www.lcyt.fi';
+if (_allowedDomains === '*') {
+  console.warn('⚠ ALLOWED_DOMAINS=* — sessions allowed from any domain.');
+} else {
+  console.info(`✓ Allowed session domains: ${_allowedDomains}`);
+}
+
 if (process.env.USAGE_PUBLIC) {
   console.info('✓ GET /usage is public (USAGE_PUBLIC is set).');
 } else {

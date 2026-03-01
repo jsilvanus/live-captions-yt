@@ -5,6 +5,21 @@ import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourly
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
+const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi';
+
+/**
+ * Check whether a domain is permitted to register sessions.
+ * Reads ALLOWED_DOMAINS env var (comma-separated list, or "*" for all).
+ * Defaults to "lcyt.fi,www.lcyt.fi" when not set.
+ * @param {string} domain
+ * @returns {boolean}
+ */
+function isAllowedDomain(domain) {
+  const raw = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
+  if (raw === '*') return true;
+  return raw.split(',').map(d => d.trim()).includes(domain);
+}
+
 /**
  * Factory for the /live router.
  *
@@ -29,6 +44,12 @@ export function createLiveRouter(db, store, jwtSecret) {
     // Validate required fields
     if (!apiKey || !streamKey || !domain) {
       return res.status(400).json({ error: 'apiKey, streamKey, and domain are required' });
+    }
+
+    // Check domain allowlist
+    if (!isAllowedDomain(domain)) {
+      writeAuthEvent(db, { apiKey, eventType: 'domain_not_allowed', domain });
+      return res.status(403).json({ error: 'Domain not allowed' });
     }
 
     // Validate API key against SQLite
