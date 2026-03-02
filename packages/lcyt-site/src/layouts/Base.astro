@@ -1,0 +1,31 @@
+---
+import '../styles/global.css';
+export interface Props {
+  title: string;
+}
+const { title } = Astro.props;
+---
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{title} — LCYT</title>
+    
+  </head>
+  <body>
+    <nav class="site-nav">
+      <a class="brand" href="/">LCYT</a>
+      <ul class="nav-links">
+        <li><a href="/lib">Library</a></li>
+        <li><a href="/api">API</a></li>
+        <li><a href="/mcp">MCP</a></li>
+        <li><a href="/blog">Blog</a></li>
+        <li><a href="/app">App</a></li>
+      </ul>
+    </nav>
+    <div class="page-content">
+      <slot />
+    </div>
+  </body>
+</html>

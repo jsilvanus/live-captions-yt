@@ -1,0 +1,47 @@
+---
+import { getCollection, render } from 'astro:content';
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const JS_ORDER = ['README', 'sender', 'backend-sender', 'config', 'logger', 'errors'];
+const PY_ORDER = [
+  'python/README', 'python/sender', 'python/backend-sender',
+  'python/config', 'python/errors',
+];
+
+function docLabel(id: string, title?: string): string {
+  if (title) return title;
+  if (id === 'README' || id === 'python/README') return 'Overview';
+  const name = id.includes('/') ? id.split('/').pop()! : id;
+  return name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+const allDocs = await getCollection('lib');
+
+const jsDocs = JS_ORDER.map(id => allDocs.find(d => d.id === id)).filter(Boolean) as typeof allDocs;
+const pyDocs = PY_ORDER.map(id => allDocs.find(d => d.id === id)).filter(Boolean) as typeof allDocs;
+
+const docs = [...jsDocs, ...pyDocs];
+
+const sidebarSections = [
+  {
+    heading: 'Node.js',
+    items: jsDocs.map(d => ({ id: d.id, label: docLabel(d.id, d.data.title) })),
+  },
+  {
+    heading: 'Python',
+    items: pyDocs.map(d => ({ id: d.id, label: docLabel(d.id, d.data.title) })),
+  },
+];
+
+const rendered = await Promise.all(docs.map(doc => render(doc)));
+---
+<DocsLayout title="Library" sidebarSections={sidebarSections} sidebarHeading="Library">
+  {docs.map((doc, i) => {
+    const { Content } = rendered[i];
+    return (
+      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+        <Content />
+      </section>
+    );
+  })}
+</DocsLayout>

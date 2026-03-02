@@ -1,0 +1,49 @@
+---
+import { getCollection, render } from 'astro:content';
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const ENDPOINTS_ORDER = [
+  'sessions', 'sync', 'captions', 'events',
+  'keys', 'stats', 'usage', 'mic', 'health', 'contact',
+];
+
+function docLabel(id: string, title?: string): string {
+  if (title) return title;
+  if (id === 'README') return 'Overview';
+  return id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+const allDocs = await getCollection('api');
+
+const readme = allDocs.find(d => d.id === 'README');
+const endpointDocs = ENDPOINTS_ORDER
+  .map(id => allDocs.find(d => d.id === id))
+  .filter(Boolean) as typeof allDocs;
+
+const docs = [
+  ...(readme ? [readme] : []),
+  ...endpointDocs,
+];
+
+const sidebarSections = [
+  {
+    items: readme ? [{ id: readme.id, label: 'Overview' }] : [],
+  },
+  {
+    heading: 'Endpoints',
+    items: endpointDocs.map(d => ({ id: d.id, label: docLabel(d.id, d.data.title) })),
+  },
+];
+
+const rendered = await Promise.all(docs.map(doc => render(doc)));
+---
+<DocsLayout title="API Reference" sidebarSections={sidebarSections} sidebarHeading="API">
+  {docs.map((doc, i) => {
+    const { Content } = rendered[i];
+    return (
+      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+        <Content />
+      </section>
+    );
+  })}
+</DocsLayout>

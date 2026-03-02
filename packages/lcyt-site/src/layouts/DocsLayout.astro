@@ -1,0 +1,47 @@
+---
+import Base from './Base.astro';
+
+export interface SidebarItem {
+  id: string;
+  label: string;
+}
+
+export interface SidebarSection {
+  heading?: string;
+  items: SidebarItem[];
+}
+
+export interface Props {
+  title: string;
+  sidebarSections?: SidebarSection[];
+  sidebarItems?: SidebarItem[];
+  sidebarHeading?: string;
+}
+
+const { title, sidebarSections, sidebarItems = [], sidebarHeading = 'Contents' } = Astro.props;
+
+// Normalise: if sections are provided use them, otherwise wrap flat items in one section
+const sections: SidebarSection[] = sidebarSections ?? [{ items: sidebarItems }];
+---
+<Base title={title}>
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <h3>{sidebarHeading}</h3>
+      {sections.map(section => (
+        <>
+          {section.heading && <h4 class="sidebar-group-heading">{section.heading}</h4>}
+          <ul>
+            {section.items.map(item => (
+              <li>
+                <a href={`#${item.id.replace(/\//g, '-')}`}>{item.label}</a>
+              </li>
+            ))}
+          </ul>
+        </>
+      ))}
+    </aside>
+    <main class="docs-content">
+      <slot />
+    </main>
+  </div>
+</Base>
