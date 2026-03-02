@@ -88,6 +88,10 @@ app.use(express.json({ limit: '64kb' }));
 
 // Request logging middleware
 app.use((req, res, next) => {
+  if (req.path === '/health') {
+    res.on('finish', () => process.stdout.write('.'));
+    return next();
+  }
   const start = Date.now();
   res.on('finish', () => {
     const ms = Date.now() - start;
