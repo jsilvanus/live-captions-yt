@@ -5,7 +5,8 @@ import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourly
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
-const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
+// NOTE: http://localhost:5173 is included for the Vite dev server — remove it in production.
+const DEFAULT_ALLOWED_DOMAINS = 'https://lcyt.fi,https://www.lcyt.fi,http://localhost:5173';
 
 /**
  * Check whether a domain is permitted to register sessions.
@@ -141,7 +142,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const { sequence, domain } = req.body || {};
+    const { sequence } = req.body || {};
 
     if (sequence !== undefined) {
       const seq = Number(sequence);
