@@ -75,6 +75,25 @@ const [sttLang, setSttLangState] = useState(savedLang);
   const [credError, setCredError] = useState('');
   const credFileRef = useRef(null);
 
+  // ── STT utterance controls ────────────────────────────────
+  const [utteranceEndButton, setUtteranceEndButton] = useState(
+    () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
+  );
+  const [utteranceEndTimer, setUtteranceEndTimer] = useState(
+    () => { try { return parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10); } catch { return 0; } }
+  );
+
+  // ── VAD tab ───────────────────────────────────────────────
+  const [vadEnabled, setVadEnabled] = useState(
+    () => { try { return localStorage.getItem('lcyt:client-vad') === '1'; } catch { return false; } }
+  );
+  const [vadSilenceMs, setVadSilenceMs] = useState(
+    () => { try { return parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10); } catch { return 500; } }
+  );
+  const [vadThreshold, setVadThreshold] = useState(
+    () => { try { return parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'); } catch { return 0.01; } }
+  );
+
   // Apply theme and text size on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem('lcyt-theme') || 'auto';
@@ -117,6 +136,13 @@ const [sttLang, setSttLangState] = useState(savedLang);
     setSttEngineState(getSttEngine());
     setCredentialState(getGoogleCredential());
     setCredError('');
+    // Re-sync VAD state
+    try { setVadEnabled(localStorage.getItem('lcyt:client-vad') === '1'); } catch {}
+    try { setVadSilenceMs(parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10)); } catch {}
+    try { setVadThreshold(parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01')); } catch {}
+    // Re-sync utterance control state
+    try { setUtteranceEndButton(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
+    try { setUtteranceEndTimer(parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10)); } catch {}
   }, [isOpen]);
 
   // Keep credential state in sync with the module (e.g. cleared externally)
@@ -278,8 +304,8 @@ const [sttLang, setSttLangState] = useState(savedLang);
       )
     : [];
 
-  const TABS = ['connection', 'captions', 'stt', 'status', 'actions'];
-  const TAB_LABELS = { connection: 'Connection', captions: 'Captions', stt: 'STT / Audio', status: 'Status', actions: 'Actions' };
+  const TABS = ['connection', 'captions', 'stt', 'vad', 'status', 'actions'];
+  const TAB_LABELS = { connection: 'Connection', captions: 'Captions', stt: 'STT / Audio', vad: 'VAD', status: 'Status', actions: 'Actions' };
 
   return (
     <div className="settings-modal">
@@ -511,6 +537,48 @@ const [sttLang, setSttLangState] = useState(savedLang);
                 <span className="settings-field__hint">{sttLang}</span>
               </div>
 
+              {/* Utterance end controls */}
+              <div className="settings-field">
+                <label className="settings-field__label">Utterance end button</label>
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={utteranceEndButton}
+                    onChange={e => {
+                      setUtteranceEndButton(e.target.checked);
+                      try { localStorage.setItem('lcyt:utterance-end-button', e.target.checked ? '1' : '0'); } catch {}
+                    }}
+                  />
+                  Show 🗣 on meter during utterance — click to force end
+                </label>
+                <span className="settings-field__hint">
+                  While speech is being recognized, a speak icon appears on the audio meter.
+                  Clicking it stops the recognizer and forces a final result immediately.
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-field__label">
+                  Utterance end timer: <strong>{utteranceEndTimer === 0 ? 'off' : `${utteranceEndTimer} s`}</strong>
+                </label>
+                <input
+                  type="range"
+                  className="settings-field__input"
+                  style={{ padding: 0, cursor: 'pointer' }}
+                  min="0" max="20" step="1"
+                  value={utteranceEndTimer}
+                  onChange={e => {
+                    const v = parseInt(e.target.value, 10);
+                    setUtteranceEndTimer(v);
+                    try { localStorage.setItem('lcyt:utterance-end-timer', String(v)); } catch {}
+                  }}
+                />
+                <span className="settings-field__hint">
+                  Automatically force end the utterance after this many seconds (0 = disabled).
+                  Useful for segmenting long speeches into shorter captions.
+                </span>
+              </div>
+
               {/* Cloud STT-specific settings */}
               {sttEngine === 'cloud' && (
                 <>
@@ -623,6 +691,79 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   </div>
                 </>
               )}
+
+            </div>
+          )}
+
+          {/* ── VAD ── */}
+          {activeTab === 'vad' && (
+            <div className="settings-panel settings-panel--active">
+
+              <div className="settings-field">
+                <label className="settings-field__label">Client-side VAD</label>
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={vadEnabled}
+                    onChange={e => {
+                      setVadEnabled(e.target.checked);
+                      try { localStorage.setItem('lcyt:client-vad', e.target.checked ? '1' : '0'); } catch {}
+                    }}
+                  />
+                  Enable silence detection (WebKit engine only)
+                </label>
+                <span className="settings-field__hint">
+                  When enabled, the browser monitors microphone energy and forces the recognizer
+                  to finalize when silence is detected. Helps segment long unbroken speech on
+                  mobile Chrome.
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-field__label">
+                  Silence duration: <strong>{vadSilenceMs} ms</strong>
+                </label>
+                <input
+                  type="range"
+                  className="settings-field__input"
+                  style={{ padding: 0, cursor: 'pointer' }}
+                  min="100" max="2000" step="100"
+                  value={vadSilenceMs}
+                  disabled={!vadEnabled}
+                  onChange={e => {
+                    const v = parseInt(e.target.value, 10);
+                    setVadSilenceMs(v);
+                    try { localStorage.setItem('lcyt:client-vad-silence-ms', String(v)); } catch {}
+                  }}
+                />
+                <span className="settings-field__hint">
+                  How long (ms) energy must stay below the threshold before the recognizer is
+                  stopped to force a final result. Default: 500 ms.
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-field__label">
+                  Energy threshold: <strong>{Number(vadThreshold).toFixed(3)}</strong>
+                </label>
+                <input
+                  type="range"
+                  className="settings-field__input"
+                  style={{ padding: 0, cursor: 'pointer' }}
+                  min="0.001" max="0.1" step="0.001"
+                  value={vadThreshold}
+                  disabled={!vadEnabled}
+                  onChange={e => {
+                    const v = parseFloat(e.target.value);
+                    setVadThreshold(v);
+                    try { localStorage.setItem('lcyt:client-vad-threshold', String(v)); } catch {}
+                  }}
+                />
+                <span className="settings-field__hint">
+                  RMS amplitude threshold below which audio is considered silent. Lower values
+                  are more sensitive. Default: 0.01.
+                </span>
+              </div>
 
             </div>
           )}
