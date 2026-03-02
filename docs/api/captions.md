@@ -1,12 +1,12 @@
 ---
-title: "Caption Delivery"
-methods: [POST, GET]
+title: "/captions — Send Captions"
+methods: [POST]
 auth: [bearer]
 ---
 
-# Caption Delivery
+# /captions — Send Captions
 
-Endpoints for sending captions and receiving real-time delivery results via SSE.
+Queue one or more captions for delivery to YouTube. Returns `202 Accepted` immediately; the actual YouTube delivery result arrives on the SSE event stream (`GET /events`).
 
 ---
 

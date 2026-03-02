@@ -1,12 +1,12 @@
 ---
-title: "Statistics, Usage & Mic Lock"
-methods: [GET, DELETE, POST]
-auth: [bearer, adminkey, none]
+title: "/stats — Usage Statistics"
+methods: [GET, DELETE]
+auth: [bearer]
 ---
 
-# Statistics, Usage & Mic Lock
+# /stats — Usage Statistics
 
-Endpoints for per-key statistics, GDPR data erasure, domain-level usage analytics, and the collaborative mic lock.
+Per-key usage statistics and GDPR data erasure.
 
 ---
 

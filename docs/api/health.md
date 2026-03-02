@@ -1,12 +1,12 @@
 ---
-title: "Health & Contact"
+title: "/health — Health Check"
 methods: [GET]
 auth: [none]
 ---
 
-# Health & Contact
+# /health — Health Check
 
-Utility endpoints that do not require authentication.
+Server health information. Suitable for load balancer health probes and uptime monitoring.
 
 ---
 

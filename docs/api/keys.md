@@ -1,5 +1,5 @@
 ---
-title: "API Key Management"
+title: "/keys — API Key Management"
 methods: [POST, GET, PATCH, DELETE]
 auth: [adminkey, none]
 ---

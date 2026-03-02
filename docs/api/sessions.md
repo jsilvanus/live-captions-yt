@@ -1,12 +1,12 @@
 ---
-title: "Session Management"
+title: "/live — Session Management"
 methods: [POST, GET, PATCH, DELETE]
 auth: [none, bearer]
 ---
 
-# Session Management
+# /live — Session Management
 
-Endpoints for creating, querying, updating, and deleting caption relay sessions, and for synchronising clocks.
+Endpoints for creating, querying, updating, and deleting caption relay sessions.
 
 ---
 
