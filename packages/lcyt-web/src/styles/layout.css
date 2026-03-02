@@ -22,6 +22,7 @@
   --tab-height: 36px;
   --font-mono: 'Cascadia Code', 'Fira Code', 'Consolas', 'Menlo', monospace;
   --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --caption-text-size: 13px;
 }
 
 /* Light theme override */

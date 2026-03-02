@@ -23,6 +23,11 @@ function applyTheme(value) {
   try { localStorage.setItem('lcyt-theme', value); } catch {}
 }
 
+function applyTextSize(px) {
+  document.documentElement.style.setProperty('--caption-text-size', px + 'px');
+  try { localStorage.setItem('lcyt:textSize', String(px)); } catch {}
+}
+
 export function SettingsModal({ isOpen, onClose }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
@@ -35,6 +40,9 @@ export function SettingsModal({ isOpen, onClose }) {
   const [streamKey, setStreamKey] = useState('');
   const [autoConnect, setAutoConnect] = useState(false);
   const [theme, setTheme] = useState('auto');
+  const [textSize, setTextSize] = useState(
+    () => { try { return parseInt(localStorage.getItem('lcyt:textSize') || '13', 10); } catch { return 13; } }
+  );
   const [batchInterval, setBatchInterval] = useState(0);
   const [transcriptionOffset, setTranscriptionOffset] = useState(0);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -56,10 +64,7 @@ export function SettingsModal({ isOpen, onClose }) {
   const [selectedMicId, setSelectedMicId] = useState(
     () => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } }
   );
-  const [fabSide, setFabSide] = useState(
-    () => { try { return localStorage.getItem('lcyt:fabSide') || 'right'; } catch { return 'right'; } }
-  );
-  const [sttLang, setSttLangState] = useState(savedLang);
+const [sttLang, setSttLangState] = useState(savedLang);
   const [sttLangDropdownOpen, setSttLangDropdownOpen] = useState(false);
   const [sttModel, setSttModel] = useState(cloudCfg.model || 'latest_long');
   const [cloudPunctuation, setCloudPunctuation] = useState(cloudCfg.punctuation !== false);
@@ -70,11 +75,14 @@ export function SettingsModal({ isOpen, onClose }) {
   const [credError, setCredError] = useState('');
   const credFileRef = useRef(null);
 
-  // Apply theme on mount
+  // Apply theme and text size on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem('lcyt-theme') || 'auto';
     setTheme(savedTheme);
     applyTheme(savedTheme);
+    const savedSize = parseInt(localStorage.getItem('lcyt:textSize') || '13', 10);
+    setTextSize(savedSize);
+    applyTextSize(savedSize);
   }, []);
 
   useEffect(() => {
@@ -146,6 +154,12 @@ export function SettingsModal({ isOpen, onClose }) {
     const v = parseFloat(value);
     setTranscriptionOffset(v);
     try { localStorage.setItem('lcyt:transcription-offset', String(v)); } catch {}
+  }
+
+  function onTextSizeChange(value) {
+    const v = parseInt(value, 10);
+    setTextSize(v);
+    applyTextSize(v);
   }
 
   async function handleConnect() {
@@ -383,6 +397,7 @@ export function SettingsModal({ isOpen, onClose }) {
                   min="-30" max="10" step="0.1"
                   value={transcriptionOffset}
                   onChange={e => onTranscriptionOffsetChange(e.target.value)}
+                  onDoubleClick={() => onTranscriptionOffsetChange('0')}
                   style={{ padding: 0, cursor: 'pointer' }}
                 />
               </div>
@@ -392,30 +407,17 @@ export function SettingsModal({ isOpen, onClose }) {
                 so captions line up with the moment the speaker started talking in the YouTube stream.
               </p>
               <div className="settings-field" style={{ marginTop: 16 }}>
-                <label className="settings-field__label">Send-line button side (mobile)</label>
-                <div className="stt-engine-list">
-                  {[
-                    { value: 'right', label: 'Right' },
-                    { value: 'left',  label: 'Left'  },
-                  ].map(opt => (
-                    <label key={opt.value}
-                      className={`stt-engine-option${fabSide === opt.value ? ' stt-engine-option--active' : ''}`}
-                    >
-                      <input type="radio" name="fab-side" value={opt.value}
-                        checked={fabSide === opt.value}
-                        onChange={() => {
-                          setFabSide(opt.value);
-                          try { localStorage.setItem('lcyt:fabSide', opt.value); } catch {}
-                          window.dispatchEvent(new Event('lcyt:stt-config-changed'));
-                        }}
-                        className="stt-engine-option__radio"
-                      />
-                      <div className="stt-engine-option__body">
-                        <span className="stt-engine-option__name">{opt.label}</span>
-                      </div>
-                    </label>
-                  ))}
-                </div>
+                <label className="settings-field__label">
+                  Text size: <span>{textSize}px</span>
+                </label>
+                <input
+                  className="settings-field__input"
+                  type="range"
+                  min="10" max="24" step="1"
+                  value={textSize}
+                  onChange={e => onTextSizeChange(e.target.value)}
+                  style={{ padding: 0, cursor: 'pointer' }}
+                />
               </div>
             </div>
           )}
