@@ -43,6 +43,17 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const meterCanvasRef  = useRef(null);
   const lastFinalRef    = useRef('');   // last final transcript sent (for mobile deduplication)
 
+  // Utterance start timestamp — set on first text, cleared after final is dispatched
+  const utteranceStartRef  = useRef(null);
+
+  // Client-side VAD refs (only used when lcyt:client-vad === '1')
+  const vadTimerRef        = useRef(null);   // setTimeout handle for the VAD check loop
+  const vadAudioCtxRef     = useRef(null);   // AudioContext created locally for VAD
+  const vadAnalyserRef     = useRef(null);   // AnalyserNode created locally for VAD
+  const vadLocalStreamRef  = useRef(null);   // MediaStream obtained locally for VAD
+  const vadSpeakingRef     = useRef(false);  // current VAD speaking state
+  const vadSilenceStartRef = useRef(null);   // timestamp (ms) when silence began
+
   // Cloud STT refs
   const streamRef    = useRef(null);   // MediaStream
   const recorderRef  = useRef(null);   // current MediaRecorder
@@ -82,11 +93,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const iHaveMic    = micHolder === clientId;
   const otherHasMic = micHolder !== null && !iHaveMic;
 
-  function pushFinalTranscript(text) {
+  function pushFinalTranscript(text, timestamp) {
     const t = String(text || '').trim();
     if (!t) return;
     // Do not render finalized words in the audio panel UI; just send them.
-    sendTranscript(t);
+    sendTranscript(t, timestamp);
   }
 
   function getTimestampWithOffset() {
@@ -99,10 +110,17 @@ export const AudioPanel = forwardRef(function AudioPanel(
     return new Date(ms).toISOString().replace('Z', '');
   }
 
-  async function sendTranscript(text) {
+  // Returns an utterance start timestamp: uses offset-adjusted time if available,
+  // otherwise falls back to a plain ISO string (no trailing Z).
+  function getUtteranceTimestamp() {
+    return getTimestampWithOffset() || new Date().toISOString().replace('Z', '');
+  }
+
+  async function sendTranscript(text, explicitTimestamp) {
     if (!text) return;
     if (session?.connected) {
-      const timestamp = getTimestampWithOffset();
+      // Use explicit timestamp when provided (e.g. utterance start), otherwise compute now
+      const timestamp = explicitTimestamp !== undefined ? explicitTimestamp : getTimestampWithOffset();
       try {
         // Honor batching: if batch interval > 0, queue via construct
         const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
@@ -200,6 +218,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
         if (event.results[i].isFinal) final += t;
         else interim += t;
       }
+      // Capture utterance start on first text (interim or final) if not already set
+      if ((interim || final) && !utteranceStartRef.current) {
+        utteranceStartRef.current = getUtteranceTimestamp();
+      }
       if (!isMobile) setInterimText(interim);
       if (final) {
         if (isMobile) {
@@ -207,7 +229,9 @@ export const AudioPanel = forwardRef(function AudioPanel(
           if (trimmed === lastFinalRef.current) return;
           lastFinalRef.current = trimmed;
         }
-        pushFinalTranscript(final);
+        const ts = utteranceStartRef.current;
+        utteranceStartRef.current = null;
+        pushFinalTranscript(final, ts);
       }
     };
 
@@ -217,6 +241,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
       // Auto-restart so continuous mode survives silence pauses
       if (recognitionRef.current) {
         try { recognition.start(); } catch {}
+        // Restart VAD check loop if enabled — it exits early after forcing finalization
+        if (localStorage.getItem('lcyt:client-vad') === '1' && !vadTimerRef.current) {
+          startVAD(recognition);
+        }
       }
     };
 
@@ -234,12 +262,20 @@ export const AudioPanel = forwardRef(function AudioPanel(
     setListening(true);
     setInterimText('');
     lastFinalRef.current = '';
+    utteranceStartRef.current = null;
+
+    // Optional client-side VAD — enabled via localStorage flag lcyt:client-vad = '1'
+    if (localStorage.getItem('lcyt:client-vad') === '1') {
+      startVAD(recognition);
+    }
   }
 
   function stopWebkit() {
     const rec = recognitionRef.current;
     recognitionRef.current = null;
     if (rec) try { rec.stop(); } catch {}
+    stopVAD();
+    utteranceStartRef.current = null;
     // Stop meter stream if we opened one for WebKit
     if (meterStreamRef.current) {
       try { meterStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
@@ -248,6 +284,104 @@ export const AudioPanel = forwardRef(function AudioPanel(
     detachMeter();
     setListening(false);
     setInterimText('');
+  }
+
+  // ─── Client-side VAD (optional) ──────────────────────────────────────────
+
+  function stopVAD() {
+    if (vadTimerRef.current) {
+      clearTimeout(vadTimerRef.current);
+      vadTimerRef.current = null;
+    }
+    if (vadAnalyserRef.current) {
+      try { vadAnalyserRef.current.disconnect(); } catch {}
+      vadAnalyserRef.current = null;
+    }
+    if (vadAudioCtxRef.current) {
+      try { vadAudioCtxRef.current.close(); } catch {}
+      vadAudioCtxRef.current = null;
+    }
+    if (vadLocalStreamRef.current) {
+      try { vadLocalStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+      vadLocalStreamRef.current = null;
+    }
+    vadSpeakingRef.current = false;
+    vadSilenceStartRef.current = null;
+  }
+
+  async function startVAD(recognition) {
+    try {
+      const silenceMs = Math.max(0, parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10));
+      const threshold = Math.max(0, parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'));
+
+      // Prefer the already-running meter analyser; fall back to locally-created VAD analyser or create one
+      let analyser = analyserRef.current || vadAnalyserRef.current;
+      if (!analyser) {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (!AudioCtx) return;
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          vadLocalStreamRef.current = stream;
+          const ctx = new AudioCtx();
+          vadAudioCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const an = ctx.createAnalyser();
+          an.fftSize = 256;
+          src.connect(an);
+          vadAnalyserRef.current = an;
+          analyser = an;
+        } catch (e) {
+          console.warn('Client VAD: could not obtain audio stream for analysis', e);
+          return;
+        }
+      }
+
+      const data = new Float32Array(analyser.fftSize);
+      vadSpeakingRef.current = false;
+      vadSilenceStartRef.current = null;
+
+      function check() {
+        // Stop the loop if recognition was torn down
+        if (!recognitionRef.current) return;
+        try {
+          analyser.getFloatTimeDomainData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
+          const rms = Math.sqrt(sum / data.length);
+
+          if (rms >= threshold) {
+            // Speech energy detected
+            vadSilenceStartRef.current = null;
+            if (!vadSpeakingRef.current) {
+              vadSpeakingRef.current = true;
+            }
+            // Capture utterance start timestamp before the first interim/final arrives
+            if (!utteranceStartRef.current) {
+              utteranceStartRef.current = getUtteranceTimestamp();
+            }
+          } else {
+            // Below threshold — measure sustained silence
+            if (vadSpeakingRef.current) {
+              if (!vadSilenceStartRef.current) {
+                vadSilenceStartRef.current = Date.now();
+              } else if (Date.now() - vadSilenceStartRef.current >= silenceMs) {
+                // Sustained silence: flip speaking state and force finalization
+                vadSpeakingRef.current = false;
+                vadSilenceStartRef.current = null;
+                try { recognition.stop(); } catch {}
+                // recognition.onend will auto-restart; utteranceStartRef cleared by onresult
+                return; // stop polling until onend restarts recognition
+              }
+            }
+          }
+        } catch {}
+        vadTimerRef.current = setTimeout(check, 50);
+      }
+
+      vadTimerRef.current = setTimeout(check, 50);
+    } catch (e) {
+      console.warn('Client VAD: initialization error', e);
+    }
   }
 
   // ─── Cloud STT engine ─────────────────────────────────────────────────────
