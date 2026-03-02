@@ -2,7 +2,10 @@
 import { getCollection, render } from 'astro:content';
 import DocsLayout from '../../layouts/DocsLayout.astro';
 
-const ENDPOINTS_ORDER = ['sessions', 'captions', 'keys', 'stats', 'health'];
+const ENDPOINTS_ORDER = [
+  'sessions', 'sync', 'captions', 'events',
+  'keys', 'stats', 'usage', 'mic', 'health', 'contact',
+];
 
 function docLabel(id: string, title?: string): string {
   if (title) return title;
