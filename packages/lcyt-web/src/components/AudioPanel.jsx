@@ -31,8 +31,9 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const [cloudError, setCloudError] = useState('');
 
   // WebKit refs
-  const recognitionRef = useRef(null);
-  const meterStreamRef = useRef(null); // MediaStream used for analyser when WebKit is active
+  const recognitionRef    = useRef(null);
+  const meterStreamRef    = useRef(null); // MediaStream used for analyser when WebKit is active
+  const finalizedIndexRef = useRef(0);   // tracks last finalized result index (Android Chrome workaround)
   const audioCtxRef     = useRef(null);
   const analyserRef     = useRef(null);
   const meterAnimRef    = useRef(null);
@@ -186,13 +187,23 @@ export const AudioPanel = forwardRef(function AudioPanel(
     recognition.interimResults = true;
     recognition.lang           = getSttLang();
 
+    finalizedIndexRef.current = 0; // reset for this recognition session
+
     recognition.onresult = (event) => {
       let interim = '';
       let final   = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      // Android Chrome always reports resultIndex=0, which would cause the loop
+      // to re-process already-finalized results on every event and send duplicates.
+      // Use finalizedIndexRef to skip results we have already sent as final.
+      const startIdx = Math.max(event.resultIndex, finalizedIndexRef.current);
+      for (let i = startIdx; i < event.results.length; i++) {
         const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += t;
-        else interim += t;
+        if (event.results[i].isFinal) {
+          final += t;
+          finalizedIndexRef.current = i + 1;
+        } else {
+          interim += t;
+        }
       }
       setInterimText(interim);
       if (final) pushFinalTranscript(final);
@@ -201,6 +212,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     recognition.onstart = () => { }; 
 
     recognition.onend = () => {
+      finalizedIndexRef.current = 0; // results list is cleared on restart
       // Auto-restart so continuous mode survives silence pauses
       if (recognitionRef.current) {
         try { recognition.start(); } catch {}
