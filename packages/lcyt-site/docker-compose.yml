@@ -26,3 +26,4 @@ services:
 
 volumes:
   lcyt-db:
+    external: true
