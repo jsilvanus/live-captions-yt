@@ -40,5 +40,4 @@ services:
       retries: 3
 
 volumes:
-  lcyt-db:
-    external: true
+  lcyt-db: {}
