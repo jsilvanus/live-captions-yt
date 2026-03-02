@@ -14,6 +14,21 @@ services:
       DB_PATH: /data/lcyt.sqlite
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
       MCP_REQUIRE_API_KEY: ${MCP_REQUIRE_API_KEY:-0}
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-lcyt.fi,www.lcyt.fi,localhost}
+      USAGE_PUBLIC: ${USAGE_PUBLIC:-}
+      STATIC_DIR: ${STATIC_DIR:-}
+      # Contact information (GET /contact)
+      CONTACT_NAME: ${CONTACT_NAME:-}
+      CONTACT_EMAIL: ${CONTACT_EMAIL:-}
+      CONTACT_PHONE: ${CONTACT_PHONE:-}
+      CONTACT_WEBSITE: ${CONTACT_WEBSITE:-}
+      # Session / cleanup tuning (milliseconds)
+      SESSION_TTL: ${SESSION_TTL:-7200000}
+      CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-300000}
+      # Revoked key cleanup (days + interval ms)
+      REVOKED_KEY_TTL_DAYS: ${REVOKED_KEY_TTL_DAYS:-30}
+      REVOKED_KEY_CLEANUP_INTERVAL: ${REVOKED_KEY_CLEANUP_INTERVAL:-86400000}
     restart: unless-stopped
     volumes:
       - lcyt-db:/data
