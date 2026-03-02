@@ -15,6 +15,10 @@ function blobToBase64(blob) {
   });
 }
 
+function isMobileDevice() {
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AudioPanel = forwardRef(function AudioPanel(
@@ -37,6 +41,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const analyserRef     = useRef(null);
   const meterAnimRef    = useRef(null);
   const meterCanvasRef  = useRef(null);
+  const lastFinalRef    = useRef('');   // last final transcript sent (for mobile deduplication)
 
   // Cloud STT refs
   const streamRef    = useRef(null);   // MediaStream
@@ -183,7 +188,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
     const recognition = new SR();
     recognition.continuous     = true;
-    recognition.interimResults = true;
+    const isMobile = isMobileDevice();
+    recognition.interimResults = !isMobile;
     recognition.lang           = getSttLang();
 
     recognition.onresult = (event) => {
@@ -194,8 +200,15 @@ export const AudioPanel = forwardRef(function AudioPanel(
         if (event.results[i].isFinal) final += t;
         else interim += t;
       }
-      setInterimText(interim);
-      if (final) pushFinalTranscript(final);
+      if (!isMobile) setInterimText(interim);
+      if (final) {
+        if (isMobile) {
+          const trimmed = final.trim();
+          if (trimmed === lastFinalRef.current) return;
+          lastFinalRef.current = trimmed;
+        }
+        pushFinalTranscript(final);
+      }
     };
 
     recognition.onstart = () => { }; 
@@ -220,6 +233,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     recognition.start();
     setListening(true);
     setInterimText('');
+    lastFinalRef.current = '';
   }
 
   function stopWebkit() {
