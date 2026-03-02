@@ -20,6 +20,7 @@ dist/
 # Screenshot artifacts
 packages/lcyt-site/screenshots/
 packages/lcyt-web/dist/index.html
+docs/screenshots/*.png
 
 # Ignore database files, all .db files globally
 *.db
