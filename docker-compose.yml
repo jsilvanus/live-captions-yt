@@ -1,5 +1,6 @@
-version: '3.8'
 services:
+  # LCYT API and MCP server
+  # (frontend is served as static files separately by nginx)
   lcyt-site:
     build:
       context: .
@@ -7,7 +8,7 @@ services:
     image: lcyt-site:latest
     ports:
       - "3000:3000"
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     environment:
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET}
@@ -15,7 +16,7 @@ services:
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
       MCP_REQUIRE_API_KEY: ${MCP_REQUIRE_API_KEY:-0}
       ADMIN_KEY: ${ADMIN_KEY:-}
-      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-lcyt.fi,www.lcyt.fi,localhost}
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-lcyt.fi,www.lcyt.fi,app.lcyt.fi,localhost}
       USAGE_PUBLIC: ${USAGE_PUBLIC:-}
       STATIC_DIR: ${STATIC_DIR:-}
       # Contact information (GET /contact)

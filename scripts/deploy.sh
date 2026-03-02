@@ -100,7 +100,7 @@ echo "    Build log: $BUILD_LOG"
 # Step 3: Start / restart the site container via Docker Compose
 # ---------------------------------------------------------------------------
 
-COMPOSE_DIR="$REPO_DIR/packages/lcyt-site"
+COMPOSE_DIR="$REPO_DIR"
 
 echo "==> Starting lcyt-site (docker compose up -d)"
 docker compose \
