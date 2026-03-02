@@ -2,10 +2,13 @@
 node_modules/
 .DS_Store
 *.log
-.env
 python/dist/
 __pycache__/
 *.pyc
+
+# Environment variable files and secrets
+.env
+.secret
 
 # Claude- Claude's files
 claude/
