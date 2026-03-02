@@ -1,3 +1,9 @@
+---
+title: "API Key Management"
+methods: [POST, GET, PATCH, DELETE]
+auth: [adminkey, none]
+---
+
 # API Key Management
 
 Admin endpoints for managing API keys. All endpoints require the `X-Admin-Key` header unless noted.

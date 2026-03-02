@@ -1,3 +1,9 @@
+---
+title: "Statistics, Usage & Mic Lock"
+methods: [GET, DELETE, POST]
+auth: [bearer, adminkey, none]
+---
+
 # Statistics, Usage & Mic Lock
 
 Endpoints for per-key statistics, GDPR data erasure, domain-level usage analytics, and the collaborative mic lock.

@@ -1,3 +1,9 @@
+---
+title: "Caption Delivery"
+methods: [POST, GET]
+auth: [bearer]
+---
+
 # Caption Delivery
 
 Endpoints for sending captions and receiving real-time delivery results via SSE.

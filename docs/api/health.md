@@ -1,3 +1,9 @@
+---
+title: "Health & Contact"
+methods: [GET]
+auth: [none]
+---
+
 # Health & Contact
 
 Utility endpoints that do not require authentication.

@@ -1,3 +1,7 @@
+---
+title: "lcyt-backend API Reference"
+---
+
 # lcyt-backend API Reference
 
 `lcyt-backend` is an Express.js HTTP relay server that sits between your client applications and YouTube Live. Clients authenticate with API keys and JWTs; the backend sends captions to YouTube on their behalf and streams delivery results back via SSE.
