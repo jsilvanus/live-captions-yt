@@ -45,6 +45,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
   // Utterance start timestamp — set on first text, cleared after final is dispatched
   const utteranceStartRef  = useRef(null);
+  const utteranceTimerRef  = useRef(null);  // setTimeout for timer-based utterance end
+
+  // Whether an utterance is currently in progress (drives the meter overlay button)
+  const [utteranceActive, setUtteranceActive] = useState(false);
 
   // Client-side VAD refs (only used when lcyt:client-vad === '1')
   const vadTimerRef        = useRef(null);   // setTimeout handle for the VAD check loop
@@ -114,6 +118,37 @@ export const AudioPanel = forwardRef(function AudioPanel(
   // otherwise falls back to a plain ISO string (no trailing Z).
   function getUtteranceTimestamp() {
     return getTimestampWithOffset() || new Date().toISOString().replace('Z', '');
+  }
+
+  // Forces the current utterance to end by stopping (and auto-restarting) the recognizer.
+  function forceUtteranceEnd() {
+    if (utteranceTimerRef.current) {
+      clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = null;
+    }
+    const rec = recognitionRef.current;
+    if (!rec) return;
+    try { rec.stop(); } catch {}
+    // recognition.onend will auto-restart
+  }
+
+  function isUtteranceEndButtonEnabled() {
+    try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; }
+  }
+
+  function getUtteranceEndTimerSec() {
+    try { return parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10); } catch { return 0; }
+  }
+
+  // Starts the utterance-end timer if configured. Call when an utterance begins.
+  function maybeStartUtteranceTimer() {
+    const timerSec = getUtteranceEndTimerSec();
+    if (timerSec > 0 && !utteranceTimerRef.current) {
+      utteranceTimerRef.current = setTimeout(() => {
+        utteranceTimerRef.current = null;
+        forceUtteranceEnd();
+      }, timerSec * 1000);
+    }
   }
 
   async function sendTranscript(text, explicitTimestamp) {
@@ -221,6 +256,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
       // Capture utterance start on first text (interim or final) if not already set
       if ((interim || final) && !utteranceStartRef.current) {
         utteranceStartRef.current = getUtteranceTimestamp();
+        setUtteranceActive(true);
+        maybeStartUtteranceTimer();
       }
       if (!isMobile) setInterimText(interim);
       if (final) {
@@ -231,6 +268,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
         }
         const ts = utteranceStartRef.current;
         utteranceStartRef.current = null;
+        setUtteranceActive(false);
+        if (utteranceTimerRef.current) {
+          clearTimeout(utteranceTimerRef.current);
+          utteranceTimerRef.current = null;
+        }
         pushFinalTranscript(final, ts);
       }
     };
@@ -276,6 +318,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
     if (rec) try { rec.stop(); } catch {}
     stopVAD();
     utteranceStartRef.current = null;
+    setUtteranceActive(false);
+    if (utteranceTimerRef.current) {
+      clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = null;
+    }
     // Stop meter stream if we opened one for WebKit
     if (meterStreamRef.current) {
       try { meterStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
@@ -358,6 +405,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
             // Capture utterance start timestamp before the first interim/final arrives
             if (!utteranceStartRef.current) {
               utteranceStartRef.current = getUtteranceTimestamp();
+              setUtteranceActive(true);
+              maybeStartUtteranceTimer();
             }
           } else {
             // Below threshold — measure sustained silence
@@ -661,11 +710,22 @@ export const AudioPanel = forwardRef(function AudioPanel(
         )}
 
         {/* Level meter — always visible when panel is open */}
-        <canvas
-          ref={meterCanvasRef}
-          className="audio-meter"
-          aria-hidden="true"
-        />
+        <div className="audio-meter-wrap">
+          <canvas
+            ref={meterCanvasRef}
+            className="audio-meter"
+            aria-hidden="true"
+          />
+          {listening && utteranceActive && isUtteranceEndButtonEnabled() && (
+            <button
+              className="audio-meter-end-btn"
+              onClick={forceUtteranceEnd}
+              title="Force end utterance"
+            >
+              🗣
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Hint / error line */}

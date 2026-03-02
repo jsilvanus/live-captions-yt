@@ -75,6 +75,14 @@ const [sttLang, setSttLangState] = useState(savedLang);
   const [credError, setCredError] = useState('');
   const credFileRef = useRef(null);
 
+  // ── STT utterance controls ────────────────────────────────
+  const [utteranceEndButton, setUtteranceEndButton] = useState(
+    () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
+  );
+  const [utteranceEndTimer, setUtteranceEndTimer] = useState(
+    () => { try { return parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10); } catch { return 0; } }
+  );
+
   // ── VAD tab ───────────────────────────────────────────────
   const [vadEnabled, setVadEnabled] = useState(
     () => { try { return localStorage.getItem('lcyt:client-vad') === '1'; } catch { return false; } }
@@ -132,6 +140,9 @@ const [sttLang, setSttLangState] = useState(savedLang);
     try { setVadEnabled(localStorage.getItem('lcyt:client-vad') === '1'); } catch {}
     try { setVadSilenceMs(parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10)); } catch {}
     try { setVadThreshold(parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01')); } catch {}
+    // Re-sync utterance control state
+    try { setUtteranceEndButton(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
+    try { setUtteranceEndTimer(parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10)); } catch {}
   }, [isOpen]);
 
   // Keep credential state in sync with the module (e.g. cleared externally)
@@ -524,6 +535,48 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   )}
                 </div>
                 <span className="settings-field__hint">{sttLang}</span>
+              </div>
+
+              {/* Utterance end controls */}
+              <div className="settings-field">
+                <label className="settings-field__label">Utterance end button</label>
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={utteranceEndButton}
+                    onChange={e => {
+                      setUtteranceEndButton(e.target.checked);
+                      try { localStorage.setItem('lcyt:utterance-end-button', e.target.checked ? '1' : '0'); } catch {}
+                    }}
+                  />
+                  Show 🗣 on meter during utterance — click to force end
+                </label>
+                <span className="settings-field__hint">
+                  While speech is being recognized, a speak icon appears on the audio meter.
+                  Clicking it stops the recognizer and forces a final result immediately.
+                </span>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-field__label">
+                  Utterance end timer: <strong>{utteranceEndTimer === 0 ? 'off' : `${utteranceEndTimer} s`}</strong>
+                </label>
+                <input
+                  type="range"
+                  className="settings-field__input"
+                  style={{ padding: 0, cursor: 'pointer' }}
+                  min="0" max="20" step="1"
+                  value={utteranceEndTimer}
+                  onChange={e => {
+                    const v = parseInt(e.target.value, 10);
+                    setUtteranceEndTimer(v);
+                    try { localStorage.setItem('lcyt:utterance-end-timer', String(v)); } catch {}
+                  }}
+                />
+                <span className="settings-field__hint">
+                  Automatically force end the utterance after this many seconds (0 = disabled).
+                  Useful for segmenting long speeches into shorter captions.
+                </span>
               </div>
 
               {/* Cloud STT-specific settings */}
