@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
@@ -17,7 +17,10 @@ function blobToBase64(blob) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AudioPanel({ visible }) {
+export const AudioPanel = forwardRef(function AudioPanel(
+  { visible, onListeningChange, extraMeterCanvasRef },
+  ref
+) {
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [engine, setEngine] = useState(getSttEngine);
@@ -43,6 +46,10 @@ export function AudioPanel({ visible }) {
   // Mic soft lock — hold-to-steal state
   const [isHolding, setIsHolding] = useState(false);
   const holdTimerRef = useRef(null);
+
+  // Stable ref that always points to the current toggle fn — avoids stale closures via ref
+  const toggleFnRef = useRef(null);
+  useImperativeHandle(ref, () => ({ toggle: () => toggleFnRef.current?.() }), []);
 
   // ── Sync engine/credential from settings events ──────────────────────────
   useEffect(() => {
@@ -126,6 +133,9 @@ export function AudioPanel({ visible }) {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micHolder]);
+
+  // Notify parent when listening state changes (e.g. for mobile bar button appearance)
+  useEffect(() => { onListeningChange?.(listening); }, [listening, onListeningChange]);
 
   // Respond to toggle requests from FileTabs: if not currently listening, allow hiding the panel.
   useEffect(() => {
@@ -373,7 +383,6 @@ export function AudioPanel({ visible }) {
       src.connect(analyser);
       analyserRef.current = analyser;
 
-      const canvas = meterCanvasRef.current;
       const data = new Float32Array(analyser.fftSize);
 
       function draw() {
@@ -383,10 +392,11 @@ export function AudioPanel({ visible }) {
         const rms = Math.sqrt(sum / data.length);
         const level = Math.min(1, rms * 3); // scale for visibility
 
-        if (canvas) {
-          const w = canvas.width = canvas.clientWidth * (window.devicePixelRatio || 1);
-          const h = canvas.height = canvas.clientHeight * (window.devicePixelRatio || 1);
-          const ctx2 = canvas.getContext('2d');
+        for (const cvs of [meterCanvasRef.current, extraMeterCanvasRef?.current]) {
+          if (!cvs || !cvs.clientWidth) continue;
+          const w = cvs.width = cvs.clientWidth * (window.devicePixelRatio || 1);
+          const h = cvs.height = cvs.clientHeight * (window.devicePixelRatio || 1);
+          const ctx2 = cvs.getContext('2d');
           ctx2.clearRect(0, 0, w, h);
           ctx2.fillStyle = '#0b8';
           ctx2.fillRect(0, 0, Math.round(w * level), h);
@@ -412,10 +422,9 @@ export function AudioPanel({ visible }) {
       try { audioCtxRef.current.close(); } catch {}
       audioCtxRef.current = null;
     }
-    const canvas = meterCanvasRef.current;
-    if (canvas) {
-      const ctx2 = canvas.getContext('2d');
-      ctx2.clearRect(0, 0, canvas.width, canvas.height);
+    for (const cvs of [meterCanvasRef.current, extraMeterCanvasRef?.current]) {
+      if (!cvs) continue;
+      cvs.getContext('2d').clearRect(0, 0, cvs.width, cvs.height);
     }
   }
 
@@ -464,6 +473,9 @@ export function AudioPanel({ visible }) {
     : !isWebkit && !credLoaded     ? 'Load a Google service account key in Settings → STT / Audio.'
     : null;
 
+  // Keep toggleFnRef current so the imperative handle never has a stale closure
+  toggleFnRef.current = toggle;
+
   return (
     <div className={`audio-panel${visible ? ' audio-panel--open' : ' audio-panel--hidden'}`}>
       <div className="audio-panel__row">
@@ -485,7 +497,7 @@ export function AudioPanel({ visible }) {
             disabled={!canStart}
             onClick={toggle}
           >
-            {listening ? '⏹ Stop' : '🎙 Caption'}
+            {listening ? '⏹ Stop' : '🎙 Mic Capture'}
           </button>
         )}
 
@@ -517,5 +529,5 @@ export function AudioPanel({ visible }) {
       )}
     </div>
   );
-}
+});
 

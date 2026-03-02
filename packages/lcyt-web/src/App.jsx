@@ -13,27 +13,6 @@ import { InputBar } from './components/InputBar';
 import { AudioPanel } from './components/AudioPanel';
 import { ToastContainer } from './components/ToastContainer';
 
-// Floating action button — sends current caption line on mobile
-function SendLineFAB({ inputBarRef }) {
-  const { activeFile } = useFileContext();
-  const [side, setSide] = useState(
-    () => { try { return localStorage.getItem('lcyt:fabSide') || 'right'; } catch { return 'right'; } }
-  );
-  useEffect(() => {
-    function onCfg() { setSide(localStorage.getItem('lcyt:fabSide') || 'right'); }
-    window.addEventListener('lcyt:stt-config-changed', onCfg);
-    return () => window.removeEventListener('lcyt:stt-config-changed', onCfg);
-  }, []);
-  if (!activeFile) return null;
-  return (
-    <button
-      className={`send-fab send-fab--${side}`}
-      onClick={() => inputBarRef.current?.triggerSend()}
-      title="Send current line"
-    >►</button>
-  );
-}
-
 // Persistent banner shown when the backend cannot be reached
 function NetworkBanner({ privacyPending }) {
   const { healthStatus, checkHealth, connected, getAutoConnect, getPersistedConfig, connect } = useSessionContext();
@@ -72,10 +51,13 @@ function AppLayout() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
-  const [audioOpen, setAudioOpen] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
+  const [micListening, setMicListening] = useState(false);
+  const [sentPanelMinH, setSentPanelMinH] = useState(null);
 
   const inputBarRef = useRef(null);
+  const audioPanelRef = useRef(null);
+  const mobileBarMeterRef = useRef(null);
 
   // Global keyboard shortcuts
   useEffect(() => {
@@ -158,6 +140,13 @@ function AppLayout() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Auto-collapse drop zone on mobile after first file loads
+  useEffect(() => {
+    if (fileStore.files.length > 0 && window.matchMedia('(max-width: 768px)').matches) {
+      setDropZoneVisible(false);
+    }
+  }, [fileStore.files.length]);
+
   function handlePrivacyOpen() {
     setPrivacyRequireAcceptance(false);
     setPrivacyOpen(true);
@@ -171,6 +160,20 @@ function AppLayout() {
 
   function handleLineSend(text, fileId, lineIndex) {
     inputBarRef.current?.sendText(text, fileId, lineIndex);
+  }
+
+  function onResizePointerDown(e) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = document.getElementById('right-panel')?.getBoundingClientRect().height || 0;
+    function onMove(me) { setSentPanelMinH(Math.max(80, startH + (startY - me.clientY))); }
+    function onUp() {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   return (
@@ -190,32 +193,54 @@ function AppLayout() {
             onToggleDropZone={() => setDropZoneVisible(v => !v)}
           />
           <CaptionView onLineSend={handleLineSend} />
-          <AudioPanel visible={audioOpen} />
+          {/* Desktop: always visible. Mobile: hidden via CSS, kept in DOM for STT logic. */}
+          <AudioPanel
+            ref={audioPanelRef}
+            visible={true}
+            onListeningChange={setMicListening}
+            extraMeterCanvasRef={mobileBarMeterRef}
+          />
         </div>
 
+        {/* Drag-resize handle — visible only on mobile (CSS hides on desktop) */}
+        <div
+          className="panel-resize-handle"
+          onPointerDown={onResizePointerDown}
+          aria-hidden="true"
+        />
+
         {/* Right panel — always visible in scroll flow */}
-        <div id="right-panel" className="panel panel--right">
+        <div
+          id="right-panel"
+          className="panel panel--right"
+          style={sentPanelMinH != null ? { minHeight: sentPanelMinH } : undefined}
+        >
           <SentPanel />
         </div>
       </main>
 
-      {/* Desktop footer */}
+      {/* Desktop footer — input bar only */}
       <footer id="footer">
         <InputBar ref={inputBarRef} />
-        <button
-          className={`footer__audio-btn${audioOpen ? ' footer__audio-btn--active' : ''}`}
-          onClick={() => setAudioOpen(v => !v)}
-          title="Toggle microphone / STT"
-        >🎵</button>
       </footer>
 
-      {/* Mobile fixed bottom bar */}
+      {/* Mobile fixed bottom bar — 3-zone: meter | mic-toggle | send */}
       <div id="mobile-audio-bar">
+        <canvas
+          ref={mobileBarMeterRef}
+          className="mobile-bar__meter"
+          aria-hidden="true"
+        />
         <button
-          className={`footer__audio-btn${audioOpen ? ' footer__audio-btn--active' : ''}`}
-          onClick={() => setAudioOpen(v => !v)}
-          title="Toggle microphone / STT"
-        >🎵 Audio</button>
+          className={`mobile-bar__mic-btn${micListening ? ' mobile-bar__mic-btn--active' : ''}`}
+          onClick={() => audioPanelRef.current?.toggle()}
+          title={micListening ? 'Stop microphone' : 'Start microphone'}
+        >{micListening ? '⏹ Stop' : '🎙 Mic'}</button>
+        <button
+          className="mobile-bar__send-btn"
+          onClick={() => inputBarRef.current?.triggerSend()}
+          title="Send current line"
+        >►</button>
       </div>
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -226,7 +251,6 @@ function AppLayout() {
         onAccept={handlePrivacyAccept}
       />
       <ToastContainer />
-      <SendLineFAB inputBarRef={inputBarRef} />
     </div>
   );
 }

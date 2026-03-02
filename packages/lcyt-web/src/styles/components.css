@@ -956,65 +956,75 @@
   color: var(--color-error);
 }
 
-/* ─── Footer audio toggle button ────────────────────────── */
+/* ─── Mobile bottom bar (3-zone: meter | mic-toggle | send) ── */
 
-.footer__audio-btn {
-  flex-shrink: 0;
+/* Desktop: bar hidden */
+#mobile-audio-bar { display: none; }
+
+.mobile-bar__meter {
+  display: block;
+  height: 20px;
+  border-radius: 3px;
+  background: var(--color-surface-elevated);
+}
+
+.mobile-bar__mic-btn {
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.mobile-bar__mic-btn:active { background: var(--color-accent-dim); }
+
+.mobile-bar__mic-btn--active {
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
-  border-radius: 6px;
   color: var(--color-text-dim);
-  font-size: 18px;
-  width: 36px;
+}
+
+.mobile-bar__mic-btn--active:hover {
+  border-color: var(--color-error);
+  color: var(--color-error);
+}
+
+.mobile-bar__send-btn {
+  width: 44px;
   height: 36px;
+  border-radius: 6px;
+  background: var(--color-accent);
+  color: #fff;
+  border: none;
+  font-size: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: border-color 0.15s, color 0.15s;
+  transition: background 0.15s, transform 0.1s;
 }
 
-.footer__audio-btn:hover {
-  border-color: var(--color-accent);
-  color: var(--color-accent);
+.mobile-bar__send-btn:active {
+  transform: scale(0.92);
+  background: var(--color-accent-dim);
 }
 
-.footer__audio-btn--active {
-  border-color: var(--color-warning);
-  color: var(--color-warning);
+/* ─── Panel resize handle ────────────────────────────────── */
+
+.panel-resize-handle::after {
+  content: '';
+  display: block;
+  width: 32px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border);
+  margin: 3px auto 0;
 }
 
-/* Mobile audio bar button (full-width on mobile) */
-#mobile-audio-bar .footer__audio-btn {
-  flex: 1;
-  width: auto;
-  font-size: 14px;
-  gap: 8px;
-}
-
-/* ─── FAB ───────────────────────────────────────────────── */
-
-/* Desktop: FAB hidden */
-.send-fab {
-  display: none;
-}
-
-@media (max-width: 768px) {
-  .send-fab {
-    display: flex;
-    background: var(--color-accent);
-    border: none;
-    color: #fff;
-    font-size: 18px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    cursor: pointer;
-    transition: transform 0.1s, background 0.15s;
-  }
-
-  .send-fab:active {
-    transform: scale(0.92);
-    background: var(--color-accent-dim);
-  }
-}
+.panel-resize-handle:hover::after { background: var(--color-text-muted); }
 
 /* ─── Legacy audio section (preserved for any remaining references) ─ */
 
