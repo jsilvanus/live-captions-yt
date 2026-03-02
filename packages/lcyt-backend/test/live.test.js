@@ -177,7 +177,7 @@ describe('POST /live', () => {
     assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), domain);
   });
 
-  it('JWT payload should contain sessionId, apiKey, streamKey, domain', async () => {
+  it('JWT payload should contain sessionId and apiKey, and must not expose streamKey or domain', async () => {
     const { key } = createKey(db, { owner: 'JWT Test' });
     const streamKey = 'jwt-stream';
     const domain = 'https://jwt-test.com';
@@ -187,9 +187,10 @@ describe('POST /live', () => {
 
     const payload = jwt.verify(data.token, JWT_SECRET);
     assert.strictEqual(payload.apiKey, key);
-    assert.strictEqual(payload.streamKey, streamKey);
-    assert.strictEqual(payload.domain, domain);
     assert.ok(payload.sessionId);
+    assert.ok(payload.exp, 'JWT must have an expiry claim');
+    assert.strictEqual(payload.streamKey, undefined, 'streamKey must not be in JWT payload');
+    assert.strictEqual(payload.domain, undefined, 'domain must not be in JWT payload');
   });
 });
 
