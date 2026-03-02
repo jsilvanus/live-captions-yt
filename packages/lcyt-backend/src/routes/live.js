@@ -91,8 +91,9 @@ export function createLiveRouter(db, store, jwtSecret) {
       // Not fatal — proceed without sync
     }
 
-    // Sign JWT
-    const token = jwt.sign({ sessionId, apiKey, streamKey, domain }, jwtSecret);
+    // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
+    const sessionTtlMs = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000;
+    const token = jwt.sign({ sessionId, apiKey }, jwtSecret, { expiresIn: Math.floor(sessionTtlMs / 1000) });
 
     // Store session
     const session = store.create({

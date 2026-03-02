@@ -1,5 +1,6 @@
 """POST/GET/DELETE /live — session registration and management."""
 
+import os
 import time
 
 from flask import Blueprint, current_app, g, jsonify, request
@@ -83,12 +84,15 @@ def register_session():
     except Exception:
         pass  # not fatal
 
-    # Sign JWT
+    # Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
+    try:
+        session_ttl_s = int(os.environ.get("SESSION_TTL", "7200000")) // 1000
+    except (ValueError, TypeError):
+        session_ttl_s = 7200  # 2 hours default
     payload = {
         "sessionId": session_id,
         "apiKey": api_key,
-        "streamKey": stream_key,
-        "domain": domain,
+        "exp": int(time.time()) + session_ttl_s,
     }
     token = jwt_encode(payload, jwt_secret)
 
