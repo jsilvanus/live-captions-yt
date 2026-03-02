@@ -18,7 +18,8 @@
     "start:backend": "npm start -w packages/lcyt-backend",
     "web": "npm run dev -w packages/lcyt-web",
     "build:web": "npm run build -w packages/lcyt-web",
-    "preview:web": "npm run preview -w packages/lcyt-web"
+    "preview:web": "npm run preview -w packages/lcyt-web",
+    "screenshots": "node scripts/screenshots/capture.js"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",
