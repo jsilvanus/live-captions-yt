@@ -968,18 +968,58 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
   border: none;
   border-radius: 3px;
-  cursor: pointer;
   font-size: 13px;
   padding: 0;
   line-height: 1;
-  transition: background 0.1s;
+  transition: background 0.15s;
 }
 
-.audio-meter-end-btn:hover {
-  background: rgba(0, 0, 0, 0.65);
+/* Idle (enabled but no active utterance) — blue indicator, not interactive */
+.audio-meter-end-btn--idle {
+  background: rgba(79, 142, 247, 0.4);
+  cursor: default;
+}
+
+/* Active (utterance detected) — red, clickable */
+.audio-meter-end-btn--active {
+  background: rgba(220, 50, 50, 0.55);
+  cursor: pointer;
+}
+
+.audio-meter-end-btn--active:hover {
+  background: rgba(220, 50, 50, 0.75);
+}
+
+/* Click visual cue: brief white flash fading back to red */
+.audio-meter-end-btn--clicked {
+  animation: meter-end-flash 0.4s ease-out;
+}
+
+@keyframes meter-end-flash {
+  0%   { background: rgba(255, 255, 255, 0.85); }
+  100% { background: rgba(220, 50, 50, 0.55); }
+}
+
+/* Timer border: an accent bar that fills across the bottom of the meter
+   over the utterance-timer duration, set via inline animationDuration. */
+.audio-meter-timer-border {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  width: 0%;
+  background: var(--color-accent, #4f8ef7);
+  animation: timer-fill linear forwards;
+  border-radius: 0 0 3px 3px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@keyframes timer-fill {
+  from { width: 0%; }
+  to   { width: 100%; }
 }
 
 .audio-panel__hint {

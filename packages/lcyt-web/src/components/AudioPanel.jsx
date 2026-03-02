@@ -19,6 +19,9 @@ function isMobileDevice() {
   return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
+// Duration of the utterance-end button click flash animation (ms) — must match CSS @keyframes
+const UTTERANCE_CLICK_FLASH_MS = 400;
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AudioPanel = forwardRef(function AudioPanel(
@@ -44,11 +47,16 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const lastFinalRef    = useRef('');   // last final transcript sent (for mobile deduplication)
 
   // Utterance start timestamp — set on first text, cleared after final is dispatched
-  const utteranceStartRef  = useRef(null);
-  const utteranceTimerRef  = useRef(null);  // setTimeout for timer-based utterance end
+  const utteranceStartRef   = useRef(null);
+  const utteranceTimerRef   = useRef(null);  // setTimeout for timer-based utterance end
+  const utteranceTimerSecRef = useRef(0);    // duration (s) of the current utterance timer
 
   // Whether an utterance is currently in progress (drives the meter overlay button)
   const [utteranceActive, setUtteranceActive] = useState(false);
+  // Flash state for the utterance end button click visual cue
+  const [utteranceClickFlash, setUtteranceClickFlash] = useState(false);
+  // Whether the utterance timer is currently running (drives the timer border animation)
+  const [utteranceTimerRunning, setUtteranceTimerRunning] = useState(false);
 
   // Client-side VAD refs (only used when lcyt:client-vad === '1')
   const vadTimerRef        = useRef(null);   // setTimeout handle for the VAD check loop
@@ -57,6 +65,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const vadLocalStreamRef  = useRef(null);   // MediaStream obtained locally for VAD
   const vadSpeakingRef     = useRef(false);  // current VAD speaking state
   const vadSilenceStartRef = useRef(null);   // timestamp (ms) when silence began
+  const vadStartingRef     = useRef(false);  // prevents concurrent VAD initializations
 
   // Cloud STT refs
   const streamRef    = useRef(null);   // MediaStream
@@ -126,10 +135,18 @@ export const AudioPanel = forwardRef(function AudioPanel(
       clearTimeout(utteranceTimerRef.current);
       utteranceTimerRef.current = null;
     }
+    setUtteranceTimerRunning(false);
     const rec = recognitionRef.current;
     if (!rec) return;
     try { rec.stop(); } catch {}
     // recognition.onend will auto-restart
+  }
+
+  // Handles a click on the utterance end button — flashes a visual cue then ends the utterance.
+  function handleUtteranceEndClick() {
+    setUtteranceClickFlash(true);
+    setTimeout(() => setUtteranceClickFlash(false), UTTERANCE_CLICK_FLASH_MS);
+    forceUtteranceEnd();
   }
 
   function isUtteranceEndButtonEnabled() {
@@ -144,8 +161,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
   function maybeStartUtteranceTimer() {
     const timerSec = getUtteranceEndTimerSec();
     if (timerSec > 0 && !utteranceTimerRef.current) {
+      utteranceTimerSecRef.current = timerSec;
+      setUtteranceTimerRunning(true);
       utteranceTimerRef.current = setTimeout(() => {
         utteranceTimerRef.current = null;
+        setUtteranceTimerRunning(false);
         forceUtteranceEnd();
       }, timerSec * 1000);
     }
@@ -273,6 +293,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
           clearTimeout(utteranceTimerRef.current);
           utteranceTimerRef.current = null;
         }
+        setUtteranceTimerRunning(false);
         pushFinalTranscript(final, ts);
       }
     };
@@ -280,13 +301,17 @@ export const AudioPanel = forwardRef(function AudioPanel(
     recognition.onstart = () => { }; 
 
     recognition.onend = () => {
-      // Auto-restart so continuous mode survives silence pauses
+      // Auto-restart so continuous mode survives silence pauses.
+      // A small delay prevents rapid start/stop cycles on browsers that need settling time.
       if (recognitionRef.current) {
-        try { recognition.start(); } catch {}
-        // Restart VAD check loop if enabled — it exits early after forcing finalization
-        if (localStorage.getItem('lcyt:client-vad') === '1' && !vadTimerRef.current) {
-          startVAD(recognition);
-        }
+        setTimeout(() => {
+          if (!recognitionRef.current) return;
+          try { recognition.start(); } catch {}
+          // Restart VAD check loop if enabled — it exits early after forcing finalization
+          if (localStorage.getItem('lcyt:client-vad') === '1' && !vadTimerRef.current) {
+            startVAD(recognition);
+          }
+        }, 100);
       }
     };
 
@@ -319,6 +344,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     stopVAD();
     utteranceStartRef.current = null;
     setUtteranceActive(false);
+    setUtteranceTimerRunning(false);
     if (utteranceTimerRef.current) {
       clearTimeout(utteranceTimerRef.current);
       utteranceTimerRef.current = null;
@@ -336,6 +362,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   // ─── Client-side VAD (optional) ──────────────────────────────────────────
 
   function stopVAD() {
+    vadStartingRef.current = false;
     if (vadTimerRef.current) {
       clearTimeout(vadTimerRef.current);
       vadTimerRef.current = null;
@@ -357,6 +384,9 @@ export const AudioPanel = forwardRef(function AudioPanel(
   }
 
   async function startVAD(recognition) {
+    // Guard against concurrent initializations — e.g. rapid onend→startVAD cycles
+    if (vadStartingRef.current) return;
+    vadStartingRef.current = true;
     try {
       const silenceMs = Math.max(0, parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10));
       const threshold = Math.max(0, parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'));
@@ -430,6 +460,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
       vadTimerRef.current = setTimeout(check, 50);
     } catch (e) {
       console.warn('Client VAD: initialization error', e);
+    } finally {
+      vadStartingRef.current = false;
     }
   }
 
@@ -716,14 +748,24 @@ export const AudioPanel = forwardRef(function AudioPanel(
             className="audio-meter"
             aria-hidden="true"
           />
-          {listening && utteranceActive && isUtteranceEndButtonEnabled() && (
+          {listening && isUtteranceEndButtonEnabled() && (
             <button
-              className="audio-meter-end-btn"
-              onClick={forceUtteranceEnd}
-              title="Force end utterance"
+              className={[
+                'audio-meter-end-btn',
+                utteranceActive ? 'audio-meter-end-btn--active' : 'audio-meter-end-btn--idle',
+                utteranceClickFlash ? 'audio-meter-end-btn--clicked' : '',
+              ].filter(Boolean).join(' ')}
+              onClick={utteranceActive ? handleUtteranceEndClick : undefined}
+              title={utteranceActive ? 'Force end utterance' : 'Utterance detection active'}
             >
               🗣
             </button>
+          )}
+          {listening && utteranceTimerRunning && (
+            <div
+              className="audio-meter-timer-border"
+              style={{ animationDuration: `${utteranceTimerSecRef.current}s` }}
+            />
           )}
         </div>
       </div>
