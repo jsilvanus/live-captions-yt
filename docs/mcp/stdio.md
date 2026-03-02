@@ -121,3 +121,13 @@ No other environment variables are required. Stream keys and session parameters 
 **Session not found errors**
 - Sessions are in-memory and are lost if the server process restarts
 - Call `start` again to create a new session
+
+---
+
+## Deployment notes
+
+- **`LCYT_LOG_STDERR=1` is required**: always set `LCYT_LOG_STDERR=1` when running the stdio server under an MCP client so that logs go to `stderr` and do not corrupt the protocol on `stdout`.
+
+- **Optional DB usage**: the stdio server can be started with `DB_PATH` to enable usage logging. If you configure a SQLite `DB_PATH` backed by a Docker volume, ensure the runtime user can write the file (see README for `chown` example).
+
+- **Session persistence**: stdio-mode sessions are process-local. If you need sessions to survive restarts or to be shared between remote clients, use the SSE server instead.

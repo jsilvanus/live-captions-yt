@@ -62,7 +62,10 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
-const store = new SessionStore();
+const store = new SessionStore({ db });
+
+// Rehydrate persisted sessions so sequence counters and metadata survive restarts.
+store.rehydrate();
 
 store.onSessionEnd = (session) => {
   const durationMs = Date.now() - session.startedAt;

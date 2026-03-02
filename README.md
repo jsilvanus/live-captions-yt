@@ -115,6 +115,29 @@ npm test             # Run tests across all packages
 npm run build        # Build CJS output for core library
 ```
 
+## Deployment notes
+
+- **Set a stable `JWT_SECRET`**: for production, set `JWT_SECRET` in your environment so session tokens remain valid across restarts. Example in `docker-compose.yml`:
+
+```yaml
+environment:
+  - JWT_SECRET=replace-with-a-secure-random-value
+```
+
+- **DB volume ownership**: the SQLite file is stored in a named Docker volume (e.g. `live-captions-yt_lcyt-db`). If you see `SqliteError: attempt to write a readonly database`, ensure the volume is owned by the runtime user (typical `node` UID 1000). One-off fix:
+
+```bash
+# on the host (alpine image used for chown)
+docker run --rm -v live-captions-yt_lcyt-db:/data alpine chown -R 1000:1000 /data
+```
+
+- **MCP SSE network exposure**: the MCP SSE service is sensitive — bind it to loopback on the host and reverse-proxy from nginx if you need external access. The included `docker-compose.yml` binds port 3001 to `127.0.0.1:3001:3001` by default so it's not externally reachable. If you expose it, ensure you use a secure reverse proxy and firewall rules.
+
+- **Reconnection behavior**: when the backend restarts, sessions persisted in SQLite are rehydrated without an active sender. When a client POSTs `/live` to re-register, the server will issue a fresh JWT for the rehydrated session so the client can obtain a usable token and open the SSE stream.
+
+- **Optional: persist tokens**: if you prefer tokens to survive restarts without client re-registration, modify the server to persist issued tokens and ensure `JWT_SECRET` is stable. The current default behaviour is to re-issue tokens on re-register.
+
+
 ## Google Caption Format
 
 LCYT implements Google's official YouTube Live caption format:

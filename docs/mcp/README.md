@@ -77,6 +77,13 @@ LCYT_LOG_STDERR=1 node packages/lcyt-mcp-stdio/src/server.js
 
 ---
 
+## Deployment & security
+
+- **Bind SSE to loopback when possible**: for single-host deployments bind the SSE server to `127.0.0.1` and expose it via a secure reverse proxy only when necessary.
+- **Set a stable `JWT_SECRET`** in production if you persist session tokens or expect tokens to survive server restarts.
+- **Ensure DB volume ownership** when using `DB_PATH` with Docker; chown the volume to the runtime UID (e.g., `1000:1000`) to avoid read-only SQLite errors.
+ - **SSE DB-backed persistence**: when `DB_PATH` is configured the SSE server can persist session metadata and will rehydrate sessions on startup (this will start sender instances for persisted sessions). See `sse.md` for details and operational notes.
+
 ## Reference
 
 - [Tools Reference](./tools.md) — all tools with per-tool transport availability (stdio / SSE)

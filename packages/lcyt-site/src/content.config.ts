@@ -1,22 +1,19 @@
 import { defineCollection, z } from 'astro:content';
 import { glob } from 'astro/loaders';
-import { fileURLToPath } from 'url';
-import path from 'path';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-// src/content.config.ts is at packages/lcyt-site/src/
-// So ../../../docs resolves to the monorepo docs/ directory
-const docsRoot = path.resolve(__dirname, '../../../docs');
+// Use file:// URLs so Astro's loader can convert them on all platforms
+// docs/ lives at packages/lcyt-site/src/../../.. => ../../../docs
+const docsRoot = new URL('../../../docs/', import.meta.url);
 
 export const collections = {
   lib: defineCollection({
-    loader: glob({ pattern: '**/*.md', base: path.join(docsRoot, 'lib') }),
+    loader: glob({ pattern: '**/*.md', base: new URL('lib/', docsRoot) }),
     schema: z.object({
       title: z.string().optional(),
     }),
   }),
   api: defineCollection({
-    loader: glob({ pattern: '**/*.md', base: path.join(docsRoot, 'api') }),
+    loader: glob({ pattern: '**/*.md', base: new URL('api/', docsRoot) }),
     schema: z.object({
       title: z.string().optional(),
       methods: z.array(z.string()).optional(),
@@ -24,7 +21,7 @@ export const collections = {
     }),
   }),
   mcp: defineCollection({
-    loader: glob({ pattern: '**/*.md', base: path.join(docsRoot, 'mcp') }),
+    loader: glob({ pattern: '**/*.md', base: new URL('mcp/', docsRoot) }),
     schema: z.object({
       title: z.string().optional(),
       stdio: z.boolean().optional(),
@@ -32,7 +29,7 @@ export const collections = {
     }),
   }),
   blog: defineCollection({
-    loader: glob({ pattern: '**/*.md', base: './src/content/blog' }),
+    loader: glob({ pattern: '**/*.md', base: new URL('./content/blog/', import.meta.url) }),
     schema: z.object({
       title: z.string(),
       date: z.string(),

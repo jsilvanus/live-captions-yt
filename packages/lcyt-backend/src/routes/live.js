@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
@@ -64,9 +64,35 @@ export function createLiveRouter(db, store, jwtSecret) {
     // Generate deterministic session ID
     const sessionId = makeSessionId(apiKey, streamKey, domain);
 
-    // Idempotent: if session already exists, return existing JWT
+    // Idempotent: if session already exists, return existing JWT. If session
+    // was rehydrated (no in-memory sender) and has no JWT, generate a fresh
+    // token so the client can obtain a usable Bearer token and open SSE.
     if (store.has(sessionId)) {
       const existing = store.get(sessionId);
+
+      // Re-issue JWT when missing (e.g. after server restart + rehydrate)
+      if (!existing.jwt) {
+        const sessionTtlMs = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000;
+        const newToken = jwt.sign({ sessionId, apiKey }, jwtSecret, { expiresIn: Math.floor(sessionTtlMs / 1000) });
+        existing.jwt = newToken;
+        // Persist updated metadata so future rehydrates have consistent state
+        try {
+          saveSession(db, {
+            sessionId: existing.sessionId || sessionId,
+            apiKey: existing.apiKey || apiKey,
+            streamKey: existing.streamKey || streamKey,
+            domain: existing.domain || domain,
+            sequence: existing.sequence || 0,
+            startedAt: existing.startedAt || new Date().toISOString(),
+            lastActivity: existing.lastActivity || new Date().toISOString(),
+            syncOffset: existing.syncOffset || 0,
+            data: existing.data || null
+          });
+        } catch (err) {
+          // persist failure is non-fatal; proceed with in-memory token
+        }
+      }
+
       store.touch(sessionId);
       res.setHeader('Access-Control-Allow-Origin', domain);
       return res.status(200).json({

@@ -28,6 +28,7 @@ import {
   writeAuthEvent, writeSessionStat, writeCaptionError,
   incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd,
   incrementDomainHourlyCaptions,
+  saveSession, listSessions, deleteSession,
 } from "lcyt-backend/src/db.js";
 
 // ── Auth database (optional) ──────────────────────────────────────────────────
@@ -196,11 +197,38 @@ const TOOLS = [
  *
  * @param {typeof YoutubeLiveCaptionSender} SenderClass
  */
-function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
+async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance = null) {
   /** @type {Map<string, InstanceType<typeof SenderClass>>} */
   const sessions = new Map();
   /** @type {Map<string, {startedAt: string}>} */
   const sessionMeta = new Map();
+
+  // Rehydrate persisted sessions from DB when available. This will start
+  // YoutubeLiveCaptionSender instances for each persisted session so that
+  // session IDs remain usable after a server restart.
+  if (dbInstance) {
+    try {
+      const rows = listSessions(dbInstance);
+      for (const r of rows) {
+        try {
+          const sender = new SenderClass({ streamKey: r.streamKey, sequence: r.sequence });
+          await sender.start();
+          if (typeof sender.setSequence === 'function') {
+            try { sender.setSequence(Number(r.sequence || 0)); } catch {}
+          }
+          sessions.set(r.sessionId, sender);
+          sessionMeta.set(r.sessionId, { startedAt: r.startedAt || new Date().toISOString() });
+          // Initialise mcpStats entry so post-call logging can attribute usage
+          mcpStats.set(r.sessionId, { apiKey: r.apiKey ?? null, startedAt: Date.parse(r.startedAt) || Date.now(), captionsSent: 0, captionsFailed: 0, lastSequence: Number(r.sequence || 0) });
+        } catch (err) {
+          console.error(`[lcyt-mcp-sse] Failed to rehydrate session ${r.sessionId}: ${err.message}`);
+        }
+      }
+      if (rows.length) console.error(`[lcyt-mcp-sse] Rehydrated ${rows.length} session(s) from DB`);
+    } catch (err) {
+      console.error(`[lcyt-mcp-sse] Failed to list persisted sessions: ${err.message}`);
+    }
+  }
 
   function getSession(sessionId) {
     const sender = sessions.get(sessionId);
@@ -243,13 +271,32 @@ function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
         await sender.start();
         const sid = randomBytes(8).toString("hex");
         sessions.set(sid, sender);
-        sessionMeta.set(sid, { startedAt: new Date().toISOString() });
+        const startedAt = new Date().toISOString();
+        sessionMeta.set(sid, { startedAt });
+        // Persist session metadata when DB is available so it can be rehydrated
+        if (dbInstance) {
+          try {
+            saveSession(dbInstance, {
+              sessionId: sid,
+              streamKey: args.stream_key,
+              sequence: sender.sequence || 0,
+              startedAt,
+              lastActivity: startedAt,
+            });
+          } catch (err) {
+            console.error(`[lcyt-mcp-sse] Failed to persist session ${sid}: ${err.message}`);
+          }
+        }
         return { content: [{ type: "text", text: JSON.stringify({ session_id: sid }) }] };
       }
 
       case "send_caption": {
         const sender = getSession(args.session_id);
         const result = await sender.send(args.text, args.timestamp);
+        // Persist updated sequence/lastActivity
+        if (dbInstance) {
+          try { saveSession(dbInstance, { sessionId: args.session_id, sequence: result.sequence, lastActivity: new Date().toISOString() }); } catch {}
+        }
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, sequence: result.sequence }) }],
         };
@@ -258,6 +305,9 @@ function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
       case "send_batch": {
         const sender = getSession(args.session_id);
         const result = await sender.sendBatch(args.captions);
+        if (dbInstance) {
+          try { saveSession(dbInstance, { sessionId: args.session_id, sequence: result.sequence, lastActivity: new Date().toISOString() }); } catch {}
+        }
         return {
           content: [
             {
@@ -294,6 +344,9 @@ function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
         sessions.delete(args.session_id);
         sessionMeta.delete(args.session_id);
         await sender.end();
+        if (dbInstance) {
+          try { deleteSession(dbInstance, args.session_id); } catch (err) { console.error(`[lcyt-mcp-sse] Failed to delete persisted session ${args.session_id}: ${err.message}`); }
+        }
         return { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
       }
 
@@ -318,8 +371,8 @@ function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
 
 // ── Shared handlers (all HTTP connections share one session map) ──────────────
 
-const { handleListTools, handleListResources, handleReadResource, handleCallTool } =
-  createHandlers();
+const handlers = await createHandlers(YoutubeLiveCaptionSender, db);
+const { handleListTools, handleListResources, handleReadResource, handleCallTool } = handlers;
 
 // ── MCP server factory (one Server per SSE connection) ────────────────────────
 
@@ -449,7 +502,7 @@ app.use(express.json());
 /** @type {Map<string, SSEServerTransport>} */
 const transports = new Map();
 
-app.get("/sse", async (req, res) => {
+app.get("/", async (req, res) => {
   let apiKey = null;
 
   const provided = db ? req.headers["x-api-key"] : null;

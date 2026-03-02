@@ -141,6 +141,16 @@ export function useSession({
     const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk });
     await sender.start();
 
+    // Ensure we received a server token; rehydrated sessions may yield no
+    // token if the backend didn't re-issue one. Fail fast and surface a
+    // helpful error so the UI can prompt the user to re-open settings.
+    if (!sender._token) {
+      try { await sender.end(); } catch {} // best-effort cleanup
+      const msg = 'No session token received from server; open Settings to re-register.';
+      cbs.current.onError?.(msg);
+      throw new Error(msg);
+    }
+
     // Auto-sync clock with YouTube immediately after connecting.
     // Failure is non-fatal — connection proceeds with syncOffset=0.
     try { await sender.sync(); } catch {}
