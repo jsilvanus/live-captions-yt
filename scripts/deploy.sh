@@ -79,13 +79,22 @@ fi
 # ---------------------------------------------------------------------------
 
 echo "==> Installing lcyt-web dependencies (includes devDependencies for Vite build)"
-npm install \
+LOG="$REPO_DIR/lcyt-web-npm-install.log"
+rm -f "$LOG"
+# Use --include=dev so devDependencies (Vite) are installed even if NODE_ENV=production
+npm ci \
   --prefix "$REPO_DIR" \
-  --workspace packages/lcyt-web 2>&1 | tail -5
+  --workspace packages/lcyt-web \
+  --include=dev 2>&1 | tee "$LOG"
+echo "    Install log: $LOG"
+tail -n 20 "$LOG" || true
 
 echo "==> Building lcyt-web"
-npm run build -w packages/lcyt-web --prefix "$REPO_DIR"
+BUILD_LOG="$REPO_DIR/lcyt-web-build.log"
+rm -f "$BUILD_LOG"
+npm run build -w packages/lcyt-web --prefix "$REPO_DIR" 2>&1 | tee "$BUILD_LOG"
 echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
+echo "    Build log: $BUILD_LOG"
 
 # ---------------------------------------------------------------------------
 # Step 3: Start / restart the site container via Docker Compose
