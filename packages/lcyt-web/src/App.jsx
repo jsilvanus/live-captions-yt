@@ -53,7 +53,7 @@ function AppLayout() {
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
   const [micListening, setMicListening] = useState(false);
-  const [sentPanelMinH, setSentPanelMinH] = useState(null);
+  const [sentPanelH, setSentPanelH] = useState(null);
 
   const inputBarRef = useRef(null);
   const audioPanelRef = useRef(null);
@@ -166,7 +166,7 @@ function AppLayout() {
     e.preventDefault();
     const startY = e.clientY;
     const startH = document.getElementById('right-panel')?.getBoundingClientRect().height || 0;
-    function onMove(me) { setSentPanelMinH(Math.max(80, startH + (startY - me.clientY))); }
+    function onMove(me) { setSentPanelH(Math.max(80, startH + (me.clientY - startY))); }
     function onUp() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
@@ -213,7 +213,7 @@ function AppLayout() {
         <div
           id="right-panel"
           className="panel panel--right"
-          style={sentPanelMinH != null ? { minHeight: sentPanelMinH } : undefined}
+          style={sentPanelH != null ? { height: sentPanelH } : undefined}
         >
           <SentPanel />
         </div>

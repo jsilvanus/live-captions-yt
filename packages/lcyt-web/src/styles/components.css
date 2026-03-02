@@ -959,7 +959,9 @@
 /* ─── Mobile bottom bar (3-zone: meter | mic-toggle | send) ── */
 
 /* Desktop: bar hidden */
-#mobile-audio-bar { display: none; }
+@media (min-width: 769px) {
+  #mobile-audio-bar { display: none; }
+}
 
 .mobile-bar__meter {
   display: block;
