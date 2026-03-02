@@ -246,6 +246,15 @@ class BackendCaptionSender {
     return data;
   }
 
+  /**
+   * Update session fields on the backend (e.g. sequence).
+   * @param {object} fields - Key/value pairs to PATCH to /live
+   * @returns {Promise<object>} Parsed JSON response
+   */
+  async updateSession(fields) {
+    return this._fetch('/live', { method: 'PATCH', body: fields });
+  }
+
   // ---------------------------------------------------------------------------
   // Getters / setters
   // ---------------------------------------------------------------------------

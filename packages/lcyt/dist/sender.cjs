@@ -451,6 +451,10 @@ class YoutubeLiveCaptionSender {
 
     // Parse server timestamp (format: YYYY-MM-DDTHH:MM:SS.mmm — no Z, treat as UTC)
     const serverTime = new Date(result.serverTimestamp + 'Z').getTime();
+    if (!Number.isFinite(serverTime)) {
+      logger.warn('Could not parse server timestamp — syncOffset not updated');
+      return { syncOffset: this.syncOffset, roundTripTime, serverTimestamp: null, statusCode: result.statusCode };
+    }
     const localEstimate = (t1 + t2) / 2;
     this.syncOffset = Math.round(serverTime - localEstimate);
     this.useSyncOffset = true;
