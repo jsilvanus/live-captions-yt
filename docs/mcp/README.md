@@ -2,7 +2,7 @@
 
 `lcyt` provides two Model Context Protocol (MCP) servers that allow AI assistants (such as Claude) to send live captions to YouTube Live.
 
-Both servers expose the same set of [tools](./tools.md) and differ only in their transport mechanism.
+Both servers share a common set of caption tools; the SSE server adds two additional tools for privacy and GDPR data deletion. They differ in their transport mechanism.
 
 | Package | Transport | Best for |
 |---|---|---|
@@ -56,6 +56,6 @@ LCYT_LOG_STDERR=1 node packages/lcyt-mcp-stdio/src/server.js
 
 ## Reference
 
-- [Tools Reference](./tools.md) — all tools, parameters, and return values
+- [Tools Reference](./tools.md) — all tools with per-tool transport availability (stdio / SSE)
 - [Stdio Transport](./stdio.md) — configuration and integration guide
 - [SSE Transport](./sse.md) — configuration and integration guide

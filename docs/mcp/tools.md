@@ -1,10 +1,27 @@
 # MCP Tools Reference
 
-Both [`lcyt-mcp-stdio`](./stdio.md) and [`lcyt-mcp-sse`](./sse.md) expose the tools listed here. The SSE server adds two additional tools noted below.
+`lcyt` exposes MCP tools across two server transports. Most tools are available on both; a few are exclusive to one transport.
+
+## Tool Availability
+
+| Tool | stdio | SSE |
+|---|:---:|:---:|
+| [`start`](#start--start-caption-session) | ✅ | ✅ |
+| [`send_caption`](#send_caption--send-a-single-caption) | ✅ | ✅ |
+| [`send_batch`](#send_batch--send-multiple-captions) | ✅ | ✅ |
+| [`sync_clock`](#sync_clock--synchronise-clock) | ✅ | ✅ |
+| [`get_status`](#get_status--session-status) | ✅ | ✅ |
+| [`stop`](#stop--stop-caption-session) | ✅ | ✅ |
+| [`privacy`](#privacy--privacy-notice) | ❌ | ✅ |
+| [`privacy_deletion`](#privacy_deletion--request-data-deletion) | ❌ | ✅ |
+
+See also: [Session Resources (stdio only)](#session-resources-stdio-only)
 
 ---
 
 ## `start` — Start Caption Session
+
+> **Available in:** stdio, SSE
 
 Create a new `YoutubeLiveCaptionSender` session identified by a unique `session_id`. The session is held in memory on the server.
 
@@ -31,6 +48,8 @@ Create a new `YoutubeLiveCaptionSender` session identified by a unique `session_
 ---
 
 ## `send_caption` — Send a Single Caption
+
+> **Available in:** stdio, SSE
 
 Send one caption to YouTube for an active session.
 
@@ -61,6 +80,8 @@ Send one caption to YouTube for an active session.
 ---
 
 ## `send_batch` — Send Multiple Captions
+
+> **Available in:** stdio, SSE
 
 Send an array of captions in a single HTTP request to YouTube.
 
@@ -93,6 +114,8 @@ Send an array of captions in a single HTTP request to YouTube.
 
 ## `sync_clock` — Synchronise Clock
 
+> **Available in:** stdio, SSE
+
 Perform an NTP-style clock sync for the session. This compensates for clock drift between the MCP server and YouTube, improving timestamp accuracy.
 
 Call this once after `start` and periodically during long sessions.
@@ -119,6 +142,8 @@ Call this once after `start` and periodically during long sessions.
 
 ## `get_status` — Session Status
 
+> **Available in:** stdio, SSE
+
 Retrieve the current state of a caption session.
 
 **Parameters**
@@ -144,6 +169,8 @@ Retrieve the current state of a caption session.
 ---
 
 ## `stop` — Stop Caption Session
+
+> **Available in:** stdio, SSE
 
 End a caption session and release its resources.
 
@@ -181,11 +208,9 @@ Read the current state of a session as JSON.
 
 ---
 
-## SSE-Only Tools
+## `privacy` — Privacy Notice
 
-The following tools are available only on the [`lcyt-mcp-sse`](./sse.md) server.
-
-### `privacy` — Privacy Notice
+> **Available in:** SSE only
 
 Return the service privacy notice as plain text. No parameters required.
 
@@ -193,7 +218,9 @@ Return the service privacy notice as plain text. No parameters required.
 
 ---
 
-### `privacy_deletion` — Request Data Deletion
+## `privacy_deletion` — Request Data Deletion
+
+> **Available in:** SSE only
 
 Submit a GDPR right-to-erasure request. Requires a configured database (`DB_PATH`) and a valid API key.
 
