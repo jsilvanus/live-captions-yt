@@ -166,7 +166,7 @@ function AppLayout() {
     e.preventDefault();
     const startY = e.clientY;
     const startH = document.getElementById('right-panel')?.getBoundingClientRect().height || 0;
-    function onMove(me) { setSentPanelH(Math.max(80, startH + (me.clientY - startY))); }
+    function onMove(me) { setSentPanelH(Math.max(80, startH + (startY - me.clientY))); }
     function onUp() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
@@ -213,7 +213,7 @@ function AppLayout() {
         <div
           id="right-panel"
           className="panel panel--right"
-          style={sentPanelH != null ? { height: sentPanelH } : undefined}
+          style={sentPanelH != null ? { height: sentPanelH, minHeight: 0 } : undefined}
         >
           <SentPanel />
         </div>
