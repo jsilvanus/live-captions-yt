@@ -1,0 +1,33 @@
+---
+import Base from './Base.astro';
+
+export interface SidebarItem {
+  id: string;
+  label: string;
+}
+
+export interface Props {
+  title: string;
+  sidebarItems: SidebarItem[];
+  sidebarHeading?: string;
+}
+
+const { title, sidebarItems, sidebarHeading = 'Contents' } = Astro.props;
+---
+<Base title={title}>
+  <div class="docs-layout">
+    <aside class="sidebar">
+      <h3>{sidebarHeading}</h3>
+      <ul>
+        {sidebarItems.map(item => (
+          <li>
+            <a href={`#${item.id.replace(/\//g, '-')}`}>{item.label}</a>
+          </li>
+        ))}
+      </ul>
+    </aside>
+    <main class="docs-content">
+      <slot />
+    </main>
+  </div>
+</Base>

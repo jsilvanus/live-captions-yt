@@ -1,0 +1,42 @@
+---
+import { getCollection, render } from 'astro:content';
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const ORDER = ['README', 'sender', 'backend-sender', 'config', 'logger', 'errors'];
+
+function sortDocs(docs: { id: string }[]) {
+  return [...docs].sort((a, b) => {
+    const ai = ORDER.indexOf(a.id);
+    const bi = ORDER.indexOf(b.id);
+    if (ai === -1 && bi === -1) return a.id.localeCompare(b.id);
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  });
+}
+
+function docLabel(id: string, title?: string): string {
+  if (title) return title;
+  if (id === 'README') return 'Overview';
+  return id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+const allDocs = await getCollection('lib');
+const docs = sortDocs(allDocs);
+const sidebarItems = docs.map(d => ({
+  id: d.id,
+  label: docLabel(d.id, d.data.title),
+}));
+
+const rendered = await Promise.all(docs.map(doc => render(doc)));
+---
+<DocsLayout title="Library" sidebarItems={sidebarItems} sidebarHeading="Library">
+  {docs.map((doc, i) => {
+    const { Content } = rendered[i];
+    return (
+      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+        <Content />
+      </section>
+    );
+  })}
+</DocsLayout>

@@ -23,3 +23,6 @@ packages/lcyt-web/dist/index.html
 *.db-shm
 *.db-wal
 
+
+# Astro
+.astro/
