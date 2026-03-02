@@ -2,23 +2,11 @@
 import { getCollection, render } from 'astro:content';
 import DocsLayout from '../../layouts/DocsLayout.astro';
 
-const ORDER = [
-  'README', 'tools', 'stdio', 'sse',
+const TOOLS_ORDER = [
   'tools/start', 'tools/send-caption', 'tools/send-batch',
   'tools/sync-clock', 'tools/get-status', 'tools/stop',
   'tools/privacy', 'tools/privacy-deletion', 'tools/session-resources',
 ];
-
-function sortDocs(docs: { id: string }[]) {
-  return [...docs].sort((a, b) => {
-    const ai = ORDER.indexOf(a.id);
-    const bi = ORDER.indexOf(b.id);
-    if (ai === -1 && bi === -1) return a.id.localeCompare(b.id);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
-}
 
 function docLabel(id: string, title?: string): string {
   if (title) return title;
@@ -28,15 +16,48 @@ function docLabel(id: string, title?: string): string {
 }
 
 const allDocs = await getCollection('mcp');
-const docs = sortDocs(allDocs);
-const sidebarItems = docs.map(d => ({
-  id: d.id,
-  label: docLabel(d.id, d.data.title),
-}));
+
+// Separate docs by category
+const readme = allDocs.find(d => d.id === 'README');
+const toolsIndex = allDocs.find(d => d.id === 'tools');
+const stdioDoc = allDocs.find(d => d.id === 'stdio');
+const sseDoc = allDocs.find(d => d.id === 'sse');
+const toolDocs = TOOLS_ORDER
+  .map(id => allDocs.find(d => d.id === id))
+  .filter(Boolean) as typeof allDocs;
+
+// Ordered list for rendering
+const docs = [
+  ...(readme ? [readme] : []),
+  ...(toolsIndex ? [toolsIndex] : []),
+  ...(stdioDoc ? [stdioDoc] : []),
+  ...(sseDoc ? [sseDoc] : []),
+  ...toolDocs,
+];
+
+const sidebarSections = [
+  {
+    items: [
+      ...(readme ? [{ id: readme.id, label: 'Overview' }] : []),
+      ...(toolsIndex ? [{ id: toolsIndex.id, label: 'Tools Overview' }] : []),
+    ],
+  },
+  {
+    heading: 'Transport',
+    items: [
+      ...(stdioDoc ? [{ id: stdioDoc.id, label: 'stdio' }] : []),
+      ...(sseDoc ? [{ id: sseDoc.id, label: 'SSE' }] : []),
+    ],
+  },
+  {
+    heading: 'Tools',
+    items: toolDocs.map(d => ({ id: d.id, label: docLabel(d.id, d.data.title) })),
+  },
+];
 
 const rendered = await Promise.all(docs.map(doc => render(doc)));
 ---
-<DocsLayout title="MCP Server" sidebarItems={sidebarItems} sidebarHeading="MCP">
+<DocsLayout title="MCP Server" sidebarSections={sidebarSections} sidebarHeading="MCP">
   {docs.map((doc, i) => {
     const { Content } = rendered[i];
     return (
