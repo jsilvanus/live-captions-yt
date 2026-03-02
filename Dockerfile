@@ -32,6 +32,11 @@ RUN chmod +x /entrypoint.sh \
  && mkdir -p /data \
  && chown node:node /data
 
+# Create a convenience symlink `/app/bin` → backend's bin directory
+# so any runtime scripts can be found at `/app/bin` inside the image.
+RUN rm -rf /app/bin \
+ && ln -s /app/packages/lcyt-backend/bin /app/bin || true
+
 USER node
 EXPOSE 3000
 EXPOSE 3001
