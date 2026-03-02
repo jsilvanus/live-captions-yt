@@ -1,11 +1,19 @@
 {
-  "servers": {
-    "lcyt-mcp-stdio": {
-      "command": "docker",
-      "args": ["run", "-i", "--rm", "lcyt-mcp-stdio"]
-    },
-    "lcyt-mcp-sse": {
-      "url": "http://localhost:3001/sse"
-    }
-  }
+	"servers": {
+		"lcyt-mcp-stdio": {
+			"command": "docker",
+			"args": [
+				"run",
+				"-i",
+				"--rm",
+				"lcyt-mcp-stdio"
+			],
+			"type": "stdio"
+		},
+		"lcyt-mcp-sse": {
+			"url": "https://mcp.lcyt.fi",
+			"type": "http"
+		}
+	},
+	"inputs": []
 }

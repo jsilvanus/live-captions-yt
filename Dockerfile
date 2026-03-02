@@ -27,7 +27,7 @@ ENV NODE_ENV=production
 ENV FREE_APIKEY_ACTIVE=0
 
 # Copy process manager entrypoint and make executable, create SQLite data dir
-COPY packages/lcyt-site/entrypoint.sh /entrypoint.sh
+COPY scripts/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh \
  && mkdir -p /data \
  && chown node:node /data
