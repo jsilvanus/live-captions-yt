@@ -55,6 +55,12 @@ function AppLayout() {
   const [micListening, setMicListening] = useState(false);
   const [micHolding, setMicHolding] = useState(false);
   const [leftPanelH, setLeftPanelH] = useState(null);
+  const [utteranceActive, setUtteranceActive] = useState(false);
+  const [utteranceTimerRunning, setUtteranceTimerRunning] = useState(false);
+  const [utteranceTimerSec, setUtteranceTimerSec] = useState(0);
+  const [mobileUtteranceEndEnabled, setMobileUtteranceEndEnabled] = useState(
+    () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
+  );
 
   const inputBarRef = useRef(null);
   const audioPanelRef = useRef(null);
@@ -148,6 +154,15 @@ function AppLayout() {
     }
   }, [fileStore.files.length]);
 
+  // Sync mobile utterance-end button setting when settings change
+  useEffect(() => {
+    function onCfgChange() {
+      try { setMobileUtteranceEndEnabled(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
+    }
+    window.addEventListener('lcyt:stt-config-changed', onCfgChange);
+    return () => window.removeEventListener('lcyt:stt-config-changed', onCfgChange);
+  }, []);
+
   function handlePrivacyOpen() {
     setPrivacyRequireAcceptance(false);
     setPrivacyOpen(true);
@@ -161,6 +176,12 @@ function AppLayout() {
 
   function handleLineSend(text, fileId, lineIndex) {
     inputBarRef.current?.sendText(text, fileId, lineIndex);
+  }
+
+  function handleUtteranceChange(active, timerRunning, timerSec) {
+    setUtteranceActive(active);
+    setUtteranceTimerRunning(timerRunning);
+    setUtteranceTimerSec(timerSec);
   }
 
   function onResizePointerDown(e) {
@@ -200,6 +221,7 @@ function AppLayout() {
             visible={true}
             onListeningChange={setMicListening}
             onHoldingChange={setMicHolding}
+            onUtteranceChange={handleUtteranceChange}
             extraMeterCanvasRef={mobileBarMeterRef}
           />
         </div>
@@ -234,11 +256,29 @@ function AppLayout() {
         const otherHasMic = session.micHolder !== null && session.micHolder !== session.clientId;
         return (
           <div id="mobile-audio-bar">
-            <canvas
-              ref={mobileBarMeterRef}
-              className="mobile-bar__meter"
-              aria-hidden="true"
-            />
+            <div className="mobile-bar__meter-wrap">
+              <canvas
+                ref={mobileBarMeterRef}
+                className="mobile-bar__meter"
+                aria-hidden="true"
+              />
+              {micListening && mobileUtteranceEndEnabled && (
+                <button
+                  className={[
+                    'audio-meter-end-btn',
+                    utteranceActive ? 'audio-meter-end-btn--active' : 'audio-meter-end-btn--idle',
+                  ].join(' ')}
+                  onClick={utteranceActive ? () => audioPanelRef.current?.utteranceEndClick() : undefined}
+                  title={utteranceActive ? 'Force end utterance' : 'Utterance detection active'}
+                >🗣</button>
+              )}
+              {micListening && utteranceTimerRunning && (
+                <div
+                  className="audio-meter-timer-border"
+                  style={{ animationDuration: `${utteranceTimerSec}s` }}
+                />
+              )}
+            </div>
             {otherHasMic ? (
               <button
                 className={`mobile-bar__mic-btn mobile-bar__mic-btn--locked${micHolding ? ' mobile-bar__mic-btn--holding' : ''}`}
