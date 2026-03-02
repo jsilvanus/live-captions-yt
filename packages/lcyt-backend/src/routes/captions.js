@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions } from '../db.js';
+import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence } from '../db.js';
 
 /**
  * Factory for the /captions router.
@@ -69,6 +69,10 @@ export function createCaptionsRouter(store, auth, db) {
 
         session.sequence = session.sender.sequence;
         store.touch(sessionId);
+        // Persist per-API-key sequence so it survives session expiry
+        if (db) {
+          try { updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
+        }
 
         if (result.statusCode >= 200 && result.statusCode < 300) {
           session.captionsSent++;

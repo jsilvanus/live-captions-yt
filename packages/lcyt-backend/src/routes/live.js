@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
@@ -40,7 +40,7 @@ export function createLiveRouter(db, store, jwtSecret) {
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
-    const { apiKey, streamKey, domain, sequence: startSeq = 0 } = req.body || {};
+    const { apiKey, streamKey, domain, sequence: startSeqRaw } = req.body || {};
 
     // Validate required fields
     if (!apiKey || !streamKey || !domain) {
@@ -105,7 +105,10 @@ export function createLiveRouter(db, store, jwtSecret) {
     }
 
     // Create sender and start it
-    const sender = new YoutubeLiveCaptionSender({ streamKey, sequence: startSeq });
+    // Use per-key sequence as default; allow explicit client override
+    const keySeq = getKeySequence(db, apiKey);
+    const initialSeq = startSeqRaw !== undefined ? Number(startSeqRaw) : keySeq;
+    const sender = new YoutubeLiveCaptionSender({ streamKey, sequence: initialSeq });
     sender.start();
 
     // Initial sync — best-effort
@@ -177,13 +180,23 @@ export function createLiveRouter(db, store, jwtSecret) {
         return res.status(400).json({ error: 'sequence must be a non-negative number' });
       }
       try {
-        if (typeof session.sender.setSequence === 'function') {
+        if (typeof session.sender?.setSequence === 'function') {
           session.sender.setSequence(seq);
         }
       } catch (err) {
         // Ignore sender errors but continue to update session value
       }
       session.sequence = seq;
+      // Persist to per-API-key store; seq=0 is an explicit reset (clears last_caption_at)
+      if (db) {
+        try {
+          if (seq === 0) {
+            resetKeySequence(db, session.apiKey);
+          } else {
+            updateKeySequence(db, session.apiKey, seq);
+          }
+        } catch (_) {}
+      }
       store.touch(sessionId);
     }
 
