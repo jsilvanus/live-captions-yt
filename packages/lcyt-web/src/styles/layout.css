@@ -151,22 +151,26 @@ body {
     display: none;
   }
 
-  /* Main area scrolls vertically */
+  /* Main area: fixed height split-pane (no scroll) */
   #main {
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
+    overflow: hidden;
+    padding-bottom: var(--mobile-bar-height, 52px);
   }
 
-  /* Left panel: normal flow, no fixed height */
+  /* Left panel: fixed initial share of main, shrinks/grows via drag */
   .panel--left {
     flex-shrink: 0;
     border-right: none;
+    height: 52%;
   }
 
-  /* Caption view capped on mobile */
+  /* Caption view fills the left panel; remove the 30vh cap */
   #left-panel .caption-view {
-    max-height: 30vh;
+    flex: 1;
+    min-height: 0;
+    max-height: none;
   }
 
   /* AudioPanel on mobile: kept in DOM for STT logic, hidden visually */
@@ -179,20 +183,16 @@ body {
     display: none;
   }
 
-  /* Right panel: normal flow in scroll area */
+  /* Right panel: fills remaining space in split-pane */
   .panel--right {
+    flex: 1;
+    min-height: 0;
     display: flex;
     position: static;
     inset: auto;
     height: auto;
-    min-height: 28vh;
     background: var(--color-bg);
     z-index: 1;
-  }
-
-  /* Pad main content so it doesn't hide behind the fixed bar */
-  #main {
-    padding-bottom: var(--mobile-bar-height, 52px);
   }
 
   /* Drag resize handle between left and right panels */
@@ -206,7 +206,7 @@ body {
     touch-action: none;
   }
 
-  /* Fixed bottom 3-zone bar: meter | mic-toggle | send */
+  /* Fixed bottom bar: meter | mic | prev | send | next */
   #mobile-audio-bar {
     position: fixed;
     bottom: 0;
@@ -216,10 +216,10 @@ body {
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: 56px 1fr auto 1fr auto;
     align-items: center;
-    gap: 8px;
-    padding: 0 10px;
+    gap: 6px;
+    padding: 0 8px;
     z-index: 60;
   }
 

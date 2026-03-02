@@ -53,7 +53,8 @@ function AppLayout() {
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
   const [micListening, setMicListening] = useState(false);
-  const [sentPanelH, setSentPanelH] = useState(null);
+  const [micHolding, setMicHolding] = useState(false);
+  const [leftPanelH, setLeftPanelH] = useState(null);
 
   const inputBarRef = useRef(null);
   const audioPanelRef = useRef(null);
@@ -165,8 +166,8 @@ function AppLayout() {
   function onResizePointerDown(e) {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = document.getElementById('right-panel')?.getBoundingClientRect().height || 0;
-    function onMove(me) { setSentPanelH(Math.max(80, startH + (startY - me.clientY))); }
+    const startH = document.getElementById('left-panel')?.getBoundingClientRect().height || 0;
+    function onMove(me) { setLeftPanelH(Math.max(80, startH + (me.clientY - startY))); }
     function onUp() {
       document.removeEventListener('pointermove', onMove);
       document.removeEventListener('pointerup', onUp);
@@ -186,7 +187,7 @@ function AppLayout() {
 
       <main id="main">
         {/* Left panel */}
-        <div id="left-panel" className="panel panel--left">
+        <div id="left-panel" className="panel panel--left" style={leftPanelH != null ? { height: leftPanelH } : undefined}>
           <DropZone visible={dropZoneVisible} />
           <FileTabs
             dropZoneVisible={dropZoneVisible}
@@ -198,6 +199,7 @@ function AppLayout() {
             ref={audioPanelRef}
             visible={true}
             onListeningChange={setMicListening}
+            onHoldingChange={setMicHolding}
             extraMeterCanvasRef={mobileBarMeterRef}
           />
         </div>
@@ -213,7 +215,6 @@ function AppLayout() {
         <div
           id="right-panel"
           className="panel panel--right"
-          style={sentPanelH != null ? { height: sentPanelH, minHeight: 0 } : undefined}
         >
           <SentPanel />
         </div>
@@ -224,24 +225,57 @@ function AppLayout() {
         <InputBar ref={inputBarRef} />
       </footer>
 
-      {/* Mobile fixed bottom bar — 3-zone: meter | mic-toggle | send */}
-      <div id="mobile-audio-bar">
-        <canvas
-          ref={mobileBarMeterRef}
-          className="mobile-bar__meter"
-          aria-hidden="true"
-        />
-        <button
-          className={`mobile-bar__mic-btn${micListening ? ' mobile-bar__mic-btn--active' : ''}`}
-          onClick={() => audioPanelRef.current?.toggle()}
-          title={micListening ? 'Stop microphone' : 'Start microphone'}
-        >{micListening ? '⏹ Stop' : '🎙 Mic'}</button>
-        <button
-          className="mobile-bar__send-btn"
-          onClick={() => inputBarRef.current?.triggerSend()}
-          title="Send current line"
-        >►</button>
-      </div>
+      {/* Mobile fixed bottom bar — meter | mic | prev | send | next */}
+      {(() => {
+        const file = fileStore.activeFile;
+        const hasFile = !!file;
+        const canGoPrev = hasFile && file.pointer > 0;
+        const canGoNext = hasFile && file.pointer < file.lines.length - 1;
+        const otherHasMic = session.micHolder !== null && session.micHolder !== session.clientId;
+        return (
+          <div id="mobile-audio-bar">
+            <canvas
+              ref={mobileBarMeterRef}
+              className="mobile-bar__meter"
+              aria-hidden="true"
+            />
+            {otherHasMic ? (
+              <button
+                className={`mobile-bar__mic-btn mobile-bar__mic-btn--locked${micHolding ? ' mobile-bar__mic-btn--holding' : ''}`}
+                onPointerDown={(e) => audioPanelRef.current?.holdStart(e)}
+                onPointerUp={() => audioPanelRef.current?.holdEnd()}
+                onPointerLeave={() => audioPanelRef.current?.holdEnd()}
+                onPointerCancel={() => audioPanelRef.current?.holdEnd()}
+                title="Hold to steal the microphone"
+              >{micHolding ? '🎙 Hold…' : '🔒 Locked'}</button>
+            ) : (
+              <button
+                className={`mobile-bar__mic-btn${micListening ? ' mobile-bar__mic-btn--active' : ''}`}
+                onClick={() => audioPanelRef.current?.toggle()}
+                title={micListening ? 'Stop microphone' : 'Start microphone'}
+              >{micListening ? '⏹' : '🎙'}</button>
+            )}
+            <button
+              className="mobile-bar__nav-btn"
+              onClick={() => fileStore.setPointer(file.id, file.pointer - 1)}
+              disabled={!canGoPrev}
+              title="Previous line"
+            >−</button>
+            <button
+              className="mobile-bar__send-btn"
+              onClick={() => inputBarRef.current?.triggerSend()}
+              disabled={!hasFile}
+              title="Send current line"
+            >►</button>
+            <button
+              className="mobile-bar__nav-btn"
+              onClick={() => fileStore.advancePointer(file.id)}
+              disabled={!canGoNext}
+              title="Next line"
+            >+</button>
+          </div>
+        );
+      })()}
 
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <PrivacyModal

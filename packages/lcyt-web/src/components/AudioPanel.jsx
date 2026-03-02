@@ -18,7 +18,7 @@ function blobToBase64(blob) {
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AudioPanel = forwardRef(function AudioPanel(
-  { visible, onListeningChange, extraMeterCanvasRef },
+  { visible, onListeningChange, onHoldingChange, extraMeterCanvasRef },
   ref
 ) {
   const [listening, setListening] = useState(false);
@@ -47,9 +47,15 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const [isHolding, setIsHolding] = useState(false);
   const holdTimerRef = useRef(null);
 
-  // Stable ref that always points to the current toggle fn — avoids stale closures via ref
-  const toggleFnRef = useRef(null);
-  useImperativeHandle(ref, () => ({ toggle: () => toggleFnRef.current?.() }), []);
+  // Stable refs so imperative handles never have stale closures
+  const toggleFnRef   = useRef(null);
+  const holdStartRef  = useRef(null);
+  const holdEndRef    = useRef(null);
+  useImperativeHandle(ref, () => ({
+    toggle:    ()  => toggleFnRef.current?.(),
+    holdStart: (e) => holdStartRef.current?.(e),
+    holdEnd:   ()  => holdEndRef.current?.(),
+  }), []);
 
   // ── Sync engine/credential from settings events ──────────────────────────
   useEffect(() => {
@@ -473,8 +479,13 @@ export const AudioPanel = forwardRef(function AudioPanel(
     : !isWebkit && !credLoaded     ? 'Load a Google service account key in Settings → STT / Audio.'
     : null;
 
-  // Keep toggleFnRef current so the imperative handle never has a stale closure
-  toggleFnRef.current = toggle;
+  // Keep fn refs current so imperative handles never have stale closures
+  toggleFnRef.current  = toggle;
+  holdStartRef.current = onHoldStart;
+  holdEndRef.current   = onHoldEnd;
+
+  // Notify parent of holding state changes (for mobile bar)
+  useEffect(() => { onHoldingChange?.(isHolding); }, [isHolding, onHoldingChange]);
 
   return (
     <div className={`audio-panel${visible ? ' audio-panel--open' : ' audio-panel--hidden'}`}>

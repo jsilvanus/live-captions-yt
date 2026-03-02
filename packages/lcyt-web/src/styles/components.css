@@ -971,15 +971,19 @@
 }
 
 .mobile-bar__mic-btn {
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 14px;
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+  font-size: 20px;
   font-weight: 600;
   background: var(--color-accent);
   color: #fff;
   border: none;
   white-space: nowrap;
   transition: background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .mobile-bar__mic-btn:active { background: var(--color-accent-dim); }
@@ -995,23 +999,68 @@
   color: var(--color-error);
 }
 
+.mobile-bar__mic-btn--locked {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-warning);
+  color: var(--color-warning);
+  font-size: 14px;
+}
+
+.mobile-bar__mic-btn--holding {
+  background: var(--color-warning);
+  color: #fff;
+  border: none;
+}
+
 .mobile-bar__send-btn {
-  width: 44px;
-  height: 36px;
-  border-radius: 6px;
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
   background: var(--color-accent);
   color: #fff;
   border: none;
-  font-size: 16px;
+  font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.15s, transform 0.1s;
 }
 
-.mobile-bar__send-btn:active {
+.mobile-bar__send-btn:active:not(:disabled) {
   transform: scale(0.92);
   background: var(--color-accent-dim);
+}
+
+.mobile-bar__send-btn:disabled {
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.mobile-bar__nav-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.mobile-bar__nav-btn:active:not(:disabled) {
+  transform: scale(0.92);
+  background: var(--color-border);
+}
+
+.mobile-bar__nav-btn:disabled {
+  color: var(--color-text-muted);
+  border-color: var(--color-border);
+  cursor: default;
+  opacity: 0.4;
 }
 
 /* ─── Panel resize handle ────────────────────────────────── */

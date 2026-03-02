@@ -93,6 +93,7 @@ export function useSession({
 
     es.addEventListener('caption_result', (e) => {
       const data = JSON.parse(e.data);
+      if (import.meta.env.DEV) console.log(`[LCYT] caption_result seq=${data.sequence} status=${data.statusCode}`);
       setSequence(data.sequence);
       cbs.current.onCaptionResult?.(data);
     });
