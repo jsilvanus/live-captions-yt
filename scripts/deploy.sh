@@ -32,6 +32,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+set -a
 # Load .env next to the script if it exists
 ENV_FILE="$SCRIPT_DIR/.env"
 if [[ -f "$ENV_FILE" ]]; then
@@ -42,6 +43,7 @@ fi
 REPO_DIR="${1:-${REPO_DIR:-$HOME/lcyt}}"
 REPO_URL="${REPO_URL:-}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
+set +a
 
 # ---------------------------------------------------------------------------
 # Validation
@@ -105,5 +107,5 @@ echo ""
 echo "Deploy complete."
 echo "  Backend:  http://localhost:3000/health"
 echo "  MCP SSE:  http://localhost:3001/sse"
-echo "  Web UI:   http://localhost:3000  (served by host nginx; see nginx symlink in this script)"
+echo "  Web UI:   in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
 echo ""
