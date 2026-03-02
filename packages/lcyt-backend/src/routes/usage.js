@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { getDomainUsageStats } from '../db.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi';
+const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
 
 /**
  * Parse ALLOWED_DOMAINS env var.

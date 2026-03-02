@@ -5,7 +5,7 @@ import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourly
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
-const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi';
+const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
 
 /**
  * Check whether a domain is permitted to register sessions.

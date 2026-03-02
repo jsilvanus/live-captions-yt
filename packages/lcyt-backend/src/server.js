@@ -34,10 +34,14 @@ if (!process.env.ADMIN_KEY) {
   console.info('  Set ADMIN_KEY in your environment to enable API key management via HTTP.');
 }
 
-const _allowedDomains = process.env.ALLOWED_DOMAINS ?? 'lcyt.fi,www.lcyt.fi';
+const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
+const _allowedDomains = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
 if (_allowedDomains === '*') {
   console.warn('⚠ ALLOWED_DOMAINS=* — sessions allowed from any domain.');
 } else {
+  if (!process.env.ALLOWED_DOMAINS) {
+    console.info(`ℹ ALLOWED_DOMAINS not set — using default domains: ${DEFAULT_ALLOWED_DOMAINS}`);
+  }
   console.info(`✓ Allowed session domains: ${_allowedDomains}`);
 }
 
