@@ -22,10 +22,15 @@ function isMobileDevice() {
 // Duration of the utterance-end button click flash animation (ms) — must match CSS @keyframes
 const UTTERANCE_CLICK_FLASH_MS = 400;
 
+// VAD polling and grace-period constants
+const VAD_POLL_INTERVAL_MS       = 50;   // normal check interval (ms)
+const VAD_POLL_INTERVAL_GRACE_MS = 100;  // check interval while in grace period (ms)
+const VAD_GRACE_PERIOD_MS        = 1000; // cooldown after a VAD-triggered force-stop (ms)
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AudioPanel = forwardRef(function AudioPanel(
-  { visible, onListeningChange, onHoldingChange, extraMeterCanvasRef },
+  { visible, onListeningChange, onHoldingChange, onUtteranceChange, extraMeterCanvasRef },
   ref
 ) {
   const [listening, setListening] = useState(false);
@@ -57,15 +62,18 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const [utteranceClickFlash, setUtteranceClickFlash] = useState(false);
   // Whether the utterance timer is currently running (drives the timer border animation)
   const [utteranceTimerRunning, setUtteranceTimerRunning] = useState(false);
+  // Timer duration in seconds — kept as both state (for effect deps) and ref (for animation style reads)
+  const [utteranceTimerSec, setUtteranceTimerSec] = useState(0);
 
   // Client-side VAD refs (only used when lcyt:client-vad === '1')
-  const vadTimerRef        = useRef(null);   // setTimeout handle for the VAD check loop
-  const vadAudioCtxRef     = useRef(null);   // AudioContext created locally for VAD
-  const vadAnalyserRef     = useRef(null);   // AnalyserNode created locally for VAD
-  const vadLocalStreamRef  = useRef(null);   // MediaStream obtained locally for VAD
-  const vadSpeakingRef     = useRef(false);  // current VAD speaking state
-  const vadSilenceStartRef = useRef(null);   // timestamp (ms) when silence began
-  const vadStartingRef     = useRef(false);  // prevents concurrent VAD initializations
+  const vadTimerRef         = useRef(null);   // setTimeout handle for the VAD check loop
+  const vadAudioCtxRef      = useRef(null);   // AudioContext created locally for VAD
+  const vadAnalyserRef      = useRef(null);   // AnalyserNode created locally for VAD
+  const vadLocalStreamRef   = useRef(null);   // MediaStream obtained locally for VAD
+  const vadSpeakingRef      = useRef(false);  // current VAD speaking state
+  const vadSilenceStartRef  = useRef(null);   // timestamp (ms) when silence began
+  const vadStartingRef      = useRef(false);  // prevents concurrent VAD initializations
+  const vadLastForceStopRef = useRef(0);      // timestamp of last VAD-triggered force-stop (ms)
 
   // Cloud STT refs
   const streamRef    = useRef(null);   // MediaStream
@@ -81,9 +89,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const holdStartRef  = useRef(null);
   const holdEndRef    = useRef(null);
   useImperativeHandle(ref, () => ({
-    toggle:    ()  => toggleFnRef.current?.(),
-    holdStart: (e) => holdStartRef.current?.(e),
-    holdEnd:   ()  => holdEndRef.current?.(),
+    toggle:           ()  => toggleFnRef.current?.(),
+    holdStart:        (e) => holdStartRef.current?.(e),
+    holdEnd:          ()  => holdEndRef.current?.(),
+    utteranceEndClick: () => handleUtteranceEndClick(),
   }), []);
 
   // ── Sync engine/credential from settings events ──────────────────────────
@@ -162,6 +171,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     const timerSec = getUtteranceEndTimerSec();
     if (timerSec > 0 && !utteranceTimerRef.current) {
       utteranceTimerSecRef.current = timerSec;
+      setUtteranceTimerSec(timerSec);
       setUtteranceTimerRunning(true);
       utteranceTimerRef.current = setTimeout(() => {
         utteranceTimerRef.current = null;
@@ -220,6 +230,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
   // Notify parent when listening state changes (e.g. for mobile bar button appearance)
   useEffect(() => { onListeningChange?.(listening); }, [listening, onListeningChange]);
+
+  // Notify parent when utterance state changes (e.g. for mobile bar overlays)
+  useEffect(() => {
+    onUtteranceChange?.(utteranceActive, utteranceTimerRunning, utteranceTimerSec);
+  }, [utteranceActive, utteranceTimerRunning, utteranceTimerSec, onUtteranceChange]);
 
   // Respond to toggle requests from FileTabs: if not currently listening, allow hiding the panel.
   useEffect(() => {
@@ -447,6 +462,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
                 // Sustained silence: flip speaking state and force finalization
                 vadSpeakingRef.current = false;
                 vadSilenceStartRef.current = null;
+                vadLastForceStopRef.current = Date.now();
                 try { recognition.stop(); } catch {}
                 // recognition.onend will auto-restart; utteranceStartRef cleared by onresult
                 return; // stop polling until onend restarts recognition
@@ -454,10 +470,16 @@ export const AudioPanel = forwardRef(function AudioPanel(
             }
           }
         } catch {}
-        vadTimerRef.current = setTimeout(check, 50);
+        // Skip polling if we're within the grace period after a VAD-triggered force-stop,
+        // to prevent rapid stop/start cycles when silence persists after restart.
+        if (Date.now() - vadLastForceStopRef.current < VAD_GRACE_PERIOD_MS) {
+          vadTimerRef.current = setTimeout(check, VAD_POLL_INTERVAL_GRACE_MS);
+        } else {
+          vadTimerRef.current = setTimeout(check, VAD_POLL_INTERVAL_MS);
+        }
       }
 
-      vadTimerRef.current = setTimeout(check, 50);
+      vadTimerRef.current = setTimeout(check, VAD_POLL_INTERVAL_MS);
     } catch (e) {
       console.warn('Client VAD: initialization error', e);
     } finally {

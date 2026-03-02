@@ -1046,6 +1046,17 @@
   background: var(--color-surface-elevated);
 }
 
+.mobile-bar__meter-wrap {
+  position: relative;
+  height: 20px;
+  border-radius: 3px;
+}
+
+.mobile-bar__meter-wrap .mobile-bar__meter {
+  width: 100%;
+  height: 100%;
+}
+
 .mobile-bar__mic-btn {
   width: 100%;
   height: 40px;
