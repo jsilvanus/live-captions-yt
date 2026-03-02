@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>lcyt-web — Live Captions for YouTube</title>
-  <!-- PWA / installability -->
-  <link rel="manifest" href="/manifest.json" />
+  <!-- PWA / installability (disabled) -->
+  <!-- Manifest and service worker removed during development -->
   <meta name="theme-color" content="#1c2128" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -18,12 +18,6 @@
 <body>
   <div id="app"></div>
   <script type="module" src="/src/main.jsx"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-      });
-    }
-  </script>
+  <!-- Service worker registration removed -->
 </body>
 </html>
