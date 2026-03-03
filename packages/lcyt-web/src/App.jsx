@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { AppProviders } from './contexts/AppProviders';
 import { useSessionContext } from './contexts/SessionContext';
 import { useFileContext } from './contexts/FileContext';
+import { useLang } from './contexts/LangContext';
 import { StatusBar } from './components/StatusBar';
 import { SettingsModal } from './components/SettingsModal';
 import { PrivacyModal } from './components/PrivacyModal';
@@ -16,6 +17,7 @@ import { ToastContainer } from './components/ToastContainer';
 // Persistent banner shown when the backend cannot be reached
 function NetworkBanner({ privacyPending }) {
   const { healthStatus, checkHealth, connected, getAutoConnect, getPersistedConfig, connect } = useSessionContext();
+  const { t } = useLang();
 
   const retry = useCallback(async () => {
     const cfg = getPersistedConfig();
@@ -37,8 +39,8 @@ function NetworkBanner({ privacyPending }) {
   return (
     <div className="network-banner" role="alert">
       <span className="network-banner__icon">⚠</span>
-      <span className="network-banner__msg">Backend cannot be reached — check your network connection</span>
-      <button className="network-banner__btn" onClick={retry}>Retry</button>
+      <span className="network-banner__msg">{t('networkBanner.message')}</span>
+      <button className="network-banner__btn" onClick={retry}>{t('networkBanner.retry')}</button>
     </div>
   );
 }

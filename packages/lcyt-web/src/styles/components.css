@@ -1844,3 +1844,33 @@
 .network-banner__btn:hover {
   background: rgba(255, 210, 122, 0.25);
 }
+
+/* ── Language switcher ── */
+.lang-switcher {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lang-btn {
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.lang-btn:hover {
+  color: var(--color-text);
+  border-color: var(--color-text-dim);
+}
+
+.lang-btn--active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}

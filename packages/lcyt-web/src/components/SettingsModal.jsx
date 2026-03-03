@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
+import { useLang } from '../contexts/LangContext';
 import {
   COMMON_LANGUAGES, STT_MODELS,
   getSttEngine, setSttEngine,
@@ -31,6 +32,7 @@ function applyTextSize(px) {
 export function SettingsModal({ isOpen, onClose }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
+  const { lang, setLang, t, LOCALE_CODES } = useLang();
 
   const [activeTab, setActiveTab] = useState('connection');
 
@@ -47,6 +49,9 @@ export function SettingsModal({ isOpen, onClose }) {
   const [transcriptionOffset, setTranscriptionOffset] = useState(0);
   const [showApiKey, setShowApiKey] = useState(false);
   const [showStreamKey, setShowStreamKey] = useState(false);
+
+  // ── Actions tab ────────────────────────────────────────────
+  const [customSequence, setCustomSequence] = useState(0);
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [hbResult, setHbResult] = useState(null);
@@ -243,6 +248,16 @@ const [sttLang, setSttLangState] = useState(savedLang);
     }
   }
 
+  async function handleSetSequence() {
+    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
+    try {
+      await session.updateSequence(customSequence);
+      showToast(`${t('settings.actions.setSequence')}: ${customSequence}`, 'success');
+    } catch (err) {
+      showToast(err.message || t('settings.actions.sequenceSetError'), 'error');
+    }
+  }
+
   function handleClearConfig() {
     session.clearPersistedConfig();
     setBackendUrl('');
@@ -305,14 +320,13 @@ const [sttLang, setSttLangState] = useState(savedLang);
     : [];
 
   const TABS = ['connection', 'captions', 'stt', 'vad', 'status', 'actions'];
-  const TAB_LABELS = { connection: 'Connection', captions: 'Captions', stt: 'STT / Audio', vad: 'VAD', status: 'Status', actions: 'Actions' };
 
   return (
     <div className="settings-modal">
       <div className="settings-modal__backdrop" onClick={onClose} />
       <div className="settings-modal__box">
         <div className="settings-modal__header">
-          <span className="settings-modal__title">Settings</span>
+          <span className="settings-modal__title">{t('settings.title')}</span>
           <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
         </div>
 
@@ -323,7 +337,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
               className={`settings-tab${activeTab === tab ? ' settings-tab--active' : ''}`}
               onClick={() => setActiveTab(tab)}
             >
-              {TAB_LABELS[tab]}
+              {t(`settings.tabs.${tab}`)}
             </button>
           ))}
         </div>
@@ -334,7 +348,22 @@ const [sttLang, setSttLangState] = useState(savedLang);
           {activeTab === 'connection' && (
             <div className="settings-panel settings-panel--active">
               <div className="settings-field">
-                <label className="settings-field__label">Backend URL</label>
+                <label className="settings-field__label">{t('settings.language')}</label>
+                <div className="lang-switcher">
+                  {LOCALE_CODES.map(code => (
+                    <button
+                      key={code}
+                      className={`lang-btn${lang === code ? ' lang-btn--active' : ''}`}
+                      onClick={() => setLang(code)}
+                      title={code.toUpperCase()}
+                    >
+                      🌐 {code.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="settings-field">
+                <label className="settings-field__label">{t('settings.connection.backendUrl')}</label>
                 <input
                   className="settings-field__input"
                   type="url"
@@ -345,7 +374,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
                 />
               </div>
               <div className="settings-field">
-                <label className="settings-field__label">API Key</label>
+                <label className="settings-field__label">{t('settings.connection.apiKey')}</label>
                 <div className="settings-field__input-wrap">
                   <input
                     className="settings-field__input settings-field__input--has-eye"
@@ -359,7 +388,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
                 </div>
               </div>
               <div className="settings-field">
-                <label className="settings-field__label">Stream Key</label>
+                <label className="settings-field__label">{t('settings.connection.streamKey')}</label>
                 <div className="settings-field__input-wrap">
                   <input
                     className="settings-field__input settings-field__input--has-eye"
@@ -374,19 +403,19 @@ const [sttLang, setSttLangState] = useState(savedLang);
               </div>
               <label className="settings-checkbox">
                 <input type="checkbox" checked={autoConnect} onChange={e => setAutoConnect(e.target.checked)} />
-                Auto-connect on startup
+                {t('settings.connection.autoConnect')}
               </label>
               <div className="settings-field">
-                <label className="settings-field__label">Theme</label>
+                <label className="settings-field__label">{t('settings.connection.theme')}</label>
                 <select
                   className="settings-field__input"
                   style={{ appearance: 'auto' }}
                   value={theme}
                   onChange={e => onThemeChange(e.target.value)}
                 >
-                  <option value="auto">Auto (system)</option>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
+                  <option value="auto">{t('settings.connection.themeAuto')}</option>
+                  <option value="dark">{t('settings.connection.themeDark')}</option>
+                  <option value="light">{t('settings.connection.themeLight')}</option>
                 </select>
               </div>
               {error && <div className="settings-error">{error}</div>}
@@ -773,28 +802,28 @@ const [sttLang, setSttLangState] = useState(savedLang);
           {activeTab === 'status' && (
             <div className="settings-panel settings-panel--active">
               <div className="settings-status-row">
-                <span className="settings-status-row__label">Connection</span>
+                <span className="settings-status-row__label">{t('settings.status.connection')}</span>
                 <span
                   className="settings-status-row__value"
                   style={{ color: session.connected ? 'var(--color-success)' : 'var(--color-text-dim)' }}
                 >
-                  {session.connected ? '● Connected' : '○ Disconnected'}
+                  {session.connected ? t('settings.status.connected') : t('settings.status.disconnected')}
                 </span>
               </div>
               <div className="settings-status-row">
-                <span className="settings-status-row__label">Backend URL</span>
+                <span className="settings-status-row__label">{t('settings.status.backendUrl')}</span>
                 <span className="settings-status-row__value">{session.backendUrl || '—'}</span>
               </div>
               <div className="settings-status-row">
-                <span className="settings-status-row__label">Sequence</span>
+                <span className="settings-status-row__label">{t('settings.status.sequence')}</span>
                 <span className="settings-status-row__value">{session.connected ? session.sequence : '—'}</span>
               </div>
               <div className="settings-status-row">
-                <span className="settings-status-row__label">Sync Offset</span>
+                <span className="settings-status-row__label">{t('settings.status.syncOffset')}</span>
                 <span className="settings-status-row__value">{session.connected ? `${session.syncOffset}ms` : '—'}</span>
               </div>
               <div className="settings-status-row">
-                <span className="settings-status-row__label">Last connected</span>
+                <span className="settings-status-row__label">{t('settings.status.lastConnected')}</span>
                 <span className="settings-status-row__value">
                   {lastConnectedTime ? new Date(lastConnectedTime).toLocaleTimeString() : '—'}
                 </span>
@@ -806,24 +835,38 @@ const [sttLang, setSttLangState] = useState(savedLang);
           {activeTab === 'actions' && (
             <div className="settings-panel settings-panel--active">
               <div className="settings-modal__actions">
-                <button className="btn btn--secondary btn--sm" onClick={handleSync}>⟳ Sync Now</button>
-                <button className="btn btn--secondary btn--sm" onClick={handleHeartbeat}>♥ Heartbeat</button>
-                <button className="btn btn--secondary btn--sm" onClick={handleResetSequence}>↺ Reset sequence</button>
+                <button className="btn btn--secondary btn--sm" onClick={handleSync}>{t('settings.actions.syncNow')}</button>
+                <button className="btn btn--secondary btn--sm" onClick={handleHeartbeat}>{t('settings.actions.heartbeat')}</button>
+                <button className="btn btn--secondary btn--sm" onClick={handleResetSequence}>{t('settings.actions.resetSequence')}</button>
               </div>
               {hbResult && (
                 <div className="settings-status-row">
-                  <span className="settings-status-row__label">Round-trip</span>
+                  <span className="settings-status-row__label">{t('settings.actions.roundTrip')}</span>
                   <span className="settings-status-row__value">{hbResult}</span>
                 </div>
               )}
               {syncResult && (
                 <div className="settings-status-row">
-                  <span className="settings-status-row__label">Sync offset</span>
+                  <span className="settings-status-row__label">{t('settings.actions.syncOffset')}</span>
                   <span className="settings-status-row__value">{syncResult}</span>
                 </div>
               )}
+              <div className="settings-field">
+                <label className="settings-field__label">{t('settings.actions.setSequence')}</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    type="number"
+                    className="settings-field__input"
+                    style={{ width: 90 }}
+                    min="0"
+                    value={customSequence}
+                    onChange={e => setCustomSequence(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                  />
+                  <button className="btn btn--secondary btn--sm" onClick={handleSetSequence}>↗ Set</button>
+                </div>
+              </div>
               <hr style={{ borderColor: 'var(--color-border)', margin: '8px 0' }} />
-              <button className="btn btn--danger btn--sm" onClick={handleClearConfig}>🗑 Clear saved config</button>
+              <button className="btn btn--danger btn--sm" onClick={handleClearConfig}>{t('settings.actions.clearConfig')}</button>
             </div>
           )}
 
@@ -832,10 +875,10 @@ const [sttLang, setSttLangState] = useState(savedLang);
         <div className="settings-modal__footer">
           <div className="settings-modal__actions">
             <button className="btn btn--primary" onClick={handleConnect} disabled={connecting}>
-              {connecting ? 'Connecting…' : 'Connect'}
+              {connecting ? t('settings.footer.connecting') : t('settings.footer.connect')}
             </button>
-            <button className="btn btn--secondary" onClick={handleDisconnect}>Disconnect</button>
-            <button className="btn btn--secondary" onClick={onClose}>Close</button>
+            <button className="btn btn--secondary" onClick={handleDisconnect}>{t('settings.footer.disconnect')}</button>
+            <button className="btn btn--secondary" onClick={onClose}>{t('settings.footer.close')}</button>
           </div>
         </div>
       </div>
