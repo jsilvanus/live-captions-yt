@@ -69,6 +69,33 @@ Connect your MCP client to:
 
 ## Configuration Examples
 
+### Managed SSE — `mcp.lcyt.fi` (easiest)
+
+The quickest way to get started is to connect your MCP client to the hosted SSE service at **`https://mcp.lcyt.fi`**. No server setup is required — just obtain an API key and point your client at the endpoint.
+
+**Get an API key:** contact the service administrator or sign up at [lcyt.fi](https://lcyt.fi).
+
+**Claude Desktop config:**
+
+```json
+{
+  "mcpServers": {
+    "lcyt": {
+      "type": "sse",
+      "url": "https://mcp.lcyt.fi/sse?apiKey=YOUR_API_KEY"
+    }
+  }
+}
+```
+
+After restarting Claude Desktop the full tool set is available (`start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop`, `privacy`, `privacy_deletion`). You can prompt Claude with:
+
+> _"Start a YouTube Live caption session with stream key xxxx-xxxx-xxxx-xxxx and send 'Hello, world!'"_
+
+> **Note:** Stream keys are transmitted over TLS but are stored server-side while a session is active. Use a dedicated stream key and rotate it if you believe it has been exposed.
+
+---
+
 ### Claude Desktop — stdio
 
 The stdio server integrates directly with Claude Desktop. Add the following block to your `claude_desktop_config.json` (location: `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows):
