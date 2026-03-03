@@ -113,6 +113,7 @@ app.use(createCorsMiddleware(store));
 // Default: never cache any response. Cacheable routes override this explicitly.
 app.use((_req, res, next) => {
   res.set('Cache-Control', 'no-store');
+  res.set('Permissions-Policy', 'on-device-speech-recognition=*');
   next();
 });
 
