@@ -88,6 +88,8 @@ export default {
       targetLang: 'Target language',
       targetLangPlaceholder: 'Type to filter…',
       sameLanguageNote: 'Translation is skipped when source and target language are the same.',
+      showOriginal: 'Show original text',
+      showOriginalHint: 'When enabled, the caption will contain both the original and the translated text.',
       vendor: 'Translation service',
       vendorKey: 'API key',
       vendorKeyHint: 'Required for Google Cloud Translation and DeepL.',

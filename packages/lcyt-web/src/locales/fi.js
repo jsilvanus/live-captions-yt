@@ -88,6 +88,8 @@ export default {
       targetLang: 'Kohdekieli',
       targetLangPlaceholder: 'Kirjoita suodattaaksesi…',
       sameLanguageNote: 'Käännös ohitetaan, kun lähde- ja kohdekieli ovat samat.',
+      showOriginal: 'Näytä alkuperäinen teksti',
+      showOriginalHint: 'Kun käytössä, tekstitys sisältää sekä alkuperäisen että käännetyn tekstin.',
       vendor: 'Käännöspalvelu',
       vendorKey: 'API-avain',
       vendorKeyHint: 'Vaaditaan Google Cloud Translation- ja DeepL-palveluihin.',

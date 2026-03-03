@@ -88,6 +88,8 @@ export default {
       targetLang: 'Målspråk',
       targetLangPlaceholder: 'Skriv för att filtrera…',
       sameLanguageNote: 'Översättning hoppas över när käll- och målspråk är samma.',
+      showOriginal: 'Visa originaltext',
+      showOriginalHint: 'När aktiverat innehåller undertexten både originaltexten och den översatta texten.',
       vendor: 'Översättningstjänst',
       vendorKey: 'API-nyckel',
       vendorKeyHint: 'Krävs för Google Cloud Translation och DeepL.',

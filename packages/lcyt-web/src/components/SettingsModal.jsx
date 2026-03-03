@@ -20,6 +20,7 @@ import {
   getTranslationApiKey, setTranslationApiKey,
   getTranslationLibreUrl, setTranslationLibreUrl,
   getTranslationLibreKey, setTranslationLibreKey,
+  getTranslationShowOriginal, setTranslationShowOriginal,
 } from '../lib/translationConfig';
 
 function applyTheme(value) {
@@ -127,6 +128,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
     savedTargetEntry ? savedTargetEntry.label : savedTargetLang
   );
   const [translationTargetDropdownOpen, setTranslationTargetDropdownOpen] = useState(false);
+  const [translationShowOriginal, setTranslationShowOriginalState] = useState(getTranslationShowOriginal);
 
   // Apply theme and text size on mount
   useEffect(() => {
@@ -185,6 +187,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
     setTranslationApiKeyState(getTranslationApiKey());
     setTranslationLibreUrlState(getTranslationLibreUrl());
     setTranslationLibreKeyState(getTranslationLibreKey());
+    setTranslationShowOriginalState(getTranslationShowOriginal());
     const tgtLang = getTranslationTargetLang();
     setTranslationTargetLangState(tgtLang);
     const tgtEntry = COMMON_LANGUAGES.find(l => l.code === tgtLang);
@@ -964,6 +967,22 @@ const [sttLang, setSttLangState] = useState(savedLang);
                         <option key={v.value} value={v.value}>{t(v.labelKey)}</option>
                       ))}
                     </select>
+                  </div>
+
+                  {/* Show original toggle */}
+                  <div className="settings-field">
+                    <label className="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={translationShowOriginal}
+                        onChange={e => {
+                          setTranslationShowOriginalState(e.target.checked);
+                          setTranslationShowOriginal(e.target.checked);
+                        }}
+                      />
+                      {t('settings.translation.showOriginal')}
+                    </label>
+                    <span className="settings-field__hint">{t('settings.translation.showOriginalHint')}</span>
                   </div>
 
                   {/* API key — shown for Google and DeepL */}

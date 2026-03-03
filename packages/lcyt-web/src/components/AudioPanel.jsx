@@ -3,7 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
-import { getTranslationEnabled, getTranslationTargetLang } from '../lib/translationConfig';
+import { getTranslationEnabled, getTranslationTargetLang, getTranslationShowOriginal } from '../lib/translationConfig';
 import { isSameLanguage, translateText } from '../lib/translate';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -130,7 +130,12 @@ export const AudioPanel = forwardRef(function AudioPanel(
         translateText(cleaned, sourceLang, targetLang)
           .then(translated => {
             const trimmed = translated ? translated.trim() : '';
-            sendTranscript(trimmed || cleaned, utteranceTimestamp);
+            const result = trimmed || cleaned;
+            // If "show original" is enabled, prepend the original transcript.
+            const caption = (getTranslationShowOriginal() && trimmed && trimmed !== cleaned)
+              ? `${cleaned}\n${trimmed}`
+              : result;
+            sendTranscript(caption, utteranceTimestamp);
           })
           .catch(err => {
             console.warn('Translation failed, using original text', err);

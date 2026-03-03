@@ -1,9 +1,10 @@
-const KEY_ENABLED    = 'lcyt:translation-enabled';
-const KEY_TARGET     = 'lcyt:translation-target-lang';
-const KEY_VENDOR     = 'lcyt:translation-vendor';
-const KEY_API_KEY    = 'lcyt:translation-vendor-key';
-const KEY_LIBRE_URL  = 'lcyt:translation-libre-url';
-const KEY_LIBRE_KEY  = 'lcyt:translation-libre-key';
+const KEY_ENABLED       = 'lcyt:translation-enabled';
+const KEY_TARGET        = 'lcyt:translation-target-lang';
+const KEY_VENDOR        = 'lcyt:translation-vendor';
+const KEY_API_KEY       = 'lcyt:translation-vendor-key';
+const KEY_LIBRE_URL     = 'lcyt:translation-libre-url';
+const KEY_LIBRE_KEY     = 'lcyt:translation-libre-key';
+const KEY_SHOW_ORIGINAL = 'lcyt:translation-show-original';
 
 export const TRANSLATION_VENDORS = [
   { value: 'mymemory',       labelKey: 'settings.translation.vendors.mymemory' },
@@ -58,4 +59,12 @@ export function getTranslationLibreKey() {
 
 export function setTranslationLibreKey(key) {
   try { localStorage.setItem(KEY_LIBRE_KEY, key); } catch {}
+}
+
+export function getTranslationShowOriginal() {
+  try { return localStorage.getItem(KEY_SHOW_ORIGINAL) === '1'; } catch { return false; }
+}
+
+export function setTranslationShowOriginal(enabled) {
+  try { localStorage.setItem(KEY_SHOW_ORIGINAL, enabled ? '1' : '0'); } catch {}
 }
