@@ -10,6 +10,14 @@ import {
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential';
+import {
+  getTranslationEnabled, setTranslationEnabled,
+  getTranslationTarget, setTranslationTarget,
+  getTranslationVendor, setTranslationVendor,
+  getDeepLKey, setDeepLKey,
+  getLibreTranslateUrl, setLibreTranslateUrl,
+  getLibreTranslateKey, setLibreTranslateKey,
+} from '../lib/translationConfig';
 
 function applyTheme(value) {
   const html = document.documentElement;
@@ -94,6 +102,20 @@ const [sttLang, setSttLangState] = useState(savedLang);
     () => { try { return parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'); } catch { return 0.01; } }
   );
 
+  // ── Translation tab ───────────────────────────────────────
+  const savedTransTarget = getTranslationTarget();
+  const savedTransTargetEntry = COMMON_LANGUAGES.find(l => l.code === savedTransTarget);
+
+  const [translationEnabled, setTranslationEnabledState] = useState(getTranslationEnabled);
+  const [translationVendor, setTranslationVendorState] = useState(getTranslationVendor);
+  const [transTargetQuery, setTransTargetQuery] = useState(savedTransTargetEntry ? savedTransTargetEntry.label : savedTransTarget);
+  const [transTarget, setTransTarget] = useState(savedTransTarget);
+  const [transTargetDropdownOpen, setTransTargetDropdownOpen] = useState(false);
+  const [deepLKey, setDeepLKeyState] = useState(getDeepLKey);
+  const [libreUrl, setLibreUrlState] = useState(getLibreTranslateUrl);
+  const [libreKey, setLibreKeyState] = useState(getLibreTranslateKey);
+  const [showDeepLKey, setShowDeepLKey] = useState(false);
+
   // Apply theme and text size on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem('lcyt-theme') || 'auto';
@@ -143,6 +165,16 @@ const [sttLang, setSttLangState] = useState(savedLang);
     // Re-sync utterance control state
     try { setUtteranceEndButton(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
     try { setUtteranceEndTimer(parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10)); } catch {}
+    // Re-sync translation state
+    setTranslationEnabledState(getTranslationEnabled());
+    setTranslationVendorState(getTranslationVendor());
+    const tgt = getTranslationTarget();
+    setTransTarget(tgt);
+    const tgtEntry = COMMON_LANGUAGES.find(l => l.code === tgt);
+    setTransTargetQuery(tgtEntry ? tgtEntry.label : tgt);
+    setDeepLKeyState(getDeepLKey());
+    setLibreUrlState(getLibreTranslateUrl());
+    setLibreKeyState(getLibreTranslateKey());
   }, [isOpen]);
 
   // Keep credential state in sync with the module (e.g. cleared externally)
@@ -304,8 +336,15 @@ const [sttLang, setSttLangState] = useState(savedLang);
       )
     : [];
 
-  const TABS = ['connection', 'captions', 'stt', 'vad', 'status', 'actions'];
-  const TAB_LABELS = { connection: 'Connection', captions: 'Captions', stt: 'STT / Audio', vad: 'VAD', status: 'Status', actions: 'Actions' };
+  const transTargetMatches = transTargetDropdownOpen
+    ? COMMON_LANGUAGES.filter(l =>
+        l.label.toLowerCase().includes(transTargetQuery.toLowerCase()) ||
+        l.code.toLowerCase().includes(transTargetQuery.toLowerCase())
+      )
+    : [];
+
+  const TABS = ['connection', 'captions', 'stt', 'vad', 'translation', 'status', 'actions'];
+  const TAB_LABELS = { connection: 'Connection', captions: 'Captions', stt: 'STT / Audio', vad: 'VAD', translation: 'Translation', status: 'Status', actions: 'Actions' };
 
   return (
     <div className="settings-modal">
@@ -765,6 +804,181 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   are more sensitive. Default: 0.01.
                 </span>
               </div>
+
+            </div>
+          )}
+
+          {/* ── Translation ── */}
+          {activeTab === 'translation' && (
+            <div className="settings-panel settings-panel--active">
+
+              <div className="settings-field">
+                <label className="settings-field__label">Automatic translation</label>
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={translationEnabled}
+                    onChange={e => {
+                      setTranslationEnabledState(e.target.checked);
+                      setTranslationEnabled(e.target.checked);
+                    }}
+                  />
+                  Enable automatic translation of captions
+                </label>
+                <span className="settings-field__hint">
+                  When enabled, captions are translated to the selected target language before
+                  being sent to YouTube. Translation is skipped if the audio language matches
+                  the target language.
+                </span>
+              </div>
+
+              {/* Target language */}
+              <div className="settings-field">
+                <label className="settings-field__label">Target language</label>
+                <div className="audio-lang-wrap">
+                  <input
+                    className="settings-field__input"
+                    type="text"
+                    placeholder="Type to filter…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    disabled={!translationEnabled}
+                    value={transTargetQuery}
+                    onChange={e => {
+                      setTransTargetQuery(e.target.value);
+                      setTransTargetDropdownOpen(true);
+                    }}
+                    onFocus={() => setTransTargetDropdownOpen(true)}
+                    onBlur={() => setTimeout(() => setTransTargetDropdownOpen(false), 150)}
+                  />
+                  {transTargetDropdownOpen && transTargetMatches.length > 0 && (
+                    <div className="audio-lang-list">
+                      {transTargetMatches.map(l => (
+                        <button
+                          key={l.code}
+                          className="audio-lang-option"
+                          onMouseDown={() => {
+                            setTransTarget(l.code);
+                            setTransTargetQuery(l.label);
+                            setTransTargetDropdownOpen(false);
+                            setTranslationTarget(l.code);
+                          }}
+                        >
+                          {l.label} <span className="audio-lang-code">{l.code}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <span className="settings-field__hint">{transTarget}</span>
+              </div>
+
+              {/* Vendor selection */}
+              <div className="settings-field">
+                <label className="settings-field__label">Translation vendor</label>
+                <div className="stt-engine-list">
+                  {[
+                    { value: 'google',        name: 'Google Cloud Translation', desc: 'Uses your Google Cloud service account credential (shared with Cloud STT if configured). Requires Cloud Translation API to be enabled.' },
+                    { value: 'deepl',         name: 'DeepL',                    desc: 'High-quality neural machine translation. Requires a DeepL API key (free or Pro).' },
+                    { value: 'libretranslate', name: 'LibreTranslate',          desc: 'Open-source, self-hostable translation. Provide the URL of your LibreTranslate instance.' },
+                  ].map(opt => (
+                    <label
+                      key={opt.value}
+                      className={`stt-engine-option${translationVendor === opt.value ? ' stt-engine-option--active' : ''}${!translationEnabled ? ' stt-engine-option--disabled' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="translation-vendor"
+                        value={opt.value}
+                        checked={translationVendor === opt.value}
+                        disabled={!translationEnabled}
+                        onChange={() => {
+                          setTranslationVendorState(opt.value);
+                          setTranslationVendor(opt.value);
+                        }}
+                        className="stt-engine-option__radio"
+                      />
+                      <div className="stt-engine-option__body">
+                        <span className="stt-engine-option__name">{opt.name}</span>
+                        <span className="stt-engine-option__desc">{opt.desc}</span>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {/* DeepL API key */}
+              {translationVendor === 'deepl' && translationEnabled && (
+                <div className="settings-field">
+                  <label className="settings-field__label">DeepL API key</label>
+                  <div className="settings-field__input-wrap">
+                    <input
+                      className="settings-field__input settings-field__input--has-eye"
+                      type={showDeepLKey ? 'text' : 'password'}
+                      placeholder="••••••••"
+                      autoComplete="off"
+                      value={deepLKey}
+                      onChange={e => {
+                        setDeepLKeyState(e.target.value);
+                        setDeepLKey(e.target.value);
+                      }}
+                    />
+                    <button className="settings-field__eye" onClick={() => setShowDeepLKey(v => !v)} title="Toggle visibility">👁</button>
+                  </div>
+                  <span className="settings-field__hint">
+                    Find your key at <strong>deepl.com/account/summary</strong>. Free-tier keys end with <code>:fx</code>.
+                  </span>
+                </div>
+              )}
+
+              {/* LibreTranslate settings */}
+              {translationVendor === 'libretranslate' && translationEnabled && (
+                <>
+                  <div className="settings-field">
+                    <label className="settings-field__label">LibreTranslate URL</label>
+                    <input
+                      className="settings-field__input"
+                      type="url"
+                      placeholder="https://libretranslate.com"
+                      autoComplete="off"
+                      value={libreUrl}
+                      onChange={e => {
+                        setLibreUrlState(e.target.value);
+                        setLibreTranslateUrl(e.target.value);
+                      }}
+                    />
+                    <span className="settings-field__hint">
+                      Base URL of your LibreTranslate instance (e.g. <code>https://libretranslate.com</code>).
+                    </span>
+                  </div>
+                  <div className="settings-field">
+                    <label className="settings-field__label">API key (optional)</label>
+                    <input
+                      className="settings-field__input"
+                      type="password"
+                      placeholder="••••••••"
+                      autoComplete="off"
+                      value={libreKey}
+                      onChange={e => {
+                        setLibreKeyState(e.target.value);
+                        setLibreTranslateKey(e.target.value);
+                      }}
+                    />
+                    <span className="settings-field__hint">
+                      Leave empty if your instance does not require authentication.
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {/* Google note */}
+              {translationVendor === 'google' && translationEnabled && (
+                <p style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, lineHeight: 1.5 }}>
+                  Google Cloud Translation uses the same service account credential loaded in the
+                  STT / Audio tab. Ensure the <strong>Cloud Translation API</strong> is enabled in
+                  your Google Cloud project.
+                </p>
+              )}
 
             </div>
           )}

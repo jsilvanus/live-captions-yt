@@ -1399,6 +1399,12 @@
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
 
+.stt-engine-option--disabled {
+  opacity: 0.45;
+  cursor: default;
+  pointer-events: none;
+}
+
 .stt-engine-option__radio {
   margin-top: 2px;
   flex-shrink: 0;
