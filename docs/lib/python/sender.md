@@ -118,7 +118,7 @@ result = sender.send("Recent", -2.0)  # 2 seconds ago (relative)
 | Parameter | Type | Description |
 |---|---|---|
 | `text` | `str` | Caption text (required, non-empty) |
-| `timestamp` | `str \| datetime \| int \| float \| None` | See [Timestamp Handling](./README.md#timestamp-handling). Defaults to current time. |
+| `timestamp` | `str \| datetime \| int \| float \| None` | See [Timestamp Handling](#timestamp-handling). Defaults to current time. |
 
 **Returns:** `SendResult`
 

@@ -204,6 +204,8 @@ a:hover {
   flex: 1;
   padding: 2.5rem 3rem;
   max-width: 900px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 /* Doc sections */
@@ -258,6 +260,9 @@ a:hover {
   padding: 1.25rem;
   overflow-x: auto;
   margin: 1em 0;
+  white-space: pre;
+  word-wrap: normal;
+  overflow-wrap: normal;
 }
 
 .docs-content pre code {

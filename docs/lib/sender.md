@@ -71,7 +71,7 @@ interface SendResult {
 }
 ```
 
-**Throws:** [`NetworkError`](./errors.md#networkerror) on non-2xx response.
+**Throws:** [`NetworkError`](#networkerror) on non-2xx response.
 
 ---
 
@@ -102,7 +102,7 @@ interface BatchSendResult {
 }
 ```
 
-**Throws:** [`NetworkError`](./errors.md#networkerror) on non-2xx response.
+**Throws:** [`NetworkError`](#networkerror) on non-2xx response.
 
 ---
 
@@ -167,7 +167,7 @@ interface HeartbeatResult {
 }
 ```
 
-**Throws:** [`NetworkError`](./errors.md#networkerror) on failure.
+**Throws:** [`NetworkError`](#networkerror) on failure.
 
 ---
 

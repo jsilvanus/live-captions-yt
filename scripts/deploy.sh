@@ -97,6 +97,28 @@ echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
 echo "    Build log: $BUILD_LOG"
 
 # ---------------------------------------------------------------------------
+# Step 2b: Build lcyt-site on the host (served by nginx, not included in Docker)
+# ---------------------------------------------------------------------------
+
+echo "==> Installing lcyt-site dependencies (includes devDependencies for Astro build)"
+SITE_LOG="$REPO_DIR/lcyt-site-npm-install.log"
+rm -f "$SITE_LOG"
+# Use --include=dev so devDependencies (Astro) are installed even if NODE_ENV=production
+npm ci \
+  --prefix "$REPO_DIR" \
+  --workspace packages/lcyt-site \
+  --include=dev 2>&1 | tee "$SITE_LOG"
+echo "    Install log: $SITE_LOG"
+tail -n 20 "$SITE_LOG" || true
+
+echo "==> Building lcyt-site"
+SITE_BUILD_LOG="$REPO_DIR/lcyt-site-build.log"
+rm -f "$SITE_BUILD_LOG"
+npm run build -w packages/lcyt-site --prefix "$REPO_DIR" 2>&1 | tee "$SITE_BUILD_LOG"
+echo "    Built → $REPO_DIR/packages/lcyt-site/dist"
+echo "    Build log: $SITE_BUILD_LOG"
+
+# ---------------------------------------------------------------------------
 # Step 3: Start / restart the site container via Docker Compose
 # ---------------------------------------------------------------------------
 

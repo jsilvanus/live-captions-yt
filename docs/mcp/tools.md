@@ -10,16 +10,16 @@ title: "MCP Tools Reference"
 
 | Tool | stdio | SSE | Reference |
 |---|:---:|:---:|---|
-| `start` | ✅ | ✅ | [start.md](./tools/start.md) |
-| `send_caption` | ✅ | ✅ | [send-caption.md](./tools/send-caption.md) |
-| `send_batch` | ✅ | ✅ | [send-batch.md](./tools/send-batch.md) |
-| `sync_clock` | ✅ | ✅ | [sync-clock.md](./tools/sync-clock.md) |
-| `get_status` | ✅ | ✅ | [get-status.md](./tools/get-status.md) |
-| `stop` | ✅ | ✅ | [stop.md](./tools/stop.md) |
-| `privacy` | ❌ | ✅ | [privacy.md](./tools/privacy.md) |
-| `privacy_deletion` | ❌ | ✅ | [privacy-deletion.md](./tools/privacy-deletion.md) |
+| `start` | ✅ | ✅ | [start.md](#tools-start) |
+| `send_caption` | ✅ | ✅ | [send-caption.md](#tools-send-caption) |
+| `send_batch` | ✅ | ✅ | [send-batch.md](#tools-send-batch) |
+| `sync_clock` | ✅ | ✅ | [sync-clock.md](#tools-sync-clock) |
+| `get_status` | ✅ | ✅ | [get-status.md](#tools-get-status) |
+| `stop` | ✅ | ✅ | [stop.md](#tools-stop) |
+| `privacy` | ❌ | ✅ | [privacy.md](#tools-privacy) |
+| `privacy_deletion` | ❌ | ✅ | [privacy-deletion.md](#tools-privacy-deletion) |
 
-See also: [Session Resources (stdio only)](./tools/session-resources.md)
+See also: [Session Resources (stdio only)](#tools-session-resources)
 
 ---
 

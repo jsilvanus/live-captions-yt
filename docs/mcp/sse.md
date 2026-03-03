@@ -86,16 +86,16 @@ The server processes the message and sends the response on the SSE stream.
 
 | Tool | Description |
 |---|---|
-| [`start`](./tools.md#start--start-caption-session) | Create a new caption session |
-| [`send_caption`](./tools.md#send_caption--send-a-single-caption) | Send a single caption |
-| [`send_batch`](./tools.md#send_batch--send-multiple-captions) | Send multiple captions at once |
-| [`sync_clock`](./tools.md#sync_clock--synchronise-clock) | Synchronise clock with YouTube |
-| [`get_status`](./tools.md#get_status--session-status) | Query session state |
-| [`stop`](./tools.md#stop--stop-caption-session) | End a session |
-| [`privacy`](./tools.md#privacy--privacy-notice) | Return privacy notice |
-| [`privacy_deletion`](./tools.md#privacy_deletion--request-data-deletion) | Request GDPR data erasure |
+| [`start`](#tools-start) | Create a new caption session |
+| [`send_caption`](#tools-send-caption) | Send a single caption |
+| [`send_batch`](#tools-send-batch) | Send multiple captions at once |
+| [`sync_clock`](#tools-sync-clock) | Synchronise clock with YouTube |
+| [`get_status`](#tools-get-status) | Query session state |
+| [`stop`](#tools-stop) | End a session |
+| [`privacy`](#tools-privacy) | Return privacy notice |
+| [`privacy_deletion`](#tools-privacy-deletion) | Request GDPR data erasure |
 
-See the [Tools Reference](./tools.md) for full parameter and return value documentation.
+See the [Tools Reference](#tools) for full parameter and return value documentation.
 
 ---
 
