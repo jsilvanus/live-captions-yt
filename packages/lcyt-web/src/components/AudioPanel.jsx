@@ -133,7 +133,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
             const result = trimmed || cleaned;
             // If "show original" is enabled, prepend the original transcript.
             const caption = (getTranslationShowOriginal() && trimmed && trimmed !== cleaned)
-              ? `${cleaned}\n${trimmed}`
+              ? `${cleaned}<br>${trimmed}`
               : result;
             sendTranscript(caption, utteranceTimestamp);
           })
