@@ -28,10 +28,10 @@ pip install -e python-packages/lcyt
 
 | Module | Purpose |
 |---|---|
-| `lcyt.sender` | [`YoutubeLiveCaptionSender`](./sender.md) — direct YouTube caption delivery |
-| `lcyt.backend_sender` | [`BackendCaptionSender`](./backend-sender.md) — relay via lcyt-backend |
-| `lcyt.config` | [Configuration utilities](./config.md) — load/save config, build ingestion URL |
-| `lcyt.errors` | [Error classes](./errors.md) — typed exception hierarchy |
+| `lcyt.sender` | [`YoutubeLiveCaptionSender`](#python-sender) — direct YouTube caption delivery |
+| `lcyt.backend_sender` | [`BackendCaptionSender`](#python-backend-sender) — relay via lcyt-backend |
+| `lcyt.config` | [Configuration utilities](#python-config) — load/save config, build ingestion URL |
+| `lcyt.errors` | [Error classes](#python-errors) — typed exception hierarchy |
 
 ---
 
@@ -86,7 +86,7 @@ ISO strings must not include a trailing `Z` or `+00:00` — they are stripped au
 
 ## Reference Documents
 
-- [YoutubeLiveCaptionSender](./sender.md)
-- [BackendCaptionSender](./backend-sender.md)
-- [Configuration](./config.md)
-- [Errors](./errors.md)
+- [YoutubeLiveCaptionSender](#python-sender)
+- [BackendCaptionSender](#python-backend-sender)
+- [Configuration](#python-config)
+- [Errors](#python-errors)

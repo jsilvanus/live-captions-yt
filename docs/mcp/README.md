@@ -10,8 +10,8 @@ Both servers share a common set of caption tools; the SSE server adds two additi
 
 | Package | Transport | Best for |
 |---|---|---|
-| [`lcyt-mcp-stdio`](./stdio.md) | stdio | Claude Desktop, subprocess MCP clients |
-| [`lcyt-mcp-sse`](./sse.md) | HTTP + SSE | Remote/web MCP clients, shared sessions |
+| [`lcyt-mcp-stdio`](#stdio) | stdio | Claude Desktop, subprocess MCP clients |
+| [`lcyt-mcp-sse`](#sse) | HTTP + SSE | Remote/web MCP clients, shared sessions |
 
 ---
 
@@ -30,7 +30,7 @@ Both servers share a common set of caption tools; the SSE server adds two additi
 | **Log routing** | Requires `LCYT_LOG_STDERR=1` | Requires `LCYT_LOG_STDERR=1` |
 | **Typical use** | Single user, local AI assistant | Shared service, multiple users |
 
-See the [Tools Reference](./tools.md) for full per-tool transport availability.
+See the [Tools Reference](#tools) for full per-tool transport availability.
 
 ---
 
@@ -238,6 +238,6 @@ LCYT_LOG_STDERR=1 node packages/lcyt-mcp-stdio/src/server.js
 
 ## Reference
 
-- [Tools Reference](./tools.md) — all tools with per-tool transport availability (stdio / SSE)
-- [Stdio Transport](./stdio.md) — configuration and integration guide
-- [SSE Transport](./sse.md) — configuration and integration guide
+- [Tools Reference](#tools) — all tools with per-tool transport availability (stdio / SSE)
+- [Stdio Transport](#stdio) — configuration and integration guide
+- [SSE Transport](#sse) — configuration and integration guide

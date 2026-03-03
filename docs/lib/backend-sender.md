@@ -1,6 +1,6 @@
 # BackendCaptionSender
 
-Relay-based caption sender that routes captions through an `lcyt-backend` HTTP server instead of calling YouTube directly. Mirrors the [`YoutubeLiveCaptionSender`](./sender.md) API.
+Relay-based caption sender that routes captions through an `lcyt-backend` HTTP server instead of calling YouTube directly. Mirrors the [`YoutubeLiveCaptionSender`](#sender) API.
 
 **Import**
 ```js
@@ -49,7 +49,7 @@ await sender.start();
 
 **Returns:** `Promise<void>`
 
-**Throws:** [`NetworkError`](./errors.md#networkerror) if the backend rejects registration.
+**Throws:** [`NetworkError`](#networkerror) if the backend rejects registration.
 
 ---
 
@@ -212,7 +212,7 @@ es.addEventListener('caption_error', (e) => {
 });
 ```
 
-See the [Backend API SSE docs](../api/captions.md#get-events) for the full event reference.
+See the [Backend API SSE docs](/api/#events) for the full event reference.
 
 ---
 

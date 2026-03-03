@@ -15,11 +15,11 @@ title: "lcyt-backend API Reference"
 - [Authentication](#authentication)
 - [Environment Variables](#environment-variables)
 - [Endpoints](#endpoints)
-  - [Sessions — `/live`, `/sync`](./sessions.md)
-  - [Captions — `/captions`, `/events`](./captions.md)
-  - [API Keys — `/keys`](./keys.md)
-  - [Statistics — `/stats`, `/usage`](./stats.md)
-  - [Health — `/health`, `/contact`](./health.md)
+  - [Sessions — `/live`, `/sync`](#sessions)
+  - [Captions — `/captions`, `/events`](#captions)
+  - [API Keys — `/keys`](#keys)
+  - [Statistics — `/stats`, `/usage`](#stats)
+  - [Health — `/health`, `/contact`](#health)
 
 ---
 

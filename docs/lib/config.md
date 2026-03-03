@@ -78,7 +78,7 @@ const config = loadConfig('/custom/path/config.json'); // custom path
 
 **Returns:** `LCYTConfig`
 
-**Throws:** [`ConfigError`](./errors.md#configerror) if the file exists but cannot be parsed.
+**Throws:** [`ConfigError`](#configerror) if the file exists but cannot be parsed.
 
 ---
 
@@ -98,7 +98,7 @@ saveConfig('/custom/path/config.json', { ...config, region: 'eu' });
 
 **Returns:** `void`
 
-**Throws:** [`ConfigError`](./errors.md#configerror) if the file cannot be written.
+**Throws:** [`ConfigError`](#configerror) if the file cannot be written.
 
 ---
 

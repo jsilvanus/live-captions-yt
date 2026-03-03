@@ -93,7 +93,7 @@ data: {"requestId":"...","error":"HTTP 403: Forbidden","statusCode":403,"sequenc
 
 #### `mic_state`
 
-Sent when the soft mic lock changes (see [`POST /mic`](./mic.md)).
+Sent when the soft mic lock changes (see [`POST /mic`](#mic)).
 
 ```
 event: mic_state

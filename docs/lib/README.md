@@ -18,11 +18,11 @@ npm install lcyt
 
 | Import path | Purpose |
 |---|---|
-| `lcyt` | [`YoutubeLiveCaptionSender`](./sender.md) — direct YouTube caption delivery |
-| `lcyt/backend` | [`BackendCaptionSender`](./backend-sender.md) — relay via lcyt-backend |
-| `lcyt/config` | [Configuration utilities](./config.md) — load/save config, build ingestion URL |
-| `lcyt/logger` | [Logger](./logger.md) — pluggable structured logger |
-| `lcyt/errors` | [Error classes](./errors.md) — typed error hierarchy |
+| `lcyt` | [`YoutubeLiveCaptionSender`](#sender) — direct YouTube caption delivery |
+| `lcyt/backend` | [`BackendCaptionSender`](#backend-sender) — relay via lcyt-backend |
+| `lcyt/config` | [Configuration utilities](#config) — load/save config, build ingestion URL |
+| `lcyt/logger` | [Logger](#logger) — pluggable structured logger |
+| `lcyt/errors` | [Error classes](#errors) — typed error hierarchy |
 
 ---
 
@@ -73,10 +73,10 @@ pip install lcyt
 
 | Module | Purpose |
 |---|---|
-| `lcyt.sender` | [`YoutubeLiveCaptionSender`](./python/sender.md) — direct YouTube caption delivery |
-| `lcyt.backend_sender` | [`BackendCaptionSender`](./python/backend-sender.md) — relay via lcyt-backend |
-| `lcyt.config` | [Configuration utilities](./python/config.md) — load/save config, build ingestion URL |
-| `lcyt.errors` | [Error classes](./python/errors.md) — typed exception hierarchy |
+| `lcyt.sender` | [`YoutubeLiveCaptionSender`](#python-sender) — direct YouTube caption delivery |
+| `lcyt.backend_sender` | [`BackendCaptionSender`](#python-backend-sender) — relay via lcyt-backend |
+| `lcyt.config` | [Configuration utilities](#python-config) — load/save config, build ingestion URL |
+| `lcyt.errors` | [Error classes](#python-errors) — typed exception hierarchy |
 
 ### Python — Send a caption directly to YouTube
 
@@ -112,14 +112,14 @@ sender.end()
 ## Reference Documents
 
 ### Node.js
-- [YoutubeLiveCaptionSender](./sender.md)
-- [BackendCaptionSender](./backend-sender.md)
-- [Configuration](./config.md)
-- [Logger](./logger.md)
-- [Errors](./errors.md)
+- [YoutubeLiveCaptionSender](#sender)
+- [BackendCaptionSender](#backend-sender)
+- [Configuration](#config)
+- [Logger](#logger)
+- [Errors](#errors)
 
 ### Python
-- [YoutubeLiveCaptionSender](./python/sender.md)
-- [BackendCaptionSender](./python/backend-sender.md)
-- [Configuration](./python/config.md)
-- [Errors](./python/errors.md)
+- [YoutubeLiveCaptionSender](#python-sender)
+- [BackendCaptionSender](#python-backend-sender)
+- [Configuration](#python-config)
+- [Errors](#python-errors)
