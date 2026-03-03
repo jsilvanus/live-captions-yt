@@ -954,19 +954,21 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   {/* Vendor */}
                   <div className="settings-field">
                     <label className="settings-field__label">{t('settings.translation.vendor')}</label>
-                    <select
-                      className="settings-field__input"
-                      style={{ appearance: 'auto' }}
-                      value={translationVendor}
-                      onChange={e => {
-                        setTranslationVendorState(e.target.value);
-                        setTranslationVendor(e.target.value);
-                      }}
-                    >
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                       {TRANSLATION_VENDORS.map(v => (
-                        <option key={v.value} value={v.value}>{t(v.labelKey)}</option>
+                        <button
+                          key={v.value}
+                          type="button"
+                          className={`lang-btn${translationVendor === v.value ? ' lang-btn--active' : ''}`}
+                          onClick={() => {
+                            setTranslationVendorState(v.value);
+                            setTranslationVendor(v.value);
+                          }}
+                        >
+                          {t(v.labelKey)}
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   </div>
 
                   {/* Show original toggle */}
