@@ -1,15 +1,11 @@
 {
-	"inputs": [],
 	"servers": {
-		"lcyt-mcp-stdio": {
-			"command": "docker",
-			"args": [
-				"run",
-				"-i",
-				"--rm",
-				"lcyt-mcp-stdio"
-			],
-			"type": "stdio"
+		"LCYT": {
+			"url": "https://mcp.lcyt.fi/sse",
+			"type": "http",
+			"headers": {
+        		"X-Api-Key": "09102f3a-9a8e-4f11-aacf-ed3e3fa7a7c8"
 		}
-	}
+	},
+	"inputs": []
 }

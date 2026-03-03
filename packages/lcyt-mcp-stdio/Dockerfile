@@ -18,5 +18,8 @@ COPY packages/lcyt-mcp-stdio/src/ packages/lcyt-mcp-stdio/src/
 
 ENV NODE_ENV=production
 
+# Route lcyt logs to stderr so MCP stdio protocol stays on stdout
+ENV LCYT_LOG_STDERR=1
+
 # stdio MCP server — no port to expose
 CMD ["node", "packages/lcyt-mcp-stdio/src/server.js"]
