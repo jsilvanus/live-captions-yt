@@ -9,7 +9,10 @@ import {
   revokeKey,
   deleteKey,
   renewKey,
-  updateKey
+  updateKey,
+  getKeySequence,
+  updateKeySequence,
+  resetKeySequence,
 } from '../src/db.js';
 
 // ---------------------------------------------------------------------------
@@ -276,6 +279,51 @@ describe('db.js', () => {
     it('should return false for non-existent key', () => {
       const result = updateKey(db, 'non-existent-for-update', { owner: 'X' });
       assert.strictEqual(result, false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // getKeySequence / updateKeySequence / resetKeySequence
+  // -------------------------------------------------------------------------
+
+  describe('per-API-key sequence', () => {
+    it('getKeySequence returns 0 when no captions have been sent', () => {
+      const { key } = createKey(db, { owner: 'Seq Zero' });
+      assert.strictEqual(getKeySequence(db, key), 0);
+    });
+
+    it('updateKeySequence persists the sequence and getKeySequence returns it', () => {
+      const { key } = createKey(db, { owner: 'Seq Update' });
+      updateKeySequence(db, key, 42);
+      assert.strictEqual(getKeySequence(db, key), 42);
+    });
+
+    it('getKeySequence returns 0 when last_caption_at is older than 2 hours', () => {
+      const { key } = createKey(db, { owner: 'Seq TTL' });
+      // Manually write a past timestamp (3 hours ago)
+      const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString();
+      db.prepare('UPDATE api_keys SET sequence = 99, last_caption_at = ? WHERE key = ?').run(threeHoursAgo, key);
+      assert.strictEqual(getKeySequence(db, key), 0);
+    });
+
+    it('getKeySequence returns stored sequence when last_caption_at is within 2 hours', () => {
+      const { key } = createKey(db, { owner: 'Seq Recent' });
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      db.prepare('UPDATE api_keys SET sequence = 77, last_caption_at = ? WHERE key = ?').run(oneHourAgo, key);
+      assert.strictEqual(getKeySequence(db, key), 77);
+    });
+
+    it('resetKeySequence resets sequence to 0 and clears last_caption_at', () => {
+      const { key } = createKey(db, { owner: 'Seq Reset' });
+      updateKeySequence(db, key, 55);
+      resetKeySequence(db, key);
+      assert.strictEqual(getKeySequence(db, key), 0);
+      const row = db.prepare('SELECT last_caption_at FROM api_keys WHERE key = ?').get(key);
+      assert.strictEqual(row.last_caption_at, null);
+    });
+
+    it('getKeySequence returns 0 for unknown key', () => {
+      assert.strictEqual(getKeySequence(db, 'does-not-exist'), 0);
     });
   });
 });
