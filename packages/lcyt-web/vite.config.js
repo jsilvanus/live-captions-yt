@@ -24,6 +24,9 @@ export default defineConfig({
     ]
   },
   server: {
+    headers: {
+      'Permissions-Policy': 'on-device-speech-recognition=*',
+    },
     proxy: {
       '/live': 'http://localhost:3000',
       '/captions': 'http://localhost:3000',

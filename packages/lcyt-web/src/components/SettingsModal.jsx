@@ -6,6 +6,7 @@ import {
   getSttEngine, setSttEngine,
   getSttLang, setSttLang,
   getSttCloudConfig, patchSttCloudConfig,
+  getSttLocalProcessing, setSttLocalProcessing,
 } from '../lib/sttConfig';
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
@@ -75,6 +76,11 @@ const [sttLang, setSttLangState] = useState(savedLang);
   const [credError, setCredError] = useState('');
   const credFileRef = useRef(null);
 
+  // ── On-device (local) speech recognition ─────────────────
+  // Possible values: null (API unsupported/unchecked), 'readily', 'downloadable', 'no'
+  const [localAvailability, setLocalAvailability] = useState(null);
+  const [sttLocal, setSttLocalState] = useState(getSttLocalProcessing);
+
   // ── STT utterance controls ────────────────────────────────
   const [utteranceEndButton, setUtteranceEndButton] = useState(
     () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
@@ -136,6 +142,8 @@ const [sttLang, setSttLangState] = useState(savedLang);
     setSttEngineState(getSttEngine());
     setCredentialState(getGoogleCredential());
     setCredError('');
+    setSttLocalState(getSttLocalProcessing());
+    if (getSttEngine() === 'webkit') checkLocalAvailability(getSttLang());
     // Re-sync VAD state
     try { setVadEnabled(localStorage.getItem('lcyt:client-vad') === '1'); } catch {}
     try { setVadSilenceMs(parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10)); } catch {}
@@ -257,6 +265,17 @@ const [sttLang, setSttLangState] = useState(savedLang);
   function onSttEngineChange(engine) {
     setSttEngineState(engine);
     setSttEngine(engine);
+    if (engine === 'webkit') checkLocalAvailability(sttLang);
+    else setLocalAvailability(null);
+  }
+
+  async function checkLocalAvailability(langCode) {
+    const speechRecognitionAPI = window.SpeechRecognition;
+    if (!speechRecognitionAPI || typeof speechRecognitionAPI.available !== 'function') { setLocalAvailability(null); return; }
+    try {
+      const result = await speechRecognitionAPI.available(langCode);
+      setLocalAvailability(result);
+    } catch { setLocalAvailability(null); }
   }
 
   function onSttLangInput(value) {
@@ -269,6 +288,23 @@ const [sttLang, setSttLangState] = useState(savedLang);
     setSttLangState(entry.code);
     setSttLangDropdownOpen(false);
     setSttLang(entry.code);
+    if (sttEngine === 'webkit') checkLocalAvailability(entry.code);
+  }
+
+  async function handleLocalToggle(enabled, langCode) {
+    setSttLocalState(enabled);
+    setSttLocalProcessing(enabled);
+    if (enabled && localAvailability === 'downloadable') {
+      // SpeechRecognition.available() returned 'downloadable', so the API exists
+      showToast(`Installing on-device language pack for ${langCode}…`, 'info');
+      try {
+        await window.SpeechRecognition.install(langCode);
+        setLocalAvailability('readily');
+        showToast('Language pack installed', 'success');
+      } catch {
+        showToast('Language pack installation failed', 'error');
+      }
+    }
   }
 
   async function handleCredentialFile(e) {
@@ -536,6 +572,26 @@ const [sttLang, setSttLangState] = useState(savedLang);
                 </div>
                 <span className="settings-field__hint">{sttLang}</span>
               </div>
+
+              {/* On-device (local) processing — shown only for Web Speech API when supported */}
+              {sttEngine === 'webkit' && localAvailability !== null && localAvailability !== 'no' && (
+                <div className="settings-field">
+                  <label className="settings-field__label">On-device processing</label>
+                  <label className="settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={sttLocal}
+                      onChange={e => handleLocalToggle(e.target.checked, sttLang)}
+                    />
+                    Use local speech recognition (no audio sent to server)
+                  </label>
+                  <span className="settings-field__hint">
+                    {localAvailability === 'readily'
+                      ? '✓ Language pack installed — on-device recognition is ready.'
+                      : 'Language pack not installed. Enable to download it now.'}
+                  </span>
+                </div>
+              )}
 
               {/* Utterance end controls */}
               <div className="settings-field">

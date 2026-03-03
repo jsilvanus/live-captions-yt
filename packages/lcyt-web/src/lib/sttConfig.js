@@ -1,6 +1,7 @@
 const KEY_ENGINE = 'lcyt-stt-engine';
 const KEY_LANG   = 'lcyt-stt-lang';
 const KEY_CFG    = 'lcyt-stt-config';
+const KEY_LOCAL  = 'lcyt-stt-local';
 
 export const COMMON_LANGUAGES = [
   { code: 'en-US', label: 'English (US)' },
@@ -68,4 +69,12 @@ export function getSttCloudConfig() {
 export function patchSttCloudConfig(patch) {
   const cfg = getSttCloudConfig();
   try { localStorage.setItem(KEY_CFG, JSON.stringify({ ...cfg, ...patch })); } catch {}
+}
+
+export function getSttLocalProcessing() {
+  try { return localStorage.getItem(KEY_LOCAL) === '1'; } catch { return false; }
+}
+
+export function setSttLocalProcessing(enabled) {
+  try { localStorage.setItem(KEY_LOCAL, enabled ? '1' : '0'); } catch {}
 }
