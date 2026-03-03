@@ -151,7 +151,7 @@ GET/POST/PATCH/DELETE /keys — admin CRUD (X-Admin-Key header)
 ```
 
 **Key internals:**
-- `src/db.js` — `better-sqlite3` (synchronous). Tables: `api_keys` (key, owner, active, email, daily_limit, lifetime_limit, lifetime_used, revoked_at, expires_at, created_at), `caption_usage` (per-key daily count), `session_stats` (per-session telemetry), `caption_errors` (delivery failure log). Additive migrations run on startup.
+- `src/db.js` — `better-sqlite3` (synchronous). Tables: `api_keys` (key, owner, active, email, daily_limit, lifetime_limit, lifetime_used, revoked_at, expires_at, created_at, sequence, last_caption_at), `caption_usage` (per-key daily count), `session_stats` (per-session telemetry), `caption_errors` (delivery failure log), `sessions` (persistent session metadata for server-restart survival). Additive migrations run on startup. Per-key sequence helpers (`getKeySequence`, `updateKeySequence`, `resetKeySequence`) implement a 2-hour inactivity TTL reset. Session persistence helpers (`saveSession`, `loadSession`, `deleteSession`, `listSessions`, `incSessionSequence`) back the store's `rehydrate()` call on startup.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue, micHolder }`. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
 - `src/middleware/auth.js` — JWT Bearer verification.
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
@@ -349,7 +349,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
 | `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |
-| `packages/lcyt-backend/src/db.js` | SQLite store: api_keys, caption_usage, session_stats, caption_errors |
+| `packages/lcyt-backend/src/db.js` | SQLite store: api_keys, caption_usage, session_stats, caption_errors, sessions |
 | `packages/lcyt-mcp-stdio/src/server.js` | MCP server — stdio transport |
 | `packages/lcyt-mcp-sse/src/server.js` | MCP server — HTTP SSE transport |
 | `packages/lcyt-web/src/main.jsx` | React entry point |

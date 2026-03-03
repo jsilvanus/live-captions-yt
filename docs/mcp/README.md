@@ -67,6 +67,158 @@ Connect your MCP client to:
 
 ---
 
+## Configuration Examples
+
+### Managed SSE — `mcp.lcyt.fi` (easiest)
+
+The quickest way to get started is to connect your MCP client to the hosted SSE service at **`https://mcp.lcyt.fi`**. No server setup is required — just obtain an API key and point your client at the endpoint.
+
+**Get an API key:** contact the service administrator or sign up at [lcyt.fi](https://lcyt.fi).
+
+**Claude Desktop config:**
+
+```json
+{
+  "mcpServers": {
+    "lcyt": {
+      "type": "sse",
+      "url": "https://mcp.lcyt.fi/sse",
+      "headers": {
+        "X-Api-Key": "YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+After restarting Claude Desktop the full tool set is available (`start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop`, `privacy`, `privacy_deletion`). You can prompt Claude with:
+
+> _"Start a YouTube Live caption session with stream key xxxx-xxxx-xxxx-xxxx and send 'Hello, world!'"_
+
+> **Note:** Stream keys are transmitted over TLS but are stored server-side while a session is active. Use a dedicated stream key and rotate it if you believe it has been exposed.
+
+---
+
+### Claude Desktop — stdio
+
+The stdio server integrates directly with Claude Desktop. Add the following block to your `claude_desktop_config.json` (location: `~/Library/Application Support/Claude/` on macOS, `%APPDATA%\Claude\` on Windows):
+
+```json
+{
+  "mcpServers": {
+    "lcyt": {
+      "command": "node",
+      "args": ["/absolute/path/to/packages/lcyt-mcp-stdio/src/server.js"],
+      "env": {
+        "LCYT_LOG_STDERR": "1"
+      }
+    }
+  }
+}
+```
+
+If you installed `lcyt-mcp-stdio` via npm globally you can also use:
+
+```json
+{
+  "mcpServers": {
+    "lcyt": {
+      "command": "npx",
+      "args": ["lcyt-mcp-stdio"],
+      "env": {
+        "LCYT_LOG_STDERR": "1"
+      }
+    }
+  }
+}
+```
+
+After restarting Claude Desktop, the tools (`start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop`) will be available. You can prompt Claude with:
+
+> _"Start a YouTube Live caption session with stream key xxxx-xxxx-xxxx-xxxx and send 'Hello, world!'"_
+
+### Claude Desktop — SSE (via reverse proxy or local port)
+
+When the MCP SSE server is running locally (e.g. bound to `127.0.0.1:3001` behind nginx), you can connect to it from Claude Desktop using an HTTP-based MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "lcyt-sse": {
+      "type": "sse",
+      "url": "http://127.0.0.1:3001/"
+    }
+  }
+}
+```
+
+With an API key (when `MCP_REQUIRE_API_KEY=1` is set on the server):
+
+```json
+{
+  "mcpServers": {
+    "lcyt-sse": {
+      "type": "sse",
+      "url": "http://127.0.0.1:3001/",
+      "headers": {
+        "X-Api-Key": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+### Docker / production (SSE server behind nginx)
+
+The included `docker-compose.yml` binds both ports to loopback so they are not directly reachable from the public internet. Configure your host nginx to reverse-proxy from HTTPS to the local ports:
+
+```nginx
+# API backend (port 3000)
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+
+# MCP SSE server (port 3001)
+server {
+    listen 443 ssl;
+    server_name mcp.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Connection '';   # required for SSE
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+Then configure your MCP client to use the public HTTPS endpoint:
+
+```json
+{
+  "mcpServers": {
+    "lcyt-sse": {
+      "type": "sse",
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "X-Api-Key": "your-api-key"
+      }
+    }
+  }
+}
+```
+
+---
+
 ## Important: Log Routing
 
 Both MCP servers must **not** write logs to `stdout` because the MCP protocol uses `stdout` for its message stream. Set the environment variable `LCYT_LOG_STDERR=1` to route all `lcyt` logs to `stderr`.

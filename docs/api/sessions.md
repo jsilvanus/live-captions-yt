@@ -37,7 +37,7 @@ Content-Type: application/json
 | `apiKey` | `string` | Yes | API key issued by the server admin |
 | `streamKey` | `string` | Yes | YouTube Live stream key |
 | `domain` | `string` | Yes | Registered origin domain (used for CORS and session isolation) |
-| `sequence` | `number` | No | Starting sequence number (default `0`) |
+| `sequence` | `number` | No | Override the starting sequence number. When omitted, the server uses the persisted per-API-key sequence (see [Per-key Sequence Persistence](#per-api-key-sequence-persistence)). |
 
 **Response — `200 OK`**
 
@@ -45,7 +45,7 @@ Content-Type: application/json
 {
   "token": "<JWT>",
   "sessionId": "a1b2c3...",
-  "sequence": 0,
+  "sequence": 42,
   "syncOffset": 0,
   "startedAt": "2024-01-01T12:00:00.000"
 }
@@ -120,7 +120,7 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `sequence` | `number` | No | New sequence counter value |
+| `sequence` | `number` | No | New sequence counter value. Setting `0` explicitly resets the persisted per-key sequence. |
 
 **Response — `200 OK`**
 
@@ -177,3 +177,29 @@ DELETE /live  →  session closed, stats recorded
 ```
 
 Sessions expire automatically after `SESSION_TTL` milliseconds of inactivity (default 2 hours). Expiry emits a `session_closed` SSE event.
+
+---
+
+## Per-API-key Sequence Persistence
+
+The caption sequence counter is persisted **per API key** across sessions. When a new session is created via `POST /live`, the server initialises the sequence from the stored value for that API key rather than always starting from `0`.
+
+**2-hour inactivity TTL:** If no caption has been sent in more than 2 hours, the sequence is automatically reset to `0` on the next session start. This matches YouTube's own caption sequence reset window.
+
+**Explicit override:** Pass `"sequence": N` in the `POST /live` body to override the persisted value (useful for testing or forced resets).
+
+**Explicit reset:** `PATCH /live` with `{ "sequence": 0 }` clears the persisted per-key sequence and records a `NULL` last-caption timestamp, so the next session will also start from `0`.
+
+**Automatic update:** Every successful caption delivery via `POST /captions` updates the persisted per-key sequence atomically.
+
+---
+
+## Session Persistence Across Server Restarts
+
+Sessions are stored in the `sessions` SQLite table and **rehydrated automatically** when the server starts. On restart:
+
+1. All previously active sessions are restored into memory (without active YouTube senders — senders are not serialisable).
+2. Sequence counters, clock offsets, and metadata are preserved.
+3. When a client calls `POST /live` for a rehydrated session, the server issues a **fresh JWT** and attaches a new `YoutubeLiveCaptionSender`. Captions can then be sent normally without any client-side change.
+
+This means clients that reconnect after a server restart do not lose caption history or sequence continuity — they simply need to call `POST /live` again to obtain a new token.
