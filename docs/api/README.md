@@ -125,11 +125,12 @@ The SQLite database contains the following tables:
 
 | Table | Purpose |
 |---|---|
-| `api_keys` | Registered API keys with owner, limits, expiry |
+| `api_keys` | Registered API keys with owner, limits, expiry, and persisted sequence counter |
 | `caption_usage` | Daily per-key caption counts |
 | `session_stats` | Completed session telemetry |
 | `caption_errors` | Caption delivery failure log |
 | `auth_events` | Authentication and usage events |
 | `domain_hourly_stats` | Per-domain aggregated caption statistics |
+| `sessions` | Persistent session metadata for survival across server restarts |
 
 Additive migrations run automatically on startup.
