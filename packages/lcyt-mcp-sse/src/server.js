@@ -497,7 +497,6 @@ function createMcpServer(apiKey = null) {
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
-app.use(express.json());
 
 /** @type {Map<string, SSEServerTransport>} */
 const transports = new Map();
