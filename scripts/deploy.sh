@@ -136,7 +136,8 @@ docker compose \
 
 echo ""
 echo "Deploy complete."
-echo "  Backend:  http://localhost:3000/health"
-echo "  MCP SSE:  http://localhost:3001/sse"
-echo "  Web UI:   in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
+echo "  Main site: in packages/lcyt-site/dist, served by host nginx; see nginx symlink in this script"
+echo "  Backend:   http://localhost:3000/health"
+echo "  MCP SSE:   http://localhost:3001/sse"
+echo "  Web UI:    in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
 echo ""
