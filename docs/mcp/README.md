@@ -82,7 +82,10 @@ The quickest way to get started is to connect your MCP client to the hosted SSE 
   "mcpServers": {
     "lcyt": {
       "type": "sse",
-      "url": "https://mcp.lcyt.fi/sse?apiKey=YOUR_API_KEY"
+      "url": "https://mcp.lcyt.fi/sse",
+      "headers": {
+        "X-Api-Key": "YOUR_API_KEY"
+      }
     }
   }
 }
@@ -143,7 +146,7 @@ When the MCP SSE server is running locally (e.g. bound to `127.0.0.1:3001` behin
   "mcpServers": {
     "lcyt-sse": {
       "type": "sse",
-      "url": "http://127.0.0.1:3001/sse"
+      "url": "http://127.0.0.1:3001/"
     }
   }
 }
@@ -156,7 +159,10 @@ With an API key (when `MCP_REQUIRE_API_KEY=1` is set on the server):
   "mcpServers": {
     "lcyt-sse": {
       "type": "sse",
-      "url": "http://127.0.0.1:3001/sse?apiKey=your-api-key"
+      "url": "http://127.0.0.1:3001/",
+      "headers": {
+        "X-Api-Key": "your-api-key"
+      }
     }
   }
 }
@@ -202,7 +208,10 @@ Then configure your MCP client to use the public HTTPS endpoint:
   "mcpServers": {
     "lcyt-sse": {
       "type": "sse",
-      "url": "https://mcp.example.com/sse?apiKey=your-api-key"
+      "url": "https://mcp.example.com/sse",
+      "headers": {
+        "X-Api-Key": "your-api-key"
+      }
     }
   }
 }

@@ -43,11 +43,11 @@ PORT=3001 DB_PATH=./lcyt.db LCYT_LOG_STDERR=1 node packages/lcyt-mcp-sse/src/ser
 
 Open an SSE stream. The server returns MCP protocol messages as SSE events.
 
-**Query parameters**
+**Request headers**
 
-| Parameter | Type | Required | Description |
+| Header | Type | Required | Description |
 |---|---|---|---|
-| `apiKey` | `string` | No | API key for usage logging (requires `DB_PATH` to be configured) |
+| `X-Api-Key` | `string` | No | API key for usage logging (requires `DB_PATH` to be configured). Required when `MCP_REQUIRE_API_KEY=1` |
 
 **Response headers**
 ```
@@ -101,7 +101,7 @@ See the [Tools Reference](./tools.md) for full parameter and return value docume
 
 ## Authentication & API Keys
 
-Authentication is optional by default. When `DB_PATH` is configured, passing an `apiKey` query parameter to `GET /sse` enables usage logging and limits enforcement.
+Authentication is optional by default. When `DB_PATH` is configured, sending an `X-Api-Key` request header to `GET /sse` enables usage logging and limits enforcement.
 
 **Enforce authentication:**
 
@@ -176,8 +176,8 @@ curl -X POST 'http://localhost:3001/messages?sessionId=abc123' \
 ## Troubleshooting
 
 **`401 Unauthorized` on `GET /sse`**
-- `MCP_REQUIRE_API_KEY=1` is set but no `?apiKey=` was supplied
-- Provide a valid API key: `GET /sse?apiKey=your-key`
+- `MCP_REQUIRE_API_KEY=1` is set but no `X-Api-Key` header was supplied
+- Add the header to your request: `X-Api-Key: your-key`
 
 **Messages not received on SSE stream**
 - Ensure the `sessionId` in `POST /messages?sessionId=...` matches the value from the `endpoint` SSE event

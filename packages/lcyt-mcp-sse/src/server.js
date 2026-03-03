@@ -502,7 +502,7 @@ app.use(express.json());
 /** @type {Map<string, SSEServerTransport>} */
 const transports = new Map();
 
-app.get("/", async (req, res) => {
+app.get("/sse", async (req, res) => {
   let apiKey = null;
 
   const provided = db ? req.headers["x-api-key"] : null;
