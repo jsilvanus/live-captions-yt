@@ -3,6 +3,8 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
+import { getTranslationEnabled, getTranslationTargetLang } from '../lib/translationConfig';
+import { isSameLanguage, translateText } from '../lib/translate';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -115,11 +117,30 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const iHaveMic    = micHolder === clientId;
   const otherHasMic = micHolder !== null && !iHaveMic;
 
-  function pushFinalTranscript(text, timestamp) {
-    const t = String(text || '').trim();
-    if (!t) return;
+  function pushFinalTranscript(text, utteranceTimestamp) {
+    const cleaned = String(text || '').trim();
+    if (!cleaned) return;
+
+    if (getTranslationEnabled()) {
+      // Run translation asynchronously but use the utterance start timestamp
+      // for sending — NOT the time when the translation response arrives.
+      const sourceLang = getSttLang();
+      const targetLang = getTranslationTargetLang();
+      if (!isSameLanguage(sourceLang, targetLang)) {
+        translateText(cleaned, sourceLang, targetLang)
+          .then(translated => {
+            sendTranscript(translated && translated.trim() ? translated.trim() : cleaned, utteranceTimestamp);
+          })
+          .catch(err => {
+            console.warn('Translation failed, using original text', err);
+            sendTranscript(cleaned, utteranceTimestamp);
+          });
+        return;
+      }
+    }
+
     // Do not render finalized words in the audio panel UI; just send them.
-    sendTranscript(t, timestamp);
+    sendTranscript(cleaned, utteranceTimestamp);
   }
 
   function getTimestampWithOffset() {
@@ -501,7 +522,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     return tokenData.token;
   }
 
-  async function recognizeChunk(blob) {
+  async function recognizeChunk(blob, chunkTimestamp) {
     const base64 = await blobToBase64(blob);
     const cfg    = getSttCloudConfig();
     const token  = await getToken();
@@ -543,15 +564,21 @@ export const AudioPanel = forwardRef(function AudioPanel(
     }
 
     const transcript = data.results?.[0]?.alternatives?.[0]?.transcript;
-    
+
     if (transcript) {
-      pushFinalTranscript(transcript);
+      // Pass the chunk start timestamp so it is preserved through async translation.
+      pushFinalTranscript(transcript, chunkTimestamp);
     }
   }
 
   function scheduleNextChunk(stream) {
     // Don't schedule if we've stopped
     if (!streamRef.current) return;
+
+    // Capture the chunk start time now — before the async STT round-trip.
+    // This timestamp is passed to pushFinalTranscript so the utterance-start
+    // time is preserved even when translation adds latency.
+    const chunkTimestamp = getUtteranceTimestamp();
 
     const recorder = new MediaRecorder(stream);
     const chunks   = [];
@@ -563,7 +590,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
       if (!streamRef.current) return; // user stopped
       const blob = new Blob(chunks, { type: recorder.mimeType });
       try {
-        await recognizeChunk(blob);
+        await recognizeChunk(blob, chunkTimestamp);
         setCloudError('');
       } catch (err) {
         setCloudError(err.message);
