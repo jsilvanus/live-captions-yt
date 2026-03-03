@@ -547,6 +547,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
                     onChange={e => {
                       setUtteranceEndButton(e.target.checked);
                       try { localStorage.setItem('lcyt:utterance-end-button', e.target.checked ? '1' : '0'); } catch {}
+                      window.dispatchEvent(new Event('lcyt:stt-config-changed'));
                     }}
                   />
                   Show 🗣 on meter during utterance — click to force end
