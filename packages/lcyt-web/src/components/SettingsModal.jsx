@@ -12,6 +12,16 @@ import {
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential';
+import {
+  TRANSLATION_VENDORS,
+  getTranslationEnabled, setTranslationEnabled,
+  getTranslationTargetLang, setTranslationTargetLang,
+  getTranslationVendor, setTranslationVendor,
+  getTranslationApiKey, setTranslationApiKey,
+  getTranslationLibreUrl, setTranslationLibreUrl,
+  getTranslationLibreKey, setTranslationLibreKey,
+  getTranslationShowOriginal, setTranslationShowOriginal,
+} from '../lib/translationConfig';
 
 function applyTheme(value) {
   const html = document.documentElement;
@@ -105,6 +115,21 @@ const [sttLang, setSttLangState] = useState(savedLang);
     () => { try { return parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'); } catch { return 0.01; } }
   );
 
+  // ── Translation tab ────────────────────────────────────────
+  const savedTargetLang = getTranslationTargetLang();
+  const savedTargetEntry = COMMON_LANGUAGES.find(l => l.code === savedTargetLang);
+  const [translationEnabled, setTranslationEnabledState] = useState(getTranslationEnabled);
+  const [translationVendor, setTranslationVendorState] = useState(getTranslationVendor);
+  const [translationApiKey, setTranslationApiKeyState] = useState(getTranslationApiKey);
+  const [translationLibreUrl, setTranslationLibreUrlState] = useState(getTranslationLibreUrl);
+  const [translationLibreKey, setTranslationLibreKeyState] = useState(getTranslationLibreKey);
+  const [translationTargetLang, setTranslationTargetLangState] = useState(savedTargetLang);
+  const [translationTargetQuery, setTranslationTargetQuery] = useState(
+    savedTargetEntry ? savedTargetEntry.label : savedTargetLang
+  );
+  const [translationTargetDropdownOpen, setTranslationTargetDropdownOpen] = useState(false);
+  const [translationShowOriginal, setTranslationShowOriginalState] = useState(getTranslationShowOriginal);
+
   // Apply theme and text size on mount
   useEffect(() => {
     const savedTheme = localStorage.getItem('lcyt-theme') || 'auto';
@@ -156,6 +181,17 @@ const [sttLang, setSttLangState] = useState(savedLang);
     // Re-sync utterance control state
     try { setUtteranceEndButton(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
     try { setUtteranceEndTimer(parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10)); } catch {}
+    // Re-sync translation state
+    setTranslationEnabledState(getTranslationEnabled());
+    setTranslationVendorState(getTranslationVendor());
+    setTranslationApiKeyState(getTranslationApiKey());
+    setTranslationLibreUrlState(getTranslationLibreUrl());
+    setTranslationLibreKeyState(getTranslationLibreKey());
+    setTranslationShowOriginalState(getTranslationShowOriginal());
+    const tgtLang = getTranslationTargetLang();
+    setTranslationTargetLangState(tgtLang);
+    const tgtEntry = COMMON_LANGUAGES.find(l => l.code === tgtLang);
+    setTranslationTargetQuery(tgtEntry ? tgtEntry.label : tgtLang);
   }, [isOpen]);
 
   // Keep credential state in sync with the module (e.g. cleared externally)
@@ -203,15 +239,15 @@ const [sttLang, setSttLangState] = useState(savedLang);
 
   async function handleConnect() {
     setError('');
-    if (!backendUrl) { setError('Backend URL is required'); return; }
-    if (!apiKey) { setError('API Key is required'); return; }
-    if (!streamKey) { setError('Stream Key is required'); return; }
+    if (!backendUrl) { setError(t('settings.connection.errorBackendUrl')); return; }
+    if (!apiKey) { setError(t('settings.connection.errorApiKey')); return; }
+    if (!streamKey) { setError(t('settings.connection.errorStreamKey')); return; }
 
     setConnecting(true);
     try {
       await session.connect({ backendUrl, apiKey, streamKey });
       session.setAutoConnect(autoConnect);
-      showToast('Connected', 'success');
+      showToast(t('settings.connection.connected'), 'success');
       onClose();
     } catch (err) {
       setError(err.message || 'Connection failed');
@@ -222,12 +258,12 @@ const [sttLang, setSttLangState] = useState(savedLang);
 
   async function handleDisconnect() {
     await session.disconnect();
-    showToast('Disconnected', 'info');
+    showToast(t('settings.connection.disconnected'), 'info');
     onClose();
   }
 
   async function handleSync() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
+    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
     try {
       const data = await session.sync();
       setSyncResult(`${data.syncOffset}ms`);
@@ -237,7 +273,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
   }
 
   async function handleHeartbeat() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
+    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
     try {
       const data = await session.heartbeat();
       setHbResult(`${data.roundTripTime}ms`);
@@ -247,12 +283,12 @@ const [sttLang, setSttLangState] = useState(savedLang);
   }
 
   async function handleResetSequence() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
+    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
     try {
       await session.updateSequence(0);
-      showToast('Sequence reset to 0', 'success');
+      showToast(t('settings.actions.sequenceReset'), 'success');
     } catch (err) {
-      showToast(err.message || 'Failed to reset sequence', 'error');
+      showToast(err.message || t('settings.actions.sequenceSetError'), 'error');
     }
   }
 
@@ -272,7 +308,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
     setApiKey('');
     setStreamKey('');
     setAutoConnect(false);
-    showToast('Config cleared', 'info');
+    showToast(t('settings.connection.configCleared'), 'info');
   }
 
   // ── STT tab handlers ──────────────────────────────────────
@@ -311,13 +347,13 @@ const [sttLang, setSttLangState] = useState(savedLang);
     setSttLocalProcessing(enabled);
     if (enabled && localAvailability === 'downloadable') {
       // SpeechRecognition.available() returned 'downloadable', so the API exists
-      showToast(`Installing on-device language pack for ${langCode}…`, 'info');
+      showToast(t('settings.stt.onDeviceInstalling'), 'info');
       try {
         await window.SpeechRecognition.install(langCode);
         setLocalAvailability('readily');
-        showToast('Language pack installed', 'success');
+        showToast(t('settings.stt.onDeviceInstalled'), 'success');
       } catch {
-        showToast('Language pack installation failed', 'error');
+        showToast(t('settings.stt.onDeviceInstallFailed'), 'error');
       }
     }
   }
@@ -355,7 +391,14 @@ const [sttLang, setSttLangState] = useState(savedLang);
       )
     : [];
 
-  const TABS = ['connection', 'captions', 'stt', 'vad', 'status', 'actions'];
+  const translationTargetMatches = translationTargetDropdownOpen
+    ? COMMON_LANGUAGES.filter(l =>
+        l.label.toLowerCase().includes(translationTargetQuery.toLowerCase()) ||
+        l.code.toLowerCase().includes(translationTargetQuery.toLowerCase())
+      )
+    : [];
+
+  const TABS = ['connection', 'captions', 'stt', 'vad', 'translation', 'status', 'actions'];
 
   return (
     <div className="settings-modal">
@@ -463,7 +506,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
             <div className="settings-panel settings-panel--active">
               <div className="settings-field">
                 <label className="settings-field__label">
-                  Batch window: <span>{batchInterval === 0 ? 'Off' : `${batchInterval}s`}</span>
+                  {t('settings.captions.batchWindow')}: <span>{batchInterval === 0 ? t('settings.captions.batchWindowOff') : `${batchInterval}s`}</span>
                 </label>
                 <input
                   className="settings-field__input"
@@ -475,12 +518,11 @@ const [sttLang, setSttLangState] = useState(savedLang);
                 />
               </div>
               <p style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, lineHeight: 1.5 }}>
-                0 = send each caption immediately.<br />
-                1–20 s = collect captions over the window, then send as a single batch.
+                {t('settings.captions.batchWindowHint')}
               </p>
               <div className="settings-field" style={{ marginTop: 16 }}>
                 <label className="settings-field__label">
-                  Transcription offset: <span>{transcriptionOffset === 0 ? '0 s (none)' : `${transcriptionOffset > 0 ? '+' : ''}${Number(transcriptionOffset).toFixed(1)} s`}</span>
+                  {t('settings.captions.transcriptionOffset')}: <span>{transcriptionOffset === 0 ? t('settings.captions.transcriptionOffsetNone') : `${transcriptionOffset > 0 ? '+' : ''}${Number(transcriptionOffset).toFixed(1)} s`}</span>
                 </label>
                 <input
                   className="settings-field__input"
@@ -493,13 +535,11 @@ const [sttLang, setSttLangState] = useState(savedLang);
                 />
               </div>
               <p style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, lineHeight: 1.5 }}>
-                Shifts the caption timestamp relative to when the transcription arrives.<br />
-                Use a <strong>negative</strong> value (e.g. −5 s) to compensate for transcription processing delay,
-                so captions line up with the moment the speaker started talking in the YouTube stream.
+                {t('settings.captions.transcriptionOffsetHint')}
               </p>
               <div className="settings-field" style={{ marginTop: 16 }}>
                 <label className="settings-field__label">
-                  Text size: <span>{textSize}px</span>
+                  {t('settings.captions.textSize')}: <span>{textSize}px</span>
                 </label>
                 <input
                   className="settings-field__input"
@@ -519,11 +559,11 @@ const [sttLang, setSttLangState] = useState(savedLang);
 
               {/* Engine selector */}
               <div className="settings-field">
-                <label className="settings-field__label">Recognition Engine</label>
+                <label className="settings-field__label">{t('settings.stt.engineLabel')}</label>
                 <div className="stt-engine-list">
                   {[
-                    { value: 'webkit', name: 'Web Speech API',    desc: 'Browser built-in (Chrome / Edge). No account required.' },
-                    { value: 'cloud',  name: 'Google Cloud STT',  desc: 'Higher accuracy and more language models. Requires a service account JSON key.' },
+                    { value: 'webkit', name: t('settings.stt.engineWebkitName'), desc: t('settings.stt.engineWebkitDesc') },
+                    { value: 'cloud',  name: t('settings.stt.engineCloudName'),  desc: t('settings.stt.engineCloudDesc') },
                   ].map(opt => (
                     <label
                       key={opt.value}
@@ -548,7 +588,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
 
               {/* Microphone device */}
               <div className="settings-field">
-                <label className="settings-field__label">Microphone</label>
+                <label className="settings-field__label">{t('settings.stt.microphone')}</label>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <select
                     className="settings-field__input"
@@ -560,25 +600,25 @@ const [sttLang, setSttLangState] = useState(savedLang);
                       window.dispatchEvent(new Event('lcyt:stt-config-changed'));
                     }}
                   >
-                    <option value="">Default device</option>
+                    <option value="">{t('settings.stt.microphoneDefault')}</option>
                     {micDevices.map(d => (
                       <option key={d.deviceId} value={d.deviceId}>
                         {d.label || d.deviceId}
                       </option>
                     ))}
                   </select>
-                  <button type="button" className="btn" onClick={refreshMics}>Refresh</button>
+                  <button type="button" className="btn" onClick={refreshMics}>{t('settings.stt.microphoneRefresh')}</button>
                 </div>
               </div>
 
               {/* Language (shared by both engines) */}
               <div className="settings-field">
-                <label className="settings-field__label">Language</label>
+                <label className="settings-field__label">{t('settings.stt.language')}</label>
                 <div className="audio-lang-wrap">
                   <input
                     className="settings-field__input"
                     type="text"
-                    placeholder="Type to filter…"
+                    placeholder={t('settings.stt.languagePlaceholder')}
                     autoComplete="off"
                     spellCheck={false}
                     value={sttLangQuery}
@@ -605,26 +645,26 @@ const [sttLang, setSttLangState] = useState(savedLang);
               {/* On-device (local) processing — shown only for Web Speech API when supported */}
               {sttEngine === 'webkit' && localAvailability !== null && localAvailability !== 'no' && (
                 <div className="settings-field">
-                  <label className="settings-field__label">On-device processing</label>
+                  <label className="settings-field__label">{t('settings.stt.onDevice')}</label>
                   <label className="settings-checkbox">
                     <input
                       type="checkbox"
                       checked={sttLocal}
                       onChange={e => handleLocalToggle(e.target.checked, sttLang)}
                     />
-                    Use local speech recognition (no audio sent to server)
+                    {t('settings.stt.onDeviceCheckbox')}
                   </label>
                   <span className="settings-field__hint">
                     {localAvailability === 'readily'
-                      ? '✓ Language pack installed — on-device recognition is ready.'
-                      : 'Language pack not installed. Enable to download it now.'}
+                      ? t('settings.stt.onDeviceReady')
+                      : t('settings.stt.onDeviceNotInstalled')}
                   </span>
                 </div>
               )}
 
               {/* Utterance end controls */}
               <div className="settings-field">
-                <label className="settings-field__label">Utterance end button</label>
+                <label className="settings-field__label">{t('settings.stt.utteranceEndButton')}</label>
                 <label className="settings-checkbox">
                   <input
                     type="checkbox"
@@ -635,17 +675,16 @@ const [sttLang, setSttLangState] = useState(savedLang);
                       window.dispatchEvent(new Event('lcyt:stt-config-changed'));
                     }}
                   />
-                  Show 🗣 on meter during utterance — click to force end
+                  {t('settings.stt.utteranceEndButtonCheckbox')}
                 </label>
                 <span className="settings-field__hint">
-                  While speech is being recognized, a speak icon appears on the audio meter.
-                  Clicking it stops the recognizer and forces a final result immediately.
+                  {t('settings.stt.utteranceEndButtonHint')}
                 </span>
               </div>
 
               <div className="settings-field">
                 <label className="settings-field__label">
-                  Utterance end timer: <strong>{utteranceEndTimer === 0 ? 'off' : `${utteranceEndTimer} s`}</strong>
+                  {t('settings.stt.utteranceEndTimer')}: <strong>{utteranceEndTimer === 0 ? t('settings.stt.utteranceEndTimerOff') : `${utteranceEndTimer} s`}</strong>
                 </label>
                 <input
                   type="range"
@@ -660,8 +699,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   }}
                 />
                 <span className="settings-field__hint">
-                  Automatically force end the utterance after this many seconds (0 = disabled).
-                  Useful for segmenting long speeches into shorter captions.
+                  {t('settings.stt.utteranceEndTimerHint')}
                 </span>
               </div>
 
@@ -669,7 +707,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
               {sttEngine === 'cloud' && (
                 <>
                   <div className="settings-field">
-                    <label className="settings-field__label">Model</label>
+                    <label className="settings-field__label">{t('settings.stt.model')}</label>
                     <select
                       className="settings-field__input"
                       style={{ appearance: 'auto' }}
@@ -679,19 +717,19 @@ const [sttLang, setSttLangState] = useState(savedLang);
                       {STT_MODELS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
                     </select>
                     <span className="settings-field__hint">
-                      latest_long suits most live-speech use cases. telephony is optimised for phone audio.
+                      {t('settings.stt.modelHint')}
                     </span>
                   </div>
 
                   <div className="settings-field">
-                    <label className="settings-field__label">Options</label>
+                    <label className="settings-field__label">{t('settings.stt.options')}</label>
                     <label className="settings-checkbox">
                       <input
                         type="checkbox"
                         checked={cloudPunctuation}
                         onChange={e => { setCloudPunctuation(e.target.checked); patchSttCloudConfig({ punctuation: e.target.checked }); }}
                       />
-                      Automatic punctuation
+                      {t('settings.stt.punctuation')}
                     </label>
                     <label className="settings-checkbox">
                       <input
@@ -699,13 +737,13 @@ const [sttLang, setSttLangState] = useState(savedLang);
                         checked={cloudProfanity}
                         onChange={e => { setCloudProfanity(e.target.checked); patchSttCloudConfig({ profanity: e.target.checked }); }}
                       />
-                      Profanity filter
+                      {t('settings.stt.profanity')}
                     </label>
                   </div>
 
                   <div className="settings-field">
                     <label className="settings-field__label">
-                      Confidence threshold: <strong>{Number(cloudConfidence).toFixed(2)}</strong>
+                      {t('settings.stt.confidence')}: <strong>{Number(cloudConfidence).toFixed(2)}</strong>
                     </label>
                     <input
                       type="range"
@@ -719,12 +757,12 @@ const [sttLang, setSttLangState] = useState(savedLang);
                       }}
                     />
                     <span className="settings-field__hint">
-                      Transcripts below this score are dimmed and not auto-sent.
+                      {t('settings.stt.confidenceHint')}
                     </span>
                   </div>
 
                   <div className="settings-field">
-                    <label className="settings-field__label">Max caption length (chars)</label>
+                    <label className="settings-field__label">{t('settings.stt.maxLen')}</label>
                     <input
                       type="number"
                       className="settings-field__input"
@@ -740,7 +778,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
 
                   {/* Google service account credential */}
                   <div className="settings-field">
-                    <label className="settings-field__label">Google Service Account</label>
+                    <label className="settings-field__label">{t('settings.stt.credential')}</label>
                     {credential ? (
                       <div className="stt-cred-loaded">
                         <span className="stt-cred-loaded__check">✓</span>
@@ -751,7 +789,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
                           className="btn btn--secondary btn--sm"
                           onClick={handleClearCredential}
                         >
-                          Remove
+                          {t('settings.stt.credentialRemove')}
                         </button>
                       </div>
                     ) : (
@@ -759,13 +797,12 @@ const [sttLang, setSttLangState] = useState(savedLang);
                         className="btn btn--secondary btn--sm"
                         onClick={() => credFileRef.current?.click()}
                       >
-                        Load JSON key file…
+                        {t('settings.stt.credentialLoad')}
                       </button>
                     )}
                     {credError && <div className="settings-error">{credError}</div>}
                     <span className="settings-field__hint">
-                      Credentials are kept in memory only and are cleared when the page is closed.
-                      Never committed to disk or localStorage.
+                      {t('settings.stt.credentialHint')}
                     </span>
                     <input
                       ref={credFileRef}
@@ -786,7 +823,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
             <div className="settings-panel settings-panel--active">
 
               <div className="settings-field">
-                <label className="settings-field__label">Client-side VAD</label>
+                <label className="settings-field__label">{t('settings.vad.clientVad')}</label>
                 <label className="settings-checkbox">
                   <input
                     type="checkbox"
@@ -796,18 +833,16 @@ const [sttLang, setSttLangState] = useState(savedLang);
                       try { localStorage.setItem('lcyt:client-vad', e.target.checked ? '1' : '0'); } catch {}
                     }}
                   />
-                  Enable silence detection (WebKit engine only)
+                  {t('settings.vad.enableCheckbox')}
                 </label>
                 <span className="settings-field__hint">
-                  When enabled, the browser monitors microphone energy and forces the recognizer
-                  to finalize when silence is detected. Helps segment long unbroken speech on
-                  mobile Chrome.
+                  {t('settings.vad.enableHint')}
                 </span>
               </div>
 
               <div className="settings-field">
                 <label className="settings-field__label">
-                  Silence duration: <strong>{vadSilenceMs} ms</strong>
+                  {t('settings.vad.silenceDuration')}: <strong>{vadSilenceMs} ms</strong>
                 </label>
                 <input
                   type="range"
@@ -823,14 +858,13 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   }}
                 />
                 <span className="settings-field__hint">
-                  How long (ms) energy must stay below the threshold before the recognizer is
-                  stopped to force a final result. Default: 500 ms.
+                  {t('settings.vad.silenceDurationHint')}
                 </span>
               </div>
 
               <div className="settings-field">
                 <label className="settings-field__label">
-                  Energy threshold: <strong>{Number(vadThreshold).toFixed(3)}</strong>
+                  {t('settings.vad.energyThreshold')}: <strong>{Number(vadThreshold).toFixed(3)}</strong>
                 </label>
                 <input
                   type="range"
@@ -846,10 +880,167 @@ const [sttLang, setSttLangState] = useState(savedLang);
                   }}
                 />
                 <span className="settings-field__hint">
-                  RMS amplitude threshold below which audio is considered silent. Lower values
-                  are more sensitive. Default: 0.01.
+                  {t('settings.vad.energyThresholdHint')}
                 </span>
               </div>
+
+            </div>
+          )}
+
+          {/* ── Translation ── */}
+          {activeTab === 'translation' && (
+            <div className="settings-panel settings-panel--active">
+
+              <label className="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={translationEnabled}
+                  onChange={e => {
+                    setTranslationEnabledState(e.target.checked);
+                    setTranslationEnabled(e.target.checked);
+                  }}
+                />
+                {t('settings.translation.enable')}
+              </label>
+              <span className="settings-field__hint" style={{ display: 'block', marginTop: 4, marginBottom: 12 }}>
+                {t('settings.translation.enableHint')}
+              </span>
+
+              {translationEnabled && (
+                <>
+                  {/* Target language */}
+                  <div className="settings-field">
+                    <label className="settings-field__label">{t('settings.translation.targetLang')}</label>
+                    <div className="audio-lang-wrap">
+                      <input
+                        className="settings-field__input"
+                        type="text"
+                        placeholder={t('settings.translation.targetLangPlaceholder')}
+                        autoComplete="off"
+                        spellCheck={false}
+                        value={translationTargetQuery}
+                        onChange={e => {
+                          setTranslationTargetQuery(e.target.value);
+                          setTranslationTargetDropdownOpen(e.target.value.trim().length > 0);
+                        }}
+                        onBlur={() => setTimeout(() => setTranslationTargetDropdownOpen(false), 150)}
+                      />
+                      {translationTargetDropdownOpen && translationTargetMatches.length > 0 && (
+                        <div className="audio-lang-list">
+                          {translationTargetMatches.map(l => (
+                            <button
+                              key={l.code}
+                              className="audio-lang-option"
+                              onMouseDown={() => {
+                                setTranslationTargetQuery(l.label);
+                                setTranslationTargetLangState(l.code);
+                                setTranslationTargetDropdownOpen(false);
+                                setTranslationTargetLang(l.code);
+                              }}
+                            >
+                              {l.label} <span className="audio-lang-code">{l.code}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <span className="settings-field__hint">
+                      {translationTargetLang}
+                      {' — '}
+                      {t('settings.translation.sameLanguageNote')}
+                    </span>
+                  </div>
+
+                  {/* Vendor */}
+                  <div className="settings-field">
+                    <label className="settings-field__label">{t('settings.translation.vendor')}</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {TRANSLATION_VENDORS.map(v => (
+                        <button
+                          key={v.value}
+                          type="button"
+                          className={`lang-btn${translationVendor === v.value ? ' lang-btn--active' : ''}`}
+                          onClick={() => {
+                            setTranslationVendorState(v.value);
+                            setTranslationVendor(v.value);
+                          }}
+                        >
+                          {t(v.labelKey)}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Show original toggle */}
+                  <div className="settings-field">
+                    <label className="settings-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={translationShowOriginal}
+                        onChange={e => {
+                          setTranslationShowOriginalState(e.target.checked);
+                          setTranslationShowOriginal(e.target.checked);
+                        }}
+                      />
+                      {t('settings.translation.showOriginal')}
+                    </label>
+                    <span className="settings-field__hint">{t('settings.translation.showOriginalHint')}</span>
+                  </div>
+
+                  {/* API key — shown for Google and DeepL */}
+                  {(translationVendor === 'google' || translationVendor === 'deepl') && (
+                    <div className="settings-field">
+                      <label className="settings-field__label">{t('settings.translation.vendorKey')}</label>
+                      <input
+                        className="settings-field__input"
+                        type="password"
+                        autoComplete="off"
+                        value={translationApiKey}
+                        onChange={e => {
+                          setTranslationApiKeyState(e.target.value);
+                          setTranslationApiKey(e.target.value);
+                        }}
+                      />
+                      <span className="settings-field__hint">{t('settings.translation.vendorKeyHint')}</span>
+                    </div>
+                  )}
+
+                  {/* LibreTranslate-specific settings */}
+                  {translationVendor === 'libretranslate' && (
+                    <>
+                      <div className="settings-field">
+                        <label className="settings-field__label">{t('settings.translation.libreUrl')}</label>
+                        <input
+                          className="settings-field__input"
+                          type="url"
+                          placeholder={t('settings.translation.libreUrlPlaceholder')}
+                          autoComplete="off"
+                          value={translationLibreUrl}
+                          onChange={e => {
+                            setTranslationLibreUrlState(e.target.value);
+                            setTranslationLibreUrl(e.target.value);
+                          }}
+                        />
+                        <span className="settings-field__hint">{t('settings.translation.libreUrlHint')}</span>
+                      </div>
+                      <div className="settings-field">
+                        <label className="settings-field__label">{t('settings.translation.libreKey')}</label>
+                        <input
+                          className="settings-field__input"
+                          type="password"
+                          autoComplete="off"
+                          value={translationLibreKey}
+                          onChange={e => {
+                            setTranslationLibreKeyState(e.target.value);
+                            setTranslationLibreKey(e.target.value);
+                          }}
+                        />
+                        <span className="settings-field__hint">{t('settings.translation.libreKeyHint')}</span>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
 
             </div>
           )}
@@ -918,7 +1109,7 @@ const [sttLang, setSttLangState] = useState(savedLang);
                     value={customSequence}
                     onChange={e => setCustomSequence(Math.max(0, parseInt(e.target.value, 10) || 0))}
                   />
-                  <button className="btn btn--secondary btn--sm" onClick={handleSetSequence}>↗ Set</button>
+                  <button className="btn btn--secondary btn--sm" onClick={handleSetSequence}>{t('settings.actions.setSequenceBtn')}</button>
                 </div>
               </div>
               <hr style={{ borderColor: 'var(--color-border)', margin: '8px 0' }} />
