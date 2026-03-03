@@ -4,6 +4,7 @@ import { useSession } from '../hooks/useSession';
 import { FileProvider } from './FileContext';
 import { SentLogContext } from './SentLogContext';
 import { ToastProvider } from './ToastContext';
+import { LangProvider } from './LangContext';
 
 /**
  * Composes all context providers with proper wiring:
@@ -26,14 +27,16 @@ export function AppProviders({ children }) {
   });
 
   return (
-    <SentLogContext.Provider value={sentLog}>
-      <SessionContext.Provider value={session}>
-        <FileProvider>
-          <ToastProvider>
-            {children}
-          </ToastProvider>
-        </FileProvider>
-      </SessionContext.Provider>
-    </SentLogContext.Provider>
+    <LangProvider>
+      <SentLogContext.Provider value={sentLog}>
+        <SessionContext.Provider value={session}>
+          <FileProvider>
+            <ToastProvider>
+              {children}
+            </ToastProvider>
+          </FileProvider>
+        </SessionContext.Provider>
+      </SentLogContext.Provider>
+    </LangProvider>
   );
 }
