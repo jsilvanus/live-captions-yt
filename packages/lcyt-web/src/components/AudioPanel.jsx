@@ -129,7 +129,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
       if (!isSameLanguage(sourceLang, targetLang)) {
         translateText(cleaned, sourceLang, targetLang)
           .then(translated => {
-            sendTranscript(translated && translated.trim() ? translated.trim() : cleaned, utteranceTimestamp);
+            const trimmed = translated ? translated.trim() : '';
+            sendTranscript(trimmed || cleaned, utteranceTimestamp);
           })
           .catch(err => {
             console.warn('Translation failed, using original text', err);

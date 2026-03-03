@@ -21,7 +21,7 @@ export function setTranslationEnabled(enabled) {
 }
 
 export function getTranslationTargetLang() {
-  return localStorage.getItem(KEY_TARGET) || 'en-US';
+  try { return localStorage.getItem(KEY_TARGET) || 'en-US'; } catch { return 'en-US'; }
 }
 
 export function setTranslationTargetLang(lang) {
@@ -29,7 +29,7 @@ export function setTranslationTargetLang(lang) {
 }
 
 export function getTranslationVendor() {
-  return localStorage.getItem(KEY_VENDOR) || 'mymemory';
+  try { return localStorage.getItem(KEY_VENDOR) || 'mymemory'; } catch { return 'mymemory'; }
 }
 
 export function setTranslationVendor(vendor) {
@@ -37,7 +37,7 @@ export function setTranslationVendor(vendor) {
 }
 
 export function getTranslationApiKey() {
-  return localStorage.getItem(KEY_API_KEY) || '';
+  try { return localStorage.getItem(KEY_API_KEY) || ''; } catch { return ''; }
 }
 
 export function setTranslationApiKey(key) {
@@ -45,7 +45,7 @@ export function setTranslationApiKey(key) {
 }
 
 export function getTranslationLibreUrl() {
-  return localStorage.getItem(KEY_LIBRE_URL) || '';
+  try { return localStorage.getItem(KEY_LIBRE_URL) || ''; } catch { return ''; }
 }
 
 export function setTranslationLibreUrl(url) {
@@ -53,7 +53,7 @@ export function setTranslationLibreUrl(url) {
 }
 
 export function getTranslationLibreKey() {
-  return localStorage.getItem(KEY_LIBRE_KEY) || '';
+  try { return localStorage.getItem(KEY_LIBRE_KEY) || ''; } catch { return ''; }
 }
 
 export function setTranslationLibreKey(key) {
