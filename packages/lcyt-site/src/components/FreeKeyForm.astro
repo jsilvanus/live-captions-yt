@@ -1,0 +1,76 @@
+---
+// Astro island: free-tier API key sign-up form.
+// Submits to POST https://api.lcyt.fi/keys?freetier
+// Hydrates client-side via <script> tag.
+---
+<div class="free-key-form" id="free-key-island">
+  <form id="free-key-form" novalidate>
+    <div class="fkf-field">
+      <label for="fkf-name">Name</label>
+      <input id="fkf-name" name="name" type="text" autocomplete="name" placeholder="Your name" required />
+    </div>
+    <div class="fkf-field">
+      <label for="fkf-email">Email</label>
+      <input id="fkf-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required />
+    </div>
+    <button class="btn-primary" type="submit" id="fkf-submit">Request free key</button>
+  </form>
+  <div id="fkf-result" aria-live="polite"></div>
+</div>
+
+<script>
+  const BACKEND = 'https://api.lcyt.fi';
+
+  const form = document.getElementById('free-key-form') as HTMLFormElement;
+  const result = document.getElementById('fkf-result') as HTMLElement;
+  const submitBtn = document.getElementById('fkf-submit') as HTMLButtonElement;
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    result.textContent = '';
+    result.className = '';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Requesting…';
+
+    const name = (document.getElementById('fkf-name') as HTMLInputElement).value.trim();
+    const email = (document.getElementById('fkf-email') as HTMLInputElement).value.trim();
+
+    try {
+      const res = await fetch(`${BACKEND}/keys?freetier`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        result.className = 'fkf-success';
+        // Build DOM safely to avoid XSS from server-returned key value
+        const p1 = document.createElement('p');
+        p1.textContent = '✅ Your free API key has been created!';
+        const p2 = document.createElement('p');
+        p2.append('Key: ');
+        const code = document.createElement('code');
+        code.className = 'fkf-key';
+        code.textContent = data.key;
+        p2.append(code);
+        const p3 = document.createElement('p');
+        p3.className = 'fkf-note';
+        p3.textContent = 'Copy and save your key — it will not be shown again here. It expires in 30 days and allows up to 200 captions per day.';
+        result.replaceChildren(p1, p2, p3);
+        form.reset();
+      } else {
+        result.className = 'fkf-error';
+        result.textContent = `❌ ${data.error || 'Something went wrong. Please try again.'}`;
+      }
+    } catch (err) {
+      console.error('[FreeKeyForm] request failed:', err);
+      result.className = 'fkf-error';
+      result.textContent = '❌ Could not reach the server. Please try again later.';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Request free key';
+    }
+  });
+</script>

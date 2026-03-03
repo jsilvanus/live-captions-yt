@@ -367,7 +367,88 @@ a:hover {
   margin-bottom: 1.5rem;
 }
 
-/* Mobile responsive */
+/* GitHub repo card variant */
+.card--repo {
+  border-color: #d0e8f5;
+  background: #f7fbff;
+}
+
+.card--repo:hover {
+  box-shadow: 0 4px 16px rgba(77, 170, 230, 0.28);
+}
+
+/* Free-key form island */
+.free-key-form {
+  margin-top: 1.5rem;
+}
+
+.fkf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-bottom: 1rem;
+}
+
+.fkf-field label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.fkf-field input {
+  padding: 0.55rem 0.85rem;
+  border: 1px solid #d0d0d0;
+  border-radius: 6px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+  max-width: 400px;
+}
+
+.fkf-field input:focus {
+  border-color: var(--color-primary);
+}
+
+#fkf-result {
+  margin-top: 1rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.fkf-success {
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+}
+
+.fkf-error {
+  color: #991b1b;
+  background: #fff7f7;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 0.85rem 1rem;
+}
+
+.fkf-key {
+  display: inline-block;
+  background: #e8f4fd;
+  color: #1a5276;
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.95em;
+  word-break: break-all;
+}
+
+.fkf-note {
+  margin-top: 0.5rem;
+  font-size: 0.88rem;
+  color: #555;
+}
+
 @media (max-width: 700px) {
   .sidebar {
     position: static;
