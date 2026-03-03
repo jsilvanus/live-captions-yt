@@ -136,7 +136,7 @@ If you installed `lcyt-mcp-stdio` via npm globally you can also use:
 
 After restarting Claude Desktop, the tools (`start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop`) will be available. You can prompt Claude with:
 
-> _"Start a YouTube Live caption session with stream key xxxx-xxxx-xxxx-xxxx and send 'Hello, world!'"_
+> _"You will be sender of closed captions. Please start a YouTube live caption session. My stream key is rhh1-etst-bf7b-0wvm-5aem. Treat all my messages from now on as captions to be sent, and respond to my mesasges after tool use with: Sent (sequence): text."_
 
 ### Claude Desktop — SSE (via reverse proxy or local port)
 
