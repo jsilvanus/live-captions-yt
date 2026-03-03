@@ -2,6 +2,7 @@
 title: "send_caption — Send a Single Caption"
 stdio: true
 sse: true
+id: mcp/tools/send-caption
 ---
 
 # `send_caption` — Send a Single Caption

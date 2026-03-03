@@ -1,5 +1,9 @@
 # Configuration
 
+---
+id: lib/config
+---
+
 Utilities for loading, saving, and building YouTube ingestion URLs from the `lcyt` configuration file (`~/.lcyt-config.json`).
 
 **Import**

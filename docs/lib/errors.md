@@ -1,5 +1,9 @@
 # Error Classes
 
+---
+id: lib/errors
+---
+
 `lcyt` uses a typed error hierarchy so callers can handle errors at different levels of specificity. All errors extend the base `LCYTError` class.
 
 **Import**

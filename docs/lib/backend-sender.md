@@ -1,5 +1,9 @@
 # BackendCaptionSender
 
+---
+id: lib/backend-sender
+---
+
 Relay-based caption sender that routes captions through an `lcyt-backend` HTTP server instead of calling YouTube directly. Mirrors the [`YoutubeLiveCaptionSender`](#sender) API.
 
 **Import**

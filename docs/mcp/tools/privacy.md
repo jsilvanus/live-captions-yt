@@ -2,6 +2,7 @@
 title: "privacy — Privacy Notice"
 stdio: false
 sse: true
+id: mcp/tools/privacy
 ---
 
 # `privacy` — Privacy Notice

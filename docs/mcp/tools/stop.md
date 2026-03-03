@@ -2,6 +2,7 @@
 title: "stop — Stop Caption Session"
 stdio: true
 sse: true
+id: mcp/tools/stop
 ---
 
 # `stop` — Stop Caption Session

@@ -1,5 +1,9 @@
 # lcyt — Core Library Reference
 
+---
+id: lib/readme
+---
+
 `lcyt` is available as both a **Node.js** library (npm) and a **Python** library (PyPI). Both provide the same core abstractions: direct caption delivery to YouTube and relay-based delivery via the lcyt-backend.
 
 ---

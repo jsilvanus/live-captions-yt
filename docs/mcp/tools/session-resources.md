@@ -2,6 +2,7 @@
 title: "Session Resources"
 stdio: true
 sse: false
+id: mcp/tools/session-resources
 ---
 
 # Session Resources

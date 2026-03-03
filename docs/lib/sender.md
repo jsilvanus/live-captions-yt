@@ -1,5 +1,9 @@
 # YoutubeLiveCaptionSender
 
+---
+id: lib/sender
+---
+
 Direct caption delivery to YouTube Live via Google's HTTP POST ingestion API.
 
 **Import**

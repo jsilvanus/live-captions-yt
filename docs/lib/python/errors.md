@@ -1,4 +1,5 @@
 ---
+id: lib/python/errors
 title: "Python — Error Classes"
 ---
 

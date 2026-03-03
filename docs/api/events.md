@@ -1,4 +1,5 @@
 ---
+id: api/events
 title: "/events — SSE Event Stream"
 methods: [GET]
 auth: [bearer]

@@ -1,5 +1,9 @@
 # Plan: Add MCP to lcyt-backend
 
+---
+id: plan/mcp
+---
+
 ## What is MCP?
 
 Model Context Protocol (MCP) is an open standard from Anthropic for connecting AI assistants to external tools and data. An **MCP server** exposes **tools** (callable functions) and **resources** (readable data) over a standardized protocol, so clients like Claude Desktop or Claude Code can discover and invoke them without custom glue code.

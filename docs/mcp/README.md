@@ -1,4 +1,5 @@
 ---
+id: mcp/readme
 title: "MCP Servers — Overview"
 ---
 

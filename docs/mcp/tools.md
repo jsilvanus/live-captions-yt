@@ -1,4 +1,5 @@
 ---
+id: mcp/tools
 title: "MCP Tools Reference"
 ---
 

@@ -1,4 +1,5 @@
 ---
+id: lib/python/sender
 title: "Python — YoutubeLiveCaptionSender"
 ---
 

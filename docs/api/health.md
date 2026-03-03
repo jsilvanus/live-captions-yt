@@ -1,4 +1,5 @@
 ---
+id: api/health
 title: "/health — Health Check"
 methods: [GET]
 auth: [none]

@@ -1,5 +1,9 @@
 # Logger
 
+---
+id: lib/logger
+---
+
 A pluggable, structured logger used throughout `lcyt`. All log output is prefixed with `[LCYT]`.
 
 **Import**

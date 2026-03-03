@@ -1,5 +1,9 @@
 # Help Page Screenshot Plan — lcyt-web
 
+---
+id: plan/help
+---
+
 ## Goal
 
 Generate static screenshots of every significant UI view in the `lcyt-web` browser

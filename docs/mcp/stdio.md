@@ -1,3 +1,7 @@
+---
+id: mcp/stdio
+---
+
 # MCP Stdio Transport
 
 `lcyt-mcp-stdio` is an MCP server that communicates over **standard input/output** (stdin/stdout). It is the recommended integration for Claude Desktop and any MCP client that launches the server as a child process.

@@ -2,6 +2,7 @@
 title: "send_batch — Send Multiple Captions"
 stdio: true
 sse: true
+id: mcp/tools/send-batch
 ---
 
 # `send_batch` — Send Multiple Captions

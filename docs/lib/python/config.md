@@ -1,4 +1,5 @@
 ---
+id: lib/python/config
 title: "Python — Configuration"
 ---
 

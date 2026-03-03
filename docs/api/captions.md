@@ -1,4 +1,5 @@
 ---
+id: api/captions
 title: "/captions — Send Captions"
 methods: [POST]
 auth: [bearer]

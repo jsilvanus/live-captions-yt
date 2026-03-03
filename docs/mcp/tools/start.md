@@ -2,6 +2,7 @@
 title: "start — Start Caption Session"
 stdio: true
 sse: true
+id: mcp/tools/start
 ---
 
 # `start` — Start Caption Session

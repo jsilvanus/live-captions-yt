@@ -22,6 +22,9 @@ Retrieve the current state of a caption session.
 
 ```json
 {
+---
+id: mcp/tools/get-status
+---
   "sequence": 9,
   "syncOffset": 150
 }
@@ -29,5 +32,4 @@ Retrieve the current state of a caption session.
 
 | Field | Type | Description |
 |---|---|---|
-| `sequence` | `number` | Current sequence counter |
 | `syncOffset` | `number` | Current clock sync offset |

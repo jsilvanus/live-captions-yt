@@ -1,4 +1,5 @@
 ---
+id: api/sync
 title: "/sync — Clock Sync"
 methods: [POST]
 auth: [bearer]

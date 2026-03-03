@@ -1,4 +1,5 @@
 ---
+id: api/keys
 title: "/keys — API Key Management"
 methods: [POST, GET, PATCH, DELETE]
 auth: [adminkey, none]

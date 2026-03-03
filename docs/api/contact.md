@@ -1,4 +1,5 @@
 ---
+id: api/contact
 title: "/contact — Contact"
 methods: [GET]
 auth: [none]

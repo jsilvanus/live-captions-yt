@@ -1,4 +1,5 @@
 ---
+id: api/mic
 title: "/mic — Mic Lock"
 methods: [POST]
 auth: [bearer]

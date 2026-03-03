@@ -1,4 +1,5 @@
 ---
+id: api/sessions
 title: "/live — Session Management"
 methods: [POST, GET, PATCH, DELETE]
 auth: [none, bearer]

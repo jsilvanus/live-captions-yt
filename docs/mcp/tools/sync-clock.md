@@ -2,6 +2,7 @@
 title: "sync_clock — Synchronise Clock"
 stdio: true
 sse: true
+id: mcp/tools/sync-clock
 ---
 
 # `sync_clock` — Synchronise Clock

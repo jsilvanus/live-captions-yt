@@ -15,15 +15,28 @@ function docLabel(id: string, title?: string): string {
   return name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
+// Use only the `mcp` collection here — other pages should use their own collections.
 const allDocs = await getCollection('mcp');
 
-// Separate docs by category
-const readme = allDocs.find(d => d.id === 'README');
-const toolsIndex = allDocs.find(d => d.id === 'tools');
-const stdioDoc = allDocs.find(d => d.id === 'stdio');
-const sseDoc = allDocs.find(d => d.id === 'sse');
+function matchTarget(doc: any, target: string) {
+  const last = target.split('/').pop()!.toLowerCase();
+  const id = (doc.id || '').toString().toLowerCase();
+  const slug = (doc.slug || '').toString().toLowerCase();
+  const title = ((doc.data && doc.data.title) || '').toString().toLowerCase();
+  const t = target.toLowerCase();
+  if (id === t || slug === t) return true;
+  if (id.endsWith('/' + t) || slug.endsWith('/' + t)) return true;
+  if (id.includes(last) || slug.includes(last) || title.includes(last.replace(/-/g, ' '))) return true;
+  return false;
+}
+
+// Separate docs by category (use flexible matching to handle collection prefixes)
+const readme = allDocs.find(d => matchTarget(d, 'readme') || matchTarget(d, 'mcp/readme') || (d.data && d.data.title && d.data.title.toLowerCase().includes('overview'))) || allDocs[0];
+const toolsIndex = allDocs.find(d => matchTarget(d, 'tools') || matchTarget(d, 'mcp/tools'));
+const stdioDoc = allDocs.find(d => matchTarget(d, 'stdio') || matchTarget(d, 'mcp/stdio'));
+const sseDoc = allDocs.find(d => matchTarget(d, 'sse') || matchTarget(d, 'mcp/sse'));
 const toolDocs = TOOLS_ORDER
-  .map(id => allDocs.find(d => d.id === id))
+  .map(id => allDocs.find(d => matchTarget(d, id) || matchTarget(d, 'mcp/' + id)))
   .filter(Boolean) as typeof allDocs;
 
 // Ordered list for rendering
@@ -45,8 +58,8 @@ const sidebarSections = [
   {
     heading: 'Transport',
     items: [
-      ...(stdioDoc ? [{ id: stdioDoc.id, label: 'stdio' }] : []),
-      ...(sseDoc ? [{ id: sseDoc.id, label: 'SSE' }] : []),
+      ...(sseDoc ? [{ id: sseDoc.id, label: 'HTTP SSE' }] : []),
+      ...(stdioDoc ? [{ id: stdioDoc.id, label: 'stdio (local)' }] : []),
     ],
   },
   {

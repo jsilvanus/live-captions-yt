@@ -1,5 +1,9 @@
 # UI Reorganisation Plan — lcyt-web
 
+---
+id: plan/ui
+---
+
 > Target branch: `claude/reorganize-ui-layout-jE7Rv`
 > Base: merge `origin/copilot/sub-pr-36` (mic lock + multi-mic) onto the
 > feature branch before starting, so all changes build on the latest code.

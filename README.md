@@ -26,20 +26,7 @@ This is a monorepo containing the following packages:
 
 ### Breaking change in lcyt v2.0.0
 
-The `lcyt` npm package no longer includes the CLI. The CLI has been moved to a separate [`lcyt-cli`](https://www.npmjs.com/package/lcyt-cli) package.
-
-**If you were using the CLI**, switch to:
-```bash
-npm install -g lcyt-cli   # Global install
-# or
-npx lcyt-cli              # One-off usage
-```
-
-**If you were using the library**, no changes needed — `import { YoutubeLiveCaptionSender } from 'lcyt'` still works.
-
-### Current status of lcyt-cli
-
-There is currently some bugs in the -f version of lcyt-cli. Please use -i.
+The `lcyt` npm package no longer includes the CLI. The CLI has been moved to a separate [`lcyt-cli`](https://www.npmjs.com/package/lcyt-cli) package. There is currently some bugs in the -f version of lcyt-cli. Please use -i.
 
 ## Quick Start with CLI
 
@@ -163,7 +150,11 @@ YYYY-MM-DDTHH:MM:SS.mmm
 
 The libraries accept multiple timestamp forms — see the [lcyt package docs](packages/lcyt/) (Node.js) and [Python package docs](python-packages/lcyt/README.md) for the full list including `Date`/`datetime` objects, epoch numbers, and relative second offsets.
 
-### Body Format
+### Region and Cue information
+
+A region/cue identifier may follow the timestamp on the same line. It is optional. It's format is (`region:reg1#cue1`). The effects of the regions and cues is not well documented and has not been tested. Some indication has been given that cue means possible places for advertisement breaks.
+
+### Complete body Format
 ```
 YYYY-MM-DDTHH:MM:SS.mmm region:reg1#cue1
 CAPTION TEXT
@@ -171,33 +162,32 @@ YYYY-MM-DDTHH:MM:SS.mmm
 ANOTHER CAPTION
 ```
 
-> **Note on numeric epoch values:** The Node.js library treats numbers >= 1000 as **milliseconds** (`Date.now()` convention); the Python library treats them as **seconds** (`time.time()` convention).
-
 > **Important Requirements:**
 > - **Timestamps must be within 60 seconds** of the server's current time
 > - **Body must end with a trailing newline** (`\n`)
-> - Region/cue identifier after timestamp is optional (`region:reg1#cue1`). The effects of the regions and cues is not documented and has not been tested.
+> - Region/cue identifier after timestamp is optional . 
+
+> **Note on numeric epoch values:** The Node.js library treats numbers >= 1000 as **milliseconds** (`Date.now()` convention); the Python library treats them as **seconds** (`time.time()` convention).
 
 ## YouTube Setup
 
 To get your YouTube Live caption ingestion URL and key:
 
 1. Go to [YouTube Studio](https://studio.youtube.com)
-2. Click **Create** → **Go Live**
+2. Click **Create** → **Schelude a broadcast**
 3. Set up your stream settings
-4. Look for **Closed captions** in the stream settings
-5. Enable **POST captions to URL**
-6. Copy the ingestion URL (this is usually stable and has been added as a default) and stream key
+4. Set a **30 second delay** for the broadcast (important!)
+5. Look for **Closed captions** in settings, enable it
+6. Enable **POST captions to URL** for closed captions
+7. Copy the ingestion URL (usually stable, default in the library) and stream key
+
+## Motivation
+
+YouTube already has English transcription for live videos, why bother? Well, there are other languages as well, and you might want to have another model do the transcription! This project was initially founded to serve as accessibility feature for the (Evangelical Lutheran Church of Finland)[evl.fi], but was created from the beginning as a general tool for anyone to use.
 
 ## Contributing
 
-You are welcome to contribute by opening issues and contributing code.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+You are welcome to contribute by opening issues and contributing code. Just fork and do a pull request when your feature is ready.
 
 ## Copyright
 

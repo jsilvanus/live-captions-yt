@@ -2,6 +2,7 @@
 title: "privacy_deletion — Request Data Deletion"
 stdio: false
 sse: true
+id: mcp/tools/privacy-deletion
 ---
 
 # `privacy_deletion` — Request Data Deletion

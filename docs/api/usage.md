@@ -1,4 +1,5 @@
 ---
+id: api/usage
 title: "/usage — Domain Usage"
 methods: [GET]
 auth: [adminkey, none]

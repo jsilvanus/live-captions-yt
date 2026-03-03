@@ -1,4 +1,5 @@
 ---
+id: api/stats
 title: "/stats — Usage Statistics"
 methods: [GET, DELETE]
 auth: [bearer]

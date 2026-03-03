@@ -1,3 +1,7 @@
+---
+id: mcp/sse
+---
+
 # MCP SSE Transport
 
 `lcyt-mcp-sse` is an MCP server that communicates over **HTTP with Server-Sent Events**. It is suitable for web-based MCP clients, remote AI agents, and scenarios where multiple clients share caption sessions.

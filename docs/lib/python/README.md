@@ -1,4 +1,5 @@
 ---
+id: lib/python/readme
 title: "Python Library — lcyt"
 ---
 

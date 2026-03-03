@@ -1,5 +1,9 @@
 # Web GUI Client — TODO List
 
+---
+id: todo_client
+---
+
 Status legend: `[ ]` todo · `[~]` in progress · `[x]` done · `[-]` skipped/deferred
 
 ---
