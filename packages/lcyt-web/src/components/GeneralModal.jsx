@@ -4,14 +4,16 @@ import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import {
   getRelayMode, setRelayMode,
-  getRelayTargetType, setRelayTargetType,
-  getRelayYoutubeKey, setRelayYoutubeKey,
-  getRelayGenericUrl, setRelayGenericUrl,
-  getRelayGenericName, setRelayGenericName,
-  getRelayCaptionMode, setRelayCaptionMode,
   getAllRelayConfig,
-  buildRelayTarget, buildRelayTargetUrl,
+  buildRelayTargetUrl,
+  getSlotConfig, setSlotTargetType,
+  setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName, setSlotCaptionMode,
+  buildSlotTarget, buildSlotTargetUrl,
+  clearSlot,
 } from '../lib/relayConfig.js';
+
+const MAX_RELAY_SLOTS = 4;
+
 
 function applyTheme(value) {
   const html = document.documentElement;
@@ -23,6 +25,14 @@ function applyTheme(value) {
     html.removeAttribute('data-theme');
   }
   try { localStorage.setItem('lcyt-theme', value); } catch {}
+}
+
+function loadAllSlotConfigs() {
+  const configs = {};
+  for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
+    configs[s] = getSlotConfig(s);
+  }
+  return configs;
 }
 
 export function GeneralModal({ isOpen, onClose }) {
@@ -40,14 +50,13 @@ export function GeneralModal({ isOpen, onClose }) {
   const [error, setError] = useState('');
   const [connecting, setConnecting] = useState(false);
 
-  // Relay settings
+  // Relay top-level settings
   const [relayMode, setRelayModeState] = useState('caption');
-  const [relayTargetType, setRelayTargetTypeState] = useState('youtube');
-  const [relayYoutubeKey, setRelayYoutubeKeyState] = useState('');
-  const [relayGenericUrl, setRelayGenericUrlState] = useState('');
-  const [relayGenericName, setRelayGenericNameState] = useState('');
-  const [relayCaptionMode, setRelayCaptionModeState] = useState('http');
-  const [relayStatus, setRelayStatus] = useState(null); // { relay, running } | null
+  // RTMP fan-out: per-slot configs + active slot
+  const [activeRelaySlot, setActiveRelaySlot] = useState(1);
+  const [slotConfigs, setSlotConfigs] = useState(() => loadAllSlotConfigs());
+  // Backend relay status: { relays: [...], runningSlots: [...] } | null
+  const [relayStatus, setRelayStatus] = useState(null);
   const [relayLoading, setRelayLoading] = useState(false);
   const [relayError, setRelayError] = useState('');
 
@@ -61,14 +70,10 @@ export function GeneralModal({ isOpen, onClose }) {
     try { setTheme(localStorage.getItem('lcyt-theme') || 'auto'); } catch {}
     setError('');
 
-    // Load relay settings from localStorage (single consolidated read)
+    // Load relay settings
     const rc = getAllRelayConfig();
     setRelayModeState(rc.mode);
-    setRelayTargetTypeState(rc.targetType);
-    setRelayYoutubeKeyState(rc.youtubeKey);
-    setRelayGenericUrlState(rc.genericUrl);
-    setRelayGenericNameState(rc.genericName);
-    setRelayCaptionModeState(rc.captionMode);
+    setSlotConfigs(loadAllSlotConfigs());
     setRelayError('');
 
     // Fetch current relay status from backend if connected
@@ -133,41 +138,31 @@ export function GeneralModal({ isOpen, onClose }) {
     setRelayMode(mode);
   }
 
-  function onRelayTargetTypeChange(type) {
-    setRelayTargetTypeState(type);
-    setRelayTargetType(type);
+  function updateSlotField(slot, field, value) {
+    switch (field) {
+      case 'targetType':  setSlotTargetType(slot, value);  break;
+      case 'youtubeKey':  setSlotYoutubeKey(slot, value);  break;
+      case 'genericUrl':  setSlotGenericUrl(slot, value);  break;
+      case 'genericName': setSlotGenericName(slot, value); break;
+      case 'captionMode': setSlotCaptionMode(slot, value); break;
+    }
+    setSlotConfigs(prev => ({
+      ...prev,
+      [slot]: { ...prev[slot], [field]: value },
+    }));
   }
 
-  function onRelayYoutubeKeyChange(val) {
-    setRelayYoutubeKeyState(val);
-    setRelayYoutubeKey(val);
-  }
-
-  function onRelayGenericUrlChange(val) {
-    setRelayGenericUrlState(val);
-    setRelayGenericUrl(val);
-  }
-
-  function onRelayGenericNameChange(val) {
-    setRelayGenericNameState(val);
-    setRelayGenericName(val);
-  }
-
-  function onRelayCaptionModeChange(mode) {
-    setRelayCaptionModeState(mode);
-    setRelayCaptionMode(mode);
-  }
-
-  async function handleStartRelay() {
+  async function handleActivateSlot(slot) {
     setRelayError('');
-    const { targetUrl, targetName } = buildRelayTarget();
+    const { targetUrl, targetName } = buildSlotTarget(slot);
+    const captionMode = slotConfigs[slot]?.captionMode || 'http';
     if (!targetUrl) {
       setRelayError(t('settings.relay.errorNoTarget'));
       return;
     }
     setRelayLoading(true);
     try {
-      await session.configureRelay({ targetUrl, targetName, captionMode: relayCaptionMode });
+      await session.configureRelay({ slot, targetUrl, targetName, captionMode });
       const status = await session.getRelayStatus();
       setRelayStatus(status);
       showToast(t('settings.relay.configured'), 'success');
@@ -178,7 +173,22 @@ export function GeneralModal({ isOpen, onClose }) {
     }
   }
 
-  async function handleStopRelay() {
+  async function handleStopSlot(slot) {
+    setRelayError('');
+    setRelayLoading(true);
+    try {
+      await session.stopRelaySlot({ slot });
+      const status = await session.getRelayStatus();
+      setRelayStatus(status);
+      showToast(t('settings.relay.stopped'), 'info');
+    } catch (err) {
+      setRelayError(err.message);
+    } finally {
+      setRelayLoading(false);
+    }
+  }
+
+  async function handleStopAll() {
     setRelayError('');
     setRelayLoading(true);
     try {
@@ -192,7 +202,14 @@ export function GeneralModal({ isOpen, onClose }) {
     }
   }
 
-  const builtTargetUrl = buildRelayTargetUrl();
+  function handleClearSlot(slot) {
+    clearSlot(slot);
+    setSlotConfigs(prev => ({ ...prev, [slot]: getSlotConfig(slot) }));
+  }
+
+  const runningSlots = relayStatus?.runningSlots ?? [];
+  const sc = slotConfigs[activeRelaySlot] || {};
+  const builtSlotUrl = buildSlotTargetUrl(activeRelaySlot);
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
@@ -264,28 +281,50 @@ export function GeneralModal({ isOpen, onClose }) {
               </>
             )}
 
-            {/* ── RTMP relay settings ── */}
+            {/* ── RTMP relay settings (fan-out: up to 4 slots) ── */}
             {relayMode === 'rtmp' && (
               <>
+                {/* Slot selector tabs */}
+                <div className="settings-field">
+                  <label className="settings-field__label">{t('settings.relay.relayTarget')}</label>
+                  <div className="lang-switcher">
+                    {[1, 2, 3, 4].map(slot => {
+                      const slotBuilt = buildSlotTargetUrl(slot);
+                      const isRunning = runningSlots.includes(slot);
+                      return (
+                        <button
+                          key={slot}
+                          className={`lang-btn${activeRelaySlot === slot ? ' lang-btn--active' : ''}`}
+                          onClick={() => setActiveRelaySlot(slot)}
+                          title={slotBuilt || ''}
+                        >
+                          {isRunning ? '🔴' : slotBuilt ? '●' : ''} {slot}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Target type for active slot */}
                 <div className="settings-field">
                   <label className="settings-field__label">{t('settings.relay.targetType')}</label>
                   <div className="lang-switcher">
                     <button
-                      className={`lang-btn${relayTargetType === 'youtube' ? ' lang-btn--active' : ''}`}
-                      onClick={() => onRelayTargetTypeChange('youtube')}
+                      className={`lang-btn${sc.targetType === 'youtube' ? ' lang-btn--active' : ''}`}
+                      onClick={() => updateSlotField(activeRelaySlot, 'targetType', 'youtube')}
                     >
                       YouTube
                     </button>
                     <button
-                      className={`lang-btn${relayTargetType === 'generic' ? ' lang-btn--active' : ''}`}
-                      onClick={() => onRelayTargetTypeChange('generic')}
+                      className={`lang-btn${sc.targetType === 'generic' ? ' lang-btn--active' : ''}`}
+                      onClick={() => updateSlotField(activeRelaySlot, 'targetType', 'generic')}
                     >
                       {t('settings.relay.generic')}
                     </button>
                   </div>
                 </div>
 
-                {relayTargetType === 'youtube' && (
+                {sc.targetType === 'youtube' && (
                   <div className="settings-field">
                     <label className="settings-field__label">{t('settings.relay.youtubeStreamKey')}</label>
                     <input
@@ -293,18 +332,18 @@ export function GeneralModal({ isOpen, onClose }) {
                       type="text"
                       placeholder="xxxx-xxxx-xxxx-xxxx-xxxx"
                       autoComplete="off"
-                      value={relayYoutubeKey}
-                      onChange={e => onRelayYoutubeKeyChange(e.target.value)}
+                      value={sc.youtubeKey || ''}
+                      onChange={e => updateSlotField(activeRelaySlot, 'youtubeKey', e.target.value)}
                     />
-                    {relayYoutubeKey.trim() && (
+                    {(sc.youtubeKey || '').trim() && (
                       <span className="settings-field__hint">
-                        → rtmp://a.rtmp.youtube.com/live2/{relayYoutubeKey.trim()}
+                        → rtmp://a.rtmp.youtube.com/live2/{(sc.youtubeKey || '').trim()}
                       </span>
                     )}
                   </div>
                 )}
 
-                {relayTargetType === 'generic' && (
+                {sc.targetType === 'generic' && (
                   <>
                     <div className="settings-field">
                       <label className="settings-field__label">{t('settings.relay.rtmpUrl')}</label>
@@ -313,8 +352,8 @@ export function GeneralModal({ isOpen, onClose }) {
                         type="text"
                         placeholder="rtmp://your-server.example.com/live"
                         autoComplete="off"
-                        value={relayGenericUrl}
-                        onChange={e => onRelayGenericUrlChange(e.target.value)}
+                        value={sc.genericUrl || ''}
+                        onChange={e => updateSlotField(activeRelaySlot, 'genericUrl', e.target.value)}
                       />
                     </div>
                     <div className="settings-field">
@@ -324,25 +363,25 @@ export function GeneralModal({ isOpen, onClose }) {
                         type="text"
                         placeholder={t('settings.relay.rtmpStreamNamePlaceholder')}
                         autoComplete="off"
-                        value={relayGenericName}
-                        onChange={e => onRelayGenericNameChange(e.target.value)}
+                        value={sc.genericName || ''}
+                        onChange={e => updateSlotField(activeRelaySlot, 'genericName', e.target.value)}
                       />
-                      {relayGenericUrl.trim() && (
+                      {(sc.genericUrl || '').trim() && (
                         <span className="settings-field__hint">
-                          → {relayGenericUrl.trim()}{relayGenericName.trim() ? `/${relayGenericName.trim()}` : ''}
+                          → {(sc.genericUrl || '').trim()}{(sc.genericName || '').trim() ? `/${(sc.genericName || '').trim()}` : ''}
                         </span>
                       )}
                     </div>
                   </>
                 )}
 
-                {/* Captions in relay */}
+                {/* Caption delivery for active slot */}
                 <div className="settings-field">
                   <label className="settings-field__label">{t('settings.relay.captionDelivery')}</label>
                   <div className="lang-switcher">
                     <button
-                      className={`lang-btn${relayCaptionMode === 'http' ? ' lang-btn--active' : ''}`}
-                      onClick={() => onRelayCaptionModeChange('http')}
+                      className={`lang-btn${(sc.captionMode || 'http') === 'http' ? ' lang-btn--active' : ''}`}
+                      onClick={() => updateSlotField(activeRelaySlot, 'captionMode', 'http')}
                     >
                       {t('settings.relay.captionHttp')}
                     </button>
@@ -357,36 +396,55 @@ export function GeneralModal({ isOpen, onClose }) {
                   </div>
                 </div>
 
-                {/* Relay status */}
-                {relayStatus && (
+                {/* Per-slot backend status */}
+                {relayStatus && relayStatus.relays?.length > 0 && (
                   <div className="settings-field">
                     <label className="settings-field__label">{t('settings.relay.status')}</label>
-                    <span style={{ fontSize: '0.85em' }}>
-                      {relayStatus.running ? '🔴 ' + t('settings.relay.live') : '⚫ ' + t('settings.relay.inactive')}
-                      {' — '}{relayStatus.relay?.targetUrl}
-                      {relayStatus.relay?.targetName ? `/${relayStatus.relay.targetName}` : ''}
-                      {relayStatus.relay?.captionMode === 'cea708' ? ' · CEA-708' : ' · HTTP'}
-                    </span>
+                    {relayStatus.relays.map(r => (
+                      <div key={r.slot} style={{ fontSize: '0.85em', marginBottom: '0.25rem' }}>
+                        <span style={{ fontWeight: 600 }}>{t('settings.relay.slot')} {r.slot}:</span>{' '}
+                        {runningSlots.includes(r.slot) ? '🔴 ' + t('settings.relay.live') : '⚫ ' + t('settings.relay.inactive')}
+                        {' — '}{r.targetUrl}{r.targetName ? `/${r.targetName}` : ''}
+                        {' · '}{r.captionMode === 'cea708' ? 'CEA-708' : 'HTTP'}
+                      </div>
+                    ))}
                   </div>
                 )}
 
                 {relayError && <div className="settings-error">{relayError}</div>}
 
-                <div className="settings-modal__actions" style={{ paddingTop: '0.5rem' }}>
+                <div className="settings-modal__actions" style={{ paddingTop: '0.5rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                   <button
                     className="btn btn--primary"
-                    onClick={handleStartRelay}
-                    disabled={relayLoading || !session.connected || !builtTargetUrl}
-                    title={!session.connected ? t('settings.relay.notConnected') : !builtTargetUrl ? t('settings.relay.errorNoTarget') : ''}
+                    onClick={() => handleActivateSlot(activeRelaySlot)}
+                    disabled={relayLoading || !session.connected || !builtSlotUrl}
+                    title={!session.connected ? t('settings.relay.notConnected') : !builtSlotUrl ? t('settings.relay.errorNoTarget') : ''}
                   >
-                    ▶ {t('settings.relay.start')}
+                    ▶ {t('settings.relay.start')} ({t('settings.relay.slot')} {activeRelaySlot})
                   </button>
                   <button
                     className="btn btn--secondary"
-                    onClick={handleStopRelay}
+                    onClick={() => handleStopSlot(activeRelaySlot)}
                     disabled={relayLoading || !session.connected}
                   >
-                    ■ {t('settings.relay.stop')}
+                    ■ {t('settings.relay.stop')} ({t('settings.relay.slot')} {activeRelaySlot})
+                  </button>
+                  {runningSlots.length > 1 && (
+                    <button
+                      className="btn btn--secondary"
+                      onClick={handleStopAll}
+                      disabled={relayLoading || !session.connected}
+                    >
+                      ■ {t('settings.relay.stopAll')}
+                    </button>
+                  )}
+                  <button
+                    className="btn btn--secondary"
+                    onClick={() => handleClearSlot(activeRelaySlot)}
+                    disabled={relayLoading}
+                    style={{ opacity: 0.7 }}
+                  >
+                    🗑 {t('settings.relay.clearSlot')} {activeRelaySlot}
                   </button>
                 </div>
               </>

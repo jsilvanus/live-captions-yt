@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { isRelayAllowed, getRelay } from '../db.js';
+import { isRelayAllowed, getRelays } from '../db.js';
 
 /**
  * Factory for the /rtmp router.
@@ -10,8 +10,8 @@ import { isRelayAllowed, getRelay } from '../db.js';
  * both on_publish and on_publish_done — the `call` field in the body
  * distinguishes them:
  *
- *   call=publish       → start ffmpeg relay (on_publish)
- *   call=publish_done  → stop ffmpeg relay  (on_publish_done)
+ *   call=publish       → start ffmpeg fan-out (all configured slots) and allow publish
+ *   call=publish_done  → stop all ffmpeg slots; nginx drops the publisher automatically
  *
  * nginx-rtmp fields present in every request:
  *   app   — RTMP application name (validated against RTMP_APPLICATION env)
@@ -19,6 +19,11 @@ import { isRelayAllowed, getRelay } from '../db.js';
  *   call  — "publish" | "publish_done"
  *
  * No JWT auth — nginx is the caller, not a browser.
+ *
+ * Stream stopping flow:
+ *   Client calls DELETE /stream → backend calls relayManager.stopKey() then
+ *   relayManager.dropPublisher() → nginx sends on_publish_done → this route
+ *   calls stopKey() again (idempotent, all procs already gone).
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
@@ -52,15 +57,13 @@ export function createRtmpRouter(db, relayManager) {
         return res.status(403).send('relay not allowed');
       }
 
-      const relay = getRelay(db, apiKey);
-      if (relay) {
+      // Fan-out: start all configured relay slots in parallel
+      const relays = getRelays(db, apiKey);
+      if (relays.length > 0) {
         try {
-          await relayManager.start(apiKey, relay.targetUrl, {
-            targetName:  relay.targetName,
-            captionMode: relay.captionMode,
-          });
+          await relayManager.startAll(apiKey, relays);
         } catch (err) {
-          console.error(`[rtmp] Failed to start relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
+          console.error(`[rtmp] Failed to start relay fan-out for ${apiKey.slice(0, 8)}…: ${err.message}`);
         }
       }
 
@@ -71,7 +74,7 @@ export function createRtmpRouter(db, relayManager) {
     // Handle on_publish_done: call=publish_done
     if (call === 'publish_done') {
       try {
-        await relayManager.stop(apiKey);
+        await relayManager.stopKey(apiKey);
       } catch (err) {
         console.error(`[rtmp] Failed to stop relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }

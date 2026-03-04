@@ -77,28 +77,30 @@ if (process.env.RTMP_APPLICATION) {
 const db = initDb();
 const store = new SessionStore({ db });
 
-// Stat tracking: map from apiKey → rtmp_stream_stats row id
+// Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
 const _rtmpStatIds = new Map();
 
 const relayManager = new RtmpRelayManager({
-  onStreamStarted(apiKey, { targetUrl, targetName, captionMode, startedAt }) {
+  onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
     try {
       const id = writeRtmpStreamStart(db, {
         apiKey,
+        slot,
         targetUrl,
         targetName,
         captionMode,
         startedAt: startedAt.toISOString(),
       });
-      _rtmpStatIds.set(apiKey, id);
+      _rtmpStatIds.set(`${apiKey}:${slot}`, id);
     } catch (err) {
       console.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
     }
   },
-  onStreamEnded(apiKey, { targetUrl, captionMode, startedAt, endedAt, durationMs }) {
+  onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs }) {
     try {
-      const statId = _rtmpStatIds.get(apiKey);
-      _rtmpStatIds.delete(apiKey);
+      const statKey = `${apiKey}:${slot}`;
+      const statId  = _rtmpStatIds.get(statKey);
+      _rtmpStatIds.delete(statKey);
       if (statId) {
         writeRtmpStreamEnd(db, {
           streamStatId: statId,

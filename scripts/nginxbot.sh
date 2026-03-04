@@ -14,6 +14,8 @@
 #   --api-host  HOST      Hostname for the API callbacks (default: api.lcyt.fi)
 #   --rtmp-port PORT      RTMP listen port               (default: 1935)
 #   --app-name  NAME      RTMP application name          (default: stream)
+#   --control-port PORT   HTTP port for the rtmp_control endpoint
+#                         (default: 8888, bound to 127.0.0.1 only)
 #   --help                Show this help message
 #
 # What it does:
@@ -24,8 +26,12 @@
 #      The block configures:
 #        - An `app <app-name>` that listens for incoming RTMP streams.
 #        - Paths of the form rtmp://<rtmp-host>/<app-name>/<APIKEY>.
-#        - on_publish  → POST http://<api-host>/rtmp?start  (with stream name = API key)
-#        - on_publish_done → POST http://<api-host>/rtmp?stop
+#        - on_publish      → POST http://<api-host>/rtmp  (start relay)
+#        - on_publish_done → POST http://<api-host>/rtmp  (stop relay)
+#   4. Appends an HTTP server block (bound to 127.0.0.1:<control-port>) that
+#      exposes the nginx-rtmp control API at /control.
+#      The backend uses this to forcefully drop publishers:
+#        POST http://127.0.0.1:<control-port>/control/drop/publisher?app=<app>&name=<apiKey>
 #
 # Requirements:
 #   - nginx with the nginx-rtmp-module (or libnginx-mod-rtmp) installed.
@@ -47,6 +53,7 @@ RTMP_HOST="rtmp.lcyt.fi"
 API_HOST="api.lcyt.fi"
 RTMP_PORT="1935"
 APP_NAME="stream"
+CONTROL_PORT="8888"
 SITE_CONFIG=""
 
 # ---------------------------------------------------------------------------
@@ -61,10 +68,11 @@ show_help() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --help|-h)       show_help ;;
-    --rtmp-host)     RTMP_HOST="$2"; shift 2 ;;
-    --api-host)      API_HOST="$2";  shift 2 ;;
-    --rtmp-port)     RTMP_PORT="$2"; shift 2 ;;
-    --app-name)      APP_NAME="$2";  shift 2 ;;
+    --rtmp-host)     RTMP_HOST="$2";    shift 2 ;;
+    --api-host)      API_HOST="$2";     shift 2 ;;
+    --rtmp-port)     RTMP_PORT="$2";    shift 2 ;;
+    --app-name)      APP_NAME="$2";     shift 2 ;;
+    --control-port)  CONTROL_PORT="$2"; shift 2 ;;
     -*)              echo "Unknown option: $1" >&2; exit 1 ;;
     *)
       if [[ -z "$SITE_CONFIG" ]]; then
@@ -123,6 +131,38 @@ if [[ -f "$NGINX_CONF" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Check if control endpoint already exists
+# ---------------------------------------------------------------------------
+
+check_control_exists() {
+  local file="$1"
+  grep -qE 'rtmp_control' "$file" 2>/dev/null
+}
+
+CONTROL_EXISTS=false
+if check_control_exists "$SITE_CONFIG"; then
+  CONTROL_EXISTS=true
+  echo "✓ rtmp_control already found in $SITE_CONFIG — skipping control block."
+fi
+
+if [[ -f "$NGINX_CONF" ]] && check_control_exists "$NGINX_CONF"; then
+  CONTROL_EXISTS=true
+  echo "✓ rtmp_control already found in $NGINX_CONF — skipping control block."
+fi
+
+if [[ "$CONTROL_EXISTS" == "false" ]] && [[ -f "$NGINX_CONF" ]]; then
+  while IFS= read -r incl; do
+    for f in $incl; do
+      [[ -f "$f" ]] && check_control_exists "$f" && {
+        CONTROL_EXISTS=true
+        echo "✓ rtmp_control already found in $f — skipping control block."
+        break 2
+      }
+    done
+  done < <(grep -oE 'include\s+[^;]+' "$NGINX_CONF" 2>/dev/null | sed 's/include[[:space:]]*//' || true)
+fi
+
+# ---------------------------------------------------------------------------
 # Build and append the rtmp block
 # ---------------------------------------------------------------------------
 
@@ -152,7 +192,39 @@ rtmp {
 }
 RTMP_BLOCK
 
-echo "✓ Done. Reload nginx to apply changes:"
+echo "✓ RTMP block appended."
+
+# ---------------------------------------------------------------------------
+# Append HTTP control server block (localhost only) if not already present
+# ---------------------------------------------------------------------------
+
+if [[ "$CONTROL_EXISTS" == "false" ]]; then
+  echo "→ Appending HTTP control server block (127.0.0.1:${CONTROL_PORT}) to $SITE_CONFIG"
+
+  cat >> "$SITE_CONFIG" << CONTROL_BLOCK
+
+# ── nginx-rtmp control endpoint (added by nginxbot.sh) ───────────────────────
+# Bound to loopback only. The backend uses this to forcefully drop publishers:
+#   POST http://127.0.0.1:${CONTROL_PORT}/control/drop/publisher?app=${APP_NAME}&name=<APIKEY>
+# Set RTMP_CONTROL_URL=http://127.0.0.1:${CONTROL_PORT}/control in the backend .env
+server {
+    listen 127.0.0.1:${CONTROL_PORT};
+    server_name localhost;
+
+    location /control {
+        rtmp_control all;
+    }
+}
+CONTROL_BLOCK
+
+  echo "✓ Control block appended."
+  echo ""
+  echo "  Set in your backend .env:"
+  echo "    RTMP_CONTROL_URL=http://127.0.0.1:${CONTROL_PORT}/control"
+fi
+
+echo ""
+echo "Reload nginx to apply changes:"
 echo "    sudo nginx -t && sudo systemctl reload nginx"
 echo ""
 echo "Stream path: rtmp://${RTMP_HOST}:${RTMP_PORT}/${APP_NAME}/<APIKEY>"

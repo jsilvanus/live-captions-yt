@@ -10,8 +10,12 @@ import {
   formatKey,
   isRelayAllowed,
   getRelay,
+  getRelays,
+  getRelaySlot,
   upsertRelay,
   deleteRelay,
+  deleteRelaySlot,
+  deleteAllRelays,
 } from '../src/db.js';
 import { createKeysRouter } from '../src/routes/keys.js';
 import { createRtmpRouter } from '../src/routes/rtmp.js';
@@ -74,40 +78,82 @@ describe('relay_allowed column', () => {
 });
 
 // ---------------------------------------------------------------------------
-// DB helpers for rtmp_relays table
+// DB helpers for rtmp_relays table (fan-out: up to 4 slots per key)
 // ---------------------------------------------------------------------------
 
-describe('rtmp_relays DB helpers', () => {
+describe('rtmp_relays DB helpers (fan-out)', () => {
   let db;
 
   before(() => { db = initDb(':memory:'); });
   after(() => { db.close(); });
 
-  it('getRelay returns null when no relay configured', () => {
+  it('getRelaySlot returns null when no relay configured', () => {
+    assert.strictEqual(getRelaySlot(db, 'no-key', 1), null);
+  });
+
+  it('getRelay (compat alias) returns null for slot 1 when no relay configured', () => {
     assert.strictEqual(getRelay(db, 'no-key'), null);
   });
 
-  it('upsertRelay creates a relay', () => {
-    const relay = upsertRelay(db, 'key-1', 'rtmp://a.example.com/live/xyz');
+  it('upsertRelay creates relay at slot 1 by default (via compat alias)', () => {
+    const relay = upsertRelay(db, 'key-1', 1, 'rtmp://a.example.com/live/xyz');
     assert.strictEqual(relay.apiKey, 'key-1');
+    assert.strictEqual(relay.slot, 1);
     assert.strictEqual(relay.targetUrl, 'rtmp://a.example.com/live/xyz');
   });
 
-  it('upsertRelay updates existing relay', () => {
-    upsertRelay(db, 'key-2', 'rtmp://old.example.com/live/key');
-    const updated = upsertRelay(db, 'key-2', 'rtmp://new.example.com/live/key');
+  it('upsertRelay creates relay at slot 2', () => {
+    const relay = upsertRelay(db, 'key-1', 2, 'rtmp://b.example.com/live/xyz');
+    assert.strictEqual(relay.slot, 2);
+    assert.strictEqual(relay.targetUrl, 'rtmp://b.example.com/live/xyz');
+  });
+
+  it('getRelays returns all slots ordered by slot', () => {
+    const relays = getRelays(db, 'key-1');
+    assert.strictEqual(relays.length, 2);
+    assert.strictEqual(relays[0].slot, 1);
+    assert.strictEqual(relays[1].slot, 2);
+  });
+
+  it('upsertRelay updates existing relay slot', () => {
+    upsertRelay(db, 'key-2', 1, 'rtmp://old.example.com/live/key');
+    const updated = upsertRelay(db, 'key-2', 1, 'rtmp://new.example.com/live/key');
     assert.strictEqual(updated.targetUrl, 'rtmp://new.example.com/live/key');
   });
 
-  it('deleteRelay removes the relay', () => {
-    upsertRelay(db, 'key-3', 'rtmp://del.example.com/live/key');
-    const ok = deleteRelay(db, 'key-3');
+  it('deleteRelaySlot removes a specific slot', () => {
+    upsertRelay(db, 'key-3', 1, 'rtmp://del.example.com/live/key');
+    upsertRelay(db, 'key-3', 2, 'rtmp://del2.example.com/live/key');
+    const ok = deleteRelaySlot(db, 'key-3', 1);
     assert.strictEqual(ok, true);
-    assert.strictEqual(getRelay(db, 'key-3'), null);
+    assert.strictEqual(getRelaySlot(db, 'key-3', 1), null);
+    assert.ok(getRelaySlot(db, 'key-3', 2)); // slot 2 still there
   });
 
-  it('deleteRelay returns false for non-existent key', () => {
+  it('deleteAllRelays removes all slots for a key', () => {
+    upsertRelay(db, 'key-4', 1, 'rtmp://x.example.com/live/1');
+    upsertRelay(db, 'key-4', 2, 'rtmp://x.example.com/live/2');
+    const count = deleteAllRelays(db, 'key-4');
+    assert.strictEqual(count, 2);
+    assert.strictEqual(getRelays(db, 'key-4').length, 0);
+  });
+
+  it('deleteRelay (compat alias) removes all slots and returns boolean', () => {
+    upsertRelay(db, 'key-5', 1, 'rtmp://y.example.com/live/1');
+    const ok = deleteRelay(db, 'key-5');
+    assert.strictEqual(ok, true);
     assert.strictEqual(deleteRelay(db, 'ghost'), false);
+  });
+
+  it('upsertRelay rejects slot out of range', () => {
+    assert.throws(() => upsertRelay(db, 'key-6', 5, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+    assert.throws(() => upsertRelay(db, 'key-6', 0, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+  });
+
+  it('upsertRelay stores targetName and captionMode', () => {
+    const relay = upsertRelay(db, 'key-7', 1, 'rtmp://base.example.com/live', { targetName: 'sk', captionMode: 'cea708' });
+    assert.strictEqual(relay.targetName, 'sk');
+    assert.strictEqual(relay.captionMode, 'cea708');
   });
 });
 
@@ -170,14 +216,34 @@ describe('RtmpRelayManager', () => {
     assert.strictEqual(m.isRunning('no-key'), false);
   });
 
+  it('isSlotRunning returns false for unknown key+slot', () => {
+    const m = new RtmpRelayManager();
+    assert.strictEqual(m.isSlotRunning('no-key', 1), false);
+  });
+
+  it('runningSlots returns empty array for unknown key', () => {
+    const m = new RtmpRelayManager();
+    assert.deepStrictEqual(m.runningSlots('no-key'), []);
+  });
+
   it('stop is a no-op for unknown key', async () => {
     const m = new RtmpRelayManager();
-    await assert.doesNotReject(() => m.stop('no-key'));
+    await assert.doesNotReject(() => m.stop('no-key', 1));
+  });
+
+  it('stopKey is a no-op for unknown key', async () => {
+    const m = new RtmpRelayManager();
+    await assert.doesNotReject(() => m.stopKey('no-key'));
   });
 
   it('stopAll resolves when no processes running', async () => {
     const m = new RtmpRelayManager();
     await assert.doesNotReject(() => m.stopAll());
+  });
+
+  it('dropPublisher is a no-op when RTMP_CONTROL_URL not set', async () => {
+    const m = new RtmpRelayManager({ rtmpControlUrl: null });
+    await assert.doesNotReject(() => m.dropPublisher('some-key'));
   });
 });
 
@@ -272,10 +338,10 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// /stream CRUD
+// /stream CRUD — fan-out (up to 4 slots per key)
 // ---------------------------------------------------------------------------
 
-describe('/stream CRUD', () => {
+describe('/stream CRUD (fan-out)', () => {
   let db, server, baseUrl, relayManager;
   let apiKey, token;
 
@@ -305,31 +371,48 @@ describe('/stream CRUD', () => {
     server.close(resolve);
   }));
 
-  it('GET /stream returns 404 when no relay configured', async () => {
+  it('GET /stream returns empty relays when none configured', async () => {
     const res = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(token) });
-    assert.strictEqual(res.status, 404);
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.relays));
+    assert.strictEqual(body.relays.length, 0);
+    assert.ok(Array.isArray(body.runningSlots));
   });
 
-  it('POST /stream creates relay config with targetName and captionMode', async () => {
+  it('POST /stream creates relay slot 1 with targetName and captionMode', async () => {
     const res = await fetch(`${baseUrl}/stream`, {
       method: 'POST',
       headers: bearerHeaders(token),
-      body: JSON.stringify({ targetUrl: 'rtmp://target.example.com/live', targetName: 'mykey', captionMode: 'http' }),
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://target.example.com/live', targetName: 'mykey', captionMode: 'http' }),
     });
     assert.strictEqual(res.status, 201);
     const body = await res.json();
+    assert.strictEqual(body.relay.slot, 1);
     assert.strictEqual(body.relay.targetUrl, 'rtmp://target.example.com/live');
     assert.strictEqual(body.relay.targetName, 'mykey');
     assert.strictEqual(body.relay.captionMode, 'http');
   });
 
-  it('GET /stream returns relay config after POST', async () => {
+  it('POST /stream creates relay slot 2 (second target in fan-out)', async () => {
+    const res = await fetch(`${baseUrl}/stream`, {
+      method: 'POST',
+      headers: bearerHeaders(token),
+      body: JSON.stringify({ slot: 2, targetUrl: 'rtmp://target2.example.com/live', targetName: 'secondkey' }),
+    });
+    assert.strictEqual(res.status, 201);
+    const body = await res.json();
+    assert.strictEqual(body.relay.slot, 2);
+    assert.strictEqual(body.relay.targetUrl, 'rtmp://target2.example.com/live');
+  });
+
+  it('GET /stream returns all configured slots + runningSlots', async () => {
     const res = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(token) });
     assert.strictEqual(res.status, 200);
     const body = await res.json();
-    assert.ok(body.relay);
-    assert.strictEqual(typeof body.running, 'boolean');
-    assert.strictEqual(body.relay.targetName, 'mykey');
+    assert.ok(Array.isArray(body.relays));
+    assert.strictEqual(body.relays.length, 2);
+    assert.ok(Array.isArray(body.runningSlots));
   });
 
   it('GET /stream/history returns stream history array', async () => {
@@ -339,8 +422,8 @@ describe('/stream CRUD', () => {
     assert.ok(Array.isArray(body.streams));
   });
 
-  it('PUT /stream updates relay target URL and clears targetName when not provided', async () => {
-    const res = await fetch(`${baseUrl}/stream`, {
+  it('PUT /stream/1 updates relay slot 1', async () => {
+    const res = await fetch(`${baseUrl}/stream/1`, {
       method: 'PUT',
       headers: bearerHeaders(token),
       body: JSON.stringify({ targetUrl: 'rtmp://new.example.com/live/updated' }),
@@ -351,16 +434,50 @@ describe('/stream CRUD', () => {
     assert.strictEqual(body.relay.targetName, null);
   });
 
+  it('PUT /stream/3 returns 404 when slot 3 not configured', async () => {
+    const res = await fetch(`${baseUrl}/stream/3`, {
+      method: 'PUT',
+      headers: bearerHeaders(token),
+      body: JSON.stringify({ targetUrl: 'rtmp://x.example.com/live/y' }),
+    });
+    assert.strictEqual(res.status, 404);
+  });
+
   it('POST /stream returns 400 for invalid targetUrl', async () => {
     const res = await fetch(`${baseUrl}/stream`, {
       method: 'POST',
       headers: bearerHeaders(token),
-      body: JSON.stringify({ targetUrl: 'https://not-rtmp.example.com' }),
+      body: JSON.stringify({ slot: 3, targetUrl: 'https://not-rtmp.example.com' }),
     });
     assert.strictEqual(res.status, 400);
   });
 
-  it('DELETE /stream removes relay config', async () => {
+  it('POST /stream returns 400 for slot out of range', async () => {
+    const res = await fetch(`${baseUrl}/stream`, {
+      method: 'POST',
+      headers: bearerHeaders(token),
+      body: JSON.stringify({ slot: 5, targetUrl: 'rtmp://x.example.com/live/y' }),
+    });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('DELETE /stream/2 removes slot 2 only', async () => {
+    const res = await fetch(`${baseUrl}/stream/2`, {
+      method: 'DELETE',
+      headers: bearerHeaders(token),
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.ok, true);
+    assert.strictEqual(body.slot, 2);
+    // Slot 1 should still exist
+    const getRes = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(token) });
+    const getBody = await getRes.json();
+    assert.strictEqual(getBody.relays.length, 1);
+    assert.strictEqual(getBody.relays[0].slot, 1);
+  });
+
+  it('DELETE /stream removes all relay configs', async () => {
     const res = await fetch(`${baseUrl}/stream`, {
       method: 'DELETE',
       headers: bearerHeaders(token),
@@ -368,6 +485,10 @@ describe('/stream CRUD', () => {
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     assert.strictEqual(body.ok, true);
+    // All relays gone
+    const getRes = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(token) });
+    const getBody = await getRes.json();
+    assert.strictEqual(getBody.relays.length, 0);
   });
 
   it('GET /stream returns 403 for key without relay_allowed', async () => {
@@ -375,15 +496,5 @@ describe('/stream CRUD', () => {
     const t2 = jwt.sign({ sessionId: 'fake2', apiKey: k2.key }, JWT_SECRET, { expiresIn: '1h' });
     const res = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(t2) });
     assert.strictEqual(res.status, 403);
-  });
-
-  it('PUT /stream returns 404 when no relay configured', async () => {
-    // relay was deleted in previous test
-    const res = await fetch(`${baseUrl}/stream`, {
-      method: 'PUT',
-      headers: bearerHeaders(token),
-      body: JSON.stringify({ targetUrl: 'rtmp://x.example.com/live/y' }),
-    });
-    assert.strictEqual(res.status, 404);
   });
 });

@@ -50,24 +50,64 @@ export function initDb(dbPath) {
   // 0 = not allowed (default), 1 = allowed to configure RTMP relay via /stream
   if (!existingCols.has('relay_allowed')) db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
 
+  // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
+  // slot (1-4): one row per target; UNIQUE on (api_key, slot)
   db.exec(`
     CREATE TABLE IF NOT EXISTS rtmp_relays (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      api_key      TEXT    NOT NULL UNIQUE,
+      api_key      TEXT    NOT NULL,
+      slot         INTEGER NOT NULL DEFAULT 1,
       target_url   TEXT    NOT NULL,
       target_name  TEXT,
       caption_mode TEXT    NOT NULL DEFAULT 'http',
       created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(api_key, slot)
     )
   `);
 
-  // Additive migrations for rtmp_relays
-  const relaysCols = new Set(
-    db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name)
-  );
-  if (!relaysCols.has('target_name'))  db.exec("ALTER TABLE rtmp_relays ADD COLUMN target_name TEXT");
-  if (!relaysCols.has('caption_mode')) db.exec("ALTER TABLE rtmp_relays ADD COLUMN caption_mode TEXT NOT NULL DEFAULT 'http'");
+  // Migration: if rtmp_relays has the old single-target schema (no slot column),
+  // recreate it with the fan-out schema (UNIQUE api_key → UNIQUE (api_key, slot)).
+  {
+    const relaysCols = new Set(
+      db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name)
+    );
+    if (!relaysCols.has('slot')) {
+      // Old schema: UNIQUE(api_key). Recreate with fan-out schema.
+      db.transaction(() => {
+        db.exec('ALTER TABLE rtmp_relays RENAME TO rtmp_relays_legacy');
+        db.exec(`
+          CREATE TABLE rtmp_relays (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            api_key      TEXT    NOT NULL,
+            slot         INTEGER NOT NULL DEFAULT 1,
+            target_url   TEXT    NOT NULL,
+            target_name  TEXT,
+            caption_mode TEXT    NOT NULL DEFAULT 'http',
+            created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+            updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+            UNIQUE(api_key, slot)
+          )
+        `);
+        const legacyCols = new Set(
+          db.prepare('PRAGMA table_info(rtmp_relays_legacy)').all().map(c => c.name)
+        );
+        db.exec(`
+          INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode, created_at, updated_at)
+          SELECT api_key, 1, target_url,
+                 ${legacyCols.has('target_name')  ? 'target_name'                 : 'NULL'},
+                 ${legacyCols.has('caption_mode') ? "COALESCE(caption_mode,'http')" : "'http'"},
+                 created_at, updated_at
+          FROM rtmp_relays_legacy
+        `);
+        db.exec('DROP TABLE rtmp_relays_legacy');
+      })();
+    } else {
+      // Table already has slot column; apply any remaining additive migrations
+      if (!relaysCols.has('target_name'))  db.exec('ALTER TABLE rtmp_relays ADD COLUMN target_name TEXT');
+      if (!relaysCols.has('caption_mode')) db.exec("ALTER TABLE rtmp_relays ADD COLUMN caption_mode TEXT NOT NULL DEFAULT 'http'");
+    }
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -168,6 +208,7 @@ export function initDb(dbPath) {
     CREATE TABLE IF NOT EXISTS rtmp_stream_stats (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
       api_key       TEXT    NOT NULL,
+      slot          INTEGER NOT NULL DEFAULT 1,
       target_url    TEXT    NOT NULL,
       target_name   TEXT,
       caption_mode  TEXT    NOT NULL DEFAULT 'http',
@@ -177,6 +218,15 @@ export function initDb(dbPath) {
       captions_sent INTEGER NOT NULL DEFAULT 0
     )
   `);
+  // Additive migration: add slot column if missing
+  {
+    const statsCols = new Set(
+      db.prepare('PRAGMA table_info(rtmp_stream_stats)').all().map(c => c.name)
+    );
+    if (!statsCols.has('slot')) {
+      db.exec('ALTER TABLE rtmp_stream_stats ADD COLUMN slot INTEGER NOT NULL DEFAULT 1');
+    }
+  }
 
   // Anonymous daily RTMP usage statistics (no API key, no target URL)
   // endpoint_type: 'youtube' | 'custom'
@@ -876,7 +926,9 @@ export function deleteAllCaptionFiles(db, apiKey) {
 }
 
 
-// ─── RTMP relay config per API key ───────────────────────────────────────────
+// ─── RTMP relay config per API key (fan-out: up to 4 slots) ──────────────────
+
+const MAX_RELAY_SLOTS = 4;
 
 /**
  * Check whether RTMP relay is allowed for an API key.
@@ -890,23 +942,52 @@ export function isRelayAllowed(db, apiKey) {
 }
 
 /**
- * Get the relay config for an API key.
+ * Map a raw rtmp_relays row to a plain object.
+ * @param {object} row
+ * @returns {object}
+ */
+function formatRelayRow(row) {
+  return {
+    id:          row.id,
+    apiKey:      row.api_key,
+    slot:        row.slot,
+    targetUrl:   row.target_url,
+    targetName:  row.target_name  || null,
+    captionMode: row.caption_mode || 'http',
+    createdAt:   row.created_at,
+    updatedAt:   row.updated_at,
+  };
+}
+
+/**
+ * Get all configured relay slots for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
- * @returns {{ id: number, apiKey: string, targetUrl: string, targetName: string|null, captionMode: string, createdAt: string, updatedAt: string }|null}
+ * @returns {object[]} ordered by slot ascending
+ */
+export function getRelays(db, apiKey) {
+  return db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ? ORDER BY slot')
+    .all(apiKey)
+    .map(formatRelayRow);
+}
+
+/**
+ * Get a specific relay slot for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {number} slot
+ * @returns {object|null}
+ */
+export function getRelaySlot(db, apiKey, slot) {
+  const row = db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ? AND slot = ?').get(apiKey, slot);
+  return row ? formatRelayRow(row) : null;
+}
+
+/**
+ * @deprecated Use getRelays() or getRelaySlot(). Kept for migration compatibility.
  */
 export function getRelay(db, apiKey) {
-  const row = db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').get(apiKey);
-  if (!row) return null;
-  return {
-    id: row.id,
-    apiKey: row.api_key,
-    targetUrl: row.target_url,
-    targetName: row.target_name || null,
-    captionMode: row.caption_mode || 'http',
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
+  return getRelaySlot(db, apiKey, 1);
 }
 
 /**
@@ -923,35 +1004,59 @@ export function buildRelayFfmpegUrl(relay) {
 }
 
 /**
- * Create or replace relay config for an API key.
+ * Create or replace a relay slot for an API key.
+ * slot must be 1-4. Rejects (throws) if all 4 slots are used and the slot is new.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
+ * @param {number} slot  1-4
  * @param {string} targetUrl
  * @param {{ targetName?: string|null, captionMode?: string }} [opts]
- * @returns {{ id: number, apiKey: string, targetUrl: string, targetName: string|null, captionMode: string, createdAt: string, updatedAt: string }}
+ * @returns {object}
  */
-export function upsertRelay(db, apiKey, targetUrl, { targetName = null, captionMode = 'http' } = {}) {
-  db.prepare(
-    `INSERT INTO rtmp_relays (api_key, target_url, target_name, caption_mode)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(api_key) DO UPDATE SET
-       target_url   = excluded.target_url,
-       target_name  = excluded.target_name,
-       caption_mode = excluded.caption_mode,
-       updated_at   = datetime('now')`
-  ).run(apiKey, targetUrl, targetName || null, captionMode || 'http');
-  return getRelay(db, apiKey);
+export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http' } = {}) {
+  if (slot < 1 || slot > MAX_RELAY_SLOTS) {
+    throw new RangeError(`slot must be 1-${MAX_RELAY_SLOTS}, got ${slot}`);
+  }
+  db.prepare(`
+    INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(api_key, slot) DO UPDATE SET
+      target_url   = excluded.target_url,
+      target_name  = excluded.target_name,
+      caption_mode = excluded.caption_mode,
+      updated_at   = datetime('now')
+  `).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http');
+  return getRelaySlot(db, apiKey, slot);
 }
 
 /**
- * Delete relay config for an API key.
+ * Delete a specific relay slot for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
+ * @param {number} slot
  * @returns {boolean} true if a row was deleted
  */
-export function deleteRelay(db, apiKey) {
-  const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(apiKey);
+export function deleteRelaySlot(db, apiKey, slot) {
+  const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ? AND slot = ?').run(apiKey, slot);
   return result.changes > 0;
+}
+
+/**
+ * Delete all relay slots for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {number} number of rows deleted
+ */
+export function deleteAllRelays(db, apiKey) {
+  const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(apiKey);
+  return result.changes;
+}
+
+/**
+ * @deprecated Use deleteAllRelays(). Kept for migration compatibility.
+ */
+export function deleteRelay(db, apiKey) {
+  return deleteAllRelays(db, apiKey) > 0;
 }
 
 // ─── RTMP stream stats (per-stream, personified) ─────────────────────────────
@@ -968,13 +1073,13 @@ function categoriseEndpoint(targetUrl) {
 /**
  * Insert a new RTMP stream stat record (call when relay starts).
  * @param {import('better-sqlite3').Database} db
- * @param {{ apiKey: string, targetUrl: string, targetName?: string|null, captionMode?: string, startedAt?: string }} data
+ * @param {{ apiKey: string, slot?: number, targetUrl: string, targetName?: string|null, captionMode?: string, startedAt?: string }} data
  * @returns {number} The row id
  */
-export function writeRtmpStreamStart(db, { apiKey, targetUrl, targetName = null, captionMode = 'http', startedAt }) {
+export function writeRtmpStreamStart(db, { apiKey, slot = 1, targetUrl, targetName = null, captionMode = 'http', startedAt }) {
   const result = db.prepare(
-    'INSERT INTO rtmp_stream_stats (api_key, target_url, target_name, caption_mode, started_at) VALUES (?, ?, ?, ?, ?)'
-  ).run(apiKey, targetUrl, targetName || null, captionMode || 'http', startedAt || new Date().toISOString());
+    'INSERT INTO rtmp_stream_stats (api_key, slot, target_url, target_name, caption_mode, started_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http', startedAt || new Date().toISOString());
   return result.lastInsertRowid;
 }
 
@@ -997,7 +1102,7 @@ export function writeRtmpStreamEnd(db, { streamStatId, endedAt, durationMs, capt
  */
 export function getRtmpStreamStats(db, apiKey) {
   return db.prepare(
-    `SELECT id, target_url AS targetUrl, target_name AS targetName, caption_mode AS captionMode,
+    `SELECT id, slot, target_url AS targetUrl, target_name AS targetName, caption_mode AS captionMode,
             started_at AS startedAt, ended_at AS endedAt, duration_ms AS durationMs,
             captions_sent AS captionsSent
      FROM rtmp_stream_stats WHERE api_key = ? ORDER BY id DESC LIMIT 100`

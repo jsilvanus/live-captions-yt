@@ -398,9 +398,9 @@ export function useSession({
   /**
    * Configure (create / replace) the relay target.
    * Requires relay_allowed on the API key.
-   * @param {{ targetUrl: string, targetName?: string|null, captionMode?: string }} opts
+   * @param {{ slot?: number, targetUrl: string, targetName?: string|null, captionMode?: string }} opts
    */
-  async function configureRelay({ targetUrl, targetName = null, captionMode = 'http' } = {}) {
+  async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
     const token = senderRef.current?._token;
     if (!token) throw new Error('Not connected');
@@ -408,7 +408,7 @@ export function useSession({
     const res = await fetch(`${url}/stream`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetUrl, targetName, captionMode }),
+      body: JSON.stringify({ slot, targetUrl, targetName, captionMode }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -418,28 +418,47 @@ export function useSession({
   }
 
   /**
-   * Update an existing relay target.
-   * @param {{ targetUrl: string, targetName?: string|null, captionMode?: string }} opts
+   * Update an existing relay slot.
+   * @param {{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }} opts
    */
-  async function updateRelay({ targetUrl, targetName = null, captionMode = 'http' } = {}) {
+  async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
     const token = senderRef.current?._token;
     if (!token) throw new Error('Not connected');
     const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
+    const res = await fetch(`${url}/stream/${slot}`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ targetUrl, targetName, captionMode }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to update relay (${res.status})`);
+      throw new Error(err.error || `Failed to update relay slot ${slot} (${res.status})`);
     }
     return res.json();
   }
 
   /**
-   * Stop and remove the relay configuration.
+   * Stop and remove a specific relay slot.
+   * @param {{ slot: number }} opts
+   */
+  async function stopRelaySlot({ slot = 1 } = {}) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/${slot}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to stop relay slot ${slot} (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Stop all relay slots and drop the nginx publisher.
    */
   async function stopRelay() {
     const token = senderRef.current?._token;
@@ -457,8 +476,8 @@ export function useSession({
   }
 
   /**
-   * Get current relay config and running status.
-   * @returns {{ relay: object, running: boolean }|null}
+   * Get all configured relay slots and which are running.
+   * @returns {{ relays: object[], runningSlots: number[] }}
    */
   async function getRelayStatus() {
     const token = senderRef.current?._token;
@@ -467,7 +486,6 @@ export function useSession({
     const res = await fetch(`${url}/stream`, {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Failed to get relay status (${res.status})`);
     return res.json();
   }
@@ -495,7 +513,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
-    configureRelay, updateRelay, stopRelay, getRelayStatus, getRelayHistory,
+    configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }
