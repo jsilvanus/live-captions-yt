@@ -161,17 +161,34 @@ export function createStreamRouter(db, auth, relayManager) {
     }
   });
 
-  // DELETE /stream/:slot — stop ffmpeg for slot and remove its config
+  // DELETE /stream/:slot — remove slot config and restart relay with remaining targets
   router.delete('/:slot', auth, requireRelayAllowed, async (req, res) => {
     const slot = parseSlot(req.params.slot, res);
     if (slot === null) return;
     const apiKey = req.session.apiKey;
-    try {
-      await relayManager.stop(apiKey, slot);
-    } catch (err) {
-      console.warn(`[stream] stop slot ${slot} on DELETE failed: ${err.message}`);
-    }
+
+    // Remove from DB first so the restart picks up the updated target list.
     const deleted = deleteRelaySlot(db, apiKey, slot);
+
+    if (relayManager.isRunning(apiKey)) {
+      const remaining = getRelays(db, apiKey);
+      if (remaining.length > 0) {
+        // Restart the single ffmpeg process with the remaining tee targets.
+        try {
+          await relayManager.start(apiKey, remaining);
+        } catch (err) {
+          console.warn(`[stream] Failed to restart relay after slot ${slot} removal: ${err.message}`);
+        }
+      } else {
+        // No targets left — stop the process entirely.
+        try {
+          await relayManager.stop(apiKey);
+        } catch (err) {
+          console.warn(`[stream] Failed to stop relay after removing last slot: ${err.message}`);
+        }
+      }
+    }
+
     return res.status(200).json({ ok: true, slot, deleted });
   });
 

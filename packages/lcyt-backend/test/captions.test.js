@@ -279,4 +279,77 @@ describe('POST /captions', () => {
     assert.ok(event.error);
     assert.strictEqual(event.statusCode, 502);
   });
+
+  it('should return 400 for batch captions when relayManager indicates cea708 mode', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    // Create a mock relayManager that reports cea708 is active for the test key
+    const mockRelayManager = {
+      hasCea708: (apiKey) => apiKey === 'test-key',
+      writeCaption: () => true,
+    };
+
+    // Spin up a second server with the mocked relay manager
+    const app2 = express();
+    app2.use(express.json());
+    const auth2 = createAuthMiddleware(JWT_SECRET);
+    app2.use('/captions', createCaptionsRouter(store, auth2, db, mockRelayManager));
+    const server2 = await new Promise(resolve => {
+      const s = createServer(app2);
+      s.listen(0, () => resolve(s));
+    });
+    const baseUrl2 = `http://localhost:${server2.address().port}`;
+
+    try {
+      const res = await fetch(`${baseUrl2}/captions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ captions: [{ text: 'One' }, { text: 'Two' }] }),
+      });
+      const data = await res.json();
+      assert.strictEqual(res.status, 400);
+      assert.ok(data.error.includes('CEA-708'));
+    } finally {
+      await new Promise(resolve => server2.close(resolve));
+    }
+  });
+
+  it('should pass speechStart through to relayManager.writeCaption in cea708 mode', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const capturedArgs = [];
+    const mockRelayManager = {
+      hasCea708: () => true,
+      writeCaption: (apiKey, text, opts) => { capturedArgs.push({ apiKey, text, opts }); return true; },
+    };
+
+    const app3 = express();
+    app3.use(express.json());
+    const auth3 = createAuthMiddleware(JWT_SECRET);
+    app3.use('/captions', createCaptionsRouter(store, auth3, db, mockRelayManager));
+    const server3 = await new Promise(resolve => {
+      const s = createServer(app3);
+      s.listen(0, () => resolve(s));
+    });
+    const baseUrl3 = `http://localhost:${server3.address().port}`;
+
+    try {
+      const eventPromise = waitForEvent(session, 'caption_result');
+      await fetch(`${baseUrl3}/captions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ captions: [{ text: 'Hello', speechStart: '2026-03-04T19:00:00.000Z' }] }),
+      });
+      await eventPromise;
+
+      assert.strictEqual(capturedArgs.length, 1);
+      assert.strictEqual(capturedArgs[0].apiKey, 'test-key');
+      assert.strictEqual(capturedArgs[0].text, 'Hello');
+      assert.strictEqual(capturedArgs[0].opts.speechStart, '2026-03-04T19:00:00.000Z');
+    } finally {
+      await new Promise(resolve => server3.close(resolve));
+    }
+  });
 });

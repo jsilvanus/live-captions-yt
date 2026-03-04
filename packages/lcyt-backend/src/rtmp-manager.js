@@ -4,9 +4,46 @@ const DEFAULT_RTMP_HOST = process.env.RTMP_HOST || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP  = process.env.RTMP_APP  || 'stream';
 
 /**
+ * Milliseconds to shift a caption earlier when speechStart is not provided.
+ * Can be overridden via the CEA708_OFFSET_MS environment variable.
+ */
+const CEA708_OFFSET_MS   = Number(process.env.CEA708_OFFSET_MS   ?? 2000);
+
+/**
+ * Default cue duration in milliseconds (how long each CEA-708 caption is displayed).
+ * Can be overridden via the CEA708_DURATION_MS environment variable.
+ */
+const CEA708_DURATION_MS = Number(process.env.CEA708_DURATION_MS ?? 3000);
+
+/**
+ * Format a number of milliseconds as an SRT timestamp: HH:MM:SS,mmm
+ * @param {number} ms
+ * @returns {string}
+ */
+function srtTime(ms) {
+  const clampedMs = Math.max(0, Math.round(ms));
+  const hh = String(Math.floor(clampedMs / 3_600_000)).padStart(2, '0');
+  const mm = String(Math.floor((clampedMs % 3_600_000) / 60_000)).padStart(2, '0');
+  const ss = String(Math.floor((clampedMs % 60_000) / 1000)).padStart(2, '0');
+  const ms3 = String(clampedMs % 1000).padStart(3, '0');
+  return `${hh}:${mm}:${ss},${ms3}`;
+}
+
+/**
+ * Build an SRT cue string for ffmpeg stdin injection.
+ * @param {number} seq         Monotonically increasing cue number (1-based)
+ * @param {number} startMs     Cue start time in ms relative to stream start
+ * @param {number} durationMs  Cue display duration in ms
+ * @param {string} text        Plain-text caption content
+ * @returns {string}
+ */
+function buildSrtCue(seq, startMs, durationMs, text) {
+  const endMs = startMs + durationMs;
+  return `${seq}\n${srtTime(startMs)} --> ${srtTime(endMs)}\n${text}\n\n`;
+}
+
+/**
  * Build the source RTMP URL from which nginx-rtmp is publishing.
- * The stream name matches the API key (as configured by nginxbot.sh).
- *
  * @param {string} apiKey
  * @returns {string}
  */
@@ -17,16 +54,34 @@ function sourceUrl(apiKey) {
 /**
  * Manages ffmpeg subprocesses for RTMP relay fan-out.
  *
- * One incoming RTMP stream (identified by apiKey) fans out to up to 4 targets.
- * Each target is a (apiKey, slot) pair. Internal process key: `${apiKey}:${slot}`.
+ * One ffmpeg **process per API key** forwards the incoming nginx-rtmp stream to all configured
+ * relay targets simultaneously using the ffmpeg tee muxer. In CEA-708 mode a single stdin
+ * pipe carries SRT-formatted caption cues that ffmpeg embeds as CEA-608/708 SEI NAL units
+ * inside H.264 (cc_data, via the eia608 subtitle encoder + libx264).
  *
- * Stat callbacks:
+ * Public API:
+ *   start(apiKey, relays)            — spawn/restart one process for all relays via tee
+ *   startAll(apiKey, relays)         — alias for start()
+ *   stop(apiKey)                     — stop the process for this API key
+ *   stopKey(apiKey)                  — alias for stop()
+ *   stopAll()                        — stop all running processes
+ *   writeCaption(apiKey, text, opts) — inject SRT cue into ffmpeg stdin (CEA-708 only)
+ *   isRunning(apiKey)                — true if the process is running
+ *   isSlotRunning(apiKey, slot)      — true if the slot is in the running tee
+ *   runningSlots(apiKey)             — sorted slot numbers currently running
+ *   startedAt(apiKey)                — Date when the process was spawned (or null)
+ *   hasCea708(apiKey)                — true if any running slot uses cea708 mode
+ *   isPublishing / markPublishing / markNotPublishing / dropPublisher
+ *
+ * Stat callbacks (optional):
  *   onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt })
  *   onStreamEnded(apiKey, slot, { targetUrl, targetName, captionMode, startedAt, endedAt, durationMs })
  *
- * Environment variables read at construction (can be overridden via opts):
- *   RTMP_CONTROL_URL   — nginx-rtmp control base URL (e.g. http://127.0.0.1:8888/control)
+ * Environment variables:
+ *   RTMP_CONTROL_URL   — nginx-rtmp control base URL
  *   RTMP_APPLICATION   — application name used when dropping publishers
+ *   CEA708_OFFSET_MS   — ms to shift caption earlier when speechStart absent (default: 2000)
+ *   CEA708_DURATION_MS — cue display duration in ms (default: 3000)
  */
 export class RtmpRelayManager {
   /**
@@ -38,262 +93,361 @@ export class RtmpRelayManager {
    * }} [opts]
    */
   constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication } = {}) {
-    /** @type {Map<string, import('node:child_process').ChildProcess>} key = `${apiKey}:${slot}` */
+    /**
+     * One process per API key.
+     * @type {Map<string, import('node:child_process').ChildProcess>}
+     */
     this._procs = new Map();
-    /** @type {Map<string, { targetUrl: string, targetName: string|null, captionMode: string, startedAt: Date }>} */
-    this._meta  = new Map();
-    /** @type {Set<string>} API keys that nginx-rtmp is currently publishing (on_publish received, on_publish_done not yet) */
+
+    /**
+     * Per-key metadata: { slots, startedAt, hasCea708, srtSeq }
+     * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number }>}
+     */
+    this._meta = new Map();
+
+    /** @type {Set<string>} API keys currently publishing in nginx-rtmp */
     this._publishing = new Set();
+
     this._onStreamStarted = onStreamStarted ?? null;
     this._onStreamEnded   = onStreamEnded   ?? null;
-    // nginx-rtmp control API (e.g. http://127.0.0.1:8888/control)
     this._controlUrl = rtmpControlUrl ?? process.env.RTMP_CONTROL_URL ?? null;
     this._rtmpApp    = rtmpApplication ?? process.env.RTMP_APPLICATION ?? DEFAULT_RTMP_APP;
   }
 
-  /** Internal composite key for (apiKey, slot). */
-  _key(apiKey, slot) { return `${apiKey}:${slot}`; }
+  // ---------------------------------------------------------------------------
+  // Public: process lifecycle
+  // ---------------------------------------------------------------------------
 
   /**
-   * Start (or restart) an ffmpeg relay for a specific slot.
+   * Start (or restart) a single ffmpeg process that forwards the source stream for `apiKey`
+   * to all provided relay targets via the tee muxer.
+   *
+   * If any relay slot has captionMode='cea708', the process uses libx264 re-encoding with the
+   * eia608 subtitle encoder so that CEA-608/708 data is embedded in H.264 SEI NAL units.
+   * Otherwise the stream is forwarded with `-c copy` (no re-encoding).
+   *
    * @param {string} apiKey
-   * @param {number} slot   1-4
-   * @param {string} targetUrl         Base RTMP URL (application URL)
-   * @param {{ targetName?: string|null, captionMode?: string }} [opts]
+   * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }>} relays
    * @returns {Promise<void>}
    */
-  start(apiKey, slot, targetUrl, { targetName = null, captionMode = 'http' } = {}) {
+  start(apiKey, relays) {
     return new Promise((resolve, reject) => {
-      const k = this._key(apiKey, slot);
-      // Kill any existing process for this key+slot first
-      this._kill(k);
+      if (!relays || relays.length === 0) {
+        this._stopProc(apiKey);
+        return resolve();
+      }
 
-      // Build the full ffmpeg target: append targetName as the RTMP stream name
-      const ffmpegTarget = targetName
-        ? `${targetUrl.replace(/\/$/, '')}/${targetName}`
-        : targetUrl;
+      this._stopProc(apiKey);
+
+      const hasCea708 = relays.some(r => r.captionMode === 'cea708');
+
+      // Build the tee muxer output: "[f=flv]url1|[f=flv]url2|..."
+      const teeTargets = relays
+        .map(r => {
+          const url = r.targetName
+            ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}`
+            : r.targetUrl;
+          return `[f=flv]${url}`;
+        })
+        .join('|');
 
       const src = sourceUrl(apiKey);
-      console.log(`[rtmp] Starting relay slot ${slot}: ${src} → ${ffmpegTarget}`);
+      const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
+      console.log(`[rtmp] Starting relay (tee, ${relays.length} slot(s), cea708=${hasCea708}): ${src} -> ${teeTargets}`);
 
-      const proc = spawn('ffmpeg', [
-        '-re',
-        '-i', src,
-        '-c', 'copy',
-        '-f', 'flv',
-        ffmpegTarget,
-      ], {
-        stdio: ['ignore', 'pipe', 'pipe'],
+      let args;
+      if (hasCea708) {
+        // CEA-708 mode: re-encode video with libx264 so eia608 can embed cc_data SEI NAL units.
+        args = [
+          '-re', '-i', src,
+          '-f', 'srt', '-i', 'pipe:0',
+          '-map', '0:v', '-map', '0:a', '-map', '1',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency',
+          '-c:a', 'copy',
+          '-c:s', 'eia608',
+          '-f', 'tee', teeTargets,
+        ];
+      } else {
+        args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
+      }
+
+      const proc = spawn('ffmpeg', args, {
+        stdio: hasCea708 ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
       });
 
       const startedAt = new Date();
-      this._procs.set(k, proc);
-      this._meta.set(k, { targetUrl, targetName, captionMode, startedAt });
+      this._procs.set(apiKey, proc);
+      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, srtSeq: 0 });
 
-      this._onStreamStarted?.(apiKey, slot, { targetUrl, targetName, captionMode, startedAt });
+      for (const r of relays) {
+        this._onStreamStarted?.(apiKey, r.slot, {
+          targetUrl:   r.targetUrl,
+          targetName:  r.targetName ?? null,
+          captionMode: r.captionMode ?? 'http',
+          startedAt,
+        });
+      }
 
-      const tag = `[ffmpeg:${apiKey.slice(0, 8)}#${slot}]`;
       proc.stdout.on('data', (d) => process.stdout.write(`${tag} ${d}`));
       proc.stderr.on('data', (d) => process.stderr.write(`${tag} ${d}`));
 
       proc.on('error', (err) => {
-        this._procs.delete(k);
-        this._meta.delete(k);
-        console.error(`[rtmp] ffmpeg error slot ${slot} for ${apiKey}: ${err.message}`);
+        this._procs.delete(apiKey);
+        this._meta.delete(apiKey);
+        console.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
         reject(err);
       });
 
       proc.on('close', (code) => {
-        this._procs.delete(k);
-        const meta = this._meta.get(k);
-        this._meta.delete(k);
+        this._procs.delete(apiKey);
+        const meta = this._meta.get(apiKey);
+        this._meta.delete(apiKey);
 
+        const endedAt = new Date();
         if (meta) {
-          const endedAt    = new Date();
           const durationMs = endedAt.getTime() - meta.startedAt.getTime();
-          this._onStreamEnded?.(apiKey, slot, {
-            targetUrl:   meta.targetUrl,
-            targetName:  meta.targetName,
-            captionMode: meta.captionMode,
-            startedAt:   meta.startedAt,
-            endedAt,
-            durationMs,
-          });
+          for (const r of meta.slots) {
+            this._onStreamEnded?.(apiKey, r.slot, {
+              targetUrl:   r.targetUrl,
+              targetName:  r.targetName ?? null,
+              captionMode: r.captionMode ?? 'http',
+              startedAt:   meta.startedAt,
+              endedAt,
+              durationMs,
+            });
+          }
         } else {
-          console.warn(`[rtmp] Stream metadata missing on close for key ${apiKey.slice(0, 8)}… slot ${slot}`);
+          console.warn(`[rtmp] Metadata missing on close for key ${apiKey.slice(0, 8)}`);
         }
 
         if (code !== 0 && code !== null) {
-          console.warn(`[rtmp] ffmpeg exited with code ${code} (slot ${slot}) for key ${apiKey.slice(0, 8)}…`);
+          console.warn(`[rtmp] ffmpeg exited with code ${code} for key ${apiKey.slice(0, 8)}`);
         } else {
-          console.log(`[rtmp] Relay ended (slot ${slot}) for key ${apiKey.slice(0, 8)}…`);
+          console.log(`[rtmp] Relay ended for key ${apiKey.slice(0, 8)}`);
         }
       });
 
-      // Resolve once the process has started (i.e. no immediate spawn error)
       setImmediate(resolve);
     });
   }
 
   /**
-   * Start ffmpeg for all provided relay slots simultaneously.
-   * Individual slot failures are logged but do not reject the returned promise.
+   * Alias for start() — starts one process for all relay slots via tee muxer.
    * @param {string} apiKey
    * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }>} relays
    * @returns {Promise<void>}
    */
-  async startAll(apiKey, relays) {
-    await Promise.all(
-      relays.map(r =>
-        this.start(apiKey, r.slot, r.targetUrl, {
-          targetName:  r.targetName,
-          captionMode: r.captionMode,
-        }).catch(err =>
-          console.error(`[rtmp] Failed to start slot ${r.slot} for ${apiKey.slice(0, 8)}…: ${err.message}`)
-        )
-      )
-    );
+  startAll(apiKey, relays) {
+    return this.start(apiKey, relays);
   }
 
   /**
-   * Stop the ffmpeg relay for a specific slot.
+   * Stop the ffmpeg relay process for an API key.
    * @param {string} apiKey
-   * @param {number} slot
    * @returns {Promise<void>}
    */
-  stop(apiKey, slot) {
+  stop(apiKey) {
     return new Promise((resolve) => {
-      const k    = this._key(apiKey, slot);
-      const proc = this._procs.get(k);
+      const proc = this._procs.get(apiKey);
       if (!proc) return resolve();
       proc.once('close', () => resolve());
-      this._kill(k);
+      this._stopProc(apiKey);
     });
   }
 
   /**
-   * Stop all ffmpeg relay slots for an API key.
+   * Alias for stop() — stops the single process for this API key.
    * @param {string} apiKey
    * @returns {Promise<void>}
    */
-  async stopKey(apiKey) {
-    const slots = this.runningSlots(apiKey);
-    await Promise.all(slots.map(s => this.stop(apiKey, s)));
+  stopKey(apiKey) {
+    return this.stop(apiKey);
   }
 
   /**
+   * Stop all running relay processes. Call during graceful shutdown.
+   * @returns {Promise<void>}
+   */
+  async stopAll() {
+    const keys = [...this._procs.keys()];
+    await Promise.all(keys.map(k => this.stop(k)));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public: CEA-708 caption injection
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Inject a caption cue into the ffmpeg stdin pipe (CEA-708 mode only).
+   *
+   * The cue is formatted as SRT and written to the stdin of the running ffmpeg process.
+   * ffmpeg's eia608 subtitle encoder embeds the CEA-608/708 data into the next available
+   * H.264 video frame as a cc_data SEI NAL unit (user_data_registered_itu_t_35).
+   *
+   * Timing options (wall-clock Date / ISO string / ms epoch):
+   *   opts.speechStart — VAD onset time; used directly as the cue start.
+   *                      If absent, cue start = `timestamp - CEA708_OFFSET_MS`.
+   *   opts.timestamp   — ASR finalisation time.
+   *
+   * @param {string} apiKey
+   * @param {string} text        Plain-text caption (no HTML tags)
+   * @param {{ speechStart?: Date|string|number, timestamp?: Date|string|number }} [opts]
+   * @returns {boolean}  true if cue was written, false if not in CEA-708 mode or pipe unavailable
+   */
+  writeCaption(apiKey, text, { speechStart, timestamp } = {}) {
+    const proc = this._procs.get(apiKey);
+    const meta = this._meta.get(apiKey);
+
+    if (!proc || !meta || !meta.hasCea708 || !proc.stdin || proc.stdin.destroyed) {
+      return false;
+    }
+
+    const now = Date.now();
+    const streamElapsedMs = now - meta.startedAt.getTime();
+
+    let cueStartMs;
+    if (speechStart !== undefined) {
+      const t = speechStart instanceof Date ? speechStart.getTime()
+        : typeof speechStart === 'string' ? new Date(speechStart).getTime()
+        : Number(speechStart);
+      cueStartMs = t - meta.startedAt.getTime();
+    } else if (timestamp !== undefined) {
+      const t = timestamp instanceof Date ? timestamp.getTime()
+        : typeof timestamp === 'string' ? new Date(timestamp).getTime()
+        : Number(timestamp);
+      cueStartMs = t - CEA708_OFFSET_MS - meta.startedAt.getTime();
+    } else {
+      cueStartMs = streamElapsedMs - CEA708_OFFSET_MS;
+    }
+
+    // Clamp: never negative, never more than 5 s behind current stream PTS.
+    const minMs = Math.max(0, streamElapsedMs - 5000);
+    cueStartMs = Math.max(minMs, cueStartMs);
+
+    meta.srtSeq++;
+    const cue = buildSrtCue(meta.srtSeq, cueStartMs, CEA708_DURATION_MS, text);
+
+    try {
+      proc.stdin.write(cue);
+      return true;
+    } catch (err) {
+      console.warn(`[rtmp] Failed to write caption to stdin for ${apiKey.slice(0, 8)}: ${err.message}`);
+      return false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public: state queries
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Check whether any relay is currently running for an API key.
+   * @param {string} apiKey
+   * @returns {boolean}
+   */
+  isRunning(apiKey) {
+    return this._procs.has(apiKey);
+  }
+
+  /**
+   * Check whether a specific relay slot is in the running tee.
+   * @param {string} apiKey
+   * @param {number} slot
+   * @returns {boolean}
+   */
+  isSlotRunning(apiKey, slot) {
+    const meta = this._meta.get(apiKey);
+    return !!meta && meta.slots.some(s => s.slot === slot);
+  }
+
+  /**
+   * Return the sorted list of slot numbers currently running for an API key.
+   * @param {string} apiKey
+   * @returns {number[]}
+   */
+  runningSlots(apiKey) {
+    const meta = this._meta.get(apiKey);
+    if (!meta) return [];
+    return meta.slots.map(s => s.slot).sort((a, b) => a - b);
+  }
+
+  /**
+   * Return the start time of the running ffmpeg process for an API key, or null.
+   * @param {string} apiKey
+   * @returns {Date|null}
+   */
+  startedAt(apiKey) { return this._meta.get(apiKey)?.startedAt ?? null; }
+
+  /**
+   * Return true if the running process has any cea708 slot (stdin pipe active).
+   * @param {string} apiKey
+   * @returns {boolean}
+   */
+  hasCea708(apiKey) { return this._meta.get(apiKey)?.hasCea708 ?? false; }
+
+  // ---------------------------------------------------------------------------
+  // Public: nginx-rtmp publish tracking
+  // ---------------------------------------------------------------------------
+
+  /** Mark that nginx-rtmp has started publishing for an API key (on_publish received). */
+  markPublishing(apiKey) { this._publishing.add(apiKey); }
+
+  /** Mark that nginx-rtmp has stopped publishing for an API key (on_publish_done received). */
+  markNotPublishing(apiKey) { this._publishing.delete(apiKey); }
+
+  /** Check whether nginx-rtmp is currently publishing for an API key. */
+  isPublishing(apiKey) { return this._publishing.has(apiKey); }
+
+  // ---------------------------------------------------------------------------
+  // Public: nginx-rtmp control API
+  // ---------------------------------------------------------------------------
+
+  /**
    * Drop the publisher from nginx using the RTMP control API.
-   * This terminates the incoming RTMP stream, which causes all ffmpeg
-   * processes reading from nginx to receive EOF and exit naturally.
-   *
-   * Requires RTMP_CONTROL_URL to be configured (via env or constructor opts).
-   *
+   * Requires RTMP_CONTROL_URL to be configured.
    * @param {string} apiKey
    * @returns {Promise<void>}
    */
   async dropPublisher(apiKey) {
     if (!this._controlUrl) {
-      console.debug('[rtmp] RTMP_CONTROL_URL not set — skipping drop/publisher');
+      console.debug('[rtmp] RTMP_CONTROL_URL not set -- skipping drop/publisher');
       return;
     }
     const url = `${this._controlUrl}/drop/publisher?app=${encodeURIComponent(this._rtmpApp)}&name=${encodeURIComponent(apiKey)}`;
     try {
       const res = await fetch(url, { method: 'POST' });
       if (!res.ok) {
-        console.warn(`[rtmp] drop/publisher returned ${res.status} for key ${apiKey.slice(0, 8)}…`);
+        console.warn(`[rtmp] drop/publisher returned ${res.status} for key ${apiKey.slice(0, 8)}`);
       } else {
-        console.log(`[rtmp] drop/publisher successful for key ${apiKey.slice(0, 8)}…`);
+        console.log(`[rtmp] drop/publisher successful for key ${apiKey.slice(0, 8)}`);
       }
     } catch (err) {
       console.error(`[rtmp] drop/publisher request failed: ${err.message}`);
     }
   }
 
-  /**
-   * Check whether any relay slot is currently running for an API key.
-   * @param {string} apiKey
-   * @returns {boolean}
-   */
-  isRunning(apiKey) {
-    return this.runningSlots(apiKey).length > 0;
-  }
+  // ---------------------------------------------------------------------------
+  // Private helpers
+  // ---------------------------------------------------------------------------
 
   /**
-   * Check whether a specific slot is currently running.
-   * @param {string} apiKey
-   * @param {number} slot
-   * @returns {boolean}
-   */
-  isSlotRunning(apiKey, slot) {
-    return this._procs.has(this._key(apiKey, slot));
-  }
-
-  /**
-   * Mark that nginx-rtmp has started publishing for an API key (on_publish received).
+   * Terminate the running ffmpeg process for an API key (SIGTERM then SIGKILL after 3 s).
+   * Gracefully closes stdin so ffmpeg can flush any buffered CEA-708 data first.
    * @param {string} apiKey
    */
-  markPublishing(apiKey) { this._publishing.add(apiKey); }
-
-  /**
-   * Mark that nginx-rtmp has stopped publishing for an API key (on_publish_done received).
-   * @param {string} apiKey
-   */
-  markNotPublishing(apiKey) { this._publishing.delete(apiKey); }
-
-  /**
-   * Check whether nginx-rtmp is currently publishing for an API key.
-   * Used to decide whether to start fan-out immediately when the user activates the relay.
-   * @param {string} apiKey
-   * @returns {boolean}
-   */
-  isPublishing(apiKey) { return this._publishing.has(apiKey); }
-
-  /**
-   * Return the list of slot numbers currently running for an API key.
-   * @param {string} apiKey
-   * @returns {number[]}
-   */
-  runningSlots(apiKey) {
-    const prefix = `${apiKey}:`;
-    const slots = [];
-    for (const k of this._procs.keys()) {
-      if (k.startsWith(prefix)) {
-        slots.push(parseInt(k.slice(prefix.length), 10));
-      }
-    }
-    return slots.sort((a, b) => a - b);
-  }
-
-  /**
-   * Kill the ffmpeg process for a composite key (SIGTERM → SIGKILL after 3s).
-   * @param {string} compositeKey  `${apiKey}:${slot}`
-   */
-  _kill(compositeKey) {
-    const proc = this._procs.get(compositeKey);
+  _stopProc(apiKey) {
+    const proc = this._procs.get(apiKey);
     if (!proc) return;
-    this._procs.delete(compositeKey);
+    this._procs.delete(apiKey);
+    try { if (proc.stdin && !proc.stdin.destroyed) proc.stdin.end(); } catch {}
     try {
       proc.kill('SIGTERM');
       const timer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch (err) {
-          if (err.code !== 'ESRCH') console.warn(`[rtmp] SIGKILL failed for ${compositeKey}: ${err.message}`);
+          if (err.code !== 'ESRCH') console.warn(`[rtmp] SIGKILL failed for ${apiKey.slice(0, 8)}: ${err.message}`);
         }
       }, 3000);
       if (timer.unref) timer.unref();
     } catch {}
-  }
-
-  /**
-   * Stop all running relay slots across all API keys. Call during graceful shutdown.
-   * @returns {Promise<void>}
-   */
-  async stopAll() {
-    const keys = [...this._procs.keys()];
-    await Promise.all(keys.map(k => {
-      const colonIdx = k.indexOf(':');
-      const apiKey   = k.slice(0, colonIdx);
-      const slot     = parseInt(k.slice(colonIdx + 1), 10);
-      return this.stop(apiKey, slot);
-    }));
   }
 }

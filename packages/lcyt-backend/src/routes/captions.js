@@ -117,9 +117,11 @@ function writeToBackendFile(context, text, timestamp, db) {
  *
  * @param {import('../store.js').SessionStore} store
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
+ * @param {object} db
+ * @param {import('../rtmp-manager.js').RtmpRelayManager|null} [relayManager]
  * @returns {Router}
  */
-export function createCaptionsRouter(store, auth, db) {
+export function createCaptionsRouter(store, auth, db, relayManager = null) {
   const router = Router();
 
   // POST /captions — Send captions (auth required)
@@ -136,6 +138,12 @@ export function createCaptionsRouter(store, auth, db) {
     const session = store.get(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
+    }
+
+    // If any RTMP relay slot is running in CEA-708 mode, batch sends are not supported
+    // because each caption must be injected at the correct video PTS immediately.
+    if (captions.length > 1 && relayManager?.hasCea708(session.apiKey)) {
+      return res.status(400).json({ error: 'Batch captions not supported in CEA-708 mode' });
     }
 
     // Enforce per-key usage limits (no-op for keys with null limits)
@@ -175,8 +183,14 @@ export function createCaptionsRouter(store, auth, db) {
       try {
         // For each caption, compose text from translations and write backend files
         const sendCaptions = resolvedCaptions.map(caption => {
-          const { text, translations, captionLang, showOriginal, timestamp, ...rest } = caption;
+          const { text, translations, captionLang, showOriginal, timestamp, speechStart, ...rest } = caption;
           const composedText = composeCaptionText(text, captionLang, translations, showOriginal);
+
+          // Inject into the CEA-708 ffmpeg pipe when relay is active in cea708 mode.
+          // Use plain text (no HTML) for the SEI NAL payload.
+          if (relayManager?.hasCea708(session.apiKey)) {
+            relayManager.writeCaption(session.apiKey, text, { speechStart, timestamp });
+          }
 
           // Write original and all translations to backend files if enabled
           if (backendFileEnabled && translations) {
