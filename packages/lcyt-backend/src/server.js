@@ -221,7 +221,7 @@ app.get('/contact', (req, res) => {
 const auth = createAuthMiddleware(jwtSecret);
 
 app.use('/live', createLiveRouter(db, store, jwtSecret));
-app.use('/captions', createCaptionsRouter(store, auth, db));
+app.use('/captions', createCaptionsRouter(store, auth, db, relayManager));
 app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));

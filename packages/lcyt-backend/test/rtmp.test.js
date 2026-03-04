@@ -265,7 +265,7 @@ describe('RtmpRelayManager', () => {
 
   it('stop is a no-op for unknown key', async () => {
     const m = new RtmpRelayManager();
-    await assert.doesNotReject(() => m.stop('no-key', 1));
+    await assert.doesNotReject(() => m.stop('no-key'));
   });
 
   it('stopKey is a no-op for unknown key', async () => {
@@ -288,12 +288,64 @@ describe('RtmpRelayManager', () => {
     assert.strictEqual(m.isPublishing('unknown-key'), false);
   });
 
-  it('markPublishing / isPublishing / markNotPublishing work', () => {
+  it('startedAt returns null for unknown key', () => {
     const m = new RtmpRelayManager();
-    m.markPublishing('my-api-key');
-    assert.strictEqual(m.isPublishing('my-api-key'), true);
-    m.markNotPublishing('my-api-key');
-    assert.strictEqual(m.isPublishing('my-api-key'), false);
+    assert.strictEqual(m.startedAt('no-key'), null);
+  });
+
+  it('hasCea708 returns false for unknown key', () => {
+    const m = new RtmpRelayManager();
+    assert.strictEqual(m.hasCea708('no-key'), false);
+  });
+
+  it('writeCaption returns false when no process is running', () => {
+    const m = new RtmpRelayManager();
+    assert.strictEqual(m.writeCaption('no-key', 'hello'), false);
+  });
+
+  it('start() with empty relays is a no-op', async () => {
+    const m = new RtmpRelayManager();
+    await assert.doesNotReject(() => m.start('some-key', []));
+    assert.strictEqual(m.isRunning('some-key'), false);
+  });
+
+  it('start() with empty relays resolves and stops any existing process', async () => {
+    const m = new RtmpRelayManager();
+    // Nothing running — should resolve without error
+    await assert.doesNotReject(() => m.start('clean-key', []));
+  });
+
+  it('runningSlots reflects slots passed to start() (via meta, no real ffmpeg)', () => {
+    const m = new RtmpRelayManager();
+    // Manually inject meta to simulate a running process without real ffmpeg
+    m._meta.set('fake-key', {
+      slots: [{ slot: 1 }, { slot: 3 }],
+      startedAt: new Date(),
+      hasCea708: false,
+      srtSeq: 0,
+    });
+    assert.deepStrictEqual(m.runningSlots('fake-key'), [1, 3]);
+    assert.strictEqual(m.isSlotRunning('fake-key', 1), true);
+    assert.strictEqual(m.isSlotRunning('fake-key', 2), false);
+    assert.strictEqual(m.isSlotRunning('fake-key', 3), true);
+  });
+
+  it('hasCea708 returns true when any slot has captionMode=cea708 (via meta)', () => {
+    const m = new RtmpRelayManager();
+    m._meta.set('cea-key', {
+      slots: [{ slot: 1, captionMode: 'http' }, { slot: 2, captionMode: 'cea708' }],
+      startedAt: new Date(),
+      hasCea708: true,
+      srtSeq: 0,
+    });
+    assert.strictEqual(m.hasCea708('cea-key'), true);
+  });
+
+  it('startedAt returns the startedAt Date from meta', () => {
+    const m = new RtmpRelayManager();
+    const now = new Date();
+    m._meta.set('dated-key', { slots: [], startedAt: now, hasCea708: false, srtSeq: 0 });
+    assert.strictEqual(m.startedAt('dated-key'), now);
   });
 });
 
