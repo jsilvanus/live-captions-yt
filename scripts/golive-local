@@ -29,7 +29,7 @@ if [ -z "$FFMPEG" ]; then
 fi
 
 # Default local RTMP target: rtmp://localhost/live/<API_KEY>
-RTMP_URL="rtmp://localhost/live/${API_KEY}"
+RTMP_URL="rtmp://rtmp.lcyt.fi/stream/${API_KEY}"
 
 # Build and run ffmpeg: color video + silent audio
 exec "$FFMPEG" -re \
