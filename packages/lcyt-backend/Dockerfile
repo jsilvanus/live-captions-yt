@@ -15,7 +15,10 @@ ENV NODE_ENV=production
 ENV FREE_APIKEY_ACTIVE=0
 # Directory for per-key caption/translation files
 ENV FILES_DIR=/data/files
-RUN mkdir -p /data/files && chown -R node:node /data
+# Database backup retention in days (0 = disabled, max 180)
+ENV BACKUP_DAYS=0
+RUN mkdir -p /data /backups && chown node:node /data /backups
+VOLUME ["/backups"]
 USER node
 # Declare volumes for persistent data and caption files
 VOLUME ["/data"]

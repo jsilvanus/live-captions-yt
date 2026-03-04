@@ -6,6 +6,14 @@ import { StatsModal } from './StatsModal';
 // Cached per page-load — contact info only changes on server restart.
 let _contactCache = null;
 
+// Build-time backup retention policy injected via VITE_BACKUP_DAYS.
+// Max of 180 days mirrors the backend's MAX_BACKUP_DAYS constant.
+const _backupDays = (() => {
+  const v = Number(import.meta.env.VITE_BACKUP_DAYS ?? 0);
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.trunc(v), 180) : 0;
+})();
+const _backupDaysSuffix = _backupDays !== 1 ? 's' : '';
+
 export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAccept }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
@@ -160,6 +168,11 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                   <li><strong>Anonymous usage statistics</strong> — aggregate caption and session counts per origin domain and time bucket (hour/day). No caption text, no user identifiers.</li>
                 </ul>
                 <p>The <strong>data controller</strong> is whoever operates the backend instance you are connected to. Contact them for data requests. Use the <strong>Contact operator</strong> button at the bottom to query their contact details.</p>
+                {_backupDays > 0 && (
+                  <div className="privacy-notice privacy-notice--info" style={{ marginTop: 8 }}>
+                    <strong>Backup retention:</strong> This backend creates daily database backups. Your data may be retained in backups for up to <strong>{_backupDays} day{_backupDaysSuffix}</strong> after it is deleted from the live database, after which backups are automatically purged.
+                  </div>
+                )}
               </section>
 
               <section className="privacy-section">
@@ -236,6 +249,12 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                 )}
 
                 <p style={{ marginTop: 8 }}>Your browser's saved credentials will also be cleared. <strong>This cannot be undone.</strong></p>
+
+                {_backupDays > 0 && (
+                  <div className="privacy-notice privacy-notice--info" style={{ marginTop: 8 }}>
+                    <strong>Backup copies:</strong> Deleted data may remain in server backups for up to <strong>{_backupDays} day{_backupDaysSuffix}</strong> before being automatically removed.
+                  </div>
+                )}
               </section>
             </div>
           )}

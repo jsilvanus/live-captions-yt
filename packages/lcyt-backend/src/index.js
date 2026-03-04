@@ -1,11 +1,37 @@
 import { app, db, store } from './server.js';
 import { cleanRevokedKeys } from './db.js';
+import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 
 const server = app.listen(PORT, () => {
   console.log(`Listening on port ${PORT}`);
 });
+
+// ---------------------------------------------------------------------------
+// Database backup
+// ---------------------------------------------------------------------------
+
+const BACKUP_DAYS = parseBackupDays(process.env.BACKUP_DAYS);
+const BACKUP_DIR = process.env.BACKUP_DIR || '/backups';
+const BACKUP_INTERVAL = 86_400_000; // 24 h
+
+if (BACKUP_DAYS > 0) {
+  async function doBackup() {
+    try {
+      const dir = await runBackup(db, BACKUP_DIR);
+      console.log(`[backup] Saved database to ${dir}`);
+      const removed = await cleanOldBackups(BACKUP_DIR, BACKUP_DAYS);
+      if (removed > 0) console.log(`[backup] Removed ${removed} backup(s) older than ${BACKUP_DAYS} days`);
+    } catch (err) {
+      console.error('[backup] Error:', err.message);
+    }
+  }
+  doBackup();
+  const backupTimer = setInterval(doBackup, BACKUP_INTERVAL);
+  // unref() prevents the timer from keeping the process alive during graceful shutdown
+  backupTimer.unref();
+}
 
 // ---------------------------------------------------------------------------
 // Revoked key cleanup
