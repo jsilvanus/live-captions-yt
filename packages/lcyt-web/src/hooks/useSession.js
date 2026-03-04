@@ -393,6 +393,83 @@ export function useSession({
     return res.json();
   }
 
+  // ─── RTMP relay ─────────────────────────────────────────
+
+  /**
+   * Configure (create / replace) the relay target URL.
+   * Requires relay_allowed on the API key.
+   * @param {string} targetUrl
+   */
+  async function configureRelay(targetUrl) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUrl }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to configure relay (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Update an existing relay target URL.
+   * @param {string} targetUrl
+   */
+  async function updateRelay(targetUrl) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUrl }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to update relay (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Stop and remove the relay configuration.
+   */
+  async function stopRelay() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to stop relay (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Get current relay config and running status.
+   * @returns {{ relay: object, running: boolean }|null}
+   */
+  async function getRelayStatus() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`Failed to get relay status (${res.status})`);
+    return res.json();
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
@@ -401,6 +478,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
+    configureRelay, updateRelay, stopRelay, getRelayStatus,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

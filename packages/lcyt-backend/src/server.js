@@ -61,6 +61,12 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
   console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
 }
 
+if (process.env.RTMP_APPLICATION) {
+  console.info(`✓ RTMP application name: ${process.env.RTMP_APPLICATION} — /rtmp will reject other app names.`);
+} else {
+  console.info('ℹ RTMP_APPLICATION not set — /rtmp will accept any application name.');
+}
+
 // ---------------------------------------------------------------------------
 // Database and session store
 // ---------------------------------------------------------------------------

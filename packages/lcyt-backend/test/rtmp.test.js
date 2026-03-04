@@ -182,17 +182,18 @@ describe('RtmpRelayManager', () => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /rtmp?start and GET /rtmp?stop
+// POST /rtmp — nginx-rtmp callback (form-encoded body)
 // ---------------------------------------------------------------------------
 
-describe('GET /rtmp?start and ?stop', () => {
+describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   let db, server, baseUrl, relayManager;
 
   before(() => new Promise((resolve) => {
     db = initDb(':memory:');
     relayManager = new RtmpRelayManager();
     const app = express();
-    app.use(express.json());
+    // Note: createRtmpRouter registers express.urlencoded() internally,
+    // so no additional body parser is needed here.
     app.use('/rtmp', createRtmpRouter(db, relayManager));
     server = createServer(app);
     server.listen(0, () => {
@@ -206,43 +207,67 @@ describe('GET /rtmp?start and ?stop', () => {
     server.close(resolve);
   }));
 
-  it('GET /rtmp?start returns 400 when name is missing', async () => {
-    const res = await fetch(`${baseUrl}/rtmp?start`);
+  function postRtmp(fields) {
+    const body = new URLSearchParams(fields).toString();
+    return fetch(`${baseUrl}/rtmp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+  }
+
+  it('returns 400 when name is missing', async () => {
+    const res = await postRtmp({ call: 'publish', app: 'stream' });
     assert.strictEqual(res.status, 400);
   });
 
-  it('GET /rtmp?start returns 403 when relay not allowed', async () => {
+  it('returns 403 when relay not allowed (call=publish)', async () => {
     const k = createKey(db, { owner: 'NoRelay' });
-    const res = await fetch(`${baseUrl}/rtmp?start&name=${k.key}`);
+    const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 403);
   });
 
-  it('GET /rtmp?start returns 200 when relay_allowed (no relay configured)', async () => {
+  it('returns 200 when relay_allowed (no relay configured)', async () => {
     const k = createKey(db, { owner: 'WithRelay', relay_allowed: true });
-    const res = await fetch(`${baseUrl}/rtmp?start&name=${k.key}`);
-    // No relay configured, so no ffmpeg spawn, but still 200
+    const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 200);
   });
 
-  it('GET /rtmp?stop returns 200 even for unknown key', async () => {
-    const res = await fetch(`${baseUrl}/rtmp?stop&name=ghost-key`);
+  it('returns 200 for call=publish_done even for unknown key', async () => {
+    const res = await postRtmp({ call: 'publish_done', app: 'stream', name: 'ghost-key' });
     assert.strictEqual(res.status, 200);
   });
 
-  it('POST /rtmp?stop returns 200', async () => {
-    const res = await fetch(`${baseUrl}/rtmp?stop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'some-key' }),
-    });
-    assert.strictEqual(res.status, 200);
+  it('returns 400 for unknown call type', async () => {
+    const k = createKey(db, { owner: 'BadCall', relay_allowed: true });
+    const res = await postRtmp({ call: 'unknown', app: 'stream', name: k.key });
+    assert.strictEqual(res.status, 400);
   });
 
-  it('POST/GET /rtmp returns 400 with no action', async () => {
-    const postResponse = await fetch(`${baseUrl}/rtmp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    assert.strictEqual(postResponse.status, 400);
-    const getResponse = await fetch(`${baseUrl}/rtmp`);
-    assert.strictEqual(getResponse.status, 400);
+  it('rejects wrong app name when RTMP_APPLICATION is set', async () => {
+    const k = createKey(db, { owner: 'WrongApp', relay_allowed: true });
+    const saved = process.env.RTMP_APPLICATION;
+    process.env.RTMP_APPLICATION = 'expected-app';
+    try {
+      const res = await postRtmp({ call: 'publish', app: 'wrong-app', name: k.key });
+      assert.strictEqual(res.status, 403);
+    } finally {
+      if (saved === undefined) delete process.env.RTMP_APPLICATION;
+      else process.env.RTMP_APPLICATION = saved;
+    }
+  });
+
+  it('accepts correct app name when RTMP_APPLICATION is set', async () => {
+    const k = createKey(db, { owner: 'RightApp', relay_allowed: true });
+    const saved = process.env.RTMP_APPLICATION;
+    process.env.RTMP_APPLICATION = 'live';
+    try {
+      const res = await postRtmp({ call: 'publish_done', app: 'live', name: k.key });
+      assert.strictEqual(res.status, 200);
+    } finally {
+      if (saved === undefined) delete process.env.RTMP_APPLICATION;
+      else process.env.RTMP_APPLICATION = saved;
+    }
   });
 });
 

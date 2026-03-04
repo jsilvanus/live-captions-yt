@@ -131,6 +131,9 @@ echo "→ Appending rtmp { } block to $SITE_CONFIG"
 cat >> "$SITE_CONFIG" << RTMP_BLOCK
 
 # ── RTMP ingestion block (added by nginxbot.sh) ──────────────────────────────
+# nginx-rtmp always sends POST with application/x-www-form-urlencoded body.
+# Both on_publish and on_publish_done point to the same /rtmp endpoint;
+# the backend distinguishes them via the 'call' field (publish / publish_done).
 rtmp {
     server {
         listen ${RTMP_PORT};
@@ -140,14 +143,10 @@ rtmp {
             live on;
             record off;
 
-            # Notify the lcyt backend when a stream starts (API key = stream name)
-            on_publish      http://${API_HOST}/rtmp?start;
-
-            # Notify the lcyt backend when a stream ends
-            on_publish_done http://${API_HOST}/rtmp?stop;
-
-            # Pass the stream name (= API key) as the 'name' field
-            notify_method   post;
+            # Single callback URL for both publish start and end.
+            # nginx-rtmp sets: call=publish or call=publish_done, app=<app>, name=<stream>
+            on_publish      http://${API_HOST}/rtmp;
+            on_publish_done http://${API_HOST}/rtmp;
         }
     }
 }
