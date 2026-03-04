@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "ALLOWED_DOMAINS=* node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.21",

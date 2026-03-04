@@ -70,6 +70,18 @@ export function createLiveRouter(db, store, jwtSecret) {
     if (store.has(sessionId)) {
       const existing = store.get(sessionId);
 
+      // Recreate sender for rehydrated sessions that have no active sender.
+      if (!existing.sender) {
+        const keySeq = getKeySequence(db, apiKey);
+        const newSender = new YoutubeLiveCaptionSender({ streamKey, sequence: keySeq });
+        try {
+          newSender.start();
+          existing.sender = newSender;
+        } catch (err) {
+          // start() failed — do not attach a half-initialised sender; proceed without
+        }
+      }
+
       // Re-issue JWT when missing (e.g. after server restart + rehydrate)
       if (!existing.jwt) {
         const sessionTtlMs = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000;
