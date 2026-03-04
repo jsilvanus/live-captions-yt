@@ -190,6 +190,12 @@ export default {
       stopped: 'Relay stoppad',
       notConnected: 'Anslut till backend först',
       errorNoTarget: 'Ange en mål-URL eller strömningsnyckel',
+      activeToggle: 'Relay aktiv',
+      activeLabel: 'Aktiv — vidarebefordrar när ström anländer',
+      inactiveLabel: 'Inaktiv — inkommande ström accepteras men vidarebefordras inte',
+      activeHint: 'Aktivera för att vidarebefordra inkommande RTMP-ström till alla konfigurerade mål.',
+      activated: 'Relay aktiverad',
+      deactivated: 'Relay inaktiverad',
     },
   },
   statusBar: {

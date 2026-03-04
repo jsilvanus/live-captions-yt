@@ -55,7 +55,9 @@ export function GeneralModal({ isOpen, onClose }) {
   // RTMP fan-out: per-slot configs + active slot
   const [activeRelaySlot, setActiveRelaySlot] = useState(1);
   const [slotConfigs, setSlotConfigs] = useState(() => loadAllSlotConfigs());
-  // Backend relay status: { relays: [...], runningSlots: [...] } | null
+  // Whether the relay fan-out is activated (user toggle)
+  const [relayActive, setRelayActiveState] = useState(false);
+  // Backend relay status: { relays: [...], runningSlots: [...], active: bool } | null
   const [relayStatus, setRelayStatus] = useState(null);
   const [relayLoading, setRelayLoading] = useState(false);
   const [relayError, setRelayError] = useState('');
@@ -78,9 +80,16 @@ export function GeneralModal({ isOpen, onClose }) {
 
     // Fetch current relay status from backend if connected
     if (session.connected) {
-      session.getRelayStatus().then(setRelayStatus).catch(() => setRelayStatus(null));
+      session.getRelayStatus().then(status => {
+        setRelayStatus(status);
+        setRelayActiveState(status?.active ?? false);
+      }).catch(() => {
+        setRelayStatus(null);
+        setRelayActiveState(false);
+      });
     } else {
       setRelayStatus(null);
+      setRelayActiveState(false);
     }
   }, [isOpen]);
 
@@ -207,6 +216,21 @@ export function GeneralModal({ isOpen, onClose }) {
     setSlotConfigs(prev => ({ ...prev, [slot]: getSlotConfig(slot) }));
   }
 
+  async function handleToggleRelayActive(newActive) {
+    setRelayActiveState(newActive);
+    setRelayError('');
+    try {
+      await session.setRelayActive(newActive);
+      const status = await session.getRelayStatus();
+      setRelayStatus(status);
+      setRelayActiveState(status?.active ?? newActive);
+      showToast(newActive ? t('settings.relay.activated') : t('settings.relay.deactivated'), 'info');
+    } catch (err) {
+      setRelayActiveState(!newActive); // revert on error
+      setRelayError(err.message);
+    }
+  }
+
   const runningSlots = relayStatus?.runningSlots ?? [];
   const sc = slotConfigs[activeRelaySlot] || {};
   const builtSlotUrl = buildSlotTargetUrl(activeRelaySlot);
@@ -284,6 +308,21 @@ export function GeneralModal({ isOpen, onClose }) {
             {/* ── RTMP relay settings (fan-out: up to 4 slots) ── */}
             {relayMode === 'rtmp' && (
               <>
+                {/* Relay active toggle */}
+                <div className="settings-field">
+                  <label className="settings-field__label">{t('settings.relay.activeToggle')}</label>
+                  <label className="settings-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={relayActive}
+                      onChange={e => handleToggleRelayActive(e.target.checked)}
+                      disabled={!session.connected || relayLoading}
+                    />
+                    {relayActive ? t('settings.relay.activeLabel') : t('settings.relay.inactiveLabel')}
+                  </label>
+                  <span className="settings-field__hint">{t('settings.relay.activeHint')}</span>
+                </div>
+
                 {/* Slot selector tabs */}
                 <div className="settings-field">
                   <label className="settings-field__label">{t('settings.relay.relayTarget')}</label>

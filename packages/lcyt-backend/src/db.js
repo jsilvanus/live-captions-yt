@@ -49,6 +49,7 @@ export function initDb(dbPath) {
   if (!existingCols.has('backend_file_enabled')) db.exec('ALTER TABLE api_keys ADD COLUMN backend_file_enabled INTEGER NOT NULL DEFAULT 0');
   // 0 = not allowed (default), 1 = allowed to configure RTMP relay via /stream
   if (!existingCols.has('relay_allowed')) db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('relay_active'))  db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)
@@ -317,6 +318,7 @@ export function formatKey(row) {
     lifetimeUsed: row.lifetime_used ?? 0,
     backendFileEnabled: row.backend_file_enabled === 1,
     relayAllowed: row.relay_allowed === 1,
+    relayActive:  row.relay_active  === 1,
   };
 }
 
@@ -939,6 +941,33 @@ const MAX_RELAY_SLOTS = 4;
 export function isRelayAllowed(db, apiKey) {
   const row = db.prepare('SELECT relay_allowed FROM api_keys WHERE key = ?').get(apiKey);
   return row ? row.relay_allowed === 1 : false;
+}
+
+/**
+ * Check whether the user has activated the RTMP relay for this key.
+ * relay_active is a user-controlled toggle (set via PUT /stream/active).
+ * Both relay_allowed (admin permission) and relay_active (user toggle) must be
+ * true for the fan-out to start when nginx sends an on_publish callback.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isRelayActive(db, apiKey) {
+  const row = db.prepare('SELECT relay_active FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.relay_active === 1 : false;
+}
+
+/**
+ * Set the relay_active flag for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {boolean} active
+ * @returns {boolean} true if the key was found and updated
+ */
+export function setRelayActive(db, apiKey, active) {
+  const result = db.prepare('UPDATE api_keys SET relay_active = ? WHERE key = ?').run(active ? 1 : 0, apiKey);
+  return result.changes > 0;
 }
 
 /**

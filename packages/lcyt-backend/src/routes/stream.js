@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isRelayAllowed, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats } from '../db.js';
+import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats } from '../db.js';
 
 const MAX_RELAY_SLOTS = 4;
 
@@ -84,17 +84,59 @@ export function createStreamRouter(db, auth, relayManager) {
     }
   });
 
-  // GET /stream — get all slots + running status per slot
+  // GET /stream — get all slots + running status per slot + relay active state
   router.get('/', auth, requireRelayAllowed, (req, res) => {
     const relays = getRelays(db, req.session.apiKey);
     const runningSlots = relayManager.runningSlots(req.session.apiKey);
-    return res.status(200).json({ relays, runningSlots });
+    const active = isRelayActive(db, req.session.apiKey);
+    return res.status(200).json({ relays, runningSlots, active });
   });
 
   // GET /stream/history — per-stream usage history for this key
   router.get('/history', auth, requireRelayAllowed, (req, res) => {
     const stats = getRtmpStreamStats(db, req.session.apiKey);
     return res.status(200).json({ streams: stats });
+  });
+
+  // PUT /stream/active — toggle the relay on/off for this key.
+  // When activated (active=true):
+  //   - Sets relay_active=1 in the DB.
+  //   - If nginx is currently publishing (on_publish was received), immediately
+  //     starts fan-out for all configured slots.
+  // When deactivated (active=false):
+  //   - Sets relay_active=0 in the DB.
+  //   - Stops all running ffmpeg fan-out processes (does not drop the nginx publisher).
+  router.put('/active', auth, requireRelayAllowed, async (req, res) => {
+    const { active } = req.body || {};
+    if (typeof active !== 'boolean') {
+      return res.status(400).json({ error: 'active must be a boolean' });
+    }
+    const apiKey = req.session.apiKey;
+    setRelayActive(db, apiKey, active);
+
+    if (active) {
+      // If nginx is currently publishing a stream, start fan-out immediately
+      if (relayManager.isPublishing(apiKey)) {
+        const relays = getRelays(db, apiKey);
+        if (relays.length > 0) {
+          try {
+            await relayManager.startAll(apiKey, relays);
+          } catch (err) {
+            console.warn(`[stream] Failed to start fan-out on relay activate: ${err.message}`);
+          }
+        }
+      }
+    } else {
+      // Deactivate: stop all running ffmpeg processes.
+      // The nginx publisher keeps the incoming stream alive (not dropped).
+      try {
+        await relayManager.stopKey(apiKey);
+      } catch (err) {
+        console.warn(`[stream] Failed to stop relay on deactivate: ${err.message}`);
+      }
+    }
+
+    return res.status(200).json({ ok: true, active });
   });
 
   // PUT /stream/:slot — update a specific slot

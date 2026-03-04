@@ -42,6 +42,8 @@ export class RtmpRelayManager {
     this._procs = new Map();
     /** @type {Map<string, { targetUrl: string, targetName: string|null, captionMode: string, startedAt: Date }>} */
     this._meta  = new Map();
+    /** @type {Set<string>} API keys that nginx-rtmp is currently publishing (on_publish received, on_publish_done not yet) */
+    this._publishing = new Set();
     this._onStreamStarted = onStreamStarted ?? null;
     this._onStreamEnded   = onStreamEnded   ?? null;
     // nginx-rtmp control API (e.g. http://127.0.0.1:8888/control)
@@ -225,6 +227,26 @@ export class RtmpRelayManager {
   isSlotRunning(apiKey, slot) {
     return this._procs.has(this._key(apiKey, slot));
   }
+
+  /**
+   * Mark that nginx-rtmp has started publishing for an API key (on_publish received).
+   * @param {string} apiKey
+   */
+  markPublishing(apiKey) { this._publishing.add(apiKey); }
+
+  /**
+   * Mark that nginx-rtmp has stopped publishing for an API key (on_publish_done received).
+   * @param {string} apiKey
+   */
+  markNotPublishing(apiKey) { this._publishing.delete(apiKey); }
+
+  /**
+   * Check whether nginx-rtmp is currently publishing for an API key.
+   * Used to decide whether to start fan-out immediately when the user activates the relay.
+   * @param {string} apiKey
+   * @returns {boolean}
+   */
+  isPublishing(apiKey) { return this._publishing.has(apiKey); }
 
   /**
    * Return the list of slot numbers currently running for an API key.

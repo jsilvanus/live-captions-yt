@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { isRelayAllowed, getRelays } from '../db.js';
+import { isRelayAllowed, isRelayActive, getRelays } from '../db.js';
 
 /**
  * Factory for the /rtmp router.
@@ -57,22 +57,33 @@ export function createRtmpRouter(db, relayManager) {
         return res.status(403).send('relay not allowed');
       }
 
-      // Fan-out: start all configured relay slots in parallel
-      const relays = getRelays(db, apiKey);
-      if (relays.length > 0) {
-        try {
-          await relayManager.startAll(apiKey, relays);
-        } catch (err) {
-          console.error(`[rtmp] Failed to start relay fan-out for ${apiKey.slice(0, 8)}…: ${err.message}`);
+      // Track that nginx is currently publishing for this key.
+      // This allows PUT /stream/active to start fan-out immediately
+      // even if the stream was already in progress when the user activated the relay.
+      relayManager.markPublishing(apiKey);
+
+      // Fan-out: start all configured relay slots in parallel,
+      // but only if the user has activated the relay (relay_active toggle).
+      if (isRelayActive(db, apiKey)) {
+        const relays = getRelays(db, apiKey);
+        if (relays.length > 0) {
+          try {
+            await relayManager.startAll(apiKey, relays);
+          } catch (err) {
+            console.error(`[rtmp] Failed to start relay fan-out for ${apiKey.slice(0, 8)}…: ${err.message}`);
+          }
         }
+      } else {
+        console.log(`[rtmp] Relay not active for ${apiKey.slice(0, 8)}…; accepting stream but not fanning out`);
       }
 
-      // Always 200 to allow the publish (relay start is best-effort)
+      // Always 200 to allow the publish (relay fan-out is best-effort)
       return res.status(200).send('ok');
     }
 
     // Handle on_publish_done: call=publish_done
     if (call === 'publish_done') {
+      relayManager.markNotPublishing(apiKey);
       try {
         await relayManager.stopKey(apiKey);
       } catch (err) {

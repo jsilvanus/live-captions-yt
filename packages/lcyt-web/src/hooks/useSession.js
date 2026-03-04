@@ -477,7 +477,7 @@ export function useSession({
 
   /**
    * Get all configured relay slots and which are running.
-   * @returns {{ relays: object[], runningSlots: number[] }}
+   * @returns {{ relays: object[], runningSlots: number[], active: boolean }}
    */
   async function getRelayStatus() {
     const token = senderRef.current?._token;
@@ -505,6 +505,29 @@ export function useSession({
     return res.json();
   }
 
+  /**
+   * Set the relay active state for this API key.
+   * When active=true and nginx is currently publishing, fan-out starts immediately.
+   * When active=false, all running ffmpeg processes are stopped.
+   * @param {boolean} active
+   * @returns {Promise<{ ok: boolean, active: boolean }>}
+   */
+  async function setRelayActive(active) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/active`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to set relay active state (${res.status})`);
+    }
+    return res.json();
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
@@ -513,7 +536,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
-    configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory,
+    configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

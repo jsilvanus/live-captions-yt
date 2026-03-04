@@ -9,6 +9,8 @@ import {
   updateKey,
   formatKey,
   isRelayAllowed,
+  isRelayActive,
+  setRelayActive,
   getRelay,
   getRelays,
   getRelaySlot,
@@ -78,8 +80,43 @@ describe('relay_allowed column', () => {
 });
 
 // ---------------------------------------------------------------------------
-// DB helpers for rtmp_relays table (fan-out: up to 4 slots per key)
+// DB helpers for relay_active (user toggle)
 // ---------------------------------------------------------------------------
+
+describe('relay_active column', () => {
+  let db;
+
+  before(() => { db = initDb(':memory:'); });
+  after(() => { db.close(); });
+
+  it('defaults to false on createKey', () => {
+    const k = createKey(db, { owner: 'ActiveA' });
+    assert.strictEqual(isRelayActive(db, k.key), false);
+    assert.strictEqual(formatKey(k).relayActive, false);
+  });
+
+  it('setRelayActive sets it to true', () => {
+    const k = createKey(db, { owner: 'ActiveB' });
+    const changed = setRelayActive(db, k.key, true);
+    assert.strictEqual(changed, true);
+    assert.strictEqual(isRelayActive(db, k.key), true);
+  });
+
+  it('setRelayActive sets it back to false', () => {
+    const k = createKey(db, { owner: 'ActiveC' });
+    setRelayActive(db, k.key, true);
+    setRelayActive(db, k.key, false);
+    assert.strictEqual(isRelayActive(db, k.key), false);
+  });
+
+  it('isRelayActive returns false for unknown key', () => {
+    assert.strictEqual(isRelayActive(db, 'no-such-key'), false);
+  });
+
+  it('setRelayActive returns false for unknown key', () => {
+    assert.strictEqual(setRelayActive(db, 'no-such-key', true), false);
+  });
+});
 
 describe('rtmp_relays DB helpers (fan-out)', () => {
   let db;
@@ -245,6 +282,19 @@ describe('RtmpRelayManager', () => {
     const m = new RtmpRelayManager({ rtmpControlUrl: null });
     await assert.doesNotReject(() => m.dropPublisher('some-key'));
   });
+
+  it('isPublishing returns false for unknown key', () => {
+    const m = new RtmpRelayManager();
+    assert.strictEqual(m.isPublishing('unknown-key'), false);
+  });
+
+  it('markPublishing / isPublishing / markNotPublishing work', () => {
+    const m = new RtmpRelayManager();
+    m.markPublishing('my-api-key');
+    assert.strictEqual(m.isPublishing('my-api-key'), true);
+    m.markNotPublishing('my-api-key');
+    assert.strictEqual(m.isPublishing('my-api-key'), false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -302,6 +352,31 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   it('returns 200 for call=publish_done even for unknown key', async () => {
     const res = await postRtmp({ call: 'publish_done', app: 'stream', name: 'ghost-key' });
     assert.strictEqual(res.status, 200);
+  });
+
+  it('marks key as publishing on call=publish', async () => {
+    const k = createKey(db, { owner: 'MarkPub', relay_allowed: true });
+    assert.strictEqual(relayManager.isPublishing(k.key), false);
+    await postRtmp({ call: 'publish', app: 'stream', name: k.key });
+    assert.strictEqual(relayManager.isPublishing(k.key), true);
+  });
+
+  it('unmarks key on call=publish_done', async () => {
+    const k = createKey(db, { owner: 'MarkPubDone', relay_allowed: true });
+    await postRtmp({ call: 'publish', app: 'stream', name: k.key });
+    await postRtmp({ call: 'publish_done', app: 'stream', name: k.key });
+    assert.strictEqual(relayManager.isPublishing(k.key), false);
+  });
+
+  it('does NOT start fan-out when relay_active=false even with slots configured', async () => {
+    // relay_allowed=true but relay_active=false (default)
+    const k = createKey(db, { owner: 'InactiveRelay', relay_allowed: true });
+    upsertRelay(db, k.key, 1, 'rtmp://target.example.com/live');
+    const startedKeys = [];
+    relayManager._onStreamStarted = (apiKey) => startedKeys.push(apiKey);
+    await postRtmp({ call: 'publish', app: 'stream', name: k.key });
+    assert.strictEqual(startedKeys.length, 0, 'fan-out should NOT start when relay_active=false');
+    relayManager._onStreamStarted = null;
   });
 
   it('returns 400 for unknown call type', async () => {
@@ -378,6 +453,43 @@ describe('/stream CRUD (fan-out)', () => {
     assert.ok(Array.isArray(body.relays));
     assert.strictEqual(body.relays.length, 0);
     assert.ok(Array.isArray(body.runningSlots));
+    assert.strictEqual(body.active, false, 'relay_active should default to false');
+  });
+
+  it('PUT /stream/active returns 400 when active is not a boolean', async () => {
+    const res = await fetch(`${baseUrl}/stream/active`, {
+      method: 'PUT',
+      headers: bearerHeaders(token),
+      body: JSON.stringify({ active: 'yes' }),
+    });
+    assert.strictEqual(res.status, 400);
+  });
+
+  it('PUT /stream/active sets relay active to true', async () => {
+    const res = await fetch(`${baseUrl}/stream/active`, {
+      method: 'PUT',
+      headers: bearerHeaders(token),
+      body: JSON.stringify({ active: true }),
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.ok, true);
+    assert.strictEqual(body.active, true);
+    // GET /stream should reflect the new state
+    const getRes = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(token) });
+    const getBody = await getRes.json();
+    assert.strictEqual(getBody.active, true);
+  });
+
+  it('PUT /stream/active sets relay active to false', async () => {
+    const res = await fetch(`${baseUrl}/stream/active`, {
+      method: 'PUT',
+      headers: bearerHeaders(token),
+      body: JSON.stringify({ active: false }),
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.active, false);
   });
 
   it('POST /stream creates relay slot 1 with targetName and captionMode', async () => {

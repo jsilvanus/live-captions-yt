@@ -190,6 +190,12 @@ export default {
       stopped: 'Relay pysäytetty',
       notConnected: 'Yhdistä ensin palvelimeen',
       errorNoTarget: 'Anna kohde-URL tai lähetysavain',
+      activeToggle: 'Relay aktiivinen',
+      activeLabel: 'Aktiivinen — fanilähetys käynnistyy kun virta saapuu',
+      inactiveLabel: 'Ei aktiivinen — tuleva virta hyväksytään, mutta ei välitetä',
+      activeHint: 'Ota käyttöön välitys kaikille määritetyille kohteille.',
+      activated: 'Relay aktivoitu',
+      deactivated: 'Relay poistettu käytöstä',
     },
   },
   statusBar: {

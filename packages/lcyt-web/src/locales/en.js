@@ -190,6 +190,12 @@ export default {
       stopped: 'Relay stopped',
       notConnected: 'Connect to backend first',
       errorNoTarget: 'Enter a target URL or stream key',
+      activeToggle: 'Relay active',
+      activeLabel: 'Active — will fan-out when stream arrives',
+      inactiveLabel: 'Inactive — incoming stream accepted but not relayed',
+      activeHint: 'Toggle on to relay an incoming RTMP stream to all configured targets.',
+      activated: 'Relay activated',
+      deactivated: 'Relay deactivated',
     },
   },
   statusBar: {
