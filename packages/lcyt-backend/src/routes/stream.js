@@ -50,8 +50,8 @@ export function createStreamRouter(db, auth, relayManager) {
   }
 
   function parseSlot(raw, res) {
-    const slot = parseInt(raw, 10);
-    if (isNaN(slot) || slot < 1 || slot > MAX_RELAY_SLOTS) {
+    const slot = Number(raw);
+    if (!Number.isInteger(slot) || slot < 1 || slot > MAX_RELAY_SLOTS) {
       res.status(400).json({ error: `slot must be an integer between 1 and ${MAX_RELAY_SLOTS}` });
       return null;
     }

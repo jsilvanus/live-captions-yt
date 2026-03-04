@@ -1014,8 +1014,8 @@ export function buildRelayFfmpegUrl(relay) {
  * @returns {object}
  */
 export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http' } = {}) {
-  if (slot < 1 || slot > MAX_RELAY_SLOTS) {
-    throw new RangeError(`slot must be 1-${MAX_RELAY_SLOTS}, got ${slot}`);
+  if (!Number.isInteger(slot) || slot < 1 || slot > MAX_RELAY_SLOTS) {
+    throw new RangeError(`slot must be an integer 1-${MAX_RELAY_SLOTS}, got ${slot}`);
   }
   db.prepare(`
     INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode)
