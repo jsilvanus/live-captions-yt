@@ -233,6 +233,7 @@ DELETE /stream/:slot
 |----------|---------|---------|
 | `CEA708_OFFSET_MS` | `2000` | Milliseconds to shift caption start time earlier when `speechStart` is absent |
 | `CEA708_DURATION_MS` | `3000` | Duration of each CEA-708 cue in milliseconds |
+| `CEA708_MAX_BACKTRACK_MS` | `5000` | Maximum ms a cue may be shifted behind current stream PTS; prevents captions on stale frames |
 | `RTMP_HOST` | `rtmp.lcyt.fi` | Hostname of the nginx-rtmp server |
 | `RTMP_APP` | `stream` | nginx-rtmp application name |
 

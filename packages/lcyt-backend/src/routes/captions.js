@@ -189,7 +189,10 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           // Inject into the CEA-708 ffmpeg pipe when relay is active in cea708 mode.
           // Use plain text (no HTML) for the SEI NAL payload.
           if (relayManager?.hasCea708(session.apiKey)) {
-            relayManager.writeCaption(session.apiKey, text, { speechStart, timestamp });
+            const written = relayManager.writeCaption(session.apiKey, text, { speechStart, timestamp });
+            if (!written) {
+              console.warn(`[captions] CEA-708 writeCaption failed for ${session.apiKey.slice(0, 8)}: pipe unavailable or invalid timing`);
+            }
           }
 
           // Write original and all translations to backend files if enabled

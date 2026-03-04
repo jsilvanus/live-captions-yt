@@ -7,13 +7,21 @@ const DEFAULT_RTMP_APP  = process.env.RTMP_APP  || 'stream';
  * Milliseconds to shift a caption earlier when speechStart is not provided.
  * Can be overridden via the CEA708_OFFSET_MS environment variable.
  */
-const CEA708_OFFSET_MS   = Number(process.env.CEA708_OFFSET_MS   ?? 2000);
+const CEA708_OFFSET_MS          = Number(process.env.CEA708_OFFSET_MS          ?? 2000);
 
 /**
  * Default cue duration in milliseconds (how long each CEA-708 caption is displayed).
  * Can be overridden via the CEA708_DURATION_MS environment variable.
  */
-const CEA708_DURATION_MS = Number(process.env.CEA708_DURATION_MS ?? 3000);
+const CEA708_DURATION_MS        = Number(process.env.CEA708_DURATION_MS        ?? 3000);
+
+/**
+ * Maximum milliseconds a cue may be shifted backwards from the current stream position.
+ * Prevents captions from referencing video frames older than this threshold — decoders
+ * typically discard SEI NAL data that is too far behind the current PTS.
+ * Can be overridden via the CEA708_MAX_BACKTRACK_MS environment variable.
+ */
+const CEA708_MAX_BACKTRACK_MS   = Number(process.env.CEA708_MAX_BACKTRACK_MS   ?? 5000);
 
 /**
  * Format a number of milliseconds as an SRT timestamp: HH:MM:SS,mmm
@@ -21,6 +29,7 @@ const CEA708_DURATION_MS = Number(process.env.CEA708_DURATION_MS ?? 3000);
  * @returns {string}
  */
 function srtTime(ms) {
+  if (!Number.isFinite(ms)) return '00:00:00,000';
   const clampedMs = Math.max(0, Math.round(ms));
   const hh = String(Math.floor(clampedMs / 3_600_000)).padStart(2, '0');
   const mm = String(Math.floor((clampedMs % 3_600_000) / 60_000)).padStart(2, '0');
@@ -310,18 +319,26 @@ export class RtmpRelayManager {
       const t = speechStart instanceof Date ? speechStart.getTime()
         : typeof speechStart === 'string' ? new Date(speechStart).getTime()
         : Number(speechStart);
+      if (!Number.isFinite(t)) {
+        console.warn(`[rtmp] writeCaption: invalid speechStart for ${apiKey.slice(0, 8)}`);
+        return false;
+      }
       cueStartMs = t - meta.startedAt.getTime();
     } else if (timestamp !== undefined) {
       const t = timestamp instanceof Date ? timestamp.getTime()
         : typeof timestamp === 'string' ? new Date(timestamp).getTime()
         : Number(timestamp);
+      if (!Number.isFinite(t)) {
+        console.warn(`[rtmp] writeCaption: invalid timestamp for ${apiKey.slice(0, 8)}`);
+        return false;
+      }
       cueStartMs = t - CEA708_OFFSET_MS - meta.startedAt.getTime();
     } else {
       cueStartMs = streamElapsedMs - CEA708_OFFSET_MS;
     }
 
-    // Clamp: never negative, never more than 5 s behind current stream PTS.
-    const minMs = Math.max(0, streamElapsedMs - 5000);
+    // Clamp: never negative, never more than CEA708_MAX_BACKTRACK_MS behind current PTS.
+    const minMs = Math.max(0, streamElapsedMs - CEA708_MAX_BACKTRACK_MS);
     cueStartMs = Math.max(minMs, cueStartMs);
 
     meta.srtSeq++;
@@ -439,7 +456,11 @@ export class RtmpRelayManager {
     const proc = this._procs.get(apiKey);
     if (!proc) return;
     this._procs.delete(apiKey);
-    try { if (proc.stdin && !proc.stdin.destroyed) proc.stdin.end(); } catch {}
+    try {
+      if (proc.stdin && !proc.stdin.destroyed) proc.stdin.end();
+    } catch (err) {
+      if (err.code !== 'EPIPE') console.warn(`[rtmp] stdin.end() failed for ${apiKey.slice(0, 8)}: ${err.message}`);
+    }
     try {
       proc.kill('SIGTERM');
       const timer = setTimeout(() => {
