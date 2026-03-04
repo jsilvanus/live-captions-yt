@@ -1,7 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { initDb, writeSessionStat, incrementDomainHourlySessionEnd } from './db.js';
+import {
+  initDb, writeSessionStat, incrementDomainHourlySessionEnd,
+  writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat,
+} from './db.js';
 import { SessionStore } from './store.js';
+import { RtmpRelayManager } from './rtmp-manager.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createLiveRouter } from './routes/live.js';
@@ -13,6 +17,8 @@ import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
+import { createRtmpRouter } from './routes/rtmp.js';
+import { createStreamRouter } from './routes/stream.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -58,12 +64,57 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
   console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
 }
 
+if (process.env.RTMP_APPLICATION) {
+  console.info(`✓ RTMP application name: ${process.env.RTMP_APPLICATION} — /rtmp will reject other app names.`);
+} else {
+  console.info('ℹ RTMP_APPLICATION not set — /rtmp will accept any application name.');
+}
+
 // ---------------------------------------------------------------------------
 // Database and session store
 // ---------------------------------------------------------------------------
 
 const db = initDb();
 const store = new SessionStore({ db });
+
+// Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
+const _rtmpStatIds = new Map();
+
+const relayManager = new RtmpRelayManager({
+  onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
+    try {
+      const id = writeRtmpStreamStart(db, {
+        apiKey,
+        slot,
+        targetUrl,
+        targetName,
+        captionMode,
+        startedAt: startedAt.toISOString(),
+      });
+      _rtmpStatIds.set(`${apiKey}:${slot}`, id);
+    } catch (err) {
+      console.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
+    }
+  },
+  onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs }) {
+    try {
+      const statKey = `${apiKey}:${slot}`;
+      const statId  = _rtmpStatIds.get(statKey);
+      _rtmpStatIds.delete(statKey);
+      if (statId) {
+        writeRtmpStreamEnd(db, {
+          streamStatId: statId,
+          endedAt: endedAt.toISOString(),
+          durationMs,
+          captionsSent: 0, // future: wire from caption counter
+        });
+      }
+      incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
+    } catch (err) {
+      console.error(`[rtmp] Failed to write stream end stat: ${err.message}`);
+    }
+  },
+});
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -178,9 +229,11 @@ app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
+app.use('/rtmp', createRtmpRouter(db, relayManager));
+app.use('/stream', createStreamRouter(db, auth, relayManager));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store };
+export { app, db, store, relayManager };

@@ -86,6 +86,7 @@ function printKey(k) {
   console.log(`lifetime limit:  ${k.lifetime_limit ?? 'unlimited'}`);
   console.log(`lifetime used:   ${k.lifetime_used ?? 0}`);
   console.log(`file saving:     ${k.backend_file_enabled ? 'enabled' : 'disabled'}`);
+  console.log(`rtmp relay:      ${k.relay_allowed ? 'allowed' : 'not allowed'}`);
   console.log(`created:         ${formatDate(k.created_at)}`);
 }
 
@@ -116,6 +117,7 @@ function cmdAdd(db, flags) {
     daily_limit: parseLimit(flags['daily-limit']),
     lifetime_limit: parseLimit(flags['lifetime-limit']),
     backend_file_enabled: flags['file-saving'] === true || flags['file-saving'] === 'true',
+    relay_allowed: flags['relay'] === true || flags['relay'] === 'true',
   });
   console.log('Created API key:');
   printKey(created);
@@ -138,9 +140,10 @@ function cmdUpdate(db, positional, flags) {
   if ('daily-limit' in flags) updates.daily_limit = parseLimit(flags['daily-limit']);
   if ('lifetime-limit' in flags) updates.lifetime_limit = parseLimit(flags['lifetime-limit']);
   if ('file-saving' in flags) updates.backend_file_enabled = flags['file-saving'] === true || flags['file-saving'] === 'true';
+  if ('relay' in flags) updates.relay_allowed = flags['relay'] === true || flags['relay'] === 'true';
 
   if (Object.keys(updates).length === 0) {
-    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, --lifetime-limit, or --file-saving');
+    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, --lifetime-limit, --file-saving, or --relay');
     process.exit(1);
   }
 
@@ -230,10 +233,10 @@ function usage() {
 Commands:
   list                              List all API keys
   add --owner <name> [--key <key>] [--email <email>] [--expires <date>]
-      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving]
+      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving] [--relay]
                                     Create a new API key
   update <key> [--owner <name>] [--expires <date>]
-      [--daily-limit <n|none>] [--lifetime-limit <n|none>] [--file-saving [true|false]]
+      [--daily-limit <n|none>] [--lifetime-limit <n|none>] [--file-saving [true|false]] [--relay [true|false]]
                                     Update key fields (use 'none' to remove a limit)
   revoke <key>                      Revoke (soft-delete) a key
   delete <key>                      Permanently remove a key

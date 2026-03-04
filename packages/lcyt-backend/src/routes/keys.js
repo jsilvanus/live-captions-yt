@@ -110,6 +110,7 @@ export function createKeysRouter(db) {
     if ('daily_limit' in body) updates.daily_limit = body.daily_limit ?? null;
     if ('lifetime_limit' in body) updates.lifetime_limit = body.lifetime_limit ?? null;
     if ('backend_file_enabled' in body) updates.backend_file_enabled = !!body.backend_file_enabled;
+    if ('relay_allowed' in body) updates.relay_allowed = !!body.relay_allowed;
 
     updateKey(db, req.params.key, updates);
 

@@ -393,6 +393,141 @@ export function useSession({
     return res.json();
   }
 
+  // ─── RTMP relay ─────────────────────────────────────────
+
+  /**
+   * Configure (create / replace) the relay target.
+   * Requires relay_allowed on the API key.
+   * @param {{ slot?: number, targetUrl: string, targetName?: string|null, captionMode?: string }} opts
+   */
+  async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
+    if (!targetUrl) throw new Error('targetUrl is required');
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slot, targetUrl, targetName, captionMode }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to configure relay (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Update an existing relay slot.
+   * @param {{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }} opts
+   */
+  async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
+    if (!targetUrl) throw new Error('targetUrl is required');
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/${slot}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetUrl, targetName, captionMode }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to update relay slot ${slot} (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Stop and remove a specific relay slot.
+   * @param {{ slot: number }} opts
+   */
+  async function stopRelaySlot({ slot = 1 } = {}) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/${slot}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to stop relay slot ${slot} (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Stop all relay slots and drop the nginx publisher.
+   */
+  async function stopRelay() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to stop relay (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Get all configured relay slots and which are running.
+   * @returns {{ relays: object[], runningSlots: number[], active: boolean }}
+   */
+  async function getRelayStatus() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to get relay status (${res.status})`);
+    return res.json();
+  }
+
+  /**
+   * Get per-stream RTMP usage history for this API key.
+   * @returns {{ streams: object[] }}
+   */
+  async function getRelayHistory() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to get relay history (${res.status})`);
+    return res.json();
+  }
+
+  /**
+   * Set the relay active state for this API key.
+   * When active=true and nginx is currently publishing, fan-out starts immediately.
+   * When active=false, all running ffmpeg processes are stopped.
+   * @param {boolean} active
+   * @returns {Promise<{ ok: boolean, active: boolean }>}
+   */
+  async function setRelayActive(active) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/active`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ active }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to set relay active state (${res.status})`);
+    }
+    return res.json();
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
@@ -401,6 +536,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
+    configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }
