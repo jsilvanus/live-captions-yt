@@ -10,6 +10,8 @@ export default {
       translation: 'Översättning',
       status: 'Status',
       actions: 'Åtgärder',
+      model: 'Modell',
+      other: 'Övrigt',
     },
     connection: {
       backendUrl: 'Backend-URL',
@@ -126,6 +128,7 @@ export default {
       sequence: 'Sekvens',
       syncOffset: 'Synkoffset',
       lastConnected: 'Senast ansluten',
+      statsButton: 'Statistik',
     },
     footer: {
       connect: 'Anslut',
@@ -141,6 +144,11 @@ export default {
     offset: 'Offset:',
     sync: '⟳ Synka',
     privacy: 'Integritet',
+    general: 'Allmänt',
+    status: 'Status',
+    actions: 'Åtgärder',
+    caption: 'Undertexter',
+    translation: 'Översättning',
   },
   networkBanner: {
     message: 'Servern kan inte nås — kontrollera din nätverksanslutning',

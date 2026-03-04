@@ -10,6 +10,8 @@ export default {
       translation: 'Translation',
       status: 'Status',
       actions: 'Actions',
+      model: 'Model',
+      other: 'Other',
     },
     connection: {
       backendUrl: 'Backend URL',
@@ -126,6 +128,7 @@ export default {
       sequence: 'Sequence',
       syncOffset: 'Sync Offset',
       lastConnected: 'Last connected',
+      statsButton: 'Stats',
     },
     footer: {
       connect: 'Connect',
@@ -141,6 +144,11 @@ export default {
     offset: 'Offset:',
     sync: '⟳ Sync',
     privacy: 'Privacy',
+    general: 'General',
+    status: 'Status',
+    actions: 'Actions',
+    caption: 'Caption',
+    translation: 'Translation',
   },
   networkBanner: {
     message: 'Backend cannot be reached — check your network connection',

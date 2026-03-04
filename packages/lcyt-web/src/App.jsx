@@ -4,7 +4,11 @@ import { useSessionContext } from './contexts/SessionContext';
 import { useFileContext } from './contexts/FileContext';
 import { useLang } from './contexts/LangContext';
 import { StatusBar } from './components/StatusBar';
-import { SettingsModal } from './components/SettingsModal';
+import { GeneralModal } from './components/GeneralModal';
+import { CaptionsModal } from './components/CaptionsModal';
+import { TranslationModal } from './components/TranslationModal';
+import { StatusPanel } from './components/StatusPanel';
+import { ActionsPanel } from './components/ActionsPanel';
 import { PrivacyModal } from './components/PrivacyModal';
 import { DropZone } from './components/DropZone';
 import { FileTabs } from './components/FileTabs';
@@ -50,7 +54,11 @@ function AppLayout() {
   const session = useSessionContext();
   const fileStore = useFileContext();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [generalOpen, setGeneralOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [actionsOpen, setActionsOpen] = useState(false);
+  const [captionOpen, setCaptionOpen] = useState(false);
+  const [translationOpen, setTranslationOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
@@ -74,7 +82,7 @@ function AppLayout() {
       // Ctrl+, / Cmd+, — toggle settings
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault();
-        setSettingsOpen(v => !v);
+        setGeneralOpen(v => !v);
         return;
       }
 
@@ -203,7 +211,11 @@ function AppLayout() {
   return (
     <div id="app">
       <StatusBar
-        onSettingsOpen={() => setSettingsOpen(true)}
+        onGeneralOpen={() => setGeneralOpen(true)}
+        onStatusOpen={() => setStatusOpen(true)}
+        onActionsOpen={() => setActionsOpen(true)}
+        onCaptionOpen={() => setCaptionOpen(true)}
+        onTranslationOpen={() => setTranslationOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
       />
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
@@ -319,7 +331,11 @@ function AppLayout() {
         );
       })()}
 
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <GeneralModal isOpen={generalOpen} onClose={() => setGeneralOpen(false)} />
+      {captionOpen && <CaptionsModal isOpen={captionOpen} onClose={() => setCaptionOpen(false)} />}
+      {translationOpen && <TranslationModal isOpen={translationOpen} onClose={() => setTranslationOpen(false)} />}
+      {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}
+      {actionsOpen && <ActionsPanel onClose={() => setActionsOpen(false)} />}
       <PrivacyModal
         isOpen={privacyOpen}
         onClose={() => setPrivacyOpen(false)}
