@@ -1,4 +1,4 @@
-import { app, db, store } from './server.js';
+import { app, db, store, relayManager } from './server.js';
 import { cleanRevokedKeys } from './db.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
@@ -54,6 +54,7 @@ if (REVOKED_KEY_TTL_DAYS > 0) {
 
 async function shutdown() {
   console.log('Shutting down...');
+  await relayManager.stopAll();
   for (const session of store.all()) {
     try { await session.sender.end(); } catch {}
   }

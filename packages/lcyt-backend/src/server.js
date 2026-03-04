@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { initDb, writeSessionStat, incrementDomainHourlySessionEnd } from './db.js';
 import { SessionStore } from './store.js';
+import { RtmpRelayManager } from './rtmp-manager.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createLiveRouter } from './routes/live.js';
@@ -13,6 +14,8 @@ import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
+import { createRtmpRouter } from './routes/rtmp.js';
+import { createStreamRouter } from './routes/stream.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -64,6 +67,7 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
 
 const db = initDb();
 const store = new SessionStore({ db });
+const relayManager = new RtmpRelayManager();
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -178,9 +182,11 @@ app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
+app.use('/rtmp', createRtmpRouter(db, relayManager));
+app.use('/stream', createStreamRouter(db, auth, relayManager));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store };
+export { app, db, store, relayManager };

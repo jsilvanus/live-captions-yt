@@ -47,6 +47,18 @@ export function initDb(dbPath) {
   if (!existingCols.has('last_caption_at')) db.exec('ALTER TABLE api_keys ADD COLUMN last_caption_at TEXT');
   // 0 = disabled (default/free tier), 1 = enabled (allows per-session file saving via /file endpoint)
   if (!existingCols.has('backend_file_enabled')) db.exec('ALTER TABLE api_keys ADD COLUMN backend_file_enabled INTEGER NOT NULL DEFAULT 0');
+  // 0 = not allowed (default), 1 = allowed to configure RTMP relay via /stream
+  if (!existingCols.has('relay_allowed')) db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rtmp_relays (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key     TEXT    NOT NULL UNIQUE,
+      target_url  TEXT    NOT NULL,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -217,6 +229,7 @@ export function formatKey(row) {
     lifetimeLimit: row.lifetime_limit ?? null,
     lifetimeUsed: row.lifetime_used ?? 0,
     backendFileEnabled: row.backend_file_enabled === 1,
+    relayAllowed: row.relay_allowed === 1,
   };
 }
 
@@ -336,10 +349,10 @@ export function getKeyByEmail(db, email) {
  * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -348,6 +361,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     daily_limit ?? null,
     lifetime_limit ?? null,
     (backend_file_enabled ?? false) ? 1 : 0,
+    (relay_allowed ?? false) ? 1 : 0,
   );
   return getKey(db, resolvedKey);
 }
@@ -549,7 +563,7 @@ export function getDomainUsageStats(db, { from, to, granularity = 'day', domain 
  * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed } = {}) {
   const parts = [];
   const params = [];
 
@@ -572,6 +586,10 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (backend_file_enabled !== undefined) {
     parts.push('backend_file_enabled = ?');
     params.push(backend_file_enabled ? 1 : 0);
+  }
+  if (relay_allowed !== undefined) {
+    parts.push('relay_allowed = ?');
+    params.push(relay_allowed ? 1 : 0);
   }
 
   if (parts.length === 0) return false;
@@ -814,4 +832,57 @@ export function deleteCaptionFile(db, id, apiKey) {
  */
 export function deleteAllCaptionFiles(db, apiKey) {
   db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(apiKey);
+}
+
+
+// ─── RTMP relay config per API key ───────────────────────────────────────────
+
+/**
+ * Check whether RTMP relay is allowed for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isRelayAllowed(db, apiKey) {
+  const row = db.prepare('SELECT relay_allowed FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.relay_allowed === 1 : false;
+}
+
+/**
+ * Get the relay config (target URL) for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {{ id: number, apiKey: string, targetUrl: string, createdAt: string, updatedAt: string }|null}
+ */
+export function getRelay(db, apiKey) {
+  const row = db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').get(apiKey);
+  if (!row) return null;
+  return { id: row.id, apiKey: row.api_key, targetUrl: row.target_url, createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+/**
+ * Create or replace relay config for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} targetUrl
+ * @returns {{ id: number, apiKey: string, targetUrl: string, createdAt: string, updatedAt: string }}
+ */
+export function upsertRelay(db, apiKey, targetUrl) {
+  db.prepare(
+    `INSERT INTO rtmp_relays (api_key, target_url)
+     VALUES (?, ?)
+     ON CONFLICT(api_key) DO UPDATE SET target_url = excluded.target_url, updated_at = datetime('now')`
+  ).run(apiKey, targetUrl);
+  return getRelay(db, apiKey);
+}
+
+/**
+ * Delete relay config for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean} true if a row was deleted
+ */
+export function deleteRelay(db, apiKey) {
+  const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(apiKey);
+  return result.changes > 0;
 }
