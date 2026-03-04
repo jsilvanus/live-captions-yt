@@ -263,6 +263,9 @@ export class SessionStore {
         session.emitter.emit('session:closed');
         session.emitter.removeAllListeners();
         this._sessions.delete(sessionId);
+        if (this.db) {
+          try { deleteSession(this.db, sessionId); } catch (_) {}
+        }
         try {
           await session.sender.end();
         } catch {

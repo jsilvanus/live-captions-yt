@@ -66,16 +66,16 @@ export function useSession({
   }
 
   function getAutoConnect() {
-    return localStorage.getItem(AUTO_CONNECT_KEY) === 'true';
+    try { return localStorage.getItem(AUTO_CONNECT_KEY) === 'true'; } catch { return false; }
   }
 
   function setAutoConnect(value) {
-    localStorage.setItem(AUTO_CONNECT_KEY, value ? 'true' : 'false');
+    try { localStorage.setItem(AUTO_CONNECT_KEY, value ? 'true' : 'false'); } catch {}
   }
 
   function clearPersistedConfig() {
-    localStorage.removeItem(CONFIG_KEY);
-    localStorage.removeItem(AUTO_CONNECT_KEY);
+    try { localStorage.removeItem(CONFIG_KEY); } catch {}
+    try { localStorage.removeItem(AUTO_CONNECT_KEY); } catch {}
   }
 
   // ─── SSE ────────────────────────────────────────────────
