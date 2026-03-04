@@ -504,6 +504,13 @@
   color: var(--color-error);
 }
 
+.sent-item__globe {
+  font-size: 11px;
+  flex-shrink: 0;
+  opacity: 0.7;
+  line-height: 1;
+}
+
 .sent-panel__empty {
   padding: 32px;
   color: var(--color-text-dim);

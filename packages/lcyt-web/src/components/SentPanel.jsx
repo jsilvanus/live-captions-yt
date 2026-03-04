@@ -25,6 +25,7 @@ function SentItem({ entry, isBatchContinuation }) {
     return (
       <li className={cls}>
         <span className="sent-item__seq" />
+        {entry.hasTranslations && <span className="sent-item__globe" title="Sent with translations">🌐</span>}
         <span className={`sent-item__ticks ${ticksCls}`}>{ticksLabel}</span>
         <span className="sent-item__time">{formatTime(entry.timestamp)}</span>
         <span className="sent-item__text" title={entry.text}>{entry.text}</span>
@@ -42,6 +43,7 @@ function SentItem({ entry, isBatchContinuation }) {
   return (
     <li className={cls}>
       <span className="sent-item__seq">{seqLabel}</span>
+      {entry.hasTranslations && <span className="sent-item__globe" title="Sent with translations">🌐</span>}
       <span className={`sent-item__ticks ${ticksCls}`}>{ticksLabel}</span>
       <span className="sent-item__time">{formatTime(entry.timestamp)}</span>
       <span className="sent-item__text" title={entry.text}>{entry.text}</span>

@@ -201,7 +201,8 @@ export function useSession({
   async function send(text, timestamp, opts) {
     if (!senderRef.current) throw new Error('Not connected');
     const data = await senderRef.current.send(text, timestamp, opts);
-    cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true });
+    const hasTranslations = !!(opts?.translations && Object.keys(opts.translations).length > 0);
+    cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true, hasTranslations });
     return data;
   }
 
@@ -266,8 +267,9 @@ export function useSession({
     }
 
     const tempId = 'q-' + Math.random().toString(36).slice(2);
+    const hasTranslations = !!(opts?.translations && Object.keys(opts.translations).length > 0);
     // Tell host a pending item exists
-    cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true });
+    cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true, hasTranslations });
     // Push into sender queue
     senderRef.current.construct(text, timestamp);
     batchBufferRef.current.push({ text, requestId: tempId });
