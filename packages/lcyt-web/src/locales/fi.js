@@ -10,6 +10,8 @@ export default {
       translation: 'Käännös',
       status: 'Tila',
       actions: 'Toiminnot',
+      model: 'Malli',
+      other: 'Muut',
     },
     connection: {
       backendUrl: 'Palvelimen URL',
@@ -126,6 +128,7 @@ export default {
       sequence: 'Sekvenssi',
       syncOffset: 'Synkronoinnin siirtymä',
       lastConnected: 'Viimeksi yhdistetty',
+      statsButton: 'Tilastot',
     },
     footer: {
       connect: 'Yhdistä',
@@ -141,6 +144,11 @@ export default {
     offset: 'Siirtymä:',
     sync: '⟳ Synkronoi',
     privacy: 'Tietosuoja',
+    general: 'Yleiset',
+    status: 'Tila',
+    actions: 'Toiminnot',
+    caption: 'Tekstitys',
+    translation: 'Käännös',
   },
   networkBanner: {
     message: 'Palvelimeen ei saada yhteyttä — tarkista verkkoyhteytesi',
