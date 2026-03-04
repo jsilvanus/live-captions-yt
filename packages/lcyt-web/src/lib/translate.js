@@ -101,3 +101,102 @@ export async function translateText(text, sourceLang, targetLang) {
     default:               return translateMyMemory(text, sourceLang, targetLang);
   }
 }
+
+/**
+ * Translate `text` to all enabled translation targets.
+ *
+ * Returns:
+ *   {
+ *     translationsMap: { 'fi-FI': 'käännetty', ... },  // all langs (captions + backend-file)
+ *     captionLang: 'fi-FI' | null,                     // the "captions" target lang, if any
+ *     localFileEntries: [{ lang, text, format }],       // langs targeting local "file"
+ *   }
+ *
+ * Skips translation when source and target language are the same.
+ *
+ * @param {string} text - Original text
+ * @param {string} sourceLang - Source language code
+ * @param {Array} enabledTranslations - From getEnabledTranslations()
+ * @returns {Promise<object>}
+ */
+export async function translateAll(text, sourceLang, enabledTranslations) {
+  const translationsMap = {};
+  let captionLang = null;
+  const localFileEntries = [];
+
+  await Promise.allSettled(
+    enabledTranslations.map(async (t) => {
+      // Skip if source and target are same language
+      const translated = isSameLanguage(sourceLang, t.lang)
+        ? text
+        : await translateText(text, sourceLang, t.lang).catch(() => text);
+
+      if (t.target === 'file') {
+        localFileEntries.push({ lang: t.lang, text: translated, format: t.format || 'youtube' });
+      } else {
+        // 'captions' or 'backend-file' — include in map for backend
+        translationsMap[t.lang] = translated;
+        if (t.target === 'captions') captionLang = t.lang;
+      }
+    })
+  );
+
+  return { translationsMap, captionLang, localFileEntries };
+}
+
+// ─── Local file writing (File System Access API) ─────────────────────────────
+
+/**
+ * Open a writable file using the File System Access API.
+ * Returns a FileSystemWritableFileStream or null if not supported / user cancels.
+ * The caller must keep this handle open for the session and close it on teardown.
+ *
+ * @param {string} suggestedName - Default filename
+ * @returns {Promise<{ handle: FileSystemFileHandle, writable: FileSystemWritableFileStream } | null>}
+ */
+export async function openLocalCaptionFile(suggestedName) {
+  if (!window.showSaveFilePicker) return null;
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [
+        { description: 'Caption file', accept: { 'text/plain': ['.vtt', '.txt'] } },
+      ],
+    });
+    const writable = await handle.createWritable({ keepExistingData: false });
+    return { handle, writable };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Format a single caption entry as a VTT cue string.
+ * @param {number} seqIndex - 1-based sequence index for cue ID
+ * @param {string} startIso - ISO start time string
+ * @param {string} endIso - ISO end time string (optional, defaults to start + 3s)
+ * @param {string} text - Caption text
+ * @returns {string}
+ */
+export function formatVttCue(seqIndex, startIso, endIso, text) {
+  function toVttTime(iso) {
+    const d = new Date(iso);
+    const hh = String(d.getUTCHours()).padStart(2, '0');
+    const mm = String(d.getUTCMinutes()).padStart(2, '0');
+    const ss = String(d.getUTCSeconds()).padStart(2, '0');
+    const ms = String(d.getUTCMilliseconds()).padStart(3, '0');
+    return `${hh}:${mm}:${ss}.${ms}`;
+  }
+  const start = toVttTime(startIso);
+  const end = endIso ? toVttTime(endIso) : toVttTime(new Date(new Date(startIso).getTime() + 3000).toISOString());
+  return `${seqIndex}\n${start} --> ${end}\n${text}\n\n`;
+}
+
+/**
+ * Format a single caption entry in YouTube ingest format (bare text, one per line).
+ * @param {string} text - Caption text
+ * @returns {string}
+ */
+export function formatYouTubeLine(text) {
+  return text + '\n';
+}

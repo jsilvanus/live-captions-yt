@@ -12,6 +12,7 @@ import { createKeysRouter } from './routes/keys.js';
 import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
+import { createFileRouter } from './routes/files.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -176,6 +177,7 @@ app.use('/keys', createKeysRouter(db));
 app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
+app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

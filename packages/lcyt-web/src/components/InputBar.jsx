@@ -3,6 +3,12 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useFileContext } from '../contexts/FileContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { useToastContext } from '../contexts/ToastContext';
+import { COMMON_LANGUAGES } from '../lib/sttConfig';
+import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
+import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
+
+// Matches [lang-code] at the start of input, e.g. "[fi-FI]"
+const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
 
 export const InputBar = forwardRef(function InputBar(_props, ref) {
   const session = useSessionContext();
@@ -14,7 +20,17 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const [errorFlash, setErrorFlash] = useState(false);
   const [sendFlash, setSendFlash] = useState(false);
   const [batchCount, setBatchCount] = useState(0);
+  const [inputLang, setInputLang] = useState(() => {
+    try { return localStorage.getItem('lcyt:input-bar-lang') || ''; } catch { return ''; }
+  });
+  const [langPickerOpen, setLangPickerOpen] = useState(false);
+  const [langQuery, setLangQuery] = useState('');
   const inputRef = useRef(null);
+  const langPickerRef = useRef(null);
+
+  // Per-language local file handles: Map<lang, { writable, seqIdx, format }>
+  const localFileHandlesRef = useRef(new Map());
+  const localFileSeqRef = useRef({});
 
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
@@ -48,19 +64,68 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     setTimeout(() => setSendFlash(false), 300);
   }
 
+  function setInputBarLang(code) {
+    setInputLang(code);
+    try { localStorage.setItem('lcyt:input-bar-lang', code); } catch {}
+  }
+
+  async function writeLocalFiles(entries, timestamp) {
+    for (const entry of entries) {
+      const lang = entry.lang;
+      let fileInfo = localFileHandlesRef.current.get(lang);
+      if (!fileInfo) {
+        const suggestedName = `input-captions-${lang}-${new Date().toISOString().slice(0, 10)}.${entry.format === 'vtt' ? 'vtt' : 'txt'}`;
+        const opened = await openLocalCaptionFile(suggestedName);
+        if (!opened) continue;
+        if (entry.format === 'vtt') await opened.writable.write('WEBVTT\n\n');
+        localFileSeqRef.current[lang] = 0;
+        fileInfo = { writable: opened.writable, format: entry.format };
+        localFileHandlesRef.current.set(lang, fileInfo);
+      }
+      const seqIdx = (localFileSeqRef.current[lang] || 0) + 1;
+      localFileSeqRef.current[lang] = seqIdx;
+      const ts = timestamp || new Date().toISOString().replace('Z', '');
+      try {
+        if (fileInfo.format === 'vtt') {
+          await fileInfo.writable.write(formatVttCue(seqIdx, ts, null, entry.text));
+        } else {
+          await fileInfo.writable.write(formatYouTubeLine(entry.text));
+        }
+      } catch (e) {
+        console.warn('Local file write failed', e);
+      }
+    }
+  }
+
   async function doSend(text) {
     if (!text?.trim()) return;
+
+    // Build translations and handle local file writing
+    const enabledTranslations = getEnabledTranslations();
+    let translationsMap = {};
+    let captionLang = null;
+    if (enabledTranslations.length > 0) {
+      const result = await translateAll(text, inputLang || 'en-US', enabledTranslations);
+      translationsMap = result.translationsMap;
+      captionLang = result.captionLang;
+      if (result.localFileEntries.length > 0) {
+        writeLocalFiles(result.localFileEntries, undefined).catch(e => console.warn(e));
+      }
+    }
+    const opts = Object.keys(translationsMap).length > 0
+      ? { translations: translationsMap, captionLang, showOriginal: getTranslationShowOriginal() }
+      : undefined;
+
     const intervalMs = getBatchIntervalMs();
     if (intervalMs > 0) {
-      await session.construct(text);
+      await session.construct(text, undefined, opts);
       // Update badge from session queue length
       try { setBatchCount(session.getQueuedCount()); } catch {}
       flashSuccess();
       return;
     }
 
-    const data = await session.send(text);
-    // session.send triggers onCaptionSent in the session hook; sentLog.add handled in AppProviders
+    await session.send(text, undefined, opts);
     flashSuccess();
   }
 
@@ -104,6 +169,16 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
         handleSendError(err);
       }
     } else {
+      // Check for [lang-code] shortcut
+      const langMatch = text.trim().match(LANG_CODE_RE);
+      if (langMatch) {
+        const code = langMatch[1];
+        setInputBarLang(code);
+        setInputValue('');
+        showToast(`Input language set to ${code}`, 'info', 2000);
+        return;
+      }
+
       // Send-custom mode
       try {
         await doSend(text.trim());
@@ -120,7 +195,6 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       session.disconnect();
       showToast('Session expired — please reconnect', 'error', 8000);
     } else {
-      // Show in status bar via toast
       showToast(err.message || 'Send failed', 'error');
     }
     flashError();
@@ -144,13 +218,65 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const inputCls = `input-bar__input${errorFlash ? ' input-bar__input--error' : ''}`;
   const sendCls = `input-bar__send${sendFlash ? ' input-bar__send--flash' : ''}`;
 
+  const langEntry = inputLang ? COMMON_LANGUAGES.find(l => l.code === inputLang) : null;
+  const langLabel = langEntry ? langEntry.code : (inputLang || '…');
+
+  const langMatches = langQuery.trim().length > 0
+    ? COMMON_LANGUAGES.filter(l =>
+        l.label.toLowerCase().includes(langQuery.toLowerCase()) ||
+        l.code.toLowerCase().includes(langQuery.toLowerCase())
+      )
+    : COMMON_LANGUAGES.slice(0, 12);
+
   return (
     <div className="input-bar">
+      {/* Language selector */}
+      <div className="input-bar__lang-picker-wrap" ref={langPickerRef}>
+        <button
+          type="button"
+          className="input-bar__lang-btn"
+          title={inputLang ? `Input language: ${inputLang}` : 'Set input language'}
+          onClick={() => {
+            setLangPickerOpen(v => !v);
+            setLangQuery('');
+          }}
+        >
+          {langLabel}
+        </button>
+        {langPickerOpen && (
+          <div className="input-bar__lang-dropdown">
+            <input
+              type="text"
+              placeholder="Filter…"
+              value={langQuery}
+              autoFocus
+              onChange={e => setLangQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') setLangPickerOpen(false);
+              }}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '4px 8px', border: 'none', borderBottom: '1px solid var(--color-border)', background: 'transparent', color: 'var(--color-text)', outline: 'none' }}
+            />
+            {langMatches.map(l => (
+              <button
+                key={l.code}
+                className="audio-lang-option"
+                onClick={() => {
+                  setInputBarLang(l.code);
+                  setLangPickerOpen(false);
+                }}
+              >
+                {l.label} <span className="audio-lang-code">{l.code}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <input
         ref={inputRef}
         className={inputCls}
         type="text"
-        placeholder="Enter: send current line | Type: send custom text"
+        placeholder="Enter: send current line | Type: send custom text | [lang-code] to set language"
         disabled={!session.connected}
         value={inputValue}
         onChange={e => setInputValue(e.target.value)}

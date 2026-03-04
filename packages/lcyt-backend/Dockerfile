@@ -13,8 +13,12 @@ COPY --from=build /app .
 ENV NODE_ENV=production
 # Toggle free-tier API key handout endpoint (0 = disabled, 1 = enabled)
 ENV FREE_APIKEY_ACTIVE=0
-RUN mkdir -p /data && chown node:node /data
+# Directory for per-key caption/translation files
+ENV FILES_DIR=/data/files
+RUN mkdir -p /data/files && chown -R node:node /data
 USER node
+# Declare volumes for persistent data and caption files
+VOLUME ["/data"]
 EXPOSE 3000
 # Lightweight healthcheck using Node (avoids adding curl/wget)
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

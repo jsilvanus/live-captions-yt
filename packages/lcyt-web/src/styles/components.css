@@ -1932,3 +1932,60 @@
   overflow-y: auto;
   max-height: 60vh;
 }
+
+
+/* ─── Translation row (multi-translation list) ─────────────────────────── */
+.translation-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+
+.translation-row .audio-lang-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─── Input bar language selector ─────────────────────────────────────── */
+.input-bar__lang-btn {
+  flex-shrink: 0;
+  padding: 0 6px;
+  height: 32px;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.input-bar__lang-btn:hover {
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+.input-bar__lang-picker-wrap {
+  position: relative;
+}
+
+.input-bar__lang-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  z-index: 200;
+  width: 220px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}

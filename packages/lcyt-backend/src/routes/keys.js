@@ -109,6 +109,7 @@ export function createKeysRouter(db) {
     if ('expires' in body) updates.expiresAt = body.expires || null;
     if ('daily_limit' in body) updates.daily_limit = body.daily_limit ?? null;
     if ('lifetime_limit' in body) updates.lifetime_limit = body.lifetime_limit ?? null;
+    if ('backend_file_enabled' in body) updates.backend_file_enabled = !!body.backend_file_enabled;
 
     updateKey(db, req.params.key, updates);
 
