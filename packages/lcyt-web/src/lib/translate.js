@@ -22,6 +22,7 @@ async function translateMyMemory(text, sourceLang, targetLang) {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`MyMemory HTTP ${res.status}`);
   const data = await res.json();
+  console.log('MyMemory response', data);
   if (data.responseStatus !== 200) throw new Error(data.responseDetails || 'MyMemory error');
   return data.responseData?.translatedText || text;
 }
