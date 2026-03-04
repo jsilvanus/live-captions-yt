@@ -67,7 +67,8 @@ function writeToBackendFile(context, text, timestamp, db) {
     const { apiKey, sessionId, lang, format } = context;
     const fileHandles = context.fileHandles;
 
-    const langKey = lang || 'original';
+    // Sanitize lang to only allow safe characters for filenames
+    const langKey = (lang || 'original').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 20);
     const fileKey = `${langKey}:${format}`;
 
     if (!fileHandles.has(fileKey)) {

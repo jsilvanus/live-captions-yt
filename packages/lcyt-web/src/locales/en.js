@@ -181,4 +181,3 @@ export default {
     retry: 'Retry',
   },
 };
-// Note: The default export closes before this line; this is intentionally appended by automation. The trailing comma is handled in the original file.

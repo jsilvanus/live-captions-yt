@@ -45,6 +45,7 @@ export function initDb(dbPath) {
   }
   if (!existingCols.has('sequence'))        db.exec('ALTER TABLE api_keys ADD COLUMN sequence INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('last_caption_at')) db.exec('ALTER TABLE api_keys ADD COLUMN last_caption_at TEXT');
+  // 0 = disabled (default/free tier), 1 = enabled (allows per-session file saving via /file endpoint)
   if (!existingCols.has('backend_file_enabled')) db.exec('ALTER TABLE api_keys ADD COLUMN backend_file_enabled INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`

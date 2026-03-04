@@ -2,10 +2,20 @@ import { Router } from 'express';
 import { createReadStream, existsSync, unlinkSync, statSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { listCaptionFiles, getCaptionFile, deleteCaptionFile } from '../db.js';
 
 // Must match the base directory used in captions.js
 const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
+
+// Rate limiter: max 60 requests per minute per IP for file operations
+const fileRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later' },
+});
 
 /**
  * Factory for the /file router.
@@ -24,7 +34,7 @@ export function createFileRouter(db, auth, store, jwtSecret) {
   const router = Router();
 
   // GET /file — List files
-  router.get('/', auth, (req, res) => {
+  router.get('/', fileRateLimit, auth, (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -43,7 +53,7 @@ export function createFileRouter(db, auth, store, jwtSecret) {
   });
 
   // GET /file/:id — Download a file (supports Bearer or ?token=)
-  router.get('/:id', (req, res) => {
+  router.get('/:id', fileRateLimit, (req, res) => {
     // Accept token via Authorization header or ?token= query param (for direct download links)
     let apiKey = null;
     const authHeader = req.headers['authorization'];
@@ -65,7 +75,9 @@ export function createFileRouter(db, auth, store, jwtSecret) {
     if (!row) return res.status(404).json({ error: 'File not found' });
 
     const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    const filepath = join(FILES_BASE_DIR, safe, row.filename);
+    // Use basename() to prevent path traversal from DB-stored filename
+    const safeFilename = basename(row.filename);
+    const filepath = join(FILES_BASE_DIR, safe, safeFilename);
     if (!existsSync(filepath)) return res.status(404).json({ error: 'File not found on disk' });
 
     const contentType = row.format === 'vtt' ? 'text/vtt' : 'text/plain';
@@ -80,7 +92,7 @@ export function createFileRouter(db, auth, store, jwtSecret) {
   });
 
   // DELETE /file/:id — Delete a file
-  router.delete('/:id', auth, (req, res) => {
+  router.delete('/:id', fileRateLimit, auth, (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -98,7 +110,9 @@ export function createFileRouter(db, auth, store, jwtSecret) {
     // Best-effort disk deletion
     try {
       const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-      const filepath = join(FILES_BASE_DIR, safe, row.filename);
+      // Use basename() to prevent path traversal from DB-stored filename
+      const safeFilename = basename(row.filename);
+      const filepath = join(FILES_BASE_DIR, safe, safeFilename);
       if (existsSync(filepath)) unlinkSync(filepath);
     } catch (e) {
       console.warn('[file] Could not delete disk file:', e.message);

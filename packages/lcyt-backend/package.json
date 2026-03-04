@@ -12,12 +12,12 @@
     "test": "ALLOWED_DOMAINS=* node --test test/*.test.js"
   },
   "dependencies": {
-    "express": "^4.21",
-    "jsonwebtoken": "^9.0",
     "better-sqlite3": "^11.0",
+    "express": "^4.21",
+    "express-rate-limit": "^8.2.1",
+    "jsonwebtoken": "^9.0",
     "lcyt": "*"
   },
-  "devDependencies": {},
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",
   "engines": {
