@@ -13,7 +13,10 @@ COPY --from=build /app .
 ENV NODE_ENV=production
 # Toggle free-tier API key handout endpoint (0 = disabled, 1 = enabled)
 ENV FREE_APIKEY_ACTIVE=0
-RUN mkdir -p /data && chown node:node /data
+# Database backup retention in days (0 = disabled, max 180)
+ENV BACKUP_DAYS=0
+RUN mkdir -p /data /backups && chown node:node /data /backups
+VOLUME ["/backups"]
 USER node
 EXPOSE 3000
 # Lightweight healthcheck using Node (avoids adding curl/wget)
