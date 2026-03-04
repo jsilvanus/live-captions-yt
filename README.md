@@ -4,6 +4,8 @@
 [![npm version](https://img.shields.io/npm/v/lcyt-cli.svg)](https://www.npmjs.com/package/lcyt-cli)
 [![PyPI version](https://img.shields.io/pypi/v/lcyt.svg)](https://pypi.org/project/lcyt/)
 
+[Project Webpage](https://lcyt.fi)
+
 Send live captions to YouTube live streams using Google's official closed caption ingestion url (HTTP POST).
 
 To use this package, you first need to:
@@ -23,6 +25,12 @@ This is a monorepo containing the following packages:
 | [`lcyt-mcp-sse`](packages/lcyt-mcp-sse/) | — | `node packages/lcyt-mcp-sse/src/server.js` | MCP server (HTTP SSE transport) |
 | [`lcyt`](python-packages/lcyt/) | PyPI | `pip install lcyt` | Core Python library |
 | [`lcyt-backend`](python-packages/lcyt-backend/) | pip | `pip install lcyt-backend` | Python/Flask backend relay (cPanel/Passenger) |
+
+There are four conceptual levels in this package:
+1. CLI tool for simple use and core library for development
+2. MCP servers (local stdio and HTTP SSE) for the latest AI frenzy
+3. Backend and web tool for production use
+4. The [project site](https://lcyt.fi) with docs and a managed version of backend and web tool
 
 ### Breaking change in lcyt v2.0.0
 
@@ -184,6 +192,10 @@ To get your YouTube Live caption ingestion URL and key:
 ## Motivation
 
 YouTube already has English transcription for live videos, why bother? Well, there are other languages as well, and you might want to have another model do the transcription! This project was initially founded to serve as accessibility feature for the (Evangelical Lutheran Church of Finland)[evl.fi], but was created from the beginning as a general tool for anyone to use.
+
+## Thanks
+
+- https://codepen.io/davatron5000/pen/AeLaNG
 
 ## Contributing
 

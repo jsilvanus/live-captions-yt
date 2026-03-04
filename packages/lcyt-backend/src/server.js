@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
+import { spawnSync } from 'node:child_process';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat,
@@ -80,7 +81,36 @@ const store = new SessionStore({ db });
 // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
 const _rtmpStatIds = new Map();
 
+// Probe local ffmpeg for required features (libx264, eia608, subrip)
+function probeFfmpeg() {
+  try {
+    const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
+    const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
+    const demux = spawnSync('ffmpeg', ['-hide_banner', '-demuxers'], { encoding: 'utf8', timeout: 3000 });
+
+    const encOut = (enc.stdout || '') + (enc.stderr || '');
+    const fmtsOut = (fmts.stdout || '') + (fmts.stderr || '');
+    const demuxOut = (demux.stdout || '') + (demux.stderr || '');
+
+    const hasLibx264 = /libx264/i.test(encOut);
+    const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
+    const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
+
+    if (!hasLibx264) console.warn('⚠ ffmpeg: libx264 encoder not found — CEA-708 re-encode may fail.');
+    if (!hasEia608) console.warn('⚠ ffmpeg: eia608 subtitle encoder not found — CEA-708 embedding unavailable.');
+    if (!hasSubrip) console.warn('⚠ ffmpeg: subrip demuxer not found — stdin SubRip parsing may fail.');
+
+    return { hasLibx264, hasEia608, hasSubrip };
+  } catch (err) {
+    console.warn('⚠ ffmpeg probe failed:', err.message);
+    return { hasLibx264: false, hasEia608: false, hasSubrip: false };
+  }
+}
+
+const _ffprobe = probeFfmpeg();
+
 const relayManager = new RtmpRelayManager({
+  ffmpegCaps: _ffprobe,
   onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
     try {
       const id = writeRtmpStreamStart(db, {

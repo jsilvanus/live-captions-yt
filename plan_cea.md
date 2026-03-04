@@ -34,8 +34,8 @@ video/audio timeline across all relay destinations.
 nginx-rtmp publisher (per API key)
          │ RTMP source
          ▼
-    ffmpeg (one process per API key)
-       ├── stdin pipe ← SRT captions (CEA-708 mode only)
+     ffmpeg (one process per API key)
+       ├── stdin pipe ← SubRip (SRT/subrip) captions (CEA-708 mode only)
        ├── re-encodes H.264 with CEA-608/708 SEI NALs embedded
        └── tee muxer → slot 1 (rtmp://target1/live/key)
                      → slot 2 (rtmp://target2/live/key2)
@@ -47,7 +47,7 @@ nginx-rtmp publisher (per API key)
 ```bash
 ffmpeg \
   -re -i rtmp://<rtmp-host>/stream/<apiKey> \
-  -f srt -i pipe:0 \                           # SRT captions via stdin
+  -f subrip -i pipe:0 \                           # SubRip (SRT) captions via stdin
   -map 0:v -map 0:a -map 1 \
   -c:v libx264 -preset veryfast -tune zerolatency \
   -c:a copy \
@@ -102,7 +102,7 @@ utterance — i.e. when speech actually began.
 
 ### Backend: mapping to video PTS
 
-When writing an SRT cue to ffmpeg stdin, the start time is computed as:
+When writing a SubRip (SRT) cue to ffmpeg stdin, the start time is computed as:
 
 ```
 cueStartMs = speechStart - ffmpegStartedAt
@@ -122,7 +122,7 @@ It can be tuned per-deployment via the `CEA708_OFFSET_MS` environment variable.
 
 The cue end time defaults to `cueStartMs + CEA708_DURATION_MS` (default **3000 ms**).
 
-### SRT cue format written to ffmpeg stdin
+### SubRip (SRT) cue format written to ffmpeg stdin
 
 ```
 1

@@ -65,7 +65,7 @@ function sourceUrl(apiKey) {
  *
  * One ffmpeg **process per API key** forwards the incoming nginx-rtmp stream to all configured
  * relay targets simultaneously using the ffmpeg tee muxer. In CEA-708 mode a single stdin
- * pipe carries SRT-formatted caption cues that ffmpeg embeds as CEA-608/708 SEI NAL units
+ * pipe carries SubRip (SRT/subrip) caption cues that ffmpeg embeds as CEA-608 SEI NAL units
  * inside H.264 (cc_data, via the eia608 subtitle encoder + libx264).
  *
  * Public API:
@@ -101,7 +101,7 @@ export class RtmpRelayManager {
    *   rtmpApplication?: string,
    * }} [opts]
    */
-  constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication } = {}) {
+  constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication, ffmpegCaps } = {}) {
     /**
      * One process per API key.
      * @type {Map<string, import('node:child_process').ChildProcess>}
@@ -121,6 +121,7 @@ export class RtmpRelayManager {
     this._onStreamEnded   = onStreamEnded   ?? null;
     this._controlUrl = rtmpControlUrl ?? process.env.RTMP_CONTROL_URL ?? null;
     this._rtmpApp    = rtmpApplication ?? process.env.RTMP_APPLICATION ?? DEFAULT_RTMP_APP;
+    this._ffmpegCaps = ffmpegCaps ?? null;
   }
 
   // ---------------------------------------------------------------------------
@@ -148,7 +149,15 @@ export class RtmpRelayManager {
 
       this._stopProc(apiKey);
 
-      const hasCea708 = relays.some(r => r.captionMode === 'cea708');
+      const requestedCea708 = relays.some(r => r.captionMode === 'cea708');
+      let hasCea708 = requestedCea708;
+      if (requestedCea708) {
+        const caps = this._ffmpegCaps;
+        if (!caps || !caps.hasEia608 || !caps.hasLibx264 || !caps.hasSubrip) {
+          console.warn(`[rtmp] CEA-708 requested for ${apiKey.slice(0,8)} but ffmpeg lacks required capabilities; falling back to HTTP caption mode.`);
+          hasCea708 = false;
+        }
+      }
 
       // Build the tee muxer output: "[f=flv]url1|[f=flv]url2|..."
       const teeTargets = relays
@@ -167,9 +176,10 @@ export class RtmpRelayManager {
       let args;
       if (hasCea708) {
         // CEA-708 mode: re-encode video with libx264 so eia608 can embed cc_data SEI NAL units.
+        // Use `-f subrip -i pipe:0` so ffmpeg reads timed text correctly from stdin.
         args = [
           '-re', '-i', src,
-          '-f', 'srt', '-i', 'pipe:0',
+          '-f', 'subrip', '-i', 'pipe:0',
           '-map', '0:v', '-map', '0:a', '-map', '1',
           '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency',
           '-c:a', 'copy',
@@ -192,7 +202,7 @@ export class RtmpRelayManager {
         this._onStreamStarted?.(apiKey, r.slot, {
           targetUrl:   r.targetUrl,
           targetName:  r.targetName ?? null,
-          captionMode: r.captionMode ?? 'http',
+          captionMode: hasCea708 ? (r.captionMode ?? 'http') : 'http',
           startedAt,
         });
       }
