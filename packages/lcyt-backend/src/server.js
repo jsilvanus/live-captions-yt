@@ -126,7 +126,7 @@ const relayManager = new RtmpRelayManager({
       console.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
     }
   },
-  onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs }) {
+  onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs, captionsSent = 0 }) {
     try {
       const statKey = `${apiKey}:${slot}`;
       const statId  = _rtmpStatIds.get(statKey);
@@ -136,7 +136,7 @@ const relayManager = new RtmpRelayManager({
           streamStatId: statId,
           endedAt: endedAt.toISOString(),
           durationMs,
-          captionsSent: 0, // future: wire from caption counter
+          captionsSent: captionsSent || 0,
         });
       }
       incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });

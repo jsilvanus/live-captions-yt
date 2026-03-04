@@ -196,7 +196,7 @@ export class RtmpRelayManager {
 
       const startedAt = new Date();
       this._procs.set(apiKey, proc);
-      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, srtSeq: 0 });
+      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, srtSeq: 0, captionsSent: 0 });
 
       for (const r of relays) {
         this._onStreamStarted?.(apiKey, r.slot, {
@@ -226,15 +226,16 @@ export class RtmpRelayManager {
         if (meta) {
           const durationMs = endedAt.getTime() - meta.startedAt.getTime();
           for (const r of meta.slots) {
-            this._onStreamEnded?.(apiKey, r.slot, {
-              targetUrl:   r.targetUrl,
-              targetName:  r.targetName ?? null,
-              captionMode: r.captionMode ?? 'http',
-              startedAt:   meta.startedAt,
-              endedAt,
-              durationMs,
-            });
-          }
+              this._onStreamEnded?.(apiKey, r.slot, {
+                targetUrl:   r.targetUrl,
+                targetName:  r.targetName ?? null,
+                captionMode: r.captionMode ?? 'http',
+                startedAt:   meta.startedAt,
+                endedAt,
+                durationMs,
+                captionsSent: meta.captionsSent ?? 0,
+              });
+            }
         } else {
           console.warn(`[rtmp] Metadata missing on close for key ${apiKey.slice(0, 8)}`);
         }
@@ -356,6 +357,8 @@ export class RtmpRelayManager {
 
     try {
       proc.stdin.write(cue);
+      // Track captions sent for stats
+      try { meta.captionsSent = (meta.captionsSent || 0) + 1; } catch {}
       return true;
     } catch (err) {
       console.warn(`[rtmp] Failed to write caption to stdin for ${apiKey.slice(0, 8)}: ${err.message}`);

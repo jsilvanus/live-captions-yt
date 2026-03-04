@@ -14,6 +14,7 @@ services:
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
       BACKUP_DAYS: ${BACKUP_DAYS:-0}
       BACKUP_DIR: /backups
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-*}
     restart: unless-stopped
     volumes:
       - lcyt-db:/data
