@@ -470,6 +470,7 @@ export function CaptionsModal({ isOpen, onClose }) {
                       type="file"
                       accept="application/json,.json"
                       style={{ display: 'none' }}
+                      aria-label={t('settings.stt.credentialLoad')}
                       onChange={handleCredentialFile}
                     />
                   </div>

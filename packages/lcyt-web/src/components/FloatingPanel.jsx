@@ -29,11 +29,13 @@ export function FloatingPanel({ title, onClose, children }) {
     <div
       className="floating-panel"
       ref={panelRef}
+      role="dialog"
+      aria-label={title}
       style={{ top: posRef.current.y, left: posRef.current.x, right: 'auto' }}
     >
       <div className="floating-panel__header" onPointerDown={onDragStart}>
         <span className="floating-panel__title">{title}</span>
-        <button className="floating-panel__close btn" onClick={onClose} title="Close">✕</button>
+        <button className="floating-panel__close btn" onClick={onClose} onPointerDown={e => e.stopPropagation()} title="Close" aria-label="Close">✕</button>
       </div>
       <div className="floating-panel__body">
         {children}
