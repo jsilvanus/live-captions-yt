@@ -165,7 +165,8 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                   <li><strong>Session records</strong> — origin domain, session start/end times, duration, and counts of captions sent and failed. Caption text is not included.</li>
                   <li><strong>Error logs</strong> — error codes and messages when caption delivery to YouTube fails.</li>
                   <li><strong>Auth event logs</strong> — timestamps and origin domain when authentication fails or a usage limit is exceeded.</li>
-                  <li><strong>Anonymous usage statistics</strong> — aggregate caption and session counts per origin domain and time bucket (hour/day). No caption text, no user identifiers.</li>
+                  <li><strong>RTMP stream records</strong> — if you use the RTMP relay feature, each stream is logged with: start and end time, duration, caption delivery mode (HTTP or CEA-708), and the target RTMP endpoint URL. These records are linked to your API key.</li>
+                  <li><strong>Anonymous usage statistics</strong> — aggregate caption and session counts per origin domain and time bucket (hour/day), and aggregate RTMP stream counts and duration per endpoint type (YouTube / custom) per day. No caption text, no user identifiers.</li>
                 </ul>
                 <p>The <strong>data controller</strong> is whoever operates the backend instance you are connected to. Contact them for data requests. Use the <strong>Contact operator</strong> button at the bottom to query their contact details.</p>
                 {_backupDays > 0 && (
@@ -238,6 +239,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
                   <li>All caption error logs</li>
                   <li>All auth event logs</li>
                   <li>All usage statistics linked to the API key</li>
+                  <li>All RTMP stream records linked to the API key</li>
                 </ul>
 
                 {isFreeTier && statsData?.email && (

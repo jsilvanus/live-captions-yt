@@ -310,15 +310,17 @@ describe('/stream CRUD', () => {
     assert.strictEqual(res.status, 404);
   });
 
-  it('POST /stream creates relay config', async () => {
+  it('POST /stream creates relay config with targetName and captionMode', async () => {
     const res = await fetch(`${baseUrl}/stream`, {
       method: 'POST',
       headers: bearerHeaders(token),
-      body: JSON.stringify({ targetUrl: 'rtmp://target.example.com/live/key' }),
+      body: JSON.stringify({ targetUrl: 'rtmp://target.example.com/live', targetName: 'mykey', captionMode: 'http' }),
     });
     assert.strictEqual(res.status, 201);
     const body = await res.json();
-    assert.strictEqual(body.relay.targetUrl, 'rtmp://target.example.com/live/key');
+    assert.strictEqual(body.relay.targetUrl, 'rtmp://target.example.com/live');
+    assert.strictEqual(body.relay.targetName, 'mykey');
+    assert.strictEqual(body.relay.captionMode, 'http');
   });
 
   it('GET /stream returns relay config after POST', async () => {
@@ -327,9 +329,17 @@ describe('/stream CRUD', () => {
     const body = await res.json();
     assert.ok(body.relay);
     assert.strictEqual(typeof body.running, 'boolean');
+    assert.strictEqual(body.relay.targetName, 'mykey');
   });
 
-  it('PUT /stream updates relay target', async () => {
+  it('GET /stream/history returns stream history array', async () => {
+    const res = await fetch(`${baseUrl}/stream/history`, { headers: bearerHeaders(token) });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.streams));
+  });
+
+  it('PUT /stream updates relay target URL and clears targetName when not provided', async () => {
     const res = await fetch(`${baseUrl}/stream`, {
       method: 'PUT',
       headers: bearerHeaders(token),
@@ -338,6 +348,7 @@ describe('/stream CRUD', () => {
     assert.strictEqual(res.status, 200);
     const body = await res.json();
     assert.strictEqual(body.relay.targetUrl, 'rtmp://new.example.com/live/updated');
+    assert.strictEqual(body.relay.targetName, null);
   });
 
   it('POST /stream returns 400 for invalid targetUrl', async () => {

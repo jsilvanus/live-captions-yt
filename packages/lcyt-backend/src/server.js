@@ -1,6 +1,9 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { initDb, writeSessionStat, incrementDomainHourlySessionEnd } from './db.js';
+import {
+  initDb, writeSessionStat, incrementDomainHourlySessionEnd,
+  writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat,
+} from './db.js';
 import { SessionStore } from './store.js';
 import { RtmpRelayManager } from './rtmp-manager.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -73,7 +76,43 @@ if (process.env.RTMP_APPLICATION) {
 
 const db = initDb();
 const store = new SessionStore({ db });
-const relayManager = new RtmpRelayManager();
+
+// Stat tracking: map from apiKey → rtmp_stream_stats row id
+const _rtmpStatIds = new Map();
+
+const relayManager = new RtmpRelayManager({
+  onStreamStarted(apiKey, { targetUrl, targetName, captionMode, startedAt }) {
+    try {
+      const id = writeRtmpStreamStart(db, {
+        apiKey,
+        targetUrl,
+        targetName,
+        captionMode,
+        startedAt: startedAt.toISOString(),
+      });
+      _rtmpStatIds.set(apiKey, id);
+    } catch (err) {
+      console.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
+    }
+  },
+  onStreamEnded(apiKey, { targetUrl, captionMode, startedAt, endedAt, durationMs }) {
+    try {
+      const statId = _rtmpStatIds.get(apiKey);
+      _rtmpStatIds.delete(apiKey);
+      if (statId) {
+        writeRtmpStreamEnd(db, {
+          streamStatId: statId,
+          endedAt: endedAt.toISOString(),
+          durationMs,
+          captionsSent: 0, // future: wire from caption counter
+        });
+      }
+      incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
+    } catch (err) {
+      console.error(`[rtmp] Failed to write stream end stat: ${err.message}`);
+    }
+  },
+});
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();

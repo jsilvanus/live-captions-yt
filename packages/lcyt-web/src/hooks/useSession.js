@@ -396,18 +396,19 @@ export function useSession({
   // ─── RTMP relay ─────────────────────────────────────────
 
   /**
-   * Configure (create / replace) the relay target URL.
+   * Configure (create / replace) the relay target.
    * Requires relay_allowed on the API key.
-   * @param {string} targetUrl
+   * @param {{ targetUrl: string, targetName?: string|null, captionMode?: string }} opts
    */
-  async function configureRelay(targetUrl) {
+  async function configureRelay({ targetUrl, targetName = null, captionMode = 'http' } = {}) {
+    if (!targetUrl) throw new Error('targetUrl is required');
     const token = senderRef.current?._token;
     if (!token) throw new Error('Not connected');
     const url = backendUrlRef.current;
     const res = await fetch(`${url}/stream`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetUrl }),
+      body: JSON.stringify({ targetUrl, targetName, captionMode }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -417,17 +418,18 @@ export function useSession({
   }
 
   /**
-   * Update an existing relay target URL.
-   * @param {string} targetUrl
+   * Update an existing relay target.
+   * @param {{ targetUrl: string, targetName?: string|null, captionMode?: string }} opts
    */
-  async function updateRelay(targetUrl) {
+  async function updateRelay({ targetUrl, targetName = null, captionMode = 'http' } = {}) {
+    if (!targetUrl) throw new Error('targetUrl is required');
     const token = senderRef.current?._token;
     if (!token) throw new Error('Not connected');
     const url = backendUrlRef.current;
     const res = await fetch(`${url}/stream`, {
       method: 'PUT',
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetUrl }),
+      body: JSON.stringify({ targetUrl, targetName, captionMode }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -470,6 +472,21 @@ export function useSession({
     return res.json();
   }
 
+  /**
+   * Get per-stream RTMP usage history for this API key.
+   * @returns {{ streams: object[] }}
+   */
+  async function getRelayHistory() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/stream/history`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to get relay history (${res.status})`);
+    return res.json();
+  }
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
@@ -478,7 +495,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
-    configureRelay, updateRelay, stopRelay, getRelayStatus,
+    configureRelay, updateRelay, stopRelay, getRelayStatus, getRelayHistory,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

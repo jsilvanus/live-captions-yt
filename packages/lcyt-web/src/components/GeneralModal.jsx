@@ -7,9 +7,10 @@ import {
   getRelayTargetType, setRelayTargetType,
   getRelayYoutubeKey, setRelayYoutubeKey,
   getRelayGenericUrl, setRelayGenericUrl,
+  getRelayGenericName, setRelayGenericName,
   getRelayCaptionMode, setRelayCaptionMode,
   getAllRelayConfig,
-  buildRelayTargetUrl,
+  buildRelayTarget, buildRelayTargetUrl,
 } from '../lib/relayConfig.js';
 
 function applyTheme(value) {
@@ -44,6 +45,7 @@ export function GeneralModal({ isOpen, onClose }) {
   const [relayTargetType, setRelayTargetTypeState] = useState('youtube');
   const [relayYoutubeKey, setRelayYoutubeKeyState] = useState('');
   const [relayGenericUrl, setRelayGenericUrlState] = useState('');
+  const [relayGenericName, setRelayGenericNameState] = useState('');
   const [relayCaptionMode, setRelayCaptionModeState] = useState('http');
   const [relayStatus, setRelayStatus] = useState(null); // { relay, running } | null
   const [relayLoading, setRelayLoading] = useState(false);
@@ -65,6 +67,7 @@ export function GeneralModal({ isOpen, onClose }) {
     setRelayTargetTypeState(rc.targetType);
     setRelayYoutubeKeyState(rc.youtubeKey);
     setRelayGenericUrlState(rc.genericUrl);
+    setRelayGenericNameState(rc.genericName);
     setRelayCaptionModeState(rc.captionMode);
     setRelayError('');
 
@@ -145,6 +148,11 @@ export function GeneralModal({ isOpen, onClose }) {
     setRelayGenericUrl(val);
   }
 
+  function onRelayGenericNameChange(val) {
+    setRelayGenericNameState(val);
+    setRelayGenericName(val);
+  }
+
   function onRelayCaptionModeChange(mode) {
     setRelayCaptionModeState(mode);
     setRelayCaptionMode(mode);
@@ -152,14 +160,14 @@ export function GeneralModal({ isOpen, onClose }) {
 
   async function handleStartRelay() {
     setRelayError('');
-    const targetUrl = buildRelayTargetUrl();
+    const { targetUrl, targetName } = buildRelayTarget();
     if (!targetUrl) {
       setRelayError(t('settings.relay.errorNoTarget'));
       return;
     }
     setRelayLoading(true);
     try {
-      await session.configureRelay(targetUrl);
+      await session.configureRelay({ targetUrl, targetName, captionMode: relayCaptionMode });
       const status = await session.getRelayStatus();
       setRelayStatus(status);
       showToast(t('settings.relay.configured'), 'success');
@@ -297,17 +305,35 @@ export function GeneralModal({ isOpen, onClose }) {
                 )}
 
                 {relayTargetType === 'generic' && (
-                  <div className="settings-field">
-                    <label className="settings-field__label">{t('settings.relay.rtmpUrl')}</label>
-                    <input
-                      className="settings-field__input"
-                      type="text"
-                      placeholder="rtmp://your-server.example.com/live/key"
-                      autoComplete="off"
-                      value={relayGenericUrl}
-                      onChange={e => onRelayGenericUrlChange(e.target.value)}
-                    />
-                  </div>
+                  <>
+                    <div className="settings-field">
+                      <label className="settings-field__label">{t('settings.relay.rtmpUrl')}</label>
+                      <input
+                        className="settings-field__input"
+                        type="text"
+                        placeholder="rtmp://your-server.example.com/live"
+                        autoComplete="off"
+                        value={relayGenericUrl}
+                        onChange={e => onRelayGenericUrlChange(e.target.value)}
+                      />
+                    </div>
+                    <div className="settings-field">
+                      <label className="settings-field__label">{t('settings.relay.rtmpStreamName')}</label>
+                      <input
+                        className="settings-field__input"
+                        type="text"
+                        placeholder={t('settings.relay.rtmpStreamNamePlaceholder')}
+                        autoComplete="off"
+                        value={relayGenericName}
+                        onChange={e => onRelayGenericNameChange(e.target.value)}
+                      />
+                      {relayGenericUrl.trim() && (
+                        <span className="settings-field__hint">
+                          → {relayGenericUrl.trim()}{relayGenericName.trim() ? `/${relayGenericName.trim()}` : ''}
+                        </span>
+                      )}
+                    </div>
+                  </>
                 )}
 
                 {/* Captions in relay */}
@@ -338,6 +364,8 @@ export function GeneralModal({ isOpen, onClose }) {
                     <span style={{ fontSize: '0.85em' }}>
                       {relayStatus.running ? '🔴 ' + t('settings.relay.live') : '⚫ ' + t('settings.relay.inactive')}
                       {' — '}{relayStatus.relay?.targetUrl}
+                      {relayStatus.relay?.targetName ? `/${relayStatus.relay.targetName}` : ''}
+                      {relayStatus.relay?.captionMode === 'cea708' ? ' · CEA-708' : ' · HTTP'}
                     </span>
                   </div>
                 )}

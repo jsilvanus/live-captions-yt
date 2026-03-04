@@ -4,7 +4,8 @@
 const KEY_MODE         = 'lcyt-relay-mode';          // 'caption' | 'rtmp'
 const KEY_TARGET_TYPE  = 'lcyt-relay-target-type';   // 'youtube' | 'generic'
 const KEY_YT_KEY       = 'lcyt-relay-youtube-key';   // YouTube stream key for RTMP
-const KEY_GENERIC_URL  = 'lcyt-relay-generic-url';   // full rtmp:// URL
+const KEY_GENERIC_URL  = 'lcyt-relay-generic-url';   // base rtmp:// URL (without stream name/key)
+const KEY_GENERIC_NAME = 'lcyt-relay-generic-name';  // RTMP stream name / key for generic target
 const KEY_CAPTION_MODE = 'lcyt-relay-caption-mode';  // 'http' | 'cea708' (placeholder)
 
 /** @returns {'caption'|'rtmp'} */
@@ -37,7 +38,7 @@ export function setRelayYoutubeKey(key) {
   try { localStorage.setItem(KEY_YT_KEY, key); } catch {}
 }
 
-/** @returns {string} */
+/** @returns {string} Base RTMP URL (application URL, without stream name) */
 export function getRelayGenericUrl() {
   try { return localStorage.getItem(KEY_GENERIC_URL) || ''; } catch { return ''; }
 }
@@ -45,6 +46,16 @@ export function getRelayGenericUrl() {
 /** @param {string} url */
 export function setRelayGenericUrl(url) {
   try { localStorage.setItem(KEY_GENERIC_URL, url); } catch {}
+}
+
+/** @returns {string} RTMP stream name / key for generic target */
+export function getRelayGenericName() {
+  try { return localStorage.getItem(KEY_GENERIC_NAME) || ''; } catch { return ''; }
+}
+
+/** @param {string} name */
+export function setRelayGenericName(name) {
+  try { localStorage.setItem(KEY_GENERIC_NAME, name); } catch {}
 }
 
 /** @returns {'http'|'cea708'} */
@@ -59,7 +70,7 @@ export function setRelayCaptionMode(mode) {
 
 /**
  * Read all relay settings in one call.
- * @returns {{ mode, targetType, youtubeKey, genericUrl, captionMode }}
+ * @returns {{ mode, targetType, youtubeKey, genericUrl, genericName, captionMode }}
  */
 export function getAllRelayConfig() {
   return {
@@ -67,21 +78,43 @@ export function getAllRelayConfig() {
     targetType:  getRelayTargetType(),
     youtubeKey:  getRelayYoutubeKey(),
     genericUrl:  getRelayGenericUrl(),
+    genericName: getRelayGenericName(),
     captionMode: getRelayCaptionMode(),
   };
 }
 
 /**
- * Build the RTMP target URL from current settings.
- * YouTube RTMP: rtmp://a.rtmp.youtube.com/live2/{streamKey}
- * @returns {string|null}
+ * Build the RTMP base URL and stream name from current settings.
+ * YouTube: base = rtmp://a.rtmp.youtube.com/live2, name = stream key
+ * Generic: base = user-entered URL, name = user-entered name (optional)
+ *
+ * @returns {{ targetUrl: string|null, targetName: string|null }}
  */
-export function buildRelayTargetUrl() {
+export function buildRelayTarget() {
   const type = getRelayTargetType();
   if (type === 'youtube') {
     const key = getRelayYoutubeKey().trim();
-    return key ? `rtmp://a.rtmp.youtube.com/live2/${key}` : null;
+    if (!key) return { targetUrl: null, targetName: null };
+    return {
+      targetUrl:  'rtmp://a.rtmp.youtube.com/live2',
+      targetName: key,
+    };
   }
-  const url = getRelayGenericUrl().trim();
-  return url || null;
+  const url  = getRelayGenericUrl().trim();
+  const name = getRelayGenericName().trim();
+  if (!url) return { targetUrl: null, targetName: null };
+  return {
+    targetUrl:  url,
+    targetName: name || null,
+  };
+}
+
+/**
+ * Build a single display-friendly full RTMP URL string.
+ * @returns {string|null}
+ */
+export function buildRelayTargetUrl() {
+  const { targetUrl, targetName } = buildRelayTarget();
+  if (!targetUrl) return null;
+  return targetName ? `${targetUrl}/${targetName}` : targetUrl;
 }

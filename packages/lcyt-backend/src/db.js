@@ -52,13 +52,22 @@ export function initDb(dbPath) {
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS rtmp_relays (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      api_key     TEXT    NOT NULL UNIQUE,
-      target_url  TEXT    NOT NULL,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key      TEXT    NOT NULL UNIQUE,
+      target_url   TEXT    NOT NULL,
+      target_name  TEXT,
+      caption_mode TEXT    NOT NULL DEFAULT 'http',
+      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // Additive migrations for rtmp_relays
+  const relaysCols = new Set(
+    db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name)
+  );
+  if (!relaysCols.has('target_name'))  db.exec("ALTER TABLE rtmp_relays ADD COLUMN target_name TEXT");
+  if (!relaysCols.has('caption_mode')) db.exec("ALTER TABLE rtmp_relays ADD COLUMN caption_mode TEXT NOT NULL DEFAULT 'http'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -151,6 +160,34 @@ export function initDb(dbPath) {
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       size_bytes  INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Per-stream personified RTMP stats (tied to an API key and target endpoint)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rtmp_stream_stats (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key       TEXT    NOT NULL,
+      target_url    TEXT    NOT NULL,
+      target_name   TEXT,
+      caption_mode  TEXT    NOT NULL DEFAULT 'http',
+      started_at    TEXT    NOT NULL,
+      ended_at      TEXT,
+      duration_ms   INTEGER NOT NULL DEFAULT 0,
+      captions_sent INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Anonymous daily RTMP usage statistics (no API key, no target URL)
+  // endpoint_type: 'youtube' | 'custom'
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rtmp_anon_daily_stats (
+      date             TEXT    NOT NULL,
+      endpoint_type    TEXT    NOT NULL,
+      caption_mode     TEXT    NOT NULL DEFAULT 'http',
+      streams_count    INTEGER NOT NULL DEFAULT 0,
+      duration_seconds INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (date, endpoint_type, caption_mode)
     )
   `);
 
@@ -397,6 +434,8 @@ export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
     db.prepare(`DELETE FROM session_stats WHERE api_key IN (${placeholders})`).run(...keys);
     db.prepare(`DELETE FROM caption_usage WHERE api_key IN (${placeholders})`).run(...keys);
     db.prepare(`DELETE FROM auth_events WHERE api_key IN (${placeholders})`).run(...keys);
+    db.prepare(`DELETE FROM rtmp_stream_stats WHERE api_key IN (${placeholders})`).run(...keys);
+    db.prepare(`DELETE FROM rtmp_relays WHERE api_key IN (${placeholders})`).run(...keys);
     db.prepare(`DELETE FROM api_keys WHERE key IN (${placeholders})`).run(...keys);
   })();
 
@@ -446,6 +485,8 @@ export function anonymizeKey(db, key) {
     db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
     db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
     db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
   })();
   return true;
 }
@@ -849,15 +890,36 @@ export function isRelayAllowed(db, apiKey) {
 }
 
 /**
- * Get the relay config (target URL) for an API key.
+ * Get the relay config for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
- * @returns {{ id: number, apiKey: string, targetUrl: string, createdAt: string, updatedAt: string }|null}
+ * @returns {{ id: number, apiKey: string, targetUrl: string, targetName: string|null, captionMode: string, createdAt: string, updatedAt: string }|null}
  */
 export function getRelay(db, apiKey) {
   const row = db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').get(apiKey);
   if (!row) return null;
-  return { id: row.id, apiKey: row.api_key, targetUrl: row.target_url, createdAt: row.created_at, updatedAt: row.updated_at };
+  return {
+    id: row.id,
+    apiKey: row.api_key,
+    targetUrl: row.target_url,
+    targetName: row.target_name || null,
+    captionMode: row.caption_mode || 'http',
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/**
+ * Build the full ffmpeg-ready target URL from relay config.
+ * If targetName is set, it is appended as the RTMP stream name.
+ * @param {{ targetUrl: string, targetName: string|null }} relay
+ * @returns {string}
+ */
+export function buildRelayFfmpegUrl(relay) {
+  if (relay.targetName) {
+    return `${relay.targetUrl.replace(/\/$/, '')}/${relay.targetName}`;
+  }
+  return relay.targetUrl;
 }
 
 /**
@@ -865,14 +927,19 @@ export function getRelay(db, apiKey) {
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {string} targetUrl
- * @returns {{ id: number, apiKey: string, targetUrl: string, createdAt: string, updatedAt: string }}
+ * @param {{ targetName?: string|null, captionMode?: string }} [opts]
+ * @returns {{ id: number, apiKey: string, targetUrl: string, targetName: string|null, captionMode: string, createdAt: string, updatedAt: string }}
  */
-export function upsertRelay(db, apiKey, targetUrl) {
+export function upsertRelay(db, apiKey, targetUrl, { targetName = null, captionMode = 'http' } = {}) {
   db.prepare(
-    `INSERT INTO rtmp_relays (api_key, target_url)
-     VALUES (?, ?)
-     ON CONFLICT(api_key) DO UPDATE SET target_url = excluded.target_url, updated_at = datetime('now')`
-  ).run(apiKey, targetUrl);
+    `INSERT INTO rtmp_relays (api_key, target_url, target_name, caption_mode)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(api_key) DO UPDATE SET
+       target_url   = excluded.target_url,
+       target_name  = excluded.target_name,
+       caption_mode = excluded.caption_mode,
+       updated_at   = datetime('now')`
+  ).run(apiKey, targetUrl, targetName || null, captionMode || 'http');
   return getRelay(db, apiKey);
 }
 
@@ -885,4 +952,72 @@ export function upsertRelay(db, apiKey, targetUrl) {
 export function deleteRelay(db, apiKey) {
   const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(apiKey);
   return result.changes > 0;
+}
+
+// ─── RTMP stream stats (per-stream, personified) ─────────────────────────────
+
+/**
+ * Categorise a target URL into a broad endpoint type for anonymous stats.
+ * @param {string} targetUrl
+ * @returns {'youtube'|'custom'}
+ */
+function categoriseEndpoint(targetUrl) {
+  return /(?:^|[./])youtube\.com(?:[/:?]|$)|(?:^|[./])youtu\.be(?:[/:?]|$)/i.test(targetUrl) ? 'youtube' : 'custom';
+}
+
+/**
+ * Insert a new RTMP stream stat record (call when relay starts).
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ apiKey: string, targetUrl: string, targetName?: string|null, captionMode?: string, startedAt?: string }} data
+ * @returns {number} The row id
+ */
+export function writeRtmpStreamStart(db, { apiKey, targetUrl, targetName = null, captionMode = 'http', startedAt }) {
+  const result = db.prepare(
+    'INSERT INTO rtmp_stream_stats (api_key, target_url, target_name, caption_mode, started_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(apiKey, targetUrl, targetName || null, captionMode || 'http', startedAt || new Date().toISOString());
+  return result.lastInsertRowid;
+}
+
+/**
+ * Complete an RTMP stream stat record when the relay ends.
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ streamStatId: number, endedAt?: string, durationMs: number, captionsSent?: number }} data
+ */
+export function writeRtmpStreamEnd(db, { streamStatId, endedAt, durationMs, captionsSent = 0 }) {
+  db.prepare(
+    'UPDATE rtmp_stream_stats SET ended_at = ?, duration_ms = ?, captions_sent = ? WHERE id = ?'
+  ).run(endedAt || new Date().toISOString(), durationMs, captionsSent, streamStatId);
+}
+
+/**
+ * Get all RTMP stream stats for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {object[]}
+ */
+export function getRtmpStreamStats(db, apiKey) {
+  return db.prepare(
+    `SELECT id, target_url AS targetUrl, target_name AS targetName, caption_mode AS captionMode,
+            started_at AS startedAt, ended_at AS endedAt, duration_ms AS durationMs,
+            captions_sent AS captionsSent
+     FROM rtmp_stream_stats WHERE api_key = ? ORDER BY id DESC LIMIT 100`
+  ).all(apiKey);
+}
+
+/**
+ * Increment anonymous RTMP daily stats when a relay stream ends.
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ targetUrl: string, captionMode?: string, durationMs: number }} data
+ */
+export function incrementRtmpAnonDailyStat(db, { targetUrl, captionMode = 'http', durationMs }) {
+  const date = new Date().toISOString().slice(0, 10);
+  const endpointType = categoriseEndpoint(targetUrl);
+  const durationSeconds = Math.round(durationMs / 1000);
+  db.prepare(`
+    INSERT INTO rtmp_anon_daily_stats (date, endpoint_type, caption_mode, streams_count, duration_seconds)
+    VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT (date, endpoint_type, caption_mode) DO UPDATE SET
+      streams_count    = streams_count + 1,
+      duration_seconds = duration_seconds + excluded.duration_seconds
+  `).run(date, endpointType, captionMode || 'http', durationSeconds);
 }

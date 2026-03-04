@@ -55,7 +55,10 @@ export function createRtmpRouter(db, relayManager) {
       const relay = getRelay(db, apiKey);
       if (relay) {
         try {
-          await relayManager.start(apiKey, relay.targetUrl);
+          await relayManager.start(apiKey, relay.targetUrl, {
+            targetName:  relay.targetName,
+            captionMode: relay.captionMode,
+          });
         } catch (err) {
           console.error(`[rtmp] Failed to start relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
         }

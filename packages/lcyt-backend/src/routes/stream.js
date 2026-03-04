@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isRelayAllowed, getRelay, upsertRelay, deleteRelay } from '../db.js';
+import { isRelayAllowed, getRelay, upsertRelay, deleteRelay, getRtmpStreamStats } from '../db.js';
 
 /**
  * Factory for the /stream router.
@@ -9,6 +9,7 @@ import { isRelayAllowed, getRelay, upsertRelay, deleteRelay } from '../db.js';
  *
  * POST   /stream            — configure relay target URL (create or replace)
  * GET    /stream            — get current relay config + running status
+ * GET    /stream/history    — get per-stream RTMP usage stats for this key
  * PUT    /stream            — update relay target URL
  * DELETE /stream            — remove relay config and stop any running relay
  *
@@ -29,20 +30,29 @@ export function createStreamRouter(db, auth, relayManager) {
     next();
   }
 
-  function validateTargetUrl(req, res) {
-    const { targetUrl } = req.body || {};
+  function validateBody(req, res) {
+    const { targetUrl, targetName, captionMode } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
     }
-    return targetUrl.trim();
+    const validModes = ['http', 'cea708'];
+    const resolvedMode = validModes.includes(captionMode) ? captionMode : 'http';
+    return {
+      targetUrl: targetUrl.trim(),
+      targetName: (typeof targetName === 'string' && targetName.trim()) ? targetName.trim() : null,
+      captionMode: resolvedMode,
+    };
   }
 
   // POST /stream — create or replace relay config
   router.post('/', auth, requireRelayAllowed, (req, res) => {
-    const targetUrl = validateTargetUrl(req, res);
-    if (!targetUrl) return;
-    const relay = upsertRelay(db, req.session.apiKey, targetUrl);
+    const fields = validateBody(req, res);
+    if (!fields) return;
+    const relay = upsertRelay(db, req.session.apiKey, fields.targetUrl, {
+      targetName:  fields.targetName,
+      captionMode: fields.captionMode,
+    });
     return res.status(201).json({ ok: true, relay });
   });
 
@@ -56,15 +66,24 @@ export function createStreamRouter(db, auth, relayManager) {
     return res.status(200).json({ relay, running });
   });
 
-  // PUT /stream — update relay target URL
+  // GET /stream/history — per-stream usage history for this key
+  router.get('/history', auth, requireRelayAllowed, (req, res) => {
+    const stats = getRtmpStreamStats(db, req.session.apiKey);
+    return res.status(200).json({ streams: stats });
+  });
+
+  // PUT /stream — update relay target URL / targetName / captionMode
   router.put('/', auth, requireRelayAllowed, (req, res) => {
     const existing = getRelay(db, req.session.apiKey);
     if (!existing) {
       return res.status(404).json({ error: 'No relay configured — use POST /stream to create one' });
     }
-    const targetUrl = validateTargetUrl(req, res);
-    if (!targetUrl) return;
-    const relay = upsertRelay(db, req.session.apiKey, targetUrl);
+    const fields = validateBody(req, res);
+    if (!fields) return;
+    const relay = upsertRelay(db, req.session.apiKey, fields.targetUrl, {
+      targetName:  fields.targetName,
+      captionMode: fields.captionMode,
+    });
     return res.status(200).json({ ok: true, relay });
   });
 
