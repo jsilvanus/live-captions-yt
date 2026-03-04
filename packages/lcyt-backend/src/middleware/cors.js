@@ -42,7 +42,7 @@ export function createCorsMiddleware(store) {
 
     if (isPermissive && origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH, OPTIONS');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       if (method === 'OPTIONS') {
@@ -57,7 +57,7 @@ export function createCorsMiddleware(store) {
       const matches = store.getByDomain(origin);
       if (matches.length > 0) {
         res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH, OPTIONS');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
