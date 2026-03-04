@@ -59,6 +59,7 @@ Content-Type: application/json
   "daily_limit": 1000,
   "lifetime_limit": 50000,
   "lifetime_used": 0,
+  "backend_file_enabled": false,
   "revoked_at": null
 }
 ```
@@ -167,6 +168,7 @@ Content-Type: application/json
 | `expires` | `string` | No | New expiry date (`YYYY-MM-DD`) |
 | `daily_limit` | `number \| null` | No | New daily limit. Pass `null` to remove the limit. |
 | `lifetime_limit` | `number \| null` | No | New lifetime limit. Pass `null` to remove the limit. |
+| `backend_file_enabled` | `boolean` | No | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`/file`](./files.md). |
 
 **Response — `200 OK`** — Updated key object (same shape as `GET /keys/:key`)
 
