@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FloatingPanel } from './FloatingPanel';
 import { StatsModal } from './StatsModal';
+import { FilesModal } from './FilesModal';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
@@ -14,6 +15,7 @@ export function StatusPanel({ onClose }) {
   const [statsOpen, setStatsOpen] = useState(false);
   const [statsData, setStatsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
+  const [filesOpen, setFilesOpen] = useState(false);
 
   useEffect(() => {
     if (session.connected) setLastConnectedTime(Date.now());
@@ -63,7 +65,7 @@ export function StatusPanel({ onClose }) {
             {lastConnectedTime ? new Date(lastConnectedTime).toLocaleTimeString() : '—'}
           </span>
         </div>
-        <div style={{ marginTop: 8 }}>
+        <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           <button
             className="btn btn--secondary btn--sm"
             onClick={handleGetStats}
@@ -71,9 +73,17 @@ export function StatusPanel({ onClose }) {
           >
             {statsLoading ? '…' : t('settings.status.statsButton')}
           </button>
+          <button
+            className="btn btn--secondary btn--sm"
+            onClick={() => setFilesOpen(true)}
+            disabled={!session.connected}
+          >
+            {t('settings.status.filesButton')}
+          </button>
         </div>
       </FloatingPanel>
       <StatsModal isOpen={statsOpen} onClose={() => setStatsOpen(false)} stats={statsData} />
+      <FilesModal isOpen={filesOpen} onClose={() => setFilesOpen(false)} />
     </>
   );
 }

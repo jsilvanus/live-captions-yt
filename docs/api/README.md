@@ -18,6 +18,7 @@ title: "lcyt-backend API Reference"
 - [Endpoints](#endpoints)
   - [Sessions — `/live`, `/sync`](#sessions)
   - [Captions — `/captions`, `/events`](#captions)
+  - [Files — `/file`](#files)
   - [API Keys — `/keys`](#keys)
   - [Statistics — `/stats`, `/usage`](#stats)
   - [Health — `/health`, `/contact`](#health)
@@ -82,6 +83,7 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `USAGE_PUBLIC` | unset | If set to any value, `GET /usage` is accessible without authentication |
 | `STATIC_DIR` | none | Directory to serve as static files |
 | `FREE_APIKEY_ACTIVE` | unset | If set to `1`, enables the free-tier key self-service endpoint (`POST /keys?freetier`) |
+| `FILES_DIR` | `/data/files` | Base directory for backend caption file saving. Each API key gets its own subdirectory. Requires `backend_file_enabled` on the key. |
 | `CONTACT_NAME` | none | Name returned by `GET /contact` |
 | `CONTACT_EMAIL` | none | Email returned by `GET /contact` |
 | `CONTACT_PHONE` | none | Phone number returned by `GET /contact` |
@@ -126,12 +128,13 @@ The SQLite database contains the following tables:
 
 | Table | Purpose |
 |---|---|
-| `api_keys` | Registered API keys with owner, limits, expiry, and persisted sequence counter |
+| `api_keys` | Registered API keys with owner, limits, expiry, persisted sequence counter, and `backend_file_enabled` flag |
 | `caption_usage` | Daily per-key caption counts |
 | `session_stats` | Completed session telemetry |
 | `caption_errors` | Caption delivery failure log |
 | `auth_events` | Authentication and usage events |
 | `domain_hourly_stats` | Per-domain aggregated caption statistics |
 | `sessions` | Persistent session metadata for survival across server restarts |
+| `caption_files` | Metadata for caption/translation files saved on the backend (via `backend_file_enabled`) |
 
 Additive migrations run automatically on startup.

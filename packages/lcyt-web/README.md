@@ -83,10 +83,15 @@ const session = useSession({
 | `startedAt` | `number \| null` | Session start time (epoch ms) |
 | `connect(cfg)` | `async fn` | Start session: `{ backendUrl, apiKey, streamKey }` |
 | `disconnect()` | `async fn` | End session gracefully |
-| `send(text)` | `async fn` | Send a single caption → `{ ok, requestId }` |
+| `send(text, timestamp?, opts?)` | `async fn` | Send a single caption → `{ ok, requestId }`. `opts` may include `{ translations, captionLang, showOriginal }`. |
 | `sendBatch(texts[])` | `async fn` | Send multiple captions → `{ ok, requestId }` |
+| `construct(text, timestamp?, opts?)` | `async fn` | Add to local batch queue (or send immediately if batch interval is 0). |
 | `sync()` | `async fn` | NTP clock sync → `{ syncOffset, roundTripTime, ... }` |
 | `heartbeat()` | `async fn` | Check session liveness → `{ sequence, syncOffset, roundTripTime }` |
+| `getStats()` | `async fn` | Fetch per-key usage stats from the backend → stats object |
+| `listFiles()` | `async fn` | List backend caption files for this API key → `{ files: [...] }` |
+| `getFileDownloadUrl(id)` | `fn` | Return a direct download URL for a backend file (includes JWT token) |
+| `deleteFile(id)` | `async fn` | Delete a backend caption file → `{ ok: true }` |
 | `getPersistedConfig()` | `fn` | Read saved config from localStorage |
 | `getAutoConnect()` | `fn` | Read auto-connect flag from localStorage |
 | `setAutoConnect(bool)` | `fn` | Persist auto-connect flag |
@@ -320,6 +325,10 @@ ref.current.focus()
 ```
 Reads from `SessionContext`, `FileContext`, `SentLogContext`, `ToastContext`.
 
+**Language selector:** A small language picker button to the left of the send button shows the current input bar language (persisted in `lcyt:input-bar-lang`).
+
+**`[lang-code]` shortcut:** If the user types `[fi-FI]` (or any valid BCP-47 code in brackets) and presses Enter, the input bar language is changed to that code without sending a caption. Example: `[de-DE]` switches to German.
+
 ### `<SentPanel>`
 Reads from `SentLogContext`. No props.
 
@@ -329,8 +338,23 @@ visible:  boolean
 ```
 Self-contained; dispatches `lcyt:audio-start` / `lcyt:audio-stop` custom events for future audio pipeline modules.
 
+### `<FilesModal>`
+```
+isOpen:   boolean
+onClose:  () => void
+```
+Reads from `SessionContext` and `ToastContext`. Lists backend caption files with download and delete actions. The backend must have `backend_file_enabled = true` on the API key for files to appear.
+
 ### `<ToastContainer>`
 Reads from `ToastContext`. No props. Renders the floating toast stack.
+
+### `<LanguagePicker>`
+```
+value:        string          // Current BCP-47 language code
+onChange:     (code) => void  // Callback when user selects a language
+placeholder?: string
+```
+Reusable autocomplete language selector. Used by `CaptionsModal`, `TranslationModal`, and `InputBar`.
 
 ---
 
@@ -345,4 +369,6 @@ Reads from `ToastContext`. No props. Renders the floating toast stack.
 | `lcyt-batch-interval` | `InputBar`, `SettingsModal` | Seconds as string, `"0"` = off |
 | `lcyt-audio-device` | `AudioPanel` | deviceId string |
 | `lcyt-stt-lang` | `AudioPanel` | BCP-47 language code e.g. `"en-US"` |
+| `lcyt:translations` | `TranslationModal` | JSON array of translation entries: `[{ id, enabled, lang, target, format? }]` |
+| `lcyt:input-bar-lang` | `InputBar` | BCP-47 language code for the input bar language selector |
 | `lcyt-stt-config` | `AudioPanel` | JSON: `{ model, punctuation, profanity, autosend, confidence, maxLen }` |

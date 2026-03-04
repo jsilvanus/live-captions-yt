@@ -3,8 +3,8 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
-import { getTranslationEnabled, getTranslationTargetLang, getTranslationShowOriginal } from '../lib/translationConfig';
-import { isSameLanguage, translateText } from '../lib/translate';
+import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
+import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -82,6 +82,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const recorderRef  = useRef(null);   // current MediaRecorder
   const oauthRef     = useRef(null);   // { token, expires }
 
+  // Per-language local file handles for "file" target: Map<lang, { writable, seqIdx, format }>
+  const localFileHandlesRef = useRef(new Map());
+  // Caption sequence index per lang for VTT cue numbering
+  const localFileSeqRef = useRef({});
+
   // Mic soft lock — hold-to-steal state
   const [isHolding, setIsHolding] = useState(false);
   const holdTimerRef = useRef(null);
@@ -121,32 +126,58 @@ export const AudioPanel = forwardRef(function AudioPanel(
     const cleaned = String(text || '').trim();
     if (!cleaned) return;
 
-    if (getTranslationEnabled()) {
-      // Run translation asynchronously but use the utterance start timestamp
-      // for sending — NOT the time when the translation response arrives.
+    const enabledTranslations = getEnabledTranslations();
+    if (enabledTranslations.length > 0) {
       const sourceLang = getSttLang();
-      const targetLang = getTranslationTargetLang();
-      if (!isSameLanguage(sourceLang, targetLang)) {
-        translateText(cleaned, sourceLang, targetLang)
-          .then(translated => {
-            const trimmed = translated ? translated.trim() : '';
-            const result = trimmed || cleaned;
-            // If "show original" is enabled, prepend the original transcript.
-            const caption = (getTranslationShowOriginal() && trimmed && trimmed !== cleaned)
-              ? `${cleaned}<br>${trimmed}`
-              : result;
-            sendTranscript(caption, utteranceTimestamp);
-          })
-          .catch(err => {
-            console.warn('Translation failed, using original text', err);
-            sendTranscript(cleaned, utteranceTimestamp);
-          });
-        return;
-      }
+      translateAll(cleaned, sourceLang, enabledTranslations)
+        .then(({ translationsMap, captionLang, localFileEntries }) => {
+          // Write to local files for "file" target translations
+          writeLocalFileEntries(localFileEntries, utteranceTimestamp);
+
+          // Compose caption text: backend will do it now, but we still need text for local display
+          // Send original + translations to backend; backend composes the <br> caption
+          sendTranscript(cleaned, utteranceTimestamp, translationsMap, captionLang);
+        })
+        .catch(err => {
+          console.warn('Translation failed, using original text', err);
+          sendTranscript(cleaned, utteranceTimestamp);
+        });
+      return;
     }
 
     // Do not render finalized words in the audio panel UI; just send them.
     sendTranscript(cleaned, utteranceTimestamp);
+  }
+
+  async function writeLocalFileEntries(entries, timestamp) {
+    const ts = timestamp || new Date().toISOString().replace('Z', '');
+    for (const entry of entries) {
+      const lang = entry.lang;
+      let fileInfo = localFileHandlesRef.current.get(lang);
+      if (!fileInfo) {
+        // Open a new file for this language
+        const suggestedName = `captions-${lang}-${new Date().toISOString().slice(0, 10)}.${entry.format === 'vtt' ? 'vtt' : 'txt'}`;
+        const opened = await openLocalCaptionFile(suggestedName);
+        if (!opened) continue;
+        if (entry.format === 'vtt') {
+          await opened.writable.write('WEBVTT\n\n');
+        }
+        localFileSeqRef.current[lang] = 0;
+        fileInfo = { writable: opened.writable, format: entry.format };
+        localFileHandlesRef.current.set(lang, fileInfo);
+      }
+      const seqIdx = (localFileSeqRef.current[lang] || 0) + 1;
+      localFileSeqRef.current[lang] = seqIdx;
+      try {
+        if (fileInfo.format === 'vtt') {
+          await fileInfo.writable.write(formatVttCue(seqIdx, ts, null, entry.text));
+        } else {
+          await fileInfo.writable.write(formatYouTubeLine(entry.text));
+        }
+      } catch (e) {
+        console.warn('Local file write failed', e);
+      }
+    }
   }
 
   function getTimestampWithOffset() {
@@ -208,7 +239,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     }
   }
 
-  async function sendTranscript(text, explicitTimestamp) {
+  async function sendTranscript(text, explicitTimestamp, translationsMap, captionLang) {
     if (!text) return;
     if (session?.connected) {
       // Use explicit timestamp when provided (e.g. utterance start), otherwise compute now
@@ -217,10 +248,15 @@ export const AudioPanel = forwardRef(function AudioPanel(
         // Honor batching: if batch interval > 0, queue via construct
         const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
         const intervalMs = Math.min(20, Math.max(0, v)) * 1000;
+        const opts = {
+          translations: translationsMap,
+          captionLang,
+          showOriginal: getTranslationShowOriginal(),
+        };
         if (intervalMs > 0) {
-          await session.construct(text, timestamp);
+          await session.construct(text, timestamp, opts);
         } else {
-          await session.send(text, timestamp);
+          await session.send(text, timestamp, opts);
         }
         setCloudError('');
       } catch (err) {
@@ -241,6 +277,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
       stopWebkit();
       stopCloud();
       if (holdTimerRef.current) clearTimeout(holdTimerRef.current);
+      // Close any open local caption files
+      for (const { writable } of localFileHandlesRef.current.values()) {
+        try { writable.close(); } catch {}
+      }
+      localFileHandlesRef.current.clear();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

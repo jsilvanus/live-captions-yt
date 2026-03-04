@@ -25,6 +25,9 @@ An Express.js HTTP relay server that bridges web clients to YouTube Live's capti
   - [DELETE /stats](#delete-stats)
   - [GET /usage](#get-usage)
   - [POST /mic](#post-mic)
+  - [GET /file](#get-file)
+  - [GET /file/:id](#get-fileid)
+  - [DELETE /file/:id](#delete-fileid)
   - [GET /health](#get-health)
   - [Admin: GET /keys](#admin-get-keys)
   - [Admin: POST /keys](#admin-post-keys)
@@ -66,12 +69,16 @@ packages/lcyt-backend/
 │   │   └── cors.js             # Dynamic CORS policy enforcement
 │   └── routes/
 │       ├── live.js             # Session registration, status, teardown
-│       ├── captions.js         # Caption queuing → 202 + async YouTube delivery
+│       ├── captions.js         # Caption queuing → 202 + async YouTube delivery + backend file saving
 │       ├── events.js           # GET /events SSE stream for delivery results
 │       ├── sync.js             # Clock synchronization
-│       └── keys.js             # Admin CRUD for API keys
+│       ├── keys.js             # Admin CRUD for API keys
+│       ├── stats.js            # Per-key usage stats + GDPR erasure
+│       ├── mic.js              # Soft mic lock for collaborative sessions
+│       ├── usage.js            # Per-domain caption statistics
+│       └── files.js            # GET/DELETE /file — per-key caption file management
 ├── test/                       # Node built-in test runner suite
-├── Dockerfile                  # Multi-stage build (node:20-slim)
+├── Dockerfile                  # Multi-stage build (node:20-slim); VOLUME /data
 └── package.json
 ```
 
@@ -122,6 +129,7 @@ All configuration is done via environment variables (12-factor style). No config
 | `REVOKED_KEY_CLEANUP_INTERVAL` | No | `86400000` (24 hours) | How often to sweep and delete expired revoked keys (ms) |
 | `ALLOWED_DOMAINS` | No | `lcyt.fi,www.lcyt.fi` | Comma-separated list of domains shown in `/usage` stats. Use `*` for all. |
 | `USAGE_PUBLIC` | No | *(unset)* | If set, the `/usage` endpoint requires no authentication |
+| `FILES_DIR` | No | `/data/files` | Base directory for backend caption file saving. Each API key gets its own subdirectory. Requires `backend_file_enabled` on the key. |
 | `NODE_ENV` | No | *(unset)* | Set to `production` to suppress development warnings |
 
 **Example `.env`:**
@@ -212,6 +220,24 @@ docker run -d \
   -e ADMIN_KEY=your-admin-secret \
   -e DB_PATH=/data/backend.db \
   -v /host/path/to/data:/data \
+  lcyt-backend:latest
+```
+
+The image declares `VOLUME ["/data"]` so Docker will create a managed volume for `/data` automatically if you don't bind-mount it. This directory holds:
+
+- `backend.db` — SQLite database (if `DB_PATH` is not changed)
+- `files/` — per-key caption files written by the backend file-saving feature (`FILES_DIR=/data/files`)
+
+To persist caption files across container restarts, mount `/data` to a named volume or bind mount:
+
+```bash
+docker run -d \
+  -p 3000:3000 \
+  -e JWT_SECRET=your-long-random-secret \
+  -e ADMIN_KEY=your-admin-secret \
+  -e DB_PATH=/data/backend.db \
+  -e FILES_DIR=/data/files \
+  -v lcyt_data:/data \
   lcyt-backend:latest
 ```
 
@@ -339,9 +365,12 @@ Send one or more captions to YouTube.
 {
   "captions": [
     {
-      "text":      "Hello, world!",
-      "timestamp": "2024-01-01T12:00:00.000Z",
-      "time":      1500
+      "text":         "Hello, world!",
+      "timestamp":    "2024-01-01T12:00:00.000Z",
+      "time":         1500,
+      "translations": { "fi-FI": "Hei maailma!" },
+      "captionLang":  "fi-FI",
+      "showOriginal": true
     }
   ]
 }
@@ -349,11 +378,29 @@ Send one or more captions to YouTube.
 
 | Field | Description |
 |---|---|
-| `text` | Caption text (required per caption) |
+| `text` | Caption text in the original language (required per caption) |
 | `timestamp` | Absolute ISO 8601 timestamp (optional). Takes precedence over `time`. |
 | `time` | Milliseconds since session start (optional). Resolved to an absolute timestamp using `startedAt + time + syncOffset`. |
+| `translations` | Map of BCP-47 language code → translated text, e.g. `{ "fi-FI": "Hei!" }` (optional). Used for caption composition and backend file saving. |
+| `captionLang` | BCP-47 code of the translation to use as the YouTube caption text (optional). |
+| `showOriginal` | If `true` and `captionLang` is set, sends `"original<br>translated"` to YouTube instead of just the translation (optional). |
 
 If neither `timestamp` nor `time` is provided, the current server time is used.
+
+**Caption text composition**
+
+When `captionLang` and `translations` are provided, the backend composes the final text sent to YouTube:
+
+| `showOriginal` | Result |
+|---|---|
+| `false` (or unset) | `translations[captionLang]` |
+| `true` | `text + "<br>" + translations[captionLang]` |
+
+If `translations[captionLang]` is missing, `text` is sent as-is.
+
+**Backend file saving**
+
+If `backend_file_enabled` is enabled on the API key, the original text and all translations are appended to per-session files under `$FILES_DIR/<apiKey>/`. See [`GET /file`](#get-file) and the `/file` routes below.
 
 **Response `202 Accepted`** (always, for valid auth + session):
 
@@ -584,6 +631,85 @@ Claim or release the advisory "mic lock" for a session. Used in collaborative se
 
 ---
 
+### GET /file
+
+List all caption/translation files stored on the backend for the authenticated API key.
+
+**Auth:** `Authorization: Bearer <token>`
+
+**CORS:** Dynamic.
+
+**Rate limit:** 60 requests per minute per IP.
+
+Files are only created when `backend_file_enabled = true` is set on the API key. See [Backend File Saving](#backend-file-saving) below.
+
+**Response `200 OK`:**
+
+```json
+{
+  "files": [
+    {
+      "id": 1,
+      "filename": "2024-01-01-a1b2c3d4-fi_FI.txt",
+      "lang": "fi-FI",
+      "format": "youtube",
+      "type": "captions",
+      "createdAt": "2024-01-01T12:00:00",
+      "updatedAt": "2024-01-01T12:05:30",
+      "sizeBytes": 1024
+    }
+  ]
+}
+```
+
+**Error responses:** `401`, `404`.
+
+---
+
+### GET /file/:id
+
+Download a specific caption file.
+
+**Auth:** `Authorization: Bearer <token>` **or** `?token=<jwt>` query parameter (for direct download links).
+
+**Rate limit:** 60 requests per minute per IP.
+
+**Response:** File download (`Content-Disposition: attachment`). Content-Type is `text/plain` for YouTube format or `text/vtt` for WebVTT.
+
+**Error responses:** `400` (invalid id), `401`, `404` (not found or not owned by this key), `429`.
+
+---
+
+### DELETE /file/:id
+
+Delete a caption file. Removes both the database record and the file from disk.
+
+**Auth:** `Authorization: Bearer <token>`
+
+**Rate limit:** 60 requests per minute per IP.
+
+**Response `200 OK`:** `{ "ok": true }`
+
+**Error responses:** `400` (invalid id), `401`, `404`, `429`.
+
+---
+
+### Backend File Saving
+
+When `backend_file_enabled = true` is set on an API key (disabled by default), every caption delivery also writes the text to files under `$FILES_DIR/<apiKey>/`. Files are created per-session, per-language, per-format.
+
+Enable for a specific key via:
+
+```http
+PATCH /keys/my-api-key
+X-Admin-Key: <ADMIN_KEY>
+Content-Type: application/json
+
+{ "backend_file_enabled": true }
+```
+
+---
+
 ### GET /health
 
 Liveness check. Returns server uptime and active session count.
@@ -679,7 +805,7 @@ Get details for a specific API key.
 
 ### Admin: PATCH /keys/:key
 
-Update an API key's owner or expiry.
+Update an API key's owner, expiry, limits, or feature flags.
 
 **Auth:** `X-Admin-Key: <admin-key>` header.
 
@@ -687,12 +813,21 @@ Update an API key's owner or expiry.
 
 ```json
 {
-  "owner":   "Bob",
-  "expires": "2028-06-01"
+  "owner":                "Bob",
+  "expires":              "2028-06-01",
+  "daily_limit":          500,
+  "lifetime_limit":       10000,
+  "backend_file_enabled": true
 }
 ```
 
-Pass `"expires": null` to remove the expiry (make the key permanent).
+| Field | Type | Description |
+|---|---|---|
+| `owner` | `string` | Updated owner name |
+| `expires` | `string \| null` | Expiry date (`YYYY-MM-DD`). Pass `null` to remove expiry. |
+| `daily_limit` | `number \| null` | Daily caption limit. Pass `null` to remove. |
+| `lifetime_limit` | `number \| null` | Lifetime caption limit. Pass `null` to remove. |
+| `backend_file_enabled` | `boolean` | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`GET /file`](#get-file). |
 
 **Response `200 OK`:** Updated key object.
 

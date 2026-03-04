@@ -57,23 +57,35 @@ await sender.start();
 
 ---
 
-### `send(text, timestamp?)`
+### `send(text, timestamp?, extraOpts?)`
 
 Queue a single caption for delivery. Returns immediately with `202 Accepted`; the actual YouTube delivery result arrives on the SSE event stream (`GET /events`).
 
 ```js
 const result = await sender.send('Hello!');
+// With translation metadata:
+const result = await sender.send('Hello!', undefined, {
+  translations: { 'fi-FI': 'Hei!' },
+  captionLang: 'fi-FI',
+  showOriginal: true,
+});
 ```
 
 | Parameter | Type | Description |
 |---|---|---|
-| `text` | `string` | Caption text |
+| `text` | `string` | Caption text (original language) |
 | `timestamp` | `string \| number \| {time: number}` | Optional. ISO string, Unix ms, or `{time: ms}` (milliseconds since session start) |
+| `extraOpts` | `object` | Optional extra fields included in the caption request body |
+| `extraOpts.translations` | `object` | Map of BCP-47 code → translated text, e.g. `{ "fi-FI": "Hei!" }` |
+| `extraOpts.captionLang` | `string` | BCP-47 code of the translation to use as the YouTube caption text |
+| `extraOpts.showOriginal` | `boolean` | If `true`, sends `"original<br>translated"` to YouTube; otherwise sends only the translation |
 
 > **Timestamp formats**
 > - ISO string: `'2024-01-01T12:00:00.000'`
 > - Unix milliseconds: `1704067200000`
 > - Relative: `{ time: 5000 }` — 5 seconds after the session `startedAt` (resolved by the server)
+
+When `translations` are provided, the backend composes the final caption text and (if enabled on the API key) writes the original and each translation to separate files. See the [backend `/captions` docs](../../docs/api/captions.md) for the full composition rules.
 
 **Returns:** `Promise<{ok: true, requestId: string}>`
 

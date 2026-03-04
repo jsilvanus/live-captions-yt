@@ -198,9 +198,9 @@ export function useSession({
 
   // ─── Caption sending ────────────────────────────────────
 
-  async function send(text, timestamp) {
+  async function send(text, timestamp, opts) {
     if (!senderRef.current) throw new Error('Not connected');
-    const data = await senderRef.current.send(text, timestamp);
+    const data = await senderRef.current.send(text, timestamp, opts);
     cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true });
     return data;
   }
@@ -254,14 +254,14 @@ export function useSession({
   }
 
   // Add a caption to the server-side batch queue (sender.construct)
-  async function construct(text, timestamp) {
+  async function construct(text, timestamp, opts) {
     if (!text || typeof text !== 'string') return 0;
     if (!senderRef.current) throw new Error('Not connected');
 
     const intervalMs = getBatchIntervalMs();
     // Immediate send if batching is disabled
     if (intervalMs === 0) {
-      const data = await send(text, timestamp);
+      const data = await send(text, timestamp, opts);
       return data;
     }
 
@@ -336,6 +336,45 @@ export function useSession({
   }
 
   /**
+   * List backend caption files for the current session's API key.
+   */
+  async function listFiles() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/file`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to list files (${res.status})`);
+    return res.json();
+  }
+
+  /**
+   * Get the download URL for a backend caption file.
+   */
+  function getFileDownloadUrl(fileId) {
+    const token = senderRef.current?._token;
+    const url = backendUrlRef.current;
+    if (!token || !url) return null;
+    return `${url}/file/${fileId}?token=${encodeURIComponent(token)}`;
+  }
+
+  /**
+   * Delete a backend caption file.
+   */
+  async function deleteFile(fileId) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/file/${fileId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete file (${res.status})`);
+    return res.json();
+  }
+
+  /**
    * GDPR right-to-erasure: anonymises the API key on the backend, disconnects locally,
    * and clears all persisted config from localStorage.
    */
@@ -361,6 +400,7 @@ export function useSession({
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
     claimMic, releaseMic,
     getStats, eraseSelf,
+    listFiles, getFileDownloadUrl, deleteFile,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

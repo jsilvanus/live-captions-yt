@@ -142,9 +142,11 @@ export class BackendCaptionSender {
    *   - Absolute timestamp (string/Date/epoch ms) — passed as `timestamp`
    *   - `{ time: number }` — milliseconds since session start, resolved server-side
    *   - Omit for auto-generated timestamp
+   * @param {object} [extraOpts] - Optional extra fields to merge into the caption object
+   *   e.g. { translations: { 'fi-FI': '...' }, captionLang: 'fi-FI', showOriginal: true }
    * @returns {Promise<{ok: boolean, requestId: string}>} Immediate ack; delivery result arrives via GET /events SSE stream
    */
-  async send(text, timestampOrOptions) {
+  async send(text, timestampOrOptions, extraOpts) {
     const caption = { text };
 
     if (timestampOrOptions !== undefined) {
@@ -157,6 +159,13 @@ export class BackendCaptionSender {
       } else {
         caption.timestamp = timestampOrOptions;
       }
+    }
+
+    if (extraOpts) {
+      if (extraOpts.translations && Object.keys(extraOpts.translations).length > 0)
+        caption.translations = extraOpts.translations;
+      if (extraOpts.captionLang) caption.captionLang = extraOpts.captionLang;
+      if (extraOpts.showOriginal !== undefined) caption.showOriginal = extraOpts.showOriginal;
     }
 
     return this._fetch('/captions', {
