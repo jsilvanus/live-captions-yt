@@ -333,13 +333,13 @@ export function getKeyByEmail(db, email) {
 /**
  * Create a new API key.
  * @param {import('better-sqlite3').Database} db
- * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null }} options
+ * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit) VALUES (?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -347,6 +347,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     expiresAt ?? null,
     daily_limit ?? null,
     lifetime_limit ?? null,
+    (backend_file_enabled ?? false) ? 1 : 0,
   );
   return getKey(db, resolvedKey);
 }

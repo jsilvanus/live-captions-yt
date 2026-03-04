@@ -85,6 +85,7 @@ function printKey(k) {
   console.log(`daily limit:     ${k.daily_limit ?? 'unlimited'}`);
   console.log(`lifetime limit:  ${k.lifetime_limit ?? 'unlimited'}`);
   console.log(`lifetime used:   ${k.lifetime_used ?? 0}`);
+  console.log(`file saving:     ${k.backend_file_enabled ? 'enabled' : 'disabled'}`);
   console.log(`created:         ${formatDate(k.created_at)}`);
 }
 
@@ -102,7 +103,7 @@ function cmdList(db) {
 }
 
 function cmdAdd(db, flags) {
-  const { owner, key, expires } = flags;
+  const { owner, key, expires, email } = flags;
   if (!owner) {
     console.error('Error: --owner is required');
     process.exit(1);
@@ -110,9 +111,11 @@ function cmdAdd(db, flags) {
   const created = createKey(db, {
     key: key || undefined,
     owner,
+    email: email || undefined,
     expiresAt: expires || undefined,
     daily_limit: parseLimit(flags['daily-limit']),
     lifetime_limit: parseLimit(flags['lifetime-limit']),
+    backend_file_enabled: flags['file-saving'] === true || flags['file-saving'] === 'true',
   });
   console.log('Created API key:');
   printKey(created);
@@ -134,9 +137,10 @@ function cmdUpdate(db, positional, flags) {
   if (flags.expires !== undefined) updates.expiresAt = flags.expires || null;
   if ('daily-limit' in flags) updates.daily_limit = parseLimit(flags['daily-limit']);
   if ('lifetime-limit' in flags) updates.lifetime_limit = parseLimit(flags['lifetime-limit']);
+  if ('file-saving' in flags) updates.backend_file_enabled = flags['file-saving'] === true || flags['file-saving'] === 'true';
 
   if (Object.keys(updates).length === 0) {
-    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, or --lifetime-limit');
+    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, --lifetime-limit, or --file-saving');
     process.exit(1);
   }
 
@@ -225,11 +229,11 @@ function usage() {
 
 Commands:
   list                              List all API keys
-  add --owner <name> [--key <key>] [--expires <date>]
-      [--daily-limit <n>] [--lifetime-limit <n>]
+  add --owner <name> [--key <key>] [--email <email>] [--expires <date>]
+      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving]
                                     Create a new API key
   update <key> [--owner <name>] [--expires <date>]
-      [--daily-limit <n|none>] [--lifetime-limit <n|none>]
+      [--daily-limit <n|none>] [--lifetime-limit <n|none>] [--file-saving [true|false]]
                                     Update key fields (use 'none' to remove a limit)
   revoke <key>                      Revoke (soft-delete) a key
   delete <key>                      Permanently remove a key
