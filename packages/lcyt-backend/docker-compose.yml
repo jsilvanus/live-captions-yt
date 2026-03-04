@@ -12,9 +12,12 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       DB_PATH: /data/lcyt.sqlite
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
+      BACKUP_DAYS: ${BACKUP_DAYS:-0}
+      BACKUP_DIR: /backups
     restart: unless-stopped
     volumes:
       - lcyt-db:/data
+      - lcyt-backups:/backups
     healthcheck:
       test: ["CMD", "node", "-e", "const http=require('http');const req=http.get('http://127.0.0.1:3000/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));"]
       interval: 30s
@@ -24,3 +27,4 @@ services:
 
 volumes:
   lcyt-db:
+  lcyt-backups:
