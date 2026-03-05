@@ -43,8 +43,8 @@ async function buildExtraTargets(targets) {
     if (target.type === 'youtube') {
       if (!target.streamKey || typeof target.streamKey !== 'string') continue;
       const sender = new YoutubeLiveCaptionSender({ streamKey: target.streamKey.trim() });
-      try { sender.start(); } catch {
-        // Non-fatal — proceed without this sender
+      try { sender.start(); } catch (err) {
+        console.warn(`[live] Failed to start extra YouTube target ${target.id}: ${err?.message}`);
       }
       extraTargets.push({ id: target.id, type: 'youtube', sender });
 

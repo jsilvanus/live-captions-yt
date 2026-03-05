@@ -561,18 +561,15 @@ export function CaptionsModal({ isOpen, onClose }) {
                   {t('settings.captions.batchWindow')}: <span>{batchInterval === 0 ? t('settings.captions.batchWindowOff') : `${batchInterval}s`}</span>
                   {batchLocked && <span style={{ marginLeft: 6, fontSize: '0.8em', opacity: 0.7 }}>🔒</span>}
                 </label>
-                {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
-                <div onClick={batchLocked ? () => showToast(t('settings.captions.batchLockedByTarget'), 'warn') : undefined}>
-                  <input
-                    className="settings-field__input"
-                    type="range"
-                    min="0" max="20" step="1"
-                    value={batchInterval}
-                    disabled={batchLocked}
-                    onChange={e => onBatchChange(e.target.value)}
-                    style={{ padding: 0, cursor: batchLocked ? 'not-allowed' : 'pointer', opacity: batchLocked ? 0.5 : 1 }}
-                  />
-                </div>
+                <input
+                  className="settings-field__input"
+                  type="range"
+                  min="0" max="20" step="1"
+                  value={batchInterval}
+                  onChange={e => onBatchChange(e.target.value)}
+                  aria-disabled={batchLocked}
+                  style={{ padding: 0, cursor: batchLocked ? 'not-allowed' : 'pointer', opacity: batchLocked ? 0.5 : 1 }}
+                />
                 {batchLocked && (
                   <span className="settings-field__hint">{t('settings.captions.batchLockedByTargetHint')}</span>
                 )}
