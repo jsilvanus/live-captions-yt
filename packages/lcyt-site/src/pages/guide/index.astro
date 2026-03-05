@@ -1,0 +1,43 @@
+---
+import { getCollection, render } from 'astro:content';
+import DocsLayout from '../../layouts/DocsLayout.astro';
+
+const GUIDE_ORDER = [
+  'overview',
+  'getting-started',
+  'sending-captions',
+  'caption-settings',
+  'translation',
+  'general-settings',
+  'status-actions',
+  'keyboard-shortcuts',
+];
+
+const allDocs = await getCollection('guide');
+
+// Sort by explicit order field first, then by the GUIDE_ORDER array, then alphabetically
+const docs = [...allDocs].sort((a, b) => {
+  const idxA = GUIDE_ORDER.indexOf(a.id);
+  const idxB = GUIDE_ORDER.indexOf(b.id);
+  const orderA = a.data.order ?? (idxA >= 0 ? idxA + 1 : 99);
+  const orderB = b.data.order ?? (idxB >= 0 ? idxB + 1 : 99);
+  return orderA - orderB;
+});
+
+const sidebarItems = docs.map(d => ({
+  id: d.id,
+  label: d.data.title ?? d.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+}));
+
+const rendered = await Promise.all(docs.map(doc => render(doc)));
+---
+<DocsLayout title="App Guide" sidebarItems={sidebarItems} sidebarHeading="Guide">
+  {docs.map((doc, i) => {
+    const { Content } = rendered[i];
+    return (
+      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+        <Content />
+      </section>
+    );
+  })}
+</DocsLayout>
