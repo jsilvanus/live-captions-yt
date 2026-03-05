@@ -238,8 +238,8 @@ export function createLiveRouter(db, store, jwtSecret) {
     });
   });
 
-  // PATCH /live — Update session fields (e.g. sequence)
-  router.patch('/', auth, (req, res) => {
+  // PATCH /live — Update session fields (e.g. sequence, targets)
+  router.patch('/', auth, async (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
 
@@ -247,7 +247,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    const { sequence } = req.body || {};
+    const { sequence, targets } = req.body || {};
 
     if (sequence !== undefined) {
       const seq = Number(sequence);
@@ -275,10 +275,29 @@ export function createLiveRouter(db, store, jwtSecret) {
       store.touch(sessionId);
     }
 
+    if (targets !== undefined) {
+      // Validate and build the new extra targets
+      const result = await buildExtraTargets(targets);
+      if (!result.ok) {
+        if (session.domain) res.setHeader('Access-Control-Allow-Origin', session.domain);
+        return res.status(400).json({ error: result.error });
+      }
+      // Clean up old secondary YouTube senders before replacing
+      for (const t of (session.extraTargets || [])) {
+        if (t.type === 'youtube' && t.sender) {
+          t.sender.end().catch(err => {
+            console.warn(`[live] Failed to end extra YouTube target ${t.id} during PATCH: ${err?.message}`);
+          });
+        }
+      }
+      session.extraTargets = result.extraTargets;
+      store.touch(sessionId);
+    }
+
     // Echo CORS allow-origin for clients that expect it (domain comes from the JWT)
     if (session.domain) res.setHeader('Access-Control-Allow-Origin', session.domain);
 
-    return res.status(200).json({ sequence: session.sequence });
+    return res.status(200).json({ sequence: session.sequence, targetsCount: session.extraTargets?.length ?? 0 });
   });
 
   // DELETE /live — Remove session

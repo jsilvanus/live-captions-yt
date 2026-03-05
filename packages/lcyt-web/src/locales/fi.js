@@ -145,6 +145,7 @@ export default {
       errorHeadersInvalid: 'Otsikot on oltava kelvollista JSON-muotoa.',
       errorHeadersObject: 'Otsikot on oltava JSON-objekti (ei taulukko).',
       reconnectHint: 'Yhdistä uudelleen palvelimeen kohteiden muuttamisen jälkeen, jotta muutokset tulevat voimaan.',
+      appliedOnClose: '✓ Yhdistetty — muutokset otetaan käyttöön nykyisessä istunnossa kun suljet tämän ikkunan.',
     },
     actions: {
       syncNow: '⟳ Synkronoi nyt',

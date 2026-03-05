@@ -145,7 +145,7 @@ function TargetRow({ entry, onChange, onRemove, t }) {
   );
 }
 
-export function TargetsModal({ isOpen, onClose }) {
+export function TargetsModal({ isOpen, onClose, connected }) {
   const { t } = useLang();
   const [targets, setTargetsState] = useState([]);
 
@@ -228,7 +228,11 @@ export function TargetsModal({ isOpen, onClose }) {
             </div>
 
             <div className="settings-field">
-              <span className="settings-field__hint">{t('settings.targets.reconnectHint')}</span>
+              <span className="settings-field__hint">
+                {connected
+                  ? t('settings.targets.appliedOnClose')
+                  : t('settings.targets.reconnectHint')}
+              </span>
             </div>
 
           </div>

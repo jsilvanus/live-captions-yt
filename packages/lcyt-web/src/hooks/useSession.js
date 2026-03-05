@@ -349,6 +349,33 @@ export function useSession({
     setSequence(Number(seq));
   }
 
+  /**
+   * Push an updated targets list to the backend session.
+   * Each entry from localStorage has headers as a raw JSON string;
+   * we parse them here before sending to the backend.
+   *
+   * @param {Array} rawTargets - Array from getEnabledTargets() (headers as JSON string)
+   * @returns {Promise<void>}
+   */
+  async function updateTargets(rawTargets) {
+    if (!senderRef.current) return; // not connected — localStorage already has the new config
+    const targets = rawTargets.map(t => {
+      if (t.type === 'youtube') {
+        return { id: t.id, type: 'youtube', streamKey: t.streamKey };
+      }
+      let headers = {};
+      // headers is stored as a raw JSON string in localStorage; parse it here.
+      // Invalid JSON falls back to empty headers (backend ignores unrecognised keys).
+      if (t.headers) {
+        try { headers = JSON.parse(t.headers); } catch (err) {
+          if (import.meta.env.DEV) console.warn('[updateTargets] Could not parse headers JSON for target', t.id, err?.message);
+        }
+      }
+      return { id: t.id, type: 'generic', url: t.url, headers };
+    });
+    await senderRef.current.updateSession({ targets });
+  }
+
   // ─── Self-service account management ────────────────────
 
   async function getStats() {
@@ -559,7 +586,7 @@ export function useSession({
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID,
     healthStatus, checkHealth,
-    connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence,
+    connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,

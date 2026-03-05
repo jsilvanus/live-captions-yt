@@ -145,6 +145,7 @@ export default {
       errorHeadersInvalid: 'Headers must be valid JSON.',
       errorHeadersObject: 'Headers must be a JSON object (not an array).',
       reconnectHint: 'Reconnect to the backend after changing targets for the changes to take effect.',
+      appliedOnClose: '✓ Connected — changes will be applied to the current session when you close this dialog.',
     },
     actions: {
       syncNow: '⟳ Sync Now',

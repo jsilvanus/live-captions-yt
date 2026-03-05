@@ -145,6 +145,7 @@ export default {
       errorHeadersInvalid: 'Huvuden måste vara giltig JSON.',
       errorHeadersObject: 'Huvuden måste vara ett JSON-objekt (inte en array).',
       reconnectHint: 'Återanslut till backend efter att ha ändrat mål för att ändringarna ska träda i kraft.',
+      appliedOnClose: '✓ Ansluten — ändringar tillämpas på den aktuella sessionen när du stänger den här dialogen.',
     },
     actions: {
       syncNow: '⟳ Synka nu',
