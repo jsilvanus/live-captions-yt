@@ -198,11 +198,23 @@ export function useSession({
 
   // ─── Caption sending ────────────────────────────────────
 
+  function _translationMeta(opts) {
+    const translations = opts?.translations || {};
+    const captionLang = opts?.captionLang || null;
+    const showOriginal = opts?.showOriginal ?? false;
+    const captionTranslationText = captionLang ? (translations[captionLang] ?? null) : null;
+    const otherTranslations = Object.fromEntries(
+      Object.entries(translations).filter(([lang]) => lang !== captionLang)
+    );
+    const hasTranslations = Object.keys(translations).length > 0;
+    return { hasTranslations, captionLang, captionTranslationText, showOriginal, otherTranslations };
+  }
+
   async function send(text, timestamp, opts) {
     if (!senderRef.current) throw new Error('Not connected');
     const data = await senderRef.current.send(text, timestamp, opts);
-    const hasTranslations = !!(opts?.translations && Object.keys(opts.translations).length > 0);
-    cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true, hasTranslations });
+    const meta = _translationMeta(opts);
+    cbs.current.onCaptionSent?.({ requestId: data.requestId, text, pending: true, ...meta });
     return data;
   }
 
@@ -267,9 +279,9 @@ export function useSession({
     }
 
     const tempId = 'q-' + Math.random().toString(36).slice(2);
-    const hasTranslations = !!(opts?.translations && Object.keys(opts.translations).length > 0);
+    const meta = _translationMeta(opts);
     // Tell host a pending item exists
-    cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true, hasTranslations });
+    cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true, ...meta });
     // Push into sender queue
     senderRef.current.construct(text, timestamp);
     batchBufferRef.current.push({ text, requestId: tempId });

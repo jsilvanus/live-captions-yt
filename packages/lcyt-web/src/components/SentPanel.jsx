@@ -13,8 +13,32 @@ function formatTime(isoString) {
   }
 }
 
+function getGlobeTitle(entry) {
+  const others = Object.entries(entry.otherTranslations || {});
+  if (others.length === 0) return 'Sent with translations';
+  return others.map(([lang, t]) => `${lang}: ${t}`).join('\n');
+}
+
+function SentItemText({ entry }) {
+  if (entry.captionTranslationText) {
+    return (
+      <span className="sent-item__text-block">
+        <span className="sent-item__text sent-item__text--translation" title={entry.captionTranslationText}>
+          {entry.captionTranslationText}
+        </span>
+        <span
+          className={`sent-item__text sent-item__text--original${entry.showOriginal ? '' : ' sent-item__text--original-small'}`}
+          title={entry.text}
+        >
+          {entry.text}
+        </span>
+      </span>
+    );
+  }
+  return <span className="sent-item__text" title={entry.text}>{entry.text}</span>;
+}
+
 function SentItem({ entry, isBatchContinuation }) {
-  const escapedText = entry.text.replace(/"/g, '&quot;');
 
   if (isBatchContinuation) {
     const cls = `sent-item sent-item--continuation${entry.pending ? ' sent-item--pending' : entry.error ? ' sent-item--error' : ''}`;
@@ -25,10 +49,10 @@ function SentItem({ entry, isBatchContinuation }) {
     return (
       <li className={cls}>
         <span className="sent-item__seq" />
-        {entry.hasTranslations && <span className="sent-item__globe" title="Sent with translations">🌐</span>}
+        {entry.hasTranslations && <span className="sent-item__globe" title={getGlobeTitle(entry)}>🌐</span>}
         <span className={`sent-item__ticks ${ticksCls}`}>{ticksLabel}</span>
         <span className="sent-item__time">{formatTime(entry.timestamp)}</span>
-        <span className="sent-item__text" title={entry.text}>{entry.text}</span>
+        <SentItemText entry={entry} />
       </li>
     );
   }
@@ -43,10 +67,10 @@ function SentItem({ entry, isBatchContinuation }) {
   return (
     <li className={cls}>
       <span className="sent-item__seq">{seqLabel}</span>
-      {entry.hasTranslations && <span className="sent-item__globe" title="Sent with translations">🌐</span>}
+      {entry.hasTranslations && <span className="sent-item__globe" title={getGlobeTitle(entry)}>🌐</span>}
       <span className={`sent-item__ticks ${ticksCls}`}>{ticksLabel}</span>
       <span className="sent-item__time">{formatTime(entry.timestamp)}</span>
-      <span className="sent-item__text" title={entry.text}>{entry.text}</span>
+      <SentItemText entry={entry} />
     </li>
   );
 }
