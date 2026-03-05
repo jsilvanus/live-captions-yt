@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useSentLogContext } from '../contexts/SentLogContext';
 
 function formatTime(isoString) {
@@ -77,12 +78,28 @@ function SentItem({ entry, isBatchContinuation }) {
 
 export function SentPanel() {
   const { entries } = useSentLogContext();
+  const [wordWrap, setWordWrap] = useState(() => {
+    try { return localStorage.getItem('lcyt:sent-panel-wrap') === '1'; } catch { return false; }
+  });
+
+  function toggleWordWrap(e) {
+    const v = e.target.checked;
+    setWordWrap(v);
+    try { localStorage.setItem('lcyt:sent-panel-wrap', v ? '1' : '0'); } catch {}
+  }
+
   const visible = entries.slice(0, 500);
 
   return (
     <div className="sent-panel">
-      <div className="sent-panel__header">Sent Captions</div>
-      <ul className="sent-list">
+      <div className="sent-panel__header">
+        <span>Sent Captions</span>
+        <label className="sent-panel__wrap-toggle">
+          <input type="checkbox" checked={wordWrap} onChange={toggleWordWrap} />
+          <span>Wrap</span>
+        </label>
+      </div>
+      <ul className={`sent-list${wordWrap ? ' sent-list--wordwrap' : ''}`}>
         {visible.length === 0 ? (
           <li className="sent-panel__empty">No captions sent yet</li>
         ) : (
