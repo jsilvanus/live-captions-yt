@@ -2,6 +2,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { useLang } from '../contexts/LangContext';
 
 const DEFAULT_MAX_LEN = 42;
+const MIN_LINE_LENGTH = 20;
+const MAX_LINE_LENGTH = 120;
 
 function normalizeLines(rawLines, maxLen) {
   const words = rawLines.join(' ').split(/\s+/).filter(w => w.length > 0);
@@ -45,7 +47,7 @@ export function NormalizeLinesModal({ fileName, rawLines, onConfirm, onSkip }) {
 
   function handleMaxLenChange(e) {
     const v = parseInt(e.target.value, 10);
-    if (!isNaN(v)) setMaxLen(Math.max(20, Math.min(120, v)));
+    if (!isNaN(v)) setMaxLen(Math.max(MIN_LINE_LENGTH, Math.min(MAX_LINE_LENGTH, v)));
   }
 
   return (
@@ -69,8 +71,8 @@ export function NormalizeLinesModal({ fileName, rawLines, onConfirm, onSkip }) {
                 type="number"
                 className="settings-field__input"
                 value={maxLen}
-                min={20}
-                max={120}
+                min={MIN_LINE_LENGTH}
+                max={MAX_LINE_LENGTH}
                 onChange={handleMaxLenChange}
               />
               <span className="settings-field__hint">{t('normalizeModal.maxLenHint')}</span>

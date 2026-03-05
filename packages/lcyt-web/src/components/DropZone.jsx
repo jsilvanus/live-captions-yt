@@ -1,21 +1,7 @@
 import { useState, useRef } from 'react';
 import { useFileContext } from '../contexts/FileContext';
 import { NormalizeLinesModal } from './NormalizeLinesModal';
-
-function readFileAsLines(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const lines = e.target.result
-        .split('\n')
-        .map(l => l.trim())
-        .filter(l => l.length > 0);
-      resolve(lines);
-    };
-    reader.onerror = () => reject(new Error(`Failed to read file: ${file.name}`));
-    reader.readAsText(file);
-  });
-}
+import { readFileAsLines, linesToFile } from '../lib/fileUtils';
 
 export function DropZone({ visible = true }) {
   const { loadFile } = useFileContext();
@@ -30,9 +16,7 @@ export function DropZone({ visible = true }) {
   }
 
   function loadLines(name, lines) {
-    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
-    const f = new File([blob], name, { type: 'text/plain' });
-    loadFile(f).catch(err => showError(err.message));
+    loadFile(linesToFile(name, lines)).catch(err => showError(err.message));
   }
 
   function handleModalConfirm(normalizedLines) {
