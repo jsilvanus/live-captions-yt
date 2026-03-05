@@ -13,7 +13,7 @@ LCYT is designed for fast, keyboard-driven operation during a live broadcast.
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+,` / `Cmd+,` | Open / close General settings |
+| `Ctrl+,` / `Cmd+,` | Open / close Settings |
 
 ---
 

@@ -1,30 +1,32 @@
 ---
-title: Caption Settings
+title: Caption Settings (CC)
 order: 4
 ---
 
-# Caption Settings
+# Caption Settings (CC)
 
-Click **Caption** in the top status bar to open the Caption Settings modal. It contains three tabs: **Model**, **VAD**, and **Other**.
+Click **CC** in the top status bar to open the Closed Captions modal. It has up to four tabs, with the **Details** tab visible only in advanced mode.
 
 ---
 
-## Model tab {#model}
+## Service tab {#service}
 
-The **Model** tab controls which speech-to-text engine is used and how it is configured.
-
-![Caption settings — Model tab](/screenshots/modal-caption-model-light.png)
+The **Service** tab controls which speech-to-text engine is used and how it is configured.
 
 ### STT engine
 
 | Option | Description |
 |--------|-------------|
-| **Browser** | Uses the Web Speech API built into Chrome/Edge — no extra setup, no cost, but quality varies by browser and OS |
-| **Google Cloud STT** | Uses Google Cloud Speech-to-Text — requires a Google Cloud API key, but gives much higher accuracy and more language options |
+| **Web Speech API** | Browser built-in (Chrome / Edge). No account required. Enable **prefer local** to use on-device recognition (no audio sent to server). |
+| **Google Cloud STT** | Higher accuracy, more language models. Requires a service account JSON key. |
 
-### Caption language
+### Microphone
 
-Choose the spoken language for the speech recogniser. For **Browser STT**, the list is filtered to languages your browser reports as supported. For **Google Cloud STT**, all supported languages are available.
+Select which microphone to use if your device has more than one. Click **Refresh** to update the list.
+
+### Recognition language
+
+Choose the spoken language for the speech recogniser. Type to filter the list.
 
 ### STT model (Google Cloud only)
 
@@ -33,43 +35,87 @@ Choose the spoken language for the speech recogniser. For **Browser STT**, the l
 | `latest_long` | Long-form speech; best for broadcast |
 | `latest_short` | Short commands; lower latency |
 | `telephony` | Phone-quality audio |
-| `medical_*` | Medical terminology (English only) |
 
-### Microphone device
+Additional Cloud STT options: **Auto-punctuation**, **Profanity filter**, **Confidence threshold**, **Max caption length**, and **Google Service Account** key upload.
 
-Select which microphone to use if your device has more than one.
+### Utterance end button _(advanced mode only)_
 
-### Punctuation & profanity filter (Google Cloud only)
+Shows a 🗣 icon on the audio meter during active speech recognition. Click it to force-end the current utterance immediately (commits the partial transcript as a final caption).
 
-- **Auto-punctuation** — adds commas and periods automatically
-- **Profanity filter** — masks offensive words with asterisks
+### Utterance end timer _(advanced mode only)_
 
----
-
-## VAD tab {#vad}
-
-**Voice Activity Detection (VAD)** decides when an utterance ends and the caption is committed.
-
-![Caption settings — VAD tab](/screenshots/modal-caption-vad-light.png)
-
-| Setting | Description |
-|---------|-------------|
-| **End-of-utterance timeout** | Silence duration (ms) before the current recognition result is committed as a caption |
-| **Max utterance length** | Maximum caption length in characters before an automatic split |
-| **Utterance end button** | Show an "end utterance" button on the mobile audio bar for manual control |
-
-Shorter timeouts give snappier captions at the cost of more frequent splits. Longer timeouts can produce more natural phrasing.
+Automatically force-ends the utterance after N seconds (0 = disabled). Useful for segmenting long speeches into shorter captions.
 
 ---
 
-## Other tab {#other}
+## Receivers tab {#receivers}
 
-The **Other** tab covers text display and timing options.
+The **Receivers** tab manages additional caption delivery destinations beyond your primary YouTube stream.
 
-![Caption settings — Other tab](/screenshots/modal-caption-other-light.png)
+Click **+ Add target** to add a new entry. Each entry can be:
+
+| Type | Description |
+|------|-------------|
+| **YouTube** | An extra YouTube stream key — captions are sent to that stream as well |
+| **Generic** | A custom HTTP POST endpoint with optional JSON headers |
+
+Each target can also have **Disable batch sending** enabled, which forces captions to be sent individually to that target regardless of the global batch setting.
+
+> Changes take effect after reconnecting to the backend.
+
+---
+
+## Details tab _(advanced mode only)_ {#details}
+
+> This tab is only visible when **Show advanced options** is enabled in Settings → Basic.
+
+### Batching
 
 | Setting | Description |
 |---------|-------------|
-| **Text size** | Font size in the caption preview area (px) |
-| **Batch interval** | If > 0, captions are queued and sent every N seconds instead of immediately |
-| **Transcription offset** | Shifts caption timestamps by ±N ms to compensate for encoding or delivery lag |
+| **Batch window** | `0` = send each caption immediately. `1–20 s` = collect captions over the window, then send as a single batch. |
+
+### Transcription offset
+
+Shifts the caption timestamp relative to when the transcription arrives. Use a negative value (e.g. `−5 s`) to compensate for transcription processing delay, so captions line up with the moment the speaker started talking in the YouTube stream.
+
+Double-click the slider to reset to 0.
+
+### Client-side VAD
+
+**Voice Activity Detection (VAD)** monitors microphone energy and forces the recogniser to finalise when silence is detected. Helps segment long unbroken speech on mobile Chrome.
+
+| Setting | Description |
+|---------|-------------|
+| **Enable VAD** | Turn on silence detection (WebKit engine only) |
+| **Silence duration** | How long (ms) energy must stay below threshold before the recogniser is stopped |
+| **Energy threshold** | RMS amplitude below which audio is considered silent (lower = more sensitive) |
+
+---
+
+## Translation tab {#translation}
+
+The **Translation** tab configures real-time caption translation.
+
+Click **+ Add translation** to add a target language. Each entry specifies:
+
+| Field | Description |
+|-------|-------------|
+| **Enabled** | Toggle this translation on/off |
+| **Language** | Target language (e.g. `en-US`) |
+| **Target** | `captions` (YouTube stream), `file` (local), or `backend-file` |
+| **Format** | `YouTube` or `WebVTT` (for file targets) |
+
+### Translation vendors
+
+| Vendor | Notes |
+|--------|-------|
+| **MyMemory** | Free, no API key needed |
+| **Google Cloud Translation** | High quality; requires an API key |
+| **DeepL** | Premium quality; requires an API key |
+| **LibreTranslate** | Self-hosted; provide server URL and optional key |
+
+### Show original
+
+Enable **Show original** to include the original text alongside the translation in the YouTube caption stream (separated by a line break).
+

@@ -43,17 +43,13 @@ Your key is emailed to you instantly and works for up to **200 captions per day*
 Navigate to **[app.lcyt.fi](https://app.lcyt.fi)**.  
 On the first visit the **Privacy** modal opens automatically. Read the policy and click **Accept** to continue.
 
-![Privacy acceptance modal](/screenshots/privacy-first-visit-light.png)
-
 ---
 
 ## Step 4 — Enter your credentials
 
-Click **General** in the top status bar to open the General Settings modal.
+Click **Settings** in the top status bar to open the Settings modal.
 
-![General settings modal](/screenshots/modal-general-light.png)
-
-Fill in:
+Fill in the **Basic** tab:
 
 | Field | Value |
 |-------|-------|
@@ -61,13 +57,22 @@ Fill in:
 | **Stream Key** | Copied from YouTube Studio |
 | **Backend URL** | `https://api.lcyt.fi` (default — leave as-is) |
 
-Optionally enable **Auto-connect** to reconnect automatically on every visit.
+Your credentials are saved automatically as you type. Close the modal when done.
 
-Click **Connect**. The status bar turns green when you are live.
+Optionally enable **Auto-connect** to reconnect automatically on every visit.
 
 ---
 
-## Step 5 — Send your first caption
+## Step 5 — Connect
+
+Click the **Connect** button in the top status bar.
+
+- The button turns **green** when the session is established.
+- To disconnect, click the button again (it turns red on hover to confirm).
+
+---
+
+## Step 6 — Send your first caption
 
 Type a test caption in the input bar at the bottom of the page and press **Enter** (or click **Send**).
 
@@ -79,7 +84,8 @@ The caption appears in the **Sent** log on the right and is delivered to your Yo
 
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
-| "Connection failed" | Wrong API key or backend URL | Double-check both fields in General settings |
+| Settings opens instead of connecting | No credentials saved | Fill in API Key + Backend URL in Settings → Basic |
+| "Connection failed" | Wrong API key or backend URL | Double-check both fields in Settings |
 | Captions not appearing on stream | Stream delay or captions not enabled | Enable HTTP POST captions in YouTube Studio |
 | Network banner (⚠) | Backend unreachable | Check your internet connection; the app retries every 30 s |
-| Clock offset warning | Server and browser clocks differ | Click **Sync clock** in the Actions panel |
+| Clock offset warning | Server and browser clocks differ | Click **⟳ Sync Now** in the Controls panel |

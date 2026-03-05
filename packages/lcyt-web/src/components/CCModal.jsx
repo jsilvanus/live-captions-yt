@@ -389,7 +389,7 @@ export function CCModal({ isOpen, onClose, connected }) {
     const speechRecognitionAPI = window.SpeechRecognition;
     if (!speechRecognitionAPI || typeof speechRecognitionAPI.available !== 'function') { setLocalAvailability(null); return; }
     try {
-      const result = await speechRecognitionAPI.available('en-US', { processLocally: true });
+      const result = await speechRecognitionAPI.available(langCode, { processLocally: true });
       setLocalAvailability(result);
     } catch { setLocalAvailability(null); }
   }

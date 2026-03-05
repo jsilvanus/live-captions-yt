@@ -1,42 +1,44 @@
 ---
-title: General Settings
+title: Settings
 order: 6
 ---
 
-# General Settings
+# Settings
 
-Click **General** in the top status bar to open the General Settings modal.
+Click **Settings** in the top status bar to open the Settings modal.
 
 ---
 
-## Connection
+## Basic tab
 
-![General settings modal](/screenshots/modal-general-light.png)
+The **Basic** tab contains all connection credentials and core preferences.
 
 | Field | Description |
 |-------|-------------|
+| **Backend URL** | URL of the LCYT relay backend (default: `https://api.lcyt.fi`) |
 | **API Key** | Your LCYT API key — get one at [lcyt.fi/app](https://lcyt.fi/app) |
 | **Stream Key** | YouTube Live stream key from YouTube Studio |
-| **Backend URL** | URL of the LCYT relay backend (default: `https://api.lcyt.fi`) |
 | **Auto-connect** | Reconnect automatically the next time you open the app |
+| **Theme** | Auto (system), Dark, or Light |
+| **Language** | UI display language (English / Finnish / Swedish) |
+| **Text size** | Font size in the caption preview area (10–24 px) |
+| **Show advanced options** | Reveals the RTMP Relay tab here, and the Details tab in the CC modal |
 
-Click **Connect** to start a session. Click **Disconnect** to end it cleanly.
+All fields are saved to your browser automatically as you type — no explicit Save button is needed.
 
 ---
 
-## Relay mode
+## RTMP Relay tab _(advanced mode only)_
 
-The **Relay mode** toggle switches between two caption delivery modes:
+> This tab is only visible when **Show advanced options** is enabled on the Basic tab.
 
-### Caption relay (default)
+The RTMP relay re-encodes your browser's audio and pushes it to up to **4 destinations** via RTMP with embedded CEA-608 captions.
 
-Captions are sent through the LCYT backend to the YouTube HTTP POST caption API. This is the standard mode.
+### Relay active toggle
 
-### RTMP relay
+Enable **Active** to start relaying incoming audio to all configured slots. When inactive, the backend accepts the RTMP stream but does not forward it.
 
-![General settings — RTMP relay](/screenshots/modal-general-rtmp-light.png)
-
-The RTMP relay re-encodes your browser's audio stream and pushes it to up to **4 destinations** via RTMP with embedded CEA-608 captions.
+### Relay slots (1–4)
 
 Configure each slot with:
 
@@ -46,22 +48,16 @@ Configure each slot with:
 | **YouTube stream key** | Your YouTube RTMP stream key |
 | **RTMP URL** | Custom RTMP ingest URL for generic targets |
 | **Stream name / key** | Optional stream name appended after the base URL |
-| **Caption mode** | `HTTP` — captions via HTTP POST (default); `CEA-708` — embedded in the video stream |
+| **Caption mode** | `HTTP POST` — captions delivered via HTTP (default) |
 
-Use the **Activate / Stop** buttons to start or stop individual slots. **Stop all** tears down all running slots at once.
+### Actions
 
----
-
-## Theme
-
-| Option | Description |
+| Button | Description |
 |--------|-------------|
-| **Auto** | Follows the operating system preference (dark or light) |
-| **Dark** | Always use the dark theme |
-| **Light** | Always use the light theme |
+| **▶ Activate (Slot N)** | Start the relay for the selected slot |
+| **■ Stop (Slot N)** | Stop the relay for the selected slot |
+| **■ Stop all** | Stop all running slots |
+| **🗑 Clear slot N** | Remove the configuration for the selected slot |
 
----
+> Requires an active backend connection to activate or stop slots.
 
-## Language
-
-Select the UI display language. Currently available: **English**, **Finnish**, **Swedish**.
