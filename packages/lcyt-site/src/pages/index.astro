@@ -8,7 +8,7 @@ import Base from '../layouts/Base.astro';
       <p>Live Captions for YouTube — send real-time captions to your live streams via Google's HTTP POST caption ingestion API.</p>
     </section>
 
-    <!-- Speech bubble: graphical depiction + bilingual vertical slider -->
+    <!-- Speech bubble: graphical depiction + bilingual vertical divider -->
     <div class="speech-bubble-wrap">
       <div class="speech-bubble">
         <div class="caption-bars" aria-hidden="true">
@@ -16,22 +16,30 @@ import Base from '../layouts/Base.astro';
           <div class="caption-bar caption-bar--medium"></div>
           <div class="caption-bar caption-bar--narrow"></div>
         </div>
-        <div class="speech-bubble__body">
-          <div class="speech-bubble__text">
-            <p class="sb-text sb-text--fi">
-              LCYT mahdollistaa suomenkielisten suoralähetysten tekstityksen — elävät tekstitykset tekevät sisältösi saavutettavaksi kaikille katsojille ympäri maailmaa, myös niille jotka eivät puhu englantia.
-            </p>
-            <p class="sb-text sb-text--en" style="opacity:0;">
-              LCYT makes live broadcasts accessible to everyone — send real-time captions in any language to your YouTube stream, breaking the language barrier for global audiences.
-            </p>
+        <!-- Split view: English left | draggable bar | Finnish right -->
+        <div class="sb-split" role="group" aria-label="Language comparison — drag the handle to reveal more of either language">
+          <div class="sb-panel sb-panel--en" aria-label="English">
+            <div class="sb-panel__content">
+              <span class="sb-lang-tag">EN&nbsp;🇬🇧</span>
+              <p>LCYT makes live broadcasts accessible to everyone — send real-time captions in any language to your YouTube stream, breaking the language barrier for global audiences.</p>
+            </div>
           </div>
-          <div class="speech-bubble__slider-col">
-            <span class="sb-slider__label">🇫🇮 FI</span>
-            <input type="range" class="sb-slider" min="0" max="1" step="0.01" value="0"
-              role="slider" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0"
-              aria-valuetext="Finnish"
-              aria-label="Slide between Finnish and English text">
-            <span class="sb-slider__label">EN 🇬🇧</span>
+          <div class="sb-divider" role="separator" tabindex="0"
+               aria-label="Drag left or right to compare languages"
+               aria-valuenow="50" aria-valuemin="10" aria-valuemax="90" aria-valuetext="50% English, 50% Finnish">
+            <div class="sb-divider__line" aria-hidden="true"></div>
+            <div class="sb-divider__handle" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M4 7H1M1 7L3 5M1 7L3 9" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                <path d="M10 7H13M13 7L11 5M13 7L11 9" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+          </div>
+          <div class="sb-panel sb-panel--fi" aria-label="Finnish">
+            <div class="sb-panel__content">
+              <span class="sb-lang-tag">🇫🇮&nbsp;FI</span>
+              <p>LCYT mahdollistaa suoralähetysten tekstityksen — elävät tekstitykset tekevät sisältösi saavutettavaksi kaikille katsojille ympäri maailmaa.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -85,24 +93,67 @@ import Base from '../layouts/Base.astro';
 </Base>
 
 <script>
-  const slider = document.querySelector<HTMLInputElement>('.sb-slider');
-  const textFi  = document.querySelector<HTMLElement>('.sb-text--fi');
-  const textEn  = document.querySelector<HTMLElement>('.sb-text--en');
+  const container = document.querySelector<HTMLElement>('.sb-split');
+  const divider   = document.querySelector<HTMLElement>('.sb-divider');
+  const panelEn   = document.querySelector<HTMLElement>('.sb-panel--en');
+  const panelFi   = document.querySelector<HTMLElement>('.sb-panel--fi');
 
-  function update(v: number) {
-    // v = 0 → Finnish fully visible; v = 1 → English fully visible
-    if (textFi) textFi.style.opacity = String(1 - v);
-    if (textEn) textEn.style.opacity = String(v);
-    if (slider) {
-      // Announce the current language for screen readers
-      if (v <= 0.1) slider.setAttribute('aria-valuetext', 'Finnish');
-      else if (v >= 0.9) slider.setAttribute('aria-valuetext', 'English');
-      else slider.setAttribute('aria-valuetext', 'Mixed');
+  if (container && divider && panelEn && panelFi) {
+    // Initial 50 / 50 split (percentage of the container excluding the divider width)
+    let pct = 50;
+
+    function applyPct(p: number) {
+      pct = Math.max(10, Math.min(90, p));
+      panelEn.style.flexBasis = `${pct}%`;
+      panelFi.style.flexBasis = `${100 - pct}%`;
+      const enPct = Math.round(pct);
+      divider.setAttribute('aria-valuenow', String(enPct));
+      divider.setAttribute('aria-valuetext', `${enPct}% English, ${100 - enPct}% Finnish`);
     }
-  }
 
-  if (slider) {
-    update(parseFloat(slider.value));
-    slider.addEventListener('input', () => update(parseFloat(slider.value)));
+    applyPct(50);
+
+    let dragging = false;
+
+    function getClientX(e: MouseEvent | TouchEvent): number {
+      const touches = (e as TouchEvent).touches;
+      return touches ? touches[0].clientX : (e as MouseEvent).clientX;
+    }
+
+    function onMove(e: MouseEvent | TouchEvent) {
+      if (!dragging) return;
+      e.preventDefault();
+      const rect = container.getBoundingClientRect();
+      const x = getClientX(e) - rect.left;
+      applyPct((x / rect.width) * 100);
+    }
+
+    function stopDrag() {
+      dragging = false;
+      document.removeEventListener('mousemove', onMove as EventListener);
+      document.removeEventListener('mouseup', stopDrag);
+      document.removeEventListener('touchmove', onMove as EventListener);
+      document.removeEventListener('touchend', stopDrag);
+    }
+
+    divider.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true;
+      document.addEventListener('mousemove', onMove as EventListener);
+      document.addEventListener('mouseup', stopDrag);
+    });
+
+    divider.addEventListener('touchstart', (e) => {
+      dragging = true;
+      document.addEventListener('touchmove', onMove as EventListener, { passive: false });
+      document.addEventListener('touchend', stopDrag);
+    }, { passive: true });
+
+    // Keyboard support: arrow keys nudge the divider (Shift for 10% jumps)
+    divider.addEventListener('keydown', (e) => {
+      const step = e.shiftKey ? 10 : 5;
+      if (e.key === 'ArrowLeft')  { applyPct(pct - step); e.preventDefault(); }
+      if (e.key === 'ArrowRight') { applyPct(pct + step); e.preventDefault(); }
+    });
   }
 </script>

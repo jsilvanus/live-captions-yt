@@ -228,48 +228,100 @@ a:hover {
 .caption-bar--medium { width: 70%;  opacity: 0.35; }
 .caption-bar--narrow { width: 46%;  opacity: 0.26; }
 
-/* Body: text area + vertical slider side by side */
-.speech-bubble__body {
+
+/* ── Split-panel bilingual view ─────────────────────────────────────────── */
+/* Container: two panels separated by a draggable vertical bar */
+.sb-split {
   display: flex;
-  gap: 1rem;
   align-items: stretch;
+  min-height: 5.5rem;
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid rgba(77, 170, 230, 0.22);
+  user-select: none;
 }
 
-/* Bilingual text panel — CSS grid keeps both texts in the same cell so the
- * container height always fits the taller text without overflow. */
-.speech-bubble__text {
-  flex: 1;
-  display: grid;
+/* Individual language panels */
+.sb-panel {
+  flex: 0 0 50%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0.75rem 1rem 0.85rem;
 }
-.sb-text {
-  grid-row: 1;
-  grid-column: 1;
-  font-size: 1rem;
+.sb-panel--en {
+  background: rgba(77, 170, 230, 0.06);
+}
+.sb-panel--fi {
+  background: rgba(203, 0, 0, 0.04);
+}
+.sb-panel__content {
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Language label pill */
+.sb-lang-tag {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+  margin-bottom: 0.4rem;
+}
+
+.sb-panel p {
+  font-size: 0.92rem;
   color: var(--color-text);
-  line-height: 1.6;
-  transition: opacity 0.25s ease;
+  line-height: 1.55;
 }
 
-/* Vertical slider column */
-.speech-bubble__slider-col {
+/* Vertical divider bar with a circular drag handle */
+.sb-divider {
+  position: relative;
+  flex: 0 0 auto;
+  width: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 5;
+}
+.sb-divider__line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  background: var(--color-primary);
+  opacity: 0.7;
+  pointer-events: none;
+}
+.sb-divider__handle {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(77, 170, 230, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  cursor: col-resize;
   flex-shrink: 0;
+  transition: background 0.15s, box-shadow 0.15s;
 }
-.sb-slider__label {
-  font-size: 0.82rem;
-  color: var(--color-muted);
-  white-space: nowrap;
+.sb-divider:hover .sb-divider__handle,
+.sb-divider:focus .sb-divider__handle {
+  background: #3a96d4;
+  box-shadow: 0 3px 12px rgba(77, 170, 230, 0.6);
 }
-.sb-slider {
-  flex: 1;
-  min-height: 3.75rem;
-  writing-mode: vertical-lr;
-  accent-color: var(--color-primary);
-  cursor: pointer;
-  width: 4px;
+.sb-divider:focus {
+  outline: none;
 }
 
 /* Docs layout */
