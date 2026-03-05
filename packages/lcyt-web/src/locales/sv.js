@@ -211,6 +211,16 @@ export default {
     caption: 'Undertexter',
     translation: 'Översättning',
   },
+  normalizeModal: {
+    title: 'Normalisera radlängder?',
+    hint: 'Normalisera rader till en fast längd för bättre undertexter? Ord bryts inte.',
+    maxLen: 'Max radlängd (tecken)',
+    maxLenHint: 'Rekommenderat: 42 tecken — passar en undertextrad på YouTube Live. Ord bryts aldrig.',
+    preview: 'Förhandsvisning (första rader)',
+    linesCount: 'rader totalt',
+    skip: 'Behåll original',
+    confirm: 'Normalisera',
+  },
   networkBanner: {
     message: 'Servern kan inte nås — kontrollera din nätverksanslutning',
     retry: 'Försök igen',

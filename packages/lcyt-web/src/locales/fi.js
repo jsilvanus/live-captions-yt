@@ -211,6 +211,16 @@ export default {
     caption: 'Tekstitys',
     translation: 'Käännös',
   },
+  normalizeModal: {
+    title: 'Normalisoi rivin pituudet?',
+    hint: 'Normalisoidaanko rivit kiinteään pituuteen paremman tekstityksen saavuttamiseksi? Sanoja ei katkaista.',
+    maxLen: 'Rivin enimmäispituus (merkkiä)',
+    maxLenHint: 'Suositus: 42 merkkiä — mahtuu yhteen tekstitykseen YouTube Livessa. Sanoja ei koskaan katkaista.',
+    preview: 'Esikatselu (ensimmäiset rivit)',
+    linesCount: 'riviä yhteensä',
+    skip: 'Säilytä alkuperäinen',
+    confirm: 'Normalisoi',
+  },
   networkBanner: {
     message: 'Palvelimeen ei saada yhteyttä — tarkista verkkoyhteytesi',
     retry: 'Yritä uudelleen',
