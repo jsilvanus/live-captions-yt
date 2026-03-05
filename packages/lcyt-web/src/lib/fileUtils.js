@@ -75,7 +75,7 @@ export function parseFileContent(rawText) {
     } else {
       lines.push(raw);
       lineCodes.push({ ...currentCodes });
-      lineNumbers.push(i + 1); // 1-based original line number
+      lineNumbers.push(lines.length); // 1-based, counts only text lines (not metadata)
     }
   }
 
