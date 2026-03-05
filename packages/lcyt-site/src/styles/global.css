@@ -639,7 +639,7 @@ a:hover {
   color: #555;
 }
 
-/* App guide placeholder */
+/* App guide section */
 .app-guide {
   margin-top: 3.5rem;
   padding-top: 2rem;
@@ -650,6 +650,43 @@ a:hover {
   font-size: 1.4rem;
   color: var(--color-primary);
   margin-bottom: 0.75rem;
+}
+
+.app-guide p {
+  color: var(--color-muted);
+  margin-bottom: 1rem;
+}
+
+.app-guide__toc {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.app-guide__toc li {
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.app-guide__toc li:last-child {
+  border-bottom: none;
+}
+
+.app-guide__toc a {
+  display: block;
+  padding: 0.65rem 1rem;
+  color: var(--color-text);
+  font-size: 0.93rem;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.app-guide__toc a:hover {
+  background: #f0f7ff;
+  color: var(--color-primary);
+  text-decoration: none;
 }
 
 .app-guide__placeholder {

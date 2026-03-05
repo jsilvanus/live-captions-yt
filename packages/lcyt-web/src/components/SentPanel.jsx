@@ -77,7 +77,7 @@ function SentItem({ entry, isBatchContinuation }) {
 }
 
 export function SentPanel() {
-  const { entries } = useSentLogContext();
+  const { entries, clear } = useSentLogContext();
   const [wordWrap, setWordWrap] = useState(() => {
     try { return localStorage.getItem('lcyt:sent-panel-wrap') === '1'; } catch { return false; }
   });
@@ -98,6 +98,12 @@ export function SentPanel() {
           <input type="checkbox" checked={wordWrap} onChange={toggleWordWrap} />
           <span>Wrap</span>
         </label>
+        <button
+          className="sent-panel__clear-btn"
+          title="Clear sent captions log"
+          onClick={() => { if (entries.length === 0 || confirm('Clear all sent captions from this log?')) clear(); }}
+          aria-label="Clear sent log"
+        >✕ Clear</button>
       </div>
       <ul className={`sent-list${wordWrap ? ' sent-list--wordwrap' : ''}`}>
         {visible.length === 0 ? (

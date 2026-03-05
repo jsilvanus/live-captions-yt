@@ -248,7 +248,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           // { source, sequence, captions: [{ text, composedText, timestamp, ... },
           //     { text, composedText, timestamp, ... }] }
           const genericCaptions = resolvedCaptions.map((orig, i) => {
-            const { text, translations, captionLang, showOriginal, timestamp } = orig;
+            const { text, translations, captionLang, showOriginal, timestamp, codes } = orig;
             const tsStr = typeof timestamp === 'string' ? timestamp
               : (timestamp instanceof Date ? timestamp.toISOString() : undefined);
             return {
@@ -258,6 +258,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
               ...(translations && { translations }),
               ...(captionLang && { captionLang }),
               ...(showOriginal !== undefined && { showOriginal }),
+              ...(codes && typeof codes === 'object' && { codes }),
             };
           });
 

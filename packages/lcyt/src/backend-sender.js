@@ -174,6 +174,7 @@ export class BackendCaptionSender {
         caption.translations = extraOpts.translations;
       if (extraOpts.captionLang) caption.captionLang = extraOpts.captionLang;
       if (extraOpts.showOriginal !== undefined) caption.showOriginal = extraOpts.showOriginal;
+      if (extraOpts.codes && typeof extraOpts.codes === 'object') caption.codes = extraOpts.codes;
     }
 
     return this._fetch('/captions', {

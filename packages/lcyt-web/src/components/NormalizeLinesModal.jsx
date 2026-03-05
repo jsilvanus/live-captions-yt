@@ -5,8 +5,11 @@ const DEFAULT_MAX_LEN = 42;
 const MIN_LINE_LENGTH = 20;
 const MAX_LINE_LENGTH = 120;
 
-function normalizeLines(rawLines, maxLen) {
-  const words = rawLines.join(' ').split(/\s+/).filter(w => w.length > 0);
+/** Matches <!-- key: value --> metadata comment lines. */
+const COMMENT_LINE_RE = /^<!--[\s\S]*?-->\s*$/;
+
+/** Wrap an array of text words into lines no longer than maxLen. */
+function wrapWords(words, maxLen) {
   const result = [];
   let current = '';
   for (const word of words) {
@@ -20,6 +23,30 @@ function normalizeLines(rawLines, maxLen) {
     }
   }
   if (current) result.push(current);
+  return result;
+}
+
+function normalizeLines(rawLines, maxLen) {
+  const result = [];
+  let textBuffer = [];
+
+  function flushBuffer() {
+    if (textBuffer.length === 0) return;
+    const words = textBuffer.join(' ').split(/\s+/).filter(w => w.length > 0);
+    result.push(...wrapWords(words, maxLen));
+    textBuffer = [];
+  }
+
+  for (const line of rawLines) {
+    if (COMMENT_LINE_RE.test(line)) {
+      // Flush accumulated text before the comment, then keep the comment verbatim
+      flushBuffer();
+      result.push(line);
+    } else {
+      textBuffer.push(line);
+    }
+  }
+  flushBuffer();
   return result;
 }
 
