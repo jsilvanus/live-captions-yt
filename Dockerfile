@@ -22,6 +22,19 @@ FROM node:20-slim
 WORKDIR /app
 COPY --from=build /app .
 
+# Install a full-featured static FFmpeg (includes libx264, subtitle demuxers/encoders)
+# We use johnvansickle's static build for reliability and to avoid compiling in-image.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget ca-certificates xz-utils \
+ && wget -O /tmp/ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
+ && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp \
+ && cp /tmp/ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ \
+ && cp /tmp/ffmpeg-*-amd64-static/ffprobe /usr/local/bin/ \
+ && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
+ && rm -rf /tmp/ffmpeg* \
+ && apt-get purge -y --auto-remove wget xz-utils \
+ && rm -rf /var/lib/apt/lists/*
+
 ENV NODE_ENV=production
 # Toggle free-tier API key handout endpoint (0 = disabled, 1 = enabled)
 ENV FREE_APIKEY_ACTIVE=0
