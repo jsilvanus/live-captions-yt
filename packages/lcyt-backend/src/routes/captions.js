@@ -235,25 +235,47 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
         // Fan-out to extra targets (fire-and-forget; errors do not affect the primary result)
         if (session.extraTargets && session.extraTargets.length > 0) {
           const source = session.domain;
-          for (const caption of sendCaptions) {
-            const { text, timestamp } = caption;
+
+          // Build the full per-caption payload for generic targets.
+          // Includes the original text, the composed/translated text, and all
+          // translation metadata so downstream services can apply their own logic.
+          //
+          // Single caption example:
+          // { source, sequence, captions: [{ text, composedText, timestamp,
+          //     captionLang, translations: { 'fi-FI': '...' }, showOriginal }] }
+          //
+          // Batch example (same structure, multiple entries in captions array):
+          // { source, sequence, captions: [{ text, composedText, timestamp, ... },
+          //     { text, composedText, timestamp, ... }] }
+          const genericCaptions = resolvedCaptions.map((orig, i) => {
+            const { text, translations, captionLang, showOriginal, timestamp } = orig;
             const tsStr = typeof timestamp === 'string' ? timestamp
               : (timestamp instanceof Date ? timestamp.toISOString() : undefined);
+            return {
+              text,
+              composedText: sendCaptions[i]?.text ?? text,
+              timestamp: tsStr,
+              ...(translations && { translations }),
+              ...(captionLang && { captionLang }),
+              ...(showOriginal !== undefined && { showOriginal }),
+            };
+          });
 
-            for (const target of session.extraTargets) {
-              if (target.type === 'youtube' && target.sender) {
-                target.sender.send(text, timestamp).catch(err => {
+          for (const target of session.extraTargets) {
+            if (target.type === 'youtube' && target.sender) {
+              for (const caption of sendCaptions) {
+                target.sender.send(caption.text, caption.timestamp).catch(err => {
                   console.warn(`[captions] Extra YouTube target ${target.id} error: ${err.message}`);
                 });
-              } else if (target.type === 'generic' && target.url) {
-                fetch(target.url, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', ...(target.headers || {}) },
-                  body: JSON.stringify({ source, text, timestamp: tsStr, sequence: session.sequence }),
-                }).catch(err => {
-                  console.warn(`[captions] Generic target ${target.id} error: ${err.message}`);
-                });
               }
+            } else if (target.type === 'generic' && target.url) {
+              fetch(target.url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(target.headers || {}) },
+                body: JSON.stringify({ source, sequence: session.sequence, captions: genericCaptions }),
+              }).catch(err => {
+                console.warn(`[captions] Generic target ${target.id} error: ${err.message}`);
+              });
             }
           }
         }
