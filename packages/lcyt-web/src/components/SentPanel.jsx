@@ -24,14 +24,15 @@ function SentItemText({ entry }) {
   if (entry.captionTranslationText) {
     return (
       <span className="sent-item__text-block">
-        <span className="sent-item__text sent-item__text--translation" title={entry.captionTranslationText}>
-          {entry.captionTranslationText}
-        </span>
         <span
           className={`sent-item__text sent-item__text--original${entry.showOriginal ? '' : ' sent-item__text--original-small'}`}
           title={entry.text}
         >
           {entry.text}
+        </span>
+        <span className="sent-item__text-divider" aria-hidden="true" />
+        <span className="sent-item__text sent-item__text--translation" title={entry.captionTranslationText}>
+          {entry.captionTranslationText}
         </span>
       </span>
     );

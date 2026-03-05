@@ -495,10 +495,19 @@
 
 .sent-item__text-block {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   overflow: hidden;
   flex: 1;
-  gap: 1px;
+  gap: 0;
+}
+
+.sent-item__text-divider {
+  flex-shrink: 0;
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-border);
+  margin: 2px 8px;
 }
 
 .sent-item__text--translation {
@@ -506,6 +515,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .sent-item__text--original {
@@ -513,6 +523,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 1;
 }
 
 .sent-item__text--original-small {
