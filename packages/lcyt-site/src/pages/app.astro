@@ -28,12 +28,27 @@ import FreeKeyForm from '../components/FreeKeyForm.astro';
       </a>
     </div>
 
-    <!-- Guide section (placeholder — will become a full help guide) -->
+    <!-- Guide section — links to the full /guide page -->
     <section class="app-guide" id="guide">
       <h2>Guide</h2>
-      <p class="app-guide__placeholder">
-        A step-by-step guide for using the LCYT web app is coming soon. It will cover setting up your YouTube Live stream, connecting with an API key, sending captions, and advanced features such as translation, RTMP relay, and keyboard shortcuts.
+      <p>
+        The full step-by-step guide covers everything you need to get the most out of the LCYT web app.
       </p>
+
+      <ul class="app-guide__toc">
+        <li><a href="/guide#overview">Overview — what LCYT is and how it works</a></li>
+        <li><a href="/guide#getting-started">Getting started — set up YouTube Live and connect</a></li>
+        <li><a href="/guide#sending-captions">Sending captions — typed input, speech recognition, and file playback</a></li>
+        <li><a href="/guide#caption-settings">Caption settings — STT engine, VAD, and display options</a></li>
+        <li><a href="/guide#translation">Translation — real-time automatic caption translation</a></li>
+        <li><a href="/guide#general-settings">General settings — connection, RTMP relay, and theme</a></li>
+        <li><a href="/guide#status-actions">Status &amp; Actions — session monitoring and diagnostics</a></li>
+        <li><a href="/guide#keyboard-shortcuts">Keyboard shortcuts — full shortcut reference</a></li>
+      </ul>
+
+      <div style="margin-top:1.5rem;">
+        <a class="btn-primary" href="/guide">Read the full guide →</a>
+      </div>
     </section>
   </div>
 </Base>

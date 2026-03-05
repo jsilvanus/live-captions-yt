@@ -8,15 +8,21 @@
  *
  * Coverage:
  *   • Main dashboard (landscape + portrait)
- *   • Privacy modal (first-visit, countdown active)
- *   • General modal
- *   • Status panel (floating)
- *   • Actions panel (floating)
- *   • Caption modal — Model tab
- *   • Caption modal — VAD tab
- *   • Caption modal — Other tab
- *   • Translation modal
- *   • Privacy modal (opened from settings)
+ *   • Status bar (cropped)
+ *   • Left panel: drop zone + caption view
+ *   • Right panel: sent captions log
+ *   • Input bar (cropped)
+ *   • Mobile audio bar (portrait, cropped)
+ *   • Privacy modal — first-visit (countdown active)
+ *   • General modal — caption relay (cropped)
+ *   • General modal — RTMP relay (cropped)
+ *   • Status panel (floating, cropped)
+ *   • Actions panel (floating, cropped)
+ *   • Caption modal — Model tab (cropped)
+ *   • Caption modal — VAD tab (cropped)
+ *   • Caption modal — Other tab (cropped)
+ *   • Translation modal (cropped)
+ *   • Privacy modal (opened from settings, cropped)
  *
  * Prerequisites:
  *   npm run build:web                  # build the Vite app
@@ -27,19 +33,26 @@
  *   # or via npm script:
  *   npm run screenshots
  *
- * Output: docs/screenshots/<name>-dark.png  and  docs/screenshots/<name>-light.png
+ * Output:
+ *   docs/screenshots/<name>-dark.png
+ *   docs/screenshots/<name>-light.png
+ *   packages/lcyt-site/public/screenshots/<name>-dark.png
+ *   packages/lcyt-site/public/screenshots/<name>-light.png
  */
 
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
-import { mkdirSync, existsSync } from 'fs';
+import { mkdirSync, existsSync, copyFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
 const WEB_PKG = resolve(ROOT, 'packages', 'lcyt-web');
-const OUT_DIR = resolve(ROOT, 'docs', 'screenshots');
+// Canonical docs location — kept in git for reference
+const DOCS_DIR = resolve(ROOT, 'docs', 'screenshots');
+// Astro public dir — served at /screenshots/ on the site
+const SITE_DIR = resolve(ROOT, 'packages', 'lcyt-site', 'public', 'screenshots');
 const PREVIEW_PORT = 4173;
 const BASE_URL = `http://localhost:${PREVIEW_PORT}`;
 
@@ -49,6 +62,9 @@ const PORTRAIT  = { width: 390,  height: 844 };
 
 // Settle time (ms) after each navigation/interaction before screenshotting
 const SETTLE_MS = 700;
+
+// Padding (px) added around a cropped element bounding box
+const CROP_PAD = 16;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -76,6 +92,22 @@ async function applyTheme(page, theme) {
   }, theme);
 }
 
+/**
+ * Save a screenshot to both output directories and log a confirmation line.
+ * @param {Buffer|string} data   - screenshot buffer (or path string from page.screenshot)
+ * @param {string}        name   - base file name (without theme suffix or .png)
+ * @param {string}        theme  - 'dark' | 'light'
+ */
+function saveScreenshot(docsPath, sitePath, name, theme) {
+  // page.screenshot already wrote to docsPath; copy to the site public dir
+  try {
+    copyFileSync(docsPath, sitePath);
+  } catch (err) {
+    process.stderr.write(`  ⚠  Could not copy to site public dir: ${err.message}\n`);
+  }
+  console.log(`  ✓  ${name}-${theme}.png`);
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 // Verify the web build exists
@@ -87,7 +119,8 @@ if (!existsSync(resolve(WEB_PKG, 'dist', 'index.html'))) {
   process.exit(1);
 }
 
-mkdirSync(OUT_DIR, { recursive: true });
+mkdirSync(DOCS_DIR, { recursive: true });
+mkdirSync(SITE_DIR, { recursive: true });
 
 console.log('Starting vite preview server…');
 const server = spawn(
@@ -106,86 +139,167 @@ async function run() {
   const browser = await chromium.launch();
 
   /**
-   * Take one screenshot in the requested theme.
+   * Take one full-viewport screenshot in the requested theme.
    * @param {string}   name     - base output filename (without theme suffix or .png)
    * @param {string}   theme    - 'dark' | 'light'
    * @param {object}   viewport - { width, height }
-   * @param {Function} setup    - async (page) => void — runs after first load
+   * @param {Function} setup    - async (page, theme) => void — runs after first load
    */
   async function shot(name, theme, viewport, setup) {
     const ctx = await browser.newContext({ viewport });
     const page = await ctx.newPage();
 
-    // Load the app (fresh localStorage in every context)
     await page.goto(BASE_URL, { waitUntil: 'networkidle' });
-
-    // Apply the requested theme before any user setup runs
     await applyTheme(page, theme);
 
     if (setup) await setup(page, theme);
 
     await sleep(SETTLE_MS);
-    const outPath = resolve(OUT_DIR, `${name}-${theme}.png`);
-    await page.screenshot({ path: outPath, fullPage: false });
-    console.log(`  ✓  ${name}-${theme}.png`);
+
+    const docsPath = resolve(DOCS_DIR, `${name}-${theme}.png`);
+    const sitePath = resolve(SITE_DIR, `${name}-${theme}.png`);
+    await page.screenshot({ path: docsPath, fullPage: false });
+    saveScreenshot(docsPath, sitePath, name, theme);
     await ctx.close();
   }
 
   /**
-   * Convenience wrapper: take the same shot in both dark and light mode.
+   * Take one cropped screenshot, clipping to a specific element's bounding box
+   * (plus optional padding). Falls back to a full-viewport shot if the selector
+   * is not found.
+   *
+   * @param {string}   name      - base output filename
+   * @param {string}   theme     - 'dark' | 'light'
+   * @param {object}   viewport  - { width, height }
+   * @param {string}   selector  - CSS selector of the element to crop to
+   * @param {Function} setup     - async (page, theme) => void
+   * @param {number}   [pad]     - extra padding in px (default: CROP_PAD)
+   */
+  async function shotCropped(name, theme, viewport, selector, setup, pad = CROP_PAD) {
+    const ctx = await browser.newContext({ viewport });
+    const page = await ctx.newPage();
+
+    await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+    await applyTheme(page, theme);
+
+    if (setup) await setup(page, theme);
+
+    await sleep(SETTLE_MS);
+
+    const docsPath = resolve(DOCS_DIR, `${name}-${theme}.png`);
+    const sitePath = resolve(SITE_DIR, `${name}-${theme}.png`);
+
+    const el = page.locator(selector).first();
+    const box = await el.boundingBox().catch(() => null);
+
+    if (box) {
+      const clip = {
+        x:      Math.max(0, box.x - pad),
+        y:      Math.max(0, box.y - pad),
+        width:  Math.min(viewport.width,  box.width  + pad * 2),
+        height: Math.min(viewport.height, box.height + pad * 2),
+      };
+      await page.screenshot({ path: docsPath, clip });
+    } else {
+      // Selector not found — fall back to full viewport
+      await page.screenshot({ path: docsPath, fullPage: false });
+    }
+
+    saveScreenshot(docsPath, sitePath, name, theme);
+    await ctx.close();
+  }
+
+  /**
+   * Convenience wrappers: take the same shot in both dark and light mode.
    */
   async function shotBoth(name, viewport, setup) {
     await shot(name, 'dark',  viewport, setup);
     await shot(name, 'light', viewport, setup);
   }
 
-  // ── 1. Dashboard — landscape ───────────────────────────────────────────────
-  await shotBoth('dashboard-landscape', LANDSCAPE, async page => {
+  async function shotBothCropped(name, viewport, selector, setup, pad = CROP_PAD) {
+    await shotCropped(name, 'dark',  viewport, selector, setup, pad);
+    await shotCropped(name, 'light', viewport, selector, setup, pad);
+  }
+
+  // ── Helper: accept privacy and reload ─────────────────────────────────────
+  async function acceptPrivacy(page) {
     await page.evaluate(() => localStorage.setItem('lcyt:privacyAccepted', '1'));
     await page.reload({ waitUntil: 'networkidle' });
-  });
-
-  // ── 2. Dashboard — portrait / mobile ──────────────────────────────────────
-  await shotBoth('dashboard-portrait', PORTRAIT, async page => {
-    await page.evaluate(() => localStorage.setItem('lcyt:privacyAccepted', '1'));
-    await page.reload({ waitUntil: 'networkidle' });
-  });
-
-  // ── 3. Privacy modal — first-visit (acceptance countdown active) ───────────
-  // Note: theme must be re-applied after the forced reload because localStorage is cleared.
-  await shotBoth('privacy-first-visit', LANDSCAPE, async (page, theme) => {
-    // Leave lcyt:privacyAccepted unset → modal auto-opens with countdown
-    await page.waitForSelector('.settings-modal__box');
-    // Re-apply theme because we reloaded with an empty localStorage
-    await applyTheme(page, theme);
-  });
+  }
 
   // ── Helper: open a StatusBar button by its title attribute ─────────────────
   async function openStatusBarBtn(page, title) {
-    await page.evaluate(() => localStorage.setItem('lcyt:privacyAccepted', '1'));
-    await page.reload({ waitUntil: 'networkidle' });
+    await acceptPrivacy(page);
     await page.click(`button[title="${title}"]`);
   }
 
-  // ── 4. General modal ───────────────────────────────────────────────────────
-  await shotBoth('modal-general', LANDSCAPE, async page => {
-    await openStatusBarBtn(page, 'General settings');
-    await page.waitForSelector('.settings-modal__box');
-  });
+  // ── 1. Dashboard — landscape ───────────────────────────────────────────────
+  await shotBoth('dashboard-landscape', LANDSCAPE, acceptPrivacy);
 
-  // ── 5. Status panel (floating) ─────────────────────────────────────────────
-  await shotBoth('panel-status', LANDSCAPE, async page => {
-    await openStatusBarBtn(page, 'Status');
-    await page.waitForSelector('.floating-panel');
-  });
+  // ── 2. Dashboard — portrait / mobile ──────────────────────────────────────
+  await shotBoth('dashboard-portrait', PORTRAIT, acceptPrivacy);
 
-  // ── 6. Actions panel (floating) ────────────────────────────────────────────
-  await shotBoth('panel-actions', LANDSCAPE, async page => {
-    await openStatusBarBtn(page, 'Actions');
-    await page.waitForSelector('.floating-panel');
-  });
+  // ── 3. Status bar (top header strip) ──────────────────────────────────────
+  await shotBothCropped('statusbar', LANDSCAPE, '#header', acceptPrivacy, 0);
 
-  // ── 7–9. Caption modal — one tab at a time ─────────────────────────────────
+  // ── 4. Left panel (drop zone + caption view) ──────────────────────────────
+  await shotBothCropped('panel-left', LANDSCAPE, '#left-panel', acceptPrivacy, 0);
+
+  // ── 5. Right panel (sent captions log) ────────────────────────────────────
+  await shotBothCropped('panel-right', LANDSCAPE, '#right-panel', acceptPrivacy, 0);
+
+  // ── 6. Input bar (footer) ─────────────────────────────────────────────────
+  await shotBothCropped('inputbar', LANDSCAPE, '#footer', acceptPrivacy, 0);
+
+  // ── 7. Mobile audio bar ───────────────────────────────────────────────────
+  await shotBothCropped('mobile-audio-bar', PORTRAIT, '#mobile-audio-bar', acceptPrivacy, 0);
+
+  // ── 8. Privacy modal — first-visit (acceptance countdown active) ───────────
+  await shotBothCropped('privacy-first-visit', LANDSCAPE, '.settings-modal__box',
+    async (page, theme) => {
+      // lcyt:privacyAccepted is NOT set → modal auto-opens
+      await page.waitForSelector('.settings-modal__box');
+      await applyTheme(page, theme);
+    }
+  );
+
+  // ── 9. General modal — caption relay mode (default) ────────────────────────
+  await shotBothCropped('modal-general', LANDSCAPE, '.settings-modal__box',
+    async page => {
+      await openStatusBarBtn(page, 'General settings');
+      await page.waitForSelector('.settings-modal__box');
+    }
+  );
+
+  // ── 10. General modal — RTMP relay mode ───────────────────────────────────
+  await shotBothCropped('modal-general-rtmp', LANDSCAPE, '.settings-modal__box',
+    async page => {
+      await openStatusBarBtn(page, 'General settings');
+      await page.waitForSelector('.settings-modal__box');
+      // Switch to RTMP mode
+      await page.locator('.lang-btn', { hasText: 'RTMP' }).first().click();
+      await sleep(200);
+    }
+  );
+
+  // ── 11. Status panel (floating) ────────────────────────────────────────────
+  await shotBothCropped('panel-status', LANDSCAPE, '.floating-panel',
+    async page => {
+      await openStatusBarBtn(page, 'Status');
+      await page.waitForSelector('.floating-panel');
+    }
+  );
+
+  // ── 12. Actions panel (floating) ───────────────────────────────────────────
+  await shotBothCropped('panel-actions', LANDSCAPE, '.floating-panel',
+    async page => {
+      await openStatusBarBtn(page, 'Actions');
+      await page.waitForSelector('.floating-panel');
+    }
+  );
+
+  // ── 13–15. Caption modal — one tab at a time ───────────────────────────────
   const CAPTION_TABS = [
     { id: 'model', label: 'Model' },
     { id: 'vad',   label: 'VAD'   },
@@ -193,32 +307,38 @@ async function run() {
   ];
 
   for (const { id, label } of CAPTION_TABS) {
-    await shotBoth(`modal-caption-${id}`, LANDSCAPE, async page => {
-      await openStatusBarBtn(page, 'Caption settings');
-      await page.waitForSelector('.settings-modal__box');
-      await page.locator('.settings-tab', { hasText: label }).click();
-      await sleep(200);
-    });
+    await shotBothCropped(`modal-caption-${id}`, LANDSCAPE, '.settings-modal__box',
+      async page => {
+        await openStatusBarBtn(page, 'Caption settings');
+        await page.waitForSelector('.settings-modal__box');
+        await page.locator('.settings-tab', { hasText: label }).click();
+        await sleep(200);
+      }
+    );
   }
 
-  // ── 10. Translation modal ──────────────────────────────────────────────────
-  await shotBoth('modal-translation', LANDSCAPE, async page => {
-    await openStatusBarBtn(page, 'Translation settings');
-    await page.waitForSelector('.settings-modal__box');
-  });
+  // ── 16. Translation modal ──────────────────────────────────────────────────
+  await shotBothCropped('modal-translation', LANDSCAPE, '.settings-modal__box',
+    async page => {
+      await openStatusBarBtn(page, 'Translation settings');
+      await page.waitForSelector('.settings-modal__box');
+    }
+  );
 
-  // ── 11. Privacy modal (opened via Settings bar) ────────────────────────────
-  await shotBoth('modal-privacy', LANDSCAPE, async page => {
-    await openStatusBarBtn(page, 'Privacy');
-    await page.waitForSelector('.settings-modal__box');
-  });
+  // ── 17. Privacy modal (opened via Settings bar) ────────────────────────────
+  await shotBothCropped('modal-privacy', LANDSCAPE, '.settings-modal__box',
+    async page => {
+      await openStatusBarBtn(page, 'Privacy');
+      await page.waitForSelector('.settings-modal__box');
+    }
+  );
 
   await browser.close();
 }
 
 run()
   .then(() => {
-    console.log(`\nAll screenshots saved to ${OUT_DIR}`);
+    console.log(`\nAll screenshots saved to:\n  ${DOCS_DIR}\n  ${SITE_DIR}`);
     server.kill();
     process.exit(0);
   })

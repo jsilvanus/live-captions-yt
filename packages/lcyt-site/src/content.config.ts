@@ -28,6 +28,13 @@ export const collections = {
       sse: z.boolean().optional(),
     }),
   }),
+  guide: defineCollection({
+    loader: glob({ pattern: '**/*.md', base: new URL('guide/', docsRoot) }),
+    schema: z.object({
+      title: z.string().optional(),
+      order: z.number().optional(),
+    }),
+  }),
   blog: defineCollection({
     loader: glob({ pattern: '**/*.md', base: new URL('./content/blog/', import.meta.url) }),
     schema: z.object({
