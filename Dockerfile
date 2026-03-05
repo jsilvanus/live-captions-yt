@@ -23,8 +23,6 @@ WORKDIR /app
 COPY --from=build /app .
 
 ENV NODE_ENV=production
-# Toggle free-tier API key handout endpoint (0 = disabled, 1 = enabled)
-ENV FREE_APIKEY_ACTIVE=0
 
 # Copy process manager entrypoint and make executable, create SQLite data dir
 COPY scripts/entrypoint.sh /entrypoint.sh
