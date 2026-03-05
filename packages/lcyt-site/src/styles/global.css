@@ -83,10 +83,22 @@ a:hover {
 }
 
 /* Landing */
+.landing-page {
+  min-height: calc(100vh - var(--nav-height));
+  background:
+    linear-gradient(
+      155deg,
+      rgba(77, 170, 230, 0.14) 0%,
+      rgba(255, 255, 255, 0.00) 45%,
+      rgba(203, 0, 0, 0.07) 80%,
+      rgba(255, 240, 240, 0.50) 100%
+    ),
+    #ffffff;
+}
+
 .hero {
   text-align: center;
   padding: 5rem 1.5rem 3rem;
-  background: linear-gradient(135deg, #f0f8ff 0%, #fff 100%);
 }
 
 .hero h1 {
@@ -107,19 +119,21 @@ a:hover {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 1.5rem;
   max-width: 1000px;
-  margin: 0 auto;
+  margin: 2.5rem auto 0;
   padding: 0 1.5rem 4rem;
 }
 
 .card {
-  background: #fff;
+  background: rgba(255, 255, 255, 0.85);
   border: 1px solid #e0e0e0;
   border-radius: 8px;
-  padding: 1.75rem 1.5rem;
+  padding: 1.75rem 1.5rem 1.75rem 0;
   text-decoration: none;
   color: var(--color-text);
   transition: box-shadow 0.2s, transform 0.2s;
   display: block;
+  position: relative;
+  overflow: hidden;
 }
 
 .card:hover {
@@ -128,15 +142,125 @@ a:hover {
   text-decoration: none;
 }
 
-.card h2 {
+/* Big emoji clipped at the left edge of the card.
+ * Positioned at left:0 and shifted left by 50% of its own width so the
+ * emoji's centre aligns with the card's left border. The card's
+ * overflow:hidden then clips the left half, leaving only the right half
+ * visible inside the card. */
+.card__emoji {
+  position: absolute;
+  top: 1.1rem;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 3.75rem;
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  display: block;
+}
+
+/* Text content pushed right to clear the visible emoji half */
+.card__body {
+  padding-left: 2.25rem;
+}
+
+.card h2,
+.card__body h2 {
   font-size: 1.15rem;
   color: var(--color-primary);
   margin-bottom: 0.5rem;
 }
 
-.card p {
+.card p,
+.card__body p {
   font-size: 0.92rem;
   color: var(--color-muted);
+}
+
+/* ── Speech bubble ──────────────────────────────────────────────────────── */
+.speech-bubble-wrap {
+  max-width: 720px;
+  margin: 0 auto 0;
+  padding: 0 1.5rem;
+}
+
+.speech-bubble {
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--color-primary);
+  border-radius: 20px;
+  box-shadow: 0 6px 28px rgba(77, 170, 230, 0.16);
+  padding: 1.75rem 2rem 1.5rem;
+  position: relative;
+}
+
+/* Downward-pointing tail toward the cards */
+.speech-bubble::before,
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-style: solid;
+  border-color: transparent;
+}
+.speech-bubble::before {
+  bottom: -22px;
+  border-width: 11px 11px 0;
+  border-top-color: var(--color-primary);
+}
+.speech-bubble::after {
+  bottom: -18px;
+  border-width: 9px 9px 0;
+  border-top-color: rgba(255, 255, 255, 0.92);
+}
+
+/* Graphical caption-bar decorations */
+.caption-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1.25rem;
+}
+.caption-bar {
+  height: 0.55rem;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--color-primary) 0%, rgba(77, 170, 230, 0.18) 100%);
+}
+.caption-bar--wide   { width: 100%; opacity: 0.45; }
+.caption-bar--medium { width: 70%;  opacity: 0.35; }
+.caption-bar--narrow { width: 46%;  opacity: 0.26; }
+
+/* Bilingual text panel */
+.speech-bubble__text {
+  position: relative;
+  min-height: 5.5rem;
+  margin-bottom: 1.25rem;
+}
+.sb-text {
+  position: absolute;
+  inset: 0;
+  font-size: 1rem;
+  color: var(--color-text);
+  line-height: 1.6;
+  transition: opacity 0.25s ease;
+}
+
+/* Slider row */
+.speech-bubble__slider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.sb-slider__label {
+  font-size: 0.82rem;
+  color: var(--color-muted);
+  white-space: nowrap;
+}
+.sb-slider {
+  flex: 1;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+  height: 4px;
 }
 
 /* Docs layout */
@@ -447,6 +571,29 @@ a:hover {
   margin-top: 0.5rem;
   font-size: 0.88rem;
   color: #555;
+}
+
+/* App guide placeholder */
+.app-guide {
+  margin-top: 3.5rem;
+  padding-top: 2rem;
+  border-top: 1px solid #e0e0e0;
+}
+
+.app-guide h2 {
+  font-size: 1.4rem;
+  color: var(--color-primary);
+  margin-bottom: 0.75rem;
+}
+
+.app-guide__placeholder {
+  color: var(--color-muted);
+  font-style: italic;
+  background: #f8f9fa;
+  border-left: 3px solid var(--color-primary);
+  padding: 0.85rem 1rem;
+  border-radius: 0 4px 4px 0;
+  font-size: 0.95rem;
 }
 
 @media (max-width: 700px) {

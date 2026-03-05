@@ -2,34 +2,105 @@
 import Base from '../layouts/Base.astro';
 ---
 <Base title="LCYT — Live Captions for YouTube">
-  <section class="hero">
-    <h1>LCYT</h1>
-    <p>Live Captions for YouTube — send real-time captions to your live streams via Google's HTTP POST caption ingestion API.</p>
-  </section>
-  <div class="cards-grid">
-    <a class="card" href="/lib">
-      <h2>📦 Library</h2>
-      <p>JavaScript &amp; Python SDKs for sending captions directly or via the relay backend.</p>
-    </a>
-    <a class="card" href="/api">
-      <h2>🔌 API</h2>
-      <p>HTTP relay backend API reference — sessions, captions, keys, stats, and more.</p>
-    </a>
-    <a class="card" href="/mcp">
-      <h2>🤖 MCP</h2>
-      <p>Model Context Protocol server — integrate LCYT with AI assistants like Claude.</p>
-    </a>
-    <a class="card" href="/blog">
-      <h2>📝 Blog</h2>
-      <p>Updates, tutorials, and tips from the LCYT team.</p>
-    </a>
-    <a class="card" href="/app">
-      <h2>🚀 App</h2>
-      <p>Get an API key and launch the browser-based captioning app.</p>
-    </a>
-    <a class="card card--repo" href="https://github.com/jsilvanus/live-captions-yt" target="_blank" rel="noopener noreferrer">
-      <h2>⭐ GitHub</h2>
-      <p>View the source code, open issues, and contribute on GitHub.</p>
-    </a>
+  <div class="landing-page">
+    <section class="hero">
+      <h1>LCYT</h1>
+      <p>Live Captions for YouTube — send real-time captions to your live streams via Google's HTTP POST caption ingestion API.</p>
+    </section>
+
+    <!-- Speech bubble: graphical depiction + bilingual slider -->
+    <div class="speech-bubble-wrap">
+      <div class="speech-bubble">
+        <div class="caption-bars" aria-hidden="true">
+          <div class="caption-bar caption-bar--wide"></div>
+          <div class="caption-bar caption-bar--medium"></div>
+          <div class="caption-bar caption-bar--narrow"></div>
+        </div>
+        <div class="speech-bubble__text">
+          <p class="sb-text sb-text--fi">
+            LCYT mahdollistaa suomenkielisten suoralähetysten tekstityksen — elävät tekstitykset tekevät sisältösi saavutettavaksi kaikille katsojille ympäri maailmaa, myös niille jotka eivät puhu englantia.
+          </p>
+          <p class="sb-text sb-text--en" style="opacity:0;">
+            LCYT makes live broadcasts accessible to everyone — send real-time captions in any language to your YouTube stream, breaking the language barrier for global audiences.
+          </p>
+        </div>
+        <div class="speech-bubble__slider">
+          <span class="sb-slider__label">🇫🇮 FI</span>
+          <input type="range" class="sb-slider" min="0" max="1" step="0.01" value="0"
+            role="slider" aria-valuemin="0" aria-valuemax="1" aria-valuenow="0"
+            aria-valuetext="Finnish"
+            aria-label="Slide between Finnish and English text">
+          <span class="sb-slider__label">EN 🇬🇧</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cards-grid">
+      <a class="card" href="/lib">
+        <span class="card__emoji" aria-hidden="true">📦</span>
+        <div class="card__body">
+          <h2>Library</h2>
+          <p>JavaScript &amp; Python SDKs for sending captions directly or via the relay backend.</p>
+        </div>
+      </a>
+      <a class="card" href="/api">
+        <span class="card__emoji" aria-hidden="true">🔌</span>
+        <div class="card__body">
+          <h2>API</h2>
+          <p>HTTP relay backend API reference — sessions, captions, keys, stats, and more.</p>
+        </div>
+      </a>
+      <a class="card" href="/mcp">
+        <span class="card__emoji" aria-hidden="true">🤖</span>
+        <div class="card__body">
+          <h2>MCP</h2>
+          <p>Model Context Protocol server — integrate LCYT with AI assistants like Claude.</p>
+        </div>
+      </a>
+      <a class="card" href="/blog">
+        <span class="card__emoji" aria-hidden="true">📝</span>
+        <div class="card__body">
+          <h2>Blog</h2>
+          <p>Updates, tutorials, and tips from the LCYT team.</p>
+        </div>
+      </a>
+      <a class="card" href="/app">
+        <span class="card__emoji" aria-hidden="true">🚀</span>
+        <div class="card__body">
+          <h2>App</h2>
+          <p>Get an API key and launch the browser-based captioning app.</p>
+        </div>
+      </a>
+      <a class="card card--repo" href="https://github.com/jsilvanus/live-captions-yt" target="_blank" rel="noopener noreferrer">
+        <span class="card__emoji" aria-hidden="true">⭐</span>
+        <div class="card__body">
+          <h2>GitHub</h2>
+          <p>View the source code, open issues, and contribute on GitHub.</p>
+        </div>
+      </a>
+    </div>
   </div>
 </Base>
+
+<script>
+  const slider = document.querySelector<HTMLInputElement>('.sb-slider');
+  const textFi  = document.querySelector<HTMLElement>('.sb-text--fi');
+  const textEn  = document.querySelector<HTMLElement>('.sb-text--en');
+
+  function update(v: number) {
+    // v = 0 → Finnish fully visible; v = 1 → English fully visible
+    if (textFi) textFi.style.opacity = String(1 - v);
+    if (textEn) textEn.style.opacity = String(v);
+    if (slider) {
+      // Announce the current language for screen readers
+      if (v <= 0.1) slider.setAttribute('aria-valuetext', 'Finnish');
+      else if (v >= 0.9) slider.setAttribute('aria-valuetext', 'English');
+      else slider.setAttribute('aria-valuetext', 'Mixed');
+    }
+  }
+
+  if (slider) {
+    update(parseFloat(slider.value));
+    slider.addEventListener('input', () => update(parseFloat(slider.value)));
+  }
+</script>

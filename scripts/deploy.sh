@@ -66,9 +66,32 @@ fi
 
 if [[ -d "$REPO_DIR/.git" ]]; then
   echo "==> Pulling latest ($GIT_BRANCH) into $REPO_DIR"
+
+  # Record the current SHA of this deploy script before pulling so we can
+  # detect whether it changed and re-execute the updated version.
+  _DEPLOY_SCRIPT_IN_REPO="$REPO_DIR/scripts/deploy.sh"
+  _OLD_DEPLOY_SHA=""
+  if [[ -f "$_DEPLOY_SCRIPT_IN_REPO" ]]; then
+    _OLD_DEPLOY_SHA=$(sha256sum "$_DEPLOY_SCRIPT_IN_REPO" | cut -d' ' -f1)
+  fi
+
   git -C "$REPO_DIR" fetch origin "$GIT_BRANCH"
   git -C "$REPO_DIR" checkout "$GIT_BRANCH"
   git -C "$REPO_DIR" reset --hard "origin/$GIT_BRANCH"
+
+  # Self-check: if deploy.sh changed in this pull, re-execute from the repo.
+  # The exec replaces the current process, so the new script runs from the
+  # beginning. On the second run the SHA will match (nothing new to pull),
+  # so the re-exec does NOT trigger again — no infinite loop.
+  # If the updated script has a syntax error, bash will exit non-zero before
+  # any destructive steps, keeping the deployment safely aborted.
+  if [[ -f "$_DEPLOY_SCRIPT_IN_REPO" ]]; then
+    _NEW_DEPLOY_SHA=$(sha256sum "$_DEPLOY_SCRIPT_IN_REPO" | cut -d' ' -f1)
+    if [[ -n "$_OLD_DEPLOY_SHA" && "$_OLD_DEPLOY_SHA" != "$_NEW_DEPLOY_SHA" ]]; then
+      echo "==> deploy.sh has been updated — re-executing the new version from repo…"
+      exec bash "$_DEPLOY_SCRIPT_IN_REPO" "$@"
+    fi
+  fi
 else
   echo "==> Cloning $REPO_URL into $REPO_DIR"
   git clone --branch "$GIT_BRANCH" "$REPO_URL" "$REPO_DIR"
