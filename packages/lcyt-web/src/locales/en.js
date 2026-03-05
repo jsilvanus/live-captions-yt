@@ -211,6 +211,16 @@ export default {
     caption: 'Caption',
     translation: 'Translation',
   },
+  normalizeModal: {
+    title: 'Normalize line lengths?',
+    hint: 'Normalize lines to a fixed length for better captioning? Words will not be broken.',
+    maxLen: 'Max line length (characters)',
+    maxLenHint: 'Recommended: 42 characters — fits one caption line on YouTube Live. Words are never split.',
+    preview: 'Preview (first lines)',
+    linesCount: 'lines total',
+    skip: 'Keep original',
+    confirm: 'Normalize',
+  },
   networkBanner: {
     message: 'Backend cannot be reached — check your network connection',
     retry: 'Retry',
