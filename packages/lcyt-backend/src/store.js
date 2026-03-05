@@ -60,7 +60,7 @@ export class SessionStore {
   * @param {object} [params.sender] - YoutubeLiveCaptionSender instance (optional; rehydrated sessions may have no sender)
    * @returns {object} The created session object
    */
-  create({ apiKey, streamKey, domain, jwt, sequence = 0, syncOffset = 0, sender }) {
+  create({ apiKey, streamKey, domain, jwt, sequence = 0, syncOffset = 0, sender, extraTargets = [] }) {
     const sessionId = makeSessionId(apiKey, streamKey, domain);
     const now = new Date();
     const session = {
@@ -72,6 +72,7 @@ export class SessionStore {
       sequence,
       syncOffset,
       sender: sender ?? null,
+      extraTargets,
       startedAt: Date.now(),
       createdAt: now,
       lastActivityAt: now,
@@ -176,6 +177,12 @@ export class SessionStore {
       if (this.db) {
         try { deleteSession(this.db, sessionId); } catch(_) {}
       }
+      // Clean up secondary YouTube senders
+      for (const target of (session.extraTargets || [])) {
+        if (target.type === 'youtube' && target.sender) {
+          target.sender.end().catch(() => {});
+        }
+      }
     }
     return session;
   }
@@ -270,6 +277,12 @@ export class SessionStore {
           await session.sender.end();
         } catch {
           // Best-effort cleanup
+        }
+        // Clean up secondary YouTube senders
+        for (const target of (session.extraTargets || [])) {
+          if (target.type === 'youtube' && target.sender) {
+            target.sender.end().catch(() => {});
+          }
         }
       }
     }

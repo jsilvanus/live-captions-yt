@@ -96,17 +96,25 @@ export class BackendCaptionSender {
   /**
    * Register a session with the backend and obtain a JWT.
    * Updates sequence, syncOffset, and startedAt from the server response.
+   *
+   * @param {object} [options]
+   * @param {Array} [options.targets] - Optional array of extra caption targets to register with the session.
+   *   Each entry: { id, type: 'youtube'|'generic', streamKey?, url?, headers? }
    * @returns {Promise<this>}
    */
-  async start() {
+  async start({ targets } = {}) {
+    const body = {
+      apiKey: this.apiKey,
+      streamKey: this.streamKey,
+      domain: this.domain,
+      sequence: this.sequence
+    };
+    if (Array.isArray(targets) && targets.length > 0) {
+      body.targets = targets;
+    }
     const data = await this._fetch('/live', {
       method: 'POST',
-      body: {
-        apiKey: this.apiKey,
-        streamKey: this.streamKey,
-        domain: this.domain,
-        sequence: this.sequence
-      },
+      body,
       auth: false
     });
 
@@ -166,6 +174,7 @@ export class BackendCaptionSender {
         caption.translations = extraOpts.translations;
       if (extraOpts.captionLang) caption.captionLang = extraOpts.captionLang;
       if (extraOpts.showOriginal !== undefined) caption.showOriginal = extraOpts.showOriginal;
+      if (extraOpts.codes && typeof extraOpts.codes === 'object') caption.codes = extraOpts.codes;
     }
 
     return this._fetch('/captions', {

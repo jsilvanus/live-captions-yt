@@ -1,6 +1,6 @@
 import { useLang } from '../contexts/LangContext';
 
-export function StatusBar({ onGeneralOpen, onStatusOpen, onActionsOpen, onCaptionOpen, onTranslationOpen, onPrivacyOpen }) {
+export function StatusBar({ onGeneralOpen, onStatusOpen, onActionsOpen, onCaptionOpen, onTranslationOpen, onTargetsOpen, onPrivacyOpen }) {
   const { t } = useLang();
 
   return (
@@ -13,6 +13,7 @@ export function StatusBar({ onGeneralOpen, onStatusOpen, onActionsOpen, onCaptio
         <button className="status-bar__btn" onClick={onActionsOpen} title="Actions">{t('statusBar.actions')}</button>
         <button className="status-bar__btn" onClick={onCaptionOpen} title="Caption settings">{t('statusBar.caption')}</button>
         <button className="status-bar__btn" onClick={onTranslationOpen} title="Translation settings">{t('statusBar.translation')}</button>
+        <button className="status-bar__btn" onClick={onTargetsOpen} title="Caption targets">{t('statusBar.targets')}</button>
         <button className="status-bar__btn" onClick={onPrivacyOpen} title="Privacy">{t('statusBar.privacy')}</button>
       </div>
     </header>

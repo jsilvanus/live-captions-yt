@@ -7,6 +7,8 @@ import { StatusBar } from './components/StatusBar';
 import { GeneralModal } from './components/GeneralModal';
 import { CaptionsModal } from './components/CaptionsModal';
 import { TranslationModal } from './components/TranslationModal';
+import { TargetsModal } from './components/TargetsModal';
+import { getEnabledTargets } from './lib/targetConfig';
 import { StatusPanel } from './components/StatusPanel';
 import { ActionsPanel } from './components/ActionsPanel';
 import { PrivacyModal } from './components/PrivacyModal';
@@ -17,6 +19,7 @@ import { SentPanel } from './components/SentPanel';
 import { InputBar } from './components/InputBar';
 import { AudioPanel } from './components/AudioPanel';
 import { ToastContainer } from './components/ToastContainer';
+import { useToastContext } from './contexts/ToastContext';
 
 // Persistent banner shown when the backend cannot be reached
 function NetworkBanner({ privacyPending }) {
@@ -56,12 +59,14 @@ const MIN_PANEL_W = 200;           // px — minimum width for either panel
 function AppLayout() {
   const session = useSessionContext();
   const fileStore = useFileContext();
+  const { showToast } = useToastContext();
 
   const [generalOpen, setGeneralOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [actionsOpen, setActionsOpen] = useState(false);
   const [captionOpen, setCaptionOpen] = useState(false);
   const [translationOpen, setTranslationOpen] = useState(false);
+  const [targetsOpen, setTargetsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
@@ -253,6 +258,7 @@ function AppLayout() {
         onActionsOpen={() => setActionsOpen(true)}
         onCaptionOpen={() => setCaptionOpen(true)}
         onTranslationOpen={() => setTranslationOpen(true)}
+          onTargetsOpen={() => setTargetsOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
       />
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
@@ -372,6 +378,18 @@ function AppLayout() {
       <GeneralModal isOpen={generalOpen} onClose={() => setGeneralOpen(false)} />
       {captionOpen && <CaptionsModal isOpen={captionOpen} onClose={() => setCaptionOpen(false)} />}
       {translationOpen && <TranslationModal isOpen={translationOpen} onClose={() => setTranslationOpen(false)} />}
+      {targetsOpen && <TargetsModal
+        isOpen={targetsOpen}
+        connected={session.connected}
+        onClose={() => {
+          setTargetsOpen(false);
+          if (session.connected) {
+            session.updateTargets(getEnabledTargets()).catch(err => {
+              showToast(err?.message || 'Failed to update targets', 'error');
+            });
+          }
+        }}
+      />}
       {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}
       {actionsOpen && <ActionsPanel onClose={() => setActionsOpen(false)} />}
       <PrivacyModal
