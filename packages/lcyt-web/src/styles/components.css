@@ -2155,3 +2155,188 @@
   overflow-y: auto;
   box-shadow: 0 4px 16px rgba(0,0,0,0.3);
 }
+
+/* ─── Custom code addition form ─────────────────────────── */
+
+.code-btn--add {
+  border-style: dashed;
+  color: var(--color-text-muted);
+}
+
+.code-btn--custom {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.custom-code-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.custom-code-sep {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.code-btn-input--key {
+  width: 80px;
+}
+
+.code-btn-input--val {
+  width: 100px;
+}
+
+/* ─── Caption view — raw edit mode ─────────────────────── */
+
+.caption-view--edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.caption-view__edit-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 5px 12px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  min-height: 32px;
+}
+
+.caption-view__edit-filename {
+  color: var(--color-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.caption-view__edit-filename strong {
+  color: var(--color-text);
+}
+
+.caption-view__edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.caption-view__add-code-btn {
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  border: 1px dashed var(--color-border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.caption-view__add-code-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  background: var(--color-surface-elevated);
+}
+
+.caption-view__code-form {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.caption-view__code-sep {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.caption-view__code-input {
+  width: 80px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 3px 6px;
+  border: 1px solid var(--color-accent);
+  border-radius: 5px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  outline: none;
+}
+
+.caption-view__code-input--val {
+  width: 100px;
+}
+
+.caption-view__code-insert-btn,
+.caption-view__code-cancel-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.caption-view__code-insert-btn:hover {
+  color: var(--color-success);
+  border-color: var(--color-success);
+}
+
+.caption-view__code-cancel-btn:hover {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
+.caption-view__editor {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  resize: none;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  padding: 10px 12px;
+  border: none;
+  outline: none;
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-sizing: border-box;
+}
+
+/* ─── Sent panel clear button ───────────────────────────── */
+
+.sent-panel__clear-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.sent-panel__clear-btn:hover {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
