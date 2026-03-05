@@ -18,21 +18,18 @@ COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
 COPY packages/lcyt-mcp-sse/src/ packages/lcyt-mcp-sse/src/
 
-FROM node:20-slim
+FROM jrottenberg/ffmpeg:4.4-ubuntu
 WORKDIR /app
 COPY --from=build /app .
 
-# Install a full-featured static FFmpeg (includes libx264, subtitle demuxers/encoders)
-# We use johnvansickle's static build for reliability and to avoid compiling in-image.
+# Install Node 20 (via NodeSource) so we run the Node app on an ffmpeg-enabled base.
+# Create a `node` user for runtime parity with the original image.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends wget ca-certificates xz-utils \
- && wget -O /tmp/ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
- && tar -xJf /tmp/ffmpeg.tar.xz -C /tmp \
- && cp /tmp/ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ \
- && cp /tmp/ffmpeg-*-amd64-static/ffprobe /usr/local/bin/ \
- && chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe \
- && rm -rf /tmp/ffmpeg* \
- && apt-get purge -y --auto-remove wget xz-utils \
+ && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+ && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && groupadd -r node || true \
+ && useradd -r -m -g node node || true \
  && rm -rf /var/lib/apt/lists/*
 
 ENV NODE_ENV=production
