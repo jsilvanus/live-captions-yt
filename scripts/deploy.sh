@@ -70,9 +70,12 @@ if [[ -d "$REPO_DIR/.git" ]]; then
   # Record the current SHA of this deploy script before pulling so we can
   # detect whether it changed and re-execute the updated version.
   _DEPLOY_SCRIPT_IN_REPO="$REPO_DIR/scripts/deploy.sh"
-  _OLD_DEPLOY_SHA=""
-  if [[ -f "$_DEPLOY_SCRIPT_IN_REPO" ]]; then
-    _OLD_DEPLOY_SHA=$(sha256sum "$_DEPLOY_SCRIPT_IN_REPO" | cut -d' ' -f1)
+
+  # Calculate checksum of the currently-running script (this file). After
+  # pulling, we'll compare this to the repo copy and re-exec if they differ.
+  _SELF_DEPLOY_SHA=""
+  if [[ -f "${BASH_SOURCE[0]}" ]]; then
+    _SELF_DEPLOY_SHA=$(sha256sum "${BASH_SOURCE[0]}" | cut -d' ' -f1)
   fi
 
   git -C "$REPO_DIR" fetch origin "$GIT_BRANCH"
@@ -87,7 +90,7 @@ if [[ -d "$REPO_DIR/.git" ]]; then
   # any destructive steps, keeping the deployment safely aborted.
   if [[ -f "$_DEPLOY_SCRIPT_IN_REPO" ]]; then
     _NEW_DEPLOY_SHA=$(sha256sum "$_DEPLOY_SCRIPT_IN_REPO" | cut -d' ' -f1)
-    if [[ -n "$_OLD_DEPLOY_SHA" && "$_OLD_DEPLOY_SHA" != "$_NEW_DEPLOY_SHA" ]]; then
+    if [[ -n "$_SELF_DEPLOY_SHA" && "$_SELF_DEPLOY_SHA" != "$_NEW_DEPLOY_SHA" ]]; then
       echo "==> deploy.sh has been updated — re-executing the new version from repo…"
       exec bash "$_DEPLOY_SCRIPT_IN_REPO" "$@"
     fi
