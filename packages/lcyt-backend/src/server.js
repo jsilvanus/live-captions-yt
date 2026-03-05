@@ -148,19 +148,25 @@ const relayManager = new RtmpRelayManager({
 store.rehydrate();
 
 store.onSessionEnd = (session) => {
-  const durationMs = Date.now() - session.startedAt;
-  writeSessionStat(db, {
-    sessionId: session.sessionId,
-    apiKey: session.apiKey,
-    domain: session.domain,
-    startedAt: new Date(session.startedAt).toISOString(),
-    endedAt: new Date().toISOString(),
-    durationMs,
-    captionsSent: session.captionsSent,
-    captionsFailed: session.captionsFailed,
-    finalSequence: session.sequence,
-    endedBy: 'ttl',
-  });
+  const durationMs = Date.now() - (session.startedAt || Date.now());
+  // Some persisted sessions may lack an apiKey (nullable in older DBs);
+  // avoid writing a session_stats row when apiKey is missing to prevent NOT NULL errors.
+  if (session.apiKey) {
+    writeSessionStat(db, {
+      sessionId: session.sessionId,
+      apiKey: session.apiKey,
+      domain: session.domain,
+      startedAt: new Date(session.startedAt).toISOString(),
+      endedAt: new Date().toISOString(),
+      durationMs,
+      captionsSent: session.captionsSent,
+      captionsFailed: session.captionsFailed,
+      finalSequence: session.sequence,
+      endedBy: 'ttl',
+    });
+  } else {
+    console.warn(`[store] session ended without apiKey (sessionId=${session.sessionId}) — skipping session_stats write`);
+  }
   incrementDomainHourlySessionEnd(db, session.domain, durationMs);
 };
 
