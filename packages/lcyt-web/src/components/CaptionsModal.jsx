@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+import { getAnyTargetNoBatch } from '../lib/targetConfig';
 import {
   COMMON_LANGUAGES, STT_MODELS,
   getSttEngine, setSttEngine,
@@ -30,6 +31,7 @@ export function CaptionsModal({ isOpen, onClose }) {
     () => { try { return parseInt(localStorage.getItem('lcyt:textSize') || '13', 10); } catch { return 13; } }
   );
   const [batchInterval, setBatchInterval] = useState(0);
+  const [batchLocked, setBatchLocked] = useState(false);
   const [transcriptionOffset, setTranscriptionOffset] = useState(0);
 
   // ── STT tab ───────────────────────────────────────────────
@@ -87,7 +89,14 @@ export function CaptionsModal({ isOpen, onClose }) {
 
   useEffect(() => {
     if (!isOpen) return;
-    const savedBatch = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+    const noBatch = getAnyTargetNoBatch();
+    setBatchLocked(noBatch);
+    let savedBatch = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+    if (noBatch && savedBatch > 0) {
+      // Force batch off because a target doesn't support it
+      savedBatch = 0;
+      try { localStorage.setItem('lcyt-batch-interval', '0'); } catch {}
+    }
     setBatchInterval(savedBatch);
     const savedOffset = parseFloat(localStorage.getItem('lcyt:transcription-offset') || '0');
     setTranscriptionOffset(isNaN(savedOffset) ? 0 : savedOffset);
@@ -119,6 +128,10 @@ export function CaptionsModal({ isOpen, onClose }) {
   if (!isOpen) return null;
 
   function onBatchChange(value) {
+    if (batchLocked) {
+      showToast(t('settings.captions.batchLockedByTarget'), 'warn');
+      return;
+    }
     const v = parseInt(value, 10);
     setBatchInterval(v);
     try { localStorage.setItem('lcyt-batch-interval', String(v)); } catch {}
@@ -546,15 +559,23 @@ export function CaptionsModal({ isOpen, onClose }) {
               <div className="settings-field">
                 <label className="settings-field__label">
                   {t('settings.captions.batchWindow')}: <span>{batchInterval === 0 ? t('settings.captions.batchWindowOff') : `${batchInterval}s`}</span>
+                  {batchLocked && <span style={{ marginLeft: 6, fontSize: '0.8em', opacity: 0.7 }}>🔒</span>}
                 </label>
-                <input
-                  className="settings-field__input"
-                  type="range"
-                  min="0" max="20" step="1"
-                  value={batchInterval}
-                  onChange={e => onBatchChange(e.target.value)}
-                  style={{ padding: 0, cursor: 'pointer' }}
-                />
+                {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events,jsx-a11y/no-static-element-interactions */}
+                <div onClick={batchLocked ? () => showToast(t('settings.captions.batchLockedByTarget'), 'warn') : undefined}>
+                  <input
+                    className="settings-field__input"
+                    type="range"
+                    min="0" max="20" step="1"
+                    value={batchInterval}
+                    disabled={batchLocked}
+                    onChange={e => onBatchChange(e.target.value)}
+                    style={{ padding: 0, cursor: batchLocked ? 'not-allowed' : 'pointer', opacity: batchLocked ? 0.5 : 1 }}
+                  />
+                </div>
+                {batchLocked && (
+                  <span className="settings-field__hint">{t('settings.captions.batchLockedByTargetHint')}</span>
+                )}
               </div>
               <p style={{ fontSize: 12, color: 'var(--color-text-dim)', margin: 0, lineHeight: 1.5 }}>
                 {t('settings.captions.batchWindowHint')}

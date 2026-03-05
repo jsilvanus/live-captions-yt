@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
+import { getEnabledTargets } from '../lib/targetConfig';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
@@ -139,7 +140,19 @@ export function useSession({
     if (senderRef.current) await disconnect();
 
     const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk });
-    await sender.start();
+
+    // Build the targets list: parse headers JSON strings into objects for the backend.
+    const rawTargets = getEnabledTargets();
+    const targets = rawTargets.map(t => {
+      if (t.type === 'youtube') {
+        return { id: t.id, type: 'youtube', streamKey: t.streamKey };
+      }
+      let headers = {};
+      if (t.headers) { try { headers = JSON.parse(t.headers); } catch {} }
+      return { id: t.id, type: 'generic', url: t.url, headers };
+    });
+
+    await sender.start(targets.length > 0 ? { targets } : {});
 
     // Ensure we received a server token; rehydrated sessions may yield no
     // token if the backend didn't re-issue one. Fail fast and surface a

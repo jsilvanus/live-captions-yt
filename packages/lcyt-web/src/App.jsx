@@ -7,6 +7,7 @@ import { StatusBar } from './components/StatusBar';
 import { GeneralModal } from './components/GeneralModal';
 import { CaptionsModal } from './components/CaptionsModal';
 import { TranslationModal } from './components/TranslationModal';
+import { TargetsModal } from './components/TargetsModal';
 import { StatusPanel } from './components/StatusPanel';
 import { ActionsPanel } from './components/ActionsPanel';
 import { PrivacyModal } from './components/PrivacyModal';
@@ -62,6 +63,7 @@ function AppLayout() {
   const [actionsOpen, setActionsOpen] = useState(false);
   const [captionOpen, setCaptionOpen] = useState(false);
   const [translationOpen, setTranslationOpen] = useState(false);
+  const [targetsOpen, setTargetsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
@@ -253,6 +255,7 @@ function AppLayout() {
         onActionsOpen={() => setActionsOpen(true)}
         onCaptionOpen={() => setCaptionOpen(true)}
         onTranslationOpen={() => setTranslationOpen(true)}
+          onTargetsOpen={() => setTargetsOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
       />
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
@@ -372,6 +375,7 @@ function AppLayout() {
       <GeneralModal isOpen={generalOpen} onClose={() => setGeneralOpen(false)} />
       {captionOpen && <CaptionsModal isOpen={captionOpen} onClose={() => setCaptionOpen(false)} />}
       {translationOpen && <TranslationModal isOpen={translationOpen} onClose={() => setTranslationOpen(false)} />}
+      {targetsOpen && <TargetsModal isOpen={targetsOpen} onClose={() => setTargetsOpen(false)} />}
       {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}
       {actionsOpen && <ActionsPanel onClose={() => setActionsOpen(false)} />}
       <PrivacyModal

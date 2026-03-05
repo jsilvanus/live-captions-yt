@@ -22,6 +22,55 @@ function isAllowedDomain(domain) {
 }
 
 /**
+ * Validate and build the extraTargets array from the client-supplied targets list.
+ * Returns { ok: true, extraTargets } or { ok: false, error }.
+ *
+ * Each enabled YouTube target gets a new YoutubeLiveCaptionSender started.
+ * Each enabled generic target is stored with its parsed headers object.
+ *
+ * @param {Array} targets  Raw array from POST /live body
+ * @returns {{ ok: boolean, extraTargets?: Array, error?: string }}
+ */
+async function buildExtraTargets(targets) {
+  if (!Array.isArray(targets) || targets.length === 0) return { ok: true, extraTargets: [] };
+
+  const extraTargets = [];
+  for (const target of targets) {
+    if (!target || !['youtube', 'generic'].includes(target.type)) {
+      return { ok: false, error: `Invalid target type: ${target?.type}` };
+    }
+
+    if (target.type === 'youtube') {
+      if (!target.streamKey || typeof target.streamKey !== 'string') continue;
+      const sender = new YoutubeLiveCaptionSender({ streamKey: target.streamKey.trim() });
+      try { sender.start(); } catch {
+        // Non-fatal — proceed without this sender
+      }
+      extraTargets.push({ id: target.id, type: 'youtube', sender });
+
+    } else if (target.type === 'generic') {
+      if (!target.url || typeof target.url !== 'string') {
+        return { ok: false, error: 'Generic target requires a url field' };
+      }
+      try {
+        const u = new URL(target.url);
+        if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+          return { ok: false, error: `Generic target URL must use http or https: ${target.url}` };
+        }
+      } catch {
+        return { ok: false, error: `Invalid generic target URL: ${target.url}` };
+      }
+      // headers arrive pre-parsed as an object (the client JSON.parse'd the textarea string)
+      const headers = (target.headers && typeof target.headers === 'object' && !Array.isArray(target.headers))
+        ? target.headers
+        : {};
+      extraTargets.push({ id: target.id, type: 'generic', url: target.url, headers });
+    }
+  }
+  return { ok: true, extraTargets };
+}
+
+/**
  * Factory for the /live router.
  *
  * POST   /live  — Register a new session (or return existing JWT, idempotent)
@@ -40,7 +89,7 @@ export function createLiveRouter(db, store, jwtSecret) {
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
-    const { apiKey, streamKey, domain, sequence: startSeqRaw } = req.body || {};
+    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets } = req.body || {};
 
     // Validate required fields
     if (!apiKey || !streamKey || !domain) {
@@ -61,6 +110,13 @@ export function createLiveRouter(db, store, jwtSecret) {
       return res.status(status).json({ error: `API key ${validation.reason}` });
     }
 
+    // Build extra targets (validates URLs, creates secondary YouTube senders)
+    const targetsResult = await buildExtraTargets(targets);
+    if (!targetsResult.ok) {
+      return res.status(400).json({ error: targetsResult.error });
+    }
+    const extraTargets = targetsResult.extraTargets;
+
     // Generate deterministic session ID
     const sessionId = makeSessionId(apiKey, streamKey, domain);
 
@@ -69,6 +125,12 @@ export function createLiveRouter(db, store, jwtSecret) {
     // token so the client can obtain a usable Bearer token and open SSE.
     if (store.has(sessionId)) {
       const existing = store.get(sessionId);
+
+      // Update extra targets: clean up old secondary senders first
+      for (const t of (existing.extraTargets || [])) {
+        if (t.type === 'youtube' && t.sender) t.sender.end().catch(() => {});
+      }
+      existing.extraTargets = extraTargets;
 
       // Recreate sender for rehydrated sessions that have no active sender.
       if (!existing.sender) {
@@ -144,7 +206,8 @@ export function createLiveRouter(db, store, jwtSecret) {
       jwt: token,
       sequence: sender.sequence,
       syncOffset,
-      sender
+      sender,
+      extraTargets,
     });
 
     incrementDomainHourlySessionStart(db, domain, store.size());

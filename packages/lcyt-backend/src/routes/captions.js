@@ -232,6 +232,32 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           try { updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
         }
 
+        // Fan-out to extra targets (fire-and-forget; errors do not affect the primary result)
+        if (session.extraTargets && session.extraTargets.length > 0) {
+          const source = session.domain;
+          for (const caption of sendCaptions) {
+            const { text, timestamp } = caption;
+            const tsStr = typeof timestamp === 'string' ? timestamp
+              : (timestamp instanceof Date ? timestamp.toISOString() : undefined);
+
+            for (const target of session.extraTargets) {
+              if (target.type === 'youtube' && target.sender) {
+                target.sender.send(text, timestamp).catch(err => {
+                  console.warn(`[captions] Extra YouTube target ${target.id} error: ${err.message}`);
+                });
+              } else if (target.type === 'generic' && target.url) {
+                fetch(target.url, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', ...(target.headers || {}) },
+                  body: JSON.stringify({ source, text, timestamp: tsStr, sequence: session.sequence }),
+                }).catch(err => {
+                  console.warn(`[captions] Generic target ${target.id} error: ${err.message}`);
+                });
+              }
+            }
+          }
+        }
+
         if (result.statusCode >= 200 && result.statusCode < 300) {
           session.captionsSent++;
           incrementDomainHourlyCaptions(db, session.domain, { sent: 1, batches: isBatch ? 1 : 0 });
