@@ -1,4 +1,4 @@
-import { useState, useRef, forwardRef, useImperativeHandle } from 'react';
+import { useState, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useFileContext } from '../contexts/FileContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
@@ -6,6 +6,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
+import { getActiveCodes } from '../lib/activeCodes';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -28,6 +29,15 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const inputRef = useRef(null);
   const langPickerRef = useRef(null);
 
+  // Keep inputLang in sync when changed by ActionsPanel or file metadata
+  useEffect(() => {
+    function onLangChange() {
+      try { setInputLang(localStorage.getItem('lcyt:input-bar-lang') || ''); } catch {}
+    }
+    window.addEventListener('lcyt:input-lang-changed', onLangChange);
+    return () => window.removeEventListener('lcyt:input-lang-changed', onLangChange);
+  }, []);
+
   // Per-language local file handles: Map<lang, { writable, seqIdx, format }>
   const localFileHandlesRef = useRef(new Map());
   const localFileSeqRef = useRef({});
@@ -39,7 +49,9 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     sendText: async (text, fileId, lineIndex) => {
       if (!session.connected) { flashError(); return; }
       try {
-        await doSend(text);
+        const file = fileStore.files.find(f => f.id === fileId);
+        const lc = file?.lineCodes?.[lineIndex] || {};
+        await doSend(text, lc);
         fileStore.setLastSentLine({ fileId, lineIndex });
       } catch (err) {
         handleSendError(err);
@@ -66,7 +78,11 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
 
   function setInputBarLang(code) {
     setInputLang(code);
-    try { localStorage.setItem('lcyt:input-bar-lang', code); } catch {}
+    try {
+      if (code) localStorage.setItem('lcyt:input-bar-lang', code);
+      else localStorage.removeItem('lcyt:input-bar-lang');
+    } catch {}
+    window.dispatchEvent(new CustomEvent('lcyt:input-lang-changed'));
   }
 
   async function writeLocalFiles(entries, timestamp) {
@@ -97,35 +113,56 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     }
   }
 
-  async function doSend(text) {
+  async function doSend(text, lineCodes = {}) {
     if (!text?.trim()) return;
+
+    // Merge manual active codes (from ActionsPanel) with per-line codes from file.
+    // Per-line codes take priority; lang is derived from lineCodes.lang or inputLang.
+    const manualCodes = getActiveCodes();
+    const mergedCodes = { ...manualCodes, ...lineCodes };
+    const effectiveLang = mergedCodes.lang || inputLang || null;
+    if (effectiveLang) mergedCodes.lang = effectiveLang;
+    else delete mergedCodes.lang;
+
+    // If the file line has a lang code, persist it as the new inputLang
+    if (lineCodes.lang && lineCodes.lang !== inputLang) {
+      setInputBarLang(lineCodes.lang);
+    }
 
     // Build translations and handle local file writing
     const enabledTranslations = getEnabledTranslations();
     let translationsMap = {};
     let captionLang = null;
     if (enabledTranslations.length > 0) {
-      const result = await translateAll(text, inputLang || 'en-US', enabledTranslations);
+      const result = await translateAll(text, effectiveLang || 'en-US', enabledTranslations);
       translationsMap = result.translationsMap;
       captionLang = result.captionLang;
       if (result.localFileEntries.length > 0) {
         writeLocalFiles(result.localFileEntries, undefined).catch(e => console.warn(e));
       }
     }
-    const opts = Object.keys(translationsMap).length > 0
-      ? { translations: translationsMap, captionLang, showOriginal: getTranslationShowOriginal() }
-      : undefined;
+
+    const codes = Object.keys(mergedCodes).length > 0 ? mergedCodes : undefined;
+    const opts = {
+      ...(Object.keys(translationsMap).length > 0 && {
+        translations: translationsMap,
+        captionLang,
+        showOriginal: getTranslationShowOriginal(),
+      }),
+      ...(codes && { codes }),
+    };
+    const finalOpts = Object.keys(opts).length > 0 ? opts : undefined;
 
     const intervalMs = getBatchIntervalMs();
     if (intervalMs > 0) {
-      await session.construct(text, undefined, opts);
+      await session.construct(text, undefined, finalOpts);
       // Update badge from session queue length
       try { setBatchCount(session.getQueuedCount()); } catch {}
       flashSuccess();
       return;
     }
 
-    await session.send(text, undefined, opts);
+    await session.send(text, undefined, finalOpts);
     flashSuccess();
   }
 
@@ -154,10 +191,11 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       }
 
       const lineText = file.lines[file.pointer];
+      const lc = file.lineCodes?.[file.pointer] || {};
       const prevPointer = file.pointer;
 
       try {
-        await doSend(lineText);
+        await doSend(lineText, lc);
         fileStore.setLastSentLine({ fileId: file.id, lineIndex: prevPointer });
 
         if (file.pointer < file.lines.length - 1) {

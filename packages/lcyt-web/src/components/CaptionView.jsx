@@ -12,6 +12,14 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+/** Build a tooltip string from a codes object, or null if no codes. */
+function buildCodesTitle(codes) {
+  if (!codes || Object.keys(codes).length === 0) return null;
+  return Object.entries(codes)
+    .map(([k, v]) => `${k}: ${v}`)
+    .join(' | ');
+}
+
 export function CaptionView({ onLineSend }) {
   const { activeFile, setPointer, lastSentLine, setLastSentLine } = useFileContext();
   const containerRef = useRef(null);
@@ -47,7 +55,7 @@ export function CaptionView({ onLineSend }) {
     );
   }
 
-  const { lines, pointer, id: fileId } = activeFile;
+  const { lines, lineCodes, lineNumbers, pointer, id: fileId } = activeFile;
 
   if (lines.length === 0) {
     return (
@@ -78,6 +86,11 @@ export function CaptionView({ onLineSend }) {
       ? escapeHtml(lines[i].replace(/^#+\s*/, ''))
       : escapeHtml(lines[i]);
 
+    const lineNum = lineNumbers?.[i] ?? (i + 1);
+    const codes = lineCodes?.[i];
+    const codesTitle = buildCodesTitle(codes);
+    const hasCodes = !!codesTitle;
+
     visibleLines.push(
       <li
         key={i}
@@ -86,6 +99,13 @@ export function CaptionView({ onLineSend }) {
         onClick={() => setPointer(fileId, i)}
         onDoubleClick={!isHeading ? () => onLineSend?.(lines[i], fileId, i) : undefined}
       >
+        <span
+          className={`caption-line__linenum${hasCodes ? ' caption-line__linenum--coded' : ''}`}
+          title={codesTitle ?? undefined}
+          aria-label={codesTitle ? `Line ${lineNum}, codes: ${codesTitle}` : `Line ${lineNum}`}
+        >
+          {lineNum}
+        </span>
         <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
         <span
           className="caption-line__text"

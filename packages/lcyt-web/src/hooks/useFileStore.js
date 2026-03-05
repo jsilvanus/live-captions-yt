@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { parseFileContent } from '../lib/fileUtils';
 
 const POINTERS_KEY = 'lcyt-pointers';
 
@@ -68,17 +69,14 @@ export function useFileStore({
       const reader = new FileReader();
 
       reader.onload = (e) => {
-        const lines = e.target.result
-          .split('\n')
-          .map(l => l.trim())
-          .filter(l => l.length > 0);
+        const { lines, lineCodes, lineNumbers } = parseFileContent(e.target.result);
 
         const id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : uuidv4();
         const pointers = loadPointers();
         const savedPointer = pointers[file.name] ?? 0;
         const pointer = Math.min(savedPointer, Math.max(0, lines.length - 1));
 
-        const entry = { id, name: file.name, lines, pointer };
+        const entry = { id, name: file.name, lines, lineCodes, lineNumbers, pointer };
         const newFiles = [...filesRef.current, entry];
         setFiles(newFiles);
 
