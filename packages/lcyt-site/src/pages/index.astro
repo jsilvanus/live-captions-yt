@@ -99,13 +99,16 @@ import Base from '../layouts/Base.astro';
   const panelFi   = document.querySelector<HTMLElement>('.sb-panel--fi');
 
   if (container && divider && panelEn && panelFi) {
-    // Initial 50 / 50 split (percentage of the container excluding the divider width)
+    // Initial 50 / 50 split — panels keep their full size; only visibility changes
     let pct = 50;
 
     function applyPct(p: number) {
       pct = Math.max(10, Math.min(90, p));
-      panelEn.style.flexBasis = `${pct}%`;
-      panelFi.style.flexBasis = `${100 - pct}%`;
+      // Clip each panel so EN is visible on the left, FI on the right
+      panelEn.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+      panelFi.style.clipPath = `inset(0 0 0 ${pct}%)`;
+      // Move the divider handle to match the clip boundary
+      divider.style.left = `${pct}%`;
       const enPct = Math.round(pct);
       divider.setAttribute('aria-valuenow', String(enPct));
       divider.setAttribute('aria-valuetext', `${enPct}% English, ${100 - enPct}% Finnish`);

@@ -230,10 +230,11 @@ a:hover {
 
 
 /* ── Split-panel bilingual view ─────────────────────────────────────────── */
-/* Container: two panels separated by a draggable vertical bar */
+/* Container: fixed size, panels stacked in the same grid cell */
 .sb-split {
-  display: flex;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: 1fr;
+  position: relative;
   min-height: 5.5rem;
   overflow: hidden;
   border-radius: 10px;
@@ -241,9 +242,10 @@ a:hover {
   user-select: none;
 }
 
-/* Individual language panels */
+/* Both panels occupy the same grid cell and are revealed by clip-path */
 .sb-panel {
-  flex: 0 0 50%;
+  grid-column: 1;
+  grid-row: 1;
   min-width: 0;
   overflow: hidden;
   padding: 0.75rem 1rem 0.85rem;
@@ -276,10 +278,13 @@ a:hover {
   line-height: 1.55;
 }
 
-/* Vertical divider bar with a circular drag handle */
+/* Vertical divider bar with a circular drag handle — absolutely positioned over panels */
 .sb-divider {
-  position: relative;
-  flex: 0 0 auto;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
   width: 28px;
   display: flex;
   flex-direction: column;
