@@ -50,6 +50,9 @@ function NetworkBanner({ privacyPending }) {
 }
 
 // Inner app that has access to all contexts
+const DEFAULT_RIGHT_PANEL_W = 400; // px — initial right-panel width on first load
+const MIN_PANEL_W = 200;           // px — minimum width for either panel
+
 function AppLayout() {
   const session = useSessionContext();
   const fileStore = useFileContext();
@@ -65,6 +68,13 @@ function AppLayout() {
   const [micListening, setMicListening] = useState(false);
   const [micHolding, setMicHolding] = useState(false);
   const [leftPanelH, setLeftPanelH] = useState(null);
+  const [rightPanelW, setRightPanelW] = useState(() => {
+    try {
+      const v = parseInt(localStorage.getItem('lcyt:sent-panel-w'), 10);
+      return v > 0 ? v : null;
+    } catch { return null; }
+  });
+  const rightPanelWRef = useRef(rightPanelW);
   const [utteranceActive, setUtteranceActive] = useState(false);
   const [utteranceTimerRunning, setUtteranceTimerRunning] = useState(false);
   const [utteranceTimerSec, setUtteranceTimerSec] = useState(0);
@@ -194,17 +204,44 @@ function AppLayout() {
     setUtteranceTimerSec(timerSec);
   }
 
+  // Keep ref in sync so resize closures always read the latest value
+  useEffect(() => { rightPanelWRef.current = rightPanelW; }, [rightPanelW]);
+
   function onResizePointerDown(e) {
     e.preventDefault();
-    const startY = e.clientY;
-    const startH = document.getElementById('left-panel')?.getBoundingClientRect().height || 0;
-    function onMove(me) { setLeftPanelH(Math.max(80, startH + (me.clientY - startY))); }
-    function onUp() {
-      document.removeEventListener('pointermove', onMove);
-      document.removeEventListener('pointerup', onUp);
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+    if (isMobile) {
+      // Vertical resize of left panel
+      const startY = e.clientY;
+      const startH = document.getElementById('left-panel')?.getBoundingClientRect().height || 0;
+      function onMoveV(me) { setLeftPanelH(Math.max(80, startH + (me.clientY - startY))); }
+      function onUpV() {
+        document.removeEventListener('pointermove', onMoveV);
+        document.removeEventListener('pointerup', onUpV);
+      }
+      document.addEventListener('pointermove', onMoveV);
+      document.addEventListener('pointerup', onUpV);
+    } else {
+      // Horizontal resize of right panel
+      const startX = e.clientX;
+      const startW = rightPanelWRef.current
+        ?? document.getElementById('right-panel')?.getBoundingClientRect().width
+        ?? DEFAULT_RIGHT_PANEL_W;
+      function onMoveH(me) {
+        const delta = startX - me.clientX;
+        const newW = Math.max(MIN_PANEL_W, Math.min(window.innerWidth - MIN_PANEL_W, startW + delta));
+        setRightPanelW(newW);
+        try { localStorage.setItem('lcyt:sent-panel-w', String(Math.round(newW))); } catch {}
+      }
+      function onUpH() {
+        document.removeEventListener('pointermove', onMoveH);
+        document.removeEventListener('pointerup', onUpH);
+      }
+      document.addEventListener('pointermove', onMoveH);
+      document.addEventListener('pointerup', onUpH);
     }
-    document.addEventListener('pointermove', onMove);
-    document.addEventListener('pointerup', onUp);
+
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
@@ -240,7 +277,7 @@ function AppLayout() {
           />
         </div>
 
-        {/* Drag-resize handle — visible only on mobile (CSS hides on desktop) */}
+        {/* Drag-resize handle — ew-resize on desktop, ns-resize on mobile */}
         <div
           className="panel-resize-handle"
           onPointerDown={onResizePointerDown}
@@ -251,6 +288,7 @@ function AppLayout() {
         <div
           id="right-panel"
           className="panel panel--right"
+          style={rightPanelW != null ? { width: rightPanelW, flexShrink: 0 } : undefined}
         >
           <SentPanel />
         </div>

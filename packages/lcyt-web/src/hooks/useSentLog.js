@@ -9,7 +9,8 @@ const MAX_ENTRIES = 500;
 export function useSentLog() {
   const [entries, setEntries] = useState([]);
 
-  function add({ requestId, sequence, text, pending = false }) {
+  function add({ requestId, sequence, text, pending = false, hasTranslations = false,
+    captionLang = null, captionTranslationText = null, showOriginal = false, otherTranslations = {} }) {
     const entry = {
       requestId,
       sequence,
@@ -17,6 +18,11 @@ export function useSentLog() {
       timestamp: new Date().toISOString(),
       pending,
       error: false,
+      hasTranslations,
+      captionLang,
+      captionTranslationText,
+      showOriginal,
+      otherTranslations,
     };
     setEntries(prev => [entry, ...prev].slice(0, MAX_ENTRIES));
   }
