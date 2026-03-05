@@ -18,7 +18,7 @@ COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
 COPY packages/lcyt-mcp-sse/src/ packages/lcyt-mcp-sse/src/
 
-FROM jrottenberg/ffmpeg:4.4-ubuntu
+FROM jrottenberg/ffmpeg:6-ubuntu
 WORKDIR /app
 COPY --from=build /app .
 
