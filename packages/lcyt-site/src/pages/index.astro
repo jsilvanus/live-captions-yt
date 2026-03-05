@@ -26,7 +26,7 @@ import Base from '../layouts/Base.astro';
           </div>
           <div class="sb-divider" role="separator" tabindex="0"
                aria-label="Drag left or right to compare languages"
-               aria-valuenow="50" aria-valuemin="10" aria-valuemax="90" aria-valuetext="50% English, 50% Finnish">
+               aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-valuetext="50% English, 50% Finnish">
             <div class="sb-divider__line" aria-hidden="true"></div>
             <div class="sb-divider__handle" aria-hidden="true">
               <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -103,7 +103,7 @@ import Base from '../layouts/Base.astro';
     let pct = 50;
 
     function applyPct(p: number) {
-      pct = Math.max(10, Math.min(90, p));
+      pct = Math.max(0, Math.min(100, p));
       // Clip each panel so EN is visible on the left, FI on the right
       panelEn.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
       panelFi.style.clipPath = `inset(0 0 0 ${pct}%)`;
