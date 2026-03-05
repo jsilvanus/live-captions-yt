@@ -2,6 +2,7 @@
  * Reads a File object as text and parses it into non-empty, trimmed lines.
  * HTML comment metadata lines (<!-- key: value -->) are included as-is so they
  * survive the normalization pipeline and can be parsed by parseFileContent().
+ * Any <!-- key: value --> comment is supported (not limited to a predefined set).
  * @param {File} file
  * @returns {Promise<string[]>}
  */
@@ -21,9 +22,9 @@ export function readFileAsLines(file) {
 }
 
 /**
- * Supported metadata code keys for HTML comment annotations.
+ * Well-known metadata code keys that receive special treatment (boolean coercion).
  */
-export const SUPPORTED_CODES = ['lang', 'section', 'speaker', 'lyrics', 'no-translate'];
+const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 
 /** @type {RegExp} Matches <!-- key: value --> metadata comment lines. */
 const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i;
@@ -37,10 +38,13 @@ const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i
  *   <!-- speaker: Alice -->
  *   <!-- lyrics: true -->
  *   <!-- no-translate: true -->
+ *   <!-- my-custom-code: any value -->
  *   <!-- lang: -->      ← empty value removes the code
  *
+ * Any valid HTML comment key is accepted (not limited to a predefined list).
  * Each code tags all subsequent lines until the same key appears again.
  * Comment lines are not included in the returned `lines` array.
+ * Line numbers count only text lines (metadata comments are excluded from the count).
  *
  * @param {string} rawText
  * @returns {{ lines: string[], lineCodes: object[], lineNumbers: number[] }}
@@ -51,6 +55,7 @@ export function parseFileContent(rawText) {
   const lineCodes = [];
   const lineNumbers = [];
   const currentCodes = {};
+  let textLineCount = 0;
 
   for (let i = 0; i < rawLines.length; i++) {
     const raw = rawLines[i].trim();
@@ -60,22 +65,20 @@ export function parseFileContent(rawText) {
     if (match) {
       const key = match[1].toLowerCase();
       const value = match[2].trim();
-      if (SUPPORTED_CODES.includes(key)) {
-        if (value === '') {
-          delete currentCodes[key];
-        } else {
-          let parsed = value;
-          if (key === 'lyrics' || key === 'no-translate') {
-            parsed = value.toLowerCase() === 'true';
-          }
-          currentCodes[key] = parsed;
+      if (value === '') {
+        delete currentCodes[key];
+      } else {
+        let parsed = value;
+        if (BOOLEAN_CODES.includes(key)) {
+          parsed = value.toLowerCase() === 'true';
         }
+        currentCodes[key] = parsed;
       }
       // Comment lines are metadata only — not added to output
     } else {
       lines.push(raw);
       lineCodes.push({ ...currentCodes });
-      lineNumbers.push(i + 1); // 1-based original line number
+      lineNumbers.push(++textLineCount); // running count of text-only lines
     }
   }
 
