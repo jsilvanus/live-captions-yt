@@ -1,5 +1,5 @@
 services:
-  # LCYT API and MCP server
+  # LCYT API (3000) and MCP server (3001)
   # (frontend is served as static files separately by nginx)
   lcyt-site:
     build:
