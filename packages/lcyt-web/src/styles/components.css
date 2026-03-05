@@ -2048,3 +2048,110 @@
   max-height: 200px;
   overflow-y: auto;
 }
+
+/* ─── Caption line number gutter ─────────────────────────── */
+
+.caption-line__linenum {
+  width: 36px;
+  text-align: right;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  line-height: 1.7;
+  padding-right: 4px;
+  cursor: default;
+  user-select: none;
+  border-radius: 3px;
+}
+
+.caption-line__linenum--coded {
+  color: var(--color-accent);
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* ─── Caption code buttons (ActionsPanel) ────────────────── */
+
+.caption-codes-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: flex-start;
+  margin-top: 4px;
+}
+
+.caption-codes-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  position: relative;
+}
+
+.code-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.code-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.code-btn--active {
+  background: var(--color-error);
+  border-color: var(--color-error);
+  color: #fff;
+  font-weight: 600;
+}
+
+.code-btn--active:hover {
+  background: #c0392b;
+  border-color: #c0392b;
+}
+
+.code-btn-pick {
+  padding: 2px 6px;
+  font-size: 11px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-dim);
+  cursor: pointer;
+  align-self: flex-start;
+}
+
+.code-btn-input {
+  width: 140px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  padding: 4px 8px;
+  border: 1px solid var(--color-accent);
+  border-radius: 6px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  outline: none;
+}
+
+.code-btn-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 300;
+  width: 220px;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 4px 0;
+  max-height: 180px;
+  overflow-y: auto;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+}
