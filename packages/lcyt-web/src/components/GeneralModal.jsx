@@ -424,14 +424,6 @@ export function GeneralModal({ isOpen, onClose }) {
                     >
                       {t('settings.relay.captionHttp')}
                     </button>
-                    <button
-                      className="lang-btn"
-                      disabled
-                      title={t('settings.relay.comingSoon')}
-                      style={{ opacity: 0.4, cursor: 'not-allowed' }}
-                    >
-                      CEA-708 ({t('settings.relay.comingSoon')})
-                    </button>
                   </div>
                 </div>
 
@@ -444,7 +436,7 @@ export function GeneralModal({ isOpen, onClose }) {
                         <span style={{ fontWeight: 600 }}>{t('settings.relay.slot')} {r.slot}:</span>{' '}
                         {runningSlots.includes(r.slot) ? '🔴 ' + t('settings.relay.live') : '⚫ ' + t('settings.relay.inactive')}
                         {' — '}{r.targetUrl}{r.targetName ? `/${r.targetName}` : ''}
-                        {' · '}{r.captionMode === 'cea708' ? 'CEA-708' : 'HTTP'}
+                        {' · '}HTTP
                       </div>
                     ))}
                   </div>

@@ -160,7 +160,7 @@ export function CaptionsModal({ isOpen, onClose }) {
     const speechRecognitionAPI = window.SpeechRecognition;
     if (!speechRecognitionAPI || typeof speechRecognitionAPI.available !== 'function') { setLocalAvailability(null); return; }
     try {
-      const result = await speechRecognitionAPI.available(langCode);
+      const result = await speechRecognitionAPI.availabla("en-US", { processLocally: true });
       setLocalAvailability(result);
     } catch { setLocalAvailability(null); }
   }

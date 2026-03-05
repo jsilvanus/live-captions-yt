@@ -96,9 +96,7 @@ function probeFfmpeg() {
     const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
     const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
 
-    if (!hasLibx264) console.warn('⚠ ffmpeg: libx264 encoder not found — CEA-708 re-encode may fail.');
-    if (!hasEia608) console.warn('⚠ ffmpeg: eia608 subtitle encoder not found — CEA-708 embedding unavailable.');
-    if (!hasSubrip) console.warn('⚠ ffmpeg: subrip demuxer not found — stdin SubRip parsing may fail.');
+    // CEA-708 support disabled for now; do not surface ffmpeg capability warnings.
 
     return { hasLibx264, hasEia608, hasSubrip };
   } catch (err) {

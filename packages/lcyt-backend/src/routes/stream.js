@@ -40,7 +40,7 @@ export function createStreamRouter(db, auth, relayManager) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
     }
-    const validModes = ['http', 'cea708'];
+    const validModes = ['http'];
     const resolvedMode = validModes.includes(captionMode) ? captionMode : 'http';
     return {
       targetUrl:   targetUrl.trim(),

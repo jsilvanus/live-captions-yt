@@ -6,7 +6,7 @@ const KEY_TARGET_TYPE  = 'lcyt-relay-target-type';   // 'youtube' | 'generic' (s
 const KEY_YT_KEY       = 'lcyt-relay-youtube-key';   // YouTube stream key for RTMP (slot 1 default)
 const KEY_GENERIC_URL  = 'lcyt-relay-generic-url';   // base rtmp:// URL (slot 1 default)
 const KEY_GENERIC_NAME = 'lcyt-relay-generic-name';  // RTMP stream name / key (slot 1 default)
-const KEY_CAPTION_MODE = 'lcyt-relay-caption-mode';  // 'http' | 'cea708' (slot 1 default)
+const KEY_CAPTION_MODE = 'lcyt-relay-caption-mode';  // 'http' (slot 1 default)
 
 // Per-slot keys (slots 1-4):
 function slotKey(slot, field) { return `lcyt-relay-slot-${slot}-${field}`; }
@@ -79,7 +79,7 @@ export function getSlotCaptionMode(slot) {
   try { return localStorage.getItem(slotKey(slot, 'caption-mode')) || 'http'; } catch { return 'http'; }
 }
 
-/** @param {number} slot @param {'http'|'cea708'} mode */
+/** @param {number} slot @param {'http'} mode */
 export function setSlotCaptionMode(slot, mode) {
   if (slot === 1) { try { localStorage.setItem(KEY_CAPTION_MODE, mode); } catch {} return; }
   try { localStorage.setItem(slotKey(slot, 'caption-mode'), mode); } catch {}
@@ -116,9 +116,9 @@ export function setRelayGenericUrl(url) { setSlotGenericUrl(1, url); }
 export function getRelayGenericName() { return getSlotGenericName(1); }
 /** @param {string} name */
 export function setRelayGenericName(name) { setSlotGenericName(1, name); }
-/** @returns {'http'|'cea708'} */
+/** @returns {'http'} */
 export function getRelayCaptionMode() { return getSlotCaptionMode(1); }
-/** @param {'http'|'cea708'} mode */
+/** @param {'http'} mode */
 export function setRelayCaptionMode(mode) { setSlotCaptionMode(1, mode); }
 
 // ─── Multi-slot helpers ────────────────────────────────────────────────────────

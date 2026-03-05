@@ -149,15 +149,8 @@ export class RtmpRelayManager {
 
       this._stopProc(apiKey);
 
-      const requestedCea708 = relays.some(r => r.captionMode === 'cea708');
-      let hasCea708 = requestedCea708;
-      if (requestedCea708) {
-        const caps = this._ffmpegCaps;
-        if (!caps || !caps.hasEia608 || !caps.hasLibx264 || !caps.hasSubrip) {
-          console.warn(`[rtmp] CEA-708 requested for ${apiKey.slice(0,8)} but ffmpeg lacks required capabilities; falling back to HTTP caption mode.`);
-          hasCea708 = false;
-        }
-      }
+      // CEA-708 mode disabled for now — force HTTP-only forwarding.
+      const hasCea708 = false;
 
       // Build the tee muxer output: "[f=flv]url1|[f=flv]url2|..."
       const teeTargets = relays
@@ -174,24 +167,11 @@ export class RtmpRelayManager {
       console.log(`[rtmp] Starting relay (tee, ${relays.length} slot(s), cea708=${hasCea708}): ${src} -> ${teeTargets}`);
 
       let args;
-      if (hasCea708) {
-        // CEA-708 mode: re-encode video with libx264 so eia608 can embed cc_data SEI NAL units.
-        // Use `-f subrip -i pipe:0` so ffmpeg reads timed text correctly from stdin.
-        args = [
-          '-re', '-i', src,
-          '-f', 'subrip', '-i', 'pipe:0',
-          '-map', '0:v', '-map', '0:a', '-map', '1',
-          '-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency',
-          '-c:a', 'copy',
-          '-c:s', 'eia608',
-          '-f', 'tee', teeTargets,
-        ];
-      } else {
-        args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
-      }
+      // HTTP mode: forward without re-encoding (copy streams)
+      args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
 
       const proc = spawn('ffmpeg', args, {
-        stdio: hasCea708 ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'],
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
       const startedAt = new Date();
@@ -315,55 +295,8 @@ export class RtmpRelayManager {
    * @returns {boolean}  true if cue was written, false if not in CEA-708 mode or pipe unavailable
    */
   writeCaption(apiKey, text, { speechStart, timestamp } = {}) {
-    const proc = this._procs.get(apiKey);
-    const meta = this._meta.get(apiKey);
-
-    if (!proc || !meta || !meta.hasCea708 || !proc.stdin || proc.stdin.destroyed) {
-      return false;
-    }
-
-    const now = Date.now();
-    const streamElapsedMs = now - meta.startedAt.getTime();
-
-    let cueStartMs;
-    if (speechStart !== undefined) {
-      const t = speechStart instanceof Date ? speechStart.getTime()
-        : typeof speechStart === 'string' ? new Date(speechStart).getTime()
-        : Number(speechStart);
-      if (!Number.isFinite(t)) {
-        console.warn(`[rtmp] writeCaption: invalid speechStart for ${apiKey.slice(0, 8)}`);
-        return false;
-      }
-      cueStartMs = t - meta.startedAt.getTime();
-    } else if (timestamp !== undefined) {
-      const t = timestamp instanceof Date ? timestamp.getTime()
-        : typeof timestamp === 'string' ? new Date(timestamp).getTime()
-        : Number(timestamp);
-      if (!Number.isFinite(t)) {
-        console.warn(`[rtmp] writeCaption: invalid timestamp for ${apiKey.slice(0, 8)}`);
-        return false;
-      }
-      cueStartMs = t - CEA708_OFFSET_MS - meta.startedAt.getTime();
-    } else {
-      cueStartMs = streamElapsedMs - CEA708_OFFSET_MS;
-    }
-
-    // Clamp: never negative, never more than CEA708_MAX_BACKTRACK_MS behind current PTS.
-    const minMs = Math.max(0, streamElapsedMs - CEA708_MAX_BACKTRACK_MS);
-    cueStartMs = Math.max(minMs, cueStartMs);
-
-    meta.srtSeq++;
-    const cue = buildSrtCue(meta.srtSeq, cueStartMs, CEA708_DURATION_MS, text);
-
-    try {
-      proc.stdin.write(cue);
-      // Track captions sent for stats
-      try { meta.captionsSent = (meta.captionsSent || 0) + 1; } catch {}
-      return true;
-    } catch (err) {
-      console.warn(`[rtmp] Failed to write caption to stdin for ${apiKey.slice(0, 8)}: ${err.message}`);
-      return false;
-    }
+    // CEA-708 disabled: no-op writeCaption and return false.
+    return false;
   }
 
   // ---------------------------------------------------------------------------
@@ -413,7 +346,7 @@ export class RtmpRelayManager {
    * @param {string} apiKey
    * @returns {boolean}
    */
-  hasCea708(apiKey) { return this._meta.get(apiKey)?.hasCea708 ?? false; }
+  hasCea708(apiKey) { return false; }
 
   // ---------------------------------------------------------------------------
   // Public: nginx-rtmp publish tracking

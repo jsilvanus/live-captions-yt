@@ -140,11 +140,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // If any RTMP relay slot is running in CEA-708 mode, batch sends are not supported
-    // because each caption must be injected at the correct video PTS immediately.
-    if (captions.length > 1 && relayManager?.hasCea708(session.apiKey)) {
-      return res.status(400).json({ error: 'Batch captions not supported in CEA-708 mode' });
-    }
+    // Batch captions allowed (CEA-708 mode disabled)
 
     // Enforce per-key usage limits (no-op for keys with null limits)
     const usage = checkAndIncrementUsage(db, session.apiKey);
@@ -186,14 +182,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           const { text, translations, captionLang, showOriginal, timestamp, speechStart, ...rest } = caption;
           const composedText = composeCaptionText(text, captionLang, translations, showOriginal);
 
-          // Inject into the CEA-708 ffmpeg pipe when relay is active in cea708 mode.
-          // Use plain text (no HTML) for the SEI NAL payload.
-          if (relayManager?.hasCea708(session.apiKey)) {
-            const written = relayManager.writeCaption(session.apiKey, text, { speechStart, timestamp });
-            if (!written) {
-              console.warn(`[captions] CEA-708 writeCaption failed for ${session.apiKey.slice(0, 8)}: pipe unavailable or invalid timing`);
-            }
-          }
+          // CEA-708 disabled: no direct ffmpeg stdin injection.
 
           // Write original and all translations to backend files if enabled
           if (backendFileEnabled && translations) {
