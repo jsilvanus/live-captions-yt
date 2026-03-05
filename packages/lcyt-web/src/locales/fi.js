@@ -12,6 +12,11 @@ export default {
       actions: 'Toiminnot',
       model: 'Malli',
       other: 'Muut',
+      basic: 'Perus',
+      rtmpRelay: 'RTMP Relay',
+      service: 'Palvelu',
+      receivers: 'Vastaanottajat',
+      details: 'Lisätiedot',
     },
     connection: {
       backendUrl: 'Palvelimen URL',
@@ -28,6 +33,9 @@ export default {
       connected: 'Yhdistetty',
       disconnected: 'Yhteys katkaistu',
       configCleared: 'Asetukset tyhjennetty',
+    },
+    basic: {
+      showAdvanced: 'Näytä lisäasetukset',
     },
     captions: {
       batchWindow: 'Erä-ikkuna',
@@ -266,6 +274,11 @@ export default {
     caption: 'Tekstitys',
     translation: 'Käännös',
     targets: 'Kohteet',
+    connect: 'Yhdistä',
+    disconnect: 'Katkaise yhteys',
+    settings: 'Asetukset',
+    cc: 'CC',
+    controls: 'Ohjaus',
   },
   normalizeModal: {
     title: 'Normalisoi rivin pituudet?',
