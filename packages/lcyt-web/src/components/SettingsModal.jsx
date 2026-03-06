@@ -129,6 +129,13 @@ export function SettingsModal({ isOpen, onClose }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
+  // Keep credential state in sync with external changes (e.g. from CCModal)
+  useEffect(() => {
+    function onCredChanged() { setCredentialState(getGoogleCredential()); }
+    window.addEventListener('lcyt:stt-credential-changed', onCredChanged);
+    return () => window.removeEventListener('lcyt:stt-credential-changed', onCredChanged);
+  }, []);
+
   if (!isOpen) return null;
 
   // ── Field change handlers (auto-save) ─────────────────────
@@ -289,13 +296,6 @@ export function SettingsModal({ isOpen, onClose }) {
     clearGoogleCredential();
     setCredentialState(null);
   }
-
-  // Keep credential state in sync with external changes (e.g. from CCModal)
-  useEffect(() => {
-    function onCredChanged() { setCredentialState(getGoogleCredential()); }
-    window.addEventListener('lcyt:stt-credential-changed', onCredChanged);
-    return () => window.removeEventListener('lcyt:stt-credential-changed', onCredChanged);
-  }, []);
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
