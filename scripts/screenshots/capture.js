@@ -14,14 +14,13 @@
  *   • Input bar (cropped)
  *   • Mobile audio bar (portrait, cropped)
  *   • Privacy modal — first-visit (countdown active)
- *   • General modal — caption relay (cropped)
- *   • General modal — RTMP relay (cropped)
- *   • Status panel (floating, cropped)
- *   • Actions panel (floating, cropped)
- *   • Caption modal — Model tab (cropped)
- *   • Caption modal — VAD tab (cropped)
- *   • Caption modal — Other tab (cropped)
- *   • Translation modal (cropped)
+ *   • Settings modal — basic tab (cropped)
+ *   • Settings modal — RTMP relay tab (cropped)
+ *   • Settings modal — credentials tab (cropped)
+ *   • Controls panel (floating, cropped)
+ *   • CC modal — Targets tab (cropped)
+ *   • CC modal — Translation tab (cropped)
+ *   • CC modal — Service tab (cropped)
  *   • Privacy modal (opened from settings, cropped)
  *
  * Prerequisites:
@@ -304,11 +303,25 @@ async function run() {
     }
   );
 
-  // ── 12–14. CC modal — one tab at a time ───────────────────────────────────
+  // ── 12. Settings modal — credentials tab (advanced mode) ──────────────────
+  await shotBothCropped('modal-settings-credentials', LANDSCAPE, '.settings-modal__box',
+    async page => {
+      await page.evaluate(() => localStorage.setItem('lcyt:advanced-mode', '1'));
+      await openStatusBarBtn(page, 'Settings');
+      await page.waitForSelector('.settings-modal__box');
+      const credTab = page.locator('.settings-tab', { hasText: /credential/i }).first();
+      if (await credTab.count() > 0) {
+        await credTab.click();
+        await sleep(200);
+      }
+    }
+  );
+
+  // ── 13–15. CC modal — one tab at a time ───────────────────────────────────
   const CC_TABS = [
-    { id: 'receivers',    label: 'Receivers'   },
-    { id: 'service',      label: 'Service'     },
+    { id: 'targets',      label: 'Targets'     },
     { id: 'translation',  label: 'Translation' },
+    { id: 'service',      label: 'Service'     },
   ];
 
   for (const { id, label } of CC_TABS) {
@@ -325,7 +338,7 @@ async function run() {
     );
   }
 
-  // ── 15. Privacy modal (opened via Settings bar) ────────────────────────────
+  // ── 16. Privacy modal (opened via Settings bar) ────────────────────────────
   await shotBothCropped('modal-privacy', LANDSCAPE, '.settings-modal__box',
     async page => {
       await openStatusBarBtn(page, 'Privacy');

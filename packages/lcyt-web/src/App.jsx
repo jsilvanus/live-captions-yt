@@ -226,6 +226,7 @@ function AppLayout() {
     e.preventDefault();
     const isMobile = window.matchMedia('(max-width: 768px)').matches;
     const el = e.currentTarget;
+    el.setPointerCapture(e.pointerId);
 
     if (isMobile) {
       // Vertical resize of left panel
@@ -233,13 +234,13 @@ function AppLayout() {
       const startH = document.getElementById('left-panel')?.getBoundingClientRect().height || 0;
       function onMoveV(me) { setLeftPanelH(Math.max(80, startH + (me.clientY - startY))); }
       function onUpV() {
-        el.removeEventListener('pointermove', onMoveV);
-        el.removeEventListener('pointerup', onUpV);
-        el.removeEventListener('pointercancel', onUpV);
+        window.removeEventListener('pointermove', onMoveV);
+        window.removeEventListener('pointerup', onUpV);
+        window.removeEventListener('pointercancel', onUpV);
       }
-      el.addEventListener('pointermove', onMoveV);
-      el.addEventListener('pointerup', onUpV);
-      el.addEventListener('pointercancel', onUpV);
+      window.addEventListener('pointermove', onMoveV);
+      window.addEventListener('pointerup', onUpV);
+      window.addEventListener('pointercancel', onUpV);
     } else {
       // Horizontal resize of right panel
       const startX = e.clientX;
@@ -253,16 +254,14 @@ function AppLayout() {
         try { localStorage.setItem('lcyt:sent-panel-w', String(Math.round(newW))); } catch {}
       }
       function onUpH() {
-        el.removeEventListener('pointermove', onMoveH);
-        el.removeEventListener('pointerup', onUpH);
-        el.removeEventListener('pointercancel', onUpH);
+        window.removeEventListener('pointermove', onMoveH);
+        window.removeEventListener('pointerup', onUpH);
+        window.removeEventListener('pointercancel', onUpH);
       }
-      el.addEventListener('pointermove', onMoveH);
-      el.addEventListener('pointerup', onUpH);
-      el.addEventListener('pointercancel', onUpH);
+      window.addEventListener('pointermove', onMoveH);
+      window.addEventListener('pointerup', onUpH);
+      window.addEventListener('pointercancel', onUpH);
     }
-
-    el.setPointerCapture(e.pointerId);
   }
 
   return (

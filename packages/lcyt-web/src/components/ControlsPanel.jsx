@@ -37,6 +37,7 @@ export function ControlsPanel({ onClose }) {
   const [statsData, setStatsData] = useState(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [statusExpanded, setStatusExpanded] = useState(false);
 
   // ── Actions section state ─────────────────────────────────
   const [customSequence, setCustomSequence] = useState(0);
@@ -249,7 +250,17 @@ export function ControlsPanel({ onClose }) {
           >
             {session.connected ? t('settings.status.connected') : t('settings.status.disconnected')}
           </span>
+          <button
+            className="btn btn--secondary btn--sm"
+            style={{ marginLeft: 'auto', padding: '2px 6px', fontSize: '11px' }}
+            onClick={() => setStatusExpanded(v => !v)}
+            title={statusExpanded ? t('statusBar.collapseStatus') : t('statusBar.expandStatus')}
+          >
+            {statusExpanded ? '▲' : '▼'}
+          </button>
         </div>
+        {statusExpanded && (
+          <>
         <div className="settings-status-row">
           <span className="settings-status-row__label">{t('settings.status.backendUrl')}</span>
           <span className="settings-status-row__value">{session.backendUrl || '—'}</span>
@@ -268,6 +279,8 @@ export function ControlsPanel({ onClose }) {
             {lastConnectedTime ? new Date(lastConnectedTime).toLocaleTimeString() : '—'}
           </span>
         </div>
+          </>
+        )}
         <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
           <button
             className="btn btn--secondary btn--sm"
