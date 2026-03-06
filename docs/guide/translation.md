@@ -7,9 +7,7 @@ order: 5
 
 LCYT can translate your captions in real time and deliver the translation alongside the original text.
 
-Click **Translation** in the top status bar to open the Translation Settings modal.
-
-![Translation settings modal](/screenshots/modal-translation-light.png)
+Click **CC** in the top status bar, then select the **Translation** tab.
 
 ---
 
@@ -17,6 +15,7 @@ Click **Translation** in the top status bar to open the Translation Settings mod
 
 | Vendor | Notes |
 |--------|-------|
+| **MyMemory** | Free, no API key required |
 | **Google Cloud Translation** | High quality, wide language support; requires a Google Cloud API key |
 | **LibreTranslate** | Self-hosted open-source option; provide your server URL and optional API key |
 | **DeepL** | Premium translation quality; requires a DeepL API key |
@@ -65,3 +64,4 @@ Enable **Show original** to keep the original caption text in the stream alongsi
 1. Deploy a LibreTranslate instance (or use a public one).
 2. Enter the server URL (e.g. `https://translate.example.com`).
 3. Optionally enter an API key if your server requires one.
+

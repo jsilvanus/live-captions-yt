@@ -108,6 +108,19 @@
   border-color: var(--color-text-dim);
 }
 
+.status-bar__btn--connected {
+  color: var(--color-success, #22c55e);
+  border-color: var(--color-success, #22c55e);
+}
+.status-bar__btn--connected:hover {
+  color: #ef4444;
+  border-color: #ef4444;
+}
+.status-bar__btn--connecting {
+  opacity: 0.7;
+  cursor: wait;
+}
+
 .status-bar__btn--icon {
   font-size: 16px;
   border: none;

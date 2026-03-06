@@ -9,15 +9,14 @@
 
 1. [What is LCYT?](#what-is-lcyt)
 2. [Getting started](#getting-started)
-3. [Connecting to your stream](#connecting-to-your-stream)
-4. [Sending captions](#sending-captions)
-5. [Caption settings](#caption-settings)
-6. [Translation](#translation)
-7. [General settings](#general-settings)
-8. [Actions & diagnostics](#actions--diagnostics)
-9. [Status panel](#status-panel)
-10. [Privacy](#privacy)
-11. [Keyboard shortcuts](#keyboard-shortcuts)
+3. [Status bar buttons](#status-bar-buttons)
+4. [Connecting to your stream](#connecting-to-your-stream)
+5. [Sending captions](#sending-captions)
+6. [Settings modal](#settings-modal)
+7. [CC (Closed Captions) modal](#cc-closed-captions-modal)
+8. [Controls panel](#controls-panel)
+9. [Privacy](#privacy)
+10. [Keyboard shortcuts](#keyboard-shortcuts)
 
 ---
 
@@ -34,14 +33,34 @@ It is especially useful for **non-English broadcasts** — you can send captions
 1. **Get an API key** — visit [lcyt.fi/app](https://lcyt.fi/app) and fill in the free-key form.
 2. **Set up your YouTube Live** — in YouTube Studio, create a live stream, enable a 30-second delay, and turn on _closed captions via HTTP POST_.
 3. **Open the app** — go to [app.lcyt.fi](https://app.lcyt.fi).
-4. **Enter your credentials** — click **General** in the top bar and fill in your API Key and Stream Key.
-5. **Connect** — click **Connect**. The status bar turns green when you are live.
+4. **Enter your credentials** — click **Settings** in the top bar, fill in your Backend URL, API Key, and Stream Key on the **Basic** tab.
+5. **Connect** — click the **Connect** button in the top bar. It turns green when you are live.
+
+---
+
+## Status bar buttons
+
+The top status bar contains five buttons:
+
+| Button | State / Colour | Purpose |
+|--------|---------------|---------|
+| **Connect / Disconnect** | Normal = disconnected, Green = connected, Red on hover = click to disconnect | Toggle your backend connection |
+| **Settings** | — | Open the Settings modal (connection config, theme, language, advanced options) |
+| **CC** | — | Open the Closed Captions modal (speech recognition, caption targets, translation) |
+| **Controls** | — | Open the Controls floating panel (session status + diagnostic actions) |
+| **Privacy** | — | Open the Privacy modal |
 
 ---
 
 ## Connecting to your stream
 
-_Placeholder — screenshots and detailed steps coming soon._
+Click the **Connect** button in the top status bar.
+
+- If no credentials have been saved yet, the **Settings** modal opens automatically.
+- If credentials are saved, the app connects immediately. The button turns **green** on success.
+- To disconnect, click the (green) button again — it turns **red** on hover to confirm the action.
+
+The **Network banner** (⚠ at the top) appears when the backend cannot be reached and auto-retries every 30 seconds.
 
 ---
 
@@ -51,60 +70,135 @@ _Placeholder — covers the input bar, microphone button, batch mode, and file d
 
 ---
 
-## Caption settings
+## Settings modal
 
-Open **Caption** in the top bar. There are three tabs:
+Click **Settings** to open the Settings modal. It has up to two tabs.
 
-| Tab | Contents |
-|-----|----------|
-| **Model** | Speech-to-text engine and language model selection |
-| **VAD** | Voice activity detection thresholds |
-| **Other** | Timing, max length, and display options |
+### Basic tab
 
-_Placeholder — detailed explanations and screenshots coming soon._
+| Field | Description |
+|-------|-------------|
+| **Backend URL** | URL of the LCYT relay backend (default: `https://api.lcyt.fi`) |
+| **API Key** | Your LCYT API key — get one at [lcyt.fi/app](https://lcyt.fi/app) |
+| **Stream Key** | YouTube Live stream key from YouTube Studio |
+| **Auto-connect** | Reconnect automatically the next time you open the app |
+| **Theme** | Auto (system), Dark, or Light |
+| **Language** | UI display language (English / Finnish / Swedish) |
+| **Text size** | Font size in the caption preview area |
+| **Show advanced options** | Enables the Advanced tab in Settings and the Details tab in CC |
 
----
+All fields are saved to your browser as you type — no explicit Save button is needed.
 
-## Translation
+### RTMP Relay tab _(advanced mode only)_
 
-Click **Translation** in the top bar to configure automatic caption translation.
+The RTMP relay re-encodes your browser's audio and pushes it to up to **4 destinations** via RTMP with embedded CEA-608 captions.
 
-_Placeholder — covers target languages, output formats, and backend file saving._
+Configure each slot:
 
----
+| Field | Description |
+|-------|-------------|
+| **Target type** | `YouTube` or `Generic` (custom RTMP URL) |
+| **YouTube stream key** | Your YouTube RTMP stream key |
+| **RTMP URL** | Custom RTMP ingest URL for generic targets |
+| **Stream name / key** | Optional stream name appended after the base URL |
+| **Caption mode** | `HTTP` — captions via HTTP POST |
 
-## General settings
+Use **Activate / Stop** to start or stop individual slots. **Stop all** tears down all running slots at once.
 
-Click **General** in the top bar to configure:
-
-- Backend URL and API key
-- Stream key
-- RTMP relay slots
-- Theme (dark / light / auto)
-- Language
-
----
-
-## Actions & diagnostics
-
-Click **Actions** in the top bar to:
-
-- Sync the clock with the server
-- Run a heartbeat test
-- Reset the caption sequence number
-- Clear all local configuration
+> The RTMP Relay tab is only visible when **Show advanced options** is enabled in the Basic tab.
 
 ---
 
-## Status panel
+## CC (Closed Captions) modal
 
-Click **Status** in the top bar to see the current connection state, sequence number, clock offset, and per-key usage statistics.
+Click **CC** to open the Closed Captions modal. It has up to four tabs.
+
+### Service tab
+
+Controls which speech-to-text engine is used.
+
+| Engine | Description |
+|--------|-------------|
+| **Web Speech API** | Browser built-in (Chrome / Edge). No account required. Toggle **prefer local** to use on-device recognition. |
+| **Google Cloud STT** | Higher accuracy, more language models. Requires a service account JSON key. |
+
+Also in this tab:
+
+- **Microphone** — select which microphone to use
+- **Recognition language** — spoken language for the speech recogniser
+- **Utterance end button** _(advanced)_ — show a 🗣 button on the audio meter to force-end an utterance
+- **Utterance end timer** _(advanced)_ — automatically end the utterance after N seconds
+
+### Receivers tab
+
+Manage additional caption delivery destinations (extra YouTube streams or custom HTTP POST endpoints).
+
+Click **+ Add target** to add a new row. Each row can be a **YouTube** target (stream key) or a **Generic** target (HTTP POST URL with optional custom headers).
+
+Changes take effect after reconnecting to the backend.
+
+### Details tab _(advanced mode only)_
+
+| Setting | Description |
+|---------|-------------|
+| **Batch window** | 0 = send each caption immediately; 1–20 s = collect and send as one batch |
+| **Transcription offset** | Shift caption timestamps by ±N seconds (negative = compensate for transcription delay) |
+| **Client-side VAD** | Enable silence detection (WebKit engine only) to auto-segment long speech |
+| **Silence duration** | How long (ms) audio must be silent before the recogniser is stopped |
+| **Energy threshold** | RMS amplitude below which audio is considered silent |
+
+> The Details tab is only visible when **Show advanced options** is enabled in Settings.
+
+### Translation tab
+
+Configure real-time caption translation. Click **+ Add translation** to add a target language.
+
+Each translation entry specifies:
+
+- **Language** — target language
+- **Target** — `captions` (YouTube stream), `file` (local download), or `backend-file`
+- **Format** — `YouTube` or `WebVTT` (for file targets)
+
+Supported vendors: MyMemory (free), Google Cloud Translation, DeepL, LibreTranslate.
+
+---
+
+## Controls panel
+
+Click **Controls** to open the Controls floating panel. It combines the session status and diagnostic actions in one place.
+
+### Status section
+
+| Row | Description |
+|-----|-------------|
+| **Connection** | Green `● Connected` or grey `○ Disconnected` |
+| **Backend URL** | The relay backend the app is talking to |
+| **Sequence** | Caption sequence number — increments with every caption sent |
+| **Clock offset** | Difference (ms) between your browser clock and the server clock |
+| **Last connected** | Time of the most recent successful connection |
+
+**Stats** — opens the usage stats modal (requires connection).  
+**My Files** — lists caption files saved on the backend (requires connection).
+
+### Actions section
+
+| Action | Description |
+|--------|-------------|
+| **⟳ Sync Now** | NTP-style clock sync with the backend — run if captions appear early or late |
+| **♥ Heartbeat** | Sends a blank caption to verify the connection end-to-end |
+| **↺ Reset sequence** | Resets the caption counter to 0 |
+| **Set sequence** | Manually set the sequence number |
+| **Caption codes** | Active metadata codes sent with each caption (language, speaker, lyrics, no-translate, custom) |
+| **File actions** | Edit the current file or clear the sent log |
+| **🗑 Clear saved config** | Removes all locally stored settings |
 
 ---
 
 ## Privacy
 
-Click **Privacy** in the top bar to review the privacy policy and manage your consent.
+Click **Privacy** to review the privacy policy and manage your consent.
+
+On first visit the Privacy modal opens automatically. Click **Accept** to continue.
 
 ---
 
@@ -112,12 +206,14 @@ Click **Privacy** in the top bar to review the privacy policy and manage your co
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl + G` | Open General settings |
-| `Enter` | Send the typed caption |
-| `Escape` | Close open modal |
-
-_More shortcuts will be documented here._
+| `Ctrl+,` / `Cmd+,` | Open Settings |
+| `Enter` | Send the current caption |
+| `Escape` | Close open modal or panel |
+| `↑ / ↓` | Move pointer up / down in the current file |
+| `Page Up / Down` | Jump 10 lines |
+| `Home / End` | Jump to first / last line |
+| `Tab` | Cycle to the next open file |
 
 ---
 
-*Last updated: placeholder — this document will be expanded with screenshots and detailed steps.*
+*Last updated: 2026-03-05*

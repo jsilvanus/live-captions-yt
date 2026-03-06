@@ -4,13 +4,10 @@ import { useSessionContext } from './contexts/SessionContext';
 import { useFileContext } from './contexts/FileContext';
 import { useLang } from './contexts/LangContext';
 import { StatusBar } from './components/StatusBar';
-import { GeneralModal } from './components/GeneralModal';
-import { CaptionsModal } from './components/CaptionsModal';
-import { TranslationModal } from './components/TranslationModal';
-import { TargetsModal } from './components/TargetsModal';
+import { SettingsModal } from './components/SettingsModal';
+import { CCModal } from './components/CCModal';
+import { ControlsPanel } from './components/ControlsPanel';
 import { getEnabledTargets } from './lib/targetConfig';
-import { StatusPanel } from './components/StatusPanel';
-import { ActionsPanel } from './components/ActionsPanel';
 import { PrivacyModal } from './components/PrivacyModal';
 import { DropZone } from './components/DropZone';
 import { FileTabs } from './components/FileTabs';
@@ -61,12 +58,9 @@ function AppLayout() {
   const fileStore = useFileContext();
   const { showToast } = useToastContext();
 
-  const [generalOpen, setGeneralOpen] = useState(false);
-  const [statusOpen, setStatusOpen] = useState(false);
-  const [actionsOpen, setActionsOpen] = useState(false);
-  const [captionOpen, setCaptionOpen] = useState(false);
-  const [translationOpen, setTranslationOpen] = useState(false);
-  const [targetsOpen, setTargetsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ccOpen, setCcOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
@@ -97,7 +91,7 @@ function AppLayout() {
       // Ctrl+, / Cmd+, — toggle settings
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault();
-        setGeneralOpen(v => !v);
+        setSettingsOpen(v => !v);
         return;
       }
 
@@ -253,12 +247,9 @@ function AppLayout() {
   return (
     <div id="app">
       <StatusBar
-        onGeneralOpen={() => setGeneralOpen(true)}
-        onStatusOpen={() => setStatusOpen(true)}
-        onActionsOpen={() => setActionsOpen(true)}
-        onCaptionOpen={() => setCaptionOpen(true)}
-        onTranslationOpen={() => setTranslationOpen(true)}
-          onTargetsOpen={() => setTargetsOpen(true)}
+        onSettingsOpen={() => setSettingsOpen(true)}
+        onCCOpen={() => setCcOpen(true)}
+        onControlsOpen={() => setControlsOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
       />
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
@@ -375,14 +366,12 @@ function AppLayout() {
         );
       })()}
 
-      <GeneralModal isOpen={generalOpen} onClose={() => setGeneralOpen(false)} />
-      {captionOpen && <CaptionsModal isOpen={captionOpen} onClose={() => setCaptionOpen(false)} />}
-      {translationOpen && <TranslationModal isOpen={translationOpen} onClose={() => setTranslationOpen(false)} />}
-      {targetsOpen && <TargetsModal
-        isOpen={targetsOpen}
+      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {ccOpen && <CCModal
+        isOpen={ccOpen}
         connected={session.connected}
         onClose={() => {
-          setTargetsOpen(false);
+          setCcOpen(false);
           if (session.connected) {
             session.updateTargets(getEnabledTargets()).catch(err => {
               showToast(err?.message || 'Failed to update targets', 'error');
@@ -390,8 +379,7 @@ function AppLayout() {
           }
         }}
       />}
-      {statusOpen && <StatusPanel onClose={() => setStatusOpen(false)} />}
-      {actionsOpen && <ActionsPanel onClose={() => setActionsOpen(false)} />}
+      {controlsOpen && <ControlsPanel onClose={() => setControlsOpen(false)} />}
       <PrivacyModal
         isOpen={privacyOpen}
         onClose={() => setPrivacyOpen(false)}

@@ -12,6 +12,11 @@ export default {
       actions: 'Åtgärder',
       model: 'Modell',
       other: 'Övrigt',
+      basic: 'Grundläggande',
+      rtmpRelay: 'RTMP Relay',
+      service: 'Tjänst',
+      receivers: 'Mottagare',
+      details: 'Detaljer',
     },
     connection: {
       backendUrl: 'Backend-URL',
@@ -28,6 +33,9 @@ export default {
       connected: 'Ansluten',
       disconnected: 'Frånkopplad',
       configCleared: 'Konfiguration rensad',
+    },
+    basic: {
+      showAdvanced: 'Visa avancerade alternativ',
     },
     captions: {
       batchWindow: 'Batchfönster',
@@ -266,6 +274,11 @@ export default {
     caption: 'Undertexter',
     translation: 'Översättning',
     targets: 'Mål',
+    connect: 'Anslut',
+    disconnect: 'Koppla från',
+    settings: 'Inställningar',
+    cc: 'CC',
+    controls: 'Kontroller',
   },
   normalizeModal: {
     title: 'Normalisera radlängder?',

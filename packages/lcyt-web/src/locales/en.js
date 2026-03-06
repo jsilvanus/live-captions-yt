@@ -12,6 +12,11 @@ export default {
       actions: 'Actions',
       model: 'Model',
       other: 'Other',
+      basic: 'Basic',
+      rtmpRelay: 'RTMP Relay',
+      service: 'Service',
+      receivers: 'Receivers',
+      details: 'Details',
     },
     connection: {
       backendUrl: 'Backend URL',
@@ -28,6 +33,9 @@ export default {
       connected: 'Connected',
       disconnected: 'Disconnected',
       configCleared: 'Config cleared',
+    },
+    basic: {
+      showAdvanced: 'Show advanced options',
     },
     captions: {
       batchWindow: 'Batch window',
@@ -266,6 +274,11 @@ export default {
     caption: 'Caption',
     translation: 'Translation',
     targets: 'Targets',
+    connect: 'Connect',
+    disconnect: 'Disconnect',
+    settings: 'Settings',
+    cc: 'CC',
+    controls: 'Controls',
   },
   normalizeModal: {
     title: 'Normalize line lengths?',

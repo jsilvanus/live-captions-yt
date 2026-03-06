@@ -32,10 +32,17 @@ The main dashboard is split into two panels side by side (or stacked on mobile):
 - **Left panel** — Drop zone for script files, file tabs, the caption preview, and the microphone / audio meter
 - **Right panel** — Log of all captions sent during the current session
 
-The **status bar** at the top contains buttons to open every settings panel.  
-The **input bar** at the bottom is where you type and send captions.
+The **status bar** at the top contains five buttons:
 
-![LCYT dashboard (dark)](/screenshots/dashboard-landscape-dark.png)
+| Button | Purpose |
+|--------|---------|
+| **Connect / Disconnect** | Toggle the backend session (green = connected, red on hover = click to disconnect) |
+| **Settings** | Configure connection credentials, theme, language, text size, and advanced options |
+| **CC** | Configure speech recognition, caption targets (receivers), details, and translation |
+| **Controls** | View session status and run diagnostic actions |
+| **Privacy** | Review the privacy policy |
+
+The **input bar** at the bottom is where you type and send captions.
 
 ---
 
@@ -56,8 +63,7 @@ The **input bar** at the bottom is where you type and send captions.
 
 - [Getting started](getting-started) — set up your stream and API key
 - [Sending captions](sending-captions) — all the ways to send captions
-- [Caption settings](caption-settings) — speech recognition and display options
-- [Translation](translation) — automatic real-time translation
-- [General settings](general-settings) — connect, theme, relay
-- [Status & Actions](status-actions) — monitor your session
+- [Caption settings](caption-settings) — the CC modal: speech recognition, targets, details, and translation
+- [General settings](general-settings) — the Settings modal: connection, theme, relay
+- [Status & Actions](status-actions) — the Controls panel
 - [Keyboard shortcuts](keyboard-shortcuts) — full shortcut reference
