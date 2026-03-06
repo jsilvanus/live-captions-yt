@@ -19,7 +19,6 @@ dist/
 
 # Screenshot artifacts
 packages/lcyt-site/screenshots/
-packages/lcyt-site/public/screenshots/
 packages/lcyt-web/dist/index.html
 docs/screenshots/*.png
 
