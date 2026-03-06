@@ -123,7 +123,27 @@ echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
 echo "    Build log: $BUILD_LOG"
 
 # ---------------------------------------------------------------------------
-# Step 2b: Build lcyt-site on the host (served by nginx, not included in Docker)
+# Step 2b: Capture UI screenshots (requires lcyt-web dist to be built first)
+# ---------------------------------------------------------------------------
+
+echo "==> Installing root devDependencies (playwright, etc.)"
+ROOT_DEV_LOG="$REPO_DIR/root-npm-install.log"
+rm -f "$ROOT_DEV_LOG"
+npm ci --prefix "$REPO_DIR" --include=dev 2>&1 | tee "$ROOT_DEV_LOG"
+tail -n 10 "$ROOT_DEV_LOG" || true
+
+echo "==> Installing Playwright Chromium browser"
+npx --prefix "$REPO_DIR" playwright install chromium 2>&1 || true
+
+echo "==> Capturing UI screenshots"
+SCREENSHOTS_LOG="$REPO_DIR/screenshots.log"
+rm -f "$SCREENSHOTS_LOG"
+npm run screenshots --prefix "$REPO_DIR" 2>&1 | tee "$SCREENSHOTS_LOG" || \
+  echo "Warning: screenshot capture failed (non-fatal) — site will build without updated screenshots."
+echo "    Screenshots log: $SCREENSHOTS_LOG"
+
+# ---------------------------------------------------------------------------
+# Step 2c: Build lcyt-site on the host (served by nginx, not included in Docker)
 # ---------------------------------------------------------------------------
 
 echo "==> Installing lcyt-site dependencies (includes devDependencies for Astro build)"
