@@ -264,68 +264,59 @@ async function run() {
     }
   );
 
-  // ── 9. General modal — caption relay mode (default) ────────────────────────
-  await shotBothCropped('modal-general', LANDSCAPE, '.settings-modal__box',
+  // ── 9. Settings modal — basic tab ──────────────────────────────────────────
+  await shotBothCropped('modal-settings', LANDSCAPE, '.settings-modal__box',
     async page => {
-      await openStatusBarBtn(page, 'General settings');
+      await openStatusBarBtn(page, 'Settings');
       await page.waitForSelector('.settings-modal__box');
     }
   );
 
-  // ── 10. General modal — RTMP relay mode ───────────────────────────────────
-  await shotBothCropped('modal-general-rtmp', LANDSCAPE, '.settings-modal__box',
+  // ── 10. Settings modal — RTMP relay tab (advanced mode) ───────────────────
+  await shotBothCropped('modal-settings-rtmp', LANDSCAPE, '.settings-modal__box',
     async page => {
-      await openStatusBarBtn(page, 'General settings');
+      await page.evaluate(() => localStorage.setItem('lcyt:advanced-mode', '1'));
+      await openStatusBarBtn(page, 'Settings');
       await page.waitForSelector('.settings-modal__box');
-      // Switch to RTMP mode
-      await page.locator('.lang-btn', { hasText: 'RTMP' }).first().click();
-      await sleep(200);
+      // Switch to RTMP Relay tab
+      const rtmpTab = page.locator('.settings-tab', { hasText: /rtmp/i }).first();
+      if (await rtmpTab.count() > 0) {
+        await rtmpTab.click();
+        await sleep(200);
+      }
     }
   );
 
-  // ── 11. Status panel (floating) ────────────────────────────────────────────
-  await shotBothCropped('panel-status', LANDSCAPE, '.floating-panel',
+  // ── 11. Controls panel (floating) ─────────────────────────────────────────
+  await shotBothCropped('panel-controls', LANDSCAPE, '.floating-panel',
     async page => {
-      await openStatusBarBtn(page, 'Status');
+      await openStatusBarBtn(page, 'Controls');
       await page.waitForSelector('.floating-panel');
     }
   );
 
-  // ── 12. Actions panel (floating) ───────────────────────────────────────────
-  await shotBothCropped('panel-actions', LANDSCAPE, '.floating-panel',
-    async page => {
-      await openStatusBarBtn(page, 'Actions');
-      await page.waitForSelector('.floating-panel');
-    }
-  );
-
-  // ── 13–15. Caption modal — one tab at a time ───────────────────────────────
-  const CAPTION_TABS = [
-    { id: 'model', label: 'Model' },
-    { id: 'vad',   label: 'VAD'   },
-    { id: 'other', label: 'Other' },
+  // ── 12–14. CC modal — one tab at a time ───────────────────────────────────
+  const CC_TABS = [
+    { id: 'receivers',    label: 'Receivers'   },
+    { id: 'service',      label: 'Service'     },
+    { id: 'translation',  label: 'Translation' },
   ];
 
-  for (const { id, label } of CAPTION_TABS) {
-    await shotBothCropped(`modal-caption-${id}`, LANDSCAPE, '.settings-modal__box',
+  for (const { id, label } of CC_TABS) {
+    await shotBothCropped(`modal-cc-${id}`, LANDSCAPE, '.settings-modal__box',
       async page => {
-        await openStatusBarBtn(page, 'Caption settings');
+        await openStatusBarBtn(page, 'CC');
         await page.waitForSelector('.settings-modal__box');
-        await page.locator('.settings-tab', { hasText: label }).click();
-        await sleep(200);
+        const tab = page.locator('.settings-tab', { hasText: label }).first();
+        if (await tab.count() > 0) {
+          await tab.click();
+          await sleep(200);
+        }
       }
     );
   }
 
-  // ── 16. Translation modal ──────────────────────────────────────────────────
-  await shotBothCropped('modal-translation', LANDSCAPE, '.settings-modal__box',
-    async page => {
-      await openStatusBarBtn(page, 'Translation settings');
-      await page.waitForSelector('.settings-modal__box');
-    }
-  );
-
-  // ── 17. Privacy modal (opened via Settings bar) ────────────────────────────
+  // ── 15. Privacy modal (opened via Settings bar) ────────────────────────────
   await shotBothCropped('modal-privacy', LANDSCAPE, '.settings-modal__box',
     async page => {
       await openStatusBarBtn(page, 'Privacy');

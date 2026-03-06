@@ -7,6 +7,8 @@ order: 6
 
 Click **Settings** in the top status bar to open the Settings modal.
 
+![Settings modal — Basic tab](/screenshots/modal-settings-light.png)
+
 ---
 
 ## Basic tab
@@ -32,32 +34,24 @@ All fields are saved to your browser automatically as you type — no explicit S
 
 > This tab is only visible when **Show advanced options** is enabled on the Basic tab.
 
+![Settings modal — RTMP Relay tab](/screenshots/modal-settings-rtmp-light.png)
+
 The RTMP relay re-encodes your browser's audio and pushes it to up to **4 destinations** via RTMP with embedded CEA-608 captions.
 
 ### Relay active toggle
 
-Enable **Active** to start relaying incoming audio to all configured slots. When inactive, the backend accepts the RTMP stream but does not forward it.
+Enable **Active** to start relaying incoming audio to all configured destinations. When inactive, the backend accepts the RTMP stream but does not forward it.
 
-### Relay slots (1–4)
+### Relay destinations
 
-Configure each slot with:
+Click **+ Add relay** to configure a new RTMP destination. Each entry supports:
 
-| Field | Description |
-|-------|-------------|
-| **Target type** | `YouTube` (uses `rtmp://a.rtmp.youtube.com/live2`) or `Generic` (custom RTMP URL) |
-| **YouTube stream key** | Your YouTube RTMP stream key |
-| **RTMP URL** | Custom RTMP ingest URL for generic targets |
-| **Stream name / key** | Optional stream name appended after the base URL |
-| **Caption mode** | `HTTP POST` — captions delivered via HTTP (default) |
+| Type | Description |
+|------|-------------|
+| **YouTube** | Enter your YouTube RTMP stream key. The full URL (`rtmp://a.rtmp.youtube.com/live2/<key>`) is shown as a preview. |
+| **Generic** | Enter a custom RTMP base URL and optional stream name / key. |
 
-### Actions
+Click **✕** to remove a destination. You can configure up to 4 destinations.
 
-| Button | Description |
-|--------|-------------|
-| **▶ Activate (Slot N)** | Start the relay for the selected slot |
-| **■ Stop (Slot N)** | Stop the relay for the selected slot |
-| **■ Stop all** | Stop all running slots |
-| **🗑 Clear slot N** | Remove the configuration for the selected slot |
-
-> Requires an active backend connection to activate or stop slots.
+> Requires an active backend connection to activate the relay.
 

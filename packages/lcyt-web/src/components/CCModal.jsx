@@ -256,7 +256,7 @@ export function CCModal({ isOpen, onClose, connected }) {
   const { t } = useLang();
 
   const [advancedMode, setAdvancedMode] = useState(getAdvancedMode);
-  const [activeTab, setActiveTab] = useState('service');
+  const [activeTab, setActiveTab] = useState('receivers');
 
   // ── Service tab ───────────────────────────────────────────
   const cloudCfg = getSttCloudConfig();
@@ -530,8 +530,8 @@ export function CCModal({ isOpen, onClose, connected }) {
   const hasCaptionTarget = translations.some(r => r.target === 'captions');
 
   const TABS = advancedMode
-    ? ['service', 'receivers', 'details', 'translation']
-    : ['service', 'receivers', 'translation'];
+    ? ['receivers', 'service', 'details', 'translation']
+    : ['receivers', 'service', 'translation'];
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">

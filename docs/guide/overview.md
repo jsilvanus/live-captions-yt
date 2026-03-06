@@ -27,6 +27,8 @@ It is especially useful for **non-English broadcasts** — you can send captions
 
 ## Dashboard
 
+![LCYT dashboard — dark mode](/screenshots/dashboard-landscape-dark.png)
+
 The main dashboard is split into two panels side by side (or stacked on mobile):
 
 - **Left panel** — Drop zone for script files, file tabs, the caption preview, and the microphone / audio meter
@@ -41,6 +43,8 @@ The **status bar** at the top contains five buttons:
 | **CC** | Configure speech recognition, caption targets (receivers), details, and translation |
 | **Controls** | View session status and run diagnostic actions |
 | **Privacy** | Review the privacy policy |
+
+![Status bar](/screenshots/statusbar-dark.png)
 
 The **input bar** at the bottom is where you type and send captions.
 
@@ -63,7 +67,7 @@ The **input bar** at the bottom is where you type and send captions.
 
 - [Getting started](getting-started) — set up your stream and API key
 - [Sending captions](sending-captions) — all the ways to send captions
-- [Caption settings](caption-settings) — the CC modal: speech recognition, targets, details, and translation
+- [Caption settings](caption-settings) — the CC modal: receivers, speech recognition, details, and translation
 - [General settings](general-settings) — the Settings modal: connection, theme, relay
 - [Status & Actions](status-actions) — the Controls panel
 - [Keyboard shortcuts](keyboard-shortcuts) — full shortcut reference

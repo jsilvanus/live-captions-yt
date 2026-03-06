@@ -392,10 +392,12 @@ a:hover {
 .docs-content {
   margin-left: var(--sidebar-width);
   flex: 1;
+  min-width: 0;
   padding: 2.5rem 3rem;
   max-width: 900px;
   overflow-wrap: break-word;
   word-wrap: break-word;
+  overflow-x: hidden;
 }
 
 /* Doc sections */
@@ -465,6 +467,13 @@ a:hover {
   border-collapse: collapse;
   width: 100%;
   margin: 1em 0;
+  table-layout: fixed;
+}
+
+.docs-content td,
+.docs-content th {
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .docs-content th,

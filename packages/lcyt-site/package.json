@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "node ../../scripts/screenshots/capture.js && astro build",
     "preview": "astro preview"
   },
   "dependencies": {
