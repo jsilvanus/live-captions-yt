@@ -115,7 +115,7 @@ function probeFfmpeg() {
     // Warn about optional capabilities used for CEA-708 embedded captions (currently disabled)
     // These are only needed when cea708 caption mode is enabled on a relay slot.
     if (!hasLibx264) {
-      console.info('  ℹ ffmpeg: libx264 encoder not detected — CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
+      console.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
     }
 
     return { available: true, hasLibx264, hasEia608, hasSubrip };

@@ -277,7 +277,8 @@ export function SettingsModal({ isOpen, onClose }) {
       if (!json.client_email || !json.private_key) throw new Error('Not a valid service account JSON key.');
       setGoogleCredential(json);
       setCredentialState(json);
-      showToast(`Credential loaded: ${json.client_email}`, 'success');
+      const displayEmail = String(json.client_email).slice(0, 60);
+      showToast(`Credential loaded: ${displayEmail}`, 'success');
     } catch (err) {
       showToast(`Failed to load credential: ${err.message}`, 'error');
     }

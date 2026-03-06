@@ -135,7 +135,8 @@ export class SessionStore {
         } else if (r.startedAt) {
           session.lastActivityAt = new Date(r.startedAt);
         } else {
-          session.lastActivityAt = new Date(0); // epoch — will be swept on next cleanup pass
+          // No timing information: set to epoch so this session is eligible for immediate cleanup
+          session.lastActivityAt = new Date(0);
         }
         // restore any saved data if present
         if (r.data) session.data = r.data;

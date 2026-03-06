@@ -147,8 +147,9 @@ export class RtmpRelayManager {
         return resolve();
       }
 
-      // Check if ffmpeg is available (capability check from probeFfmpeg at startup)
-      if (this._ffmpegCaps && this._ffmpegCaps.available === false) {
+      // Check if ffmpeg is available (capability check from probeFfmpeg at startup).
+      // Only block if we have explicit capability info confirming ffmpeg is absent.
+      if (this._ffmpegCaps !== null && this._ffmpegCaps?.available === false) {
         return reject(new Error('ffmpeg is not installed or not available in PATH. RTMP relay requires ffmpeg.'));
       }
 

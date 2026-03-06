@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { FloatingPanel } from './FloatingPanel';
 import { StatsModal } from './StatsModal';
 import { FilesModal } from './FilesModal';
@@ -29,7 +29,11 @@ export function StatusPanel({ onClose }) {
   // Load relay status when connected
   useEffect(() => {
     if (!session.connected) { setRelayStatus(null); return; }
-    session.getRelayStatus().then(s => setRelayStatus(s)).catch(() => setRelayStatus(null));
+    let cancelled = false;
+    session.getRelayStatus()
+      .then(s => { if (!cancelled) setRelayStatus(s); })
+      .catch(() => { if (!cancelled) setRelayStatus(null); });
+    return () => { cancelled = true; };
   }, [session.connected]);
 
   async function handleGetStats() {
@@ -46,9 +50,12 @@ export function StatusPanel({ onClose }) {
     }
   }
 
-  const enabledTargets = getEnabledTargets();
-  const enabledTranslations = getEnabledTranslations();
-  const runningRelays = relayStatus?.relays?.filter(r => relayStatus.runningSlots?.includes(r.slot)) ?? [];
+  const enabledTargets = useMemo(() => getEnabledTargets(), []);
+  const enabledTranslations = useMemo(() => getEnabledTranslations(), []);
+  const runningRelays = useMemo(
+    () => relayStatus?.relays?.filter(r => relayStatus.runningSlots?.includes(r.slot)) ?? [],
+    [relayStatus]
+  );
 
   return (
     <>
