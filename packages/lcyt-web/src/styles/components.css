@@ -865,6 +865,53 @@
   font-size: 12px;
 }
 
+/* ─── Status Panel collapsible sections ──────────────────── */
+
+.status-collapsible-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-dim);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+  text-align: left;
+  width: 100%;
+  transition: color 0.15s;
+}
+
+.status-collapsible-btn:hover {
+  color: var(--color-text);
+}
+
+.status-collapsible-body {
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.status-collapsible-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.status-collapsible-item__type {
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.status-collapsible-item__label {
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .settings-modal__footer {
   display: flex;
   flex-direction: column;
@@ -1521,6 +1568,32 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
+}
+
+/* ─── Keyboard shortcuts table ──────────────────────────── */
+
+.shortcuts-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.shortcuts-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: middle;
+}
+
+.shortcuts-table__key {
+  font-family: var(--font-mono);
+  color: var(--color-accent);
+  white-space: nowrap;
+  width: 120px;
+}
+
+.shortcuts-table__desc {
+  color: var(--color-text-dim);
 }
 
 /* ─── Engine badge in AudioPanel ────────────────────────── */

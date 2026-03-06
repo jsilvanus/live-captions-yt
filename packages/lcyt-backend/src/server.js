@@ -83,6 +83,19 @@ const _rtmpStatIds = new Map();
 
 // Probe local ffmpeg for required features (libx264, eia608, subrip)
 function probeFfmpeg() {
+  // First, check if ffmpeg binary exists at all
+  const which = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', timeout: 3000 });
+  if (which.error) {
+    const isNotFound = which.error.code === 'ENOENT' || which.error.message?.includes('ENOENT');
+    if (isNotFound) {
+      console.warn('⚠ ffmpeg not found in PATH — RTMP relay will not be available.');
+      console.warn('  Install ffmpeg to enable stream relay: https://ffmpeg.org/download.html');
+    } else {
+      console.warn('⚠ ffmpeg probe failed:', which.error.message);
+    }
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
+  }
+
   try {
     const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
     const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
@@ -96,12 +109,19 @@ function probeFfmpeg() {
     const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
     const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
 
-    // CEA-708 support disabled for now; do not surface ffmpeg capability warnings.
+    // Log ffmpeg availability status
+    console.info('✓ ffmpeg found — RTMP relay is available.');
 
-    return { hasLibx264, hasEia608, hasSubrip };
+    // Warn about optional capabilities used for CEA-708 embedded captions (currently disabled)
+    // These are only needed when cea708 caption mode is enabled on a relay slot.
+    if (!hasLibx264) {
+      console.info('  ℹ ffmpeg: libx264 encoder not detected — CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
+    }
+
+    return { available: true, hasLibx264, hasEia608, hasSubrip };
   } catch (err) {
     console.warn('⚠ ffmpeg probe failed:', err.message);
-    return { hasLibx264: false, hasEia608: false, hasSubrip: false };
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
   }
 }
 

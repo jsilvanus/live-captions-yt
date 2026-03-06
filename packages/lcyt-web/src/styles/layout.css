@@ -223,7 +223,7 @@ body {
     bottom: 0;
     left: 0;
     right: 0;
-    height: var(--mobile-bar-height, 52px);
+    min-height: var(--mobile-bar-height, 52px);
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     display: grid;
@@ -232,6 +232,24 @@ body {
     gap: 6px;
     padding: 0 8px;
     z-index: 60;
+    flex-wrap: wrap;
+  }
+
+  /* Live interim transcript bar inside the mobile audio bar */
+  .mobile-interim-text {
+    grid-column: 1 / -1;
+    padding: 4px 2px 0;
+    overflow: hidden;
+  }
+
+  .mobile-interim-text__content {
+    font-size: 11px;
+    color: var(--color-text-dim);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
   }
 
   /* Allow header to expand and show wrapped status lines */

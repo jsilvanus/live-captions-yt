@@ -127,7 +127,16 @@ export class SessionStore {
         });
         // Restore timestamps
         try { session.startedAt = r.startedAt ? Date.parse(r.startedAt) : Date.now(); } catch(_) { session.startedAt = Date.now(); }
-        session.lastActivityAt = r.lastActivity ? new Date(r.lastActivity) : new Date();
+        // Use lastActivity if available; fall back to startedAt so that old sessions
+        // that never received any caption are cleaned up based on their start time
+        // rather than being granted a fresh TTL window on every server restart.
+        if (r.lastActivity) {
+          session.lastActivityAt = new Date(r.lastActivity);
+        } else if (r.startedAt) {
+          session.lastActivityAt = new Date(r.startedAt);
+        } else {
+          session.lastActivityAt = new Date(0); // epoch — will be swept on next cleanup pass
+        }
         // restore any saved data if present
         if (r.data) session.data = r.data;
       }

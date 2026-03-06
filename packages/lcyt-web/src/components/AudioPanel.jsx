@@ -32,7 +32,7 @@ const VAD_GRACE_PERIOD_MS        = 1000; // cooldown after a VAD-triggered force
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AudioPanel = forwardRef(function AudioPanel(
-  { visible, onListeningChange, onHoldingChange, onUtteranceChange, extraMeterCanvasRef },
+  { visible, onListeningChange, onHoldingChange, onUtteranceChange, onInterimChange, extraMeterCanvasRef },
   ref
 ) {
   const [listening, setListening] = useState(false);
@@ -303,6 +303,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
   useEffect(() => {
     onUtteranceChange?.(utteranceActive, utteranceTimerRunning, utteranceTimerSec);
   }, [utteranceActive, utteranceTimerRunning, utteranceTimerSec, onUtteranceChange]);
+
+  // Notify parent when interim text changes (e.g. for mobile live text display)
+  useEffect(() => {
+    onInterimChange?.(interimText);
+  }, [interimText, onInterimChange]);
 
   // Respond to toggle requests from FileTabs: if not currently listening, allow hiding the panel.
   useEffect(() => {

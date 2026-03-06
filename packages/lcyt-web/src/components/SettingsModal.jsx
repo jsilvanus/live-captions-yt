@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
 import {
@@ -9,6 +9,9 @@ import {
   buildSlotTarget, buildSlotTargetUrl,
   clearSlot,
 } from '../lib/relayConfig.js';
+import {
+  getGoogleCredential, setGoogleCredential, clearGoogleCredential,
+} from '../lib/googleCredential.js';
 import { useToastContext } from '../contexts/ToastContext';
 
 const CONFIG_KEY = 'lcyt-config';
@@ -82,6 +85,10 @@ export function SettingsModal({ isOpen, onClose }) {
   const [relayStatus, setRelayStatus] = useState(null);
   const [relayLoading, setRelayLoading] = useState(false);
   const [relayError, setRelayError] = useState('');
+
+  // ── Credentials tab ───────────────────────────────────────
+  const [credential, setCredentialState] = useState(getGoogleCredential);
+  const credInputRef = useRef(null);
 
   // Load persisted values when modal opens
   useEffect(() => {
@@ -257,7 +264,37 @@ export function SettingsModal({ isOpen, onClose }) {
   const sc = slotConfigs[activeRelaySlot] || {};
   const builtSlotUrl = buildSlotTargetUrl(activeRelaySlot);
 
-  const TABS = advancedMode ? ['basic', 'rtmpRelay'] : ['basic'];
+  const TABS = advancedMode ? ['basic', 'rtmpRelay', 'credentials'] : ['basic', 'credentials'];
+
+  // ── Credential handlers ────────────────────────────────────
+
+  async function handleCredentialFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const json = JSON.parse(text);
+      if (!json.client_email || !json.private_key) throw new Error('Not a valid service account JSON key.');
+      setGoogleCredential(json);
+      setCredentialState(json);
+      showToast(`Credential loaded: ${json.client_email}`, 'success');
+    } catch (err) {
+      showToast(`Failed to load credential: ${err.message}`, 'error');
+    }
+    if (credInputRef.current) credInputRef.current.value = '';
+  }
+
+  function handleClearCredential() {
+    clearGoogleCredential();
+    setCredentialState(null);
+  }
+
+  // Keep credential state in sync with external changes (e.g. from CCModal)
+  useEffect(() => {
+    function onCredChanged() { setCredentialState(getGoogleCredential()); }
+    window.addEventListener('lcyt:stt-credential-changed', onCredChanged);
+    return () => window.removeEventListener('lcyt:stt-credential-changed', onCredChanged);
+  }, []);
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
@@ -600,6 +637,79 @@ export function SettingsModal({ isOpen, onClose }) {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* ── Credentials ── */}
+          {activeTab === 'credentials' && (
+            <div className="settings-panel settings-panel--active">
+
+              <div className="settings-field">
+                <label className="settings-field__label">{t('settings.credentials.googleCredential')}</label>
+                <span className="settings-field__hint">{t('settings.credentials.googleCredentialHint')}</span>
+                {credential ? (
+                  <div className="stt-cred-loaded">
+                    <span className="stt-cred-loaded__email" title={credential.client_email}>
+                      {credential.client_email}
+                    </span>
+                    <button className="btn btn--secondary btn--sm" onClick={handleClearCredential}>
+                      {t('settings.stt.credentialRemove')}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      ref={credInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      style={{ display: 'none' }}
+                      onChange={handleCredentialFile}
+                    />
+                    <button
+                      className="btn btn--secondary btn--sm"
+                      onClick={() => credInputRef.current?.click()}
+                    >
+                      {t('settings.stt.credentialLoad')}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              <hr style={{ borderColor: 'var(--color-border)', margin: '12px 0' }} />
+
+              {/* Keyboard shortcuts reference */}
+              <div className="settings-field">
+                <label className="settings-field__label">{t('settings.credentials.shortcuts')}</label>
+                <table className="shortcuts-table">
+                  <tbody>
+                    <tr>
+                      <td className="shortcuts-table__key">Ctrl+,</td>
+                      <td className="shortcuts-table__desc">{t('settings.credentials.shortcutSettings')}</td>
+                    </tr>
+                    <tr>
+                      <td className="shortcuts-table__key">Ctrl+1…9</td>
+                      <td className="shortcuts-table__desc">{t('settings.credentials.shortcutFileTabs')}</td>
+                    </tr>
+                    <tr>
+                      <td className="shortcuts-table__key">Enter</td>
+                      <td className="shortcuts-table__desc">{t('settings.credentials.shortcutSend')}</td>
+                    </tr>
+                    <tr>
+                      <td className="shortcuts-table__key">↑ / ↓</td>
+                      <td className="shortcuts-table__desc">{t('settings.credentials.shortcutNav')}</td>
+                    </tr>
+                    <tr>
+                      <td className="shortcuts-table__key">Tab</td>
+                      <td className="shortcuts-table__desc">{t('settings.credentials.shortcutCycle')}</td>
+                    </tr>
+                    <tr>
+                      <td className="shortcuts-table__key">Escape</td>
+                      <td className="shortcuts-table__desc">{t('settings.credentials.shortcutClose')}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
             </div>
           )}
         </div>

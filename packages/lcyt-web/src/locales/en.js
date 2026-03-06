@@ -17,6 +17,7 @@ export default {
       service: 'Service',
       receivers: 'Receivers',
       details: 'Details',
+      credentials: 'Credentials & Shortcuts',
     },
     connection: {
       backendUrl: 'Backend URL',
@@ -126,8 +127,9 @@ export default {
         backendFile: 'Backend file',
       },
       formats: {
-        youtube: 'YouTube format',
-        vtt:     'WebVTT',
+        text:    'Plain text (text only)',
+        youtube: 'YouTube timestamp format',
+        vtt:     'WebVTT (with timestamps)',
       },
     },
     targets: {
@@ -206,6 +208,9 @@ export default {
       lastConnected: 'Last connected',
       statsButton: 'Stats',
       filesButton: 'My Files',
+      captionTargets: 'Caption targets',
+      rtmpRelays: 'RTMP relays',
+      translations: 'Translations',
     },
     footer: {
       connect: 'Connect',
@@ -259,6 +264,17 @@ export default {
       activeHint: 'Toggle on to relay an incoming RTMP stream to all configured targets.',
       activated: 'Relay activated',
       deactivated: 'Relay deactivated',
+    },
+    credentials: {
+      googleCredential: 'Google Service Account',
+      googleCredentialHint: 'Used for Google Cloud STT and YouTube API access. Kept in memory only — cleared when the page is closed.',
+      shortcuts: 'Keyboard Shortcuts',
+      shortcutSettings: 'Open / close Settings',
+      shortcutFileTabs: 'Switch to file tab 1–9',
+      shortcutSend: 'Send current caption',
+      shortcutNav: 'Navigate file lines',
+      shortcutCycle: 'Cycle through file tabs',
+      shortcutClose: 'Close open panel / modal',
     },
   },
   statusBar: {

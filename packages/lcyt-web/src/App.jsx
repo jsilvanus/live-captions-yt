@@ -77,6 +77,7 @@ function AppLayout() {
   const [utteranceActive, setUtteranceActive] = useState(false);
   const [utteranceTimerRunning, setUtteranceTimerRunning] = useState(false);
   const [utteranceTimerSec, setUtteranceTimerSec] = useState(0);
+  const [mobileInterimText, setMobileInterimText] = useState('');
   const [mobileUtteranceEndEnabled, setMobileUtteranceEndEnabled] = useState(
     () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
   );
@@ -92,6 +93,17 @@ function AppLayout() {
       if ((e.ctrlKey || e.metaKey) && e.key === ',') {
         e.preventDefault();
         setSettingsOpen(v => !v);
+        return;
+      }
+
+      // Ctrl+1..9 / Cmd+1..9 — switch to file tab by index
+      if ((e.ctrlKey || e.metaKey) && e.key >= '1' && e.key <= '9') {
+        const idx = parseInt(e.key, 10) - 1;
+        const targetFile = fileStore.files[idx];
+        if (targetFile) {
+          e.preventDefault();
+          fileStore.setActive(targetFile.id);
+        }
         return;
       }
 
@@ -203,12 +215,17 @@ function AppLayout() {
     setUtteranceTimerSec(timerSec);
   }
 
+  function handleInterimChange(text) {
+    setMobileInterimText(text);
+  }
+
   // Keep ref in sync so resize closures always read the latest value
   useEffect(() => { rightPanelWRef.current = rightPanelW; }, [rightPanelW]);
 
   function onResizePointerDown(e) {
     e.preventDefault();
     const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const el = e.currentTarget;
 
     if (isMobile) {
       // Vertical resize of left panel
@@ -216,11 +233,13 @@ function AppLayout() {
       const startH = document.getElementById('left-panel')?.getBoundingClientRect().height || 0;
       function onMoveV(me) { setLeftPanelH(Math.max(80, startH + (me.clientY - startY))); }
       function onUpV() {
-        document.removeEventListener('pointermove', onMoveV);
-        document.removeEventListener('pointerup', onUpV);
+        el.removeEventListener('pointermove', onMoveV);
+        el.removeEventListener('pointerup', onUpV);
+        el.removeEventListener('pointercancel', onUpV);
       }
-      document.addEventListener('pointermove', onMoveV);
-      document.addEventListener('pointerup', onUpV);
+      el.addEventListener('pointermove', onMoveV);
+      el.addEventListener('pointerup', onUpV);
+      el.addEventListener('pointercancel', onUpV);
     } else {
       // Horizontal resize of right panel
       const startX = e.clientX;
@@ -234,14 +253,16 @@ function AppLayout() {
         try { localStorage.setItem('lcyt:sent-panel-w', String(Math.round(newW))); } catch {}
       }
       function onUpH() {
-        document.removeEventListener('pointermove', onMoveH);
-        document.removeEventListener('pointerup', onUpH);
+        el.removeEventListener('pointermove', onMoveH);
+        el.removeEventListener('pointerup', onUpH);
+        el.removeEventListener('pointercancel', onUpH);
       }
-      document.addEventListener('pointermove', onMoveH);
-      document.addEventListener('pointerup', onUpH);
+      el.addEventListener('pointermove', onMoveH);
+      el.addEventListener('pointerup', onUpH);
+      el.addEventListener('pointercancel', onUpH);
     }
 
-    e.currentTarget.setPointerCapture(e.pointerId);
+    el.setPointerCapture(e.pointerId);
   }
 
   return (
@@ -270,6 +291,7 @@ function AppLayout() {
             onListeningChange={setMicListening}
             onHoldingChange={setMicHolding}
             onUtteranceChange={handleUtteranceChange}
+            onInterimChange={handleInterimChange}
             extraMeterCanvasRef={mobileBarMeterRef}
           />
         </div>
@@ -305,6 +327,12 @@ function AppLayout() {
         const otherHasMic = session.micHolder !== null && session.micHolder !== session.clientId;
         return (
           <div id="mobile-audio-bar">
+            {/* Live transcription preview bar — shown above mic controls when interim text exists */}
+            {micListening && mobileInterimText && (
+              <div className="mobile-interim-text">
+                <span className="mobile-interim-text__content">{mobileInterimText}</span>
+              </div>
+            )}
             <div className="mobile-bar__meter-wrap">
               <canvas
                 ref={mobileBarMeterRef}
