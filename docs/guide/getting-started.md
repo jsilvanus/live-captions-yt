@@ -43,11 +43,15 @@ Your key is emailed to you instantly and works for up to **200 captions per day*
 Navigate to **[app.lcyt.fi](https://app.lcyt.fi)**.  
 On the first visit the **Privacy** modal opens automatically. Read the policy and click **Accept** to continue.
 
+![Privacy modal on first visit](/screenshots/privacy-first-visit-light.png)
+
 ---
 
 ## Step 4 — Enter your credentials
 
 Click **Settings** in the top status bar to open the Settings modal.
+
+![Settings modal — Basic tab](/screenshots/modal-settings-light.png)
 
 Fill in the **Basic** tab:
 
@@ -75,6 +79,8 @@ Click the **Connect** button in the top status bar.
 ## Step 6 — Send your first caption
 
 Type a test caption in the input bar at the bottom of the page and press **Enter** (or click **Send**).
+
+![Input bar](/screenshots/inputbar-light.png)
 
 The caption appears in the **Sent** log on the right and is delivered to your YouTube stream within a few seconds.
 

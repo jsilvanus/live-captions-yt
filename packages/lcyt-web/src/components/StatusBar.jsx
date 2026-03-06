@@ -40,13 +40,13 @@ export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyO
       <span className="status-bar__brand">lcyt-web</span>
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">
-        <button className={connectBtnClass} onClick={handleConnectClick} disabled={connecting}>
+        <button className={connectBtnClass} onClick={handleConnectClick} disabled={connecting} title={session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}>
           {connecting ? t('settings.footer.connecting') : session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}
         </button>
-        <button className="status-bar__btn" onClick={onSettingsOpen}>{t('statusBar.settings')}</button>
-        <button className="status-bar__btn" onClick={onCCOpen}>{t('statusBar.cc')}</button>
-        <button className="status-bar__btn" onClick={onControlsOpen}>{t('statusBar.controls')}</button>
-        <button className="status-bar__btn" onClick={onPrivacyOpen}>{t('statusBar.privacy')}</button>
+        <button className="status-bar__btn" onClick={onSettingsOpen} title="Settings">{t('statusBar.settings')}</button>
+        <button className="status-bar__btn" onClick={onCCOpen} title="CC">{t('statusBar.cc')}</button>
+        <button className="status-bar__btn" onClick={onControlsOpen} title="Controls">{t('statusBar.controls')}</button>
+        <button className="status-bar__btn" onClick={onPrivacyOpen} title="Privacy">{t('statusBar.privacy')}</button>
       </div>
     </header>
   );

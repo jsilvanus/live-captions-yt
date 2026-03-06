@@ -9,9 +9,32 @@ Click **CC** in the top status bar to open the Closed Captions modal. It has up 
 
 ---
 
+## Receivers tab {#receivers}
+
+The **Receivers** tab is the first tab and manages all caption delivery destinations.
+
+![CC modal — Receivers tab](/screenshots/modal-cc-receivers-light.png)
+
+Click **+ Add target** to add a new entry. Each entry can be:
+
+| Type | Description |
+|------|-------------|
+| **YouTube** | A YouTube stream key — captions are sent to that stream |
+| **Generic** | A custom HTTP POST endpoint with optional JSON headers |
+
+You can add multiple targets (e.g. two YouTube streams). Each target has an enable toggle. Only enabled targets receive captions.
+
+Each target can also have **Disable batch sending** enabled, which forces captions to be sent individually to that target regardless of the global batch setting.
+
+> Add a YouTube target here with your stream key if you want to send captions directly to a YouTube Live stream.
+
+---
+
 ## Service tab {#service}
 
 The **Service** tab controls which speech-to-text engine is used and how it is configured.
+
+![CC modal — Service tab](/screenshots/modal-cc-service-light.png)
 
 ### STT engine
 
@@ -48,23 +71,6 @@ Automatically force-ends the utterance after N seconds (0 = disabled). Useful fo
 
 ---
 
-## Receivers tab {#receivers}
-
-The **Receivers** tab manages additional caption delivery destinations beyond your primary YouTube stream.
-
-Click **+ Add target** to add a new entry. Each entry can be:
-
-| Type | Description |
-|------|-------------|
-| **YouTube** | An extra YouTube stream key — captions are sent to that stream as well |
-| **Generic** | A custom HTTP POST endpoint with optional JSON headers |
-
-Each target can also have **Disable batch sending** enabled, which forces captions to be sent individually to that target regardless of the global batch setting.
-
-> Changes take effect after reconnecting to the backend.
-
----
-
 ## Details tab _(advanced mode only)_ {#details}
 
 > This tab is only visible when **Show advanced options** is enabled in Settings → Basic.
@@ -96,6 +102,8 @@ Double-click the slider to reset to 0.
 ## Translation tab {#translation}
 
 The **Translation** tab configures real-time caption translation.
+
+![CC modal — Translation tab](/screenshots/modal-cc-translation-light.png)
 
 Click **+ Add translation** to add a target language. Each entry specifies:
 
