@@ -42,7 +42,7 @@
 
 import { chromium } from 'playwright';
 import { spawn } from 'child_process';
-import { mkdirSync, existsSync, copyFileSync } from 'fs';
+import { mkdirSync, existsSync, copyFileSync, realpathSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -100,8 +100,17 @@ async function applyTheme(page, theme) {
  */
 function saveScreenshot(docsPath, sitePath, name, theme) {
   // page.screenshot already wrote to docsPath; copy to the site public dir
+  // unless SITE_DIR is a symlink pointing to DOCS_DIR (they're the same on disk).
   try {
-    copyFileSync(docsPath, sitePath);
+    let sameDir = false;
+    try {
+      sameDir = realpathSync(dirname(docsPath)) === realpathSync(dirname(sitePath));
+    } catch {
+      // If realpath fails (e.g. broken symlink), assume different dirs and attempt copy.
+    }
+    if (!sameDir) {
+      copyFileSync(docsPath, sitePath);
+    }
   } catch (err) {
     process.stderr.write(`  ⚠  Could not copy to site public dir: ${err.message}\n`);
   }
