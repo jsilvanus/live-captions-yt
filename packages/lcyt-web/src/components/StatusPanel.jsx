@@ -32,7 +32,12 @@ export function StatusPanel({ onClose }) {
     let cancelled = false;
     session.getRelayStatus()
       .then(s => { if (!cancelled) setRelayStatus(s); })
-      .catch(() => { if (!cancelled) setRelayStatus(null); });
+      .catch(err => {
+        if (!cancelled) {
+          setRelayStatus(null);
+          console.debug('[StatusPanel] Could not fetch relay status:', err?.message);
+        }
+      });
     return () => { cancelled = true; };
   }, [session.connected]);
 

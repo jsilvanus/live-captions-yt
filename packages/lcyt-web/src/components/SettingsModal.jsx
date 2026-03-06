@@ -281,7 +281,12 @@ export function SettingsModal({ isOpen, onClose }) {
     try {
       const text = await file.text();
       const json = JSON.parse(text);
-      if (!json.client_email || !json.private_key) throw new Error('Not a valid service account JSON key.');
+      if (
+        typeof json.client_email !== 'string' || !json.client_email.includes('@') ||
+        typeof json.private_key !== 'string' || !json.private_key.startsWith('-----BEGIN')
+      ) {
+        throw new Error('Not a valid service account JSON key.');
+      }
       setGoogleCredential(json);
       setCredentialState(json);
       const displayEmail = String(json.client_email).slice(0, 60);

@@ -5,6 +5,11 @@ import { saveSession, deleteSession, loadSession, incSessionSequence, listSessio
 const DEFAULT_SESSION_TTL = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000; // 2 hours
 const DEFAULT_CLEANUP_INTERVAL = Number(process.env.CLEANUP_INTERVAL) || 5 * 60 * 1000; // 5 minutes
 
+// Sentinel date used when a rehydrated session has no timing information at all,
+// ensuring it is eligible for immediate cleanup on the next sweep rather than
+// being granted a fresh TTL window.
+const EPOCH = new Date(0);
+
 /**
  * Generate a deterministic session ID from the composite key.
  * SHA-256 hash of "apiKey:streamKey:domain", truncated to 16 hex chars.
@@ -135,8 +140,8 @@ export class SessionStore {
         } else if (r.startedAt) {
           session.lastActivityAt = new Date(r.startedAt);
         } else {
-          // No timing information: set to epoch so this session is eligible for immediate cleanup
-          session.lastActivityAt = new Date(0);
+          // No timing information available: mark immediately eligible for cleanup
+          session.lastActivityAt = EPOCH;
         }
         // restore any saved data if present
         if (r.data) session.data = r.data;
