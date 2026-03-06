@@ -17,6 +17,7 @@ export default {
       service: 'Tjänst',
       receivers: 'Mottagare',
       details: 'Detaljer',
+      credentials: 'Autentisering & Genvägar',
     },
     connection: {
       backendUrl: 'Backend-URL',
@@ -126,8 +127,9 @@ export default {
         backendFile: 'Backend-fil',
       },
       formats: {
-        youtube: 'YouTube-format',
-        vtt:     'WebVTT',
+        text:    'Enbart text',
+        youtube: 'YouTube-tidsstämpelformat',
+        vtt:     'WebVTT (med tidsstämplar)',
       },
     },
     targets: {
@@ -206,6 +208,9 @@ export default {
       lastConnected: 'Senast ansluten',
       statsButton: 'Statistik',
       filesButton: 'Mina filer',
+      captionTargets: 'Textmål',
+      rtmpRelays: 'RTMP-reläer',
+      translations: 'Översättningar',
     },
     footer: {
       connect: 'Anslut',
@@ -259,6 +264,17 @@ export default {
       activeHint: 'Aktivera för att vidarebefordra inkommande RTMP-ström till alla konfigurerade mål.',
       activated: 'Relay aktiverad',
       deactivated: 'Relay inaktiverad',
+    },
+    credentials: {
+      googleCredential: 'Google-tjänstkonto',
+      googleCredentialHint: 'Används för Google Cloud STT och YouTube API. Lagras bara i minnet — rensas när sidan stängs.',
+      shortcuts: 'Tangentbordsgenvägar',
+      shortcutSettings: 'Öppna / stäng inställningar',
+      shortcutFileTabs: 'Byt till flikfil 1–9',
+      shortcutSend: 'Skicka aktuell text',
+      shortcutNav: 'Navigera filrader',
+      shortcutCycle: 'Bläddra bland filflikar',
+      shortcutClose: 'Stäng panel / modal',
     },
   },
   statusBar: {

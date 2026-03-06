@@ -25,6 +25,7 @@ export const TRANSLATION_TARGETS = [
 
 /** File formats for file / backend-file targets. */
 export const CAPTION_FORMATS = [
+  { value: 'text',    labelKey: 'settings.translation.formats.text' },
   { value: 'youtube', labelKey: 'settings.translation.formats.youtube' },
   { value: 'vtt',     labelKey: 'settings.translation.formats.vtt' },
 ];

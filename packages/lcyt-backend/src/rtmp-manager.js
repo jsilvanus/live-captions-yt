@@ -147,6 +147,12 @@ export class RtmpRelayManager {
         return resolve();
       }
 
+      // Check if ffmpeg is available (capability check from probeFfmpeg at startup).
+      // Only block if we have explicit capability info confirming ffmpeg is absent.
+      if (this._ffmpegCaps?.available === false) {
+        return reject(new Error('ffmpeg is not installed or not available in PATH. RTMP relay requires ffmpeg.'));
+      }
+
       this._stopProc(apiKey);
 
       // CEA-708 mode disabled for now — force HTTP-only forwarding.

@@ -17,6 +17,7 @@ export default {
       service: 'Palvelu',
       receivers: 'Vastaanottajat',
       details: 'Lisätiedot',
+      credentials: 'Tunnisteet & Pikanäppäimet',
     },
     connection: {
       backendUrl: 'Palvelimen URL',
@@ -126,8 +127,9 @@ export default {
         backendFile: 'Palvelintiedosto',
       },
       formats: {
-        youtube: 'YouTube-muoto',
-        vtt:     'WebVTT',
+        text:    'Pelkkä teksti',
+        youtube: 'YouTube-aikaleiman muoto',
+        vtt:     'WebVTT (aikaleimoilla)',
       },
     },
     targets: {
@@ -206,6 +208,9 @@ export default {
       lastConnected: 'Viimeksi yhdistetty',
       statsButton: 'Tilastot',
       filesButton: 'Omat tiedostot',
+      captionTargets: 'Tekstityskohdat',
+      rtmpRelays: 'RTMP-releet',
+      translations: 'Käännökset',
     },
     footer: {
       connect: 'Yhdistä',
@@ -259,6 +264,17 @@ export default {
       activeHint: 'Ota käyttöön välitys kaikille määritetyille kohteille.',
       activated: 'Relay aktivoitu',
       deactivated: 'Relay poistettu käytöstä',
+    },
+    credentials: {
+      googleCredential: 'Google-palvelutili',
+      googleCredentialHint: 'Käytetään Google Cloud STT:hen ja YouTube API:hin. Säilytetään vain muistissa — tyhjenee sivun sulkeutuessa.',
+      shortcuts: 'Pikanäppäimet',
+      shortcutSettings: 'Avaa / sulje asetukset',
+      shortcutFileTabs: 'Siirry välilehdelle 1–9',
+      shortcutSend: 'Lähetä nykyinen tekstitys',
+      shortcutNav: 'Selaa tiedostorivejä',
+      shortcutCycle: 'Selaa tiedostovälilehtiä',
+      shortcutClose: 'Sulje paneeli / ikkuna',
     },
   },
   statusBar: {
