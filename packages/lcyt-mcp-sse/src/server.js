@@ -561,4 +561,8 @@ app.post("/messages", async (req, res) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.error(`lcyt-mcp-sse listening on port ${PORT}`);
+  console.error(`[lcyt-mcp-sse] LCYT_WEB_URL     = ${process.env.LCYT_WEB_URL || "(not set)"}`);
+  console.error(`[lcyt-mcp-sse] SPEECH_PUBLIC_URL = ${process.env.SPEECH_PUBLIC_URL || "(not set)"}`);
+  const toolNames = TOOLS.map((t) => t.name);
+  console.error(`[lcyt-mcp-sse] Tools available (${toolNames.length}): ${toolNames.join(", ")}`);
 });
