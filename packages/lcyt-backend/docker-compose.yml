@@ -4,6 +4,8 @@ services:
     build:
       context: ../..
       dockerfile: packages/lcyt-backend/Dockerfile
+      args:
+        RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
     image: lcyt-backend:latest
     ports:
       - "3000:3000"
@@ -11,6 +13,7 @@ services:
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET}
       DB_PATH: /data/lcyt.sqlite
+      RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
       BACKUP_DAYS: ${BACKUP_DAYS:-0}
       BACKUP_DIR: /backups
