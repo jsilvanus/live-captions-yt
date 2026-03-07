@@ -37,6 +37,23 @@ const DEFAULT_SPEECH_PORT = 3002;
 
 const LCYT_WEB_URL = (process.env.LCYT_WEB_URL || "").replace(/\/$/, "");
 
+/**
+ * True when LCYT_WEB_URL is configured — required to build browser URLs.
+ * When false, speech tools are excluded from the advertised tool list.
+ */
+export const SPEECH_ENABLED = !!LCYT_WEB_URL;
+
+/**
+ * Public-facing base URL of the speech capture server (what the browser will POST to).
+ * Defaults to the bind address. Override with SPEECH_PUBLIC_URL when the server is
+ * behind a proxy or when the browser must reach a different host/port.
+ * Example: SPEECH_PUBLIC_URL=https://mcp.example.com
+ */
+function getSpeechPublicUrl() {
+  const pub = (process.env.SPEECH_PUBLIC_URL || "").replace(/\/$/, "");
+  return pub || getSpeechServerBaseUrl();
+}
+
 // ── Session store ─────────────────────────────────────────────────────────────
 
 /**
@@ -378,7 +395,7 @@ function buildBrowserUrl(session) {
     : null;
 
   const params = new URLSearchParams({
-    server: getSpeechServerBaseUrl(),
+    server: getSpeechPublicUrl(),
     lang: session.language,
     silence: String(session.silenceTimeoutMs),
   });

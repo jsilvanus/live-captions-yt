@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { YoutubeLiveCaptionSender } from "lcyt";
 import { randomBytes } from "node:crypto";
-import { SPEECH_TOOLS, handleSpeechTool } from "./speech.js";
+import { SPEECH_TOOLS, handleSpeechTool, SPEECH_ENABLED } from "./speech.js";
 import {
   initDb, validateApiKey, checkAndIncrementUsage, anonymizeKey,
   writeAuthEvent, writeSessionStat, writeCaptionError,
@@ -45,6 +45,12 @@ if (db && REQUIRE_API_KEY) {
   console.error(`[lcyt-mcp-sse] DB connected (DB_PATH=${DB_PATH}), auth optional — X-Api-Key enables logging`);
 } else {
   console.error("[lcyt-mcp-sse] No DB — set DB_PATH to enable logging; MCP_REQUIRE_API_KEY=1 to enforce auth");
+}
+
+if (SPEECH_ENABLED) {
+  console.error("[lcyt-mcp-sse] Speech tools enabled (LCYT_WEB_URL configured)");
+} else {
+  console.error("[lcyt-mcp-sse] Speech tools disabled — set LCYT_WEB_URL to enable");
 }
 
 /**
@@ -188,7 +194,7 @@ const TOOLS = [
       "Email (if any) may be retained briefly to prevent free-tier abuse. This cannot be undone.",
     inputSchema: { type: "object", properties: {} },
   },
-  ...SPEECH_TOOLS,
+  ...(SPEECH_ENABLED ? SPEECH_TOOLS : []),
 ];
 
 // ── Handler factory ───────────────────────────────────────────────────────────
