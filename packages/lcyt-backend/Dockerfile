@@ -10,7 +10,14 @@ COPY packages/lcyt-backend/ packages/lcyt-backend/
 FROM node:20-slim
 WORKDIR /app
 COPY --from=build /app .
+# Install ffmpeg when RTMP relay is active (build with --build-arg RTMP_RELAY_ACTIVE=1)
+ARG RTMP_RELAY_ACTIVE=0
+RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
 ENV NODE_ENV=production
+ENV RTMP_RELAY_ACTIVE=${RTMP_RELAY_ACTIVE}
 # Toggle free-tier API key handout endpoint (0 = disabled, 1 = enabled)
 ENV FREE_APIKEY_ACTIVE=0
 # Directory for per-key caption/translation files
