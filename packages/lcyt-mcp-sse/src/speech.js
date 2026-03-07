@@ -7,12 +7,22 @@
  *   end_speech_session      — explicitly stop a session (with optional partial save)
  *   transcribe_speech_now   — combined start+wait; returns URL+transcript in one blocking call
  *
- * The embedded HTTP server (default port 3002, env SPEECH_PORT) serves:
- *   GET  /speech/:sessionId        — self-contained browser capture page (Web Speech API)
- *   POST /speech/:sessionId/chunk  — receives transcript chunks from browser
- *   POST /speech/:sessionId/done   — signals browser session ended
+ * The browser URL points to the lcyt-web production deployment at LCYT_WEB_URL/mcp/:sessionId
+ * (e.g. https://lcyt.fi/mcp/<id>). lcyt-web renders SpeechCapturePage at that route.
+ *
+ * The embedded HTTP server (default port 3002, env SPEECH_PORT) serves only:
+ *   POST /mcp/:sessionId/chunk  — receives transcript chunks from the browser page
+ *   POST /mcp/:sessionId/done   — signals browser session ended
+ *   OPTIONS /mcp/:sessionId/*   — CORS preflight (browser may come from LCYT_WEB_URL origin)
  *
  * Sessions are in-memory only. YouTube forwarding uses YoutubeLiveCaptionSender.
+ *
+ * Required env:
+ *   LCYT_WEB_URL   Base URL of the deployed lcyt-web app (e.g. https://lcyt.fi)
+ *
+ * Optional env:
+ *   SPEECH_PORT    Port for the chunk/done HTTP server (default 3002)
+ *   SPEECH_HOST    Host to bind (default localhost)
  */
 
 import { createServer } from "node:http";
@@ -24,6 +34,8 @@ import { YoutubeLiveCaptionSender } from "lcyt";
 const DEFAULT_LANGUAGE = "fi-FI";
 const DEFAULT_SILENCE_TIMEOUT_MS = 30_000;
 const DEFAULT_SPEECH_PORT = 3002;
+
+const LCYT_WEB_URL = (process.env.LCYT_WEB_URL || "").replace(/\/$/, "");
 
 // ── Session store ─────────────────────────────────────────────────────────────
 
@@ -94,14 +106,27 @@ export async function ensureSpeechServer() {
 
 /**
  * Route incoming HTTP requests for the speech capture server.
+ * Routes: POST /mcp/:sessionId/chunk  and  POST /mcp/:sessionId/done
  * @param {import('node:http').IncomingMessage} req
  * @param {import('node:http').ServerResponse} res
  */
 async function handleSpeechRequest(req, res) {
+  // CORS — allow requests from the lcyt-web origin (or any, for localhost dev)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
-  // Pattern: /speech/<sessionId>[/chunk|/done]
-  const m = url.pathname.match(/^\/speech\/([^/]+)(\/chunk|\/done)?$/);
+  // Pattern: /mcp/<sessionId>[/chunk|/done]
+  const m = url.pathname.match(/^\/mcp\/([^/]+)(\/chunk|\/done)?$/);
   if (!m) {
     res.writeHead(404, { "Content-Type": "text/plain" });
     res.end("Not found");
@@ -111,22 +136,7 @@ async function handleSpeechRequest(req, res) {
   const sessionId = m[1];
   const action = m[2]; // undefined | '/chunk' | '/done'
 
-  // ── GET /speech/:sessionId — serve capture page ──────────────────────────
-
-  if (req.method === "GET" && !action) {
-    const session = speechSessions.get(sessionId);
-    if (!session) {
-      res.writeHead(404, { "Content-Type": "text/plain" });
-      res.end("Session not found");
-      return;
-    }
-    const html = buildCapturePage(session, getSpeechServerBaseUrl());
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(html);
-    return;
-  }
-
-  // ── POST /speech/:sessionId/chunk — receive transcript chunk ─────────────
+  // ── POST /mcp/:sessionId/chunk — receive transcript chunk ─────────────────
 
   if (req.method === "POST" && action === "/chunk") {
     const body = await readBody(req);
@@ -147,14 +157,14 @@ async function handleSpeechRequest(req, res) {
       return;
     }
 
-    handleChunk(session, parsed.text ?? "", !!parsed.isFinal);
+    handleChunk(session, parsed.text ?? "", !!parsed.isFinal, parsed.timestamp ?? null);
 
     res.writeHead(204);
     res.end();
     return;
   }
 
-  // ── POST /speech/:sessionId/done — browser signals completion ────────────
+  // ── POST /mcp/:sessionId/done — browser signals completion ───────────────
 
   if (req.method === "POST" && action === "/done") {
     const session = speechSessions.get(sessionId);
@@ -184,9 +194,13 @@ function readBody(req) {
 
 /**
  * Process a transcript chunk arriving from the browser.
- * Resets the silence timer; forwards finals to YouTube.
+ * Resets the silence timer; forwards finals to YouTube with the utterance-start timestamp.
+ * @param {SpeechSession} session
+ * @param {string} text
+ * @param {boolean} isFinal
+ * @param {string | null} timestamp  Utterance-start timestamp from the browser (YouTube format)
  */
-function handleChunk(session, text, isFinal) {
+function handleChunk(session, text, isFinal, timestamp) {
   if (!text) return;
 
   // Reset silence-VAD timer on any activity
@@ -195,9 +209,9 @@ function handleChunk(session, text, isFinal) {
     endSession(session, "silence_timeout", true);
   }, session.silenceTimeoutMs);
 
-  // Forward final results to YouTube Live
+  // Forward final results to YouTube Live, preserving utterance-start timestamp
   if (isFinal && session.sender) {
-    session.sender.send(text).catch((err) => {
+    session.sender.send(text, timestamp || undefined).catch((err) => {
       console.error(`[speech] YouTube send failed for session ${session.sessionId}: ${err.message}`);
     });
   }
@@ -290,7 +304,6 @@ export async function createSpeechSession({
 
 /**
  * Return a Promise that resolves when the speech session ends.
- * If the session is already ended, rejects immediately with an error.
  * @param {string} sessionId
  * @param {number | undefined} timeoutSeconds  Optional max wait in seconds.
  * @returns {Promise<{ transcript: string, reason: string }>}
@@ -301,7 +314,6 @@ export function waitForTranscript(sessionId, timeoutSeconds) {
     return Promise.reject(new Error(`Unknown speech session: ${JSON.stringify(sessionId)}`));
   }
   if (session.status === "ended") {
-    // Shouldn't happen (ended sessions are removed), but handle gracefully
     return Promise.resolve({ transcript: session.transcript.join(" "), reason: "already_ended" });
   }
 
@@ -344,287 +356,36 @@ export function endSpeechSession(sessionId, savePartial, reason) {
   endSession(session, reason || "agent_ended", savePartial);
 }
 
-// ── Browser capture page ──────────────────────────────────────────────────────
+// ── Browser URL builder ───────────────────────────────────────────────────────
 
 /**
- * Build the self-contained HTML capture page for a speech session.
- * All session data is inlined as JSON literals — no external dependencies.
+ * Build the browser URL for a speech session.
+ * The URL points to LCYT_WEB_URL/mcp/:sessionId with session config as query params.
+ * The SpeechCapturePage React component in lcyt-web handles this route.
  * @param {SpeechSession} session
- * @param {string} serverBaseUrl   Base URL of the speech HTTP server.
  * @returns {string}
  */
-function buildCapturePage(session, serverBaseUrl) {
-  const streamKeyDisplay = session.streamKey
+function buildBrowserUrl(session) {
+  if (!LCYT_WEB_URL) {
+    throw new Error(
+      "LCYT_WEB_URL environment variable is required for speech tools " +
+      "(e.g. LCYT_WEB_URL=https://lcyt.fi)"
+    );
+  }
+
+  const streamDisplay = session.streamKey
     ? `****${session.streamKey.slice(-4)}`
     : null;
 
-  const chunkUrl = `${serverBaseUrl}/speech/${session.sessionId}/chunk`;
-  const doneUrl = `${serverBaseUrl}/speech/${session.sessionId}/done`;
-
-  // Safely inline values as JSON
-  const jsSessionId = JSON.stringify(session.sessionId);
-  const jsLanguage = JSON.stringify(session.language);
-  const jsChunkUrl = JSON.stringify(chunkUrl);
-  const jsDoneUrl = JSON.stringify(doneUrl);
-  const jsSilenceMs = String(session.silenceTimeoutMs);
-
-  return `<!DOCTYPE html>
-<html lang="${escapeHtml(session.language.split("-")[0])}">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Live Captions — Speech Capture</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-    body {
-      font-family: system-ui, sans-serif;
-      max-width: 720px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      color: #111;
-      background: #fafafa;
-    }
-    h1 { font-size: 1.4rem; margin-bottom: 0.25rem; }
-    .meta { color: #555; font-size: 0.85rem; margin-bottom: 1rem; }
-    .controls { display: flex; gap: 0.75rem; margin-bottom: 1.25rem; }
-    button {
-      padding: 0.5rem 1.25rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: 600;
-    }
-    #startBtn { background: #1a73e8; color: #fff; }
-    #startBtn:disabled { background: #aaa; cursor: default; }
-    #stopBtn  { background: #e53935; color: #fff; }
-    #stopBtn:disabled  { background: #aaa; cursor: default; }
-    .transcript-box {
-      min-height: 200px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      background: #fff;
-      font-size: 1.05rem;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .interim { color: #888; }
-    .final   { color: #111; }
-    #status  { margin-top: 0.75rem; font-size: 0.9rem; color: #444; min-height: 1.4em; }
-    #warning {
-      background: #fff3cd;
-      border: 1px solid #ffc107;
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      margin-bottom: 1rem;
-      color: #664d03;
-    }
-    #done-msg {
-      display: none;
-      background: #d4edda;
-      border: 1px solid #28a745;
-      border-radius: 6px;
-      padding: 0.75rem 1rem;
-      margin-top: 1rem;
-      color: #155724;
-      font-size: 1rem;
-    }
-  </style>
-</head>
-<body>
-  <h1>Live Captions — Speech Capture</h1>
-  <div class="meta">
-    Session:&nbsp;<code>${escapeHtml(session.sessionId)}</code>
-    &nbsp;|&nbsp;
-    Language:&nbsp;<code>${escapeHtml(session.language)}</code>${
-      streamKeyDisplay
-        ? `\n    &nbsp;|&nbsp;\n    Stream key:&nbsp;<code>${escapeHtml(streamKeyDisplay)}</code>`
-        : ""
-    }${
-      session.label
-        ? `\n    &nbsp;|&nbsp;\n    Label:&nbsp;<code>${escapeHtml(session.label)}</code>`
-        : ""
-    }
-  </div>
-
-  <div id="warning">
-    ⚠️ <strong>Web Speech API not supported in this browser.</strong>
-    Please open this page in <strong>Google Chrome</strong> or <strong>Microsoft Edge</strong>.
-  </div>
-
-  <div class="controls">
-    <button id="startBtn" disabled>Start</button>
-    <button id="stopBtn"  disabled>Stop</button>
-  </div>
-
-  <div class="transcript-box" id="transcript" aria-live="polite" aria-label="Live transcript">
-    <span class="interim" id="interimSpan"></span>
-  </div>
-  <div id="status"></div>
-
-  <div id="done-msg">
-    ✅ Transkriptio valmis. Voit sulkea tämän välilehden.<br>
-    ✅ Transcription complete. You can close this tab.
-  </div>
-
-<script>
-(function () {
-  const SESSION_ID   = ${jsSessionId};
-  const LANGUAGE     = ${jsLanguage};
-  const CHUNK_URL    = ${jsChunkUrl};
-  const DONE_URL     = ${jsDoneUrl};
-  const SILENCE_MS   = ${jsSilenceMs};
-
-  const startBtn     = document.getElementById('startBtn');
-  const stopBtn      = document.getElementById('stopBtn');
-  const transcriptEl = document.getElementById('transcript');
-  const interimSpan  = document.getElementById('interimSpan');
-  const statusEl     = document.getElementById('status');
-  const warningEl    = document.getElementById('warning');
-  const doneMsgEl    = document.getElementById('done-msg');
-
-  // ── Browser compatibility check ─────────────────────────────────────────
-
-  const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
-
-  if (!SpeechRecognition) {
-    warningEl.style.display = 'block';
-    setStatus('Web Speech API not available — use Chrome or Edge.');
-    return;
-  }
-  warningEl.style.display = 'none';
-  startBtn.disabled = false;
-
-  // ── State ───────────────────────────────────────────────────────────────
-
-  let recognition  = null;
-  let finalText    = '';
-  let running      = false;
-
-  // ── Helpers ─────────────────────────────────────────────────────────────
-
-  function setStatus(msg) { statusEl.textContent = msg; }
-
-  function renderTranscript() {
-    // Replace everything except the interim span
-    transcriptEl.innerHTML = '';
-    const finalNode = document.createTextNode(finalText);
-    transcriptEl.appendChild(finalNode);
-    transcriptEl.appendChild(interimSpan);
-  }
-
-  function postChunk(text, isFinal) {
-    fetch(CHUNK_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, isFinal }),
-      keepalive: true,
-    }).catch(() => {});  // fire and forget; server may have already ended session
-  }
-
-  function postDone() {
-    fetch(DONE_URL, {
-      method: 'POST',
-      keepalive: true,
-    }).catch(() => {});
-  }
-
-  function stop(showDone) {
-    if (!running) return;
-    running = false;
-    try { recognition.stop(); } catch {}
-    startBtn.disabled = false;
-    stopBtn.disabled  = true;
-    setStatus('Stopped.');
-    postDone();
-    if (showDone) {
-      doneMsgEl.style.display = 'block';
-    }
-  }
-
-  // ── SpeechRecognition ───────────────────────────────────────────────────
-
-  function buildRecognition() {
-    const r = new SpeechRecognition();
-    r.lang            = LANGUAGE;
-    r.continuous      = true;
-    r.interimResults  = true;
-    r.maxAlternatives = 1;
-
-    r.onstart = () => {
-      running = true;
-      setStatus('Listening…');
-    };
-
-    r.onresult = (event) => {
-      let interim = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalText += (finalText ? ' ' : '') + transcript.trim();
-          postChunk(transcript.trim(), true);
-        } else {
-          interim += transcript;
-        }
-      }
-      interimSpan.textContent = interim;
-      interimSpan.className   = 'interim';
-      renderTranscript();
-    };
-
-    r.onerror = (event) => {
-      if (event.error === 'no-speech') return; // ignore, keep going
-      if (event.error === 'aborted') return;   // intentional stop
-      setStatus('Error: ' + event.error);
-      stop(false);
-    };
-
-    r.onend = () => {
-      if (running) {
-        // Continuous mode restarted automatically (e.g. after network hiccup)
-        try { r.start(); } catch {}
-      }
-    };
-
-    return r;
-  }
-
-  // ── Button handlers ─────────────────────────────────────────────────────
-
-  startBtn.addEventListener('click', () => {
-    if (running) return;
-    finalText = '';
-    interimSpan.textContent = '';
-    renderTranscript();
-    recognition = buildRecognition();
-    startBtn.disabled = true;
-    stopBtn.disabled  = false;
-    try { recognition.start(); } catch (err) {
-      setStatus('Could not start: ' + err.message);
-      startBtn.disabled = false;
-      stopBtn.disabled  = true;
-    }
+  const params = new URLSearchParams({
+    server: getSpeechServerBaseUrl(),
+    lang: session.language,
+    silence: String(session.silenceTimeoutMs),
   });
+  if (streamDisplay) params.set("key", streamDisplay);
+  if (session.label)  params.set("label", session.label);
 
-  stopBtn.addEventListener('click', () => stop(true));
-
-  setStatus('Ready. Click Start to begin.');
-})();
-</script>
-</body>
-</html>`;
-}
-
-/** Minimal HTML entity escaping for values inserted into HTML context. */
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return `${LCYT_WEB_URL}/mcp/${session.sessionId}?${params}`;
 }
 
 // ── MCP tool definitions ──────────────────────────────────────────────────────
@@ -634,9 +395,9 @@ export const SPEECH_TOOLS = [
     name: "start_speech_session",
     description:
       "Create a browser-based voice capture session. Starts an embedded HTTP server (if not " +
-      "already running) and returns a browser URL for the user to open in Chrome or Edge. " +
-      "The page uses the Web Speech API to capture microphone audio and stream each recognised " +
-      "phrase back to the server in real time. Non-blocking — returns immediately.",
+      "already running) to receive transcript chunks, then returns a browser URL for the user " +
+      "to open in Chrome or Edge. The page uses the Web Speech API to capture microphone audio " +
+      "and stream each recognised phrase back in real time. Non-blocking — returns immediately.",
     inputSchema: {
       type: "object",
       properties: {
@@ -757,7 +518,6 @@ export const SPEECH_TOOLS = [
 
 /**
  * Handle a call to one of the four speech tools.
- * Returns an MCP tool result object, or throws if the tool name is unknown.
  * @param {string} name
  * @param {Record<string, unknown>} args
  * @returns {Promise<{ content: Array<{ type: string, text: string }> }>}
@@ -765,14 +525,14 @@ export const SPEECH_TOOLS = [
 export async function handleSpeechTool(name, args) {
   switch (name) {
     case "start_speech_session": {
-      const baseUrl = await ensureSpeechServer();
+      await ensureSpeechServer();
       const session = await createSpeechSession({
         language: args.language,
         youtube_stream_key: args.youtube_stream_key,
         label: args.label,
         silence_timeout_seconds: args.silence_timeout_seconds,
       });
-      const browserUrl = `${baseUrl}/speech/${session.sessionId}`;
+      const browserUrl = buildBrowserUrl(session);
       const streamDisplay = session.streamKey
         ? `****${session.streamKey.slice(-4)}`
         : "(none)";
@@ -822,14 +582,14 @@ export async function handleSpeechTool(name, args) {
     }
 
     case "transcribe_speech_now": {
-      const baseUrl = await ensureSpeechServer();
+      await ensureSpeechServer();
       const session = await createSpeechSession({
         language: args.language,
         youtube_stream_key: args.youtube_stream_key,
         label: args.label,
         silence_timeout_seconds: args.silence_timeout_seconds,
       });
-      const browserUrl = `${baseUrl}/speech/${session.sessionId}`;
+      const browserUrl = buildBrowserUrl(session);
       const streamDisplay = session.streamKey
         ? `****${session.streamKey.slice(-4)}`
         : "(none)";
