@@ -566,6 +566,7 @@ function currentDateHour() {
  * @param {number} currentSessionCount - Total active sessions after this one was created
  */
 export function incrementDomainHourlySessionStart(db, domain, currentSessionCount) {
+  if (!domain) return;
   const { date, hour } = currentDateHour();
   db.prepare(`
     INSERT INTO domain_hourly_stats (date, hour, domain, sessions_started, peak_sessions)
@@ -583,6 +584,7 @@ export function incrementDomainHourlySessionStart(db, domain, currentSessionCoun
  * @param {number} durationMs
  */
 export function incrementDomainHourlySessionEnd(db, domain, durationMs) {
+  if (!domain) return;
   const { date, hour } = currentDateHour();
   db.prepare(`
     INSERT INTO domain_hourly_stats (date, hour, domain, sessions_ended, total_duration_ms)
@@ -600,6 +602,7 @@ export function incrementDomainHourlySessionEnd(db, domain, durationMs) {
  * @param {{ sent?: number, failed?: number, batches?: number }} counts
  */
 export function incrementDomainHourlyCaptions(db, domain, { sent = 0, failed = 0, batches = 0 } = {}) {
+  if (!domain) return;
   const { date, hour } = currentDateHour();
   db.prepare(`
     INSERT INTO domain_hourly_stats (date, hour, domain, captions_sent, captions_failed, batches_sent)

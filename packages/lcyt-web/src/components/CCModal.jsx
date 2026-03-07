@@ -136,7 +136,7 @@ function TargetRow({ entry, onChange, onRemove, t }) {
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <label className="settings-checkbox" style={{ marginBottom: 0 }}>
           <input
             type="checkbox"
@@ -163,6 +163,15 @@ function TargetRow({ entry, onChange, onRemove, t }) {
         >
           <option value="youtube">{t('settings.targets.typeYouTube')}</option>
           <option value="generic">{t('settings.targets.typeGeneric')}</option>
+        </select>
+        <select
+          className="settings-field__input"
+          value={entry.format || 'youtube'}
+          onChange={e => onChange({ ...entry, format: e.target.value })}
+          style={{ width: 'auto' }}
+        >
+          <option value="youtube">{t('settings.targets.formatYouTube')}</option>
+          <option value="json">{t('settings.targets.formatJson')}</option>
         </select>
         <button
           type="button"
@@ -256,7 +265,7 @@ export function CCModal({ isOpen, onClose, connected }) {
   const { t } = useLang();
 
   const [advancedMode, setAdvancedMode] = useState(getAdvancedMode);
-  const [activeTab, setActiveTab] = useState('receivers');
+  const [activeTab, setActiveTab] = useState('targets');
 
   // ── Service tab ───────────────────────────────────────────
   const cloudCfg = getSttCloudConfig();
@@ -530,15 +539,15 @@ export function CCModal({ isOpen, onClose, connected }) {
   const hasCaptionTarget = translations.some(r => r.target === 'captions');
 
   const TABS = advancedMode
-    ? ['receivers', 'service', 'details', 'translation']
-    : ['receivers', 'service', 'translation'];
+    ? ['targets', 'translation', 'service', 'details']
+    : ['targets', 'translation', 'service'];
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
       <div className="settings-modal__backdrop" onClick={onClose} />
       <div className="settings-modal__box">
         <div className="settings-modal__header">
-          <span className="settings-modal__title">{t('statusBar.cc')}</span>
+          <span className="settings-modal__title">{t('statusBar.ccTitle')}</span>
           <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
         </div>
 
@@ -801,14 +810,10 @@ export function CCModal({ isOpen, onClose, connected }) {
             </div>
           )}
 
-          {/* ── Receivers ── */}
-          {activeTab === 'receivers' && (
+          {/* ── Targets ── */}
+          {activeTab === 'targets' && (
             <div className="settings-panel settings-panel--active">
               <div className="settings-field">
-                <label className="settings-field__label">{t('settings.targets.targetList')}</label>
-                <span className="settings-field__hint" style={{ display: 'block', marginBottom: 8 }}>
-                  {t('settings.targets.listHint')}
-                </span>
                 {targets.length === 0 && (
                   <span className="settings-field__hint">{t('settings.targets.noTargets')}</span>
                 )}

@@ -714,6 +714,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px 0;
+  flex-shrink: 0;
 }
 
 .settings-modal__title {
@@ -744,6 +745,7 @@
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .settings-modal__tabs::-webkit-scrollbar { display: none; }

@@ -84,7 +84,7 @@ packages/lcyt-backend/
 
 **Key design decisions:**
 
-- **Session IDs** are a 16-char SHA-256 hex hash of `apiKey:streamKey:domain`, so raw credentials are never stored in JWTs or exposed in logs.
+- **Session IDs** are a 16-char SHA-256 hex hash of `apiKey:streamKey:domain` (where `streamKey` is `''` in target-array mode), so raw credentials are never stored in JWTs or exposed in logs.
 - **In-memory sessions** with configurable TTL; no session DB is required for operation.
 - **Async caption delivery:** `POST /captions` returns `202 { ok, requestId }` immediately. The YouTube HTTP call is serialised per session via a per-session Promise queue (so sequence numbers stay monotonic) and the result is pushed to `GET /events` via an `EventEmitter` on the session.
 - **Admin routes** (`/keys`) are never exposed to CORS—they must be called from the server's local network.
@@ -262,11 +262,27 @@ Register a new caption session (or retrieve an existing one for the same credent
 ```json
 {
   "apiKey":    "string (required)",
-  "streamKey": "string (required)",
   "domain":    "string (required) — your app's origin URL, e.g. https://example.com",
-  "sequence":  0
+  "targets":   [
+    { "id": "uuid", "type": "youtube", "streamKey": "xxxx-xxxx-xxxx-xxxx-xxxx" },
+    { "id": "uuid", "type": "generic", "url": "https://example.com/captions", "headers": {} }
+  ],
+  "sequence":  0,
+  "streamKey": "string (optional, legacy single-target mode)"
 }
 ```
+
+`streamKey` is **optional** in the recommended target-array mode. All YouTube stream keys should be passed inside the `targets` array. The legacy `streamKey` field is kept for backward compatibility but superseded by `targets`.
+
+Each target entry:
+
+| Field | Required | Description |
+|---|---|---|
+| `id` | Yes | Unique identifier (any string, e.g. UUID) |
+| `type` | Yes | `"youtube"` or `"generic"` |
+| `streamKey` | YouTube only | YouTube stream key |
+| `url` | Generic only | HTTPS/HTTP POST endpoint URL |
+| `headers` | Generic only | Object of extra HTTP headers (optional) |
 
 **Response `200 OK`:**
 
@@ -292,10 +308,10 @@ Register a new caption session (or retrieve an existing one for the same credent
 
 | Status | Reason |
 |---|---|
-| `400` | Missing required field (`apiKey`, `streamKey`, or `domain`) |
+| `400` | Missing required field (`apiKey` or `domain`) |
 | `401` | API key not found, revoked, or expired |
 
-**Notes:** This endpoint is idempotent. Calling it again with the same `apiKey + streamKey + domain` returns the same session and token.
+**Notes:** This endpoint is idempotent. Calling it again with the same `apiKey + streamKey (or '') + domain` returns the same session and token.
 
 ---
 
@@ -868,7 +884,7 @@ The backend uses a two-tier authentication system:
 Used for all session-scoped operations: `/live` (GET, DELETE), `/captions`, `/sync`.
 
 - Tokens are signed with `JWT_SECRET` using HS256.
-- Token payload: `{ sessionId, apiKey, streamKey, domain }`.
+- Token payload: `{ sessionId, apiKey }`. The `streamKey` and `domain` are intentionally excluded from JWT payloads (they are sensitive and not needed by route handlers).
 - All comparisons use Node.js `crypto.timingSafeEqual` to prevent timing attacks.
 - Include the token in all requests as: `Authorization: Bearer <token>`.
 
@@ -888,9 +904,9 @@ Used for all `/keys` routes. The key must match the `ADMIN_KEY` environment vari
 Client                          lcyt-backend                    YouTube
   │                                  │                              │
   │── POST /live ──────────────────> │                              │
-  │   {apiKey, streamKey, domain}    │── validates API key in SQLite│
+  │   {apiKey, domain, targets:[…]}  │── validates API key in SQLite│
   │                                  │── creates YoutubeLiveCaption │
-  │                                  │   Sender instance            │
+  │                                  │   Sender(s) from targets     │
   │                                  │── runs initial sync ────────>│
   │<── {token, sessionId, ...} ──── │<─── sync response ───────────│
   │                                  │                              │

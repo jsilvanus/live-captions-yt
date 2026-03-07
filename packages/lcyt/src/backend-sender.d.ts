@@ -1,7 +1,8 @@
 export interface BackendSenderOptions {
   backendUrl: string;
   apiKey: string;
-  streamKey: string;
+  /** YouTube stream key. Optional in target-array mode — pass targets in `start()` instead. */
+  streamKey?: string;
   domain?: string;
   sequence?: number;
   verbose?: boolean;
@@ -37,7 +38,8 @@ export interface SyncResult {
 export declare class BackendCaptionSender {
   backendUrl: string;
   apiKey: string;
-  streamKey: string;
+  /** YouTube stream key. null when using target-array mode. */
+  streamKey: string | null;
   domain: string;
   sequence: number;
   isStarted: boolean;

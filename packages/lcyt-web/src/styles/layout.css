@@ -211,10 +211,11 @@ body {
   /* Drag resize handle: on mobile becomes a horizontal ns-resize bar */
   .panel-resize-handle {
     width: auto;
-    height: 10px;
+    height: 14px;
     border-left: none;
-    border-top: 1px solid var(--color-border);
+    border-top: 2px solid var(--color-border);
     cursor: ns-resize;
+    touch-action: none;
   }
 
   /* Fixed bottom bar: meter | mic | prev | send | next */

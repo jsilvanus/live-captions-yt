@@ -14,14 +14,13 @@
  *   • Input bar (cropped)
  *   • Mobile audio bar (portrait, cropped)
  *   • Privacy modal — first-visit (countdown active)
- *   • General modal — caption relay (cropped)
- *   • General modal — RTMP relay (cropped)
- *   • Status panel (floating, cropped)
- *   • Actions panel (floating, cropped)
- *   • Caption modal — Model tab (cropped)
- *   • Caption modal — VAD tab (cropped)
- *   • Caption modal — Other tab (cropped)
- *   • Translation modal (cropped)
+ *   • Settings modal — basic tab (cropped)
+ *   • Settings modal — RTMP relay tab (cropped)
+ *   • Settings modal — credentials tab (cropped)
+ *   • Controls panel (floating, cropped)
+ *   • CC modal — Targets tab (cropped)
+ *   • CC modal — Translation tab (cropped)
+ *   • CC modal — Service tab (cropped)
  *   • Privacy modal (opened from settings, cropped)
  *
  * Prerequisites:
@@ -293,6 +292,12 @@ async function run() {
         await rtmpTab.click();
         await sleep(200);
       }
+      // Click "+ Add relay target" to show a new entry
+      const addRelayBtn = page.locator('button', { hasText: /add relay target/i }).first();
+      if (await addRelayBtn.count() > 0) {
+        await addRelayBtn.click();
+        await sleep(200);
+      }
     }
   );
 
@@ -304,14 +309,28 @@ async function run() {
     }
   );
 
-  // ── 12–14. CC modal — one tab at a time ───────────────────────────────────
+  // ── 12. Settings modal — credentials tab (advanced mode) ──────────────────
+  await shotBothCropped('modal-settings-credentials', LANDSCAPE, '.settings-modal__box',
+    async page => {
+      await page.evaluate(() => localStorage.setItem('lcyt:advanced-mode', '1'));
+      await openStatusBarBtn(page, 'Settings');
+      await page.waitForSelector('.settings-modal__box');
+      const credTab = page.locator('.settings-tab', { hasText: /credential/i }).first();
+      if (await credTab.count() > 0) {
+        await credTab.click();
+        await sleep(200);
+      }
+    }
+  );
+
+  // ── 13–15. CC modal — one tab at a time ───────────────────────────────────
   const CC_TABS = [
-    { id: 'receivers',    label: 'Receivers'   },
-    { id: 'service',      label: 'Service'     },
-    { id: 'translation',  label: 'Translation' },
+    { id: 'targets',      label: 'Targets',     addBtnPattern: /add target/i     },
+    { id: 'translation',  label: 'Translation', addBtnPattern: /add translation/i },
+    { id: 'service',      label: 'Service',     addBtnPattern: null               },
   ];
 
-  for (const { id, label } of CC_TABS) {
+  for (const { id, label, addBtnPattern } of CC_TABS) {
     await shotBothCropped(`modal-cc-${id}`, LANDSCAPE, '.settings-modal__box',
       async page => {
         await openStatusBarBtn(page, 'CC');
@@ -321,11 +340,19 @@ async function run() {
           await tab.click();
           await sleep(200);
         }
+        // Click the "+ Add" button to show a new entry in the list
+        if (addBtnPattern) {
+          const addBtn = page.locator('button', { hasText: addBtnPattern }).first();
+          if (await addBtn.count() > 0) {
+            await addBtn.click();
+            await sleep(200);
+          }
+        }
       }
     );
   }
 
-  // ── 15. Privacy modal (opened via Settings bar) ────────────────────────────
+  // ── 16. Privacy modal (opened via Settings bar) ────────────────────────────
   await shotBothCropped('modal-privacy', LANDSCAPE, '.settings-modal__box',
     async page => {
       await openStatusBarBtn(page, 'Privacy');

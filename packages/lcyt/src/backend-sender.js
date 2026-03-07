@@ -8,17 +8,23 @@ import { NetworkError } from './errors.js';
  * fetch() — works in browsers and Node 18+.
  *
  * @example
+ * // Target-array mode (recommended): all targets configured server-side via CC → Targets
+ * const sender = new BackendCaptionSender({
+ *   backendUrl: 'https://captions.example.com',
+ *   apiKey: 'a1b2c3d4-...',
+ * });
+ * await sender.start({ targets: [{ id: '1', type: 'youtube', streamKey: 'YOUR_KEY' }] });
+ *
+ * // Legacy single-target mode: pass a streamKey directly
  * const sender = new BackendCaptionSender({
  *   backendUrl: 'https://captions.example.com',
  *   apiKey: 'a1b2c3d4-...',
  *   streamKey: 'YOUR_YOUTUBE_KEY'
  * });
- *
  * await sender.start();
+ *
  * await sender.send('Hello!');
- * await sender.send('Relative', { time: 5000 });
  * await sender.sync();
- * const status = await sender.heartbeat();
  * await sender.end();
  */
 export class BackendCaptionSender {
@@ -26,7 +32,7 @@ export class BackendCaptionSender {
    * @param {object} options
    * @param {string} options.backendUrl - Base URL of the lcyt-backend server (e.g. "https://captions.example.com")
    * @param {string} options.apiKey - API key registered in the backend's SQLite database
-   * @param {string} options.streamKey - YouTube stream key
+   * @param {string} [options.streamKey] - YouTube stream key (optional; superseded by the `targets` array in `start()`)
    * @param {string} [options.domain] - CORS origin. Defaults to location.origin in browsers or 'http://localhost' in Node.
    * @param {number} [options.sequence=0] - Starting sequence number (overridden by backend response on start())
    * @param {boolean} [options.verbose=false] - Enable verbose logging
@@ -105,10 +111,13 @@ export class BackendCaptionSender {
   async start({ targets } = {}) {
     const body = {
       apiKey: this.apiKey,
-      streamKey: this.streamKey,
       domain: this.domain,
       sequence: this.sequence
     };
+    // streamKey is optional: include it only when provided (legacy single-target mode).
+    if (this.streamKey !== null && this.streamKey !== undefined && this.streamKey !== '') {
+      body.streamKey = this.streamKey;
+    }
     if (Array.isArray(targets) && targets.length > 0) {
       body.targets = targets;
     }
