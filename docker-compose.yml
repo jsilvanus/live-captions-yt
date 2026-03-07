@@ -21,6 +21,8 @@ services:
       ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-app.lcyt.fi,localhost}
       USAGE_PUBLIC: ${USAGE_PUBLIC:-}
       STATIC_DIR: ${STATIC_DIR:-}
+      LCYT_WEB_URL: ${LCYT_WEB_URL:-}
+      SPEECH_PUBLIC_URL: ${SPEECH_PUBLIC_URL:-}
       # Contact information (GET /contact)
       CONTACT_NAME: ${CONTACT_NAME:-}
       CONTACT_EMAIL: ${CONTACT_EMAIL:-}
