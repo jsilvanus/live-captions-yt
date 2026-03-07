@@ -155,7 +155,7 @@ GET/POST/PATCH/DELETE /keys — admin CRUD (X-Admin-Key header)
 
 **Key internals:**
 - `src/db.js` — `better-sqlite3` (synchronous). Tables: `api_keys` (key, owner, active, email, daily_limit, lifetime_limit, lifetime_used, revoked_at, expires_at, created_at, sequence, last_caption_at), `caption_usage` (per-key daily count), `session_stats` (per-session telemetry), `caption_errors` (delivery failure log), `sessions` (persistent session metadata for server-restart survival). Additive migrations run on startup. Per-key sequence helpers (`getKeySequence`, `updateKeySequence`, `resetKeySequence`) implement a 2-hour inactivity TTL reset. Session persistence helpers (`saveSession`, `loadSession`, `deleteSession`, `listSessions`, `incSessionSequence`) back the store's `rehydrate()` call on startup.
-- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue, micHolder }`. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
+- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode (no primary streamKey). `extraTargets` is an array of `{ id, type, sender? }` objects representing all targets. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
 - `src/middleware/auth.js` — JWT Bearer verification.
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
@@ -205,7 +205,7 @@ Browser-based React app using Vite. Sends captions via the `lcyt-backend` relay.
 **Source (`src/`):**
 - `main.jsx` — React entry point
 - `App.jsx` — root component
-- `components/` — React JSX components: AudioPanel, CaptionView, DropZone, FileTabs, InputBar, PrivacyModal, SentPanel, SettingsModal, StatsModal, StatusBar, ToastContainer
+- `components/` — React JSX components: AudioPanel, CaptionView, DropZone, FileTabs, InputBar, PrivacyModal, SentPanel, SettingsModal, StatsModal, StatusBar, ToastContainer, CCModal, ControlsPanel, StatusPanel, FilesModal
 - `contexts/` — React context providers: AppProviders, FileContext, SentLogContext, SessionContext, ToastContext
 - `hooks/` — Custom React hooks: useSession, useFileStore, useSentLog, useToast
 - `lib/` — Utilities: googleCredential.js, sttConfig.js
@@ -314,10 +314,31 @@ All packages define a typed exception hierarchy: `LCYTError` (base) → `ConfigE
 
 No trailing `Z` in ISO strings — YouTube's API format.
 
-### Authentication (backends)
+### Caption Target Architecture
+
+Captions are delivered to one or more **targets** configured in the lcyt-web CC → Targets tab.
+
+**Target-array mode (current, recommended):**
+- The client (lcyt-web) sends `POST /live` with `{ apiKey, domain, targets: [...] }` — **no top-level `streamKey`**.
+- The backend creates a `YoutubeLiveCaptionSender` for each enabled YouTube target in the array.
+- All senders are stored in `session.extraTargets = [{ id, type, sender }]`.
+- `session.sender` is `null`; the backend synthesises a sequence number and emits a `caption_result` SSE event after fanning out to all targets.
+
+**Legacy single-target mode (backward compatible):**
+- The client sends `POST /live` with `{ apiKey, domain, streamKey }`.
+- The backend creates one primary `YoutubeLiveCaptionSender` stored in `session.sender`.
+- Additional targets can still be passed as the `targets` array; they are stored in `session.extraTargets`.
+- Caption delivery calls `session.sender.send()` and uses the real YouTube response for the SSE result.
+
+**`BackendCaptionSender` (`packages/lcyt/src/backend-sender.js`):**
+- `streamKey` is optional; omit it for target-array mode.
+- `start({ targets })` — pass the targets array to register them server-side.
+- `send()` / `sendBatch()` — always the same; the backend handles routing.
+
+
 1. **JWT Bearer** (`Authorization: Bearer <token>`) — session-level, for `/live`, `/captions`, `/sync`.
 2. **Admin API key** (`X-Admin-Key` header) — server-level, for `/keys` admin routes. Uses constant-time comparison.
-3. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain`.
+3. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain` where `streamKey` defaults to `''` in target-array mode (no primary stream key).
 
 ### ESM/CJS Dual Package (`packages/lcyt`)
 - ESM source in `src/` (canonical).
@@ -347,7 +368,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-cli/bin/lcyt` | CLI entrypoint |
 | `packages/lcyt-cli/src/interactive-ui.js` | Full-screen blessed terminal UI |
 | `packages/lcyt-backend/src/server.js` | Express app factory |
-| `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + micHolder per session) |
+| `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + extraTargets per session) |
 | `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream |
 | `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |

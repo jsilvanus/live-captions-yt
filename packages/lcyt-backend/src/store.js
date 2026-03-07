@@ -66,7 +66,9 @@ export class SessionStore {
    * @returns {object} The created session object
    */
   create({ apiKey, streamKey, domain, jwt, sequence = 0, syncOffset = 0, sender, extraTargets = [] }) {
-    const sessionId = makeSessionId(apiKey, streamKey, domain);
+    // Normalise streamKey: treat null/undefined/'' consistently so session IDs are stable
+    // across target-array mode (no streamKey) and legacy single-target mode.
+    const sessionId = makeSessionId(apiKey, streamKey || '', domain);
     const now = new Date();
     const session = {
       sessionId,
@@ -195,7 +197,7 @@ export class SessionStore {
       // Clean up secondary YouTube senders
       for (const target of (session.extraTargets || [])) {
         if (target.type === 'youtube' && target.sender) {
-          target.sender.end().catch(() => {});
+          Promise.resolve(target.sender.end()).catch(() => {});
         }
       }
     }

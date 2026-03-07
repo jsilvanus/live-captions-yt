@@ -140,7 +140,11 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
-    // Batch captions allowed (CEA-708 mode disabled)
+    // Ensure the session has at least one delivery path configured.
+    // Sessions in target-array mode (no primary sender) must have extraTargets.
+    if (!session.sender && (!session.extraTargets || session.extraTargets.length === 0)) {
+      return res.status(400).json({ error: 'No caption targets configured. Add at least one target in CC → Targets.' });
+    }
 
     // Enforce per-key usage limits (no-op for keys with null limits)
     const usage = checkAndIncrementUsage(db, session.apiKey);
@@ -207,19 +211,28 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           return { text: composedText, timestamp, ...rest };
         });
 
-        if (sendCaptions.length === 1) {
-          const { text, timestamp } = sendCaptions[0];
-          result = await session.sender.send(text, timestamp);
+        // Send via primary sender (legacy streamKey mode) or synthesise a result
+        // when operating in target-array mode (no primary stream key configured).
+        if (session.sender) {
+          if (sendCaptions.length === 1) {
+            const { text, timestamp } = sendCaptions[0];
+            result = await session.sender.send(text, timestamp);
+          } else {
+            result = await session.sender.sendBatch(sendCaptions);
+          }
+          session.sequence = session.sender.sequence;
         } else {
-          result = await session.sender.sendBatch(sendCaptions);
+          // Target-array mode: no primary sender. Increment sequence locally and
+          // synthesise a 200 result; actual delivery is handled by extraTargets below.
+        session.sequence = (session.sequence ?? 0) + 1;
+          result = { statusCode: 200, sequence: session.sequence, serverTimestamp: null };
         }
 
-        session.sequence = session.sender.sequence;
-        store.touch(sessionId);
         // Persist per-API-key sequence so it survives session expiry
         if (db) {
           try { updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
         }
+        store.touch(sessionId);
 
         // Fan-out to extra targets (fire-and-forget; errors do not affect the primary result)
         if (session.extraTargets && session.extraTargets.length > 0) {

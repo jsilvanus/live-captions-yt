@@ -38,8 +38,10 @@ Obtain a token by registering a session:
 POST /live
 Content-Type: application/json
 
-{ "apiKey": "...", "streamKey": "...", "domain": "https://your-app.example.com" }
+{ "apiKey": "...", "domain": "https://your-app.example.com", "targets": [...] }
 ```
+
+`streamKey` is **optional** — it exists for backward compatibility with single-target deployments. In the recommended target-array mode, omit `streamKey` and pass all YouTube stream keys inside the `targets` array instead.
 
 Response:
 ```json

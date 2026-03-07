@@ -79,9 +79,8 @@ const session = useSession({
 | `syncOffset` | `number` | NTP clock offset in ms |
 | `backendUrl` | `string` | Active backend URL |
 | `apiKey` | `string` | Active API key |
-| `streamKey` | `string` | Active stream key |
 | `startedAt` | `number \| null` | Session start time (epoch ms) |
-| `connect(cfg)` | `async fn` | Start session: `{ backendUrl, apiKey, streamKey }` |
+| `connect(cfg)` | `async fn` | Start session: `{ backendUrl, apiKey, streamKey? }`. `streamKey` is optional when targets are managed via CC → Targets. |
 | `disconnect()` | `async fn` | End session gracefully |
 | `send(text, timestamp?, opts?)` | `async fn` | Send a single caption → `{ ok, requestId }`. `opts` may include `{ translations, captionLang, showOriginal }`. |
 | `sendBatch(texts[])` | `async fn` | Send multiple captions → `{ ok, requestId }` |
@@ -112,7 +111,7 @@ function CaptionSender() {
       <button onClick={disconnect}>Disconnect</button>
     </>
   ) : (
-    <button onClick={() => connect({ backendUrl: 'http://localhost:3000', apiKey: '...', streamKey: '...' })}>
+    <button onClick={() => connect({ backendUrl: 'http://localhost:3000', apiKey: '...' })}>
       Connect
     </button>
   );

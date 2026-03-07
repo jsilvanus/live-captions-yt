@@ -136,10 +136,12 @@ export function useSession({
 
   // ─── Connect / Disconnect ───────────────────────────────
 
-  async function connect({ backendUrl: url, apiKey: key, streamKey: sk }) {
+  async function connect({ backendUrl: url, apiKey: key, streamKey: sk } = {}) {
     if (senderRef.current) await disconnect();
 
-    const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk });
+    // streamKey is optional in the new target-array architecture.
+    // When omitted, the backend uses the targets array for all caption delivery.
+    const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk ?? null });
 
     // Build the targets list: parse headers JSON strings into objects for the backend.
     const rawTargets = getEnabledTargets();
@@ -175,12 +177,16 @@ export function useSession({
     setHealthStatus('ok');
     setBackendUrl(url);
     setApiKey(key);
-    setStreamKey(sk);
+    setStreamKey(sk || '');
     setSequence(sender.sequence);
     setSyncOffset(sender.syncOffset);
     setStartedAt(sender.startedAt);
 
-    saveConfig({ backendUrl: url, apiKey: key, streamKey: sk });
+    // Persist backendUrl and apiKey; streamKey is omitted when not provided
+    // since targets are now managed in the CC modal.
+    const cfg = { backendUrl: url, apiKey: key };
+    if (sk) cfg.streamKey = sk;
+    saveConfig(cfg);
     openEventSource(url, sender._token);
 
     cbs.current.onConnected?.({

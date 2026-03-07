@@ -91,9 +91,9 @@ export function createLiveRouter(db, store, jwtSecret) {
   router.post('/', async (req, res) => {
     const { apiKey, streamKey, domain, sequence: startSeqRaw, targets } = req.body || {};
 
-    // Validate required fields
-    if (!apiKey || !streamKey || !domain) {
-      return res.status(400).json({ error: 'apiKey, streamKey, and domain are required' });
+    // Validate required fields (streamKey is optional — targets array supersedes it)
+    if (!apiKey || !domain) {
+      return res.status(400).json({ error: 'apiKey and domain are required' });
     }
 
     // Check domain allowlist
@@ -117,8 +117,9 @@ export function createLiveRouter(db, store, jwtSecret) {
     }
     const extraTargets = targetsResult.extraTargets;
 
-    // Generate deterministic session ID
-    const sessionId = makeSessionId(apiKey, streamKey, domain);
+    // Generate deterministic session ID. streamKey defaults to '' for sessions
+    // that use only the targets array (no primary stream key).
+    const sessionId = makeSessionId(apiKey, streamKey || '', domain);
 
     // Idempotent: if session already exists, return existing JWT. If session
     // was rehydrated (no in-memory sender) and has no JWT, generate a fresh
@@ -128,12 +129,15 @@ export function createLiveRouter(db, store, jwtSecret) {
 
       // Update extra targets: clean up old secondary senders first
       for (const t of (existing.extraTargets || [])) {
-        if (t.type === 'youtube' && t.sender) t.sender.end().catch(() => {});
+        if (t.type === 'youtube' && t.sender) {
+          Promise.resolve(t.sender.end()).catch(() => {});
+        }
       }
       existing.extraTargets = extraTargets;
 
-      // Recreate sender for rehydrated sessions that have no active sender.
-      if (!existing.sender) {
+      // Recreate primary sender for rehydrated sessions that have no active sender,
+      // but only when a streamKey is available (target-array sessions have no primary sender).
+      if (!existing.sender && streamKey) {
         const keySeq = getKeySequence(db, apiKey);
         const newSender = new YoutubeLiveCaptionSender({ streamKey, sequence: keySeq });
         try {
@@ -154,7 +158,7 @@ export function createLiveRouter(db, store, jwtSecret) {
           saveSession(db, {
             sessionId: existing.sessionId || sessionId,
             apiKey: existing.apiKey || apiKey,
-            streamKey: existing.streamKey || streamKey,
+            streamKey: existing.streamKey ?? streamKey ?? null,
             domain: existing.domain || domain,
             sequence: existing.sequence || 0,
             startedAt: existing.startedAt || new Date().toISOString(),
@@ -178,20 +182,24 @@ export function createLiveRouter(db, store, jwtSecret) {
       });
     }
 
-    // Create sender and start it
-    // Use per-key sequence as default; allow explicit client override
+    // Create primary sender when a streamKey is provided.
+    // When operating in target-array mode (no streamKey), sender remains null
+    // and all caption delivery uses the extraTargets array.
     const keySeq = getKeySequence(db, apiKey);
     const initialSeq = startSeqRaw !== undefined ? Number(startSeqRaw) : keySeq;
-    const sender = new YoutubeLiveCaptionSender({ streamKey, sequence: initialSeq });
-    sender.start();
-
-    // Initial sync — best-effort
+    let sender = null;
     let syncOffset = 0;
-    try {
-      const syncResult = await sender.sync();
-      syncOffset = syncResult.syncOffset;
-    } catch {
-      // Not fatal — proceed without sync
+
+    if (streamKey) {
+      sender = new YoutubeLiveCaptionSender({ streamKey, sequence: initialSeq });
+      sender.start();
+      // Initial sync — best-effort
+      try {
+        const syncResult = await sender.sync();
+        syncOffset = syncResult.syncOffset;
+      } catch {
+        // Not fatal — proceed without sync
+      }
     }
 
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
@@ -201,10 +209,10 @@ export function createLiveRouter(db, store, jwtSecret) {
     // Store session
     const session = store.create({
       apiKey,
-      streamKey,
+      streamKey: streamKey || null,
       domain,
       jwt: token,
-      sequence: sender.sequence,
+      sequence: sender ? sender.sequence : initialSeq,
       syncOffset,
       sender,
       extraTargets,

@@ -82,21 +82,14 @@ async function deleteLive(token) {
 
 describe('POST /live', () => {
   it('should return 400 if apiKey is missing', async () => {
-    const res = await postLive({ streamKey: 'sk', domain: 'https://a.com' });
-    const data = await res.json();
-    assert.strictEqual(res.status, 400);
-    assert.ok(data.error);
-  });
-
-  it('should return 400 if streamKey is missing', async () => {
-    const res = await postLive({ apiKey: 'k', domain: 'https://a.com' });
+    const res = await postLive({ domain: 'https://a.com' });
     const data = await res.json();
     assert.strictEqual(res.status, 400);
     assert.ok(data.error);
   });
 
   it('should return 400 if domain is missing', async () => {
-    const res = await postLive({ apiKey: 'k', streamKey: 'sk' });
+    const res = await postLive({ apiKey: 'k' });
     const data = await res.json();
     assert.strictEqual(res.status, 400);
     assert.ok(data.error);
@@ -105,7 +98,6 @@ describe('POST /live', () => {
   it('should return 401 for unknown API key', async () => {
     const res = await postLive({
       apiKey: 'unknown-api-key',
-      streamKey: 'sk',
       domain: 'https://a.com'
     });
     const data = await res.json();
@@ -120,20 +112,19 @@ describe('POST /live', () => {
 
     const res = await postLive({
       apiKey: key,
-      streamKey: 'sk',
       domain: 'https://a.com'
     });
     const data = await res.json();
     assert.strictEqual(res.status, 401);
   });
 
-  it('should return 200 with token, sessionId, sequence, syncOffset, startedAt for valid key', async () => {
+  it('should return 200 with token, sessionId, sequence, syncOffset, startedAt for valid key (target-array mode, no streamKey)', async () => {
     const { key } = createKey(db, { owner: 'Valid User' });
 
     const res = await postLive({
       apiKey: key,
-      streamKey: 'test-stream',
-      domain: 'https://test.com'
+      domain: 'https://test.com',
+      targets: [{ id: '1', type: 'youtube', streamKey: 'test-stream' }]
     });
     const data = await res.json();
 
@@ -145,9 +136,35 @@ describe('POST /live', () => {
     assert.ok(typeof data.startedAt === 'number' && data.startedAt > 0);
   });
 
-  it('should store the session in the store', async () => {
+  it('should return 200 with token for valid key with legacy streamKey', async () => {
+    const { key } = createKey(db, { owner: 'Legacy User' });
+
+    const res = await postLive({
+      apiKey: key,
+      streamKey: 'test-stream',
+      domain: 'https://legacy-test.com'
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(data.token, 'should have token');
+    assert.ok(data.sessionId, 'should have sessionId');
+  });
+
+  it('should store the session in the store (target-array mode)', async () => {
     const { key } = createKey(db, { owner: 'Store Test' });
     const domain = 'https://store-test.com';
+
+    await postLive({ apiKey: key, domain });
+
+    // Session ID uses empty string for streamKey in target-array mode
+    const sessionId = makeSessionId(key, '', domain);
+    assert.strictEqual(store.has(sessionId), true);
+  });
+
+  it('should store the session in the store (legacy streamKey mode)', async () => {
+    const { key } = createKey(db, { owner: 'Store Legacy' });
+    const domain = 'https://store-legacy.com';
     const streamKey = 'store-stream';
 
     await postLive({ apiKey: key, streamKey, domain });
@@ -159,10 +176,10 @@ describe('POST /live', () => {
   it('should be idempotent — re-registration returns same token', async () => {
     const { key } = createKey(db, { owner: 'Idempotent' });
 
-    const res1 = await postLive({ apiKey: key, streamKey: 'sk', domain: 'https://i.com' });
+    const res1 = await postLive({ apiKey: key, domain: 'https://i.com' });
     const data1 = await res1.json();
 
-    const res2 = await postLive({ apiKey: key, streamKey: 'sk', domain: 'https://i.com' });
+    const res2 = await postLive({ apiKey: key, domain: 'https://i.com' });
     const data2 = await res2.json();
 
     assert.strictEqual(data1.token, data2.token);
@@ -173,16 +190,15 @@ describe('POST /live', () => {
     const { key } = createKey(db, { owner: 'CORS Test' });
     const domain = 'https://cors-test.com';
 
-    const res = await postLive({ apiKey: key, streamKey: 'sk', domain });
+    const res = await postLive({ apiKey: key, domain });
     assert.strictEqual(res.headers.get('Access-Control-Allow-Origin'), domain);
   });
 
   it('JWT payload should contain sessionId and apiKey, and must not expose streamKey or domain', async () => {
     const { key } = createKey(db, { owner: 'JWT Test' });
-    const streamKey = 'jwt-stream';
     const domain = 'https://jwt-test.com';
 
-    const res = await postLive({ apiKey: key, streamKey, domain });
+    const res = await postLive({ apiKey: key, domain });
     const data = await res.json();
 
     const payload = jwt.verify(data.token, JWT_SECRET);
@@ -216,7 +232,7 @@ describe('GET /live', () => {
   it('should return 404 if session not found', async () => {
     // Create a valid JWT for a non-existent session
     const token = jwt.sign(
-      { sessionId: 'deadbeef00000000', apiKey: 'k', streamKey: 's', domain: 'd' },
+      { sessionId: 'deadbeef00000000', apiKey: 'k' },
       JWT_SECRET
     );
     const res = await getLive(token);
@@ -227,7 +243,7 @@ describe('GET /live', () => {
 
   it('should return 200 with sequence and syncOffset for valid session', async () => {
     const { key } = createKey(db, { owner: 'Get Status' });
-    const regRes = await postLive({ apiKey: key, streamKey: 'gs-stream', domain: 'https://gs.com' });
+    const regRes = await postLive({ apiKey: key, domain: 'https://gs.com' });
     const { token } = await regRes.json();
 
     const res = await getLive(token);
@@ -259,7 +275,7 @@ describe('DELETE /live', () => {
 
   it('should return 404 if session not found', async () => {
     const token = jwt.sign(
-      { sessionId: 'deadbeef00000001', apiKey: 'k', streamKey: 's', domain: 'd' },
+      { sessionId: 'deadbeef00000001', apiKey: 'k' },
       JWT_SECRET
     );
     const res = await deleteLive(token);
@@ -269,7 +285,7 @@ describe('DELETE /live', () => {
 
   it('should return 200 with removed=true and remove the session', async () => {
     const { key } = createKey(db, { owner: 'Delete Test' });
-    const regRes = await postLive({ apiKey: key, streamKey: 'del-stream', domain: 'https://del.com' });
+    const regRes = await postLive({ apiKey: key, domain: 'https://del.com' });
     const { token, sessionId } = await regRes.json();
 
     const res = await deleteLive(token);

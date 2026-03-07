@@ -26,7 +26,7 @@ function NetworkBanner({ privacyPending }) {
   const retry = useCallback(async () => {
     const cfg = getPersistedConfig();
     const ok = await checkHealth(cfg.backendUrl);
-    if (ok && getAutoConnect() && cfg.backendUrl && cfg.apiKey && cfg.streamKey) {
+    if (ok && getAutoConnect() && cfg.backendUrl && cfg.apiKey) {
       connect(cfg).catch(() => {});
     }
   }, [checkHealth, getAutoConnect, getPersistedConfig, connect]);
@@ -171,7 +171,7 @@ function AppLayout() {
     const cfg = session.getPersistedConfig();
     if (!cfg.backendUrl) return;
     session.checkHealth(cfg.backendUrl).then(ok => {
-      if (ok && session.getAutoConnect() && cfg.apiKey && cfg.streamKey) {
+      if (ok && session.getAutoConnect() && cfg.apiKey) {
         session.connect(cfg).catch(() => {});
       }
     });
