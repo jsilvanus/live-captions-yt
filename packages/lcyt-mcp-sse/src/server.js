@@ -23,6 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { YoutubeLiveCaptionSender } from "lcyt";
 import { randomBytes } from "node:crypto";
+import { SPEECH_TOOLS, handleSpeechTool } from "./speech.js";
 import {
   initDb, validateApiKey, checkAndIncrementUsage, anonymizeKey,
   writeAuthEvent, writeSessionStat, writeCaptionError,
@@ -187,6 +188,7 @@ const TOOLS = [
       "Email (if any) may be retained briefly to prevent free-tier abuse. This cannot be undone.",
     inputSchema: { type: "object", properties: {} },
   },
+  ...SPEECH_TOOLS,
 ];
 
 // ── Handler factory ───────────────────────────────────────────────────────────
@@ -360,6 +362,12 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
           "privacy_deletion requires an authenticated connection (X-Api-Key + DB_PATH configured)"
         );
       }
+
+      case "start_speech_session":
+      case "get_speech_transcript":
+      case "end_speech_session":
+      case "transcribe_speech_now":
+        return handleSpeechTool(name, args);
 
       default:
         throw new Error(`Unknown tool: ${JSON.stringify(name)}`);
