@@ -20,6 +20,7 @@ It is especially useful for **non-English broadcasts** — you can send captions
 | **File playback** | Load a pre-written script and step through it line by line |
 | **Translation** | Automatically translate captions to a second language |
 | **RTMP relay** | Re-stream your audio/video to up to 4 destinations with embedded captions |
+| **Embed widgets** | Drop standalone `<iframe>` widgets into any site — audio, input bar, file player, or full file UI |
 | **Dark & light mode** | Comfortable UI in any environment |
 | **Mobile support** | Fully usable on phones and tablets with a dedicated mobile bar |
 
@@ -71,3 +72,4 @@ The **input bar** at the bottom is where you type and send captions.
 - [General settings](general-settings) — the Settings modal: connection, theme, relay
 - [Status & Actions](status-actions) — the Controls panel
 - [Keyboard shortcuts](keyboard-shortcuts) — full shortcut reference
+- [Embedding in another site](embed) — iframe widgets for integration into production tools and custom dashboards

@@ -193,6 +193,7 @@ export function useSession({
       sequence: sender.sequence,
       syncOffset: sender.syncOffset,
       backendUrl: url,
+      token: sender._token,
     });
   }
 

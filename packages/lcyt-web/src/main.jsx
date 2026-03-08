@@ -5,20 +5,29 @@ import './styles/layout.css';
 import './styles/components.css';
 import { App } from './App';
 import { SpeechCapturePage } from './components/SpeechCapturePage';
+import { EmbedAudioPage } from './components/EmbedAudioPage';
+import { EmbedInputPage } from './components/EmbedInputPage';
+import { EmbedSentLogPage } from './components/EmbedSentLogPage';
+import { EmbedFileDropPage } from './components/EmbedFileDropPage';
+import { EmbedFilesPage } from './components/EmbedFilesPage';
 
 const path = window.location.pathname;
 
-if (path.startsWith('/mcp/')) {
-  const sessionId = path.split('/')[2];
-  createRoot(document.getElementById('app')).render(
-    <StrictMode>
-      <SpeechCapturePage sessionId={sessionId} />
-    </StrictMode>
-  );
-} else {
-  createRoot(document.getElementById('app')).render(
-    <StrictMode>
-      <App />
-    </StrictMode>
-  );
+function getPage() {
+  if (path.startsWith('/mcp/')) {
+    const sessionId = path.split('/')[2];
+    return <SpeechCapturePage sessionId={sessionId} />;
+  }
+  if (path.startsWith('/embed/audio'))     return <EmbedAudioPage />;
+  if (path.startsWith('/embed/input'))     return <EmbedInputPage />;
+  if (path.startsWith('/embed/sentlog'))   return <EmbedSentLogPage />;
+  if (path.startsWith('/embed/file-drop')) return <EmbedFileDropPage />;
+  if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
+  return <App />;
 }
+
+createRoot(document.getElementById('app')).render(
+  <StrictMode>
+    {getPage()}
+  </StrictMode>
+);
