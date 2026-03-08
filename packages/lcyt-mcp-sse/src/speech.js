@@ -2,7 +2,7 @@
  * Speech transcription session management for lcyt-mcp-sse.
  *
  * Provides four MCP tools:
- *   start_speech_session    — create session + embedded HTTP server, return browser URL (non-blocking)
+ *   start_speech_session    — create session, return browser URL (non-blocking)
  *   get_speech_transcript   — block until session ends, return full transcript
  *   end_speech_session      — explicitly stop a session (with optional partial save)
  *   transcribe_speech_now   — combined start+wait; returns URL+transcript in one blocking call
@@ -10,22 +10,22 @@
  * The browser URL points to the lcyt-web production deployment at LCYT_WEB_URL/mcp/:sessionId
  * (e.g. https://lcyt.fi/mcp/<id>). lcyt-web renders SpeechCapturePage at that route.
  *
- * The embedded HTTP server (default port 3002, env SPEECH_PORT) serves only:
- *   POST /mcp/:sessionId/chunk  — receives transcript chunks from the browser page
- *   POST /mcp/:sessionId/done   — signals browser session ended
- *   OPTIONS /mcp/:sessionId/*   — CORS preflight (browser may come from LCYT_WEB_URL origin)
+ * Transcript chunks are posted by the browser directly to the MCP server's Express app:
+ *   POST /stt/:sessionId/chunk  — receives transcript finals from the browser page
+ *   POST /stt/:sessionId/done   — signals browser session ended
+ *   OPTIONS /stt/:sessionId/*   — CORS preflight
+ *
+ * These routes are mounted in server.js via handleSttChunk / handleSttDone.
+ * No separate embedded HTTP server is used.
  *
  * Sessions are in-memory only. YouTube forwarding uses YoutubeLiveCaptionSender.
  *
  * Required env:
- *   LCYT_WEB_URL   Base URL of the deployed lcyt-web app (e.g. https://lcyt.fi)
- *
- * Optional env:
- *   SPEECH_PORT    Port for the chunk/done HTTP server (default 3002)
- *   SPEECH_HOST    Host to bind (default localhost)
+ *   LCYT_WEB_URL      Base URL of the deployed lcyt-web app (e.g. https://lcyt.fi)
+ *   SPEECH_PUBLIC_URL Base URL of this MCP server as reachable by the browser
+ *                     (e.g. https://mcp.lcyt.fi — reverse-proxied so /stt is accessible)
  */
 
-import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
 import { YoutubeLiveCaptionSender } from "lcyt";
 
@@ -33,7 +33,6 @@ import { YoutubeLiveCaptionSender } from "lcyt";
 
 const DEFAULT_LANGUAGE = "fi-FI";
 const DEFAULT_SILENCE_TIMEOUT_MS = 30_000;
-const DEFAULT_SPEECH_PORT = 3002;
 
 const LCYT_WEB_URL = (process.env.LCYT_WEB_URL || "").replace(/\/$/, "");
 
@@ -42,17 +41,6 @@ const LCYT_WEB_URL = (process.env.LCYT_WEB_URL || "").replace(/\/$/, "");
  * When false, speech tools are excluded from the advertised tool list.
  */
 export const SPEECH_ENABLED = !!LCYT_WEB_URL;
-
-/**
- * Public-facing base URL of the speech capture server (what the browser will POST to).
- * Defaults to the bind address. Override with SPEECH_PUBLIC_URL when the server is
- * behind a proxy or when the browser must reach a different host/port.
- * Example: SPEECH_PUBLIC_URL=https://mcp.example.com
- */
-function getSpeechPublicUrl() {
-  const pub = (process.env.SPEECH_PUBLIC_URL || "").replace(/\/$/, "");
-  return pub || getSpeechServerBaseUrl();
-}
 
 // ── Session store ─────────────────────────────────────────────────────────────
 
@@ -74,138 +62,6 @@ function getSpeechPublicUrl() {
 
 /** @type {Map<string, SpeechSession>} */
 const speechSessions = new Map();
-
-// ── Embedded HTTP server ──────────────────────────────────────────────────────
-
-let speechHttpServer = null;
-let _speechServerPort = null;
-let _speechServerHost = null;
-
-/** Return the base URL of the running speech server, or null. */
-export function getSpeechServerBaseUrl() {
-  if (!speechHttpServer) return null;
-  return `http://${_speechServerHost}:${_speechServerPort}`;
-}
-
-/**
- * Start the embedded speech HTTP server if not already running.
- * Subsequent calls are no-ops.
- * @returns {Promise<string>} The base URL of the speech server.
- */
-export async function ensureSpeechServer() {
-  if (speechHttpServer) return getSpeechServerBaseUrl();
-
-  const port = parseInt(process.env.SPEECH_PORT || String(DEFAULT_SPEECH_PORT), 10);
-  const host = process.env.SPEECH_HOST || "localhost";
-
-  const server = createServer((req, res) => {
-    handleSpeechRequest(req, res).catch((err) => {
-      console.error(`[speech] Unhandled request error: ${err.message}`);
-      if (!res.headersSent) {
-        res.writeHead(500);
-        res.end("Internal error");
-      }
-    });
-  });
-
-  await new Promise((resolve, reject) => {
-    server.on("error", reject);
-    server.listen(port, host, () => resolve());
-  });
-
-  speechHttpServer = server;
-  _speechServerPort = port;
-  _speechServerHost = host;
-
-  console.error(`[speech] Capture server listening on http://${host}:${port}`);
-  return `http://${host}:${port}`;
-}
-
-/**
- * Route incoming HTTP requests for the speech capture server.
- * Routes: POST /mcp/:sessionId/chunk  and  POST /mcp/:sessionId/done
- * @param {import('node:http').IncomingMessage} req
- * @param {import('node:http').ServerResponse} res
- */
-async function handleSpeechRequest(req, res) {
-  // CORS — allow requests from the lcyt-web origin (or any, for localhost dev)
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  // Handle CORS preflight
-  if (req.method === "OPTIONS") {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
-
-  // Pattern: /mcp/<sessionId>[/chunk|/done]
-  const m = url.pathname.match(/^\/mcp\/([^/]+)(\/chunk|\/done)?$/);
-  if (!m) {
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not found");
-    return;
-  }
-
-  const sessionId = m[1];
-  const action = m[2]; // undefined | '/chunk' | '/done'
-
-  // ── POST /mcp/:sessionId/chunk — receive transcript chunk ─────────────────
-
-  if (req.method === "POST" && action === "/chunk") {
-    const body = await readBody(req);
-    const session = speechSessions.get(sessionId);
-
-    if (!session || session.status !== "active") {
-      res.writeHead(410, { "Content-Type": "text/plain" });
-      res.end("Session ended or not found");
-      return;
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse(body);
-    } catch {
-      res.writeHead(400);
-      res.end("Bad JSON");
-      return;
-    }
-
-    handleChunk(session, parsed.text ?? "", !!parsed.isFinal, parsed.timestamp ?? null);
-
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  // ── POST /mcp/:sessionId/done — browser signals completion ───────────────
-
-  if (req.method === "POST" && action === "/done") {
-    const session = speechSessions.get(sessionId);
-    if (session && session.status === "active") {
-      endSession(session, "user_stopped", true);
-    }
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
-  res.writeHead(405, { "Content-Type": "text/plain" });
-  res.end("Method not allowed");
-}
-
-/** Read the full body of an HTTP request as a UTF-8 string. */
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let data = "";
-    req.on("data", (chunk) => (data += chunk));
-    req.on("end", () => resolve(data));
-    req.on("error", reject);
-  });
-}
 
 // ── Session lifecycle ─────────────────────────────────────────────────────────
 
@@ -271,6 +127,44 @@ function endSession(session, reason, savePartial) {
   }
 
   speechSessions.delete(session.sessionId);
+}
+
+// ── Express route handlers (mounted at /stt in server.js) ─────────────────────
+
+/**
+ * POST /stt/:sessionId/chunk — receive a final transcript chunk from the browser.
+ * Body: { text: string, isFinal: boolean, timestamp?: string }
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+export function handleSttChunk(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  const { sessionId } = req.params;
+  const session = speechSessions.get(sessionId);
+
+  if (!session || session.status !== "active") {
+    res.status(410).json({ error: "Session ended or not found" });
+    return;
+  }
+
+  const { text, isFinal, timestamp } = req.body ?? {};
+  handleChunk(session, text ?? "", !!isFinal, timestamp ?? null);
+  res.status(204).end();
+}
+
+/**
+ * POST /stt/:sessionId/done — browser signals that the user has stopped.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ */
+export function handleSttDone(req, res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  const { sessionId } = req.params;
+  const session = speechSessions.get(sessionId);
+  if (session && session.status === "active") {
+    endSession(session, "user_stopped", true);
+  }
+  res.status(204).end();
 }
 
 // ── Public API used by MCP tool handlers ─────────────────────────────────────
@@ -379,14 +273,26 @@ export function endSpeechSession(sessionId, savePartial, reason) {
  * Build the browser URL for a speech session.
  * The URL points to LCYT_WEB_URL/mcp/:sessionId with session config as query params.
  * The SpeechCapturePage React component in lcyt-web handles this route.
+ *
+ * ?server=  Base URL of this MCP server (SPEECH_PUBLIC_URL, e.g. https://mcp.lcyt.fi).
+ *           The browser will POST finals to {server}/stt/:sessionId/chunk.
+ *
  * @param {SpeechSession} session
  * @returns {string}
  */
 function buildBrowserUrl(session) {
+  const speechPublicUrl = (process.env.SPEECH_PUBLIC_URL || "").replace(/\/$/, "");
+
   if (!LCYT_WEB_URL) {
     throw new Error(
       "LCYT_WEB_URL environment variable is required for speech tools " +
       "(e.g. LCYT_WEB_URL=https://lcyt.fi)"
+    );
+  }
+  if (!speechPublicUrl) {
+    throw new Error(
+      "SPEECH_PUBLIC_URL environment variable is required for speech tools " +
+      "(e.g. SPEECH_PUBLIC_URL=https://mcp.lcyt.fi)"
     );
   }
 
@@ -395,7 +301,7 @@ function buildBrowserUrl(session) {
     : null;
 
   const params = new URLSearchParams({
-    server: getSpeechPublicUrl(),
+    server: speechPublicUrl,
     lang: session.language,
     silence: String(session.silenceTimeoutMs),
   });
@@ -411,10 +317,9 @@ export const SPEECH_TOOLS = [
   {
     name: "start_speech_session",
     description:
-      "Create a browser-based voice capture session. Starts an embedded HTTP server (if not " +
-      "already running) to receive transcript chunks, then returns a browser URL for the user " +
+      "Create a browser-based voice capture session. Returns a browser URL for the user " +
       "to open in Chrome or Edge. The page uses the Web Speech API to capture microphone audio " +
-      "and stream each recognised phrase back in real time. Non-blocking — returns immediately.",
+      "and stream each recognised final phrase to the MCP server in real time. Non-blocking — returns immediately.",
     inputSchema: {
       type: "object",
       properties: {
@@ -542,7 +447,6 @@ export const SPEECH_TOOLS = [
 export async function handleSpeechTool(name, args) {
   switch (name) {
     case "start_speech_session": {
-      await ensureSpeechServer();
       const session = await createSpeechSession({
         language: args.language,
         youtube_stream_key: args.youtube_stream_key,
@@ -599,7 +503,6 @@ export async function handleSpeechTool(name, args) {
     }
 
     case "transcribe_speech_now": {
-      await ensureSpeechServer();
       const session = await createSpeechSession({
         language: args.language,
         youtube_stream_key: args.youtube_stream_key,

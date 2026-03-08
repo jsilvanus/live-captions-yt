@@ -23,7 +23,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { YoutubeLiveCaptionSender } from "lcyt";
 import { randomBytes } from "node:crypto";
-import { SPEECH_TOOLS, handleSpeechTool, SPEECH_ENABLED } from "./speech.js";
+import { SPEECH_TOOLS, handleSpeechTool, SPEECH_ENABLED, handleSttChunk, handleSttDone } from "./speech.js";
 import {
   initDb, validateApiKey, checkAndIncrementUsage, anonymizeKey,
   writeAuthEvent, writeSessionStat, writeCaptionError,
@@ -555,6 +555,20 @@ app.post("/messages", async (req, res) => {
   }
   await transport.handlePostMessage(req, res);
 });
+
+// ── STT chunk ingestion routes (browser → MCP server) ────────────────────────
+// The browser's SpeechCapturePage POSTs final transcript chunks here.
+// Reverse-proxy /stt from mcp.lcyt.fi to this server so the browser can reach it.
+
+app.options("/stt/:sessionId/*", (req, res) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.status(204).end();
+});
+
+app.post("/stt/:sessionId/chunk", express.json(), handleSttChunk);
+app.post("/stt/:sessionId/done", handleSttDone);
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
