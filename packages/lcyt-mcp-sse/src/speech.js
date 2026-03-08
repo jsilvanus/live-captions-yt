@@ -1,11 +1,10 @@
 /**
  * Speech transcription session management for lcyt-mcp-sse.
  *
- * Provides four MCP tools:
+ * Provides three MCP tools:
  *   start_speech_session    — create session, return browser URL (non-blocking)
  *   get_speech_transcript   — block until session ends, return full transcript
  *   end_speech_session      — explicitly stop a session (with optional partial save)
- *   transcribe_speech_now   — combined start+wait; returns URL+transcript in one blocking call
  *
  * The browser URL points to the lcyt-web production deployment at LCYT_WEB_URL/mcp/:sessionId
  * (e.g. https://lcyt.fi/mcp/<id>). lcyt-web renders SpeechCapturePage at that route.
@@ -399,47 +398,12 @@ export const SPEECH_TOOLS = [
       required: ["session_id"],
     },
   },
-  {
-    name: "transcribe_speech_now",
-    description:
-      "Convenience tool: create a speech session and wait for it to finish in a single " +
-      "blocking call. The browser URL is included in the response so the user can open it " +
-      "while the agent waits. Returns the full transcript when the session ends.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        language: {
-          type: "string",
-          description: "BCP-47 language tag for recognition (default: fi-FI).",
-        },
-        youtube_stream_key: {
-          type: "string",
-          description: "Optional YouTube Live stream key for real-time caption forwarding.",
-        },
-        label: {
-          type: "string",
-          description: "Optional human-readable label for this session.",
-        },
-        silence_timeout_seconds: {
-          type: "number",
-          description: "Silence timeout in seconds. Default: 30.",
-        },
-        timeout_seconds: {
-          type: "number",
-          description:
-            "Maximum seconds to block waiting for the session to end. " +
-            "Omit to wait indefinitely.",
-        },
-      },
-      required: [],
-    },
-  },
 ];
 
 // ── MCP tool call handlers ────────────────────────────────────────────────────
 
 /**
- * Handle a call to one of the four speech tools.
+ * Handle a call to one of the three speech tools.
  * @param {string} name
  * @param {Record<string, unknown>} args
  * @returns {Promise<{ content: Array<{ type: string, text: string }> }>}
@@ -497,42 +461,6 @@ export async function handleSpeechTool(name, args) {
           {
             type: "text",
             text: JSON.stringify({ ok: true, save_partial: savePartial }),
-          },
-        ],
-      };
-    }
-
-    case "transcribe_speech_now": {
-      const session = await createSpeechSession({
-        language: args.language,
-        youtube_stream_key: args.youtube_stream_key,
-        label: args.label,
-        silence_timeout_seconds: args.silence_timeout_seconds,
-      });
-      const browserUrl = buildBrowserUrl(session);
-      const streamDisplay = session.streamKey
-        ? `****${session.streamKey.slice(-4)}`
-        : "(none)";
-
-      // Block until the session ends
-      const { transcript, reason } = await waitForTranscript(
-        session.sessionId,
-        args.timeout_seconds
-      );
-
-      return {
-        content: [
-          {
-            type: "text",
-            text: JSON.stringify({
-              ok: true,
-              browser_url: browserUrl,
-              session_id: session.sessionId,
-              language: session.language,
-              stream_key: streamDisplay,
-              transcript,
-              end_reason: reason,
-            }),
           },
         ],
       };
