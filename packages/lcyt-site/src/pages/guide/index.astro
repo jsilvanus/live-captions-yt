@@ -2,7 +2,9 @@
 import { getCollection, render } from 'astro:content';
 import DocsLayout from '../../layouts/DocsLayout.astro';
 
-const GUIDE_ORDER = [
+const CLI_ORDER = ['full-screen', 'interactive', 'single-caption'];
+
+const WEB_ORDER = [
   'overview',
   'getting-started',
   'sending-captions',
@@ -13,29 +15,53 @@ const GUIDE_ORDER = [
   'keyboard-shortcuts',
 ];
 
-const allDocs = await getCollection('guide');
+function sortDocs<T extends { id: string; data: { order?: number; title?: string } }>(
+  allDocs: T[],
+  order: string[],
+) {
+  return [...allDocs].sort((a, b) => {
+    const idxA = order.indexOf(a.id);
+    const idxB = order.indexOf(b.id);
+    const orderA = a.data.order ?? (idxA >= 0 ? idxA + 1 : 99);
+    const orderB = b.data.order ?? (idxB >= 0 ? idxB + 1 : 99);
+    return orderA - orderB;
+  });
+}
 
-// Sort by explicit order field first, then by the GUIDE_ORDER array, then alphabetically
-const docs = [...allDocs].sort((a, b) => {
-  const idxA = GUIDE_ORDER.indexOf(a.id);
-  const idxB = GUIDE_ORDER.indexOf(b.id);
-  const orderA = a.data.order ?? (idxA >= 0 ? idxA + 1 : 99);
-  const orderB = b.data.order ?? (idxB >= 0 ? idxB + 1 : 99);
-  return orderA - orderB;
-});
+function toLabel(doc: { id: string; data: { title?: string } }) {
+  return doc.data.title ?? doc.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
-const sidebarItems = docs.map(d => ({
-  id: d.id,
-  label: d.data.title ?? d.id.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-}));
+const cliDocs = sortDocs(await getCollection('guide-cli'), CLI_ORDER);
+const webDocs = sortDocs(await getCollection('guide-web'), WEB_ORDER);
 
-const rendered = await Promise.all(docs.map(doc => render(doc)));
+const sidebarSections = [
+  {
+    heading: 'CLI Guide',
+    items: cliDocs.map(d => ({ id: `cli-${d.id}`, label: toLabel(d) })),
+  },
+  {
+    heading: 'Web App Guide',
+    items: webDocs.map(d => ({ id: `web-${d.id}`, label: toLabel(d) })),
+  },
+];
+
+const cliRendered = await Promise.all(cliDocs.map(doc => render(doc)));
+const webRendered = await Promise.all(webDocs.map(doc => render(doc)));
 ---
-<DocsLayout title="App Guide" sidebarItems={sidebarItems} sidebarHeading="Guide">
-  {docs.map((doc, i) => {
-    const { Content } = rendered[i];
+<DocsLayout title="Guide" sidebarSections={sidebarSections} sidebarHeading="Guide">
+  {cliDocs.map((doc, i) => {
+    const { Content } = cliRendered[i];
     return (
-      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+      <section id={`cli-${doc.id.replace(/\//g, '-')}`} class="doc-section">
+        <Content />
+      </section>
+    );
+  })}
+  {webDocs.map((doc, i) => {
+    const { Content } = webRendered[i];
+    return (
+      <section id={`web-${doc.id.replace(/\//g, '-')}`} class="doc-section">
         <Content />
       </section>
     );
