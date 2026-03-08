@@ -8,7 +8,8 @@
     "lcyt-mcp-sse": "src/server.js"
   },
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "test": "LCYT_WEB_URL=https://lcyt-test.example SPEECH_PUBLIC_URL=https://mcp-test.example node --test test/*.test.js"
   },
   "keywords": [
     "youtube",
