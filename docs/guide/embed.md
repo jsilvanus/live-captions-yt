@@ -21,6 +21,18 @@ lcyt-web ships five standalone **embed widgets** that you can drop into any page
 
 ---
 
+## Live iframe examples
+
+Open any widget in a standalone iframe preview (opens a new window):
+
+<p><a href="/embed/audio" target="_blank" rel="noopener">Audio capture example</a></p>
+<p><a href="/embed/input" target="_blank" rel="noopener">Input + log example</a></p>
+<p><a href="/embed/sentlog" target="_blank" rel="noopener">Sent log example</a></p>
+<p><a href="/embed/file-drop" target="_blank" rel="noopener">File drop example</a></p>
+<p><a href="/embed/files" target="_blank" rel="noopener">Files manager example</a></p>
+
+---
+
 ## URL Parameters
 
 All embed pages share these common URL parameters:
