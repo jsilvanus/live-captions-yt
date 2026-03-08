@@ -17,6 +17,7 @@
 8. [Controls panel](#controls-panel)
 9. [Privacy](#privacy)
 10. [Keyboard shortcuts](#keyboard-shortcuts)
+11. [Embedding in another site](#embedding-in-another-site)
 
 ---
 
@@ -216,4 +217,24 @@ On first visit the Privacy modal opens automatically. Click **Accept** to contin
 
 ---
 
-*Last updated: 2026-03-05*
+---
+
+## Embedding in another site
+
+lcyt-web can be embedded into any website as standalone `<iframe>` widgets. Three embed routes are available:
+
+| Widget | URL path | Use case |
+|--------|----------|----------|
+| Audio capture | `/embed/audio` | Mic / speech recognition only |
+| Input bar + log | `/embed/input` | Text input with delivery log (owns the session) |
+| Sent log only | `/embed/sentlog` | Read-only caption log fed by a sibling widget |
+
+All widgets accept `?server=`, `?apikey=`, and `?theme=` URL params and connect automatically when credentials are present.
+
+When widgets from different parts of the same host page need to share state (e.g., audio widget sends captions, log widget shows results), they coordinate automatically via the browser's `BroadcastChannel` API — no host-page JavaScript required.
+
+See **[guide/embed.md](guide/embed.md)** for full documentation, code examples, and CORS configuration.
+
+---
+
+*Last updated: 2026-03-08*
