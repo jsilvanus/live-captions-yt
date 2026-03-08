@@ -431,6 +431,10 @@ export async function handleSpeechTool(name, args) {
               silence_timeout_seconds: session.silenceTimeoutMs / 1000,
             }),
           },
+          {
+            type: "text",
+            text: `[Open transcription tool](${browserUrl})`,
+          },
         ],
       };
     }
