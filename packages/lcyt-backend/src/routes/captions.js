@@ -146,11 +146,6 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
       return res.status(400).json({ error: 'No caption targets configured. Add at least one target in CC → Targets.' });
     }
 
-    // CEA-708 mode: batch captions are not supported (SRT cues must arrive one at a time)
-    if (relayManager && relayManager.hasCea708(session.apiKey) && captions.length > 1) {
-      return res.status(400).json({ error: 'Batch captions are not supported in CEA-708 mode. Send one caption at a time.' });
-    }
-
     // Enforce per-key usage limits (no-op for keys with null limits)
     const usage = checkAndIncrementUsage(db, session.apiKey);
     if (!usage.allowed) {
@@ -191,12 +186,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           const { text, translations, captionLang, showOriginal, timestamp, speechStart, ...rest } = caption;
           const composedText = composeCaptionText(text, captionLang, translations, showOriginal);
 
-          // CEA-708 mode: write caption via ffmpeg stdin pipe
-          if (relayManager && relayManager.hasCea708(session.apiKey)) {
-            const tsStr = typeof timestamp === 'string' ? timestamp
-              : (timestamp instanceof Date ? timestamp.toISOString() : undefined);
-            relayManager.writeCaption(session.apiKey, composedText, { timestamp: tsStr, speechStart });
-          }
+          // CEA-708 disabled: no direct ffmpeg stdin injection.
 
           // Write original and all translations to backend files if enabled
           if (backendFileEnabled && translations) {

@@ -352,7 +352,7 @@ export class RtmpRelayManager {
    * @param {string} apiKey
    * @returns {boolean}
    */
-  hasCea708(apiKey) { return this._meta.get(apiKey)?.hasCea708 ?? false; }
+  hasCea708(apiKey) { return false; }
 
   // ---------------------------------------------------------------------------
   // Public: nginx-rtmp publish tracking
