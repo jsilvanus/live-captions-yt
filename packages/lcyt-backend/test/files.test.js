@@ -1,0 +1,367 @@
+import { describe, it, before, after, beforeEach } from 'node:test';
+import assert from 'node:assert';
+import { createServer } from 'node:http';
+import { mkdir, writeFile, rm } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
+import express from 'express';
+import jwt from 'jsonwebtoken';
+import { initDb, createKey, registerCaptionFile } from '../src/db.js';
+import { SessionStore } from '../src/store.js';
+import { createFileRouter } from '../src/routes/files.js';
+import { createAuthMiddleware } from '../src/middleware/auth.js';
+
+const JWT_SECRET = 'test-files-secret';
+
+// ---------------------------------------------------------------------------
+// Resolve the FILES_BASE_DIR the same way the route module does.
+// The test script sets FILES_DIR=/tmp/lcyt-files-test so this resolves correctly.
+// ---------------------------------------------------------------------------
+const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
+
+// ---------------------------------------------------------------------------
+// Test app setup
+// ---------------------------------------------------------------------------
+
+let server, baseUrl, store, db;
+
+before(async () => {
+  db = initDb(':memory:');
+  createKey(db, { key: 'files-test-key', owner: 'File User', backend_file_enabled: 1 });
+
+  // Ensure the base directory exists for the test suite
+  await mkdir(FILES_BASE_DIR, { recursive: true });
+
+  store = new SessionStore({ cleanupInterval: 0 });
+  const auth = createAuthMiddleware(JWT_SECRET);
+
+  const app = express();
+  app.use(express.json({ limit: '64kb' }));
+  app.use('/file', createFileRouter(db, auth, store, JWT_SECRET));
+
+  await new Promise((resolve) => {
+    server = createServer(app);
+    server.listen(0, () => {
+      baseUrl = `http://localhost:${server.address().port}`;
+      resolve();
+    });
+  });
+});
+
+after(async () => {
+  store.stopCleanup();
+  db.close();
+  await new Promise(r => server.close(r));
+  // Clean up any test files created under FILES_BASE_DIR/files_test_key/
+  const safe = 'files_test_key';
+  await rm(join(FILES_BASE_DIR, safe), { recursive: true, force: true });
+});
+
+beforeEach(() => {
+  for (const session of [...store.all()]) {
+    store.remove(session.sessionId);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function makeToken(sessionId) {
+  return jwt.sign(
+    { sessionId, apiKey: 'files-test-key', streamKey: 'test-stream', domain: 'https://files-test.com' },
+    JWT_SECRET
+  );
+}
+
+function createMockSession() {
+  return store.create({
+    apiKey: 'files-test-key',
+    streamKey: 'test-stream',
+    domain: 'https://files-test.com',
+    jwt: 'test-jwt',
+    sequence: 0,
+    syncOffset: 0,
+    sender: null,
+  });
+}
+
+/**
+ * Register a caption file in the DB and write a corresponding file to disk.
+ * Uses the same FILES_BASE_DIR as the route module.
+ * Returns the DB row id.
+ */
+async function registerTestFile(session, { content = 'Hello caption', lang = 'original', format = 'youtube', type = 'caption' } = {}) {
+  const safe = session.apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+  const dir = join(FILES_BASE_DIR, safe);
+  await mkdir(dir, { recursive: true });
+
+  const filename = `2026-01-01-${Date.now()}-${lang}.txt`;
+  const filepath = join(dir, filename);
+  await writeFile(filepath, content, 'utf8');
+
+  const fileId = registerCaptionFile(db, {
+    apiKey: session.apiKey,
+    sessionId: session.sessionId,
+    filename,
+    lang,
+    format,
+    type,
+  });
+  return fileId;
+}
+
+// ---------------------------------------------------------------------------
+// GET /file — list files
+// ---------------------------------------------------------------------------
+
+describe('GET /file', () => {
+  it('should return 401 with no Authorization header', async () => {
+    const res = await fetch(`${baseUrl}/file`);
+    const data = await res.json();
+    assert.strictEqual(res.status, 401);
+    assert.ok(data.error);
+  });
+
+  it('should return 401 for invalid token', async () => {
+    const res = await fetch(`${baseUrl}/file`, {
+      headers: { 'Authorization': 'Bearer invalid.token' }
+    });
+    assert.strictEqual(res.status, 401);
+  });
+
+  it('should return 404 when session not found', async () => {
+    const token = makeToken('nonexistent-session');
+    const res = await fetch(`${baseUrl}/file`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 404);
+    assert.ok(data.error);
+  });
+
+  it('should return an empty files array when no files exist', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const res = await fetch(`${baseUrl}/file`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(data.files));
+    assert.strictEqual(data.files.length, 0);
+  });
+
+  it('should return registered files for the session key', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    await registerTestFile(session, { content: 'Caption one', lang: 'original' });
+    await registerTestFile(session, { content: 'Caption two', lang: 'fi-FI' });
+
+    const res = await fetch(`${baseUrl}/file`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(data.files));
+    assert.ok(data.files.length >= 2);
+
+    const file = data.files[0];
+    assert.ok('id' in file);
+    assert.ok('filename' in file);
+    assert.ok('lang' in file);
+    assert.ok('format' in file);
+    assert.ok('createdAt' in file);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /file/:id — download a file
+// ---------------------------------------------------------------------------
+
+describe('GET /file/:id', () => {
+  it('should return 401 with no auth', async () => {
+    const res = await fetch(`${baseUrl}/file/1`);
+    const data = await res.json();
+    assert.strictEqual(res.status, 401);
+    assert.ok(data.error);
+  });
+
+  it('should return 401 for invalid token', async () => {
+    const res = await fetch(`${baseUrl}/file/1`, {
+      headers: { 'Authorization': 'Bearer invalid.token' }
+    });
+    assert.strictEqual(res.status, 401);
+  });
+
+  it('should return 404 when session not found (token with unknown sessionId)', async () => {
+    const orphanToken = jwt.sign(
+      { sessionId: 'orphan-session', apiKey: 'files-test-key', streamKey: 'sk', domain: 'https://x.com' },
+      JWT_SECRET
+    );
+    const res = await fetch(`${baseUrl}/file/999`, {
+      headers: { 'Authorization': `Bearer ${orphanToken}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 404);
+    assert.ok(data.error);
+  });
+
+  it('should return 400 for a non-numeric file id', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const res = await fetch(`${baseUrl}/file/not-a-number`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 400);
+    assert.ok(data.error.includes('Invalid file id'));
+  });
+
+  it('should return 404 for a file id that does not exist in the DB', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const res = await fetch(`${baseUrl}/file/99999`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 404);
+    assert.ok(data.error);
+  });
+
+  it('should stream file content with correct headers', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const id = await registerTestFile(session, { content: 'Caption content here', lang: 'original', format: 'youtube' });
+
+    const res = await fetch(`${baseUrl}/file/${id}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    assert.strictEqual(res.status, 200);
+    const contentType = res.headers.get('Content-Type');
+    assert.ok(contentType.includes('text/plain'));
+
+    const body = await res.text();
+    assert.strictEqual(body, 'Caption content here');
+  });
+
+  it('should serve vtt files with text/vtt content type', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const safe = session.apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+    const dir = join(FILES_BASE_DIR, safe);
+    await mkdir(dir, { recursive: true });
+    const filename = `2026-01-01-${Date.now()}-original.vtt`;
+    await writeFile(join(dir, filename), 'WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello\n', 'utf8');
+
+    const fileId = registerCaptionFile(db, {
+      apiKey: session.apiKey,
+      sessionId: session.sessionId,
+      filename,
+      lang: 'original',
+      format: 'vtt',
+      type: 'caption',
+    });
+
+    const res = await fetch(`${baseUrl}/file/${fileId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    assert.strictEqual(res.status, 200);
+    const contentType = res.headers.get('Content-Type');
+    assert.ok(contentType.includes('text/vtt'));
+  });
+
+  it('should accept ?token= query param instead of Authorization header', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const id = await registerTestFile(session, { content: 'Query token test' });
+
+    const res = await fetch(`${baseUrl}/file/${id}?token=${token}`);
+    assert.strictEqual(res.status, 200);
+    const body = await res.text();
+    assert.strictEqual(body, 'Query token test');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /file/:id
+// ---------------------------------------------------------------------------
+
+describe('DELETE /file/:id', () => {
+  it('should return 401 with no auth', async () => {
+    const res = await fetch(`${baseUrl}/file/1`, { method: 'DELETE' });
+    const data = await res.json();
+    assert.strictEqual(res.status, 401);
+    assert.ok(data.error);
+  });
+
+  it('should return 400 for a non-numeric id', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const res = await fetch(`${baseUrl}/file/not-a-number`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 400);
+    assert.ok(data.error.includes('Invalid file id'));
+  });
+
+  it('should return 404 when session is not found', async () => {
+    const token = makeToken('missing-session-id');
+    const res = await fetch(`${baseUrl}/file/1`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 404);
+    assert.ok(data.error);
+  });
+
+  it('should return 404 for unknown file id', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const res = await fetch(`${baseUrl}/file/99999`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 404);
+    assert.ok(data.error);
+  });
+
+  it('should delete the DB record and disk file, returning ok', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    const id = await registerTestFile(session, { content: 'Delete me' });
+
+    const res = await fetch(`${baseUrl}/file/${id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.ok, true);
+
+    // File should no longer be listed
+    const listRes = await fetch(`${baseUrl}/file`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const listData = await listRes.json();
+    const ids = listData.files.map(f => f.id);
+    assert.ok(!ids.includes(id), 'Deleted file should not appear in list');
+  });
+});

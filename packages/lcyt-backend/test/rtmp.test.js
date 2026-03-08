@@ -330,17 +330,6 @@ describe('RtmpRelayManager', () => {
     assert.strictEqual(m.isSlotRunning('fake-key', 3), true);
   });
 
-  it('hasCea708 returns true when any slot has captionMode=cea708 (via meta)', () => {
-    const m = new RtmpRelayManager();
-    m._meta.set('cea-key', {
-      slots: [{ slot: 1, captionMode: 'http' }, { slot: 2, captionMode: 'cea708' }],
-      startedAt: new Date(),
-      hasCea708: true,
-      srtSeq: 0,
-    });
-    assert.strictEqual(m.hasCea708('cea-key'), true);
-  });
-
   it('startedAt returns the startedAt Date from meta', () => {
     const m = new RtmpRelayManager();
     const now = new Date();

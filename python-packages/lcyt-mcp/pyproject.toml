@@ -38,3 +38,9 @@ lcyt-mcp = "lcyt_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["lcyt_mcp"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[project.optional-dependencies]
+test = ["pytest", "pytest-asyncio"]
