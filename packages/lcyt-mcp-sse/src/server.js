@@ -372,7 +372,6 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
       case "start_speech_session":
       case "get_speech_transcript":
       case "end_speech_session":
-      case "transcribe_speech_now":
         return handleSpeechTool(name, args);
 
       default:
