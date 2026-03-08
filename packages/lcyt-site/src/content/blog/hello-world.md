@@ -1,17 +1,14 @@
 ---
-title: "Hello, LCYT"
-date: "2026-01-01"
-description: "Welcome to the LCYT blog."
+title: "Hello LCYT"
+date: "2026-01-29"
+description: "LCYT Begun"
+author: jsilvanus
 ---
 
-# Hello, LCYT
+# New project
 
-Welcome to the LCYT blog! We share updates, tutorials, and tips here.
+I am writing this retroactively, but it was the 29th of January in 2026, or somewhere around there, when this project was started.
 
-## What is LCYT?
+The **aim of this project** is to make a tool for sending closed captions to live broadcasts in YouTube. I am aware that YT itself has automatic CC in English. But, as you probably know, English is not everyone's native tongue.
 
-LCYT (Live Captions for YouTube) is a platform for sending real-time captions to YouTube Live streams via Google's HTTP POST caption ingestion API.
-
-## Getting Started
-
-Check out the [Library docs](/lib) to get started with the JavaScript SDK, or the [API docs](/api) to integrate with the backend relay service.
+This project is, then, to support those who need text, those with problems with vision and those with problems with hearing.

@@ -16,7 +16,7 @@ const rendered = await Promise.all(posts.map(post => render(post)));
     const { Content } = rendered[i];
     return (
       <section id={post.id.replace(/\//g, '-')} class="doc-section blog-post">
-        <div class="meta">{post.data.date}</div>
+        <div class="meta">{post.data.date}{post.data.author ? ` — by ${post.data.author}` : ''}</div>
         <Content />
       </section>
     );
