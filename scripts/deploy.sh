@@ -177,8 +177,6 @@ docker compose \
   up -d --build --remove-orphans
 
 # Give services a moment to initialize, then show logs for troubleshooting
-echo "==> Waiting 10 seconds for containers to start..."
-sleep 10
 echo "==> Showing docker compose logs (follow). Press Ctrl-C to exit."
 docker compose \
   --project-directory "$COMPOSE_DIR" \
