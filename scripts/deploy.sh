@@ -20,6 +20,9 @@
 #   GIT_BRANCH           Branch to check out (default: main)
 #   FREE_APIKEY_ACTIVE   Set to 1 to enable free-tier sign-up (default: 0)
 #   MCP_REQUIRE_API_KEY  Set to 1 to require X-Api-Key on MCP SSE connections
+#   RTMP_RELAY_ACTIVE    Set to 1 to enable the RTMP stream relay feature (default: 0)
+#                        Also installs ffmpeg inside the Docker image when set to 1.
+#   RTMP_APPLICATION     Nginx-rtmp application name to restrict (default: accept any)
 #
 # nginx symlink (run once after first deploy):
 #   ln -sfn ~/lcyt/packages/lcyt-web/dist /var/www/html/lcyt
@@ -170,8 +173,17 @@ echo "    Build log: $SITE_BUILD_LOG"
 
 COMPOSE_DIR="$REPO_DIR"
 
+# Build the --env-file flag for docker compose so it reads from the same
+# secrets file as this script.  Without this, Docker Compose falls back to
+# looking for a .env at the project root, which may differ from scripts/.env.
+COMPOSE_ENV_FLAGS=()
+if [[ -f "$ENV_FILE" ]]; then
+  COMPOSE_ENV_FLAGS+=(--env-file "$ENV_FILE")
+fi
+
 echo "==> Starting lcyt-site (docker compose up -d)"
 docker compose \
+  "${COMPOSE_ENV_FLAGS[@]}" \
   --project-directory "$COMPOSE_DIR" \
   -f "$COMPOSE_DIR/docker-compose.yml" \
   up -d --build --remove-orphans
@@ -179,6 +191,7 @@ docker compose \
 # Give services a moment to initialize, then show logs for troubleshooting
 echo "==> Showing docker compose logs (follow). Press Ctrl-C to exit."
 docker compose \
+  "${COMPOSE_ENV_FLAGS[@]}" \
   --project-directory "$COMPOSE_DIR" \
   -f "$COMPOSE_DIR/docker-compose.yml" \
   logs --follow --tail=200

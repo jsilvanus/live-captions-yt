@@ -13,6 +13,7 @@ services:
       - "127.0.0.1:3001:3001"
     environment:
       RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
+      RTMP_APPLICATION: ${RTMP_APPLICATION:-}
       JWT_SECRET: ${JWT_SECRET}
       DB_PATH: /data/lcyt.sqlite
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
