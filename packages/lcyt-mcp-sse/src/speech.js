@@ -273,8 +273,10 @@ export function endSpeechSession(sessionId, savePartial, reason) {
  * The URL points to LCYT_WEB_URL/mcp/:sessionId with session config as query params.
  * The SpeechCapturePage React component in lcyt-web handles this route.
  *
- * ?server=  Base URL of this MCP server (SPEECH_PUBLIC_URL, e.g. https://mcp.lcyt.fi).
- *           The browser will POST finals to {server}/stt/:sessionId/chunk.
+ * ?server=   Base URL of this MCP server (SPEECH_PUBLIC_URL, e.g. https://mcp.lcyt.fi).
+ *            The browser will POST finals to {server}/stt/:sessionId/chunk.
+ *
+ * Stream keys are intentionally excluded from the URL; they are held server-side only.
  *
  * @param {SpeechSession} session
  * @returns {string}
@@ -295,17 +297,12 @@ function buildBrowserUrl(session) {
     );
   }
 
-  const streamDisplay = session.streamKey
-    ? `****${session.streamKey.slice(-4)}`
-    : null;
-
   const params = new URLSearchParams({
     server: speechPublicUrl,
     lang: session.language,
     silence: String(session.silenceTimeoutMs),
   });
-  if (streamDisplay) params.set("key", streamDisplay);
-  if (session.label)  params.set("label", session.label);
+  if (session.label) params.set("label", session.label);
 
   return `${LCYT_WEB_URL}/mcp/${session.sessionId}?${params}`;
 }

@@ -259,6 +259,12 @@ if (process.env.STATIC_DIR) {
   const staticDir = resolve(process.env.STATIC_DIR);
   app.use(express.static(staticDir));
   console.info(`✓ Serving static client from: ${staticDir}`);
+
+  // SPA fallback: serve index.html for any GET that didn't match an API route or a static file.
+  // This allows client-side routes like /mcp/:sessionId to work when navigated directly.
+  app.get('*', (_req, res) => {
+    res.sendFile(resolve(staticDir, 'index.html'));
+  });
 }
 
 // ---------------------------------------------------------------------------
