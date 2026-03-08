@@ -5,7 +5,7 @@ order: 8
 
 # Embedding lcyt-web in Another Site
 
-lcyt-web ships three standalone **embed widgets** that you can drop into any page as `<iframe>` elements. Each widget renders only a specific part of the UI, configured entirely through URL parameters — no React knowledge required on the host site.
+lcyt-web ships five standalone **embed widgets** that you can drop into any page as `<iframe>` elements. Each widget renders only a specific part of the UI, configured entirely through URL parameters — no React knowledge required on the host site.
 
 ---
 
@@ -16,6 +16,8 @@ lcyt-web ships three standalone **embed widgets** that you can drop into any pag
 | **Audio capture** | `/embed/audio` | Microphone / speech recognition panel |
 | **Input bar + log** | `/embed/input` | Text input field and sent-captions log (owns the session) |
 | **Sent log only** | `/embed/sentlog` | Read-only delivery log (subscribes to a sibling widget's session) |
+| **Simple file drop** | `/embed/file-drop` | Drop one file → send lines one by one (owns the session) |
+| **Full file UI** | `/embed/files` | Complete file manager: tabs, drop zone, caption view, input bar, sent log |
 
 ---
 
@@ -77,7 +79,51 @@ Renders only the sent-captions log. Does **not** own a session. Instead, it rece
 </iframe>
 ```
 
-**Requirement:** At least one other embed widget (`/embed/audio` or `/embed/input`) must be present on the same host page and connected to the backend.
+**Requirement:** At least one other embed widget (`/embed/audio`, `/embed/input`, `/embed/file-drop`, or `/embed/files`) must be present on the same host page and connected to the backend.
+
+---
+
+### `/embed/file-drop` — Simple File Drop Widget
+
+The minimal caption-from-file widget. **Phase 1** shows a large drag-and-drop zone (click to browse is also supported). Drop one `.txt` file and **Phase 2** immediately shows the player:
+
+- The **current line** is displayed prominently in the centre of the widget.
+- **◀ Prev**, **Send**, **▶ Next** buttons control navigation and delivery.
+- Keyboard shortcuts work without clicking buttons: `↑` / `↓` to move, `Enter` to send and advance.
+- A **✕ reset** link in the header returns to Phase 1 to load a different file.
+- The connection status dot in the header shows whether the backend relay is connected.
+
+Send delivers the current line to YouTube and automatically advances the pointer to the next line.
+
+```html
+<iframe
+  src="https://your-lcyt-host/embed/file-drop?server=https://api.example.com&apikey=YOUR_KEY&theme=dark"
+  style="width:100%; height:280px; border:none;">
+</iframe>
+```
+
+---
+
+### `/embed/files` — Full File Management Widget
+
+Renders the complete file-based captioning workflow from the main app, without the status bar, settings modals, or audio panel:
+
+- **FileTabs** row at the top — switch between open files, add new files, toggle drop zone.
+- **DropZone** — collapsible drag-and-drop file loader (auto-hides once a file is loaded).
+- **CaptionView** — scrollable line list with the active pointer highlighted; supports raw text editing.
+- **InputBar** — text input with batch mode, translation, and all keyboard shortcuts.
+- **Sent log panel** — togglable delivery log (✓✓ button in the toolbar); starts visible by default.
+
+Line double-click in CaptionView sends that line immediately via the InputBar, exactly as in the main app.
+
+```html
+<iframe
+  src="https://your-lcyt-host/embed/files?server=https://api.example.com&apikey=YOUR_KEY&theme=dark"
+  style="width:100%; height:640px; border:none;">
+</iframe>
+```
+
+To start with the sent log panel hidden, add `&sentlog=0` to the URL.
 
 ---
 

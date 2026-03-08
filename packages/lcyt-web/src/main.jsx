@@ -8,6 +8,8 @@ import { SpeechCapturePage } from './components/SpeechCapturePage';
 import { EmbedAudioPage } from './components/EmbedAudioPage';
 import { EmbedInputPage } from './components/EmbedInputPage';
 import { EmbedSentLogPage } from './components/EmbedSentLogPage';
+import { EmbedFileDropPage } from './components/EmbedFileDropPage';
+import { EmbedFilesPage } from './components/EmbedFilesPage';
 
 const path = window.location.pathname;
 
@@ -16,9 +18,11 @@ function getPage() {
     const sessionId = path.split('/')[2];
     return <SpeechCapturePage sessionId={sessionId} />;
   }
-  if (path.startsWith('/embed/audio'))   return <EmbedAudioPage />;
-  if (path.startsWith('/embed/input'))   return <EmbedInputPage />;
-  if (path.startsWith('/embed/sentlog')) return <EmbedSentLogPage />;
+  if (path.startsWith('/embed/audio'))     return <EmbedAudioPage />;
+  if (path.startsWith('/embed/input'))     return <EmbedInputPage />;
+  if (path.startsWith('/embed/sentlog'))   return <EmbedSentLogPage />;
+  if (path.startsWith('/embed/file-drop')) return <EmbedFileDropPage />;
+  if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
   return <App />;
 }
 
