@@ -110,7 +110,14 @@ function endSession(session, reason, savePartial) {
   }
 
   if (session.sender) {
-    session.sender.end().catch(() => {});
+    try {
+      const endResult = session.sender.end();
+      if (endResult && typeof endResult.then === 'function') {
+        endResult.catch(() => {});
+      }
+    } catch (e) {
+      // ignore synchronous errors from end()
+    }
     session.sender = null;
   }
 
