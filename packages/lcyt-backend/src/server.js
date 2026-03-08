@@ -125,7 +125,10 @@ function probeFfmpeg() {
   }
 }
 
-const _ffprobe = probeFfmpeg();
+const _rtmpRelayActive = process.env.RTMP_RELAY_ACTIVE === '1';
+const _ffprobe = _rtmpRelayActive
+  ? probeFfmpeg()
+  : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
 
 const relayManager = new RtmpRelayManager({
   ffmpegCaps: _ffprobe,
