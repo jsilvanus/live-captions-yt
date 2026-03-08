@@ -5,7 +5,6 @@
  * All session config arrives as URL search params (injected by lcyt-mcp-sse):
  *   ?server=http://localhost:3002   MCP speech server base URL
  *   &lang=fi-FI                     recognition.lang
- *   &key=****XXXX                   masked stream key (display only)
  *   &label=...                      optional label (display only)
  *   &silence=30000                  server-side silence timeout ms (display only)
  *
@@ -27,7 +26,6 @@ export function SpeechCapturePage({ sessionId }) {
   const params    = new URLSearchParams(window.location.search);
   const serverUrl = params.get('server') || '';
   const lang      = params.get('lang')   || 'fi-FI';
-  const keyDisplay = params.get('key')   || null;
   const label     = params.get('label')  || null;
   const silenceMs = parseInt(params.get('silence') || '30000', 10);
 
@@ -249,8 +247,7 @@ export function SpeechCapturePage({ sessionId }) {
       <div style={styles.meta}>
         <span>Session: <code style={styles.code}>{sessionId}</code></span>
         <span> · Lang: <code style={styles.code}>{lang}</code></span>
-        {keyDisplay && <span> · Stream: <code style={styles.code}>{keyDisplay}</code></span>}
-        {label     && <span> · <em>{label}</em></span>}
+        {label && <span> · <em>{label}</em></span>}
         <span style={styles.metaMuted}> (silence timeout: {silenceSec}s)</span>
       </div>
 

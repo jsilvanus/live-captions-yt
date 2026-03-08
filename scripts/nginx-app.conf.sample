@@ -1,0 +1,35 @@
+# nginx vhost for app.lcyt.fi — serves the lcyt-web Vite SPA.
+#
+# The SPA uses client-side routing (React, pathname-based):
+#   /           → main app
+#   /mcp/:id    → SpeechCapturePage
+#
+# try_files must fall back to /index.html so that direct navigation
+# or page refresh on /mcp/<sessionId> returns the SPA entry point
+# instead of a 404.
+#
+# Symlink setup (run once after first deploy):
+#   ln -sfn ~/lcyt/packages/lcyt-web/dist /var/www/html/lcyt-web
+#
+# Then point `root` below at /var/www/html/lcyt-web (or the dist path directly).
+
+server {
+    listen 443 ssl;
+    server_name app.lcyt.fi;
+
+    root /var/www/html/lcyt-web;
+    index index.html;
+
+    # SPA fallback: serve index.html for any path not matching a real file.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Cache hashed assets forever; they are content-addressed by Vite.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # ssl_certificate / ssl_certificate_key — managed by certbot or similar.
+}
