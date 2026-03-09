@@ -26,7 +26,7 @@ import { SentPanel } from './SentPanel';
 
 export function EmbedInputPage() {
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || '';
+  const backendUrl = params.get('server') || 'https://api.lcyt.fi';
   const apiKey     = params.get('apikey') || '';
   const theme      = params.get('theme')  || 'dark';
 
@@ -37,7 +37,7 @@ export function EmbedInputPage() {
   return (
     <AppProviders
       initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!(backendUrl && apiKey)}
+      autoConnect={!!apiKey}
       embed
     >
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>

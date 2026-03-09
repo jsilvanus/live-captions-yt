@@ -166,7 +166,7 @@ function FilesLayout({ defaultSentLogVisible }) {
 
 export function EmbedFilesPage() {
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || '';
+  const backendUrl = params.get('server') || 'https://api.lcyt.fi';
   const apiKey     = params.get('apikey') || '';
   const theme      = params.get('theme')  || 'dark';
   const defaultSentLogVisible = params.get('sentlog') !== '0';
@@ -178,7 +178,7 @@ export function EmbedFilesPage() {
   return (
     <AppProviders
       initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!(backendUrl && apiKey)}
+      autoConnect={!!apiKey}
       embed
     >
       <FilesLayout defaultSentLogVisible={defaultSentLogVisible} />
