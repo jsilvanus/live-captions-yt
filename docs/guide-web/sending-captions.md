@@ -74,6 +74,74 @@ Once loaded, the file appears as a **tab** above the caption view. The current l
 
 ---
 
+## Caption file format
+
+Caption files are plain text (`.txt`), one caption per line. In addition to plain text, the file format supports **metadata comments**, **stanza blocks**, and **empty-send markers**.
+
+### Metadata comments
+
+HTML-style comments on their own line attach metadata codes to all subsequent caption lines. Any key is accepted.
+
+```
+<!-- lang: fi-FI -->
+<!-- section: chorus -->
+<!-- speaker: Alice -->
+<!-- lyrics: true -->
+<!-- no-translate: true -->
+```
+
+To clear a code, set its value to empty:
+
+```
+<!-- lang: -->
+```
+
+Metadata comment lines are not sent as captions.
+
+### Stanza blocks
+
+A stanza block attaches multi-line "singing aid" text to subsequent captions so viewers can see the upcoming lyrics. Open the block with `<!-- stanza` (no closing `-->`), write the stanza lines, then close with `-->` on its own line.
+
+```
+<!-- stanza
+Amazing grace, how sweet the sound
+That saved a wretch like me
+-->
+Amazing grace, how sweet the sound
+That saved a wretch like me
+```
+
+The stanza text is pushed to the viewer when the first caption in the block is sent. To clear the stanza, add an empty block:
+
+```
+<!-- stanza
+-->
+```
+
+### Empty-send markers
+
+A line containing only `_` fires the current metadata codes (including the active stanza) to the viewer **without sending any caption text** to YouTube. This is useful for pushing a stanza to the viewer before the singing starts.
+
+```
+<!-- stanza
+Amazing grace, how sweet the sound
+-->
+_
+Amazing grace, how sweet the sound
+```
+
+You can optionally add a label after the underscore. The label is shown in **red** in the caption view as a visual cue for the operator — it is never sent to YouTube.
+
+```
+_ Show verse 1
+_ ♪ Chorus
+_ [pause here]
+```
+
+A bare `_` displays a dimmed `⊘ send codes` indicator. A labeled `_ text` displays the label text in red.
+
+---
+
 ## Batch mode
 
 Batch mode lets you queue multiple captions and send them at regular intervals. This is useful for pre-written scripts where you want smooth, evenly timed delivery.
