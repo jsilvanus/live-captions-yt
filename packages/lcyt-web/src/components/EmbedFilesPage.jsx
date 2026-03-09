@@ -42,6 +42,7 @@ import { CaptionView } from './CaptionView';
 import { InputBar } from './InputBar';
 import { SentPanel } from './SentPanel';
 import { useFileContext } from '../contexts/FileContext';
+import { EmbedApiKeyGate } from './EmbedApiKeyGate';
 import { useSessionContext } from '../contexts/SessionContext';
 
 // ─── Inner layout (needs access to contexts) ─────────────────────────────────
@@ -176,13 +177,17 @@ export function EmbedFilesPage() {
   }, []);
 
   return (
-    <AppProviders
-      initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!apiKey}
-      embed
-    >
-      <FilesLayout defaultSentLogVisible={defaultSentLogVisible} />
-    </AppProviders>
+    <EmbedApiKeyGate initialKey={apiKey} backendUrl={backendUrl}>
+      {(key) => (
+        <AppProviders
+          initConfig={{ backendUrl, apiKey: key }}
+          autoConnect
+          embed
+        >
+          <FilesLayout defaultSentLogVisible={defaultSentLogVisible} />
+        </AppProviders>
+      )}
+    </EmbedApiKeyGate>
   );
 }
 

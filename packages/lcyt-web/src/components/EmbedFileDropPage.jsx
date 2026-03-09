@@ -26,6 +26,7 @@ import { AppProviders } from '../contexts/AppProviders';
 import { DropZone } from './DropZone';
 import { useFileContext } from '../contexts/FileContext';
 import { useSessionContext } from '../contexts/SessionContext';
+import { EmbedApiKeyGate } from './EmbedApiKeyGate';
 
 // ─── Inner layout (needs access to contexts) ─────────────────────────────────
 
@@ -177,15 +178,19 @@ export function EmbedFileDropPage() {
   }, []);
 
   return (
-    <AppProviders
-      initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!apiKey}
-      embed
-    >
-      <div style={{ height: '100vh', overflow: 'hidden' }}>
-        <FileDropLayout />
-      </div>
-    </AppProviders>
+    <EmbedApiKeyGate initialKey={apiKey} backendUrl={backendUrl}>
+      {(key) => (
+        <AppProviders
+          initConfig={{ backendUrl, apiKey: key }}
+          autoConnect
+          embed
+        >
+          <div style={{ height: '100vh', overflow: 'hidden' }}>
+            <FileDropLayout />
+          </div>
+        </AppProviders>
+      )}
+    </EmbedApiKeyGate>
   );
 }
 

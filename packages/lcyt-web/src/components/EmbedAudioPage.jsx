@@ -23,6 +23,7 @@
 import { useEffect, useRef } from 'react';
 import { AppProviders } from '../contexts/AppProviders';
 import { AudioPanel } from './AudioPanel';
+import { EmbedApiKeyGate } from './EmbedApiKeyGate';
 
 export function EmbedAudioPage() {
   const params     = new URLSearchParams(window.location.search);
@@ -35,14 +36,18 @@ export function EmbedAudioPage() {
   }, []);
 
   return (
-    <AppProviders
-      initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!apiKey}
-      embed
-    >
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <AudioPanel visible />
-      </div>
-    </AppProviders>
+    <EmbedApiKeyGate initialKey={apiKey} backendUrl={backendUrl}>
+      {(key) => (
+        <AppProviders
+          initConfig={{ backendUrl, apiKey: key }}
+          autoConnect
+          embed
+        >
+          <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <AudioPanel visible />
+          </div>
+        </AppProviders>
+      )}
+    </EmbedApiKeyGate>
   );
 }
