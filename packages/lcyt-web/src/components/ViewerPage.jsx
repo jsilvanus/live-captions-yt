@@ -8,17 +8,22 @@
  * viewer screen or browser-source overlay.
  *
  * URL structure:
- *   /view/<key>?server=https://api.example.com&theme=dark|light&fontsize=2.5
+ *   /view/<key>?server=https://api.example.com&theme=dark|light&fontsize=2.5&lang=fi-FI
  *
  * URL params:
- *   server    Backend URL (required — no captions shown without it)
+ *   server    Backend URL (default: https://api.lcyt.fi)
  *   theme     dark|light (default: dark)
  *   fontsize  Font size in rem (default: 2.5)
+ *   lang      Language to display: a BCP-47 code (e.g. fi-FI) shows that translation,
+ *             'original' shows the raw original text,
+ *             'all' splits the view into one column per language.
+ *             Omit (or empty) to show the composed text (original + translation if configured).
  */
 
 import { useState, useEffect, useRef } from 'react';
 
 const RECONNECT_DELAY_MS = 3000;
+const DEFAULT_BACKEND    = 'https://api.lcyt.fi';
 
 /**
  * Safely render caption text that may contain <br> separators (used for
@@ -46,11 +51,19 @@ export function ViewerPage() {
   const viewerKey = segments[1] || '';
 
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = (params.get('server') || '').replace(/\/$/, '');
+  const backendUrl = (params.get('server') || DEFAULT_BACKEND).replace(/\/$/, '');
   const theme      = params.get('theme')    || 'dark';
   const fontSize   = parseFloat(params.get('fontsize') || '2.5') || 2.5;
+  // lang: '', 'original', 'fi-FI', 'all'
+  const lang       = params.get('lang') || '';
+  const showAll    = lang === 'all';
 
+  // Single-language display state
   const [text,      setText]      = useState('');
+  // Multi-language display state: { original: '...', 'fi-FI': '...', ... }
+  const [langTexts, setLangTexts] = useState({});
+  // Section badge from codes.section
+  const [section,   setSection]   = useState('');
   const [connected, setConnected] = useState(false);
   const [error,     setError]     = useState('');
 
@@ -63,8 +76,8 @@ export function ViewerPage() {
   }, [theme, viewerKey]);
 
   useEffect(() => {
-    if (!viewerKey || !backendUrl) {
-      setError(!viewerKey ? 'No viewer key in URL.' : 'No backend URL. Add ?server=<url> to the address.');
+    if (!viewerKey) {
+      setError('No viewer key in URL.');
       return;
     }
 
@@ -91,7 +104,33 @@ export function ViewerPage() {
         if (cancelled) return;
         try {
           const data = JSON.parse(e.data);
-          if (data.text) setText(data.text);
+
+          // Update section badge when the code changes
+          if (data.codes && 'section' in data.codes) {
+            setSection(data.codes.section || '');
+          }
+
+          if (showAll) {
+            // Build / update the per-language text map
+            setLangTexts(prev => {
+              const next = { ...prev, original: data.text || '' };
+              if (data.translations && typeof data.translations === 'object') {
+                for (const [l, t] of Object.entries(data.translations)) {
+                  next[l] = t;
+                }
+              }
+              return next;
+            });
+          } else if (lang && lang !== 'original') {
+            // Show the requested translation, fall back to composed then original
+            const specific = data.translations?.[lang];
+            setText(specific ?? data.composedText ?? data.text ?? '');
+          } else if (lang === 'original') {
+            setText(data.text ?? '');
+          } else {
+            // Default: show composed text (original or original+translation)
+            setText(data.composedText ?? data.text ?? '');
+          }
         } catch {}
       });
 
@@ -110,27 +149,57 @@ export function ViewerPage() {
       clearTimeout(reconnectRef.current);
       esRef.current?.close();
     };
-  }, [viewerKey, backendUrl]);
+  }, [viewerKey, backendUrl, lang, showAll]);
+
+  const langEntries = Object.entries(langTexts);
 
   return (
     <div style={rootStyle(theme)}>
-      {/* Status dot */}
+      {/* Section badge — top left */}
+      {section && (
+        <div style={sectionBadgeStyle}>
+          {section}
+        </div>
+      )}
+
+      {/* Connection status dot — top right */}
       <div style={statusStyle}>
         <span style={{ ...dotStyle, background: connected ? '#4caf50' : '#888' }} />
-        {!connected && <span style={{ color: '#888', fontSize: '0.75rem' }}>
-          {error || 'Connecting…'}
-        </span>}
-      </div>
-
-      {/* Caption text */}
-      <div style={captionAreaStyle}>
-        {text && (
-          <CaptionText
-            text={text}
-            style={{ ...captionTextStyle, fontSize: `${fontSize}rem` }}
-          />
+        {!connected && (
+          <span style={{ color: '#888', fontSize: '0.75rem' }}>
+            {error || 'Connecting…'}
+          </span>
         )}
       </div>
+
+      {showAll ? (
+        /* ── Multi-language view: side-by-side columns, one per language ── */
+        <div style={multiColContainerStyle}>
+          {langEntries.length === 0 && (
+            <div style={{ color: '#888', fontSize: '1rem', textAlign: 'center', width: '100%', alignSelf: 'center' }}>
+              Waiting for captions…
+            </div>
+          )}
+          {langEntries.map(([l, t]) => (
+            <div key={l} style={colStyle(theme, langEntries.length)}>
+              <div style={colLabelStyle}>{l === 'original' ? 'Original' : l}</div>
+              <div style={colCaptionAreaStyle}>
+                {t && <CaptionText text={t} style={{ ...captionTextStyle, fontSize: `${fontSize}rem` }} />}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* ── Single-caption view ── */
+        <div style={captionAreaStyle}>
+          {text && (
+            <CaptionText
+              text={text}
+              style={{ ...captionTextStyle, fontSize: `${fontSize}rem` }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -139,16 +208,28 @@ export function ViewerPage() {
 
 function rootStyle(theme) {
   return {
-    height:          '100vh',
-    display:         'flex',
-    flexDirection:   'column',
-    background:      theme === 'light' ? '#fff' : '#000',
-    color:           theme === 'light' ? '#111' : '#fff',
-    fontFamily:      'system-ui, sans-serif',
-    overflow:        'hidden',
-    position:        'relative',
+    height:        '100vh',
+    display:       'flex',
+    flexDirection: 'column',
+    background:    theme === 'light' ? '#fff' : '#000',
+    color:         theme === 'light' ? '#111' : '#fff',
+    fontFamily:    'system-ui, sans-serif',
+    overflow:      'hidden',
+    position:      'relative',
   };
 }
+
+const sectionBadgeStyle = {
+  position:     'absolute',
+  top:          8,
+  left:         10,
+  fontSize:     '0.75rem',
+  fontWeight:   600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  opacity:      0.7,
+  zIndex:       10,
+};
 
 const statusStyle = {
   position:   'absolute',
@@ -182,4 +263,40 @@ const captionTextStyle = {
   fontWeight: 600,
   textShadow: '0 2px 8px rgba(0,0,0,0.7)',
   wordBreak:  'break-word',
+};
+
+const multiColContainerStyle = {
+  flex:      1,
+  display:   'flex',
+  flexDirection: 'row',
+  overflow:  'hidden',
+};
+
+function colStyle(theme, count) {
+  return {
+    flex:          1,
+    display:       'flex',
+    flexDirection: 'column',
+    borderRight:   count > 1 ? `1px solid ${theme === 'light' ? '#ddd' : '#333'}` : 'none',
+    overflow:      'hidden',
+  };
+}
+
+const colLabelStyle = {
+  padding:    '4px 12px',
+  fontSize:   '0.7rem',
+  fontWeight: 600,
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  opacity:    0.5,
+  flexShrink: 0,
+};
+
+const colCaptionAreaStyle = {
+  flex:           1,
+  display:        'flex',
+  alignItems:     'flex-end',
+  justifyContent: 'center',
+  padding:        '0.5rem 1.5rem 2rem',
+  textAlign:      'center',
 };

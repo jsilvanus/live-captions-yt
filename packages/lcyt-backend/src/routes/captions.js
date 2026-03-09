@@ -281,12 +281,17 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
                 console.warn(`[captions] Generic target ${target.id} error: ${err.message}`);
               });
             } else if (target.type === 'viewer' && target.viewerKey) {
-              // Broadcast each caption to viewer SSE subscribers
+              // Broadcast each caption to viewer SSE subscribers.
+              // Include original text, composed text, all translations, and metadata codes
+              // so viewer pages can filter/display by language and show section info.
               for (const caption of genericCaptions) {
                 broadcastToViewers(target.viewerKey, {
-                  text: caption.composedText ?? caption.text,
+                  text: caption.text,
+                  composedText: caption.composedText,
                   sequence: session.sequence,
                   timestamp: caption.timestamp,
+                  ...(caption.translations && { translations: caption.translations }),
+                  ...(caption.codes && { codes: caption.codes }),
                 });
               }
             }
