@@ -123,11 +123,17 @@ After receiving this event, the client should close the SSE connection and stop 
 ## Example: Full Client Flow (Browser)
 
 ```js
-// 1. Register session
+// 1. Register session (target-array mode — no top-level streamKey)
 const reg = await fetch('/live', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ apiKey, streamKey, domain: location.origin }),
+  body: JSON.stringify({
+    apiKey,
+    domain: location.origin,
+    targets: [
+      { id: 'yt-main', type: 'youtube', streamKey: 'xxxx-xxxx-xxxx-xxxx' },
+    ],
+  }),
 });
 const { token } = await reg.json();
 
@@ -148,14 +154,23 @@ es.addEventListener('session_closed', () => {
   es.close();
 });
 
-// 3. Send a caption
+// 3. Send a caption with a Finnish translation
 const res = await fetch('/captions', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   },
-  body: JSON.stringify({ captions: [{ text: 'Hello, world!' }] }),
+  body: JSON.stringify({
+    captions: [
+      {
+        text: 'Hello, world!',
+        translations: { 'fi-FI': 'Hei maailma!' },
+        captionLang: 'fi-FI',
+        showOriginal: false,
+      },
+    ],
+  }),
 });
 const { requestId } = await res.json();
 // Wait for caption_result with matching requestId on the SSE stream

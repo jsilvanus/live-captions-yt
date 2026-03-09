@@ -24,21 +24,82 @@ POST /live
 Content-Type: application/json
 ```
 
+**Target-array mode** (recommended) — pass all YouTube stream keys and optional generic webhook targets inside the `targets` array and omit `streamKey`:
+
+```json
+{
+  "apiKey": "your-api-key",
+  "domain": "https://your-app.example.com",
+  "targets": [
+    { "id": "yt-main",    "type": "youtube", "streamKey": "xxxx-xxxx-xxxx-xxxx" },
+    { "id": "yt-backup",  "type": "youtube", "streamKey": "yyyy-yyyy-yyyy-yyyy" },
+    {
+      "id": "webhook-1",
+      "type": "generic",
+      "url": "https://webhook.example.com/captions",
+      "headers": { "Authorization": "Bearer my-webhook-secret" }
+    }
+  ]
+}
+```
+
+**Legacy single-target mode** — pass a single stream key as `streamKey`. Additional targets can still be supplied via the `targets` array.
+
 ```json
 {
   "apiKey": "your-api-key",
   "streamKey": "xxxx-xxxx-xxxx-xxxx",
-  "domain": "https://your-app.example.com",
-  "sequence": 0
+  "domain": "https://your-app.example.com"
 }
 ```
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `apiKey` | `string` | Yes | API key issued by the server admin |
-| `streamKey` | `string` | Yes | YouTube Live stream key |
+| `streamKey` | `string` | No | YouTube Live stream key. Omit in target-array mode. |
 | `domain` | `string` | Yes | Registered origin domain (used for CORS and session isolation) |
 | `sequence` | `number` | No | Override the starting sequence number. When omitted, the server uses the persisted per-API-key sequence (see [Per-key Sequence Persistence](#per-api-key-sequence-persistence)). |
+| `targets` | `array` | No | Array of caption delivery targets. See [Caption Targets](#caption-targets) below. |
+
+### Caption Targets
+
+Each entry in the `targets` array describes one delivery destination. Two target types are supported.
+
+**YouTube target** — delivers captions via the YouTube Live HTTP caption ingestion API:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | Client-assigned identifier (used for logging and updates) |
+| `type` | `string` | Yes | Must be `"youtube"` |
+| `streamKey` | `string` | Yes | YouTube Live stream key for this target |
+
+**Generic (webhook) target** — POSTs caption data as JSON to an arbitrary HTTP endpoint:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | Client-assigned identifier |
+| `type` | `string` | Yes | Must be `"generic"` |
+| `url` | `string` | Yes | Destination URL (must use `http` or `https`) |
+| `headers` | `object` | No | Extra HTTP headers to include in the webhook request (e.g. `Authorization`) |
+
+Generic targets receive a JSON body structured as follows (see also [`POST /captions`](./captions.md#generic-target-payload)):
+
+```json
+{
+  "source": "https://your-app.example.com",
+  "sequence": 7,
+  "captions": [
+    {
+      "text": "Hello, world!",
+      "composedText": "Hello, world! <br>Hei maailma!",
+      "timestamp": "2024-01-01T12:00:02.000",
+      "translations": { "fi-FI": "Hei maailma!" },
+      "captionLang": "fi-FI",
+      "showOriginal": true
+    }
+  ]
+}
+```
 
 **Response — `200 OK`**
 
@@ -101,7 +162,7 @@ Authorization: Bearer <token>
 
 ## `PATCH /live` — Update Session
 
-Update mutable session fields. Currently supports advancing the sequence counter.
+Update mutable session fields. Supports advancing the sequence counter and replacing the active caption targets at runtime.
 
 **Authentication:** Bearer JWT
 
@@ -115,21 +176,31 @@ Content-Type: application/json
 
 ```json
 {
-  "sequence": 10
+  "sequence": 10,
+  "targets": [
+    { "id": "yt-main", "type": "youtube", "streamKey": "xxxx-xxxx-xxxx-xxxx" }
+  ]
 }
 ```
 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `sequence` | `number` | No | New sequence counter value. Setting `0` explicitly resets the persisted per-key sequence. |
+| `targets` | `array` | No | Replace all active caption targets. Uses the same format as `POST /live`. Old YouTube senders are stopped before the new ones start. |
 
 **Response — `200 OK`**
 
 ```json
 {
-  "sequence": 10
+  "sequence": 10,
+  "targetsCount": 1
 }
 ```
+
+| Field | Type | Description |
+|---|---|---|
+| `sequence` | `number` | Current sequence counter |
+| `targetsCount` | `number` | Number of active targets after the update |
 
 ---
 
@@ -156,7 +227,7 @@ Authorization: Bearer <token>
 ```
 
 **Side effects:**
-- Closes the `YoutubeLiveCaptionSender` for this session
+- Closes the `YoutubeLiveCaptionSender` for this session (primary sender and all extra YouTube targets)
 - Writes a `session_stats` record to the database
 - Emits a `session_closed` event to any connected SSE clients
 
