@@ -25,6 +25,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { resolveViewerText, collectLangTexts } from '../lib/viewerUtils.js';
 
 const RECONNECT_DELAY_MS = 3000;
 const DEFAULT_MAX_ENTRIES = 50;
@@ -56,16 +57,6 @@ function CaptionText({ text, style }) {
       ))}
     </span>
   );
-}
-
-/**
- * Resolve the display text for a caption event given the requested lang.
- */
-function resolveText(data, lang) {
-  if (!lang || lang === '') return data.composedText ?? data.text ?? '';
-  if (lang === 'original') return data.text ?? '';
-  const specific = data.translations?.[lang];
-  return specific ?? data.composedText ?? data.text ?? '';
 }
 
 export function EmbedViewerPage() {
@@ -131,23 +122,10 @@ export function EmbedViewerPage() {
           // Build the entry object
           const section = data.codes?.section || '';
 
-          let entryTexts;
-          if (showAll) {
-            // Collect all available languages
-            entryTexts = { original: data.text || '' };
-            if (data.translations && typeof data.translations === 'object') {
-              for (const [l, t] of Object.entries(data.translations)) {
-                entryTexts[l] = t;
-              }
-            }
-          } else {
-            entryTexts = null; // resolved per-render
-          }
-
           const entry = {
             id:        data.sequence ?? Date.now(),
-            text:      showAll ? null : resolveText(data, lang),
-            langTexts: showAll ? entryTexts : null,
+            text:      showAll ? null : resolveViewerText(data, lang),
+            langTexts: showAll ? collectLangTexts(data) : null,
             section,
             timestamp: data.timestamp || new Date().toISOString(),
           };

@@ -21,6 +21,7 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { resolveViewerText, collectLangTexts } from '../lib/viewerUtils.js';
 
 const RECONNECT_DELAY_MS = 3000;
 const DEFAULT_BACKEND    = 'https://api.lcyt.fi';
@@ -111,25 +112,9 @@ export function ViewerPage() {
           }
 
           if (showAll) {
-            // Build / update the per-language text map
-            setLangTexts(prev => {
-              const next = { ...prev, original: data.text || '' };
-              if (data.translations && typeof data.translations === 'object') {
-                for (const [l, t] of Object.entries(data.translations)) {
-                  next[l] = t;
-                }
-              }
-              return next;
-            });
-          } else if (lang && lang !== 'original') {
-            // Show the requested translation, fall back to composed then original
-            const specific = data.translations?.[lang];
-            setText(specific ?? data.composedText ?? data.text ?? '');
-          } else if (lang === 'original') {
-            setText(data.text ?? '');
+            setLangTexts(prev => ({ ...prev, ...collectLangTexts(data) }));
           } else {
-            // Default: show composed text (original or original+translation)
-            setText(data.composedText ?? data.text ?? '');
+            setText(resolveViewerText(data, lang));
           }
         } catch {}
       });
