@@ -18,6 +18,8 @@ import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
+import { createImagesRouter } from './routes/images.js';
+import { createDskRouter } from './routes/dsk.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
 
@@ -76,6 +78,15 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
   console.info('ℹ FREE_APIKEY_ACTIVE is not set — POST /keys?freetier is disabled.');
 } else {
   console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
+}
+
+if (process.env.GRAPHICS_ENABLED === '1') {
+  const graphicsDir = process.env.GRAPHICS_DIR || '/data/images';
+  const maxFileMB   = ((Number(process.env.GRAPHICS_MAX_FILE_BYTES)    || 5  * 1024 * 1024) / 1024 / 1024).toFixed(0);
+  const maxStoreMB  = ((Number(process.env.GRAPHICS_MAX_STORAGE_BYTES) || 50 * 1024 * 1024) / 1024 / 1024).toFixed(0);
+  console.info(`✓ Graphics upload enabled — dir: ${graphicsDir}, max file: ${maxFileMB} MB, max per-key storage: ${maxStoreMB} MB`);
+} else {
+  console.info('ℹ GRAPHICS_ENABLED is not set — POST /images (upload) is disabled. Set GRAPHICS_ENABLED=1 to enable.');
 }
 
 if (process.env.RTMP_APPLICATION) {
@@ -327,6 +338,8 @@ app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
+app.use('/images', createImagesRouter(db, auth));
+app.use('/dsk', createDskRouter(db, store));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 

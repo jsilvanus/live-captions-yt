@@ -1,50 +1,103 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 
-export function FilesModal({ isOpen, onClose }) {
+const ACCEPTED_MIME = 'image/png,image/webp,image/svg+xml';
+
+export function FilesModal({ isOpen, onClose, initialTab }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
   const { t } = useLang();
 
+  const hasImages = session.graphicsEnabled;
+  const [tab, setTab] = useState(initialTab || 'captions');
+
+  // ── Caption files ───────────────────────────────────────
   const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingFiles, setLoadingFiles] = useState(false);
+
+  // ── Images ──────────────────────────────────────────────
+  const [images, setImages] = useState([]);
+  const [loadingImages, setLoadingImages] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const imageInputRef = useRef(null);
+  const pendingFileRef = useRef(null);
+  const [shorthandPrompt, setShorthandPrompt] = useState(null); // { file } | null
+
+  // Reset tab if initialTab changes while open
+  useEffect(() => {
+    if (isOpen && initialTab) setTab(initialTab);
+  }, [isOpen, initialTab]);
 
   useEffect(() => {
     if (!isOpen || !session.connected) return;
-    loadFiles();
-  }, [isOpen, session.connected]);
+    if (tab === 'captions') loadFiles();
+    if (tab === 'images') loadImages();
+  }, [isOpen, session.connected, tab]);
 
   async function loadFiles() {
-    setLoading(true);
-    try {
-      const data = await session.listFiles();
-      setFiles(data.files || []);
-    } catch (err) {
-      showToast(err.message, 'error');
-    } finally {
-      setLoading(false);
-    }
+    setLoadingFiles(true);
+    try { setFiles((await session.listFiles()).files || []); }
+    catch (err) { showToast(err.message, 'error'); }
+    finally { setLoadingFiles(false); }
   }
 
-  async function handleDelete(fileId) {
+  async function loadImages() {
+    setLoadingImages(true);
+    try { setImages((await session.listImages()).images || []); }
+    catch (err) { showToast(err.message, 'error'); }
+    finally { setLoadingImages(false); }
+  }
+
+  // ── Caption file actions ────────────────────────────────
+  async function handleDeleteFile(id) {
     try {
-      await session.deleteFile(fileId);
-      setFiles(prev => prev.filter(f => f.id !== fileId));
+      await session.deleteFile(id);
+      setFiles(prev => prev.filter(f => f.id !== id));
       showToast(t('settings.files.deleted'), 'success', 2000);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    } catch (err) { showToast(err.message, 'error'); }
   }
 
   function handleDownload(file) {
     const url = session.getFileDownloadUrl(file.id);
     if (!url) return;
     const a = document.createElement('a');
-    a.href = url;
-    a.download = file.filename;
-    a.click();
+    a.href = url; a.download = file.filename; a.click();
+  }
+
+  // ── Image actions ────────────────────────────────────────
+  function handleImagePickerChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    pendingFileRef.current = file;
+    setShorthandPrompt({ file });
+    if (imageInputRef.current) imageInputRef.current.value = '';
+  }
+
+  async function handleUploadConfirm(shorthand) {
+    const file = pendingFileRef.current;
+    setShorthandPrompt(null);
+    pendingFileRef.current = null;
+    if (!file || !shorthand) return;
+    setUploading(true);
+    try {
+      await session.uploadImage(file, shorthand);
+      showToast(`Image '${shorthand}' uploaded`, 'success', 2500);
+      loadImages();
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleDeleteImage(id, shorthand) {
+    try {
+      await session.deleteImage(id);
+      setImages(prev => prev.filter(i => i.id !== id));
+      showToast(`Image '${shorthand}' deleted`, 'success', 2000);
+    } catch (err) { showToast(err.message, 'error'); }
   }
 
   function formatSize(bytes) {
@@ -53,37 +106,58 @@ export function FilesModal({ isOpen, onClose }) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  // ── Keyboard close ───────────────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+    function onKey(e) { if (e.key === 'Escape' && !shorthandPrompt) onClose(); }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose, shorthandPrompt]);
 
   if (!isOpen) return null;
 
+  const tabs = hasImages ? ['captions', 'images'] : ['captions'];
+
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
-      <div className="settings-modal__backdrop" onClick={onClose} />
+      <div className="settings-modal__backdrop" onClick={!shorthandPrompt ? onClose : undefined} />
       <div className="settings-modal__box">
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('settings.files.title')}</span>
           <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
         </div>
+
+        {/* Tabs */}
+        {tabs.length > 1 && (
+          <div className="settings-modal__tabs">
+            {tabs.map(tkey => (
+              <button
+                key={tkey}
+                className={`settings-tab${tab === tkey ? ' settings-tab--active' : ''}`}
+                onClick={() => setTab(tkey)}
+              >
+                {tkey === 'captions' ? t('settings.files.tabCaptions') : t('settings.files.tabImages')}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="settings-modal__body">
           <div className="settings-panel settings-panel--active">
             {!session.connected && (
               <span className="settings-field__hint">{t('settings.actions.notConnected')}</span>
             )}
-            {session.connected && (
+
+            {/* ── Captions tab ── */}
+            {session.connected && tab === 'captions' && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span className="settings-field__hint">{t('settings.files.hint')}</span>
-                  <button className="btn btn--secondary btn--sm" onClick={loadFiles} disabled={loading}>
-                    {loading ? '…' : '↺'}
+                  <button className="btn btn--secondary btn--sm" onClick={loadFiles} disabled={loadingFiles}>
+                    {loadingFiles ? '…' : '↺'}
                   </button>
                 </div>
-                {files.length === 0 && !loading && (
+                {files.length === 0 && !loadingFiles && (
                   <span className="settings-field__hint">{t('settings.files.empty')}</span>
                 )}
                 {files.length > 0 && (
@@ -100,24 +174,71 @@ export function FilesModal({ isOpen, onClose }) {
                     <tbody>
                       {files.map(file => (
                         <tr key={file.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
-                          <td style={{ padding: '4px 6px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.filename}>
-                            {file.filename}
-                          </td>
+                          <td style={{ padding: '4px 6px', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={file.filename}>{file.filename}</td>
                           <td style={{ padding: '4px 6px' }}>{file.lang || '—'}</td>
                           <td style={{ padding: '4px 6px' }}>{file.format}</td>
                           <td style={{ padding: '4px 6px', textAlign: 'right' }}>{formatSize(file.sizeBytes)}</td>
                           <td style={{ padding: '4px 6px', whiteSpace: 'nowrap' }}>
-                            <button
-                              className="btn btn--secondary btn--sm"
-                              onClick={() => handleDownload(file)}
-                              title={t('settings.files.download')}
-                              style={{ marginRight: 4 }}
-                            >⬇</button>
-                            <button
-                              className="btn btn--secondary btn--sm"
-                              onClick={() => handleDelete(file.id)}
-                              title={t('settings.files.delete')}
-                            >✕</button>
+                            <button className="btn btn--secondary btn--sm" onClick={() => handleDownload(file)} title={t('settings.files.download')} style={{ marginRight: 4 }}>⬇</button>
+                            <button className="btn btn--secondary btn--sm" onClick={() => handleDeleteFile(file.id)} title={t('settings.files.delete')}>✕</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </>
+            )}
+
+            {/* ── Images tab ── */}
+            {session.connected && tab === 'images' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span className="settings-field__hint">
+                    Trigger with <code style={{ fontSize: 11 }}>{`<!-- graphics:shorthand -->`}</code>
+                  </span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn--secondary btn--sm" onClick={loadImages} disabled={loadingImages}>{loadingImages ? '…' : '↺'}</button>
+                    <button
+                      className="btn btn--primary btn--sm"
+                      onClick={() => imageInputRef.current?.click()}
+                      disabled={uploading}
+                    >
+                      {uploading ? 'Uploading…' : '+ Upload'}
+                    </button>
+                  </div>
+                </div>
+                <input ref={imageInputRef} type="file" accept={ACCEPTED_MIME} style={{ display: 'none' }} onChange={handleImagePickerChange} />
+
+                {images.length === 0 && !loadingImages && (
+                  <span className="settings-field__hint">No images uploaded yet. PNG, WebP and SVG are supported.</span>
+                )}
+                {images.length > 0 && (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--color-border)' }}>
+                        <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--color-text-dim)', width: 40 }}></th>
+                        <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--color-text-dim)' }}>Shorthand</th>
+                        <th style={{ textAlign: 'left', padding: '4px 6px', color: 'var(--color-text-dim)' }}>Type</th>
+                        <th style={{ textAlign: 'right', padding: '4px 6px', color: 'var(--color-text-dim)' }}>Size</th>
+                        <th style={{ padding: '4px 6px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {images.map(img => (
+                        <tr key={img.id} style={{ borderBottom: '1px solid var(--color-border)' }}>
+                          <td style={{ padding: '4px 6px' }}>
+                            <img
+                              src={session.getImageViewUrl(img.id)}
+                              alt={img.shorthand}
+                              style={{ width: 32, height: 32, objectFit: 'contain', background: '#333', borderRadius: 3 }}
+                            />
+                          </td>
+                          <td style={{ padding: '4px 6px', fontFamily: 'monospace' }}>{img.shorthand}</td>
+                          <td style={{ padding: '4px 6px', color: 'var(--color-text-dim)' }}>{img.mimeType?.split('/')[1] || '?'}</td>
+                          <td style={{ padding: '4px 6px', textAlign: 'right' }}>{formatSize(img.sizeBytes)}</td>
+                          <td style={{ padding: '4px 6px' }}>
+                            <button className="btn btn--secondary btn--sm" onClick={() => handleDeleteImage(img.id, img.shorthand)} title="Delete">✕</button>
                           </td>
                         </tr>
                       ))}
@@ -128,12 +249,79 @@ export function FilesModal({ isOpen, onClose }) {
             )}
           </div>
         </div>
+
         <div className="settings-modal__footer">
           <div className="settings-modal__actions">
             <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>
               {t('settings.footer.close')}
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Shorthand prompt overlay */}
+      {shorthandPrompt && (
+        <ShorthandDialog
+          filename={shorthandPrompt.file.name}
+          onConfirm={handleUploadConfirm}
+          onCancel={() => { setShorthandPrompt(null); pendingFileRef.current = null; }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ShorthandDialog({ filename, onConfirm, onCancel }) {
+  const [value, setValue] = useState(() => {
+    // Pre-fill from filename without extension
+    return filename.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '-').slice(0, 32).toLowerCase();
+  });
+  const [error, setError] = useState('');
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  function validate(v) {
+    if (!v) return 'Shorthand is required';
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$/.test(v)) return 'Use letters, digits, _ or - (start with letter/digit, max 32 chars)';
+    return '';
+  }
+
+  function submit() {
+    const err = validate(value);
+    if (err) { setError(err); return; }
+    onConfirm(value.trim());
+  }
+
+  function onKey(e) {
+    if (e.key === 'Enter') submit();
+    if (e.key === 'Escape') onCancel();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} onClick={onCancel} />
+      <div style={{ position: 'relative', background: 'var(--color-bg)', border: '1px solid var(--color-border)', borderRadius: 8, padding: 24, minWidth: 320, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }}>
+        <div style={{ marginBottom: 12, fontWeight: 600 }}>Set shorthand name</div>
+        <div style={{ fontSize: 12, color: 'var(--color-text-dim)', marginBottom: 12 }}>
+          File: <span style={{ fontFamily: 'monospace' }}>{filename}</span><br />
+          Used in captions as: <code style={{ fontSize: 11 }}>{`<!-- graphics:${value || 'name'} -->`}</code>
+        </div>
+        <input
+          ref={inputRef}
+          type="text"
+          className="settings-field__input"
+          value={value}
+          onChange={e => { setValue(e.target.value); setError(''); }}
+          onKeyDown={onKey}
+          placeholder="e.g. logo, pastor, prayer"
+          maxLength={32}
+          style={{ marginBottom: 6 }}
+        />
+        {error && <div style={{ color: 'var(--color-error, #e55)', fontSize: 12, marginBottom: 8 }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+          <button className="btn btn--secondary" onClick={onCancel}>Cancel</button>
+          <button className="btn btn--primary" onClick={submit}>Upload</button>
         </div>
       </div>
     </div>

@@ -1,6 +1,10 @@
 import { Router } from 'express';
-import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey } from '../db.js';
+import { join, resolve, basename } from 'node:path';
+import { existsSync, unlinkSync } from 'node:fs';
+import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages } from '../db.js';
 import { adminMiddleware } from '../middleware/admin.js';
+
+const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -111,6 +115,7 @@ export function createKeysRouter(db) {
     if ('lifetime_limit' in body) updates.lifetime_limit = body.lifetime_limit ?? null;
     if ('backend_file_enabled' in body) updates.backend_file_enabled = !!body.backend_file_enabled;
     if ('relay_allowed' in body) updates.relay_allowed = !!body.relay_allowed;
+    if ('graphics_enabled' in body) updates.graphics_enabled = !!body.graphics_enabled;
 
     updateKey(db, req.params.key, updates);
 
@@ -126,6 +131,17 @@ export function createKeysRouter(db) {
     }
 
     if (req.query.permanent === 'true') {
+      // Delete all images from disk before removing DB rows
+      const imageRows = deleteAllImages(db, req.params.key);
+      for (const row of imageRows) {
+        try {
+          const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+          const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
+          if (existsSync(filepath)) unlinkSync(filepath);
+        } catch (e) {
+          console.warn('[keys] Could not delete image file on key deletion:', e.message);
+        }
+      }
       deleteKey(db, req.params.key);
       return res.status(200).json({ key: req.params.key, deleted: true });
     } else {

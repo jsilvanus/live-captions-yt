@@ -12,6 +12,7 @@ import { EmbedFileDropPage } from './components/EmbedFileDropPage';
 import { EmbedFilesPage } from './components/EmbedFilesPage';
 import { EmbedSettingsPage } from './components/EmbedSettingsPage';
 import { EmbedRtmpPage } from './components/EmbedRtmpPage';
+import { DskPage } from './components/DskPage';
 
 const path = window.location.pathname;
 
@@ -27,6 +28,7 @@ function getPage() {
   if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
   if (path.startsWith('/embed/settings')) return <EmbedSettingsPage />;
   if (path.startsWith('/embed/rtmp'))     return <EmbedRtmpPage />;
+  if (path.startsWith('/dsk/'))           return <DskPage />;
   return <App />;
 }
 

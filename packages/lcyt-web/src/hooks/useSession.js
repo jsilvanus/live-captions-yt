@@ -38,6 +38,7 @@ export function useSession({
   const [streamKey, setStreamKey] = useState('');
   const [startedAt, setStartedAt] = useState(null);
   const [micHolder, setMicHolder] = useState(null);
+  const [graphicsEnabled, setGraphicsEnabled] = useState(false);
   // 'unknown' | 'checking' | 'ok' | 'unreachable'
   const [healthStatus, setHealthStatus] = useState('unknown');
 
@@ -181,6 +182,7 @@ export function useSession({
     setSequence(sender.sequence);
     setSyncOffset(sender.syncOffset);
     setStartedAt(sender.startedAt);
+    setGraphicsEnabled(sender.graphicsEnabled === true);
 
     // Persist backendUrl and apiKey; streamKey is omitted when not provided
     // since targets are now managed in the CC modal.
@@ -212,6 +214,7 @@ export function useSession({
     setSyncOffset(0);
     setStartedAt(null);
     setMicHolder(null);
+    setGraphicsEnabled(false);
 
     cbs.current.onDisconnected?.();
   }
@@ -381,6 +384,64 @@ export function useSession({
       return { id: t.id, type: 'generic', url: t.url, headers };
     });
     await senderRef.current.updateSession({ targets });
+  }
+
+
+  // ─── Image / graphics management ────────────────────────
+  async function uploadImage(file, shorthand) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const form = new FormData();
+    form.append('file', file);
+    form.append('shorthand', shorthand);
+    const res = await fetch(`${url}/images`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Upload failed (${res.status})`);
+    }
+    return res.json();
+  }
+
+  async function listImages() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/images`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`Failed to list images (${res.status})`);
+    return res.json();
+  }
+
+  async function deleteImage(id) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/images/${id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to delete image (${res.status})`);
+    return res.json();
+  }
+
+  function getImageViewUrl(id) {
+    const url = backendUrlRef.current;
+    if (!url) return null;
+    return `${url}/images/${id}`;
+  }
+
+  function getDskUrl(opts = {}) {
+    const key = senderRef.current?.apiKey;
+    const serverUrl = backendUrlRef.current;
+    if (!key || !serverUrl) return null;
+    const params = new URLSearchParams({ server: serverUrl });
+    if (opts.cc) params.set('cc', '1');
+    if (opts.bg) params.set('bg', opts.bg);
+    return `/dsk/${key}?${params}`;
   }
 
   // ─── Self-service account management ────────────────────
@@ -591,12 +652,13 @@ export function useSession({
 
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
-    micHolder, clientId: CLIENT_ID,
+    micHolder, clientId: CLIENT_ID, graphicsEnabled,
     healthStatus, checkHealth,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
+    uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };

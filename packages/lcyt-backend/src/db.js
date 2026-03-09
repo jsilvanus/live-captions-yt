@@ -50,6 +50,8 @@ export function initDb(dbPath) {
   // 0 = not allowed (default), 1 = allowed to configure RTMP relay via /stream
   if (!existingCols.has('relay_allowed')) db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('relay_active'))  db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
+  // 0 = not allowed (default), 1 = allowed to upload images/graphics via /images
+  if (!existingCols.has('graphics_enabled')) db.exec('ALTER TABLE api_keys ADD COLUMN graphics_enabled INTEGER NOT NULL DEFAULT 0');
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)
@@ -203,6 +205,12 @@ export function initDb(dbPath) {
       size_bytes  INTEGER NOT NULL DEFAULT 0
     )
   `);
+  // Additive migrations for caption_files (images support)
+  {
+    const cfCols = new Set(db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name));
+    if (!cfCols.has('shorthand')) db.exec('ALTER TABLE caption_files ADD COLUMN shorthand TEXT');
+    if (!cfCols.has('mime_type')) db.exec('ALTER TABLE caption_files ADD COLUMN mime_type TEXT');
+  }
 
   // Per-stream personified RTMP stats (tied to an API key and target endpoint)
   db.exec(`
@@ -319,6 +327,7 @@ export function formatKey(row) {
     backendFileEnabled: row.backend_file_enabled === 1,
     relayAllowed: row.relay_allowed === 1,
     relayActive:  row.relay_active  === 1,
+    graphicsEnabled: row.graphics_enabled === 1,
   };
 }
 
@@ -438,10 +447,10 @@ export function getKeyByEmail(db, email) {
  * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, graphics_enabled } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, graphics_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -451,6 +460,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     lifetime_limit ?? null,
     (backend_file_enabled ?? false) ? 1 : 0,
     (relay_allowed ?? false) ? 1 : 0,
+    (graphics_enabled ?? false) ? 1 : 0,
   );
   return getKey(db, resolvedKey);
 }
@@ -659,7 +669,7 @@ export function getDomainUsageStats(db, { from, to, granularity = 'day', domain 
  * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, graphics_enabled } = {}) {
   const parts = [];
   const params = [];
 
@@ -686,6 +696,10 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (relay_allowed !== undefined) {
     parts.push('relay_allowed = ?');
     params.push(relay_allowed ? 1 : 0);
+  }
+  if (graphics_enabled !== undefined) {
+    parts.push('graphics_enabled = ?');
+    params.push(graphics_enabled ? 1 : 0);
   }
 
   if (parts.length === 0) return false;
@@ -886,13 +900,13 @@ export function updateCaptionFileSize(db, id, sizeBytes) {
 }
 
 /**
- * List all caption files for an API key.
+ * List all caption files (non-image) for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @returns {Array}
  */
 export function listCaptionFiles(db, apiKey) {
-  return db.prepare('SELECT * FROM caption_files WHERE api_key = ? ORDER BY created_at DESC').all(apiKey);
+  return db.prepare("SELECT * FROM caption_files WHERE api_key = ? AND type != 'image' ORDER BY created_at DESC").all(apiKey);
 }
 
 /**
@@ -927,7 +941,124 @@ export function deleteCaptionFile(db, id, apiKey) {
  * @param {string} apiKey
  */
 export function deleteAllCaptionFiles(db, apiKey) {
-  db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(apiKey);
+  db.prepare("DELETE FROM caption_files WHERE api_key = ? AND type != 'image'").run(apiKey);
+}
+
+// ─── Image / graphics helpers ─────────────────────────────────────────────────
+
+/**
+ * Check whether graphics upload is enabled for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isGraphicsEnabled(db, apiKey) {
+  const row = db.prepare('SELECT graphics_enabled FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.graphics_enabled === 1 : false;
+}
+
+/**
+ * Register an uploaded image in caption_files.
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ apiKey: string, filename: string, shorthand: string, mimeType: string, sizeBytes: number }} data
+ * @returns {number} row id
+ */
+export function registerImage(db, { apiKey, filename, shorthand, mimeType, sizeBytes }) {
+  const result = db.prepare(
+    "INSERT INTO caption_files (api_key, filename, shorthand, mime_type, size_bytes, type, format) VALUES (?, ?, ?, ?, ?, 'image', 'image')"
+  ).run(apiKey, filename, shorthand, mimeType, sizeBytes ?? 0);
+  return result.lastInsertRowid;
+}
+
+/**
+ * List all images for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {Array}
+ */
+export function listImages(db, apiKey) {
+  return db.prepare("SELECT * FROM caption_files WHERE api_key = ? AND type = 'image' ORDER BY created_at DESC").all(apiKey);
+}
+
+/**
+ * Get a single image row by id (no api_key filter — for public DSK page serving).
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @returns {object|null}
+ */
+export function getImage(db, id) {
+  return db.prepare("SELECT * FROM caption_files WHERE id = ? AND type = 'image'").get(id) ?? null;
+}
+
+/**
+ * Get a single image row by id, scoped to an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @param {string} apiKey
+ * @returns {object|null}
+ */
+export function getImageByKey(db, id, apiKey) {
+  return db.prepare("SELECT * FROM caption_files WHERE id = ? AND api_key = ? AND type = 'image'").get(id, apiKey) ?? null;
+}
+
+/**
+ * Get an image by shorthand name for a specific API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} shorthand
+ * @returns {object|null}
+ */
+export function getImageByShorthand(db, apiKey, shorthand) {
+  return db.prepare("SELECT * FROM caption_files WHERE api_key = ? AND shorthand = ? AND type = 'image'").get(apiKey, shorthand) ?? null;
+}
+
+/**
+ * Check whether a shorthand name is already taken for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} shorthand
+ * @returns {boolean}
+ */
+export function isShorthandTaken(db, apiKey, shorthand) {
+  const row = db.prepare("SELECT id FROM caption_files WHERE api_key = ? AND shorthand = ? AND type = 'image'").get(apiKey, shorthand);
+  return !!row;
+}
+
+/**
+ * Delete an image row scoped to an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @param {string} apiKey
+ * @returns {object|null} the deleted row (for disk cleanup), or null if not found
+ */
+export function deleteImage(db, id, apiKey) {
+  const row = getImageByKey(db, id, apiKey);
+  if (!row) return null;
+  db.prepare('DELETE FROM caption_files WHERE id = ?').run(id);
+  return row;
+}
+
+/**
+ * Delete all image rows for an API key (for hard-delete cascade).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {Array} deleted rows (for disk cleanup)
+ */
+export function deleteAllImages(db, apiKey) {
+  const rows = listImages(db, apiKey);
+  db.prepare("DELETE FROM caption_files WHERE api_key = ? AND type = 'image'").run(apiKey);
+  return rows;
+}
+
+/**
+ * Get total image storage in bytes for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {number}
+ */
+export function getTotalImageStorageBytes(db, apiKey) {
+  const row = db.prepare("SELECT COALESCE(SUM(size_bytes),0) AS total FROM caption_files WHERE api_key = ? AND type = 'image'").get(apiKey);
+  return row ? row.total : 0;
 }
 
 
