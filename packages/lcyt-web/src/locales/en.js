@@ -39,6 +39,8 @@ export default {
     },
     basic: {
       showAdvanced: 'Show advanced options',
+      holdToSpeak: 'Hold to speak (mic)',
+      holdToSpeakHint: 'When enabled, the microphone only captures audio while you hold the mic button.',
     },
     captions: {
       batchWindow: 'Batch window',

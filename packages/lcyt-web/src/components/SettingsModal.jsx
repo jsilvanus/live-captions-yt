@@ -125,6 +125,9 @@ export function SettingsModal({ isOpen, onClose, inline }) {
 
   const [activeTab, setActiveTab] = useState('basic');
   const [advancedMode, setAdvancedModeState] = useState(getAdvancedMode);
+  const [holdToSpeak, setHoldToSpeakState] = useState(
+    () => { try { return localStorage.getItem('lcyt:hold-to-speak') === '1'; } catch { return false; } }
+  );
 
   // ── Basic tab fields ──────────────────────────────────────
   const [backendUrl, setBackendUrl] = useState('');
@@ -158,6 +161,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
     setTextSize(savedSize);
     applyTextSize(savedSize);
     setAdvancedModeState(getAdvancedMode());
+    try { setHoldToSpeakState(localStorage.getItem('lcyt:hold-to-speak') === '1'); } catch {}
     // Load relay settings
     setRelayList(buildInitialRelayList());
     setRelayError('');
@@ -219,6 +223,12 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   function handleAdvancedModeChange(val) {
     setAdvancedModeState(val);
     setAdvancedMode(val);
+  }
+
+  function handleHoldToSpeakChange(val) {
+    setHoldToSpeakState(val);
+    try { localStorage.setItem('lcyt:hold-to-speak', val ? '1' : '0'); } catch {}
+    window.dispatchEvent(new Event('lcyt:stt-config-changed'));
   }
 
   // ── Relay helpers ──────────────────────────────────────────
@@ -394,6 +404,18 @@ export function SettingsModal({ isOpen, onClose, inline }) {
                   />
                   {t('settings.basic.showAdvanced')}
                 </label>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={holdToSpeak}
+                    onChange={e => handleHoldToSpeakChange(e.target.checked)}
+                  />
+                  {t('settings.basic.holdToSpeak')}
+                </label>
+                <span className="settings-field__hint">{t('settings.basic.holdToSpeakHint')}</span>
               </div>
             </div>
           )}

@@ -91,20 +91,32 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const [isHolding, setIsHolding] = useState(false);
   const holdTimerRef = useRef(null);
 
+  // Hold-to-speak mode
+  const [holdSpeakEnabled, setHoldSpeakEnabled] = useState(
+    () => { try { return localStorage.getItem('lcyt:hold-to-speak') === '1'; } catch { return false; } }
+  );
+
   // Stable refs so imperative handles never have stale closures
-  const toggleFnRef   = useRef(null);
-  const holdStartRef  = useRef(null);
-  const holdEndRef    = useRef(null);
+  const toggleFnRef      = useRef(null);
+  const holdStartRef     = useRef(null);
+  const holdEndRef       = useRef(null);
+  const holdSpeakStartRef = useRef(null);
+  const holdSpeakEndRef   = useRef(null);
   useImperativeHandle(ref, () => ({
-    toggle:           ()  => toggleFnRef.current?.(),
-    holdStart:        (e) => holdStartRef.current?.(e),
-    holdEnd:          ()  => holdEndRef.current?.(),
+    toggle:            ()  => toggleFnRef.current?.(),
+    holdStart:         (e) => holdStartRef.current?.(e),
+    holdEnd:           ()  => holdEndRef.current?.(),
+    holdSpeakStart:    (e) => holdSpeakStartRef.current?.(e),
+    holdSpeakEnd:      ()  => holdSpeakEndRef.current?.(),
     utteranceEndClick: () => handleUtteranceEndClick(),
   }), []);
 
   // ── Sync engine/credential from settings events ──────────────────────────
   useEffect(() => {
-    function onCfgChange()  { setEngine(getSttEngine()); }
+    function onCfgChange()  {
+      setEngine(getSttEngine());
+      try { setHoldSpeakEnabled(localStorage.getItem('lcyt:hold-to-speak') === '1'); } catch {}
+    }
     function onCredChange() { setCredLoaded(!!getGoogleCredential()); }
     window.addEventListener('lcyt:stt-config-changed',     onCfgChange);
     window.addEventListener('lcyt:stt-credential-changed', onCredChange);
@@ -799,6 +811,25 @@ export const AudioPanel = forwardRef(function AudioPanel(
     setIsHolding(false);
   }
 
+  // ─── Hold-to-speak handlers ──────────────────────────────────────────────
+
+  function onHoldSpeakStart(e) {
+    e.preventDefault();
+    if (!listening) {
+      if (connected) claimMic().catch(() => {});
+      if (engine === 'webkit') startWebkit();
+      else startCloud();
+    }
+  }
+
+  function onHoldSpeakEnd() {
+    if (listening) {
+      if (engine === 'webkit') stopWebkit();
+      else stopCloud();
+      if (connected) releaseMic().catch(() => {});
+    }
+  }
+
   // ─── Derived state ────────────────────────────────────────────────────────
 
   const isWebkit = engine === 'webkit';
@@ -810,9 +841,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
     : null;
 
   // Keep fn refs current so imperative handles never have stale closures
-  toggleFnRef.current  = toggle;
-  holdStartRef.current = onHoldStart;
-  holdEndRef.current   = onHoldEnd;
+  toggleFnRef.current      = toggle;
+  holdStartRef.current     = onHoldStart;
+  holdEndRef.current       = onHoldEnd;
+  holdSpeakStartRef.current = onHoldSpeakStart;
+  holdSpeakEndRef.current   = onHoldSpeakEnd;
 
   // Notify parent of holding state changes (for mobile bar)
   useEffect(() => { onHoldingChange?.(isHolding); }, [isHolding, onHoldingChange]);
@@ -831,6 +864,17 @@ export const AudioPanel = forwardRef(function AudioPanel(
             onPointerCancel={onHoldEnd}
           >
             {isHolding ? '🎙 Hold…' : '🔒 Another mic is active'}
+          </button>
+        ) : holdSpeakEnabled ? (
+          <button
+            className={`btn audio-caption-btn audio-caption-btn--hold-to-speak${listening ? ' audio-caption-btn--active' : ' btn--primary'}`}
+            disabled={!canStart}
+            onPointerDown={onHoldSpeakStart}
+            onPointerUp={onHoldSpeakEnd}
+            onPointerLeave={onHoldSpeakEnd}
+            onPointerCancel={onHoldSpeakEnd}
+          >
+            {listening ? '🎙 Hold…' : '🎙 Hold to speak'}
           </button>
         ) : (
           <button

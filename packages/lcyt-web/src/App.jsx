@@ -81,6 +81,9 @@ function AppLayout() {
   const [mobileUtteranceEndEnabled, setMobileUtteranceEndEnabled] = useState(
     () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
   );
+  const [micHoldToSpeak, setMicHoldToSpeak] = useState(
+    () => { try { return localStorage.getItem('lcyt:hold-to-speak') === '1'; } catch { return false; } }
+  );
 
   const inputBarRef = useRef(null);
   const audioPanelRef = useRef(null);
@@ -189,6 +192,7 @@ function AppLayout() {
   useEffect(() => {
     function onCfgChange() {
       try { setMobileUtteranceEndEnabled(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
+      try { setMicHoldToSpeak(localStorage.getItem('lcyt:hold-to-speak') === '1'); } catch {}
     }
     window.addEventListener('lcyt:stt-config-changed', onCfgChange);
     return () => window.removeEventListener('lcyt:stt-config-changed', onCfgChange);
@@ -364,6 +368,15 @@ function AppLayout() {
                 onPointerCancel={() => audioPanelRef.current?.holdEnd()}
                 title="Hold to steal the microphone"
               >{micHolding ? '🎙 Hold…' : '🔒 Locked'}</button>
+            ) : micHoldToSpeak ? (
+              <button
+                className={`mobile-bar__mic-btn${micListening ? ' mobile-bar__mic-btn--active' : ''}`}
+                onPointerDown={(e) => audioPanelRef.current?.holdSpeakStart(e)}
+                onPointerUp={() => audioPanelRef.current?.holdSpeakEnd()}
+                onPointerLeave={() => audioPanelRef.current?.holdSpeakEnd()}
+                onPointerCancel={() => audioPanelRef.current?.holdSpeakEnd()}
+                title="Hold to speak"
+              >{micListening ? '⏹' : '🎙'}</button>
             ) : (
               <button
                 className={`mobile-bar__mic-btn${micListening ? ' mobile-bar__mic-btn--active' : ''}`}

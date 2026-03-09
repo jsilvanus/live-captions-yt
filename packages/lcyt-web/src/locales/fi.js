@@ -39,6 +39,8 @@ export default {
     },
     basic: {
       showAdvanced: 'Näytä lisäasetukset',
+      holdToSpeak: 'Pidä painettuna puhuaksesi (mikrofoni)',
+      holdToSpeakHint: 'Kun käytössä, mikrofoni tallentaa ääntä vain kun pidät mikrofoninappia painettuna.',
     },
     captions: {
       batchWindow: 'Erä-ikkuna',
