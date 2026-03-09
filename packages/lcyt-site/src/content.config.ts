@@ -28,8 +28,15 @@ export const collections = {
       sse: z.boolean().optional(),
     }),
   }),
-  guide: defineCollection({
-    loader: glob({ pattern: '**/*.md', base: new URL('guide/', docsRoot) }),
+  'guide-web': defineCollection({
+    loader: glob({ pattern: '**/*.md', base: new URL('guide-web/', docsRoot) }),
+    schema: z.object({
+      title: z.string().optional(),
+      order: z.number().optional(),
+    }),
+  }),
+  'guide-cli': defineCollection({
+    loader: glob({ pattern: '**/*.md', base: new URL('guide-cli/', docsRoot) }),
     schema: z.object({
       title: z.string().optional(),
       order: z.number().optional(),
