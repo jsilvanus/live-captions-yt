@@ -11,6 +11,7 @@ import { EmbedSentLogPage } from './components/EmbedSentLogPage';
 import { EmbedFileDropPage } from './components/EmbedFileDropPage';
 import { EmbedFilesPage } from './components/EmbedFilesPage';
 import { EmbedSettingsPage } from './components/EmbedSettingsPage';
+import { EmbedRtmpPage } from './components/EmbedRtmpPage';
 
 const path = window.location.pathname;
 
@@ -25,6 +26,7 @@ function getPage() {
   if (path.startsWith('/embed/file-drop')) return <EmbedFileDropPage />;
   if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
   if (path.startsWith('/embed/settings')) return <EmbedSettingsPage />;
+  if (path.startsWith('/embed/rtmp'))     return <EmbedRtmpPage />;
   return <App />;
 }
 

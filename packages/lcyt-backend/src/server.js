@@ -53,6 +53,19 @@ if (_allowedDomains === '*') {
   console.info(`✓ Allowed session domains: ${_allowedDomains}`);
 }
 
+// ALLOWED_RTMP_DOMAINS — restricts which domains may use the /stream relay endpoints.
+// If unset, falls back to ALLOWED_DOMAINS so operators only need to set one variable.
+const _allowedRtmpDomains = process.env.ALLOWED_RTMP_DOMAINS ?? _allowedDomains;
+if (process.env.ALLOWED_RTMP_DOMAINS) {
+  if (_allowedRtmpDomains === '*') {
+    console.warn('⚠ ALLOWED_RTMP_DOMAINS=* — RTMP relay accessible from any domain.');
+  } else {
+    console.info(`✓ Allowed RTMP relay domains: ${_allowedRtmpDomains}`);
+  }
+} else {
+  console.info('ℹ ALLOWED_RTMP_DOMAINS not set — falling back to ALLOWED_DOMAINS for RTMP relay access.');
+}
+
 if (process.env.USAGE_PUBLIC) {
   console.info('✓ GET /usage is public (USAGE_PUBLIC is set).');
 } else {
@@ -270,7 +283,13 @@ app.get('/health', (req, res) => {
   res.status(200).json({
     ok: true,
     uptime: Math.floor(process.uptime()),
-    activeSessions: store.size()
+    activeSessions: store.size(),
+    ...(process.env.RTMP_RELAY_ACTIVE === '1' ? {
+      rtmpIngest: {
+        host: process.env.RTMP_HOST || 'rtmp.lcyt.fi',
+        app:  process.env.RTMP_APP  || 'stream',
+      },
+    } : {}),
   });
 });
 
@@ -309,7 +328,7 @@ app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
-app.use('/stream', createStreamRouter(db, auth, relayManager));
+app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
