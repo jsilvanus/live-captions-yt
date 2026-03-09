@@ -214,10 +214,30 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
   // Rehydrate persisted sessions from DB when available. This will start
   // YoutubeLiveCaptionSender instances for each persisted session so that
   // session IDs remain usable after a server restart.
+  //
+  // Only MCP-created sessions are rehydrated: they have no `domain` (unlike
+  // lcyt-backend sessions which always set domain) and must have a stream_key.
+  // Sessions whose last_activity is older than MCP_SESSION_TTL_MS are pruned
+  // from the DB to prevent indefinite accumulation across restarts.
   if (dbInstance) {
     try {
+      const SESSION_TTL_MS = Number(process.env.MCP_SESSION_TTL_MS) || 2 * 60 * 60 * 1000; // 2h
+      const cutoff = Date.now() - SESSION_TTL_MS;
       const rows = listSessions(dbInstance);
+      let rehydrated = 0;
+      let pruned = 0;
       for (const r of rows) {
+        // Skip sessions owned by lcyt-backend (they have domain set)
+        if (r.domain) continue;
+        // Skip sessions without a stream_key (can't create a sender)
+        if (!r.streamKey) continue;
+        // Prune stale sessions from DB
+        const lastActivity = r.lastActivity ? Date.parse(r.lastActivity) : 0;
+        if (!lastActivity || lastActivity < cutoff) {
+          try { deleteSession(dbInstance, r.sessionId); } catch {}
+          pruned++;
+          continue;
+        }
         try {
           const sender = new SenderClass({ streamKey: r.streamKey, sequence: r.sequence });
           await sender.start();
@@ -228,11 +248,13 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
           sessionMeta.set(r.sessionId, { startedAt: r.startedAt || new Date().toISOString() });
           // Initialise mcpStats entry so post-call logging can attribute usage
           mcpStats.set(r.sessionId, { apiKey: r.apiKey ?? null, startedAt: Date.parse(r.startedAt) || Date.now(), captionsSent: 0, captionsFailed: 0, lastSequence: Number(r.sequence || 0) });
+          rehydrated++;
         } catch (err) {
           console.error(`[lcyt-mcp-sse] Failed to rehydrate session ${r.sessionId}: ${err.message}`);
         }
       }
-      if (rows.length) console.error(`[lcyt-mcp-sse] Rehydrated ${rows.length} session(s) from DB`);
+      if (rehydrated) console.error(`[lcyt-mcp-sse] Rehydrated ${rehydrated} session(s) from DB`);
+      if (pruned) console.error(`[lcyt-mcp-sse] Pruned ${pruned} stale session(s) from DB`);
     } catch (err) {
       console.error(`[lcyt-mcp-sse] Failed to list persisted sessions: ${err.message}`);
     }
