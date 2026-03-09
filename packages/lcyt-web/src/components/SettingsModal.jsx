@@ -118,7 +118,7 @@ function RelayRow({ entry, onChange, onRemove, t }) {
   );
 }
 
-export function SettingsModal({ isOpen, onClose }) {
+export function SettingsModal({ isOpen, onClose, inline }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
   const { lang, setLang, t, LOCALE_CODES } = useLang();
@@ -186,7 +186,7 @@ export function SettingsModal({ isOpen, onClose }) {
     return () => window.removeEventListener('lcyt:stt-credential-changed', onCredChanged);
   }, []);
 
-  if (!isOpen) return null;
+  if (!isOpen && !inline) return null;
 
   // ── Field change handlers (auto-save) ─────────────────────
 
@@ -280,13 +280,11 @@ export function SettingsModal({ isOpen, onClose }) {
     setCredentialState(null);
   }
 
-  return (
-    <div className="settings-modal" role="dialog" aria-modal="true">
-      <div className="settings-modal__backdrop" onClick={onClose} />
-      <div className="settings-modal__box">
+  const box = (
+      <div className="settings-modal__box" style={inline ? { position: 'static', maxWidth: '100%', maxHeight: '100%', height: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' } : {}}>
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('statusBar.settings')}</span>
-          <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
+          {!inline && <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>}
         </div>
 
         {TABS.length > 1 && (
@@ -547,14 +545,24 @@ export function SettingsModal({ isOpen, onClose }) {
           )}
         </div>
 
-        <div className="settings-modal__footer">
-          <div className="settings-modal__actions">
-            <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>
-              {t('settings.footer.close')}
-            </button>
+        {!inline && (
+          <div className="settings-modal__footer">
+            <div className="settings-modal__actions">
+              <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>
+                {t('settings.footer.close')}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
+  );
+
+  if (inline) return box;
+
+  return (
+    <div className="settings-modal" role="dialog" aria-modal="true">
+      <div className="settings-modal__backdrop" onClick={onClose} />
+      {box}
     </div>
   );
 }

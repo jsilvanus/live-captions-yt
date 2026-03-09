@@ -260,7 +260,7 @@ function TargetRow({ entry, onChange, onRemove, t }) {
 
 // ── Main CCModal component ────────────────────────────────────
 
-export function CCModal({ isOpen, onClose, connected }) {
+export function CCModal({ isOpen, onClose, connected, inline }) {
   const { showToast } = useToastContext();
   const { t } = useLang();
 
@@ -383,7 +383,7 @@ export function CCModal({ isOpen, onClose, connected }) {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isOpen, onClose]);
 
-  if (!isOpen) return null;
+  if (!isOpen && !inline) return null;
 
   // ── Service tab handlers ──────────────────────────────────
 
@@ -542,13 +542,11 @@ export function CCModal({ isOpen, onClose, connected }) {
     ? ['targets', 'translation', 'service', 'details']
     : ['targets', 'translation', 'service'];
 
-  return (
-    <div className="settings-modal" role="dialog" aria-modal="true">
-      <div className="settings-modal__backdrop" onClick={onClose} />
-      <div className="settings-modal__box">
+  const box = (
+      <div className="settings-modal__box" style={inline ? { position: 'static', maxWidth: '100%', maxHeight: '100%', height: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' } : {}}>
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('statusBar.ccTitle')}</span>
-          <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
+          {!inline && <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>}
         </div>
 
         <div className="settings-modal__tabs">
@@ -1072,14 +1070,24 @@ export function CCModal({ isOpen, onClose, connected }) {
           )}
         </div>
 
-        <div className="settings-modal__footer">
-          <div className="settings-modal__actions">
-            <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>
-              {t('settings.footer.close')}
-            </button>
+        {!inline && (
+          <div className="settings-modal__footer">
+            <div className="settings-modal__actions">
+              <button className="btn btn--secondary" onClick={onClose} style={{ marginLeft: 'auto' }}>
+                {t('settings.footer.close')}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
       </div>
+  );
+
+  if (inline) return box;
+
+  return (
+    <div className="settings-modal" role="dialog" aria-modal="true">
+      <div className="settings-modal__backdrop" onClick={onClose} />
+      {box}
     </div>
   );
 }
