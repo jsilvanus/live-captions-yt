@@ -32,8 +32,8 @@ const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i
 /** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza */
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
 
-/** Sentinel for an empty-send line that fires codes without caption text. */
-const EMPTY_SEND_RE = /^_$/;
+/** Sentinel for an empty-send line. Captures optional label after the underscore. */
+const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 
 /**
  * Parse raw file content and extract text lines with associated metadata codes.
@@ -97,30 +97,34 @@ export function parseFileContent(rawText) {
       } else {
         delete currentCodes.stanza;
       }
-    } else if (EMPTY_SEND_RE.test(raw)) {
-      // Empty-send marker: fires current codes to the viewer without caption text.
-      lines.push('');
-      lineCodes.push({ ...currentCodes, emptySend: true });
-      lineNumbers.push(++textLineCount);
     } else {
-      const match = raw.match(METADATA_COMMENT_RE);
-      if (match) {
-        const key = match[1].toLowerCase();
-        const value = match[2].trim();
-        if (value === '') {
-          delete currentCodes[key];
-        } else {
-          let parsed = value;
-          if (BOOLEAN_CODES.includes(key)) {
-            parsed = value.toLowerCase() === 'true';
-          }
-          currentCodes[key] = parsed;
-        }
-        // Comment lines are metadata only — not added to output
+      const emptySendMatch = raw.match(EMPTY_SEND_RE);
+      if (emptySendMatch) {
+        // Empty-send marker: fires current codes to the viewer without caption text.
+        const label = emptySendMatch[1]?.trim() || null;
+        lines.push('');
+        lineCodes.push({ ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) });
+        lineNumbers.push(++textLineCount);
       } else {
-        lines.push(raw);
-        lineCodes.push({ ...currentCodes });
-        lineNumbers.push(++textLineCount); // running count of text-only lines
+        const match = raw.match(METADATA_COMMENT_RE);
+        if (match) {
+          const key = match[1].toLowerCase();
+          const value = match[2].trim();
+          if (value === '') {
+            delete currentCodes[key];
+          } else {
+            let parsed = value;
+            if (BOOLEAN_CODES.includes(key)) {
+              parsed = value.toLowerCase() === 'true';
+            }
+            currentCodes[key] = parsed;
+          }
+          // Comment lines are metadata only — not added to output
+        } else {
+          lines.push(raw);
+          lineCodes.push({ ...currentCodes });
+          lineNumbers.push(++textLineCount); // running count of text-only lines
+        }
       }
     }
   }

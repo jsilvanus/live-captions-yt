@@ -411,6 +411,12 @@
   user-select: none;
 }
 
+.caption-line__empty-send-label--named {
+  color: #e05555;
+  font-size: 1em;
+  letter-spacing: normal;
+}
+
 .caption-line--sent {
   animation: sent-flash 1.5s ease-out forwards;
 }
