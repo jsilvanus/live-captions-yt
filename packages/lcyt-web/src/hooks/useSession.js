@@ -149,6 +149,9 @@ export function useSession({
       if (t.type === 'youtube') {
         return { id: t.id, type: 'youtube', streamKey: t.streamKey };
       }
+      if (t.type === 'viewer') {
+        return { id: t.id, type: 'viewer', viewerKey: t.viewerKey };
+      }
       let headers = {};
       if (t.headers) { try { headers = JSON.parse(t.headers); } catch {} }
       return { id: t.id, type: 'generic', url: t.url, headers };
@@ -369,6 +372,9 @@ export function useSession({
     const targets = rawTargets.map(t => {
       if (t.type === 'youtube') {
         return { id: t.id, type: 'youtube', streamKey: t.streamKey };
+      }
+      if (t.type === 'viewer') {
+        return { id: t.id, type: 'viewer', viewerKey: t.viewerKey };
       }
       let headers = {};
       // headers is stored as a raw JSON string in localStorage; parse it here.

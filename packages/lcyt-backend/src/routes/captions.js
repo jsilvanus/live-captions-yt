@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { createWriteStream, mkdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled, registerCaptionFile, updateCaptionFileSize } from '../db.js';
+import { broadcastToViewers } from './viewer.js';
 
 // Directory where per-key caption files are stored.
 // Configurable via FILES_DIR env var; defaults to /data/files (Docker volume).
@@ -279,6 +280,15 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
               }).catch(err => {
                 console.warn(`[captions] Generic target ${target.id} error: ${err.message}`);
               });
+            } else if (target.type === 'viewer' && target.viewerKey) {
+              // Broadcast each caption to viewer SSE subscribers
+              for (const caption of genericCaptions) {
+                broadcastToViewers(target.viewerKey, {
+                  text: caption.composedText ?? caption.text,
+                  sequence: session.sequence,
+                  timestamp: caption.timestamp,
+                });
+              }
             }
           }
         }

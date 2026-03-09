@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+import { useSessionContext } from '../contexts/SessionContext';
 import { getAnyTargetNoBatch } from '../lib/targetConfig';
 import { getTargets, setTargets } from '../lib/targetConfig';
 import {
@@ -106,9 +107,10 @@ function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t
 
 // ── Target row ────────────────────────────────────────────────
 
-function TargetRow({ entry, onChange, onRemove, t }) {
+function TargetRow({ entry, onChange, onRemove, backendUrl, t }) {
   const [urlError, setUrlError] = useState('');
   const [headersError, setHeadersError] = useState('');
+  const [viewerKeyError, setViewerKeyError] = useState('');
 
   function validateUrl(val) {
     if (!val) return t('settings.targets.errorUrlRequired');
@@ -134,6 +136,17 @@ function TargetRow({ entry, onChange, onRemove, t }) {
     }
   }
 
+  function validateViewerKey(val) {
+    if (!val) return t('settings.targets.viewerKeyError');
+    if (!/^[a-zA-Z0-9_-]{3,}$/.test(val)) return t('settings.targets.viewerKeyError');
+    return '';
+  }
+
+  // Build the viewer URL for display when a valid key and backendUrl are available
+  const viewerPageUrl = (entry.type === 'viewer' && entry.viewerKey && /^[a-zA-Z0-9_-]{3,}$/.test(entry.viewerKey) && backendUrl)
+    ? `${window.location.origin}/view/${encodeURIComponent(entry.viewerKey)}?server=${encodeURIComponent(backendUrl)}`
+    : null;
+
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -149,30 +162,33 @@ function TargetRow({ entry, onChange, onRemove, t }) {
           value={entry.type}
           onChange={e => {
             const next = { ...entry, type: e.target.value };
-            if (e.target.value === 'youtube') {
-              delete next.url;
-              delete next.headers;
-            } else {
-              delete next.streamKey;
-            }
+            // Clear all type-specific fields when switching types to prevent stale data
+            delete next.url;
+            delete next.headers;
+            delete next.streamKey;
+            delete next.viewerKey;
             onChange(next);
             setUrlError('');
             setHeadersError('');
+            setViewerKeyError('');
           }}
           style={{ width: 'auto' }}
         >
           <option value="youtube">{t('settings.targets.typeYouTube')}</option>
           <option value="generic">{t('settings.targets.typeGeneric')}</option>
+          <option value="viewer">{t('settings.targets.typeViewer')}</option>
         </select>
-        <select
-          className="settings-field__input"
-          value={entry.format || 'youtube'}
-          onChange={e => onChange({ ...entry, format: e.target.value })}
-          style={{ width: 'auto' }}
-        >
-          <option value="youtube">{t('settings.targets.formatYouTube')}</option>
-          <option value="json">{t('settings.targets.formatJson')}</option>
-        </select>
+        {entry.type !== 'viewer' && (
+          <select
+            className="settings-field__input"
+            value={entry.format || 'youtube'}
+            onChange={e => onChange({ ...entry, format: e.target.value })}
+            style={{ width: 'auto' }}
+          >
+            <option value="youtube">{t('settings.targets.formatYouTube')}</option>
+            <option value="json">{t('settings.targets.formatJson')}</option>
+          </select>
+        )}
         <button
           type="button"
           className="btn btn--secondary btn--sm"
@@ -241,6 +257,40 @@ function TargetRow({ entry, onChange, onRemove, t }) {
         </>
       )}
 
+      {entry.type === 'viewer' && (
+        <div>
+          <label className="settings-field__label">{t('settings.targets.viewerKey')}</label>
+          <input
+            className="settings-field__input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t('settings.targets.viewerKeyPlaceholder')}
+            value={entry.viewerKey || ''}
+            onChange={e => {
+              onChange({ ...entry, viewerKey: e.target.value });
+              setViewerKeyError(validateViewerKey(e.target.value));
+            }}
+            onBlur={e => setViewerKeyError(validateViewerKey(e.target.value))}
+          />
+          {viewerKeyError && (
+            <span className="settings-field__hint" style={{ color: 'var(--color-error, #c00)' }}>{viewerKeyError}</span>
+          )}
+          <span className="settings-field__hint">{t('settings.targets.viewerKeyHint')}</span>
+          {viewerPageUrl && (
+            <div style={{ marginTop: 6 }}>
+              <span className="settings-field__label">{t('settings.targets.viewerUrl')}</span>
+              <a
+                href={viewerPageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ display: 'block', wordBreak: 'break-all', fontSize: '0.85em', marginTop: 2 }}
+              >{viewerPageUrl}</a>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
         <label className="settings-checkbox" style={{ marginBottom: 0 }}>
           <input
@@ -263,6 +313,10 @@ function TargetRow({ entry, onChange, onRemove, t }) {
 export function CCModal({ isOpen, onClose, connected, inline }) {
   const { showToast } = useToastContext();
   const { t } = useLang();
+  const { backendUrl: sessionBackendUrl, getPersistedConfig } = useSessionContext();
+  // Use connected backendUrl, falling back to the persisted config so the
+  // viewer URL preview is visible even when not currently connected.
+  const backendUrl = sessionBackendUrl || (getPersistedConfig().backendUrl ?? '');
 
   const [advancedMode, setAdvancedMode] = useState(getAdvancedMode);
   const [activeTab, setActiveTab] = useState('targets');
@@ -822,6 +876,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                       entry={entry}
                       onChange={updated => updateTargetRow(entry.id, updated)}
                       onRemove={() => removeTargetRow(entry.id)}
+                      backendUrl={backendUrl}
                       t={t}
                     />
                   ))}

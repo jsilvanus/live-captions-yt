@@ -20,6 +20,7 @@ import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
+import { createViewerRouter } from './routes/viewer.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -329,6 +330,7 @@ app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
+app.use('/viewer', createViewerRouter());
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

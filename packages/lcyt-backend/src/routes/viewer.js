@@ -78,7 +78,10 @@ export function createViewerRouter() {
 
     // Periodic heartbeat to keep the connection alive through proxies
     const heartbeat = setInterval(() => {
-      try { res.write(':heartbeat\n\n'); } catch {}
+      try { res.write(':heartbeat\n\n'); } catch (err) {
+        console.warn(`[viewer] Heartbeat write error for key "${key}": ${err.message}`);
+        clearInterval(heartbeat);
+      }
     }, 25000);
 
     // Clean up on client disconnect
