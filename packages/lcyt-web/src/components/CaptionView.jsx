@@ -219,18 +219,24 @@ export function CaptionView({ onLineSend }) {
     const isActive = i === pointer;
     const isSent = lastSentLine?.fileId === fileId && lastSentLine?.lineIndex === i;
     const isHeading = lines[i].startsWith('#');
+    const codes = lineCodes?.[i];
+    const isStanza = !!codes?.stanza;
 
     let cls = 'caption-line';
     if (isActive) cls += ' caption-line--active';
     if (isSent) cls += ' caption-line--sent';
     if (isHeading) cls += ' caption-line--heading';
+    if (isStanza) cls += ' caption-line--stanza';
 
+    // For stanza lines, split on <br>, escape each part, rejoin with <br> for display.
+    // For headings, strip leading # markers. Otherwise just escape.
     const displayText = isHeading
       ? escapeHtml(lines[i].replace(/^#+\s*/, ''))
-      : escapeHtml(lines[i]);
+      : isStanza
+        ? lines[i].split('<br>').map(escapeHtml).join('<br>')
+        : escapeHtml(lines[i]);
 
     const lineNum = lineNumbers?.[i] ?? (i + 1);
-    const codes = lineCodes?.[i];
     const codesTitle = buildCodesTitle(codes);
     const hasCodes = !!codesTitle;
 
@@ -249,7 +255,7 @@ export function CaptionView({ onLineSend }) {
         >
           {lineNum}
         </span>
-        <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
+        <span className="caption-line__gutter">{isActive ? '►' : isStanza ? '♪' : ''}</span>
         <span
           className="caption-line__text"
           dangerouslySetInnerHTML={{ __html: displayText }}

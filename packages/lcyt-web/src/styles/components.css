@@ -395,6 +395,16 @@
   background: transparent;
 }
 
+.caption-line--stanza .caption-line__text {
+  font-style: italic;
+  line-height: 1.6;
+}
+
+.caption-line--stanza .caption-line__gutter {
+  color: var(--color-accent);
+  opacity: 0.7;
+}
+
 .caption-line--sent {
   animation: sent-flash 1.5s ease-out forwards;
 }

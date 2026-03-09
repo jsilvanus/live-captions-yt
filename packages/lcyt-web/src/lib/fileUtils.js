@@ -29,6 +29,9 @@ const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 /** @type {RegExp} Matches <!-- key: value --> metadata comment lines. */
 const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i;
 
+/** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza --> */
+const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
+
 /**
  * Parse raw file content and extract text lines with associated metadata codes.
  *
@@ -40,6 +43,13 @@ const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i
  *   <!-- no-translate: true -->
  *   <!-- my-custom-code: any value -->
  *   <!-- lang: -->      ← empty value removes the code
+ *
+ * Multi-line stanza blocks group several song lines into a single caption,
+ * sent to YouTube as one unit with <br> between lines:
+ *   <!-- stanza
+ *   First song line
+ *   Second song line
+ *   -->
  *
  * Any valid HTML comment key is accepted (not limited to a predefined list).
  * Each code tags all subsequent lines until the same key appears again.
@@ -61,24 +71,41 @@ export function parseFileContent(rawText) {
     const raw = rawLines[i].trim();
     if (!raw) continue;
 
-    const match = raw.match(METADATA_COMMENT_RE);
-    if (match) {
-      const key = match[1].toLowerCase();
-      const value = match[2].trim();
-      if (value === '') {
-        delete currentCodes[key];
-      } else {
-        let parsed = value;
-        if (BOOLEAN_CODES.includes(key)) {
-          parsed = value.toLowerCase() === 'true';
-        }
-        currentCodes[key] = parsed;
+    if (STANZA_OPEN_RE.test(raw)) {
+      // Collect lines until '-->' as a single stanza caption
+      const stanzaLines = [];
+      i++;
+      while (i < rawLines.length) {
+        const stanzaRaw = rawLines[i].trim();
+        if (stanzaRaw === '-->') break;
+        if (stanzaRaw) stanzaLines.push(stanzaRaw);
+        i++;
       }
-      // Comment lines are metadata only — not added to output
+      if (stanzaLines.length > 0) {
+        lines.push(stanzaLines.join('<br>'));
+        lineCodes.push({ ...currentCodes, stanza: true });
+        lineNumbers.push(++textLineCount);
+      }
     } else {
-      lines.push(raw);
-      lineCodes.push({ ...currentCodes });
-      lineNumbers.push(++textLineCount); // running count of text-only lines
+      const match = raw.match(METADATA_COMMENT_RE);
+      if (match) {
+        const key = match[1].toLowerCase();
+        const value = match[2].trim();
+        if (value === '') {
+          delete currentCodes[key];
+        } else {
+          let parsed = value;
+          if (BOOLEAN_CODES.includes(key)) {
+            parsed = value.toLowerCase() === 'true';
+          }
+          currentCodes[key] = parsed;
+        }
+        // Comment lines are metadata only — not added to output
+      } else {
+        lines.push(raw);
+        lineCodes.push({ ...currentCodes });
+        lineNumbers.push(++textLineCount); // running count of text-only lines
+      }
     }
   }
 
