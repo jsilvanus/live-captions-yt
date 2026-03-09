@@ -25,7 +25,7 @@ import { randomUUID } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { registerIcon, listIcons, getIcon, deleteIcon } from '../db.js';
 
-const ICONS_BASE_DIR = resolve(process.env.ICONS_DIR || '/data/icons');
+const ICONS_DIR = resolve(process.env.ICONS_DIR || '/data/icons');
 
 /** Maximum icon file size in bytes (200 KB). Base64-encoded that's ~267 KB body. */
 const MAX_ICON_BYTES = 200 * 1024;
@@ -47,9 +47,11 @@ const iconRateLimit = rateLimit({
  * @param {import('better-sqlite3').Database} db
  * @param {import('../middleware/auth.js').AuthMiddleware} auth
  * @param {import('../store.js').SessionStore} store
+ * @param {string} [baseDir] - Override the icons base directory (for tests).
  * @returns {Router}
  */
-export function createIconRouter(db, auth, store) {
+export function createIconRouter(db, auth, store, baseDir) {
+  const ICONS_DIR = resolve(baseDir || process.env.ICONS_DIR || '/data/icons');
   const router = Router();
 
   // ── POST /icons — upload a PNG or SVG icon ─────────────────────────────────
@@ -113,7 +115,7 @@ export function createIconRouter(db, auth, store) {
       const ext = mimeType === 'image/svg+xml' ? '.svg' : '.png';
       const safeKey = session.apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
       const diskFilename = `${randomUUID()}${ext}`;
-      const dir = join(ICONS_BASE_DIR, safeKey);
+      const dir = join(ICONS_DIR, safeKey);
 
       try {
         mkdirSync(dir, { recursive: true });
@@ -166,7 +168,7 @@ export function createIconRouter(db, auth, store) {
     if (!row) return res.status(404).json({ error: 'Icon not found' });
 
     const safeKey = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    const filepath = join(ICONS_BASE_DIR, safeKey, row.disk_filename);
+    const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
     if (!existsSync(filepath)) return res.status(404).json({ error: 'Icon file not found on disk' });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -196,7 +198,7 @@ export function createIconRouter(db, auth, store) {
     // Best-effort disk cleanup
     try {
       const safeKey = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-      const filepath = join(ICONS_BASE_DIR, safeKey, row.disk_filename);
+      const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
       if (existsSync(filepath)) unlinkSync(filepath);
     } catch (e) {
       console.warn('[icons] Could not delete disk file:', e.message);

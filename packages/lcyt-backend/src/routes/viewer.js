@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { incrementViewerKeyStat, incrementViewerAnonStat } from '../db.js';
 
 /**
  * In-memory map of viewerKey → Set of active SSE client objects.
@@ -38,9 +39,10 @@ export function broadcastToViewers(viewerKey, data) {
  *
  * CORS: Access-Control-Allow-Origin: * (public endpoint)
  *
+ * @param {import('better-sqlite3').Database} [db] - Optional DB for usage stats.
  * @returns {Router}
  */
-export function createViewerRouter() {
+export function createViewerRouter(db) {
   const router = Router();
 
   // CORS preflight for the viewer endpoint (all origins allowed)
@@ -71,6 +73,23 @@ export function createViewerRouter() {
     // Send initial connected event
     res.write(`event: connected\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
+    // Track usage stats — look up the viewerKey → apiKey from in-memory subs
+    // We record stats for the owning API key by scanning the live session.
+    // If no session owns this key yet (viewer arrived early), we still count the anon stat.
+    if (db) {
+      try {
+        // Anon stat: always increment
+        incrementViewerAnonStat(db);
+        // Per-key stat: look up which API key owns this viewerKey via the global viewerKeyOwners map
+        const ownerKey = viewerKeyOwners.get(key);
+        if (ownerKey) {
+          incrementViewerKeyStat(db, ownerKey, key);
+        }
+      } catch (err) {
+        console.warn(`[viewer] Failed to record stats for key "${key}": ${err.message}`);
+      }
+    }
+
     // Register this client
     const client = { res };
     if (!viewerSubs.has(key)) viewerSubs.set(key, new Set());
@@ -97,3 +116,21 @@ export function createViewerRouter() {
 
   return router;
 }
+
+/**
+ * Module-level map of viewerKey → apiKey.
+ * Populated by captions.js when a viewer target is in the session's extraTargets,
+ * so the viewer router can attribute stats to the correct API key.
+ */
+export const viewerKeyOwners = new Map();
+
+/**
+ * Register the owner (apiKey) of a viewerKey.
+ * Called from captions.js when processing viewer extraTargets.
+ * @param {string} viewerKey
+ * @param {string} apiKey
+ */
+export function registerViewerKeyOwner(viewerKey, apiKey) {
+  viewerKeyOwners.set(viewerKey, apiKey);
+}
+

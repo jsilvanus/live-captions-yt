@@ -1,7 +1,7 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdirSync, rmSync, readdirSync } from 'node:fs';
+import { mkdirSync, rmSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -24,7 +24,6 @@ let server, baseUrl, store, db, iconsDir;
 before(() => new Promise((resolve) => {
   iconsDir = join(tmpdir(), `lcyt-icons-test-${Date.now()}`);
   mkdirSync(iconsDir, { recursive: true });
-  process.env.ICONS_DIR = iconsDir;
 
   db = initDb(':memory:');
   createKey(db, { key: API_KEY, owner: 'Test' });
@@ -33,7 +32,7 @@ before(() => new Promise((resolve) => {
   const auth = createAuthMiddleware(JWT_SECRET);
 
   const app = express();
-  app.use('/icons', createIconRouter(db, auth, store));
+  app.use('/icons', createIconRouter(db, auth, store, iconsDir));
   app.use(express.json({ limit: '64kb' }));
 
   server = createServer(app);
@@ -46,13 +45,18 @@ before(() => new Promise((resolve) => {
 after(() => new Promise((resolve) => {
   server.close(() => {
     try { rmSync(iconsDir, { recursive: true, force: true }); } catch {}
-    delete process.env.ICONS_DIR;
     resolve();
   });
 }));
 
 beforeEach(() => {
   for (const session of [...store.all()]) store.remove(session.sessionId);
+  // Clear icons for the test API key so tests start with a clean state
+  db.prepare('DELETE FROM icons WHERE api_key = ?').run(API_KEY);
+  db.prepare('DELETE FROM icons WHERE api_key LIKE ?').run('other-key%');
+  // Clear the icons directory (recursive, including subdirectories)
+  try { rmSync(iconsDir, { recursive: true, force: true }); } catch {}
+  try { mkdirSync(iconsDir, { recursive: true }); } catch {}
 });
 
 function makeSession(suffix = Math.random().toString(36).slice(2)) {
@@ -123,7 +127,7 @@ describe('POST /icons — upload', () => {
   it('writes icon file to ICONS_DIR on upload', async () => {
     await postIcon(makeSession(), { filename: 'disk.png', mimeType: 'image/png', data: VALID_PNG_BASE64 });
     const files = readdirSync(iconsDir, { recursive: true });
-    assert.ok(files.some(f => typeof f === 'string' && f.endsWith('.png')));
+    assert.ok(files.some(f => String(f).endsWith('.png')));
   });
 });
 
@@ -155,7 +159,8 @@ describe('GET /icons — list', () => {
 
 describe('GET /icons/:id — public serve', () => {
   let iconId;
-  before(async () => {
+  beforeEach(async () => {
+    // Upload a fresh icon before each test so the outer beforeEach DB clear doesn't break us
     const token = makeSession('serve');
     const res = await postIcon(token, { filename: 'served.png', mimeType: 'image/png', data: VALID_PNG_BASE64 });
     const body = await res.json();

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { getDomainUsageStats } from '../db.js';
+import { getDomainUsageStats, getViewerAnonStats } from '../db.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
@@ -75,6 +75,8 @@ export function createUsageRouter(db) {
     const rows = getDomainUsageStats(db, { from, to, granularity, domain });
     const data = allowedDomains === '*' ? rows : rows.filter(r => allowedDomains.includes(r.domain));
 
+    const viewerStats = getViewerAnonStats(db, { from, to });
+
     // Historical windows (entirely in the past) are immutable — safe to cache.
     // Any window touching today changes constantly, so must not be cached.
     if (to < today) {
@@ -88,6 +90,7 @@ export function createUsageRouter(db) {
       granularity,
       public: Boolean(process.env.USAGE_PUBLIC),
       data,
+      viewerStats,
     });
   });
 
