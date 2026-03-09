@@ -132,6 +132,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `REVOKED_KEY_TTL_DAYS` | Days before revoked keys are purged | 30 |
 | `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval (ms) | 86400000 (24h) |
 | `ALLOWED_DOMAINS` | Comma-separated domains for /usage CORS filter | `lcyt.fi,www.lcyt.fi` |
+| `ALLOWED_RTMP_DOMAINS` | Comma-separated domains allowed to use `/stream` relay endpoints; if unset, falls back to `ALLOWED_DOMAINS` | (falls back to `ALLOWED_DOMAINS`) |
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
 
 **API routes:**
@@ -222,6 +223,8 @@ Browser-based React app using Vite. Sends captions via the `lcyt-backend` relay.
 | `/embed/sentlog` | `EmbedSentLogPage` | Read-only delivery log (BroadcastChannel subscriber) |
 | `/embed/file-drop` | `EmbedFileDropPage` | Drop-one-file player widget |
 | `/embed/files` | `EmbedFilesPage` | Full file management widget |
+| `/embed/settings` | `EmbedSettingsPage` | Settings widget — General tab (credentials, theme) + CC tab (targets, STT, translations) |
+| `/embed/rtmp` | `EmbedRtmpPage` | RTMP relay-only widget — ingest address + relay slot management |
 
 **Embed pages** (`/embed/*`) accept `?server=`, `?apikey=`, and `?theme=` URL params and auto-connect when credentials are present. All session-owning embed pages (`/embed/audio`, `/embed/input`, `/embed/file-drop`, `/embed/files`) operate in `embed` mode: they broadcast the JWT token (`lcyt:session`) and each sent caption (`lcyt:caption`) on `BroadcastChannel('lcyt-embed')` so a sibling `/embed/sentlog` can subscribe without owning a session. See `docs/guide/embed.md` for full documentation.
 

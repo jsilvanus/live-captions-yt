@@ -26,6 +26,7 @@ import { AppProviders } from '../contexts/AppProviders';
 import { DropZone } from './DropZone';
 import { useFileContext } from '../contexts/FileContext';
 import { useSessionContext } from '../contexts/SessionContext';
+import { EmbedApiKeyGate } from './EmbedApiKeyGate';
 
 // ─── Inner layout (needs access to contexts) ─────────────────────────────────
 
@@ -168,7 +169,7 @@ function FileDropLayout() {
 
 export function EmbedFileDropPage() {
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || '';
+  const backendUrl = params.get('server') || 'https://api.lcyt.fi';
   const apiKey     = params.get('apikey') || '';
   const theme      = params.get('theme')  || 'dark';
 
@@ -177,15 +178,19 @@ export function EmbedFileDropPage() {
   }, []);
 
   return (
-    <AppProviders
-      initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!(backendUrl && apiKey)}
-      embed
-    >
-      <div style={{ height: '100vh', overflow: 'hidden' }}>
-        <FileDropLayout />
-      </div>
-    </AppProviders>
+    <EmbedApiKeyGate initialKey={apiKey} backendUrl={backendUrl}>
+      {(key) => (
+        <AppProviders
+          initConfig={{ backendUrl, apiKey: key }}
+          autoConnect
+          embed
+        >
+          <div style={{ height: '100vh', overflow: 'hidden' }}>
+            <FileDropLayout />
+          </div>
+        </AppProviders>
+      )}
+    </EmbedApiKeyGate>
   );
 }
 

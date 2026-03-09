@@ -23,10 +23,11 @@ import { useEffect } from 'react';
 import { AppProviders } from '../contexts/AppProviders';
 import { InputBar } from './InputBar';
 import { SentPanel } from './SentPanel';
+import { EmbedApiKeyGate } from './EmbedApiKeyGate';
 
 export function EmbedInputPage() {
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || '';
+  const backendUrl = params.get('server') || 'https://api.lcyt.fi';
   const apiKey     = params.get('apikey') || '';
   const theme      = params.get('theme')  || 'dark';
 
@@ -35,17 +36,21 @@ export function EmbedInputPage() {
   }, []);
 
   return (
-    <AppProviders
-      initConfig={{ backendUrl, apiKey }}
-      autoConnect={!!(backendUrl && apiKey)}
-      embed
-    >
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-        <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-          <SentPanel />
-        </div>
-        <InputBar />
-      </div>
-    </AppProviders>
+    <EmbedApiKeyGate initialKey={apiKey} backendUrl={backendUrl}>
+      {(key) => (
+        <AppProviders
+          initConfig={{ backendUrl, apiKey: key }}
+          autoConnect
+          embed
+        >
+          <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <SentPanel />
+            </div>
+            <InputBar />
+          </div>
+        </AppProviders>
+      )}
+    </EmbedApiKeyGate>
   );
 }

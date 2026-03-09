@@ -22,8 +22,24 @@ const MAX_RELAY_SLOTS = 4;
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @returns {Router}
  */
-export function createStreamRouter(db, auth, relayManager) {
+export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
   const router = Router();
+
+  // Build domain allowlist. null = wildcard (all domains allowed).
+  const rtmpDomainList = (!allowedRtmpDomains || allowedRtmpDomains === '*')
+    ? null
+    : allowedRtmpDomains.split(',').map(d => d.trim()).filter(Boolean);
+
+  // Apply auth + domain check to every route in this router.
+  router.use(auth);
+  router.use(function requireRtmpDomain(req, res, next) {
+    if (!rtmpDomainList) return next();
+    const domain = req.session?.domain;
+    if (!domain || !rtmpDomainList.includes(domain)) {
+      return res.status(403).json({ error: 'RTMP relay not available for this domain' });
+    }
+    next();
+  });
 
   // Middleware: check relay_allowed for this API key
   function requireRelayAllowed(req, res, next) {
@@ -59,7 +75,7 @@ export function createStreamRouter(db, auth, relayManager) {
   }
 
   // POST /stream — create or replace a relay slot
-  router.post('/', auth, requireRelayAllowed, (req, res) => {
+  router.post('/', requireRelayAllowed, (req, res) => {
     const fields = validateBody(req, res);
     if (!fields) return;
     const slotRaw = req.body?.slot ?? 1;
@@ -85,7 +101,7 @@ export function createStreamRouter(db, auth, relayManager) {
   });
 
   // GET /stream — get all slots + running status per slot + relay active state
-  router.get('/', auth, requireRelayAllowed, (req, res) => {
+  router.get('/', requireRelayAllowed, (req, res) => {
     const relays = getRelays(db, req.session.apiKey);
     const runningSlots = relayManager.runningSlots(req.session.apiKey);
     const active = isRelayActive(db, req.session.apiKey);
@@ -93,7 +109,7 @@ export function createStreamRouter(db, auth, relayManager) {
   });
 
   // GET /stream/history — per-stream usage history for this key
-  router.get('/history', auth, requireRelayAllowed, (req, res) => {
+  router.get('/history', requireRelayAllowed, (req, res) => {
     const stats = getRtmpStreamStats(db, req.session.apiKey);
     return res.status(200).json({ streams: stats });
   });
@@ -106,7 +122,7 @@ export function createStreamRouter(db, auth, relayManager) {
   // When deactivated (active=false):
   //   - Sets relay_active=0 in the DB.
   //   - Stops all running ffmpeg fan-out processes (does not drop the nginx publisher).
-  router.put('/active', auth, requireRelayAllowed, async (req, res) => {
+  router.put('/active', requireRelayAllowed, async (req, res) => {
     const { active } = req.body || {};
     if (typeof active !== 'boolean') {
       return res.status(400).json({ error: 'active must be a boolean' });
@@ -140,7 +156,7 @@ export function createStreamRouter(db, auth, relayManager) {
   });
 
   // PUT /stream/:slot — update a specific slot
-  router.put('/:slot', auth, requireRelayAllowed, (req, res) => {
+  router.put('/:slot', requireRelayAllowed, (req, res) => {
     const slot = parseSlot(req.params.slot, res);
     if (slot === null) return;
 
@@ -162,7 +178,7 @@ export function createStreamRouter(db, auth, relayManager) {
   });
 
   // DELETE /stream/:slot — remove slot config and restart relay with remaining targets
-  router.delete('/:slot', auth, requireRelayAllowed, async (req, res) => {
+  router.delete('/:slot', requireRelayAllowed, async (req, res) => {
     const slot = parseSlot(req.params.slot, res);
     if (slot === null) return;
     const apiKey = req.session.apiKey;
@@ -193,7 +209,7 @@ export function createStreamRouter(db, auth, relayManager) {
   });
 
   // DELETE /stream — stop all slots, drop publisher from nginx, delete all configs
-  router.delete('/', auth, requireRelayAllowed, async (req, res) => {
+  router.delete('/', requireRelayAllowed, async (req, res) => {
     const apiKey = req.session.apiKey;
     try {
       // Drop publisher from nginx first — this kills the incoming stream,
