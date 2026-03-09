@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
-import { useLang } from '../contexts/LangContext';
-import {
+import { useLang } from '../contexts/LangContext';import {
   getSlotConfig, setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotCaptionMode,
   buildSlotTarget,
@@ -146,6 +145,11 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   const [credential, setCredentialState] = useState(getGoogleCredential);
   const credInputRef = useRef(null);
 
+  // ── Icons tab ─────────────────────────────────────────────
+  const [icons, setIcons] = useState([]);
+  const [iconsLoading, setIconsLoading] = useState(false);
+  const iconInputRef = useRef(null);
+
   // Load persisted values when modal opens
   useEffect(() => {
     if (!isOpen) return;
@@ -167,8 +171,16 @@ export function SettingsModal({ isOpen, onClose, inline }) {
       }).catch(() => {
         setRelayStatus(null);
       });
+      // Load icons list
+      setIconsLoading(true);
+      session.listIcons().then(data => {
+        setIcons(data.icons || []);
+      }).catch(() => {
+        setIcons([]);
+      }).finally(() => setIconsLoading(false));
     } else {
       setRelayStatus(null);
+      setIcons([]);
     }
   }, [isOpen]);
 
@@ -249,7 +261,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
 
   const runningSlots = relayStatus?.runningSlots ?? [];
 
-  const TABS = advancedMode ? ['basic', 'rtmpRelay', 'credentials'] : ['basic', 'credentials'];
+  const TABS = advancedMode ? ['basic', 'rtmpRelay', 'credentials', 'icons'] : ['basic', 'credentials', 'icons'];
 
   // ── Credential handlers ────────────────────────────────────
 
@@ -278,6 +290,45 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   function handleClearCredential() {
     clearGoogleCredential();
     setCredentialState(null);
+  }
+
+  // ── Icon handlers ──────────────────────────────────────────
+
+  async function handleIconFile(e) {
+    const file = e.target.files?.[0];
+    if (iconInputRef.current) iconInputRef.current.value = '';
+    if (!file) return;
+
+    const ALLOWED_TYPES = ['image/png', 'image/svg+xml'];
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      showToast(t('settings.icons.typeError'), 'error');
+      return;
+    }
+    const MAX_BYTES = 200 * 1024;
+    if (file.size > MAX_BYTES) {
+      showToast(t('settings.icons.sizeError'), 'error');
+      return;
+    }
+
+    try {
+      const arrayBuf = await file.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
+      const result = await session.uploadIcon({ filename: file.name, mimeType: file.type, data: base64 });
+      setIcons(prev => [{ id: result.id, filename: result.filename, mimeType: result.mimeType, sizeBytes: result.sizeBytes, createdAt: new Date().toISOString() }, ...prev]);
+      showToast(`${result.filename} uploaded`, 'success');
+    } catch (err) {
+      showToast(err.message || t('settings.icons.uploadError'), 'error');
+    }
+  }
+
+  async function handleDeleteIcon(id) {
+    if (!window.confirm(t('settings.icons.deleteConfirm'))) return;
+    try {
+      await session.deleteIcon(id);
+      setIcons(prev => prev.filter(ic => ic.id !== id));
+    } catch (err) {
+      showToast(err.message || 'Failed to delete icon', 'error');
+    }
   }
 
   const box = (
@@ -541,6 +592,79 @@ export function SettingsModal({ isOpen, onClose, inline }) {
                 </table>
               </div>
 
+            </div>
+          )}
+
+          {/* ── Icons ── */}
+          {activeTab === 'icons' && (
+            <div className="settings-panel settings-panel--active">
+              {!session.connected ? (
+                <div className="settings-field">
+                  <span className="settings-field__hint" style={{ color: 'var(--color-text-dim)' }}>
+                    {t('settings.icons.notConnected')}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <div className="settings-field">
+                    <label className="settings-field__label">{t('settings.icons.upload')}</label>
+                    <span className="settings-field__hint">{t('settings.icons.uploadHint')}</span>
+                    <input
+                      ref={iconInputRef}
+                      type="file"
+                      accept="image/png,image/svg+xml"
+                      style={{ display: 'none' }}
+                      onChange={handleIconFile}
+                    />
+                    <button
+                      className="btn btn--secondary btn--sm"
+                      style={{ marginTop: 4 }}
+                      onClick={() => iconInputRef.current?.click()}
+                    >
+                      {t('settings.icons.uploadButton')}
+                    </button>
+                  </div>
+
+                  <div className="settings-field">
+                    {iconsLoading && <span className="settings-field__hint">Loading…</span>}
+                    {!iconsLoading && icons.length === 0 && (
+                      <span className="settings-field__hint">{t('settings.icons.noIcons')}</span>
+                    )}
+                    {icons.map(icon => (
+                      <div key={icon.id} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        marginBottom: 8,
+                        padding: '6px 8px',
+                        border: '1px solid var(--border)',
+                        borderRadius: 4,
+                      }}>
+                        <img
+                          src={`${backendUrl}/icons/${icon.id}`}
+                          alt={icon.filename}
+                          style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, borderRadius: 4 }}
+                        />
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: '0.85em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {icon.filename}
+                          </div>
+                          <div style={{ fontSize: '0.75em', opacity: 0.5 }}>
+                            {Math.round(icon.sizeBytes / 1024)} KB · {icon.mimeType}
+                          </div>
+                        </div>
+                        <button
+                          className="btn btn--secondary btn--sm"
+                          style={{ flexShrink: 0 }}
+                          onClick={() => handleDeleteIcon(icon.id)}
+                        >
+                          {t('settings.icons.deleteIcon')}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
         </div>

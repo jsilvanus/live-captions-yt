@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+import { useSessionContext } from '../contexts/SessionContext';
 import { getAnyTargetNoBatch } from '../lib/targetConfig';
 import { getTargets, setTargets } from '../lib/targetConfig';
 import {
@@ -106,9 +107,11 @@ function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t
 
 // ── Target row ────────────────────────────────────────────────
 
-function TargetRow({ entry, onChange, onRemove, t }) {
+function TargetRow({ entry, onChange, onRemove, backendUrl, icons, t }) {
   const [urlError, setUrlError] = useState('');
   const [headersError, setHeadersError] = useState('');
+  const [viewerKeyError, setViewerKeyError] = useState('');
+  const [qrOpen, setQrOpen] = useState(false);
 
   function validateUrl(val) {
     if (!val) return t('settings.targets.errorUrlRequired');
@@ -134,6 +137,19 @@ function TargetRow({ entry, onChange, onRemove, t }) {
     }
   }
 
+  function validateViewerKey(val) {
+    if (!val) return t('settings.targets.viewerKeyError');
+    if (!/^[a-zA-Z0-9_-]{3,}$/.test(val)) return t('settings.targets.viewerKeyError');
+    return '';
+  }
+
+  const isValidViewerKey = entry.type === 'viewer' && entry.viewerKey && /^[a-zA-Z0-9_-]{3,}$/.test(entry.viewerKey);
+
+  // Build the viewer URL — includes icon param when an icon is selected
+  const viewerPageUrl = (isValidViewerKey && backendUrl)
+    ? `${window.location.origin}/view/${encodeURIComponent(entry.viewerKey)}?server=${encodeURIComponent(backendUrl)}${entry.iconId ? `&icon=${entry.iconId}` : ''}`
+    : null;
+
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -149,30 +165,33 @@ function TargetRow({ entry, onChange, onRemove, t }) {
           value={entry.type}
           onChange={e => {
             const next = { ...entry, type: e.target.value };
-            if (e.target.value === 'youtube') {
-              delete next.url;
-              delete next.headers;
-            } else {
-              delete next.streamKey;
-            }
+            // Clear all type-specific fields when switching types to prevent stale data
+            delete next.url;
+            delete next.headers;
+            delete next.streamKey;
+            delete next.viewerKey;
             onChange(next);
             setUrlError('');
             setHeadersError('');
+            setViewerKeyError('');
           }}
           style={{ width: 'auto' }}
         >
           <option value="youtube">{t('settings.targets.typeYouTube')}</option>
           <option value="generic">{t('settings.targets.typeGeneric')}</option>
+          <option value="viewer">{t('settings.targets.typeViewer')}</option>
         </select>
-        <select
-          className="settings-field__input"
-          value={entry.format || 'youtube'}
-          onChange={e => onChange({ ...entry, format: e.target.value })}
-          style={{ width: 'auto' }}
-        >
-          <option value="youtube">{t('settings.targets.formatYouTube')}</option>
-          <option value="json">{t('settings.targets.formatJson')}</option>
-        </select>
+        {entry.type !== 'viewer' && (
+          <select
+            className="settings-field__input"
+            value={entry.format || 'youtube'}
+            onChange={e => onChange({ ...entry, format: e.target.value })}
+            style={{ width: 'auto' }}
+          >
+            <option value="youtube">{t('settings.targets.formatYouTube')}</option>
+            <option value="json">{t('settings.targets.formatJson')}</option>
+          </select>
+        )}
         <button
           type="button"
           className="btn btn--secondary btn--sm"
@@ -241,6 +260,98 @@ function TargetRow({ entry, onChange, onRemove, t }) {
         </>
       )}
 
+      {entry.type === 'viewer' && (
+        <div>
+          <label className="settings-field__label">{t('settings.targets.viewerKey')}</label>
+          <input
+            className="settings-field__input"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={t('settings.targets.viewerKeyPlaceholder')}
+            value={entry.viewerKey || ''}
+            onChange={e => {
+              onChange({ ...entry, viewerKey: e.target.value });
+              setViewerKeyError(validateViewerKey(e.target.value));
+            }}
+            onBlur={e => setViewerKeyError(validateViewerKey(e.target.value))}
+          />
+          {viewerKeyError && (
+            <span className="settings-field__hint" style={{ color: 'var(--color-error, #c00)' }}>{viewerKeyError}</span>
+          )}
+          <span className="settings-field__hint">{t('settings.targets.viewerKeyHint')}</span>
+
+          {/* Icon selector */}
+          <label className="settings-field__label" style={{ marginTop: 8 }}>{t('settings.targets.viewerIcon')}</label>
+          <select
+            className="settings-field__input"
+            style={{ width: 'auto' }}
+            value={entry.iconId || ''}
+            onChange={e => onChange({ ...entry, iconId: e.target.value ? Number(e.target.value) : null })}
+          >
+            <option value="">{t('settings.targets.viewerIconNone')}</option>
+            {(icons || []).map(icon => (
+              <option key={icon.id} value={icon.id}>{icon.filename}</option>
+            ))}
+          </select>
+          <span className="settings-field__hint">{t('settings.targets.viewerIconHint')}</span>
+
+          {viewerPageUrl && (
+            <div style={{ marginTop: 6 }}>
+              <span className="settings-field__label">{t('settings.targets.viewerUrl')}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
+                <a
+                  href={viewerPageUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ wordBreak: 'break-all', fontSize: '0.85em', flex: 1, minWidth: 0 }}
+                >{viewerPageUrl}</a>
+                <button
+                  type="button"
+                  className="btn btn--secondary btn--sm"
+                  style={{ flexShrink: 0 }}
+                  onClick={() => setQrOpen(v => !v)}
+                  title={t('settings.targets.viewerQrTitle')}
+                >
+                  {t('settings.targets.viewerQr')}
+                </button>
+              </div>
+
+              {/* QR code popover */}
+              {qrOpen && (
+                <div style={{
+                  marginTop: 8,
+                  padding: '12px 14px',
+                  background: 'var(--color-bg, #1a1a1a)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 6,
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 8,
+                }}>
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(viewerPageUrl)}`}
+                    alt="QR code"
+                    width={180}
+                    height={180}
+                    style={{ display: 'block', borderRadius: 4 }}
+                  />
+                  <span style={{ fontSize: '0.72em', opacity: 0.6, textAlign: 'center' }}>
+                    {t('settings.targets.viewerQrHint')}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => setQrOpen(false)}
+                  >✕</button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
         <label className="settings-checkbox" style={{ marginBottom: 0 }}>
           <input
@@ -263,9 +374,17 @@ function TargetRow({ entry, onChange, onRemove, t }) {
 export function CCModal({ isOpen, onClose, connected, inline }) {
   const { showToast } = useToastContext();
   const { t } = useLang();
+  const session = useSessionContext();
+  const { backendUrl: sessionBackendUrl, getPersistedConfig } = session;
+  // Use connected backendUrl, falling back to the persisted config so the
+  // viewer URL preview is visible even when not currently connected.
+  const backendUrl = sessionBackendUrl || (getPersistedConfig().backendUrl ?? '');
 
   const [advancedMode, setAdvancedMode] = useState(getAdvancedMode);
   const [activeTab, setActiveTab] = useState('targets');
+
+  // ── Icons (for viewer target icon picker) ─────────────────
+  const [icons, setIcons] = useState([]);
 
   // ── Service tab ───────────────────────────────────────────
   const cloudCfg = getSttCloudConfig();
@@ -368,6 +487,12 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
     setTranslationLibreUrlState(getTranslationLibreUrl());
     setTranslationLibreKeyState(getTranslationLibreKey());
     setTranslationShowOriginalState(getTranslationShowOriginal());
+    // Fetch icons for the viewer icon picker (only when connected)
+    if (session.connected) {
+      session.listIcons().then(data => setIcons(data.icons || [])).catch(() => setIcons([]));
+    } else {
+      setIcons([]);
+    }
   }, [isOpen]);
 
   useEffect(() => {
@@ -822,6 +947,8 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                       entry={entry}
                       onChange={updated => updateTargetRow(entry.id, updated)}
                       onRemove={() => removeTargetRow(entry.id)}
+                      backendUrl={backendUrl}
+                      icons={icons}
                       t={t}
                     />
                   ))}

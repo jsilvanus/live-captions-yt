@@ -149,6 +149,9 @@ export function useSession({
       if (t.type === 'youtube') {
         return { id: t.id, type: 'youtube', streamKey: t.streamKey };
       }
+      if (t.type === 'viewer') {
+        return { id: t.id, type: 'viewer', viewerKey: t.viewerKey };
+      }
       let headers = {};
       if (t.headers) { try { headers = JSON.parse(t.headers); } catch {} }
       return { id: t.id, type: 'generic', url: t.url, headers };
@@ -370,6 +373,9 @@ export function useSession({
       if (t.type === 'youtube') {
         return { id: t.id, type: 'youtube', streamKey: t.streamKey };
       }
+      if (t.type === 'viewer') {
+        return { id: t.id, type: 'viewer', viewerKey: t.viewerKey };
+      }
       let headers = {};
       // headers is stored as a raw JSON string in localStorage; parse it here.
       // Invalid JSON falls back to empty headers (backend ignores unrecognised keys).
@@ -432,6 +438,64 @@ export function useSession({
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error(`Failed to delete file (${res.status})`);
+    return res.json();
+  }
+
+  // ─── Icons ──────────────────────────────────────────────
+
+  /**
+   * List icons uploaded for the current API key.
+   * @returns {Promise<{ icons: object[] }>}
+   */
+  async function listIcons() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/icons`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) throw new Error(`Failed to list icons (${res.status})`);
+    return res.json();
+  }
+
+  /**
+   * Upload a PNG or SVG icon.
+   * @param {{ filename: string, mimeType: string, data: string }} opts
+   *   data is a base64-encoded string of the file contents.
+   * @returns {Promise<{ ok: boolean, id: number, filename: string, mimeType: string, sizeBytes: number }>}
+   */
+  async function uploadIcon({ filename, mimeType, data }) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/icons`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, mimeType, data }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to upload icon (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
+   * Delete an icon by id.
+   * @param {number} iconId
+   */
+  async function deleteIcon(iconId) {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/icons/${iconId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Failed to delete icon (${res.status})`);
+    }
     return res.json();
   }
 
@@ -597,6 +661,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
+    listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };

@@ -242,6 +242,35 @@ export function initDb(dbPath) {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS icons (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key       TEXT    NOT NULL,
+      filename      TEXT    NOT NULL,
+      disk_filename TEXT    NOT NULL,
+      mime_type     TEXT    NOT NULL DEFAULT 'image/png',
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      size_bytes    INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS viewer_key_daily_stats (
+      date        TEXT    NOT NULL,
+      api_key     TEXT    NOT NULL,
+      viewer_key  TEXT    NOT NULL,
+      views       INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (date, api_key, viewer_key)
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS viewer_anon_daily_stats (
+      date  TEXT    PRIMARY KEY NOT NULL,
+      views INTEGER NOT NULL DEFAULT 0
+    )
+  `);
+
   return db;
 }
 
@@ -1157,4 +1186,121 @@ export function incrementRtmpAnonDailyStat(db, { targetUrl, captionMode = 'http'
       streams_count    = streams_count + 1,
       duration_seconds = duration_seconds + excluded.duration_seconds
   `).run(date, endpointType, captionMode || 'http', durationSeconds);
+}
+
+// ─── Icons (user-uploaded PNG/SVG for viewer branding) ────────────────────────
+
+/**
+ * Register a new icon in the database.
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ apiKey: string, filename: string, diskFilename: string, mimeType: string, sizeBytes: number }} data
+ * @returns {number} row id
+ */
+export function registerIcon(db, { apiKey, filename, diskFilename, mimeType, sizeBytes }) {
+  const result = db.prepare(
+    'INSERT INTO icons (api_key, filename, disk_filename, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?)'
+  ).run(apiKey, filename, diskFilename, mimeType ?? 'image/png', sizeBytes ?? 0);
+  return result.lastInsertRowid;
+}
+
+/**
+ * List all icons for an API key, newest first.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {Array}
+ */
+export function listIcons(db, apiKey) {
+  return db.prepare('SELECT * FROM icons WHERE api_key = ? ORDER BY created_at DESC').all(apiKey);
+}
+
+/**
+ * Get a single icon row by id (no API key scoping — for public serving).
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @returns {object|null}
+ */
+export function getIcon(db, id) {
+  return db.prepare('SELECT * FROM icons WHERE id = ?').get(id) ?? null;
+}
+
+/**
+ * Delete an icon row by id, scoped to an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @param {string} apiKey
+ * @returns {boolean} true if a row was deleted
+ */
+export function deleteIcon(db, id, apiKey) {
+  const result = db.prepare('DELETE FROM icons WHERE id = ? AND api_key = ?').run(id, apiKey);
+  return result.changes > 0;
+}
+
+/**
+ * Delete all icon rows for an API key (for GDPR erasure).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ */
+export function deleteAllIcons(db, apiKey) {
+  db.prepare('DELETE FROM icons WHERE api_key = ?').run(apiKey);
+}
+
+// ─── Viewer usage stats ────────────────────────────────────────────────────────
+
+/**
+ * Increment the per-API-key viewer view count for today.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} viewerKey
+ */
+export function incrementViewerKeyStat(db, apiKey, viewerKey) {
+  const date = new Date().toISOString().slice(0, 10);
+  db.prepare(`
+    INSERT INTO viewer_key_daily_stats (date, api_key, viewer_key, views)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT (date, api_key, viewer_key) DO UPDATE SET views = views + 1
+  `).run(date, apiKey, viewerKey);
+}
+
+/**
+ * Increment the anonymous global viewer view count for today.
+ * @param {import('better-sqlite3').Database} db
+ */
+export function incrementViewerAnonStat(db) {
+  const date = new Date().toISOString().slice(0, 10);
+  db.prepare(`
+    INSERT INTO viewer_anon_daily_stats (date, views)
+    VALUES (?, 1)
+    ON CONFLICT (date) DO UPDATE SET views = views + 1
+  `).run(date);
+}
+
+/**
+ * Get per-key viewer stats for an API key, newest first.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {{ from?: string, to?: string }} opts
+ * @returns {Array<{ date: string, viewer_key: string, views: number }>}
+ */
+export function getViewerKeyStats(db, apiKey, { from, to } = {}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const f = from || '2000-01-01';
+  const t = to || today;
+  return db.prepare(
+    'SELECT date, viewer_key, views FROM viewer_key_daily_stats WHERE api_key = ? AND date >= ? AND date <= ? ORDER BY date DESC, viewer_key ASC'
+  ).all(apiKey, f, t);
+}
+
+/**
+ * Get anonymous global viewer stats.
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ from?: string, to?: string }} opts
+ * @returns {Array<{ date: string, views: number }>}
+ */
+export function getViewerAnonStats(db, { from, to } = {}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const f = from || '2000-01-01';
+  const t = to || today;
+  return db.prepare(
+    'SELECT date, views FROM viewer_anon_daily_stats WHERE date >= ? AND date <= ? ORDER BY date DESC'
+  ).all(f, t);
 }

@@ -20,6 +20,8 @@ import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
+import { createViewerRouter } from './routes/viewer.js';
+import { createIconRouter } from './routes/icons.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -234,7 +236,16 @@ const app = express();
   console.info(`✓ Express trust proxy: ${String(val)}`);
 }
 
+// Auth middleware instance — created here so /icons can be mounted before the
+// global express.json body parser (the icons upload route uses its own 400kb parser).
+const auth = createAuthMiddleware(jwtSecret);
+
+// Mount /icons BEFORE the global JSON body parser so uploads can use the
+// router-local 400kb parser without hitting the global 64kb limit first.
+app.use('/icons', createIconRouter(db, auth, store));
+
 // JSON body parser — 64KB limit prevents abuse
+// NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
 app.use(express.json({ limit: '64kb' }));
 
 // Request logging middleware
@@ -315,9 +326,6 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-// Auth middleware instance shared by captions and sync routers
-const auth = createAuthMiddleware(jwtSecret);
-
 app.use('/live', createLiveRouter(db, store, jwtSecret));
 app.use('/captions', createCaptionsRouter(store, auth, db, relayManager));
 app.use('/events', createEventsRouter(store, jwtSecret));
@@ -329,6 +337,7 @@ app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
+app.use('/viewer', createViewerRouter(db));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
