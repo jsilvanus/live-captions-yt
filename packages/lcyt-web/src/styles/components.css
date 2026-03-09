@@ -395,6 +395,28 @@
   background: transparent;
 }
 
+.caption-line--empty-send {
+  opacity: 0.45;
+  font-style: italic;
+}
+
+.caption-line--empty-send:hover {
+  opacity: 0.7;
+}
+
+.caption-line__empty-send-label {
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  user-select: none;
+}
+
+.caption-line__empty-send-label--named {
+  color: #e05555;
+  font-size: 1em;
+  letter-spacing: normal;
+}
+
 .caption-line--sent {
   animation: sent-flash 1.5s ease-out forwards;
 }
