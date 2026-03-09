@@ -29,8 +29,11 @@ const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 /** @type {RegExp} Matches <!-- key: value --> metadata comment lines. */
 const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i;
 
-/** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza --> */
+/** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza */
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
+
+/** Sentinel for an empty-send line that fires codes without caption text. */
+const EMPTY_SEND_RE = /^_$/;
 
 /**
  * Parse raw file content and extract text lines with associated metadata codes.
@@ -44,12 +47,18 @@ const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
  *   <!-- my-custom-code: any value -->
  *   <!-- lang: -->      ← empty value removes the code
  *
- * Multi-line stanza blocks group several song lines into a single caption,
- * sent to YouTube as one unit with <br> between lines:
+ * Multi-line stanza blocks set a `stanza` metadata code on all subsequent lines.
+ * The stanza text is newline-joined and carried as codes.stanza to the viewer.
+ * Stanza blocks do NOT produce a caption line themselves:
  *   <!-- stanza
  *   First song line
  *   Second song line
  *   -->
+ *
+ * A lone underscore `_` on its own line creates an empty-send entry: pressing
+ * Enter on it fires the current metadata codes (including stanza) without sending
+ * any caption text to YouTube — useful for pushing the stanza to the viewer
+ * before the singing starts.
  *
  * Any valid HTML comment key is accepted (not limited to a predefined list).
  * Each code tags all subsequent lines until the same key appears again.
@@ -72,7 +81,9 @@ export function parseFileContent(rawText) {
     if (!raw) continue;
 
     if (STANZA_OPEN_RE.test(raw)) {
-      // Collect lines until '-->' as a single stanza caption
+      // Collect lines until '-->' and store as a stanza metadata code.
+      // Stanza blocks are NOT caption lines — they carry singing-aid text
+      // to the viewer via codes.stanza on subsequent caption lines.
       const stanzaLines = [];
       i++;
       while (i < rawLines.length) {
@@ -82,10 +93,15 @@ export function parseFileContent(rawText) {
         i++;
       }
       if (stanzaLines.length > 0) {
-        lines.push(stanzaLines.join('<br>'));
-        lineCodes.push({ ...currentCodes, stanza: true });
-        lineNumbers.push(++textLineCount);
+        currentCodes.stanza = stanzaLines.join('\n');
+      } else {
+        delete currentCodes.stanza;
       }
+    } else if (EMPTY_SEND_RE.test(raw)) {
+      // Empty-send marker: fires current codes to the viewer without caption text.
+      lines.push('');
+      lineCodes.push({ ...currentCodes, emptySend: true });
+      lineNumbers.push(++textLineCount);
     } else {
       const match = raw.match(METADATA_COMMENT_RE);
       if (match) {

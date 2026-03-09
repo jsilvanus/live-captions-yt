@@ -220,20 +220,18 @@ export function CaptionView({ onLineSend }) {
     const isSent = lastSentLine?.fileId === fileId && lastSentLine?.lineIndex === i;
     const isHeading = lines[i].startsWith('#');
     const codes = lineCodes?.[i];
-    const isStanza = !!codes?.stanza;
+    const isEmptySend = !!codes?.emptySend;
 
     let cls = 'caption-line';
     if (isActive) cls += ' caption-line--active';
     if (isSent) cls += ' caption-line--sent';
     if (isHeading) cls += ' caption-line--heading';
-    if (isStanza) cls += ' caption-line--stanza';
+    if (isEmptySend) cls += ' caption-line--empty-send';
 
-    // For stanza lines, split on <br>, escape each part, rejoin with <br> for display.
-    // For headings, strip leading # markers. Otherwise just escape.
     const displayText = isHeading
       ? escapeHtml(lines[i].replace(/^#+\s*/, ''))
-      : isStanza
-        ? lines[i].split('<br>').map(escapeHtml).join('<br>')
+      : isEmptySend
+        ? ''
         : escapeHtml(lines[i]);
 
     const lineNum = lineNumbers?.[i] ?? (i + 1);
@@ -246,7 +244,7 @@ export function CaptionView({ onLineSend }) {
         className={cls}
         data-index={i}
         onClick={() => setPointer(fileId, i)}
-        onDoubleClick={!isHeading ? () => onLineSend?.(lines[i], fileId, i) : undefined}
+        onDoubleClick={!isHeading && !isEmptySend ? () => onLineSend?.(lines[i], fileId, i) : undefined}
       >
         <span
           className={`caption-line__linenum${hasCodes ? ' caption-line__linenum--coded' : ''}`}
@@ -255,11 +253,11 @@ export function CaptionView({ onLineSend }) {
         >
           {lineNum}
         </span>
-        <span className="caption-line__gutter">{isActive ? '►' : isStanza ? '♪' : ''}</span>
-        <span
-          className="caption-line__text"
-          dangerouslySetInnerHTML={{ __html: displayText }}
-        />
+        <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
+        {isEmptySend
+          ? <span className="caption-line__empty-send-label">⊘ send codes</span>
+          : <span className="caption-line__text" dangerouslySetInnerHTML={{ __html: displayText }} />
+        }
       </li>
     );
   }

@@ -395,14 +395,20 @@
   background: transparent;
 }
 
-.caption-line--stanza .caption-line__text {
+.caption-line--empty-send {
+  opacity: 0.45;
   font-style: italic;
-  line-height: 1.6;
 }
 
-.caption-line--stanza .caption-line__gutter {
-  color: var(--color-accent);
+.caption-line--empty-send:hover {
   opacity: 0.7;
+}
+
+.caption-line__empty-send-label {
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+  color: var(--color-accent);
+  user-select: none;
 }
 
 .caption-line--sent {
