@@ -1687,6 +1687,12 @@
   to   { background: color-mix(in srgb, var(--color-accent) 35%, var(--color-surface-elevated)); }
 }
 
+/* Hold-to-speak mode — mic only active while pointer is held down */
+.audio-caption-btn--hold-to-speak {
+  touch-action: none; /* prevent scroll interference on mobile */
+  user-select: none;
+}
+
 /* Live caption display */
 .audio-caption-live {
   min-height: 80px;

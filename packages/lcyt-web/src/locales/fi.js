@@ -60,6 +60,8 @@ export default {
       microphone: 'Mikrofoni',
       microphoneDefault: 'Oletuslaite',
       microphoneRefresh: 'Päivitä',
+      holdToSpeak: 'Pidä painettuna puhuaksesi',
+      holdToSpeakHint: 'Kun käytössä, mikrofoni tallentaa ääntä vain kun pidät mikrofoninappia painettuna.',
       language: 'Tunnistuskieli',
       languagePlaceholder: 'Kirjoita suodattaaksesi…',
       onDevice: 'Laitteen paikallinen käsittely',

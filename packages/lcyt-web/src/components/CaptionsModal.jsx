@@ -65,6 +65,9 @@ export function CaptionsModal({ isOpen, onClose }) {
   const [utteranceEndTimer, setUtteranceEndTimer] = useState(
     () => { try { return parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10); } catch { return 0; } }
   );
+  const [holdToSpeak, setHoldToSpeakState] = useState(
+    () => { try { return localStorage.getItem('lcyt:hold-to-speak') === '1'; } catch { return false; } }
+  );
 
   // ── VAD tab ───────────────────────────────────────────────
   const [vadEnabled, setVadEnabled] = useState(
@@ -110,6 +113,7 @@ export function CaptionsModal({ isOpen, onClose }) {
     try { setVadThreshold(parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01')); } catch {}
     try { setUtteranceEndButton(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
     try { setUtteranceEndTimer(parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10)); } catch {}
+    try { setHoldToSpeakState(localStorage.getItem('lcyt:hold-to-speak') === '1'); } catch {}
   }, [isOpen]);
 
   useEffect(() => {
@@ -304,6 +308,23 @@ export function CaptionsModal({ isOpen, onClose }) {
                   </select>
                   <button type="button" className="btn" onClick={refreshMics}>{t('settings.stt.microphoneRefresh')}</button>
                 </div>
+              </div>
+
+              <div className="settings-field">
+                <label className="settings-checkbox">
+                  <input
+                    type="checkbox"
+                    checked={holdToSpeak}
+                    onChange={e => {
+                      const val = e.target.checked;
+                      setHoldToSpeakState(val);
+                      try { localStorage.setItem('lcyt:hold-to-speak', val ? '1' : '0'); } catch {}
+                      window.dispatchEvent(new Event('lcyt:stt-config-changed'));
+                    }}
+                  />
+                  {t('settings.stt.holdToSpeak')}
+                </label>
+                <span className="settings-field__hint">{t('settings.stt.holdToSpeakHint')}</span>
               </div>
 
               <div className="settings-field">

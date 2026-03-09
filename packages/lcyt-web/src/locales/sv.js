@@ -60,6 +60,8 @@ export default {
       microphone: 'Mikrofon',
       microphoneDefault: 'Standardenhet',
       microphoneRefresh: 'Uppdatera',
+      holdToSpeak: 'Håll för att tala',
+      holdToSpeakHint: 'När aktiverat fångar mikrofonen bara ljud medan du håller mikrofon-knappen intryckt.',
       language: 'Igenkänningsspråk',
       languagePlaceholder: 'Skriv för att filtrera…',
       onDevice: 'Lokal bearbetning',
