@@ -58,6 +58,7 @@ export function ViewerPage() {
   // lang: '', 'original', 'fi-FI', 'all'
   const lang       = params.get('lang') || '';
   const showAll    = lang === 'all';
+  const iconId     = params.get('icon') ? parseInt(params.get('icon'), 10) : null;
 
   // Single-language display state
   const [text,      setText]      = useState('');
@@ -149,6 +150,13 @@ export function ViewerPage() {
 
       {/* Connection status dot — top right */}
       <div style={statusStyle}>
+        {iconId && Number.isFinite(iconId) && iconId > 0 && (
+          <img
+            src={`${backendUrl}/icons/${iconId}`}
+            alt=""
+            style={iconStyle}
+          />
+        )}
         <span style={{ ...dotStyle, background: connected ? '#4caf50' : '#888' }} />
         {!connected && (
           <span style={{ color: '#888', fontSize: '0.75rem' }}>
@@ -224,6 +232,14 @@ const statusStyle = {
   alignItems: 'center',
   gap:        6,
   zIndex:     10,
+};
+
+const iconStyle = {
+  width:        40,
+  height:       40,
+  objectFit:    'contain',
+  borderRadius: 4,
+  flexShrink:   0,
 };
 
 const dotStyle = {
