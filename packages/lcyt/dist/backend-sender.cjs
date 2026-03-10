@@ -8,17 +8,23 @@ const { NetworkError } = require('./errors.cjs');
  * fetch() — works in browsers and Node 18+.
  *
  * @example
+ * // Target-array mode (recommended): all targets configured server-side via CC → Targets
+ * const sender = new BackendCaptionSender({
+ *   backendUrl: 'https://captions.example.com',
+ *   apiKey: 'a1b2c3d4-...',
+ * });
+ * await sender.start({ targets: [{ id: '1', type: 'youtube', streamKey: 'YOUR_KEY' }] });
+ *
+ * // Legacy single-target mode: pass a streamKey directly
  * const sender = new BackendCaptionSender({
  *   backendUrl: 'https://captions.example.com',
  *   apiKey: 'a1b2c3d4-...',
  *   streamKey: 'YOUR_YOUTUBE_KEY'
  * });
- *
  * await sender.start();
+ *
  * await sender.send('Hello!');
- * await sender.send('Relative', { time: 5000 });
  * await sender.sync();
- * const status = await sender.heartbeat();
  * await sender.end();
  */
 class BackendCaptionSender {
@@ -26,7 +32,7 @@ class BackendCaptionSender {
    * @param {object} options
    * @param {string} options.backendUrl - Base URL of the lcyt-backend server (e.g. "https://captions.example.com")
    * @param {string} options.apiKey - API key registered in the backend's SQLite database
-   * @param {string} options.streamKey - YouTube stream key
+   * @param {string} [options.streamKey] - YouTube stream key (optional; superseded by the `targets` array in `start()`)
    * @param {string} [options.domain] - CORS origin. Defaults to location.origin in browsers or 'http://localhost' in Node.
    * @param {number} [options.sequence=0] - Starting sequence number (overridden by backend response on start())
    * @param {boolean} [options.verbose=false] - Enable verbose logging
@@ -96,17 +102,28 @@ class BackendCaptionSender {
   /**
    * Register a session with the backend and obtain a JWT.
    * Updates sequence, syncOffset, and startedAt from the server response.
+   *
+   * @param {object} [options]
+   * @param {Array} [options.targets] - Optional array of extra caption targets to register with the session.
+   *   Each entry: { id, type: 'youtube'|'generic', streamKey?, url?, headers? }
    * @returns {Promise<this>}
    */
-  async start() {
+  async start({ targets } = {}) {
+    const body = {
+      apiKey: this.apiKey,
+      domain: this.domain,
+      sequence: this.sequence
+    };
+    // streamKey is optional: include it only when provided (legacy single-target mode).
+    if (this.streamKey !== null && this.streamKey !== undefined && this.streamKey !== '') {
+      body.streamKey = this.streamKey;
+    }
+    if (Array.isArray(targets) && targets.length > 0) {
+      body.targets = targets;
+    }
     const data = await this._fetch('/live', {
       method: 'POST',
-      body: {
-        apiKey: this.apiKey,
-        streamKey: this.streamKey,
-        domain: this.domain,
-        sequence: this.sequence
-      },
+      body,
       auth: false
     });
 
@@ -142,9 +159,11 @@ class BackendCaptionSender {
    *   - Absolute timestamp (string/Date/epoch ms) — passed as `timestamp`
    *   - `{ time: number }` — milliseconds since session start, resolved server-side
    *   - Omit for auto-generated timestamp
+   * @param {object} [extraOpts] - Optional extra fields to merge into the caption object
+   *   e.g. { translations: { 'fi-FI': '...' }, captionLang: 'fi-FI', showOriginal: true }
    * @returns {Promise<{ok: boolean, requestId: string}>} Immediate ack; delivery result arrives via GET /events SSE stream
    */
-  async send(text, timestampOrOptions) {
+  async send(text, timestampOrOptions, extraOpts) {
     const caption = { text };
 
     if (timestampOrOptions !== undefined) {
@@ -157,6 +176,14 @@ class BackendCaptionSender {
       } else {
         caption.timestamp = timestampOrOptions;
       }
+    }
+
+    if (extraOpts) {
+      if (extraOpts.translations && Object.keys(extraOpts.translations).length > 0)
+        caption.translations = extraOpts.translations;
+      if (extraOpts.captionLang) caption.captionLang = extraOpts.captionLang;
+      if (extraOpts.showOriginal !== undefined) caption.showOriginal = extraOpts.showOriginal;
+      if (extraOpts.codes && typeof extraOpts.codes === 'object') caption.codes = extraOpts.codes;
     }
 
     return this._fetch('/captions', {
