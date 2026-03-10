@@ -495,7 +495,7 @@ export class InteractiveUI {
         post = '{/bold}{/blue-fg}';
       }
 
-      content += `${pointer}${pre}${num}│ ${line.text}${post}\n`;
+      content += `${pointer}${pre}${num}│ ${_escapeTags(line.text)}${post}\n`;
     }
 
     this.textPreview.setContent(content);
@@ -511,7 +511,7 @@ export class InteractiveUI {
       content +=
         `{${color}-fg}${symbol}{/${color}-fg} ` +
         `{gray-fg}${entry.timestamp}{/gray-fg} ` +
-        `${entry.message}\n`;
+        `${_escapeTags(entry.message)}\n`;
     }
 
     this.logBox.setContent(content);
@@ -535,9 +535,9 @@ export class InteractiveUI {
           content +=
             `{yellow-fg}#${seq}{/yellow-fg} ` +
             `{gray-fg}[${c.timestamp}]{/gray-fg} ` +
-            `${c.text}\n`;
+            `${_escapeTags(c.text)}\n`;
         } else {
-          content += `{yellow-fg}#${seq}{/yellow-fg} ${c.text}\n`;
+          content += `{yellow-fg}#${seq}{/yellow-fg} ${_escapeTags(c.text)}\n`;
         }
       }
     }
@@ -682,9 +682,14 @@ export class InteractiveUI {
     this.inputField.key(['pageup'], () => { this.shiftPointer(-10); });
     this.inputField.key(['pagedown'], () => { this.shiftPointer(10); });
 
-    // Quick keys
-    this.inputField.key(['h'], () => { this.showHelp(); });
-    this.inputField.key(['q'], () => { this.cleanup(); process.exit(0); });
+    // Quick keys — only active when the input field is empty so that typing
+    // captions starting with 'h' or 'q' works correctly.
+    this.inputField.key(['h'], () => {
+      if (!this.inputField.getValue()) { this.showHelp(); }
+    });
+    this.inputField.key(['q'], () => {
+      if (!this.inputField.getValue()) { this.cleanup(); process.exit(0); }
+    });
     this.inputField.key(['C-c'], () => { this.cleanup(); process.exit(0); });
 
     // Enter — the main action handler
@@ -1099,4 +1104,16 @@ function _logStyle(type) {
     case 'info':    return { color: 'cyan',   symbol: 'ℹ' };
     default:        return { color: 'white',  symbol: '·' };
   }
+}
+
+/**
+ * Escape curly braces in a string so that blessed's tag parser does not
+ * interpret them as formatting tags (e.g. {red-fg}, {bold}).
+ * Use this for any content that comes from user-supplied sources (file text,
+ * caption text, log messages derived from external data, etc.).
+ * @param {string} str - The string to escape.
+ * @returns {string} The string with `{` replaced by `{open}` and `}` by `{close}`.
+ */
+function _escapeTags(str) {
+  return String(str).replace(/\{/g, '{open}').replace(/\}/g, '{close}');
 }

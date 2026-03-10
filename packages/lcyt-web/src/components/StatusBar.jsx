@@ -3,7 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 
-export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyOpen }) {
+export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyOpen, onBroadcastOpen }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
   const { t } = useLang();
@@ -40,6 +40,11 @@ export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyO
       <span className="status-bar__brand">lcyt-web</span>
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">
+        <button className="status-bar__btn status-bar__btn--icon" onClick={onBroadcastOpen} title="Broadcast">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
+          </svg>
+        </button>
         <button className={connectBtnClass} onClick={handleConnectClick} disabled={connecting} title={session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}>
           {connecting ? t('settings.footer.connecting') : session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}
         </button>

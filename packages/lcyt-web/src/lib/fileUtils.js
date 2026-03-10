@@ -29,6 +29,12 @@ const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 /** @type {RegExp} Matches <!-- key: value --> metadata comment lines. */
 const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i;
 
+/** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza */
+const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
+
+/** Sentinel for an empty-send line. Captures optional label after the underscore. */
+const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
+
 /**
  * Parse raw file content and extract text lines with associated metadata codes.
  *
@@ -40,6 +46,19 @@ const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i
  *   <!-- no-translate: true -->
  *   <!-- my-custom-code: any value -->
  *   <!-- lang: -->      ← empty value removes the code
+ *
+ * Multi-line stanza blocks set a `stanza` metadata code on all subsequent lines.
+ * The stanza text is newline-joined and carried as codes.stanza to the viewer.
+ * Stanza blocks do NOT produce a caption line themselves:
+ *   <!-- stanza
+ *   First song line
+ *   Second song line
+ *   -->
+ *
+ * A lone underscore `_` on its own line creates an empty-send entry: pressing
+ * Enter on it fires the current metadata codes (including stanza) without sending
+ * any caption text to YouTube — useful for pushing the stanza to the viewer
+ * before the singing starts.
  *
  * Any valid HTML comment key is accepted (not limited to a predefined list).
  * Each code tags all subsequent lines until the same key appears again.
@@ -61,24 +80,52 @@ export function parseFileContent(rawText) {
     const raw = rawLines[i].trim();
     if (!raw) continue;
 
-    const match = raw.match(METADATA_COMMENT_RE);
-    if (match) {
-      const key = match[1].toLowerCase();
-      const value = match[2].trim();
-      if (value === '') {
-        delete currentCodes[key];
-      } else {
-        let parsed = value;
-        if (BOOLEAN_CODES.includes(key)) {
-          parsed = value.toLowerCase() === 'true';
-        }
-        currentCodes[key] = parsed;
+    if (STANZA_OPEN_RE.test(raw)) {
+      // Collect lines until '-->' and store as a stanza metadata code.
+      // Stanza blocks are NOT caption lines — they carry singing-aid text
+      // to the viewer via codes.stanza on subsequent caption lines.
+      const stanzaLines = [];
+      i++;
+      while (i < rawLines.length) {
+        const stanzaRaw = rawLines[i].trim();
+        if (stanzaRaw === '-->') break;
+        if (stanzaRaw) stanzaLines.push(stanzaRaw);
+        i++;
       }
-      // Comment lines are metadata only — not added to output
+      if (stanzaLines.length > 0) {
+        currentCodes.stanza = stanzaLines.join('\n');
+      } else {
+        delete currentCodes.stanza;
+      }
     } else {
-      lines.push(raw);
-      lineCodes.push({ ...currentCodes });
-      lineNumbers.push(++textLineCount); // running count of text-only lines
+      const emptySendMatch = raw.match(EMPTY_SEND_RE);
+      if (emptySendMatch) {
+        // Empty-send marker: fires current codes to the viewer without caption text.
+        const label = emptySendMatch[1]?.trim() || null;
+        lines.push('');
+        lineCodes.push({ ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) });
+        lineNumbers.push(++textLineCount);
+      } else {
+        const match = raw.match(METADATA_COMMENT_RE);
+        if (match) {
+          const key = match[1].toLowerCase();
+          const value = match[2].trim();
+          if (value === '') {
+            delete currentCodes[key];
+          } else {
+            let parsed = value;
+            if (BOOLEAN_CODES.includes(key)) {
+              parsed = value.toLowerCase() === 'true';
+            }
+            currentCodes[key] = parsed;
+          }
+          // Comment lines are metadata only — not added to output
+        } else {
+          lines.push(raw);
+          lineCodes.push({ ...currentCodes });
+          lineNumbers.push(++textLineCount); // running count of text-only lines
+        }
+      }
     }
   }
 
@@ -94,4 +141,18 @@ export function parseFileContent(rawText) {
 export function linesToFile(name, lines) {
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   return new File([blob], name, { type: 'text/plain' });
+}
+
+/**
+ * Read a Blob as a base64-encoded string (data URL without the prefix).
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+export function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }

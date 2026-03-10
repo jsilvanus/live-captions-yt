@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 const ACCEPTED_MIME = 'image/png,image/webp,image/svg+xml';
 
@@ -106,13 +107,7 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  // ── Keyboard close ───────────────────────────────────────
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKey(e) { if (e.key === 'Escape' && !shorthandPrompt) onClose(); }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [isOpen, onClose, shorthandPrompt]);
+  useEscapeKey(() => { if (!shorthandPrompt) onClose(); }, isOpen);
 
   if (!isOpen) return null;
 

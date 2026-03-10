@@ -18,11 +18,9 @@ const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8
 function isRunningViaNpx() {
   const npmExecPath = process.env.npm_execpath || '';
   const npmCommand = process.env.npm_command || '';
-  const npmLifecycleEvent = process.env.npm_lifecycle_event || '';
 
   return npmExecPath.includes('npx') ||
-         npmCommand === 'exec' ||
-         npmLifecycleEvent === 'npx';
+         npmCommand === 'exec';
 }
 
 const argv = yargs(hideBin(process.argv))
@@ -206,7 +204,7 @@ async function main() {
       config.batchQueue = [];
     }
 
-    const timestamp = argv.timestamp || new Date().toISOString();
+    const timestamp = argv.timestamp || new Date().toISOString().slice(0, 23);
     config.batchQueue.push({ text: captionText, timestamp });
     saveConfig(configPath, config);
     logger.info(`Added to batch queue (${config.batchQueue.length} total): "${captionText}"`);
@@ -524,6 +522,7 @@ async function sendSingleCaption(sender, text, config, configPath, timestamp) {
     await sender.send(text, timestamp);
     config.sequence = sender.getSequence();
     saveConfig(configPath, config);
+    logger.info('Caption sent.');
     sender.end();
   } catch (err) {
     logger.error(err.message);

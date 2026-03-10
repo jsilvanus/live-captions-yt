@@ -5,21 +5,8 @@ import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function blobToBase64(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result.split(',')[1]);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
-function isMobileDevice() {
-  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-}
+import { blobToBase64 } from '../lib/fileUtils';
+import { isMobileDevice } from '../lib/device';
 
 // Duration of the utterance-end button click flash animation (ms) — must match CSS @keyframes
 const UTTERANCE_CLICK_FLASH_MS = 400;

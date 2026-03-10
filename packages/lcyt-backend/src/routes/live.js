@@ -36,7 +36,7 @@ async function buildExtraTargets(targets) {
 
   const extraTargets = [];
   for (const target of targets) {
-    if (!target || !['youtube', 'generic'].includes(target.type)) {
+    if (!target || !['youtube', 'generic', 'viewer'].includes(target.type)) {
       return { ok: false, error: `Invalid target type: ${target?.type}` };
     }
 
@@ -65,6 +65,15 @@ async function buildExtraTargets(targets) {
         ? target.headers
         : {};
       extraTargets.push({ id: target.id, type: 'generic', url: target.url, headers });
+
+    } else if (target.type === 'viewer') {
+      if (!target.viewerKey || typeof target.viewerKey !== 'string') {
+        return { ok: false, error: 'Viewer target requires a viewerKey field' };
+      }
+      if (!/^[a-zA-Z0-9_-]{3,}$/.test(target.viewerKey)) {
+        return { ok: false, error: `Invalid viewerKey "${target.viewerKey}": must be at least 3 characters (letters, digits, hyphens, underscores)` };
+      }
+      extraTargets.push({ id: target.id, type: 'viewer', viewerKey: target.viewerKey });
     }
   }
   return { ok: true, extraTargets };

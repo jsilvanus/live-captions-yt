@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "test": "ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test node --test test/*.test.js"
+    "test": "ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --test test/*.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.0",

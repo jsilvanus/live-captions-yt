@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 
 const DEFAULT_RTMP_HOST = process.env.RTMP_HOST || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP  = process.env.RTMP_APP  || 'stream';
@@ -422,5 +422,49 @@ export class RtmpRelayManager {
       }, 3000);
       if (timer.unref) timer.unref();
     } catch {}
+  }
+}
+
+/**
+ * Probe local ffmpeg for required features (libx264, eia608, subrip).
+ * @returns {{ available: boolean, hasLibx264: boolean, hasEia608: boolean, hasSubrip: boolean }}
+ */
+export function probeFfmpeg() {
+  // First, check if ffmpeg binary exists at all
+  const which = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', timeout: 3000 });
+  if (which.error) {
+    const isNotFound = which.error.code === 'ENOENT' || which.error.message?.includes('ENOENT');
+    if (isNotFound) {
+      console.warn('⚠ ffmpeg not found in PATH — RTMP relay will not be available.');
+      console.warn('  Install ffmpeg to enable stream relay: https://ffmpeg.org/download.html');
+    } else {
+      console.warn('⚠ ffmpeg probe failed:', which.error.message);
+    }
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
+  }
+
+  try {
+    const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
+    const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
+    const demux = spawnSync('ffmpeg', ['-hide_banner', '-demuxers'], { encoding: 'utf8', timeout: 3000 });
+
+    const encOut = (enc.stdout || '') + (enc.stderr || '');
+    const fmtsOut = (fmts.stdout || '') + (fmts.stderr || '');
+    const demuxOut = (demux.stdout || '') + (demux.stderr || '');
+
+    const hasLibx264 = /libx264/i.test(encOut);
+    const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
+    const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
+
+    console.info('✓ ffmpeg found — RTMP relay is available.');
+
+    if (!hasLibx264) {
+      console.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
+    }
+
+    return { available: true, hasLibx264, hasEia608, hasSubrip };
+  } catch (err) {
+    console.warn('⚠ ffmpeg probe failed:', err.message);
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
   }
 }

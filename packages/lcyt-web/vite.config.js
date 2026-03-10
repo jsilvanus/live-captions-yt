@@ -16,6 +16,8 @@ export default defineConfig({
   resolve: {
     // Array form ensures more-specific sub-path aliases match before 'lcyt'
     alias: [
+      // Polyfill Node.js built-ins used by @jsilvanus/matrox-monarch-control
+      { find: 'node:events', replacement: 'events' },
       { find: 'lcyt/backend', replacement: resolve(__dirname, '../lcyt/src/backend-sender.js') },
       { find: 'lcyt/errors',  replacement: resolve(__dirname, '../lcyt/src/errors.js') },
       { find: 'lcyt/config',  replacement: resolve(__dirname, '../lcyt/src/config.js') },

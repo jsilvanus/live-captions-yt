@@ -31,17 +31,10 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
+import { formatTime } from '../lib/formatting';
 
 const CHANNEL    = 'lcyt-embed';
 const MAX_ENTRIES = 200;
-
-function formatTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString([], {
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-    });
-  } catch { return '—'; }
-}
 
 export function EmbedSentLogPage() {
   const params = new URLSearchParams(window.location.search);
