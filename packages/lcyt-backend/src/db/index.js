@@ -204,7 +204,8 @@ export function initDb(dbPath) {
       size_bytes  INTEGER NOT NULL DEFAULT 0
     )
   `);
-  // Additive migrations for caption_files (images support)
+  // Additive migrations for caption_files (images support).
+  // shorthand and mime_type remain NULL for regular caption files; only populated for type='image' rows.
   {
     const cfCols = new Set(db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name));
     if (!cfCols.has('shorthand')) db.exec('ALTER TABLE caption_files ADD COLUMN shorthand TEXT');
