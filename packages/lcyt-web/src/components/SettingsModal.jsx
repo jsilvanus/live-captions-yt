@@ -6,33 +6,23 @@ import {
   setSlotYoutubeKey, setSlotGenericUrl, setSlotCaptionMode,
   buildSlotTarget,
   clearSlot,
+  MAX_RELAY_SLOTS,
+  buildInitialRelayList,
 } from '../lib/relayConfig.js';
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential.js';
 import { useToastContext } from '../contexts/ToastContext';
 import { getAdvancedMode, setAdvancedMode, applyTheme, applyTextSize } from '../lib/settings';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 const CONFIG_KEY = 'lcyt-config';
-const MAX_RELAY_SLOTS = 4;
 
 function persist(patch) {
   try {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
     localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...saved, ...patch }));
   } catch {}
-}
-
-function buildInitialRelayList() {
-  const list = [];
-  for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
-    const cfg = getSlotConfig(s);
-    const hasConfig = cfg.targetType === 'youtube'
-      ? !!(cfg.youtubeKey ?? '').trim()
-      : !!(cfg.genericUrl ?? '').trim();
-    if (hasConfig) list.push({ ...cfg });
-  }
-  return list;
 }
 
 // ── Relay row component ────────────────────────────────────────
@@ -161,12 +151,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   // Keep credential state in sync with external changes (e.g. from CCModal)
   useEffect(() => {

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MonarchHDX } from '@jsilvanus/matrox-monarch-control';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import {
   requestYouTubeToken, getYouTubeToken, revokeYouTubeToken,
 } from '../lib/youtubeAuth';
@@ -431,12 +432,7 @@ const TAB_LABELS = { encoder: 'Encoder', youtube: 'YouTube' };
 export function BroadcastModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('encoder');
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 

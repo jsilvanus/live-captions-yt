@@ -123,7 +123,7 @@ export function setRelayCaptionMode(mode) { setSlotCaptionMode(1, mode); }
 
 // ─── Multi-slot helpers ────────────────────────────────────────────────────────
 
-const MAX_RELAY_SLOTS = 4;
+export const MAX_RELAY_SLOTS = 4;
 
 /**
  * Get config for a specific slot.
@@ -239,4 +239,21 @@ export function buildSlotTargetUrl(slot) {
  */
 export function buildRelayTargetUrl() {
   return buildSlotTargetUrl(1);
+}
+
+/**
+ * Build the initial relay list by reading all configured slots from localStorage.
+ * Used by SettingsModal and EmbedRtmpPage to populate their relay list state.
+ * @returns {Array<{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode }>}
+ */
+export function buildInitialRelayList() {
+  const list = [];
+  for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
+    const cfg = getSlotConfig(s);
+    const hasConfig = cfg.targetType === 'youtube'
+      ? !!(cfg.youtubeKey ?? '').trim()
+      : !!(cfg.genericUrl ?? '').trim();
+    if (hasConfig) list.push({ ...cfg });
+  }
+  return list;
 }

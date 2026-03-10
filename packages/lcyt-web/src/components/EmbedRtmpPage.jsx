@@ -32,9 +32,9 @@ import {
   getSlotConfig, setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   clearSlot,
+  MAX_RELAY_SLOTS,
+  buildInitialRelayList,
 } from '../lib/relayConfig.js';
-
-const MAX_RELAY_SLOTS = 4;
 
 // ─── RelayRow (mirrors SettingsModal's RelayRow) ──────────────────────────────
 
@@ -130,18 +130,6 @@ function IngestAddress({ backendUrl, apiKey }) {
 }
 
 // ─── RelayPanel ───────────────────────────────────────────────────────────────
-
-function buildInitialRelayList() {
-  const list = [];
-  for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
-    const cfg = getSlotConfig(s);
-    const hasConfig = cfg.targetType === 'youtube'
-      ? !!(cfg.youtubeKey ?? '').trim()
-      : !!(cfg.genericUrl ?? '').trim();
-    if (hasConfig) list.push({ ...cfg });
-  }
-  return list;
-}
 
 function RelayPanel({ backendUrl, apiKey }) {
   const session = useSessionContext();

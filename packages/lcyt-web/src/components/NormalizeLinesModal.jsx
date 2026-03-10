@@ -1,5 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useLang } from '../contexts/LangContext';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 const DEFAULT_MAX_LEN = 42;
 const MIN_LINE_LENGTH = 20;
@@ -60,13 +61,7 @@ export function NormalizeLinesModal({ fileName, rawLines, onConfirm, onSkip }) {
   const preview = normalized.slice(0, 5);
   const hasMore = normalized.length > 5;
 
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === 'Escape') onSkip();
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onSkip]);
+  useEscapeKey(onSkip);
 
   function handleConfirm() {
     onConfirm(normalized);
