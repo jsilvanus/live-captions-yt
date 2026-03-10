@@ -492,4 +492,52 @@ describe('CLI', () => {
       }
     });
   });
+
+  describe('batch queue timestamp format', () => {
+    it('should store timestamp without trailing Z', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const before = Date.now();
+        const { code } = await runCLI(['--batch', 'Timestamp test', '--config', configPath]);
+        const after = Date.now();
+        assert.strictEqual(code, 0);
+
+        const savedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        const ts = savedConfig.batchQueue[0].timestamp;
+
+        // Must match YYYY-MM-DDTHH:MM:SS.mmm — no trailing Z
+        assert.ok(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/.test(ts),
+          `Timestamp "${ts}" must match YYYY-MM-DDTHH:MM:SS.mmm (no trailing Z)`);
+
+        // Must represent a valid and recent date
+        const parsed = new Date(ts + 'Z'); // re-add Z only for parsing
+        assert.ok(!isNaN(parsed.getTime()), `Timestamp "${ts}" must be a valid date`);
+        assert.ok(parsed.getTime() >= before && parsed.getTime() <= after,
+          `Timestamp "${ts}" must be within the test window`);
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+
+    it('should preserve custom timestamp as-is', async () => {
+      const configPath = createTempConfig({
+        streamKey: 'test-key',
+        sequence: 0
+      });
+
+      try {
+        const customTs = '2024-06-15T10:30:00.000';
+        await runCLI(['--batch', 'Custom ts', '-t', customTs, '--config', configPath]);
+
+        const savedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        assert.strictEqual(savedConfig.batchQueue[0].timestamp, customTs);
+      } finally {
+        removeTempConfig(configPath);
+      }
+    });
+  });
 });
