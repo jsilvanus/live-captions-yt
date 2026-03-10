@@ -47,8 +47,10 @@ export function initDb(dbPath) {
   // 0 = disabled (default/free tier), 1 = enabled (allows per-session file saving via /file endpoint)
   if (!existingCols.has('backend_file_enabled')) db.exec('ALTER TABLE api_keys ADD COLUMN backend_file_enabled INTEGER NOT NULL DEFAULT 0');
   // 0 = not allowed (default), 1 = allowed to configure RTMP relay via /stream
-  if (!existingCols.has('relay_allowed')) db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
-  if (!existingCols.has('relay_active'))  db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('relay_allowed'))     db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
+  // 0 = graphics upload disabled (default), 1 = enabled (allows image upload via /images)
+  if (!existingCols.has('graphics_enabled'))  db.exec('ALTER TABLE api_keys ADD COLUMN graphics_enabled INTEGER NOT NULL DEFAULT 0');
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)
@@ -203,6 +205,16 @@ export function initDb(dbPath) {
     )
   `);
 
+  // Additive migrations for caption_files (images use shorthand and mime_type)
+  {
+    const filesCols = new Set(
+      db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name)
+    );
+    if (!filesCols.has('shorthand')) db.exec('ALTER TABLE caption_files ADD COLUMN shorthand TEXT');
+    // mime_type is nullable; only set for image-type rows
+    if (!filesCols.has('mime_type')) db.exec('ALTER TABLE caption_files ADD COLUMN mime_type TEXT');
+  }
+
   // Per-stream personified RTMP stats (tied to an API key and target endpoint)
   db.exec(`
     CREATE TABLE IF NOT EXISTS rtmp_stream_stats (
@@ -282,5 +294,6 @@ export * from './stats.js';
 export * from './usage.js';
 export * from './files.js';
 export * from './icons.js';
+export * from './images.js';
 export * from './relay.js';
 export * from './viewer.js';

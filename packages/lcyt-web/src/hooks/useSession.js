@@ -397,10 +397,6 @@ export function useSession({
   }
 
 
-<<<<<<< HEAD
-  async function getStats() {
-    return api.get('/stats');
-=======
 
   // ─── Image / graphics management ────────────────────────
   async function uploadImage(file, shorthand) {
@@ -441,7 +437,6 @@ export function useSession({
     });
     if (!res.ok) throw new Error(`Failed to delete image (${res.status})`);
     return res.json();
->>>>>>> origin/dskdingding
   }
 
   function getImageViewUrl(id) {
@@ -609,10 +604,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
-<<<<<<< HEAD
-=======
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
->>>>>>> origin/dskdingding
     listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getYouTubeConfig,
