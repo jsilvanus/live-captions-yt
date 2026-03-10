@@ -7,6 +7,7 @@ import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
 import { getActiveCodes } from '../lib/activeCodes';
+import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -21,9 +22,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const [errorFlash, setErrorFlash] = useState(false);
   const [sendFlash, setSendFlash] = useState(false);
   const [batchCount, setBatchCount] = useState(0);
-  const [inputLang, setInputLang] = useState(() => {
-    try { return localStorage.getItem('lcyt:input-bar-lang') || ''; } catch { return ''; }
-  });
+  const [inputLang, setInputLang] = useState(readInputLang);
   const [langPickerOpen, setLangPickerOpen] = useState(false);
   const [langQuery, setLangQuery] = useState('');
   const inputRef = useRef(null);
@@ -31,11 +30,9 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
 
   // Keep inputLang in sync when changed by ActionsPanel or file metadata
   useEffect(() => {
-    function onLangChange() {
-      try { setInputLang(localStorage.getItem('lcyt:input-bar-lang') || ''); } catch {}
-    }
-    window.addEventListener('lcyt:input-lang-changed', onLangChange);
-    return () => window.removeEventListener('lcyt:input-lang-changed', onLangChange);
+    function onLangChange() { setInputLang(readInputLang()); }
+    window.addEventListener(INPUT_LANG_EVENT, onLangChange);
+    return () => window.removeEventListener(INPUT_LANG_EVENT, onLangChange);
   }, []);
 
   // Per-language local file handles: Map<lang, { writable, seqIdx, format }>
@@ -78,11 +75,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
 
   function setInputBarLang(code) {
     setInputLang(code);
-    try {
-      if (code) localStorage.setItem('lcyt:input-bar-lang', code);
-      else localStorage.removeItem('lcyt:input-bar-lang');
-    } catch {}
-    window.dispatchEvent(new CustomEvent('lcyt:input-lang-changed'));
+    writeInputLang(code);
   }
 
   async function writeLocalFiles(entries, timestamp) {

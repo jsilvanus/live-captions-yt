@@ -26,18 +26,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { resolveViewerText, collectLangTexts } from '../lib/viewerUtils.js';
+import { formatTime } from '../lib/formatting';
 
 const RECONNECT_DELAY_MS = 3000;
 const DEFAULT_MAX_ENTRIES = 50;
 const DEFAULT_BACKEND     = 'https://api.lcyt.fi';
-
-function formatTime(iso) {
-  try {
-    return new Date(iso).toLocaleTimeString([], {
-      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
-    });
-  } catch { return '—'; }
-}
 
 /**
  * Safely render caption text that may contain <br> separators (used for

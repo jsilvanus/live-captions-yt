@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 function fmt(n) {
   return n == null ? '—' : Number(n).toLocaleString();
@@ -29,14 +29,7 @@ function UsageBar({ used, limit }) {
 }
 
 export function StatsModal({ isOpen, onClose, stats }) {
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 

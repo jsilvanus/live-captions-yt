@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 export function FilesModal({ isOpen, onClose }) {
   const session = useSessionContext();
@@ -53,12 +54,7 @@ export function FilesModal({ isOpen, onClose }) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 

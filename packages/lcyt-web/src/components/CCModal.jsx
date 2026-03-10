@@ -3,6 +3,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { useSessionContext } from '../contexts/SessionContext';
 import { getAnyTargetNoBatch } from '../lib/targetConfig';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import { getTargets, setTargets } from '../lib/targetConfig';
 import {
   COMMON_LANGUAGES, STT_MODELS,
@@ -23,11 +24,8 @@ import {
   getTranslationLibreKey, setTranslationLibreKey,
   getTranslationShowOriginal, setTranslationShowOriginal,
 } from '../lib/translationConfig';
+import { getAdvancedMode } from '../lib/settings';
 import { LanguagePicker } from './LanguagePicker';
-
-function getAdvancedMode() {
-  try { return localStorage.getItem('lcyt:advanced-mode') === '1'; } catch { return false; }
-}
 
 // ── Translation row ───────────────────────────────────────────
 
@@ -501,12 +499,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
     return () => window.removeEventListener('lcyt:stt-credential-changed', onCredChanged);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen && !inline) return null;
 

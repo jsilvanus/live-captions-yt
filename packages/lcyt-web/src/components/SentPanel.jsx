@@ -1,18 +1,6 @@
 import { useState } from 'react';
 import { useSentLogContext } from '../contexts/SentLogContext';
-
-function formatTime(isoString) {
-  try {
-    return new Date(isoString).toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-  } catch {
-    return '—';
-  }
-}
+import { formatTime } from '../lib/formatting';
 
 function getGlobeTitle(entry) {
   const others = Object.entries(entry.otherTranslations || {});

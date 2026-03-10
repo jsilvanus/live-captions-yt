@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useLang } from '../contexts/LangContext';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import {
   TRANSLATION_VENDORS, TRANSLATION_TARGETS, CAPTION_FORMATS,
   getTranslations, setTranslations,
@@ -108,12 +109,7 @@ export function TranslationModal({ isOpen, onClose }) {
     setTranslationShowOriginalState(getTranslationShowOriginal());
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 

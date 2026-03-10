@@ -3,6 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { getAnyTargetNoBatch } from '../lib/targetConfig';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 import {
   COMMON_LANGUAGES, STT_MODELS,
   getSttEngine, setSttEngine,
@@ -13,11 +14,7 @@ import {
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential';
-
-function applyTextSize(px) {
-  document.documentElement.style.setProperty('--caption-text-size', px + 'px');
-  try { localStorage.setItem('lcyt:textSize', String(px)); } catch {}
-}
+import { applyTextSize } from '../lib/settings';
 
 export function CaptionsModal({ isOpen, onClose }) {
   const session = useSessionContext();
@@ -122,12 +119,7 @@ export function CaptionsModal({ isOpen, onClose }) {
     return () => window.removeEventListener('lcyt:stt-credential-changed', onCredChanged);
   }, []);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) { if (e.key === 'Escape') onClose(); }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 

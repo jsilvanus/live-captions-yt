@@ -142,3 +142,17 @@ export function linesToFile(name, lines) {
   const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
   return new File([blob], name, { type: 'text/plain' });
 }
+
+/**
+ * Read a Blob as a base64-encoded string (data URL without the prefix).
+ * @param {Blob} blob
+ * @returns {Promise<string>}
+ */
+export function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
