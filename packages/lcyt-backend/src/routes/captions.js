@@ -31,7 +31,6 @@ function extractGraphicsCode(text) {
   return { cleanText, graphicsNames: names };
 }
 
-
 /**
  * Factory for the /captions router.
  *

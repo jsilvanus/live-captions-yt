@@ -397,6 +397,7 @@ export function useSession({
   }
 
 
+
   // ─── Image / graphics management ────────────────────────
   async function uploadImage(file, shorthand) {
     const token = senderRef.current?._token;
