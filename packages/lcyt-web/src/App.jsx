@@ -16,6 +16,7 @@ import { SentPanel } from './components/SentPanel';
 import { InputBar } from './components/InputBar';
 import { AudioPanel } from './components/AudioPanel';
 import { ToastContainer } from './components/ToastContainer';
+import { BroadcastModal } from './components/BroadcastModal';
 import { useToastContext } from './contexts/ToastContext';
 
 // Persistent banner shown when the backend cannot be reached
@@ -62,6 +63,7 @@ function AppLayout() {
   const [ccOpen, setCcOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
   const [micListening, setMicListening] = useState(false);
@@ -275,6 +277,7 @@ function AppLayout() {
         onCCOpen={() => setCcOpen(true)}
         onControlsOpen={() => setControlsOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
+        onBroadcastOpen={() => setBroadcastOpen(true)}
       />
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
 
@@ -406,6 +409,7 @@ function AppLayout() {
         );
       })()}
 
+      <BroadcastModal isOpen={broadcastOpen} onClose={() => setBroadcastOpen(false)} />
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
       {ccOpen && <CCModal
         isOpen={ccOpen}
