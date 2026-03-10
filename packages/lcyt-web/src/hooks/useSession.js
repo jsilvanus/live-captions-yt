@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
+import { createApi } from '../lib/api';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
@@ -45,6 +46,9 @@ export function useSession({
   const esRef = useRef(null);
   // Keep backendUrl in a ref so claimMic/releaseMic always have the current value
   const backendUrlRef = useRef('');
+
+  // Authenticated fetch helper — always reads current token + URL from refs
+  const api = createApi(senderRef, backendUrlRef);
 
   // Keep all callbacks in a ref so SSE handlers always see the latest version
   const cbs = useRef({});
@@ -392,28 +396,14 @@ export function useSession({
   // ─── Self-service account management ────────────────────
 
   async function getStats() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stats`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to load stats (${res.status})`);
-    return res.json();
+    return api.get('/stats');
   }
 
   /**
    * List backend caption files for the current session's API key.
    */
   async function listFiles() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/file`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to list files (${res.status})`);
-    return res.json();
+    return api.get('/file');
   }
 
   /**
@@ -430,15 +420,7 @@ export function useSession({
    * Delete a backend caption file.
    */
   async function deleteFile(fileId) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/file/${fileId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to delete file (${res.status})`);
-    return res.json();
+    return api.del(`/file/${fileId}`);
   }
 
   // ─── Icons ──────────────────────────────────────────────
@@ -448,14 +430,7 @@ export function useSession({
    * @returns {Promise<{ icons: object[] }>}
    */
   async function listIcons() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/icons`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to list icons (${res.status})`);
-    return res.json();
+    return api.get('/icons');
   }
 
   /**
@@ -465,19 +440,7 @@ export function useSession({
    * @returns {Promise<{ ok: boolean, id: number, filename: string, mimeType: string, sizeBytes: number }>}
    */
   async function uploadIcon({ filename, mimeType, data }) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/icons`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ filename, mimeType, data }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to upload icon (${res.status})`);
-    }
-    return res.json();
+    return api.post('/icons', { filename, mimeType, data });
   }
 
   /**
@@ -485,18 +448,7 @@ export function useSession({
    * @param {number} iconId
    */
   async function deleteIcon(iconId) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/icons/${iconId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to delete icon (${res.status})`);
-    }
-    return res.json();
+    return api.del(`/icons/${iconId}`, { parseErrorBody: true });
   }
 
   /**
@@ -504,18 +456,11 @@ export function useSession({
    * and clears all persisted config from localStorage.
    */
   async function eraseSelf() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stats`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Erasure failed (${res.status})`);
+    const data = await api.del('/stats');
     // Disconnect locally (SSE already closed by server) and clear saved credentials
     await disconnect();
     clearPersistedConfig();
-    return res.json();
+    return data;
   }
 
   // ─── RTMP relay ─────────────────────────────────────────
@@ -527,19 +472,7 @@ export function useSession({
    */
   async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slot, targetUrl, targetName, captionMode }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to configure relay (${res.status})`);
-    }
-    return res.json();
+    return api.post('/stream', { slot, targetUrl, targetName, captionMode });
   }
 
   /**
@@ -548,19 +481,7 @@ export function useSession({
    */
   async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/${slot}`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetUrl, targetName, captionMode }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to update relay slot ${slot} (${res.status})`);
-    }
-    return res.json();
+    return api.put(`/stream/${slot}`, { targetUrl, targetName, captionMode });
   }
 
   /**
@@ -568,36 +489,14 @@ export function useSession({
    * @param {{ slot: number }} opts
    */
   async function stopRelaySlot({ slot = 1 } = {}) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/${slot}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to stop relay slot ${slot} (${res.status})`);
-    }
-    return res.json();
+    return api.del(`/stream/${slot}`, { parseErrorBody: true });
   }
 
   /**
    * Stop all relay slots and drop the nginx publisher.
    */
   async function stopRelay() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to stop relay (${res.status})`);
-    }
-    return res.json();
+    return api.del('/stream', { parseErrorBody: true });
   }
 
   /**
@@ -605,17 +504,7 @@ export function useSession({
    * @returns {Promise<{ clientId: string }>}
    */
   async function getYouTubeConfig() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/youtube/config`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}));
-      throw new Error(body.error || `YouTube config unavailable (${res.status})`);
-    }
-    return res.json();
+    return api.get('/youtube/config');
   }
 
   /**
@@ -623,14 +512,7 @@ export function useSession({
    * @returns {{ relays: object[], runningSlots: number[], active: boolean }}
    */
   async function getRelayStatus() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to get relay status (${res.status})`);
-    return res.json();
+    return api.get('/stream');
   }
 
   /**
@@ -638,14 +520,7 @@ export function useSession({
    * @returns {{ streams: object[] }}
    */
   async function getRelayHistory() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/history`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to get relay history (${res.status})`);
-    return res.json();
+    return api.get('/stream/history');
   }
 
   /**
@@ -656,19 +531,7 @@ export function useSession({
    * @returns {Promise<{ ok: boolean, active: boolean }>}
    */
   async function setRelayActive(active) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/active`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to set relay active state (${res.status})`);
-    }
-    return res.json();
+    return api.put('/stream/active', { active });
   }
 
   return {
