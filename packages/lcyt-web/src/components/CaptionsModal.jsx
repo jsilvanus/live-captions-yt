@@ -13,11 +13,7 @@ import {
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential';
-
-function applyTextSize(px) {
-  document.documentElement.style.setProperty('--caption-text-size', px + 'px');
-  try { localStorage.setItem('lcyt:textSize', String(px)); } catch {}
-}
+import { applyTextSize } from '../lib/settings';
 
 export function CaptionsModal({ isOpen, onClose }) {
   const session = useSessionContext();

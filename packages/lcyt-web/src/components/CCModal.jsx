@@ -23,11 +23,8 @@ import {
   getTranslationLibreKey, setTranslationLibreKey,
   getTranslationShowOriginal, setTranslationShowOriginal,
 } from '../lib/translationConfig';
+import { getAdvancedMode } from '../lib/settings';
 import { LanguagePicker } from './LanguagePicker';
-
-function getAdvancedMode() {
-  try { return localStorage.getItem('lcyt:advanced-mode') === '1'; } catch { return false; }
-}
 
 // ── Translation row ───────────────────────────────────────────
 

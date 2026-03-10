@@ -9,20 +9,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getActiveCodes, setActiveCode, clearActiveCode } from '../lib/activeCodes';
-
-/** Read input-bar lang from localStorage. */
-function readInputLang() {
-  try { return localStorage.getItem('lcyt:input-bar-lang') || ''; } catch { return ''; }
-}
-
-/** Write input-bar lang to localStorage and notify listeners. */
-function writeInputLang(code) {
-  try {
-    if (code) localStorage.setItem('lcyt:input-bar-lang', code);
-    else localStorage.removeItem('lcyt:input-bar-lang');
-    window.dispatchEvent(new CustomEvent('lcyt:input-lang-changed'));
-  } catch {}
-}
+import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 
 export function ControlsPanel({ onClose }) {
   const session = useSessionContext();
@@ -68,10 +55,10 @@ export function ControlsPanel({ onClose }) {
   useEffect(() => {
     function onLangChange() { setInputLang(readInputLang()); }
     function onCodesChange() { setActiveCodesState(getActiveCodes()); }
-    window.addEventListener('lcyt:input-lang-changed', onLangChange);
+    window.addEventListener(INPUT_LANG_EVENT, onLangChange);
     window.addEventListener('lcyt:active-codes-changed', onCodesChange);
     return () => {
-      window.removeEventListener('lcyt:input-lang-changed', onLangChange);
+      window.removeEventListener(INPUT_LANG_EVENT, onLangChange);
       window.removeEventListener('lcyt:active-codes-changed', onCodesChange);
     };
   }, []);

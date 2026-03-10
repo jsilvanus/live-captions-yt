@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
-import { useLang } from '../contexts/LangContext';import {
+import { useLang } from '../contexts/LangContext';
+import {
   getSlotConfig, setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotCaptionMode,
   buildSlotTarget,
@@ -10,34 +11,10 @@ import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential.js';
 import { useToastContext } from '../contexts/ToastContext';
+import { getAdvancedMode, setAdvancedMode, applyTheme, applyTextSize } from '../lib/settings';
 
 const CONFIG_KEY = 'lcyt-config';
 const MAX_RELAY_SLOTS = 4;
-
-function applyTheme(value) {
-  const html = document.documentElement;
-  if (value === 'dark') {
-    html.setAttribute('data-theme', 'dark');
-  } else if (value === 'light') {
-    html.setAttribute('data-theme', 'light');
-  } else {
-    html.removeAttribute('data-theme');
-  }
-  try { localStorage.setItem('lcyt-theme', value); } catch {}
-}
-
-function applyTextSize(px) {
-  document.documentElement.style.setProperty('--caption-text-size', px + 'px');
-  try { localStorage.setItem('lcyt:textSize', String(px)); } catch {}
-}
-
-function getAdvancedMode() {
-  try { return localStorage.getItem('lcyt:advanced-mode') === '1'; } catch { return false; }
-}
-
-function setAdvancedMode(val) {
-  try { localStorage.setItem('lcyt:advanced-mode', val ? '1' : '0'); } catch {}
-}
 
 function persist(patch) {
   try {
