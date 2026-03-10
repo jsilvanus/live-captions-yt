@@ -601,6 +601,24 @@ export function useSession({
   }
 
   /**
+   * Fetch the YouTube OAuth client ID configured on the backend.
+   * @returns {Promise<{ clientId: string }>}
+   */
+  async function getYouTubeConfig() {
+    const token = senderRef.current?._token;
+    if (!token) throw new Error('Not connected');
+    const url = backendUrlRef.current;
+    const res = await fetch(`${url}/youtube/config`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `YouTube config unavailable (${res.status})`);
+    }
+    return res.json();
+  }
+
+  /**
    * Get all configured relay slots and which are running.
    * @returns {{ relays: object[], runningSlots: number[], active: boolean }}
    */
@@ -663,6 +681,7 @@ export function useSession({
     listFiles, getFileDownloadUrl, deleteFile,
     listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
+    getYouTubeConfig,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

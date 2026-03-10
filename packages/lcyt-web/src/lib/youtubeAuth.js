@@ -1,11 +1,8 @@
 /**
  * YouTube OAuth2 via Google Identity Services (GIS).
  *
- * Users must create a Google Cloud project, enable YouTube Data API v3,
- * and create OAuth 2.0 credentials (Web application) with the app origin
- * as an allowed JavaScript origin.
- *
- * The client ID is stored in localStorage under 'lcyt:yt-client-id'.
+ * The OAuth client ID is fetched from the lcyt-backend (GET /youtube/config)
+ * and passed to requestYouTubeToken(clientId) by the calling component.
  */
 
 let _tokenClient = null;
@@ -13,14 +10,6 @@ let _accessToken = null;
 let _tokenExpiry = 0;
 let _gisLoaded = false;
 let _loadPromise = null;
-
-export function getYtClientId() {
-  try { return localStorage.getItem('lcyt:yt-client-id') || ''; } catch { return ''; }
-}
-
-export function setYtClientId(id) {
-  try { localStorage.setItem('lcyt:yt-client-id', id); } catch {}
-}
 
 /** Load the Google Identity Services script (once). */
 function loadGis() {
@@ -44,12 +33,12 @@ function loadGis() {
 }
 
 /**
- * Request an access token via OAuth2 popup.
- * Resolves with the token string; rejects on error or user cancel.
+ * Request a YouTube OAuth2 access token via GIS popup.
+ * @param {string} clientId - Google OAuth 2.0 Web client ID (fetched from backend).
+ * @returns {Promise<string>} Resolves with the access token string.
  */
-export async function requestYouTubeToken() {
-  const clientId = getYtClientId();
-  if (!clientId) throw new Error('No YouTube OAuth Client ID configured');
+export async function requestYouTubeToken(clientId) {
+  if (!clientId) throw new Error('No YouTube OAuth Client ID provided');
 
   await loadGis();
 
@@ -74,6 +63,7 @@ export async function requestYouTubeToken() {
   });
 }
 
+/** Returns the cached access token if still valid, otherwise null. */
 export function getYouTubeToken() {
   if (_accessToken && Date.now() < _tokenExpiry - 60_000) return _accessToken;
   return null;

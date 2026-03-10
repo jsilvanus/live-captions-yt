@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MonarchHDX } from '@jsilvanus/matrox-monarch-control';
 import {
-  getYtClientId, setYtClientId,
   requestYouTubeToken, getYouTubeToken, revokeYouTubeToken,
 } from '../lib/youtubeAuth';
 import {
   listScheduledBroadcasts, transitionBroadcast, enableHttpCaptions,
 } from '../lib/youtubeApi';
 import { useToastContext } from '../contexts/ToastContext';
+import { useSessionContext } from '../contexts/SessionContext';
 
 // ── Encoder types ──────────────────────────────────────────────────────────
 
@@ -191,7 +191,9 @@ function EncoderTab() {
 
 function YouTubeTab() {
   const { showToast } = useToastContext();
-  const [clientId, setClientId] = useState(getYtClientId);
+  const session = useSessionContext();
+  const [clientId, setClientId] = useState('');
+  const [clientIdLoading, setClientIdLoading] = useState(false);
   const [token, setToken] = useState(getYouTubeToken);
   const [loggingIn, setLoggingIn] = useState(false);
   const [broadcasts, setBroadcasts] = useState([]);
@@ -199,6 +201,16 @@ function YouTubeTab() {
   const [selectedId, setSelectedId] = useState('');
   const [ytBusy, setYtBusy] = useState(false);
   const [captionsBusy, setCaptionsBusy] = useState(false);
+
+  // Fetch the OAuth client ID from the backend when connected
+  useEffect(() => {
+    if (!session.connected) return;
+    setClientIdLoading(true);
+    session.getYouTubeConfig()
+      .then(cfg => setClientId(cfg.clientId))
+      .catch(err => showToast(`YouTube not configured on server: ${err.message}`, 'error'))
+      .finally(() => setClientIdLoading(false));
+  }, [session.connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedBroadcast = broadcasts.find(b => b.id === selectedId) || null;
   const broadcastStatus = selectedBroadcast?.status?.lifeCycleStatus || '';
@@ -224,7 +236,7 @@ function YouTubeTab() {
   async function handleSignIn() {
     setLoggingIn(true);
     try {
-      const tok = await requestYouTubeToken();
+      const tok = await requestYouTubeToken(clientId);
       setToken(tok);
       await fetchBroadcasts(tok);
     } catch (err) {
@@ -283,30 +295,18 @@ function YouTubeTab() {
 
   return (
     <div className="settings-panel settings-panel--active broadcast-tab">
-      {/* Client ID config */}
-      <div className="settings-field">
-        <label className="settings-field__label">
-          Google OAuth Client ID
-          <span className="broadcast-hint-inline"> — create in Google Cloud Console → APIs &amp; Services → Credentials</span>
-        </label>
-        <input
-          className="settings-field__input"
-          type="text"
-          placeholder="xxxxxxxxxx-xxxx.apps.googleusercontent.com"
-          value={clientId}
-          onChange={e => { setClientId(e.target.value); setYtClientId(e.target.value); }}
-          disabled={!!token}
-        />
-      </div>
+      {!session.connected && (
+        <p className="broadcast-hint">Connect to the backend first to use YouTube features.</p>
+      )}
 
       {/* Auth row */}
       {!token ? (
         <button
           className="btn btn--primary broadcast-google-btn"
           onClick={handleSignIn}
-          disabled={loggingIn || !clientId}
+          disabled={loggingIn || !clientId || clientIdLoading || !session.connected}
         >
-          {loggingIn ? 'Signing in…' : 'Sign in with Google'}
+          {clientIdLoading ? 'Loading…' : loggingIn ? 'Signing in…' : 'Sign in with Google'}
         </button>
       ) : (
         <div className="broadcast-signed-in-row">

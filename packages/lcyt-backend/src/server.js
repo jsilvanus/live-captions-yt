@@ -22,6 +22,7 @@ import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
 import { createViewerRouter } from './routes/viewer.js';
 import { createIconRouter } from './routes/icons.js';
+import { createYouTubeRouter } from './routes/youtube.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -338,6 +339,7 @@ app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
+app.use('/youtube', createYouTubeRouter(auth));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

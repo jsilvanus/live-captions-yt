@@ -2457,6 +2457,145 @@
   border-color: var(--color-error);
 }
 
+/* ─── Broadcast modal ────────────────────────────────────── */
+
+.broadcast-modal__box {
+  max-width: 620px;
+}
+
+.broadcast-tab {
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Status indicator row (encoder) */
+.broadcast-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.broadcast-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.broadcast-status-dot--encoding { background: var(--color-success, #3fb950); }
+.broadcast-status-dot--idle     { background: var(--color-border, #444); }
+.broadcast-status-dot--error    { background: var(--color-error, #f85149); }
+
+.broadcast-status-label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* Action button row */
+.broadcast-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Hint text */
+.broadcast-hint {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.broadcast-hint-inline {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+/* Google sign-in button */
+.broadcast-google-btn {
+  width: 100%;
+}
+
+/* Signed-in status row */
+.broadcast-signed-in-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: var(--color-bg-alt, var(--color-bg));
+  border-radius: 4px;
+  border: 1px solid var(--color-border);
+}
+
+.broadcast-signed-in-label {
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+/* Stream preview card */
+.broadcast-preview {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.yt-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  display: block;
+}
+
+.broadcast-preview-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.broadcast-preview-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.broadcast-preview-time {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.broadcast-preview-status {
+  font-size: 11px;
+  text-transform: capitalize;
+  padding: 2px 7px;
+  border-radius: 3px;
+  width: fit-content;
+}
+
+.broadcast-preview-status--live     { background: #c82010; color: #fff; }
+.broadcast-preview-status--upcoming { background: var(--color-accent, #2563eb); color: #fff; }
+.broadcast-preview-status--complete { background: var(--color-border, #555); color: var(--color-text-muted); }
+.broadcast-preview-status--ready    { background: #3fb950; color: #fff; }
+
+/* HTTP captions section */
+.broadcast-captions-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+.broadcast-captions-status {
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.broadcast-captions-on  { color: #3fb950; }
+.broadcast-captions-off { color: var(--color-text-muted); }
+
 /* ── Broadcast Modal ──────────────────────────────────────────────────────── */
 
 .broadcast-modal__box {
