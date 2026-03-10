@@ -14,6 +14,7 @@ export default {
       other: 'Övrigt',
       basic: 'Grundläggande',
       rtmpRelay: 'RTMP Relay',
+      graphics: 'Grafik',
       service: 'Tjänst',
       receivers: 'Mottagare',
       targets: 'Mål',
@@ -249,6 +250,8 @@ export default {
       download: 'Ladda ner',
       delete: 'Ta bort',
       deleted: 'Fil borttagen',
+      tabCaptions: 'Undertexter',
+      tabImages: 'Bilder',
     },
     relay: {
       mode: 'Relayläge',

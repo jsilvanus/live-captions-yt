@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
@@ -187,7 +187,8 @@ export function createLiveRouter(db, store, jwtSecret) {
         sessionId,
         sequence: existing.sequence,
         syncOffset: existing.syncOffset,
-        startedAt: existing.startedAt
+        startedAt: existing.startedAt,
+        graphicsEnabled: isGraphicsEnabled(db, apiKey),
       });
     }
 
@@ -235,7 +236,8 @@ export function createLiveRouter(db, store, jwtSecret) {
       sessionId,
       sequence: session.sequence,
       syncOffset: session.syncOffset,
-      startedAt: session.startedAt
+      startedAt: session.startedAt,
+      graphicsEnabled: isGraphicsEnabled(db, apiKey),
     });
   });
 

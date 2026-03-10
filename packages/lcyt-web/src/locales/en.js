@@ -14,6 +14,7 @@ export default {
       other: 'Other',
       basic: 'Basic',
       rtmpRelay: 'RTMP Relay',
+      graphics: 'Graphics',
       service: 'Service',
       receivers: 'Receivers',
       targets: 'Targets',
@@ -249,6 +250,8 @@ export default {
       download: 'Download',
       delete: 'Delete',
       deleted: 'File deleted',
+      tabCaptions: 'Captions',
+      tabImages: 'Images',
     },
     relay: {
       mode: 'Relay mode',

@@ -4,6 +4,33 @@ import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDom
 import { broadcastToViewers, registerViewerKeyOwner } from './viewer.js';
 import { composeCaptionText, writeToBackendFile } from '../caption-files.js';
 
+// Regex to detect and extract <!-- graphics:... --> metadata codes.
+// Matches anywhere in the caption text (own line or inline with text).
+const GRAPHICS_CODE_RE = /<!--\s*graphics\s*:(.*?)-->/i;
+
+/**
+ * Strip any <!-- graphics:... --> code from caption text and return
+ * the cleaned text plus the parsed list of shorthand names.
+ *
+ * @param {string} text
+ * @returns {{ cleanText: string, graphicsNames: string[]|null }}
+ *   graphicsNames is null when no graphics code was present,
+ *   an empty array for <!-- graphics: --> (clear command),
+ *   or a non-empty array of trimmed names.
+ */
+function extractGraphicsCode(text) {
+  const match = text.match(GRAPHICS_CODE_RE);
+  if (!match) return { cleanText: text, graphicsNames: null };
+
+  const names = match[1]
+    .split(',')
+    .map(n => n.trim())
+    .filter(Boolean);
+
+  const cleanText = text.replace(GRAPHICS_CODE_RE, '').trim();
+  return { cleanText, graphicsNames: names };
+}
+
 /**
  * Factory for the /captions router.
  *
@@ -77,6 +104,29 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
     session._sendQueue = session._sendQueue.then(async () => {
       let result;
       try {
+        // Extract graphics codes from captions and emit DSK events.
+        // The graphics code is stripped from the text before delivery to YouTube.
+        for (const caption of resolvedCaptions) {
+          const { cleanText, graphicsNames } = extractGraphicsCode(caption.text || '');
+          if (graphicsNames !== null) {
+            // Mutate in place so downstream processing uses the stripped text
+            caption.text = cleanText;
+            // Emit DSK event to any open /dsk/:apikey/events SSE connections
+            store.emitDskEvent(session.apiKey, 'graphics', {
+              names: graphicsNames,
+              ts: Date.now(),
+            });
+            // In CC mode, also emit the stripped text as a separate event so the
+            // DSK CC overlay can display it
+            if (cleanText) {
+              store.emitDskEvent(session.apiKey, 'text', {
+                text: cleanText,
+                ts: Date.now(),
+              });
+            }
+          }
+        }
+
         // For each caption, compose text from translations and write backend files
         const sendCaptions = resolvedCaptions.map(caption => {
           const { text, translations, captionLang, showOriginal, timestamp, speechStart, ...rest } = caption;

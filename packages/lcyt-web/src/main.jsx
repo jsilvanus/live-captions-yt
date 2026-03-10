@@ -12,6 +12,7 @@ import { EmbedFileDropPage } from './components/EmbedFileDropPage';
 import { EmbedFilesPage } from './components/EmbedFilesPage';
 import { EmbedSettingsPage } from './components/EmbedSettingsPage';
 import { EmbedRtmpPage } from './components/EmbedRtmpPage';
+import { DskPage } from './components/DskPage';
 import { EmbedViewerPage } from './components/EmbedViewerPage';
 import { ViewerPage } from './components/ViewerPage';
 
@@ -29,6 +30,7 @@ function getPage() {
   if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
   if (path.startsWith('/embed/settings')) return <EmbedSettingsPage />;
   if (path.startsWith('/embed/rtmp'))     return <EmbedRtmpPage />;
+  if (path.startsWith('/dsk/'))           return <DskPage />;
   if (path.startsWith('/embed/viewer'))   return <EmbedViewerPage />;
   if (path.startsWith('/view/'))          return <ViewerPage />;
   return <App />;

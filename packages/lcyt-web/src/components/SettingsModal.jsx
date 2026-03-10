@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
+import { FilesModal } from './FilesModal';
 import {
   getSlotConfig, setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotCaptionMode,
@@ -111,6 +112,9 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   // ── Credentials tab ───────────────────────────────────────
   const [credential, setCredentialState] = useState(getGoogleCredential);
   const credInputRef = useRef(null);
+
+  // ── Graphics tab ──────────────────────────────────────────
+  const [filesModalOpen, setFilesModalOpen] = useState(false);
 
   // ── Icons tab ─────────────────────────────────────────────
   const [icons, setIcons] = useState([]);
@@ -223,7 +227,10 @@ export function SettingsModal({ isOpen, onClose, inline }) {
 
   const runningSlots = relayStatus?.runningSlots ?? [];
 
-  const TABS = advancedMode ? ['basic', 'rtmpRelay', 'credentials', 'icons'] : ['basic', 'credentials', 'icons'];
+  const hasGraphics = session.graphicsEnabled;
+  const TABS = advancedMode
+    ? ['basic', 'rtmpRelay', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons']
+    : ['basic', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons'];
 
   // ── Credential handlers ────────────────────────────────────
 
@@ -470,6 +477,13 @@ export function SettingsModal({ isOpen, onClose, inline }) {
             </div>
           )}
 
+          {/* ── Graphics ── */}
+          {activeTab === 'graphics' && (
+            <div className="settings-panel settings-panel--active">
+              <GraphicsTabContent session={session} onOpenFiles={() => setFilesModalOpen(true)} />
+            </div>
+          )}
+
           {/* ── Credentials ── */}
           {activeTab === 'credentials' && (
             <div className="settings-panel settings-panel--active">
@@ -641,6 +655,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
           </div>
         )}
       </div>
+      <FilesModal isOpen={filesModalOpen} onClose={() => setFilesModalOpen(false)} initialTab="images" />
   );
 
   if (inline) return box;
@@ -650,5 +665,88 @@ export function SettingsModal({ isOpen, onClose, inline }) {
       <div className="settings-modal__backdrop" onClick={onClose} />
       {box}
     </div>
+  );
+}
+
+// ── Graphics tab content ──────────────────────────────────────────────────────
+
+function GraphicsTabContent({ session, onOpenFiles }) {
+  const [copied, setCopied] = useState('');
+
+  function getDskUrl(cc) {
+    const key = session.apiKey;
+    const serverUrl = session.backendUrl || '';
+    if (!key || !serverUrl) return null;
+    const params = new URLSearchParams({ server: serverUrl });
+    if (cc) params.set('cc', '1');
+    return `${window.location.origin}/dsk/${key}?${params}`;
+  }
+
+  function copy(text, label) {
+    navigator.clipboard?.writeText(text).then(() => {
+      setCopied(label);
+      setTimeout(() => setCopied(''), 1500);
+    }).catch(() => {});
+  }
+
+  const dskUrl   = getDskUrl(false);
+  const dskCcUrl = getDskUrl(true);
+
+  return (
+    <>
+      <div className="settings-field">
+        <label className="settings-field__label">DSK overlay (graphics only)</label>
+        <span className="settings-field__hint">Add as Browser Source in OBS. Green background (chroma key).</span>
+        {dskUrl ? (
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <input className="settings-field__input" readOnly value={dskUrl} style={{ flex: 1, fontSize: 11 }} />
+            <button className="btn btn--secondary btn--sm" onClick={() => copy(dskUrl, 'dsk')} title="Copy URL">
+              {copied === 'dsk' ? '✓' : '⎘'}
+            </button>
+          </div>
+        ) : (
+          <span className="settings-field__hint" style={{ color: 'var(--color-text-dim)' }}>Connect to see URL</span>
+        )}
+      </div>
+
+      <div className="settings-field">
+        <label className="settings-field__label">DSK + captions (CC burn-in)</label>
+        <span className="settings-field__hint">Shows graphics and caption text together — useful for monitoring.</span>
+        {dskCcUrl ? (
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <input className="settings-field__input" readOnly value={dskCcUrl} style={{ flex: 1, fontSize: 11 }} />
+            <button className="btn btn--secondary btn--sm" onClick={() => copy(dskCcUrl, 'dskcc')} title="Copy URL">
+              {copied === 'dskcc' ? '✓' : '⎘'}
+            </button>
+          </div>
+        ) : (
+          <span className="settings-field__hint" style={{ color: 'var(--color-text-dim)' }}>Connect to see URL</span>
+        )}
+      </div>
+
+      <hr style={{ borderColor: 'var(--color-border)', margin: '12px 0' }} />
+
+      <div className="settings-field">
+        <label className="settings-field__label">Trigger code</label>
+        <span className="settings-field__hint">
+          Add to any caption line (or send alone) to show/hide graphics on the DSK page.
+          The code is stripped before sending to YouTube.
+        </span>
+        <code style={{ display: 'block', marginTop: 6, fontSize: 12, padding: '6px 8px', background: 'var(--color-bg-alt)', borderRadius: 4 }}>
+          {`<!-- graphics:logo, prayer -->`}
+        </code>
+        <code style={{ display: 'block', marginTop: 4, fontSize: 12, padding: '6px 8px', background: 'var(--color-bg-alt)', borderRadius: 4 }}>
+          {`<!-- graphics: -->`}  (clear all)
+        </code>
+      </div>
+
+      <hr style={{ borderColor: 'var(--color-border)', margin: '12px 0' }} />
+
+      <div className="settings-field">
+        <button className="btn btn--secondary" onClick={onOpenFiles} style={{ width: '100%' }}>
+          Manage images (My Files)
+        </button>
+      </div>
+    </>
   );
 }
