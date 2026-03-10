@@ -219,18 +219,22 @@ export function CaptionView({ onLineSend }) {
     const isActive = i === pointer;
     const isSent = lastSentLine?.fileId === fileId && lastSentLine?.lineIndex === i;
     const isHeading = lines[i].startsWith('#');
+    const codes = lineCodes?.[i];
+    const isEmptySend = !!codes?.emptySend;
 
     let cls = 'caption-line';
     if (isActive) cls += ' caption-line--active';
     if (isSent) cls += ' caption-line--sent';
     if (isHeading) cls += ' caption-line--heading';
+    if (isEmptySend) cls += ' caption-line--empty-send';
 
     const displayText = isHeading
       ? escapeHtml(lines[i].replace(/^#+\s*/, ''))
-      : escapeHtml(lines[i]);
+      : isEmptySend
+        ? ''
+        : escapeHtml(lines[i]);
 
     const lineNum = lineNumbers?.[i] ?? (i + 1);
-    const codes = lineCodes?.[i];
     const codesTitle = buildCodesTitle(codes);
     const hasCodes = !!codesTitle;
 
@@ -240,7 +244,7 @@ export function CaptionView({ onLineSend }) {
         className={cls}
         data-index={i}
         onClick={() => setPointer(fileId, i)}
-        onDoubleClick={!isHeading ? () => onLineSend?.(lines[i], fileId, i) : undefined}
+        onDoubleClick={!isHeading && !isEmptySend ? () => onLineSend?.(lines[i], fileId, i) : undefined}
       >
         <span
           className={`caption-line__linenum${hasCodes ? ' caption-line__linenum--coded' : ''}`}
@@ -250,10 +254,10 @@ export function CaptionView({ onLineSend }) {
           {lineNum}
         </span>
         <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
-        <span
-          className="caption-line__text"
-          dangerouslySetInnerHTML={{ __html: displayText }}
-        />
+        {isEmptySend
+          ? <span className={`caption-line__empty-send-label${codes.emptySendLabel ? ' caption-line__empty-send-label--named' : ''}`}>{codes.emptySendLabel ?? '⊘ send codes'}</span>
+          : <span className="caption-line__text" dangerouslySetInnerHTML={{ __html: displayText }} />
+        }
       </li>
     );
   }

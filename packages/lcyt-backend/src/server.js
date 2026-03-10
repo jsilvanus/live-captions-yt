@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { spawnSync } from 'node:child_process';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat,
 } from './db.js';
 import { SessionStore } from './store.js';
-import { RtmpRelayManager } from './rtmp-manager.js';
+import { RtmpRelayManager, probeFfmpeg } from './rtmp-manager.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createLiveRouter } from './routes/live.js';
@@ -22,6 +21,9 @@ import { createImagesRouter } from './routes/images.js';
 import { createDskRouter } from './routes/dsk.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
+import { createViewerRouter } from './routes/viewer.js';
+import { createIconRouter } from './routes/icons.js';
+import { createYouTubeRouter } from './routes/youtube.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -104,50 +106,6 @@ const store = new SessionStore({ db });
 
 // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
 const _rtmpStatIds = new Map();
-
-// Probe local ffmpeg for required features (libx264, eia608, subrip)
-function probeFfmpeg() {
-  // First, check if ffmpeg binary exists at all
-  const which = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', timeout: 3000 });
-  if (which.error) {
-    const isNotFound = which.error.code === 'ENOENT' || which.error.message?.includes('ENOENT');
-    if (isNotFound) {
-      console.warn('⚠ ffmpeg not found in PATH — RTMP relay will not be available.');
-      console.warn('  Install ffmpeg to enable stream relay: https://ffmpeg.org/download.html');
-    } else {
-      console.warn('⚠ ffmpeg probe failed:', which.error.message);
-    }
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
-  }
-
-  try {
-    const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
-    const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
-    const demux = spawnSync('ffmpeg', ['-hide_banner', '-demuxers'], { encoding: 'utf8', timeout: 3000 });
-
-    const encOut = (enc.stdout || '') + (enc.stderr || '');
-    const fmtsOut = (fmts.stdout || '') + (fmts.stderr || '');
-    const demuxOut = (demux.stdout || '') + (demux.stderr || '');
-
-    const hasLibx264 = /libx264/i.test(encOut);
-    const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
-    const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
-
-    // Log ffmpeg availability status
-    console.info('✓ ffmpeg found — RTMP relay is available.');
-
-    // Warn about optional capabilities used for CEA-708 embedded captions (currently disabled)
-    // These are only needed when cea708 caption mode is enabled on a relay slot.
-    if (!hasLibx264) {
-      console.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
-    }
-
-    return { available: true, hasLibx264, hasEia608, hasSubrip };
-  } catch (err) {
-    console.warn('⚠ ffmpeg probe failed:', err.message);
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
-  }
-}
 
 const _rtmpRelayActive = process.env.RTMP_RELAY_ACTIVE === '1';
 if (!_rtmpRelayActive) {
@@ -245,7 +203,16 @@ const app = express();
   console.info(`✓ Express trust proxy: ${String(val)}`);
 }
 
+// Auth middleware instance — created here so /icons can be mounted before the
+// global express.json body parser (the icons upload route uses its own 400kb parser).
+const auth = createAuthMiddleware(jwtSecret);
+
+// Mount /icons BEFORE the global JSON body parser so uploads can use the
+// router-local 400kb parser without hitting the global 64kb limit first.
+app.use('/icons', createIconRouter(db, auth, store));
+
 // JSON body parser — 64KB limit prevents abuse
+// NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
 app.use(express.json({ limit: '64kb' }));
 
 // Request logging middleware
@@ -326,9 +293,6 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-// Auth middleware instance shared by captions and sync routers
-const auth = createAuthMiddleware(jwtSecret);
-
 app.use('/live', createLiveRouter(db, store, jwtSecret));
 app.use('/captions', createCaptionsRouter(store, auth, db, relayManager));
 app.use('/events', createEventsRouter(store, jwtSecret));
@@ -342,6 +306,8 @@ app.use('/images', createImagesRouter(db, auth));
 app.use('/dsk', createDskRouter(db, store));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
+app.use('/viewer', createViewerRouter(db));
+app.use('/youtube', createYouTubeRouter(auth));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

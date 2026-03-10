@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getKey, getKeyStats, anonymizeKey } from '../db.js';
+import { getKey, getKeyStats, anonymizeKey, getViewerKeyStats } from '../db.js';
 
 /**
  * Factory for the /stats router.
@@ -34,6 +34,7 @@ export function createStatsRouter(db, auth, store) {
     ).get(apiKey, today);
 
     const { sessions, captionErrors, authEvents } = getKeyStats(db, apiKey);
+    const viewerStats = getViewerKeyStats(db, apiKey);
 
     return res.status(200).json({
       apiKey,
@@ -49,6 +50,7 @@ export function createStatsRouter(db, auth, store) {
       sessions,
       captionErrors,
       authEvents,
+      viewerStats,
     });
   });
 

@@ -21,6 +21,8 @@ live-captions-yt/
 │   ├── lcyt/                   # Core Python library (published to PyPI as `lcyt`)
 │   ├── lcyt-backend/           # Flask backend (cPanel/Passenger compatible)
 │   └── lcyt-mcp/               # Python MCP server
+├── android/                    # Native Android apps
+│   └── lcyt-tv/                # Android TV caption viewer (Kotlin + Compose for TV)
 ├── python/                     # LEGACY — do not use; canonical source is python-packages/
 ├── scripts/                    # Shell deployment scripts
 ├── package.json                # Root workspace manifest
@@ -287,6 +289,42 @@ Python MCP server with the same tool interface as the Node.js version.
 
 ---
 
+## Android Apps
+
+### `android/lcyt-tv` — Android TV Caption Viewer
+
+Kotlin + Jetpack Compose for TV app. Subscribes to the public `GET /viewer/:key` SSE endpoint and displays captions full-screen on Android TV / Fire TV devices. No authentication required — uses the **viewer target** type configured in the web UI (CC → Targets tab).
+
+**Min SDK:** API 21 (Android 5.0 / Fire TV Gen 1+)
+**Build tool:** Gradle with version catalog (`gradle/libs.versions.toml`)
+
+**Key source files (`app/src/main/java/fi/lcyt/tv/`):**
+- `SseClient.kt` — OkHttp streaming SSE client; emits typed `SseEvent`s; exponential-backoff reconnect (1 s → 30 s max)
+- `CaptionViewModel.kt` — `StateFlow`-driven state; persists `backendUrl` + `viewerKey` in `SharedPreferences`; default backend URL: `https://api.lcyt.fi`
+- `SettingsScreen.kt` — D-pad-friendly settings screen; only the viewer key is required from the user
+- `MainActivity.kt` — Compose entry point; full-screen viewer with large current caption, dimmed history list, status dot; Menu key opens settings
+
+**SSE payload received** (from `GET /viewer/:key`):
+```json
+{ "text": "...", "composedText": "original<br>translation", "sequence": 42,
+  "timestamp": "2026-03-10T12:00:00.000", "translations": { "fi-FI": "..." } }
+```
+`composedText` is displayed by default (mirrors `viewerUtils.js` behaviour). `<br>` splits original and translation onto separate lines.
+
+**Configuration:**
+- First launch → settings screen → enter viewer key (backend URL pre-filled)
+- Settings persisted in `SharedPreferences`
+- Deep-link: `lcyt-tv://viewer?server=https://api.lcyt.fi&key=myevent` (scannable QR from web UI)
+
+**Build:**
+```bash
+cd android/lcyt-tv
+./gradlew assembleDebug   # debug APK
+./gradlew assembleRelease # release APK (requires signing config)
+```
+
+---
+
 ## CLI Usage
 
 ```bash
@@ -355,6 +393,13 @@ Captions are delivered to one or more **targets** configured in the lcyt-web CC 
 - Additional targets can still be passed as the `targets` array; they are stored in `session.extraTargets`.
 - Caption delivery calls `session.sender.send()` and uses the real YouTube response for the SSE result.
 
+**Target types:**
+| Type | Config field | Delivery mechanism |
+|---|---|---|
+| `youtube` | `streamKey` | `YoutubeLiveCaptionSender` per target; HTTP POST to YouTube ingestion API |
+| `viewer` | `viewerKey` | `broadcastToViewers(key, payload)` → SSE `GET /viewer/:key` (public, no auth) |
+| `generic` | `url`, `headers` | HTTP POST JSON `{ source, sequence, captions: [...] }` to arbitrary endpoint |
+
 **`BackendCaptionSender` (`packages/lcyt/src/backend-sender.js`):**
 - `streamKey` is optional; omit it for target-array mode.
 - `start({ targets })` — pass the targets array to register them server-side.
@@ -406,7 +451,8 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-cli/src/interactive-ui.js` | Full-screen blessed terminal UI |
 | `packages/lcyt-backend/src/server.js` | Express app factory |
 | `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + extraTargets per session) |
-| `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream |
+| `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream (authenticated, session owner) |
+| `packages/lcyt-backend/src/routes/viewer.js` | Public SSE broadcast stream `GET /viewer/:key` — no auth, CORS `*`; used by viewer targets |
 | `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
 | `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |
@@ -427,3 +473,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `python-packages/lcyt-backend/lcyt_backend/_jwt.py` | Stdlib-only HS256 JWT |
 | `python-packages/lcyt-backend/passenger_wsgi.py` | cPanel entry point |
 | `python-packages/lcyt-backend/run.py` | Python dev server |
+| `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/SseClient.kt` | OkHttp SSE client for Android TV viewer |
+| `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/CaptionViewModel.kt` | StateFlow state + SharedPreferences persistence |
+| `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/MainActivity.kt` | Compose TV viewer UI + deep-link handling |
+| `android/lcyt-tv/gradle/libs.versions.toml` | Dependency version catalog |

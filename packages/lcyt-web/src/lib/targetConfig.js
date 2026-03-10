@@ -7,10 +7,11 @@ const KEY_TARGETS = 'lcyt:caption-targets';
  *   {
  *     id: string,          // UUID
  *     enabled: boolean,
- *     type: 'youtube' | 'generic',
+ *     type: 'youtube' | 'generic' | 'viewer',
  *     streamKey?: string,  // YouTube stream key (type='youtube')
  *     url?: string,        // Endpoint URL (type='generic')
  *     headers?: string,    // Raw JSON string of extra HTTP headers (type='generic')
+ *     viewerKey?: string,  // Short URL-safe key for viewer page (type='viewer')
  *   }
  *
  * @returns {Array}

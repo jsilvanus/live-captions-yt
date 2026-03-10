@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
+import { createApi } from '../lib/api';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
@@ -46,6 +47,9 @@ export function useSession({
   const esRef = useRef(null);
   // Keep backendUrl in a ref so claimMic/releaseMic always have the current value
   const backendUrlRef = useRef('');
+
+  // Authenticated fetch helper — always reads current token + URL from refs
+  const api = createApi(senderRef, backendUrlRef);
 
   // Keep all callbacks in a ref so SSE handlers always see the latest version
   const cbs = useRef({});
@@ -149,6 +153,9 @@ export function useSession({
     const targets = rawTargets.map(t => {
       if (t.type === 'youtube') {
         return { id: t.id, type: 'youtube', streamKey: t.streamKey };
+      }
+      if (t.type === 'viewer') {
+        return { id: t.id, type: 'viewer', viewerKey: t.viewerKey };
       }
       let headers = {};
       if (t.headers) { try { headers = JSON.parse(t.headers); } catch {} }
@@ -373,6 +380,9 @@ export function useSession({
       if (t.type === 'youtube') {
         return { id: t.id, type: 'youtube', streamKey: t.streamKey };
       }
+      if (t.type === 'viewer') {
+        return { id: t.id, type: 'viewer', viewerKey: t.viewerKey };
+      }
       let headers = {};
       // headers is stored as a raw JSON string in localStorage; parse it here.
       // Invalid JSON falls back to empty headers (backend ignores unrecognised keys).
@@ -447,28 +457,14 @@ export function useSession({
   // ─── Self-service account management ────────────────────
 
   async function getStats() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stats`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to load stats (${res.status})`);
-    return res.json();
+    return api.get('/stats');
   }
 
   /**
    * List backend caption files for the current session's API key.
    */
   async function listFiles() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/file`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to list files (${res.status})`);
-    return res.json();
+    return api.get('/file');
   }
 
   /**
@@ -485,15 +481,35 @@ export function useSession({
    * Delete a backend caption file.
    */
   async function deleteFile(fileId) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/file/${fileId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to delete file (${res.status})`);
-    return res.json();
+    return api.del(`/file/${fileId}`);
+  }
+
+  // ─── Icons ──────────────────────────────────────────────
+
+  /**
+   * List icons uploaded for the current API key.
+   * @returns {Promise<{ icons: object[] }>}
+   */
+  async function listIcons() {
+    return api.get('/icons');
+  }
+
+  /**
+   * Upload a PNG or SVG icon.
+   * @param {{ filename: string, mimeType: string, data: string }} opts
+   *   data is a base64-encoded string of the file contents.
+   * @returns {Promise<{ ok: boolean, id: number, filename: string, mimeType: string, sizeBytes: number }>}
+   */
+  async function uploadIcon({ filename, mimeType, data }) {
+    return api.post('/icons', { filename, mimeType, data });
+  }
+
+  /**
+   * Delete an icon by id.
+   * @param {number} iconId
+   */
+  async function deleteIcon(iconId) {
+    return api.del(`/icons/${iconId}`, { parseErrorBody: true });
   }
 
   /**
@@ -501,18 +517,11 @@ export function useSession({
    * and clears all persisted config from localStorage.
    */
   async function eraseSelf() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stats`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Erasure failed (${res.status})`);
+    const data = await api.del('/stats');
     // Disconnect locally (SSE already closed by server) and clear saved credentials
     await disconnect();
     clearPersistedConfig();
-    return res.json();
+    return data;
   }
 
   // ─── RTMP relay ─────────────────────────────────────────
@@ -524,19 +533,7 @@ export function useSession({
    */
   async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slot, targetUrl, targetName, captionMode }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to configure relay (${res.status})`);
-    }
-    return res.json();
+    return api.post('/stream', { slot, targetUrl, targetName, captionMode });
   }
 
   /**
@@ -545,19 +542,7 @@ export function useSession({
    */
   async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/${slot}`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ targetUrl, targetName, captionMode }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to update relay slot ${slot} (${res.status})`);
-    }
-    return res.json();
+    return api.put(`/stream/${slot}`, { targetUrl, targetName, captionMode });
   }
 
   /**
@@ -565,36 +550,22 @@ export function useSession({
    * @param {{ slot: number }} opts
    */
   async function stopRelaySlot({ slot = 1 } = {}) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/${slot}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to stop relay slot ${slot} (${res.status})`);
-    }
-    return res.json();
+    return api.del(`/stream/${slot}`, { parseErrorBody: true });
   }
 
   /**
    * Stop all relay slots and drop the nginx publisher.
    */
   async function stopRelay() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to stop relay (${res.status})`);
-    }
-    return res.json();
+    return api.del('/stream', { parseErrorBody: true });
+  }
+
+  /**
+   * Fetch the YouTube OAuth client ID configured on the backend.
+   * @returns {Promise<{ clientId: string }>}
+   */
+  async function getYouTubeConfig() {
+    return api.get('/youtube/config');
   }
 
   /**
@@ -602,14 +573,7 @@ export function useSession({
    * @returns {{ relays: object[], runningSlots: number[], active: boolean }}
    */
   async function getRelayStatus() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to get relay status (${res.status})`);
-    return res.json();
+    return api.get('/stream');
   }
 
   /**
@@ -617,14 +581,7 @@ export function useSession({
    * @returns {{ streams: object[] }}
    */
   async function getRelayHistory() {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/history`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!res.ok) throw new Error(`Failed to get relay history (${res.status})`);
-    return res.json();
+    return api.get('/stream/history');
   }
 
   /**
@@ -635,19 +592,7 @@ export function useSession({
    * @returns {Promise<{ ok: boolean, active: boolean }>}
    */
   async function setRelayActive(active) {
-    const token = senderRef.current?._token;
-    if (!token) throw new Error('Not connected');
-    const url = backendUrlRef.current;
-    const res = await fetch(`${url}/stream/active`, {
-      method: 'PUT',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ active }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Failed to set relay active state (${res.status})`);
-    }
-    return res.json();
+    return api.put('/stream/active', { active });
   }
 
   return {
@@ -659,7 +604,9 @@ export function useSession({
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
+    listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
+    getYouTubeConfig,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
   };
 }

@@ -1,0 +1,7 @@
+.gradle/
+.idea/
+*.iml
+local.properties
+lcyt-tv/build/
+lcyt-tv/app/build/
+lcyt-tv/.gradle/

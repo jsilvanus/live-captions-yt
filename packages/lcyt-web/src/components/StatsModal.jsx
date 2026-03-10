@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEscapeKey } from '../hooks/useEscapeKey';
 
 function fmt(n) {
   return n == null ? '—' : Number(n).toLocaleString();
@@ -29,14 +29,7 @@ function UsageBar({ used, limit }) {
 }
 
 export function StatsModal({ isOpen, onClose, stats }) {
-  useEffect(() => {
-    if (!isOpen) return;
-    function onKeyDown(e) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  useEscapeKey(onClose, isOpen);
 
   if (!isOpen) return null;
 
@@ -116,6 +109,50 @@ export function StatsModal({ isOpen, onClose, stats }) {
               </div>
             </section>
           )}
+
+          {/* Viewer key stats */}
+          {stats?.viewerStats != null && stats.viewerStats.length > 0 && (() => {
+            // Group by viewer_key, sum views, track last active date
+            const byKey = {};
+            for (const row of stats.viewerStats) {
+              if (!byKey[row.viewer_key]) {
+                byKey[row.viewer_key] = { total: 0, lastDate: row.date };
+              }
+              byKey[row.viewer_key].total += row.views;
+              if (row.date > byKey[row.viewer_key].lastDate) {
+                byKey[row.viewer_key].lastDate = row.date;
+              }
+            }
+            const keys = Object.entries(byKey).sort((a, b) => b[1].total - a[1].total);
+            return (
+              <section className="privacy-section">
+                <h3 className="privacy-heading">
+                  Viewer key stats
+                  <span className="stats-count">{keys.length}</span>
+                </h3>
+                <div className="stats-table-wrap">
+                  <table className="stats-table">
+                    <thead>
+                      <tr>
+                        <th>Key</th>
+                        <th>Total views</th>
+                        <th>Last active</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {keys.map(([key, { total, lastDate }]) => (
+                        <tr key={key}>
+                          <td><code>{key}</code></td>
+                          <td>{fmt(total)}</td>
+                          <td>{lastDate}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            );
+          })()}
 
           {/* Sessions */}
           {stats?.sessions != null && (
