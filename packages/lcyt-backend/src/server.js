@@ -1,12 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
-import { spawnSync } from 'node:child_process';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat,
 } from './db.js';
 import { SessionStore } from './store.js';
-import { RtmpRelayManager } from './rtmp-manager.js';
+import { RtmpRelayManager, probeFfmpeg } from './rtmp-manager.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createLiveRouter } from './routes/live.js';
@@ -96,50 +95,6 @@ const store = new SessionStore({ db });
 
 // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
 const _rtmpStatIds = new Map();
-
-// Probe local ffmpeg for required features (libx264, eia608, subrip)
-function probeFfmpeg() {
-  // First, check if ffmpeg binary exists at all
-  const which = spawnSync('ffmpeg', ['-version'], { encoding: 'utf8', timeout: 3000 });
-  if (which.error) {
-    const isNotFound = which.error.code === 'ENOENT' || which.error.message?.includes('ENOENT');
-    if (isNotFound) {
-      console.warn('⚠ ffmpeg not found in PATH — RTMP relay will not be available.');
-      console.warn('  Install ffmpeg to enable stream relay: https://ffmpeg.org/download.html');
-    } else {
-      console.warn('⚠ ffmpeg probe failed:', which.error.message);
-    }
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
-  }
-
-  try {
-    const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
-    const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
-    const demux = spawnSync('ffmpeg', ['-hide_banner', '-demuxers'], { encoding: 'utf8', timeout: 3000 });
-
-    const encOut = (enc.stdout || '') + (enc.stderr || '');
-    const fmtsOut = (fmts.stdout || '') + (fmts.stderr || '');
-    const demuxOut = (demux.stdout || '') + (demux.stderr || '');
-
-    const hasLibx264 = /libx264/i.test(encOut);
-    const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
-    const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
-
-    // Log ffmpeg availability status
-    console.info('✓ ffmpeg found — RTMP relay is available.');
-
-    // Warn about optional capabilities used for CEA-708 embedded captions (currently disabled)
-    // These are only needed when cea708 caption mode is enabled on a relay slot.
-    if (!hasLibx264) {
-      console.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
-    }
-
-    return { available: true, hasLibx264, hasEia608, hasSubrip };
-  } catch (err) {
-    console.warn('⚠ ffmpeg probe failed:', err.message);
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
-  }
-}
 
 const _rtmpRelayActive = process.env.RTMP_RELAY_ACTIVE === '1';
 if (!_rtmpRelayActive) {
