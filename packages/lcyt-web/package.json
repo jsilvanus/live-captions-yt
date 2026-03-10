@@ -11,6 +11,8 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@jsilvanus/matrox-monarch-control": "^0.5.0",
+    "events": "^3.3.0",
     "lcyt": "*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0"
