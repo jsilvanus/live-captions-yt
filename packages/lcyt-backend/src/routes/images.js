@@ -61,9 +61,6 @@ export function createImagesRouter(db, auth) {
       return res.status(503).json({ error: 'Graphics upload is not enabled on this server' });
     }
 
-    const { sessionId } = req.session;
-    // auth middleware attaches session info; we need apiKey from the session store
-    // but we only have sessionId here — apiKey is on req.session.apiKey (set by auth middleware)
     const apiKey = req.session.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 

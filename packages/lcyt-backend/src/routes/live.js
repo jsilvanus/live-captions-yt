@@ -328,10 +328,18 @@ export function createLiveRouter(db, store, jwtSecret) {
       return res.status(404).json({ error: 'Session not found' });
     }
 
+    // Clean up primary sender (null in target-array mode — safe with optional chaining)
     try {
-      await session.sender.end();
+      await session.sender?.end();
     } catch {
       // Best-effort cleanup
+    }
+
+    // Clean up extra YouTube target senders
+    for (const t of (session.extraTargets || [])) {
+      if (t.type === 'youtube' && t.sender) {
+        t.sender.end().catch(() => {});
+      }
     }
 
     const removed = store.remove(sessionId);

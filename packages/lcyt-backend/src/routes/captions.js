@@ -170,7 +170,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
         } else {
           // Target-array mode: no primary sender. Increment sequence locally and
           // synthesise a 200 result; actual delivery is handled by extraTargets below.
-        session.sequence = (session.sequence ?? 0) + 1;
+          session.sequence = (session.sequence ?? 0) + 1;
           result = { statusCode: 200, sequence: session.sequence, serverTimestamp: null };
         }
 
