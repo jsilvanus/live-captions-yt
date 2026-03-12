@@ -51,6 +51,8 @@ export function initDb(dbPath) {
   if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
   // 0 = graphics upload disabled (default), 1 = enabled (allows image upload via /images)
   if (!existingCols.has('graphics_enabled'))  db.exec('ALTER TABLE api_keys ADD COLUMN graphics_enabled INTEGER NOT NULL DEFAULT 0');
+  // 0 = radio (RTMP → audio-only HLS) disabled (default), 1 = enabled
+  if (!existingCols.has('radio_enabled'))     db.exec('ALTER TABLE api_keys ADD COLUMN radio_enabled INTEGER NOT NULL DEFAULT 0');
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)

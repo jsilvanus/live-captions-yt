@@ -115,6 +115,7 @@ export function createKeysRouter(db) {
     if ('lifetime_limit' in body) updates.lifetime_limit = body.lifetime_limit ?? null;
     if ('backend_file_enabled' in body) updates.backend_file_enabled = !!body.backend_file_enabled;
     if ('relay_allowed' in body) updates.relay_allowed = !!body.relay_allowed;
+    if ('radio_enabled' in body) updates.radio_enabled = !!body.radio_enabled;
     if ('graphics_enabled' in body) updates.graphics_enabled = !!body.graphics_enabled;
 
     updateKey(db, req.params.key, updates);

@@ -13,6 +13,21 @@ export function isRelayAllowed(db, apiKey) {
   return row ? row.relay_allowed === 1 : false;
 }
 
+// ─── Radio (RTMP → audio-only HLS) ───────────────────────────────────────────
+
+/**
+ * Check whether the audio-only HLS "radio" feature is enabled for an API key.
+ * The api_key must have radio_enabled = 1 (set by admin via PATCH /keys/:key).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isRadioEnabled(db, apiKey) {
+  const row = db.prepare('SELECT radio_enabled FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.radio_enabled === 1 : false;
+}
+
 /**
  * Check whether the user has activated the RTMP relay for this key.
  * relay_active is a user-controlled toggle (set via PUT /stream/active).

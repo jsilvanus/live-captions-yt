@@ -22,15 +22,18 @@ FROM node:20-slim
 WORKDIR /app
 COPY --from=build /app .
 
-# Install ffmpeg when RTMP relay is active (build with --build-arg RTMP_RELAY_ACTIVE=1)
+# Install ffmpeg when RTMP relay or radio HLS is active
+# (build with --build-arg RTMP_RELAY_ACTIVE=1 or --build-arg RADIO_ACTIVE=1)
 ARG RTMP_RELAY_ACTIVE=0
-RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ]; then \
+ARG RADIO_ACTIVE=0
+RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ]; then \
       apt-get update && apt-get install -y --no-install-recommends ffmpeg \
       && rm -rf /var/lib/apt/lists/*; \
     fi
 
 ENV NODE_ENV=production
 ENV RTMP_RELAY_ACTIVE=${RTMP_RELAY_ACTIVE}
+ENV RADIO_ACTIVE=${RADIO_ACTIVE}
 
 # Copy process manager entrypoint and make executable, create SQLite data dir
 COPY scripts/entrypoint.sh /entrypoint.sh
