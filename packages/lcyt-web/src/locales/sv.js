@@ -306,6 +306,9 @@ export default {
       slotCaptionMode: 'Textningsläge',
       slotCaptionModeHttp: 'HTTP POST',
       slotCaptionModeCea708: 'CEA-708 (inbäddad i ström)',
+      useOriginal: 'Använd original',
+      dskRtmpIngestUrl: 'DSK RTMP-ingest-URL',
+      dskRtmpHint: 'Skicka en DSK-grafikström från OBS till denna adress. Den läggs ovanpå reläströmmen i realtid.',
     },
     credentials: {
       googleCredential: 'Google-tjänstkonto',

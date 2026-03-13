@@ -111,24 +111,44 @@ function RelayRow({ entry, onChange, onRemove, t }) {
             </select>
           </div>
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotScale')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={!entry.scale}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, scale: '' }); }} />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotScale')}
+            </label>
             <input className="settings-field__input" type="text" placeholder={t('settings.relay.slotScalePlaceholder')}
-              value={entry.scale || ''} onChange={e => onChange({ ...entry, scale: e.target.value })} />
+              value={entry.scale || ''} onChange={e => onChange({ ...entry, scale: e.target.value })}
+              style={!entry.scale ? { opacity: 0.55 } : {}} />
           </div>
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotFps')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={entry.fps == null}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, fps: null }); }} />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotFps')}
+            </label>
             <input className="settings-field__input" type="number" min="1" max="120" placeholder={t('settings.relay.slotFpsPlaceholder')}
-              value={entry.fps ?? ''} onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })} />
+              value={entry.fps ?? ''} onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })}
+              style={entry.fps == null ? { opacity: 0.55 } : {}} />
           </div>
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotVideoBitrate')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={!entry.videoBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, videoBitrate: '' }); }} />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotVideoBitrate')}
+            </label>
             <input className="settings-field__input" type="text" placeholder={t('settings.relay.slotVideoBitratePlaceholder')}
-              value={entry.videoBitrate || ''} onChange={e => onChange({ ...entry, videoBitrate: e.target.value })} />
+              value={entry.videoBitrate || ''} onChange={e => onChange({ ...entry, videoBitrate: e.target.value })}
+              style={!entry.videoBitrate ? { opacity: 0.55 } : {}} />
           </div>
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotAudioBitrate')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={!entry.audioBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, audioBitrate: '' }); }} />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotAudioBitrate')}
+            </label>
             <input className="settings-field__input" type="text" placeholder={t('settings.relay.slotAudioBitratePlaceholder')}
-              value={entry.audioBitrate || ''} onChange={e => onChange({ ...entry, audioBitrate: e.target.value })} />
+              value={entry.audioBitrate || ''} onChange={e => onChange({ ...entry, audioBitrate: e.target.value })}
+              style={!entry.audioBitrate ? { opacity: 0.55 } : {}} />
           </div>
         </div>
       )}
@@ -319,6 +339,26 @@ function RelayPanel({ backendUrl, apiKey }) {
       )}
 
       {relayError && <div className="settings-error">{relayError}</div>}
+
+      {/* DSK RTMP ingest URL */}
+      {backendUrl && apiKey && (() => {
+        try {
+          const host = new URL(backendUrl).hostname;
+          const dskUrl = `rtmp://${host}/dsk/${encodeURIComponent(apiKey)}`;
+          return (
+            <div className="settings-field">
+              <label className="settings-field__label">{t('settings.relay.dskRtmpIngestUrl')}</label>
+              <span className="settings-field__hint">{t('settings.relay.dskRtmpHint')}</span>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <input className="settings-field__input" readOnly value={dskUrl}
+                  style={{ flex: 1, fontSize: '0.82em', fontFamily: 'monospace' }} />
+                <button className="btn btn--secondary btn--sm"
+                  onClick={() => navigator.clipboard?.writeText(dskUrl)} title="Copy">⎘</button>
+              </div>
+            </div>
+          );
+        } catch { return null; }
+      })()}
     </div>
   );
 }

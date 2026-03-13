@@ -116,18 +116,33 @@ function RelayRow({ entry, onChange, onRemove, t }) {
           </div>
           {/* Resolution */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotScale')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={!entry.scale}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, scale: '' }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotScale')}
+            </label>
             <input
               className="settings-field__input"
               type="text"
               placeholder={t('settings.relay.slotScalePlaceholder')}
               value={entry.scale || ''}
               onChange={e => onChange({ ...entry, scale: e.target.value })}
+              style={!entry.scale ? { opacity: 0.55 } : {}}
             />
           </div>
           {/* Frame rate */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotFps')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={entry.fps == null}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, fps: null }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotFps')}
+            </label>
             <input
               className="settings-field__input"
               type="number"
@@ -135,32 +150,75 @@ function RelayRow({ entry, onChange, onRemove, t }) {
               placeholder={t('settings.relay.slotFpsPlaceholder')}
               value={entry.fps ?? ''}
               onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })}
+              style={entry.fps == null ? { opacity: 0.55 } : {}}
             />
           </div>
           {/* Video bitrate */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotVideoBitrate')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={!entry.videoBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, videoBitrate: '' }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotVideoBitrate')}
+            </label>
             <input
               className="settings-field__input"
               type="text"
               placeholder={t('settings.relay.slotVideoBitratePlaceholder')}
               value={entry.videoBitrate || ''}
               onChange={e => onChange({ ...entry, videoBitrate: e.target.value })}
+              style={!entry.videoBitrate ? { opacity: 0.55 } : {}}
             />
           </div>
           {/* Audio bitrate */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotAudioBitrate')}</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={!entry.audioBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, audioBitrate: '' }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotAudioBitrate')}
+            </label>
             <input
               className="settings-field__input"
               type="text"
               placeholder={t('settings.relay.slotAudioBitratePlaceholder')}
               value={entry.audioBitrate || ''}
               onChange={e => onChange({ ...entry, audioBitrate: e.target.value })}
+              style={!entry.audioBitrate ? { opacity: 0.55 } : {}}
             />
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── DSK RTMP ingest URL display ─────────────────────────────────────────────
+function DskRtmpUrlField({ backendUrl, apiKey }) {
+  const [copied, setCopied] = useState(false);
+  const rtmpUrl = (() => {
+    try {
+      const host = new URL(backendUrl).hostname;
+      return `rtmp://${host}/dsk/${encodeURIComponent(apiKey)}`;
+    } catch { return null; }
+  })();
+  if (!rtmpUrl) return null;
+  const copy = () => {
+    navigator.clipboard?.writeText(rtmpUrl).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <input className="settings-field__input" readOnly value={rtmpUrl} style={{ flex: 1, fontSize: '0.82em', fontFamily: 'monospace' }} />
+      <button className="btn btn--secondary btn--sm" onClick={copy} title="Copy URL">
+        {copied ? '✓' : '⎘'}
+      </button>
     </div>
   );
 }
@@ -558,6 +616,15 @@ export function SettingsModal({ isOpen, onClose, inline }) {
               )}
 
               {relayError && <div className="settings-error">{relayError}</div>}
+
+              {/* DSK RTMP ingest URL */}
+              {backendUrl && apiKey && (
+                <div className="settings-field">
+                  <label className="settings-field__label">{t('settings.relay.dskRtmpIngestUrl')}</label>
+                  <span className="settings-field__hint">{t('settings.relay.dskRtmpHint')}</span>
+                  <DskRtmpUrlField backendUrl={backendUrl} apiKey={apiKey} />
+                </div>
+              )}
             </div>
           )}
 

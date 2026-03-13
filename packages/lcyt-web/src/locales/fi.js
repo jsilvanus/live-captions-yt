@@ -303,6 +303,9 @@ export default {
       slotCaptionMode: 'Tekstitystila',
       slotCaptionModeHttp: 'HTTP POST',
       slotCaptionModeCea708: 'CEA-708 (upotettu virtaan)',
+      useOriginal: 'Käytä alkuperäistä',
+      dskRtmpIngestUrl: 'DSK RTMP-vastaanotto-osoite',
+      dskRtmpHint: 'Lähetä DSK-grafiikkavirta OBS:stä tähän osoitteeseen. Se lisätään relaylle reaaliajassa.',
     },
     credentials: {
       googleCredential: 'Google-palvelutili',

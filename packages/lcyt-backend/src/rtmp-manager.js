@@ -117,7 +117,8 @@ export class RtmpRelayManager {
     /**
      * Server-side DSK overlay state: ordered image paths to composite on the relay stream.
      * Populated by setDskOverlay(); read by start().
-     * @type {Map<string, { names: string[], imagePaths: string[] }>}
+     * For RTMP DSK streams, only `rtmpUrl` is set (no imagePaths).
+     * @type {Map<string, { names: string[], imagePaths: string[], rtmpUrl?: string }>}
      */
     this._dskState = new Map();
 
@@ -197,7 +198,7 @@ export class RtmpRelayManager {
       // Not compatible with CEA-708 (CEA-708 takes priority).
       // Not compatible with per-slot transcoding (each slot gets its own video stream; skip DSK there).
       const dskState = !hasCea708 && !hasTranscode ? (this._dskState.get(apiKey) ?? null) : null;
-      const hasDsk = !!(dskState && dskState.imagePaths.length > 0);
+      const hasDsk = !!(dskState && (dskState.imagePaths?.length > 0 || dskState.rtmpUrl));
 
       const src = sourceUrl(apiKey);
       const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
@@ -286,25 +287,32 @@ export class RtmpRelayManager {
 
       } else if (hasDsk) {
         // ── Server-side DSK overlay mode (Phase 8) ─────────────────────────
-        // Add source then each image as a separate input.
-        args = ['-re', '-i', src];
-        for (const imgPath of dskState.imagePaths) {
-          args.push('-i', imgPath);
+        if (dskState.rtmpUrl) {
+          // RTMP stream as DSK source (e.g. from OBS pushing to rtmp://server/dsk/<key>)
+          args = ['-re', '-i', src, '-re', '-i', dskState.rtmpUrl];
+          args.push('-filter_complex', '[0:v][1:v]overlay=0:0:shortest=1[ovout]');
+        } else {
+          // Static image files as DSK source
+          args = ['-re', '-i', src];
+          for (const imgPath of dskState.imagePaths) {
+            args.push('-i', imgPath);
+          }
+
+          // Build the overlay chain: [0:v][1:v]overlay=0:0[odsk0]; [odsk0][2:v]overlay=0:0[odsk1] ...
+          // The first listed image is the bottom layer; the last is the top layer.
+          const N = dskState.imagePaths.length;
+          const filterParts = [];
+          let prevLabel = '[0:v]';
+          for (let i = 0; i < N; i++) {
+            const imgLabel = `[${i + 1}:v]`;
+            const outLabel = i < N - 1 ? `[odsk${i}]` : '[ovout]';
+            filterParts.push(`${prevLabel}${imgLabel}overlay=0:0${outLabel}`);
+            prevLabel = outLabel;
+          }
+
+          args.push('-filter_complex', filterParts.join('; '));
         }
 
-        // Build the overlay chain: [0:v][1:v]overlay=0:0[odsk0]; [odsk0][2:v]overlay=0:0[odsk1] ...
-        // The first listed image is the bottom layer; the last is the top layer.
-        const N = dskState.imagePaths.length;
-        const filterParts = [];
-        let prevLabel = '[0:v]';
-        for (let i = 0; i < N; i++) {
-          const imgLabel = `[${i + 1}:v]`;
-          const outLabel = i < N - 1 ? `[odsk${i}]` : '[ovout]';
-          filterParts.push(`${prevLabel}${imgLabel}overlay=0:0${outLabel}`);
-          prevLabel = outLabel;
-        }
-
-        args.push('-filter_complex', filterParts.join('; '));
         args.push('-map', '[ovout]', '-map', '0:a');
         args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
         args.push('-c:a', 'copy');
@@ -605,6 +613,34 @@ export class RtmpRelayManager {
           await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
         } catch (err) {
           console.error(`[rtmp] Failed to restart relay after DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Set an RTMP stream as the server-side DSK overlay source for an API key.
+   * Call this when an OBS/broadcaster publishes to the backend's DSK nginx-rtmp endpoint.
+   * Pass `null` for `rtmpUrl` to clear the RTMP DSK overlay.
+   *
+   * @param {string} apiKey     The API key that owns the relay
+   * @param {string|null} rtmpUrl  Full RTMP URL of the DSK source (e.g. rtmp://127.0.0.1:1935/dsk/mykey)
+   * @returns {Promise<void>}
+   */
+  async setDskRtmpSource(apiKey, rtmpUrl) {
+    if (!rtmpUrl) {
+      this._dskState.delete(apiKey);
+    } else {
+      this._dskState.set(apiKey, { names: ['rtmp-dsk'], imagePaths: [], rtmpUrl });
+    }
+
+    if (this.isRunning(apiKey)) {
+      const meta = this._meta.get(apiKey);
+      if (meta) {
+        try {
+          await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
+        } catch (err) {
+          console.error(`[rtmp] Failed to restart relay after RTMP DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
         }
       }
     }

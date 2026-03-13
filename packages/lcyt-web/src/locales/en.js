@@ -306,6 +306,9 @@ export default {
       slotCaptionMode: 'Caption mode',
       slotCaptionModeHttp: 'HTTP POST',
       slotCaptionModeCea708: 'CEA-708 (embed in stream)',
+      useOriginal: 'Use original',
+      dskRtmpIngestUrl: 'DSK RTMP ingest URL',
+      dskRtmpHint: 'Push a DSK graphics stream from OBS to this address. It will be overlaid on the relay in real time.',
     },
     credentials: {
       googleCredential: 'Google Service Account',
