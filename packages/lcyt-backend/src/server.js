@@ -104,6 +104,22 @@ if (process.env.RTMP_APPLICATION) {
   console.info('ℹ RTMP_APPLICATION not set — /rtmp will accept any application name.');
 }
 
+// YouTube OAuth configuration check
+if (process.env.YOUTUBE_CLIENT_ID) {
+  console.info('✓ YouTube OAuth configured (YOUTUBE_CLIENT_ID is set).');
+} else {
+  console.warn('⚠ YOUTUBE_CLIENT_ID is not set — YouTube OAuth (GET /youtube/config) will return 503.');
+  console.warn('  Set YOUTUBE_CLIENT_ID to a Google OAuth 2.0 Web application client ID to enable YouTube integration.');
+}
+
+// Nginx configuration reminder
+console.info('ℹ nginx: see scripts/nginx-app.conf.sample for an example nginx vhost configuration.');
+if (process.env.RTMP_RELAY_ACTIVE === '1') {
+  console.info('  RTMP relay is active. Ensure nginx-rtmp is configured with on_publish/on_publish_done pointing to /rtmp.');
+} else {
+  console.info('  RTMP relay is inactive. Set RTMP_RELAY_ACTIVE=1 and configure nginx-rtmp to enable it.');
+}
+
 // ---------------------------------------------------------------------------
 // Database and session store
 // ---------------------------------------------------------------------------
@@ -226,6 +242,10 @@ const app = express();
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
 
+// Dynamic CORS middleware — must run before all routers (including /icons) so
+// that OPTIONS preflight requests are handled and CORS headers are set.
+app.use(createCorsMiddleware(store));
+
 // Mount /icons BEFORE the global JSON body parser so uploads can use the
 // router-local 400kb parser without hitting the global 64kb limit first.
 app.use('/icons', createIconRouter(db, auth, store));
@@ -247,9 +267,6 @@ app.use((req, res, next) => {
   });
   next();
 });
-
-// Dynamic CORS middleware
-app.use(createCorsMiddleware(store));
 
 // Default: never cache any response. Cacheable routes override this explicitly.
 app.use((_req, res, next) => {

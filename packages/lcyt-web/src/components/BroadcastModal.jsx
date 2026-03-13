@@ -9,6 +9,14 @@ import {
 } from '../lib/youtubeApi';
 import { useToastContext } from '../contexts/ToastContext';
 import { useSessionContext } from '../contexts/SessionContext';
+import {
+  setSlotTargetType,
+  setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
+  setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
+  clearSlot,
+  MAX_RELAY_SLOTS,
+  buildInitialRelayList,
+} from '../lib/relayConfig.js';
 
 // ── Encoder types ──────────────────────────────────────────────────────────
 
@@ -184,6 +192,343 @@ function EncoderTab() {
         The Matrox Monarch HDx HTTP API must be reachable from this browser.
         If you see CORS errors, access the app from the same network as the encoder.
       </p>
+    </div>
+  );
+}
+
+// ── Stream Tab (RTMP relay config) ─────────────────────────────────────────
+
+function RelayRow({ entry, onChange, onRemove }) {
+  const [showAdvanced, setShowAdvanced] = useState(
+    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
+  );
+  return (
+    <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label className="settings-checkbox" style={{ marginBottom: 0 }}>
+          <input
+            type="checkbox"
+            checked={!!entry.active}
+            onChange={e => onChange({ ...entry, active: e.target.checked })}
+          />
+        </label>
+        <select
+          className="settings-field__input"
+          value={entry.targetType}
+          onChange={e => onChange({ ...entry, targetType: e.target.value })}
+          style={{ width: 'auto' }}
+        >
+          <option value="youtube">YouTube</option>
+          <option value="generic">Generic</option>
+        </select>
+        {entry.targetType === 'youtube' ? (
+          <input
+            className="settings-field__input"
+            type="password"
+            placeholder="xxxx-xxxx-xxxx-xxxx-xxxx"
+            autoComplete="off"
+            value={entry.youtubeKey || ''}
+            onChange={e => onChange({ ...entry, youtubeKey: e.target.value })}
+            style={{ flex: 1 }}
+          />
+        ) : (
+          <input
+            className="settings-field__input"
+            type="text"
+            placeholder="rtmp://ingest.example.com/live/my-stream-key"
+            autoComplete="off"
+            value={entry.genericUrl || ''}
+            onChange={e => onChange({ ...entry, genericUrl: e.target.value })}
+            style={{ flex: 1 }}
+          />
+        )}
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          onClick={() => setShowAdvanced(v => !v)}
+          title="Advanced"
+          style={{ flexShrink: 0, fontSize: '0.75em' }}
+        >⚙</button>
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          onClick={onRemove}
+          title="Remove"
+          style={{ flexShrink: 0 }}
+        >✕</button>
+      </div>
+      {entry.targetType === 'youtube' && (entry.youtubeKey || '').trim() && (
+        <span className="settings-field__hint">
+          → rtmp://a.rtmp.youtube.com/live2/{(entry.youtubeKey || '').trim()}
+        </span>
+      )}
+      {showAdvanced && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>Caption mode</label>
+            <select
+              className="settings-field__input"
+              value={entry.captionMode || 'http'}
+              onChange={e => onChange({ ...entry, captionMode: e.target.value })}
+              style={{ width: '100%' }}
+            >
+              <option value="http">HTTP POST</option>
+              <option value="cea708">CEA-708 (embed in stream)</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={!entry.scale}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, scale: '' }); }} />
+              Use original — Resolution
+            </label>
+            <input className="settings-field__input" type="text" placeholder="e.g. 1280x720"
+              value={entry.scale || ''}
+              onChange={e => onChange({ ...entry, scale: e.target.value })}
+              style={!entry.scale ? { opacity: 0.55 } : {}} />
+          </div>
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={entry.fps == null}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, fps: null }); }} />
+              Use original — Frame rate
+            </label>
+            <input className="settings-field__input" type="number" min="1" max="120" placeholder="e.g. 30"
+              value={entry.fps ?? ''}
+              onChange={e => { const v = parseInt(e.target.value, 10); onChange({ ...entry, fps: Number.isFinite(v) ? v : null }); }}
+              style={entry.fps == null ? { opacity: 0.55 } : {}} />
+          </div>
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={!entry.videoBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, videoBitrate: '' }); }} />
+              Use original — Video bitrate
+            </label>
+            <input className="settings-field__input" type="text" placeholder="e.g. 2500k"
+              value={entry.videoBitrate || ''}
+              onChange={e => onChange({ ...entry, videoBitrate: e.target.value })}
+              style={!entry.videoBitrate ? { opacity: 0.55 } : {}} />
+          </div>
+          <div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input type="checkbox" checked={!entry.audioBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, audioBitrate: '' }); }} />
+              Use original — Audio bitrate
+            </label>
+            <input className="settings-field__input" type="text" placeholder="e.g. 128k"
+              value={entry.audioBitrate || ''}
+              onChange={e => onChange({ ...entry, audioBitrate: e.target.value })}
+              style={!entry.audioBitrate ? { opacity: 0.55 } : {}} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RtmpUrlField({ label, hint, url }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard?.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+  return (
+    <div className="settings-field">
+      <label className="settings-field__label">{label}</label>
+      {hint && <span className="settings-field__hint">{hint}</span>}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <input className="settings-field__input" readOnly value={url}
+          style={{ flex: 1, fontSize: '0.82em', fontFamily: 'monospace' }}
+          onClick={e => e.target.select()} />
+        <button className="btn btn--secondary btn--sm" onClick={copy} title="Copy URL">
+          {copied ? '✓' : '⎘'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StreamTab() {
+  const session = useSessionContext();
+  const { showToast } = useToastContext();
+
+  const [relayList, setRelayList] = useState(buildInitialRelayList);
+  const [relayStatus, setRelayStatus] = useState(null);
+  const [relayActive, setRelayActiveState] = useState(false);
+  const [relayError, setRelayError] = useState('');
+  const [rtmpIngest, setRtmpIngest] = useState(null);
+
+  // Fetch RTMP ingest info from health endpoint
+  useEffect(() => {
+    const url = session.backendUrl;
+    if (!url) return;
+    fetch(`${url}/health`, { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (data?.rtmpIngest) setRtmpIngest(data.rtmpIngest); })
+      .catch(() => {});
+  }, [session.backendUrl]);
+
+  function refreshStatus() {
+    if (!session.connected) { setRelayStatus(null); return; }
+    session.getRelayStatus()
+      .then(s => { setRelayStatus(s); setRelayActiveState(!!s.active); })
+      .catch(() => setRelayStatus(null));
+  }
+
+  useEffect(() => { refreshStatus(); }, [session.connected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function addRelay() {
+    const usedSlots = relayList.map(r => r.slot);
+    for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
+      if (!usedSlots.includes(s)) {
+        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' }]);
+        return;
+      }
+    }
+  }
+
+  function updateRelayItem(slot, updated) {
+    if ('targetType'   in updated) setSlotTargetType(slot, updated.targetType);
+    if ('youtubeKey'   in updated) setSlotYoutubeKey(slot, updated.youtubeKey);
+    if ('genericUrl'   in updated) setSlotGenericUrl(slot, updated.genericUrl);
+    if ('genericName'  in updated) setSlotGenericName(slot, updated.genericName);
+    if ('captionMode'  in updated) setSlotCaptionMode(slot, updated.captionMode);
+    if ('scale'        in updated) setSlotScale(slot, updated.scale ?? '');
+    if ('fps'          in updated) setSlotFps(slot, updated.fps ?? null);
+    if ('videoBitrate' in updated) setSlotVideoBitrate(slot, updated.videoBitrate ?? '');
+    if ('audioBitrate' in updated) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
+    setRelayList(prev => prev.map(r => r.slot === slot ? { ...r, ...updated } : r));
+  }
+
+  function removeRelay(slot) {
+    clearSlot(slot);
+    setRelayList(prev => prev.filter(r => r.slot !== slot));
+  }
+
+  async function handleRelayActive(active) {
+    try {
+      setRelayError('');
+      await session.setRelayActive(active);
+      setRelayActiveState(active);
+      refreshStatus();
+    } catch (err) {
+      const msg = err.message || 'Failed to toggle relay';
+      setRelayError(msg);
+      showToast(msg, 'error');
+    }
+  }
+
+  const runningSlots = relayStatus?.runningSlots ?? [];
+  const backendUrl = session.backendUrl;
+  const apiKey = session.apiKey;
+
+  // Compute DSK RTMP URL
+  const dskUrl = (() => {
+    try {
+      if (!backendUrl || !apiKey) return null;
+      const host = new URL(backendUrl).hostname;
+      return `rtmp://${host}/dsk/${encodeURIComponent(apiKey)}`;
+    } catch { return null; }
+  })();
+
+  // Compute input RTMP ingest URL
+  const ingestUrl = rtmpIngest && apiKey
+    ? `rtmp://${rtmpIngest.host}/${rtmpIngest.app}/${apiKey}`
+    : null;
+
+  return (
+    <div className="settings-panel settings-panel--active broadcast-tab">
+      {!session.connected && (
+        <div className="settings-field">
+          <span className="settings-field__hint" style={{ color: 'var(--color-text-dim)' }}>
+            Connect to the backend first to manage the RTMP relay.
+          </span>
+        </div>
+      )}
+
+      <div className="settings-field">
+        <span className="settings-field__hint">
+          The RTMP relay receives your stream and fans it out to all configured targets with embedded captions.
+        </span>
+      </div>
+
+      {/* Input RTMP stream address */}
+      {ingestUrl && (
+        <RtmpUrlField
+          label="RTMP ingest address"
+          hint="Point your streaming software (OBS, vMix, etc.) here. Use your API key as the stream name."
+          url={ingestUrl}
+        />
+      )}
+
+      {/* Relay targets */}
+      <div className="settings-field">
+        <label className="settings-field__label">RTMP relay targets</label>
+        {relayList.length === 0 && (
+          <span className="settings-field__hint">No relay targets configured. Click &quot;+ Add relay target&quot; to add one.</span>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {relayList.map(entry => (
+            <RelayRow
+              key={entry.slot}
+              entry={entry}
+              onChange={updated => updateRelayItem(entry.slot, updated)}
+              onRemove={() => removeRelay(entry.slot)}
+            />
+          ))}
+        </div>
+        {relayList.length < MAX_RELAY_SLOTS && (
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={addRelay}
+            style={{ marginTop: 8 }}
+          >
+            + Add relay target
+          </button>
+        )}
+      </div>
+
+      {/* Relay active toggle */}
+      {session.connected && (
+        <div className="settings-field">
+          <label className="settings-field__label">Relay status</label>
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={relayActive}
+              onChange={e => handleRelayActive(e.target.checked)}
+            />
+            {relayActive ? 'Active — will fan-out when stream arrives' : 'Inactive — incoming stream accepted but not relayed'}
+          </label>
+        </div>
+      )}
+
+      {/* Running slot status */}
+      {relayStatus && relayStatus.relays?.length > 0 && (
+        <div className="settings-field">
+          <label className="settings-field__label">Running slots</label>
+          {relayStatus.relays.map(r => (
+            <div key={r.slot} style={{ fontSize: '0.85em', marginBottom: '0.25rem' }}>
+              {runningSlots.includes(r.slot) ? '🔴 Live' : '⚫ Inactive'}
+              {' — '}{r.targetUrl}{r.targetName ? `/${r.targetName}` : ''}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {relayError && <div className="settings-error">{relayError}</div>}
+
+      {/* DSK RTMP ingest URL */}
+      {dskUrl && (
+        <RtmpUrlField
+          label="DSK RTMP ingest URL"
+          hint="Push a DSK graphics stream from OBS to this address. It will be overlaid on the relay in real time."
+          url={dskUrl}
+        />
+      )}
     </div>
   );
 }
@@ -426,8 +771,8 @@ function YouTubeTab() {
 
 // ── BroadcastModal ─────────────────────────────────────────────────────────
 
-const TABS = ['encoder', 'youtube'];
-const TAB_LABELS = { encoder: 'Encoder', youtube: 'YouTube' };
+const TABS = ['encoder', 'youtube', 'stream'];
+const TAB_LABELS = { encoder: 'Encoder', youtube: 'YouTube', stream: 'Stream' };
 
 export function BroadcastModal({ isOpen, onClose }) {
   const [activeTab, setActiveTab] = useState('encoder');
@@ -460,6 +805,7 @@ export function BroadcastModal({ isOpen, onClose }) {
         <div className="settings-modal__body">
           {activeTab === 'encoder' && <EncoderTab />}
           {activeTab === 'youtube' && <YouTubeTab />}
+          {activeTab === 'stream' && <StreamTab />}
         </div>
       </div>
     </div>
