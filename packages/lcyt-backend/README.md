@@ -181,7 +181,10 @@ node packages/lcyt-backend/bin/lcyt-backend-admin list
 node packages/lcyt-backend/bin/lcyt-backend-admin add \
   --owner "Alice" \
   [--key custom-key-value] \
-  [--expires 2027-01-01]
+  [--expires 2027-01-01] \
+  [--relay] [--radio] [--hls] \
+  [--cea708-delay 2000] \
+  [--embed-cors "https://example.com"]
 
 # Show details for a specific key
 node packages/lcyt-backend/bin/lcyt-backend-admin info <key>
@@ -194,6 +197,12 @@ node packages/lcyt-backend/bin/lcyt-backend-admin delete <key>
 
 # Extend or update a key's expiry
 node packages/lcyt-backend/bin/lcyt-backend-admin renew <key> --expires 2027-12-31
+
+# Enable radio and HLS on an existing key
+node packages/lcyt-backend/bin/lcyt-backend-admin update <key> --radio true --hls true
+
+# Set the CEA-708 delay and embed CORS on an existing key
+node packages/lcyt-backend/bin/lcyt-backend-admin update <key> --cea708-delay 2000 --embed-cors "https://example.com"
 ```
 
 > The CLI uses the same `DB_PATH` environment variable as the server.
@@ -833,7 +842,12 @@ Update an API key's owner, expiry, limits, or feature flags.
   "expires":              "2028-06-01",
   "daily_limit":          500,
   "lifetime_limit":       10000,
-  "backend_file_enabled": true
+  "backend_file_enabled": true,
+  "relay_allowed":        true,
+  "radio_enabled":        true,
+  "hls_enabled":          true,
+  "cea708_delay_ms":      2000,
+  "embed_cors":           "https://example.com"
 }
 ```
 
@@ -844,6 +858,11 @@ Update an API key's owner, expiry, limits, or feature flags.
 | `daily_limit` | `number \| null` | Daily caption limit. Pass `null` to remove. |
 | `lifetime_limit` | `number \| null` | Lifetime caption limit. Pass `null` to remove. |
 | `backend_file_enabled` | `boolean` | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`GET /file`](#get-file). |
+| `relay_allowed` | `boolean` | Allow RTMP relay for this key. Disabled by default. |
+| `radio_enabled` | `boolean` | Enable audio-only radio HLS output for this key. Disabled by default. |
+| `hls_enabled` | `boolean` | Enable video HLS output for this key. Disabled by default. |
+| `cea708_delay_ms` | `number` | Video delay in milliseconds for CEA-708 caption mode. Default `0`. |
+| `embed_cors` | `string` | CORS origin for public embed endpoints (`/radio/:key/*`, `/stream-hls/:key/*`). Defaults to `*`. |
 
 **Response `200 OK`:** Updated key object.
 
