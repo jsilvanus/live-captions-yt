@@ -20,6 +20,7 @@ export function formatKey(row) {
     relayAllowed: row.relay_allowed === 1,
     relayActive:  row.relay_active  === 1,
     radioEnabled: row.radio_enabled  === 1,
+    hlsEnabled:   row.hls_enabled    === 1,
   };
 }
 
@@ -136,13 +137,13 @@ export function getKeyByEmail(db, email) {
 /**
  * Create a new API key.
  * @param {import('better-sqlite3').Database} db
- * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean }} options
+ * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -153,6 +154,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     (backend_file_enabled ?? false) ? 1 : 0,
     (relay_allowed ?? false) ? 1 : 0,
     (radio_enabled ?? false) ? 1 : 0,
+    (hls_enabled ?? false) ? 1 : 0,
   );
   return getKey(db, resolvedKey);
 }
@@ -249,10 +251,10 @@ export function anonymizeKey(db, key) {
  * Update owner and/or expires_at for a key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key
- * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean }} fields
+ * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled } = {}) {
   const parts = [];
   const params = [];
 
@@ -283,6 +285,10 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (radio_enabled !== undefined) {
     parts.push('radio_enabled = ?');
     params.push(radio_enabled ? 1 : 0);
+  }
+  if (hls_enabled !== undefined) {
+    parts.push('hls_enabled = ?');
+    params.push(hls_enabled ? 1 : 0);
   }
 
   if (parts.length === 0) return false;

@@ -28,6 +28,21 @@ export function isRadioEnabled(db, apiKey) {
   return row ? row.radio_enabled === 1 : false;
 }
 
+// ─── HLS (RTMP → video+audio HLS embed) ──────────────────────────────────────
+
+/**
+ * Check whether the video+audio HLS embed feature is enabled for an API key.
+ * The api_key must have hls_enabled = 1 (set by admin via PATCH /keys/:key).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isHlsEnabled(db, apiKey) {
+  const row = db.prepare('SELECT hls_enabled FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.hls_enabled === 1 : false;
+}
+
 /**
  * Check whether the user has activated the RTMP relay for this key.
  * relay_active is a user-controlled toggle (set via PUT /stream/active).

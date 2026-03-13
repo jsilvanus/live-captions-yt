@@ -134,7 +134,7 @@ GET  /stt/status — running state + partial transcript buffer
 
 Deliver full video+audio (or audio-only) to HTTP Live Streaming consumers.
 
-#### 2a. HLS Browser Embed — live stream in a `<video>` element 📋 *Planned*
+#### 2a. HLS Browser Embed — live stream in a `<video>` element ✅ *Implemented*
 
 **Purpose:** Let viewers watch the full video stream in a browser without any RTMP player.
 Useful for embedding a stream preview on a website or dashboard.
@@ -157,26 +157,48 @@ Useful for embedding a stream preview on a website or dashboard.
 
 **Gating flag:** `hls_enabled` on `api_keys`
 
+**nginx nginx-rtmp callbacks:** `POST /stream-hls` (or `POST /stream-hls/on_publish[_done]`)
+
+**Embed snippet (drop anywhere in HTML):**
+```html
+<script src="https://api.example.com/stream-hls/myevent/player.js"></script>
+```
+
+**Environment variables:**
+
+| Variable         | Default                           | Purpose                              |
+|------------------|-----------------------------------|--------------------------------------|
+| `HLS_ROOT`       | `/tmp/hls-video`                  | HLS segment output directory         |
+| `HLS_LOCAL_RTMP` | `RADIO_LOCAL_RTMP` or `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL |
+| `HLS_RTMP_APP`   | `RTMP_APPLICATION` or `live`      | nginx-rtmp application name          |
+
 ---
 
-#### 2b. HLS Previews — real-time thumbnails / short clips 📋 *Planned*
+#### 2b. HLS Previews — real-time thumbnails / short clips ✅ *Implemented*
 
-**Purpose:** Generate a low-bandwidth preview of the incoming and outgoing streams for
-monitoring in the web UI (`EmbedRtmpPage` or a new `StreamMonitorPage`).
+**Purpose:** Generate a low-bandwidth preview of the incoming stream for monitoring in the
+web UI (`EmbedRtmpPage` or a new `StreamMonitorPage`).
 
-Two preview types:
+| Preview  | Source           | Output                                              |
+|----------|------------------|-----------------------------------------------------|
+| Incoming | Local nginx-rtmp | 1 JPEG thumbnail / 5 s, served at `GET /preview/:key/incoming.jpg` |
 
-| Preview        | Source           | Output                                  |
-|----------------|------------------|-----------------------------------------|
-| Incoming       | Local nginx-rtmp | 1 JPEG thumbnail / 5 s, served at `/preview/:key/incoming.jpg` |
-| Outgoing       | Re-read relay target URL | 1 JPEG thumbnail / 5 s, at `/preview/:key/outgoing/:slot.jpg` |
+**Implementation (`PreviewManager` / `/preview` route):**
+- ffmpeg `-vf fps=1/5 -update 1 -q:v 3 -f image2 -y` to continuously overwrite a single JPEG
+- Backend serves the file with `Cache-Control: public, max-age=5, must-revalidate` and `Last-Modified`
+- Supports `If-Modified-Since` conditional requests → 304 when thumbnail hasn't changed
+- Web UI can poll the thumbnail URL every 5 s inside an `<img>` tag
+- Separate thumbnail per key at `/preview/<key>/incoming.jpg`
 
-**Approach:**
-- ffmpeg `-vf fps=1/5 -update 1 -q:v 3` to write a single updating JPEG
-- Backend serves the file with `max-age=5` and a `Last-Modified` header
-- Web UI polls the thumbnail URL every 5 s inside an `<img>` tag
+**Gating:** Started automatically when a stream begins; stops when the stream ends. No
+separate permission flag needed.
 
-**Gating:** Preview generation runs only when the relay is active. No separate flag needed.
+**Environment variables:**
+
+| Variable             | Default              | Purpose                              |
+|----------------------|----------------------|--------------------------------------|
+| `PREVIEW_ROOT`       | `/tmp/previews`      | JPEG output root directory           |
+| `PREVIEW_INTERVAL_S` | `5`                  | Seconds between thumbnail updates    |
 
 ---
 
@@ -303,9 +325,9 @@ ffmpeg with `libx264` and `eia608` encoder (check via `probeFfmpeg()`).
 | Phase | Features                                             | Status        |
 |-------|------------------------------------------------------|---------------|
 | 1     | RTMP relay (copy, fan-out)                           | ✅ Done        |
-| 2     | Internet radio (audio-only HLS)                      | ✅ Done (this PR) |
-| 3     | HLS browser embed (video+audio)                      | 📋 Planned     |
-| 4     | HLS previews (incoming + outgoing thumbnails)        | 📋 Planned     |
+| 2     | Internet radio (audio-only HLS)                      | ✅ Done        |
+| 3     | HLS browser embed (video+audio)                      | ✅ Done        |
+| 4     | HLS previews (incoming thumbnails)                   | ✅ Done        |
 | 5     | CEA-708 caption delay                                | 📋 Planned     |
 | 6     | Caption burn-in                                      | 📋 Planned     |
 | 7     | Resolution / frame-rate transcoding per slot         | 📋 Planned     |
@@ -324,7 +346,7 @@ All RTMP features are gated by columns on the `api_keys` table, set by an admin 
 | `relay_allowed`     | INTEGER | 0       | RTMP fan-out relay enabled                   |
 | `relay_active`      | INTEGER | 0       | User toggle: relay currently active          |
 | `radio_enabled`     | INTEGER | 0       | Internet radio (audio-only HLS)              |
-| `hls_enabled`       | INTEGER | 0       | Full HLS video+audio embed *(planned)*       |
+| `hls_enabled`       | INTEGER | 0       | Full HLS video+audio embed                   |
 | `stt_relay_enabled` | INTEGER | 0       | Auto-STT from stream audio *(planned)*       |
 
 ---
@@ -360,15 +382,18 @@ RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ]; then \
 The backend registers as a callback handler for nginx-rtmp lifecycle events. nginx always
 sends POST with `application/x-www-form-urlencoded` body containing `app`, `name`, `call`.
 
-| Route                      | Handles         | Triggers                           |
-|----------------------------|-----------------|------------------------------------|
-| `POST /rtmp`               | Relay start/stop | `relay_allowed` + `relay_active`  |
-| `POST /radio`              | Radio start/stop | `radio_enabled`                   |
-| `POST /radio/on_publish`   | Radio start      | nginx separate-URL style           |
-| `POST /radio/on_publish_done` | Radio stop   | nginx separate-URL style           |
+| Route                             | Handles           | Triggers                           |
+|-----------------------------------|-------------------|------------------------------------|
+| `POST /rtmp`                      | Relay start/stop  | `relay_allowed` + `relay_active`   |
+| `POST /radio`                     | Radio start/stop  | `radio_enabled`                    |
+| `POST /radio/on_publish`          | Radio start       | nginx separate-URL style           |
+| `POST /radio/on_publish_done`     | Radio stop        | nginx separate-URL style           |
+| `POST /stream-hls`                | HLS embed start/stop | `hls_enabled`                  |
+| `POST /stream-hls/on_publish`     | HLS embed start   | nginx separate-URL style           |
+| `POST /stream-hls/on_publish_done`| HLS embed stop    | nginx separate-URL style           |
 
-Both `/rtmp` and `/radio` can be configured as `on_publish` / `on_publish_done` callbacks in
-the nginx RTMP application block — they run independently for each feature.
+`/rtmp`, `/radio`, and `/stream-hls` can all be configured as `on_publish` / `on_publish_done`
+callbacks in the nginx RTMP application block — they run independently for each feature.
 
 ---
 
@@ -377,15 +402,17 @@ the nginx RTMP application block — they run independently for each feature.
 ```
 packages/lcyt-backend/src/
 ├── radio-manager.js       ✅ RTMP → audio-only HLS (RadioManager)
+├── hls-manager.js         ✅ RTMP → video+audio HLS embed (HlsManager)
+├── preview-manager.js     ✅ RTMP → JPEG thumbnail (PreviewManager)
 ├── rtmp-manager.js        ✅ RTMP relay fan-out (RtmpRelayManager)
 ├── routes/
-│   ├── radio.js           ✅ /radio — nginx callbacks + HLS serving + player.js
+│   ├── radio.js           ✅ /radio — nginx callbacks + audio HLS + player.js
+│   ├── stream-hls.js      ✅ /stream-hls — nginx callbacks + video HLS + player.js
+│   ├── preview.js         ✅ /preview — incoming thumbnail endpoint (JPEG)
 │   ├── rtmp.js            ✅ /rtmp — nginx relay callbacks
 │   ├── stream.js          ✅ /stream — authenticated relay CRUD
-│   ├── dsk.js             ✅ /dsk — browser-side DSK SSE + images (existing)
-│   ├── stream-hls.js      📋 /stream-hls — HLS video+audio embed (planned)
-│   └── preview.js         📋 /preview — thumbnail preview endpoints (planned)
+│   └── dsk.js             ✅ /dsk — browser-side DSK SSE + images (existing)
 └── db/
-    └── relay.js           ✅ isRelayAllowed, isRelayActive, isRadioEnabled
-                           📋 isHlsEnabled, isSttRelayEnabled (planned)
+    └── relay.js           ✅ isRelayAllowed, isRelayActive, isRadioEnabled, isHlsEnabled
+                           📋 isSttRelayEnabled (planned)
 ```
