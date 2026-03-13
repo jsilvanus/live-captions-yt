@@ -117,6 +117,7 @@ export function createKeysRouter(db) {
     if ('relay_allowed' in body) updates.relay_allowed = !!body.relay_allowed;
     if ('radio_enabled' in body) updates.radio_enabled = !!body.radio_enabled;
     if ('hls_enabled' in body) updates.hls_enabled = !!body.hls_enabled;
+    if ('cea708_delay_ms' in body) updates.cea708_delay_ms = body.cea708_delay_ms;
     if ('graphics_enabled' in body) updates.graphics_enabled = !!body.graphics_enabled;
 
     updateKey(db, req.params.key, updates);

@@ -55,6 +55,8 @@ export function initDb(dbPath) {
   if (!existingCols.has('radio_enabled'))     db.exec('ALTER TABLE api_keys ADD COLUMN radio_enabled INTEGER NOT NULL DEFAULT 0');
   // 0 = HLS video+audio embed disabled (default), 1 = enabled
   if (!existingCols.has('hls_enabled'))       db.exec('ALTER TABLE api_keys ADD COLUMN hls_enabled INTEGER NOT NULL DEFAULT 0');
+  // ms of video delay to add in CEA-708 mode (compensates for STT latency). 0 = no delay.
+  if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)
@@ -112,6 +114,16 @@ export function initDb(dbPath) {
       // Table already has slot column; apply any remaining additive migrations
       if (!relaysCols.has('target_name'))  db.exec('ALTER TABLE rtmp_relays ADD COLUMN target_name TEXT');
       if (!relaysCols.has('caption_mode')) db.exec("ALTER TABLE rtmp_relays ADD COLUMN caption_mode TEXT NOT NULL DEFAULT 'http'");
+    }
+    // Per-slot transcoding options (nullable = use stream copy for that slot)
+    {
+      const latestCols = new Set(
+        db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name)
+      );
+      if (!latestCols.has('scale'))         db.exec('ALTER TABLE rtmp_relays ADD COLUMN scale TEXT');
+      if (!latestCols.has('fps'))           db.exec('ALTER TABLE rtmp_relays ADD COLUMN fps INTEGER');
+      if (!latestCols.has('video_bitrate')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN video_bitrate TEXT');
+      if (!latestCols.has('audio_bitrate')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN audio_bitrate TEXT');
     }
   }
 

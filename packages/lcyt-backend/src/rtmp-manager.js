@@ -132,15 +132,25 @@ export class RtmpRelayManager {
    * Start (or restart) a single ffmpeg process that forwards the source stream for `apiKey`
    * to all provided relay targets via the tee muxer.
    *
-   * If any relay slot has captionMode='cea708', the process uses libx264 re-encoding with the
-   * eia608 subtitle encoder so that CEA-608/708 data is embedded in H.264 SEI NAL units.
-   * Otherwise the stream is forwarded with `-c copy` (no re-encoding).
+   * **CEA-708 mode** (Phase 5): when any relay slot has `captionMode='cea708'` AND the local
+   * ffmpeg binary supports `libx264` + `eia608` + `subrip`, the process re-encodes video with
+   * libx264 and embeds CEA-608/708 caption data from an SRT stdin pipe.  An optional video
+   * delay (`cea708DelayMs`) compensates for speech-to-text latency by shifting the video later
+   * in time so real-time captions appear to arrive early (i.e., in sync with the delayed video).
+   *
+   * **Per-slot transcoding** (Phase 7): when any relay slot carries transcode options
+   * (`scale`, `fps`, `videoBitrate`, `audioBitrate`), ffmpeg uses a `filter_complex` to produce
+   * per-output video streams.  Slots without transcode options use stream copy (`-c:v copy`).
+   *
+   * CEA-708 and per-slot transcoding cannot be combined in the same process (the stdin SRT
+   * pipe conflicts with the filter_complex approach).  CEA-708 takes priority if both are set.
    *
    * @param {string} apiKey
-   * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }>} relays
+   * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null }>} relays
+   * @param {{ cea708DelayMs?: number }} [opts]
    * @returns {Promise<void>}
    */
-  start(apiKey, relays) {
+  start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
     return new Promise((resolve, reject) => {
       if (!relays || relays.length === 0) {
         this._stopProc(apiKey);
@@ -155,29 +165,117 @@ export class RtmpRelayManager {
 
       this._stopProc(apiKey);
 
-      // CEA-708 mode disabled for now — force HTTP-only forwarding.
-      const hasCea708 = false;
+      // Determine operating mode.
+      // CEA-708: any slot with captionMode='cea708' AND ffmpeg supports libx264+eia608+subrip.
+      const hasCea708 = !!(
+        (this._ffmpegCaps?.hasLibx264 ?? false) &&
+        (this._ffmpegCaps?.hasEia608  ?? false) &&
+        (this._ffmpegCaps?.hasSubrip  ?? false) &&
+        relays.some(r => r.captionMode === 'cea708')
+      );
 
-      // Build the tee muxer output: "[f=flv]url1|[f=flv]url2|..."
-      const teeTargets = relays
-        .map(r => {
-          const url = r.targetName
-            ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}`
-            : r.targetUrl;
-          return `[f=flv]${url}`;
-        })
-        .join('|');
+      // Per-slot transcoding: any slot with scale/fps/videoBitrate/audioBitrate set.
+      // Not compatible with CEA-708 (takes priority below).
+      const hasTranscode = !hasCea708 && relays.some(
+        r => r.scale || r.fps != null || r.videoBitrate || r.audioBitrate
+      );
 
       const src = sourceUrl(apiKey);
       const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
-      console.log(`[rtmp] Starting relay (tee, ${relays.length} slot(s), cea708=${hasCea708}): ${src} -> ${teeTargets}`);
+      console.log(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}): ${src}`);
 
       let args;
-      // HTTP mode: forward without re-encoding (copy streams)
-      args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
+      let stdinMode = 'ignore';
+
+      if (hasCea708) {
+        // ── CEA-708 mode ───────────────────────────────────────────────────
+        // Input 0: RTMP source; Input 1: SRT captions from stdin (pipe:0)
+        args = ['-re', '-i', src, '-f', 'subrip', '-i', 'pipe:0'];
+
+        if (cea708DelayMs > 0) {
+          // Delay video and audio to compensate for STT latency.
+          // The delay is specified in seconds to the setpts/asetpts filters.
+          const delayS = cea708DelayMs / 1000;
+          args.push('-vf', `setpts=PTS+(${delayS}/TB)`, '-af', `asetpts=PTS+(${delayS}/TB)`);
+          args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+          // Re-encode audio too so the delay filter is applied
+          args.push('-c:a', 'aac', '-b:a', '128k');
+        } else {
+          args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+          args.push('-c:a', 'copy');
+        }
+
+        args.push('-c:s', 'eia608');
+        args.push('-map', '0:v', '-map', '0:a', '-map', '1:s');
+
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        args.push('-f', 'tee', teeTargets);
+        stdinMode = 'pipe';
+
+      } else if (hasTranscode) {
+        // ── Per-slot transcoding mode (Phase 7) ────────────────────────────
+        // Build filter_complex: split video into N streams, apply per-slot transforms.
+        const N = relays.length;
+        const filterParts = [`[0:v]split=${N}${relays.map((_, i) => `[v${i}]`).join('')}`];
+        const videoLabels = [];
+
+        for (let i = 0; i < N; i++) {
+          const r = relays[i];
+          const filters = [];
+          if (r.scale) filters.push(`scale=${r.scale.replace(/x/, ':')}`); // stored as WxH; ffmpeg wants W:H
+          if (r.fps != null) filters.push(`fps=fps=${r.fps}`);
+
+          if (filters.length > 0) {
+            filterParts.push(`[v${i}]${filters.join(',')}[vout${i}]`);
+            videoLabels.push(`[vout${i}]`);
+          } else {
+            videoLabels.push(`[v${i}]`);
+          }
+        }
+
+        args = ['-re', '-i', src, '-filter_complex', filterParts.join('; ')];
+
+        // Map per-slot video and audio streams
+        for (let i = 0; i < N; i++) {
+          args.push('-map', videoLabels[i]);
+          args.push('-map', '0:a:0');
+        }
+
+        // Per-stream codec options
+        for (let i = 0; i < N; i++) {
+          const r = relays[i];
+          const needsEncode = r.scale || r.fps != null || r.videoBitrate || r.audioBitrate;
+          if (needsEncode) {
+            args.push(`-c:v:${i}`, 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+            if (r.videoBitrate) args.push(`-b:v:${i}`, r.videoBitrate);
+            args.push(`-c:a:${i}`, 'aac');
+            args.push(`-b:a:${i}`, r.audioBitrate || '128k');
+          } else {
+            args.push(`-c:v:${i}`, 'copy');
+            args.push(`-c:a:${i}`, 'copy');
+          }
+        }
+
+        const teeTargets = relays.map((r, i) => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv:select=v:${i}+a:${i}]${url}`;
+        }).join('|');
+        args.push('-f', 'tee', teeTargets);
+
+      } else {
+        // ── Simple stream copy mode (Phase 1) ─────────────────────────────
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
+      }
 
       const proc = spawn('ffmpeg', args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: [stdinMode, 'pipe', 'pipe'],
       });
 
       const startedAt = new Date();
@@ -241,10 +339,11 @@ export class RtmpRelayManager {
    * Alias for start() — starts one process for all relay slots via tee muxer.
    * @param {string} apiKey
    * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }>} relays
+   * @param {{ cea708DelayMs?: number }} [opts]
    * @returns {Promise<void>}
    */
-  startAll(apiKey, relays) {
-    return this.start(apiKey, relays);
+  startAll(apiKey, relays, opts) {
+    return this.start(apiKey, relays, opts);
   }
 
   /**
@@ -301,8 +400,62 @@ export class RtmpRelayManager {
    * @returns {boolean}  true if cue was written, false if not in CEA-708 mode or pipe unavailable
    */
   writeCaption(apiKey, text, { speechStart, timestamp } = {}) {
-    // CEA-708 disabled: no-op writeCaption and return false.
-    return false;
+    if (!this.hasCea708(apiKey)) return false;
+
+    const proc = this._procs.get(apiKey);
+    if (!proc || !proc.stdin || proc.stdin.destroyed) return false;
+
+    const meta = this._meta.get(apiKey);
+    if (!meta) return false;
+
+    const now = Date.now();
+    const streamTimeMs = now - meta.startedAt.getTime();
+
+    /**
+     * Convert a wall-clock timestamp value to ms-since-stream-start.
+     * @param {Date|string|number} val
+     * @returns {number}
+     */
+    function toStreamMs(val) {
+      if (val instanceof Date) return val.getTime() - meta.startedAt.getTime();
+      if (typeof val === 'string') return new Date(val).getTime() - meta.startedAt.getTime();
+      if (typeof val === 'number') {
+        // Values >= 1e12 are treated as Unix epoch ms (wall-clock);
+        // smaller values are already stream-relative ms (elapsed since stream start).
+        return val >= 1e12 ? val - meta.startedAt.getTime() : val;
+      }
+      return streamTimeMs;
+    }
+
+    let cueStartMs;
+    if (speechStart !== undefined && speechStart !== null) {
+      // VAD onset — use as cue start
+      cueStartMs = Math.max(0, toStreamMs(speechStart));
+    } else if (timestamp !== undefined && timestamp !== null) {
+      // ASR finalisation minus offset
+      cueStartMs = Math.max(0, toStreamMs(timestamp) - CEA708_OFFSET_MS);
+    } else {
+      // No timing info — shift back from current stream time
+      cueStartMs = Math.max(0, streamTimeMs - CEA708_OFFSET_MS);
+    }
+
+    // Don't backtrack too far — decoders typically discard stale SEI data
+    const minStartMs = Math.max(0, streamTimeMs - CEA708_MAX_BACKTRACK_MS);
+    cueStartMs = Math.max(minStartMs, cueStartMs);
+
+    meta.srtSeq += 1;
+    meta.captionsSent = (meta.captionsSent || 0) + 1;
+    const cue = buildSrtCue(meta.srtSeq, cueStartMs, CEA708_DURATION_MS, text);
+
+    try {
+      proc.stdin.write(cue);
+      return true;
+    } catch (err) {
+      if (err.code !== 'EPIPE') {
+        console.error(`[rtmp] Failed to write CEA-708 cue for ${apiKey.slice(0, 8)}: ${err.message}`);
+      }
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -352,7 +505,7 @@ export class RtmpRelayManager {
    * @param {string} apiKey
    * @returns {boolean}
    */
-  hasCea708(apiKey) { return false; }
+  hasCea708(apiKey) { return this._meta.get(apiKey)?.hasCea708 ?? false; }
 
   // ---------------------------------------------------------------------------
   // Public: nginx-rtmp publish tracking

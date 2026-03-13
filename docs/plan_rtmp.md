@@ -229,20 +229,30 @@ POST /rtmp                         — nginx-rtmp lifecycle callback
 
 ---
 
-#### 3b. Resolution / Frame-rate Transcoding 📋 *Planned*
+#### 3b. Resolution / Frame-rate Transcoding ✅ *Implemented*
 
 **Purpose:** Scale or re-encode the stream before relaying, e.g. to reduce bitrate for
 downstream targets that have bandwidth or resolution limits.
 
-**Approach:**
-- Per-slot transcode options stored in `rtmp_relays`: `scale` (e.g. `1280x720`),
-  `fps` (e.g. `30`), `video_bitrate` (e.g. `2500k`), `audio_bitrate` (e.g. `128k`)
-- When any slot has transcode options, the tee command switches from `-c copy` to a
-  per-output filter complex with `libx264` / `aac` and `setpts`/`fps` filters
-- Slots without transcode options stay in copy mode via the tee muxer's
-  `[f=flv:onfail=ignore]` syntax
+**Per-slot transcode options stored in `rtmp_relays`:** `scale` (e.g. `1280x720`),
+`fps` (e.g. `30`), `video_bitrate` (e.g. `2500k`), `audio_bitrate` (e.g. `128k`)
 
-**Planned slot config fields:**
+When any slot has transcode options, `RtmpRelayManager` switches to a `filter_complex`
+pipeline that produces per-slot video streams. Slots without transcode options continue
+in copy mode (`-c:v:N copy`).
+
+**Operating modes in `RtmpRelayManager.start()`:**
+
+| Mode         | Trigger                                                   | ffmpeg strategy                  |
+|--------------|-----------------------------------------------------------|----------------------------------|
+| Copy         | No slot has transcode or CEA-708 options                  | `-c copy -f tee`                 |
+| Transcoding  | Any slot has `scale`/`fps`/bitrate (no CEA-708 slots)     | `filter_complex` + per-output `-c:v:N libx264` or `-c:v:N copy`; tee with `select=v:N+a:N` |
+| CEA-708      | Any slot has `captionMode='cea708'` + ffmpeg has codecs   | stdin SRT pipe + libx264 + eia608 |
+
+**Note:** CEA-708 and per-slot transcoding cannot be combined (the SRT stdin pipe is
+incompatible with the filter_complex approach). CEA-708 takes priority when both are set.
+
+**Planned slot config fields (now implemented):**
 ```json
 {
   "slot": 1,
@@ -295,28 +305,41 @@ YouTube HTTP captions / viewer SSE) — no separate input required.
 
 ---
 
-#### 3e. Video Delay + CEA-708 Closed Captions 📋 *Planned*
+#### 3e. Video Delay + CEA-708 Closed Captions ✅ *Implemented*
 
 **Purpose:** Introduce a configurable video delay so that CEA-608/708 caption cues arrive
 at the decoder precisely timed with the video frame they describe. Broadcasters adjust the
 delay to compensate for their speech-to-text latency.
 
-**Current state:** The `RtmpRelayManager` has stubbed CEA-708 support (`hasCea708()` always
-returns `false`; `writeCaption()` is a no-op). The underlying ffmpeg pipeline (libx264 +
-eia608 subtitle encoder + SRT stdin pipe) was previously implemented but disabled.
+**Current state (implemented):** CEA-708 is re-enabled in `RtmpRelayManager`. When any relay
+slot has `captionMode: 'cea708'` AND the local ffmpeg has `libx264` + `eia608` + `subrip`
+(detected by `probeFfmpeg()` at startup), the relay process uses:
 
-**Planned re-enablement:**
-- Per-slot option `captionMode: 'cea708'` in `rtmp_relays`
-- ffmpeg args switch from `-c copy` to:
-  ```
-  -vf setpts=PTS+DELAY/TB -c:v libx264 -c:a copy
-  -filter_complex "[0:s]eia608[cc]" -map 0:v -map 0:a -map "[cc]"
-  ```
-- Caption text piped via ffmpeg stdin as SRT cues (existing `buildSrtCue()` helper)
-- Delay configurable per API key (`cea708_delay_ms`)
+```bash
+ffmpeg -re -i rtmp://source/live/key -f subrip -i pipe:0 \
+  [-vf "setpts=PTS+(DELAY/TB)" -af "asetpts=PTS+(DELAY/TB)"] \  # optional delay
+  -c:v libx264 -preset ultrafast -tune zerolatency \
+  -c:a copy                           # aac when delay is set \
+  -c:s eia608 \
+  -map 0:v -map 0:a -map 1:s \
+  -f tee "[f=flv]url1|[f=flv]url2"
+```
 
-**Gating:** Only activates when at least one slot has `captionMode: 'cea708'`. Requires
-ffmpeg with `libx264` and `eia608` encoder (check via `probeFfmpeg()`).
+Caption text is injected in real-time via `POST /captions` → `relayManager.writeCaption()`.
+The backend converts each caption to SRT format and pipes it to ffmpeg stdin.
+
+**Timing strategy (implemented):**
+- If `speechStart` (VAD onset) is available → use as cue start (most accurate)
+- Otherwise → `timestamp - CEA708_OFFSET_MS` (configurable, default 2 s)
+- Backtrack guard: never start a cue more than `CEA708_MAX_BACKTRACK_MS` (default 5 s) before now
+
+**Re-enablement (implemented):**
+- Per-slot option `captionMode: 'cea708'` in `rtmp_relays` (accepted by `POST/PUT /stream`)
+- `cea708_delay_ms` configurable per API key (admin: `PATCH /keys/:key`)
+- `hasCea708(apiKey)` and `writeCaption(apiKey, text, opts)` in `RtmpRelayManager`
+
+**Gating:** `captionMode: 'cea708'` on any relay slot. Requires ffmpeg with `libx264` + `eia608`.
+Only activates when at least one slot has `captionMode: 'cea708'` and ffmpeg has the required codecs.
 
 ---
 
@@ -328,9 +351,9 @@ ffmpeg with `libx264` and `eia608` encoder (check via `probeFfmpeg()`).
 | 2     | Internet radio (audio-only HLS)                      | ✅ Done        |
 | 3     | HLS browser embed (video+audio)                      | ✅ Done        |
 | 4     | HLS previews (incoming thumbnails)                   | ✅ Done        |
-| 5     | CEA-708 caption delay                                | 📋 Planned     |
+| 5     | CEA-708 caption delay                                | ✅ Done        |
 | 6     | Caption burn-in                                      | 📋 Planned     |
-| 7     | Resolution / frame-rate transcoding per slot         | 📋 Planned     |
+| 7     | Resolution / frame-rate transcoding per slot         | ✅ Done        |
 | 8     | Server-side DSK overlay                              | 📋 Planned     |
 | 9     | STT audio relay (auto-caption from stream)           | 📋 Planned     |
 
@@ -347,6 +370,7 @@ All RTMP features are gated by columns on the `api_keys` table, set by an admin 
 | `relay_active`      | INTEGER | 0       | User toggle: relay currently active          |
 | `radio_enabled`     | INTEGER | 0       | Internet radio (audio-only HLS)              |
 | `hls_enabled`       | INTEGER | 0       | Full HLS video+audio embed                   |
+| `cea708_delay_ms`   | INTEGER | 0       | Video delay (ms) added in CEA-708 mode       |
 | `stt_relay_enabled` | INTEGER | 0       | Auto-STT from stream audio *(planned)*       |
 
 ---
@@ -368,7 +392,7 @@ All processing requires ffmpeg in PATH. Detected at startup by `probeFfmpeg()`.
 **Docker build args:**
 
 ```dockerfile
-# Install ffmpeg for relay, radio, or HLS features
+# Install ffmpeg for relay, radio, HLS, or preview features
 ARG RTMP_RELAY_ACTIVE=0
 ARG RADIO_ACTIVE=0
 RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ]; then \
@@ -405,14 +429,19 @@ packages/lcyt-backend/src/
 ├── hls-manager.js         ✅ RTMP → video+audio HLS embed (HlsManager)
 ├── preview-manager.js     ✅ RTMP → JPEG thumbnail (PreviewManager)
 ├── rtmp-manager.js        ✅ RTMP relay fan-out (RtmpRelayManager)
+│                             • stream copy (Phase 1)
+│                             • CEA-708 stdin SRT pipe + libx264 (Phase 5)
+│                             • per-slot filter_complex transcoding (Phase 7)
 ├── routes/
 │   ├── radio.js           ✅ /radio — nginx callbacks + audio HLS + player.js
 │   ├── stream-hls.js      ✅ /stream-hls — nginx callbacks + video HLS + player.js
 │   ├── preview.js         ✅ /preview — incoming thumbnail endpoint (JPEG)
 │   ├── rtmp.js            ✅ /rtmp — nginx relay callbacks
-│   ├── stream.js          ✅ /stream — authenticated relay CRUD
+│   ├── stream.js          ✅ /stream — relay CRUD + transcode field validation
 │   └── dsk.js             ✅ /dsk — browser-side DSK SSE + images (existing)
 └── db/
-    └── relay.js           ✅ isRelayAllowed, isRelayActive, isRadioEnabled, isHlsEnabled
-                           📋 isSttRelayEnabled (planned)
+    ├── relay.js           ✅ isRelayAllowed, isRelayActive, isRadioEnabled, isHlsEnabled
+    │                         upsertRelay now stores scale/fps/video_bitrate/audio_bitrate
+    │                         📋 isSttRelayEnabled (planned)
+    └── keys.js            ✅ formatKey/createKey/updateKey carry cea708_delay_ms
 ```

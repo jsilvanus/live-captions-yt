@@ -132,8 +132,6 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
           const { text, translations, captionLang, showOriginal, timestamp, speechStart, ...rest } = caption;
           const composedText = composeCaptionText(text, captionLang, translations, showOriginal);
 
-          // CEA-708 disabled: no direct ffmpeg stdin injection.
-
           // Write original and all translations to backend files if enabled
           if (backendFileEnabled && translations) {
             for (const [lang, translatedText] of Object.entries(translations)) {
@@ -156,6 +154,18 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
 
           return { text: composedText, timestamp, ...rest };
         });
+
+        // CEA-708 caption injection: pipe the original (pre-composition) caption text to
+        // the ffmpeg stdin SRT pipe when the relay is running in CEA-708 mode.
+        // Done after the map so each caption is injected exactly once.
+        if (relayManager?.hasCea708(session.apiKey)) {
+          for (const caption of resolvedCaptions) {
+            relayManager.writeCaption(session.apiKey, caption.text, {
+              speechStart: caption.speechStart,
+              timestamp:   caption.timestamp,
+            });
+          }
+        }
 
         // Send via primary sender (legacy streamKey mode) or synthesise a result
         // when operating in target-array mode (no primary stream key configured).
