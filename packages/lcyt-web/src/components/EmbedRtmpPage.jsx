@@ -29,8 +29,9 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
 import { useToastContext } from '../contexts/ToastContext';
 import {
-  getSlotConfig, setSlotTargetType,
+  setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
+  setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
   clearSlot,
   MAX_RELAY_SLOTS,
   buildInitialRelayList,
@@ -39,6 +40,9 @@ import {
 // ─── RelayRow (mirrors SettingsModal's RelayRow) ──────────────────────────────
 
 function RelayRow({ entry, onChange, onRemove, t }) {
+  const [showAdvanced, setShowAdvanced] = useState(
+    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
+  );
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -59,6 +63,7 @@ function RelayRow({ entry, onChange, onRemove, t }) {
             autoComplete="off"
             value={entry.youtubeKey || ''}
             onChange={e => onChange({ ...entry, youtubeKey: e.target.value })}
+            style={{ flex: 1 }}
           />
         ) : (
           <input
@@ -68,8 +73,16 @@ function RelayRow({ entry, onChange, onRemove, t }) {
             autoComplete="off"
             value={entry.genericUrl || ''}
             onChange={e => onChange({ ...entry, genericUrl: e.target.value })}
+            style={{ flex: 1 }}
           />
         )}
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          onClick={() => setShowAdvanced(v => !v)}
+          title={t('settings.relay.slotAdvanced')}
+          style={{ flexShrink: 0, fontSize: '0.75em' }}
+        >⚙</button>
         <button
           type="button"
           className="btn btn--secondary btn--sm"
@@ -82,6 +95,42 @@ function RelayRow({ entry, onChange, onRemove, t }) {
         <span className="settings-field__hint">
           → rtmp://a.rtmp.youtube.com/live2/{(entry.youtubeKey || '').trim()}
         </span>
+      )}
+      {showAdvanced && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotCaptionMode')}</label>
+            <select
+              className="settings-field__input"
+              value={entry.captionMode || 'http'}
+              onChange={e => onChange({ ...entry, captionMode: e.target.value })}
+              style={{ width: '100%' }}
+            >
+              <option value="http">{t('settings.relay.slotCaptionModeHttp')}</option>
+              <option value="cea708">{t('settings.relay.slotCaptionModeCea708')}</option>
+            </select>
+          </div>
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotScale')}</label>
+            <input className="settings-field__input" type="text" placeholder={t('settings.relay.slotScalePlaceholder')}
+              value={entry.scale || ''} onChange={e => onChange({ ...entry, scale: e.target.value })} />
+          </div>
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotFps')}</label>
+            <input className="settings-field__input" type="number" min="1" max="120" placeholder={t('settings.relay.slotFpsPlaceholder')}
+              value={entry.fps ?? ''} onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })} />
+          </div>
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotVideoBitrate')}</label>
+            <input className="settings-field__input" type="text" placeholder={t('settings.relay.slotVideoBitratePlaceholder')}
+              value={entry.videoBitrate || ''} onChange={e => onChange({ ...entry, videoBitrate: e.target.value })} />
+          </div>
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotAudioBitrate')}</label>
+            <input className="settings-field__input" type="text" placeholder={t('settings.relay.slotAudioBitratePlaceholder')}
+              value={entry.audioBitrate || ''} onChange={e => onChange({ ...entry, audioBitrate: e.target.value })} />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -154,17 +203,22 @@ function RelayPanel({ backendUrl, apiKey }) {
     const usedSlots = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!usedSlots.includes(s)) {
-        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http' }]);
+        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' }]);
         return;
       }
     }
   }
 
   function updateRelayItem(slot, updated) {
-    if ('targetType' in updated) setSlotTargetType(slot, updated.targetType);
-    if ('youtubeKey'  in updated) setSlotYoutubeKey(slot, updated.youtubeKey);
-    if ('genericUrl'  in updated) setSlotGenericUrl(slot, updated.genericUrl);
-    if ('genericName' in updated) setSlotGenericName(slot, updated.genericName);
+    if ('targetType'   in updated) setSlotTargetType(slot, updated.targetType);
+    if ('youtubeKey'   in updated) setSlotYoutubeKey(slot, updated.youtubeKey);
+    if ('genericUrl'   in updated) setSlotGenericUrl(slot, updated.genericUrl);
+    if ('genericName'  in updated) setSlotGenericName(slot, updated.genericName);
+    if ('captionMode'  in updated) setSlotCaptionMode(slot, updated.captionMode);
+    if ('scale'        in updated) setSlotScale(slot, updated.scale ?? '');
+    if ('fps'          in updated) setSlotFps(slot, updated.fps ?? null);
+    if ('videoBitrate' in updated) setSlotVideoBitrate(slot, updated.videoBitrate ?? '');
+    if ('audioBitrate' in updated) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
     setRelayList(prev => prev.map(r => r.slot === slot ? { ...r, ...updated } : r));
   }
 
@@ -289,7 +343,7 @@ export function EmbedRtmpPage() {
     <AppProviders initConfig={initConfig} autoConnect={!!(serverUrl && apiKey)}>
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', background: 'var(--color-bg, #111)' }}>
         <div style={headerStyle}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>RTMP Relay</span>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>Stream</span>
         </div>
         <RelayPanel backendUrl={serverUrl} apiKey={apiKey} />
       </div>

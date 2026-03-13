@@ -5,6 +5,7 @@ import { FilesModal } from './FilesModal';
 import {
   getSlotConfig, setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotCaptionMode,
+  setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
   buildSlotTarget,
   clearSlot,
   MAX_RELAY_SLOTS,
@@ -28,8 +29,14 @@ function persist(patch) {
 
 // ── Relay row component ────────────────────────────────────────
 function RelayRow({ entry, onChange, onRemove, t }) {
+  const [showAdvanced, setShowAdvanced] = useState(
+    // Start expanded if any advanced option is already set
+    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
+  );
+
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Main row: type selector + key/URL + remove */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
         <label className="settings-checkbox" style={{ marginBottom: 0 }}>
           <input
@@ -71,15 +78,88 @@ function RelayRow({ entry, onChange, onRemove, t }) {
         <button
           type="button"
           className="btn btn--secondary btn--sm"
+          onClick={() => setShowAdvanced(v => !v)}
+          title={t('settings.relay.slotAdvanced')}
+          style={{ flexShrink: 0, fontSize: '0.75em' }}
+        >⚙</button>
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
           onClick={onRemove}
           title={t('settings.relay.removeRelay')}
           style={{ flexShrink: 0 }}
         >✕</button>
       </div>
+
+      {/* URL hint */}
       {entry.targetType === 'youtube' && (entry.youtubeKey || '').trim() && (
         <span className="settings-field__hint">
           → rtmp://a.rtmp.youtube.com/live2/{(entry.youtubeKey || '').trim()}
         </span>
+      )}
+
+      {/* Advanced per-slot options */}
+      {showAdvanced && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
+          {/* Caption mode */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotCaptionMode')}</label>
+            <select
+              className="settings-field__input"
+              value={entry.captionMode || 'http'}
+              onChange={e => onChange({ ...entry, captionMode: e.target.value })}
+              style={{ width: '100%' }}
+            >
+              <option value="http">{t('settings.relay.slotCaptionModeHttp')}</option>
+              <option value="cea708">{t('settings.relay.slotCaptionModeCea708')}</option>
+            </select>
+          </div>
+          {/* Resolution */}
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotScale')}</label>
+            <input
+              className="settings-field__input"
+              type="text"
+              placeholder={t('settings.relay.slotScalePlaceholder')}
+              value={entry.scale || ''}
+              onChange={e => onChange({ ...entry, scale: e.target.value })}
+            />
+          </div>
+          {/* Frame rate */}
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotFps')}</label>
+            <input
+              className="settings-field__input"
+              type="number"
+              min="1" max="120"
+              placeholder={t('settings.relay.slotFpsPlaceholder')}
+              value={entry.fps ?? ''}
+              onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })}
+            />
+          </div>
+          {/* Video bitrate */}
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotVideoBitrate')}</label>
+            <input
+              className="settings-field__input"
+              type="text"
+              placeholder={t('settings.relay.slotVideoBitratePlaceholder')}
+              value={entry.videoBitrate || ''}
+              onChange={e => onChange({ ...entry, videoBitrate: e.target.value })}
+            />
+          </div>
+          {/* Audio bitrate */}
+          <div>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotAudioBitrate')}</label>
+            <input
+              className="settings-field__input"
+              type="text"
+              placeholder={t('settings.relay.slotAudioBitratePlaceholder')}
+              value={entry.audioBitrate || ''}
+              onChange={e => onChange({ ...entry, audioBitrate: e.target.value })}
+            />
+          </div>
+        </div>
       )}
     </div>
   );
@@ -205,18 +285,22 @@ export function SettingsModal({ isOpen, onClose, inline }) {
     const usedSlots = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!usedSlots.includes(s)) {
-        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http' }]);
+        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' }]);
         return;
       }
     }
   }
 
   function updateRelayItem(slot, updated) {
-    if ('targetType' in updated) setSlotTargetType(slot, updated.targetType);
-    if ('youtubeKey' in updated) setSlotYoutubeKey(slot, updated.youtubeKey);
-    if ('genericUrl' in updated) setSlotGenericUrl(slot, updated.genericUrl);
-    if ('genericName' in updated) setSlotGenericName(slot, updated.genericName);
-    if ('captionMode' in updated) setSlotCaptionMode(slot, updated.captionMode);
+    if ('targetType'   in updated) setSlotTargetType(slot, updated.targetType);
+    if ('youtubeKey'   in updated) setSlotYoutubeKey(slot, updated.youtubeKey);
+    if ('genericUrl'   in updated) setSlotGenericUrl(slot, updated.genericUrl);
+    if ('genericName'  in updated) setSlotGenericName(slot, updated.genericName);
+    if ('captionMode'  in updated) setSlotCaptionMode(slot, updated.captionMode);
+    if ('scale'        in updated) setSlotScale(slot, updated.scale ?? '');
+    if ('fps'          in updated) setSlotFps(slot, updated.fps ?? null);
+    if ('videoBitrate' in updated) setSlotVideoBitrate(slot, updated.videoBitrate ?? '');
+    if ('audioBitrate' in updated) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
     setRelayList(prev => prev.map(r => r.slot === slot ? { ...r, ...updated } : r));
   }
 
@@ -229,7 +313,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
 
   const hasGraphics = session.graphicsEnabled;
   const TABS = advancedMode
-    ? ['basic', 'rtmpRelay', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons']
+    ? ['basic', 'stream', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons']
     : ['basic', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons'];
 
   // ── Credential handlers ────────────────────────────────────
@@ -418,8 +502,8 @@ export function SettingsModal({ isOpen, onClose, inline }) {
             </div>
           )}
 
-          {/* ── RTMP Relay (advanced mode only) ── */}
-          {activeTab === 'rtmpRelay' && (
+          {/* ── Stream (RTMP Relay, advanced mode only) ── */}
+          {activeTab === 'stream' && (
             <div className="settings-panel settings-panel--active">
               {!session.connected && (
                 <div className="settings-field">
@@ -654,8 +738,8 @@ export function SettingsModal({ isOpen, onClose, inline }) {
             </div>
           </div>
         )}
+        <FilesModal isOpen={filesModalOpen} onClose={() => setFilesModalOpen(false)} initialTab="images" />
       </div>
-      <FilesModal isOpen={filesModalOpen} onClose={() => setFilesModalOpen(false)} initialTab="images" />
   );
 
   if (inline) return box;
