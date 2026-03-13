@@ -101,6 +101,14 @@ Generic targets receive a JSON body structured as follows (see also [`POST /capt
 }
 ```
 
+**Viewer target** — broadcasts captions to audience members via the public [`GET /viewer/:key`](./viewer.md) SSE endpoint:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `id` | `string` | Yes | Client-assigned identifier |
+| `type` | `string` | Yes | Must be `"viewer"` |
+| `viewerKey` | `string` | Yes | Short URL-safe key (letters, digits, hyphens, underscores; min 3 characters). Viewers subscribe at `GET /viewer/:viewerKey`. |
+
 **Response — `200 OK`**
 
 ```json

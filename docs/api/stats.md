@@ -61,6 +61,13 @@ Authorization: Bearer <token>
       "domain": "https://my-app.example.com",
       "occurredAt": "2024-06-01T10:00:00.000Z"
     }
+  ],
+  "viewerStats": [
+    {
+      "viewerKey": "my-event-key",
+      "date": "2024-06-01",
+      "opens": 42
+    }
   ]
 }
 ```
@@ -78,6 +85,7 @@ Authorization: Bearer <token>
 | `sessions` | `array` | Completed session records |
 | `captionErrors` | `array` | Recent caption delivery failures |
 | `authEvents` | `array` | Recent authentication and usage events |
+| `viewerStats` | `array` | Daily viewer opens per viewer key. Each entry: `{ viewerKey, date, opens }`. |
 
 ---
 

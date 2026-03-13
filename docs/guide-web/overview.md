@@ -19,8 +19,14 @@ It is especially useful for **non-English broadcasts** — you can send captions
 | **Speech-to-text** | Use your microphone with automatic speech recognition (browser API or Google Cloud STT) |
 | **File playback** | Load a pre-written script and step through it line by line |
 | **Translation** | Automatically translate captions to a second language |
-| **RTMP relay** | Re-stream your audio/video to up to 4 destinations with embedded captions |
-| **Embed widgets** | Drop standalone `<iframe>` widgets into any site — audio, input bar, file player, or full file UI |
+| **Viewer page** | Broadcast captions to audience members via a public SSE-based viewer page (no YouTube account needed on the viewer's side) |
+| **RTMP relay** | Re-stream your audio/video to up to 4 destinations simultaneously with embedded captions |
+| **CEA-708 captions** | Embed captions directly in the RTMP video stream (requires ffmpeg with CEA-708 support) |
+| **HLS streaming** | Serve a live HLS video+audio stream via the backend (embeddable in any web page) |
+| **Radio HLS** | Serve a live audio-only HLS stream via the backend |
+| **Stream preview** | See a live JPEG thumbnail of your incoming RTMP stream in the web UI |
+| **DSK overlay** | Overlay PNG/WebP/SVG graphics on the relayed video using a downstream keyer (green screen) page |
+| **Embed widgets** | Drop standalone `<iframe>` widgets into any site — audio, input bar, file player, full file UI, viewer, settings, or RTMP relay |
 | **Dark & light mode** | Comfortable UI in any environment |
 | **Mobile support** | Fully usable on phones and tablets with a dedicated mobile bar |
 
@@ -69,7 +75,7 @@ The **input bar** at the bottom is where you type and send captions.
 - [Getting started](getting-started) — set up your stream and API key
 - [Sending captions](sending-captions) — all the ways to send captions
 - [Caption settings](caption-settings) — the CC modal: receivers, speech recognition, details, and translation
-- [General settings](general-settings) — the Settings modal: connection, theme, relay
+- [General settings](general-settings) — the Settings modal: connection, theme, relay, and stream
 - [Status & Actions](status-actions) — the Controls panel
 - [Keyboard shortcuts](keyboard-shortcuts) — full shortcut reference
 - [Embedding in another site](embed) — iframe widgets for integration into production tools and custom dashboards

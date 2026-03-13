@@ -19,14 +19,33 @@ Click **+ Add target** to add a new entry. Each entry can be:
 
 | Type | Description |
 |------|-------------|
-| **YouTube** | A YouTube stream key — captions are sent to that stream |
+| **YouTube** | A YouTube stream key — captions are sent to that stream via YouTube's HTTP POST caption ingestion API |
+| **Viewer** | A viewer key — captions are broadcast to audience members via the public SSE endpoint at `/viewer/:key`. Viewers open the viewer page at `/view/:key` or the embed widget at `/embed/viewer`. |
 | **Generic** | A custom HTTP POST endpoint with optional JSON headers |
 
-You can add multiple targets (e.g. two YouTube streams). Each target has an enable toggle. Only enabled targets receive captions.
+You can add multiple targets (e.g. two YouTube streams and a viewer feed). Each target has an enable toggle. Only enabled targets receive captions.
 
 Each target can also have **Disable batch sending** enabled, which forces captions to be sent individually to that target regardless of the global batch setting.
 
 > Add a YouTube target here with your stream key if you want to send captions directly to a YouTube Live stream.
+
+### Viewer targets
+
+Viewer targets broadcast captions to anyone with the viewer page URL — no YouTube account required. After adding a viewer target you'll see a shareable link:
+
+```
+https://app.lcyt.fi/view/<your-viewer-key>?server=https://api.lcyt.fi
+```
+
+You can also use the embeddable viewer widget:
+
+```
+https://app.lcyt.fi/embed/viewer?key=<your-viewer-key>&server=https://api.lcyt.fi
+```
+
+The viewer page displays the current caption prominently with a dimmed history list. It connects to the backend via Server-Sent Events and reconnects automatically on disconnect.
+
+You can optionally assign an **icon** (PNG or SVG logo) to a viewer target. The icon is shown in the viewer page header. Upload icons in **Settings → Icons** (see below).
 
 ---
 

@@ -33,9 +33,25 @@ GET /health
 }
 ```
 
+When `RTMP_RELAY_ACTIVE=1` is set, the response also includes an `rtmpIngest` object:
+
+```json
+{
+  "ok": true,
+  "uptime": 3600.42,
+  "activeSessions": 3,
+  "rtmpIngest": {
+    "host": "rtmp.example.com",
+    "app": "stream"
+  }
+}
+```
+
 | Field | Type | Description |
 |---|---|---|
 | `ok` | `boolean` | Always `true` when the server is healthy |
 | `uptime` | `number` | Server uptime in seconds |
 | `activeSessions` | `number` | Number of currently active caption relay sessions |
+| `rtmpIngest.host` | `string` | RTMP ingest hostname (from `RTMP_HOST` env var) |
+| `rtmpIngest.app` | `string` | RTMP application name (from `RTMP_APP` env var) |
 

@@ -71,3 +71,23 @@ When `granularity=hour`, each record also includes an `hour` field (integer 0–
 | `batches_sent` | `number` | Number of batch requests |
 | `total_duration_ms` | `number` | Sum of session durations in milliseconds |
 | `peak_sessions` | `number` | Highest concurrent session count observed |
+
+The response also includes a top-level `viewerStats` array with anonymous daily viewer open counts:
+
+```json
+{
+  "from": "2024-01-01",
+  "to": "2024-01-31",
+  "granularity": "day",
+  "public": false,
+  "data": [...],
+  "viewerStats": [
+    { "date": "2024-01-15", "opens": 38 }
+  ]
+}
+```
+
+| Field | Type | Description |
+|---|---|---|
+| `viewerStats[].date` | `string` | Date in `YYYY-MM-DD` format |
+| `viewerStats[].opens` | `number` | Total anonymous viewer SSE opens on that date |
