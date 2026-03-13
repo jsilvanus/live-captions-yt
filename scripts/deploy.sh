@@ -132,8 +132,8 @@ rm -f "$ROOT_DEV_LOG"
 npm ci --prefix "$REPO_DIR" --include=dev 2>&1 | tee "$ROOT_DEV_LOG"
 tail -n 10 "$ROOT_DEV_LOG" || true
 
-echo "==> Installing Playwright Chromium browser"
-npx --prefix "$REPO_DIR" playwright install chromium 2>&1 || true
+echo "==> Installing Playwright Chromium browser (with OS-level system dependencies)"
+npx --prefix "$REPO_DIR" playwright install --with-deps chromium 2>&1 || true
 
 echo "==> Capturing UI screenshots"
 SCREENSHOTS_LOG="$REPO_DIR/screenshots.log"
