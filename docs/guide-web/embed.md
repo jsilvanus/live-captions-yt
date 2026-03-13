@@ -5,7 +5,7 @@ order: 8
 
 # Embedding lcyt-web in Another Site
 
-lcyt-web ships five standalone **embed widgets** that you can drop into any page as `<iframe>` elements. Each widget renders only a specific part of the UI, configured entirely through URL parameters — no React knowledge required on the host site.
+lcyt-web ships **eight** standalone **embed widgets** that you can drop into any page as `<iframe>` elements. Each widget renders only a specific part of the UI, configured entirely through URL parameters — no React knowledge required on the host site.
 
 ---
 
@@ -18,6 +18,9 @@ lcyt-web ships five standalone **embed widgets** that you can drop into any page
 | **Sent log only** | `/embed/sentlog` | Read-only delivery log (subscribes to a sibling widget's session) |
 | **Simple file drop** | `/embed/file-drop` | Drop one file → send lines one by one (owns the session) |
 | **Full file UI** | `/embed/files` | Complete file manager: tabs, drop zone, caption view, input bar, sent log |
+| **Settings** | `/embed/settings` | Connection credentials, theme, and CC targets (General + CC tabs) |
+| **RTMP relay** | `/embed/rtmp` | RTMP relay slot management widget |
+| **Viewer** | `/embed/viewer` | Read-only live caption viewer for audience members |
 
 ---
 
@@ -30,6 +33,9 @@ Open any widget in a standalone iframe preview (opens a new window):
 <p><a href="/embed/sentlog" target="_blank" rel="noopener">Sent log example</a></p>
 <p><a href="/embed/file-drop" target="_blank" rel="noopener">File drop example</a></p>
 <p><a href="/embed/files" target="_blank" rel="noopener">Files manager example</a></p>
+<p><a href="/embed/settings" target="_blank" rel="noopener">Settings example</a></p>
+<p><a href="/embed/rtmp" target="_blank" rel="noopener">RTMP relay example</a></p>
+<p><a href="/embed/viewer" target="_blank" rel="noopener">Viewer example</a></p>
 
 ---
 
@@ -136,6 +142,61 @@ Line double-click in CaptionView sends that line immediately via the InputBar, e
 ```
 
 To start with the sent log panel hidden, add `&sentlog=0` to the URL.
+
+---
+
+### `/embed/settings` — Settings Widget
+
+Renders the Settings panel as a standalone widget. Provides the **General** tab (backend URL, API key, stream key, theme) and the **CC** tab (caption targets, STT language, translation settings). The widget connects automatically if credentials are present in the URL.
+
+```html
+<iframe
+  src="https://your-lcyt-host/embed/settings?server=https://api.example.com&apikey=YOUR_KEY&theme=dark"
+  style="width:100%; height:480px; border:none;">
+</iframe>
+```
+
+Useful for building custom operator dashboards where settings management and captioning are in separate panels.
+
+---
+
+### `/embed/rtmp` — RTMP Relay Widget
+
+Renders the RTMP relay slot management UI as a standalone widget. Shows the relay active toggle, configured slots, RTMP ingest address, and per-slot advanced options (scale, FPS, bitrate, caption mode).
+
+```html
+<iframe
+  src="https://your-lcyt-host/embed/rtmp?server=https://api.example.com&apikey=YOUR_KEY&theme=dark"
+  style="width:100%; height:320px; border:none;">
+</iframe>
+```
+
+Requires an active backend connection and `relay_allowed` on the API key.
+
+---
+
+### `/embed/viewer` — Caption Viewer Widget
+
+Renders a read-only live caption display for audience members. Connects directly to the backend's public `GET /viewer/:key` SSE endpoint — no API key or JWT required.
+
+```html
+<iframe
+  src="https://your-lcyt-host/embed/viewer?key=my-event-key&server=https://api.example.com&theme=dark"
+  style="width:100%; height:200px; border:none;">
+</iframe>
+```
+
+**URL parameters specific to `/embed/viewer`:**
+
+| Param | Description | Default |
+|-------|-------------|---------|
+| `key` | Viewer key configured by the streamer | _(required)_ |
+| `server` | Backend URL | _(required)_ |
+| `theme` | `dark` or `light` | `dark` |
+
+This widget does **not** need `apikey` or a session — it is intended for the audience, not the operator. The `server` and `key` parameters are required; the widget shows a "waiting for stream" state until captions arrive.
+
+The full-screen version (non-embed) is available at `/view/:key?server=<backendUrl>`.
 
 ---
 

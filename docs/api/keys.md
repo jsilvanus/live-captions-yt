@@ -53,14 +53,19 @@ Content-Type: application/json
 {
   "key": "custom-key-value",
   "owner": "Alice",
-  "active": 1,
-  "created_at": "2024-01-01T12:00:00.000Z",
-  "expires_at": "2025-01-01T00:00:00.000Z",
-  "daily_limit": 1000,
-  "lifetime_limit": 50000,
-  "lifetime_used": 0,
-  "backend_file_enabled": false,
-  "revoked_at": null
+  "active": true,
+  "createdAt": "2024-01-01T12:00:00.000Z",
+  "expires": "2025-01-01T00:00:00.000Z",
+  "dailyLimit": 1000,
+  "lifetimeLimit": 50000,
+  "lifetimeUsed": 0,
+  "backendFileEnabled": false,
+  "relayAllowed": false,
+  "relayActive": false,
+  "radioEnabled": false,
+  "hlsEnabled": false,
+  "cea708DelayMs": 0,
+  "embedCors": "*"
 }
 ```
 
@@ -87,13 +92,19 @@ X-Admin-Key: <ADMIN_KEY>
     {
       "key": "key-abc",
       "owner": "Alice",
-      "active": 1,
-      "created_at": "2024-01-01T12:00:00.000Z",
-      "expires_at": null,
-      "daily_limit": null,
-      "lifetime_limit": null,
-      "lifetime_used": 42,
-      "revoked_at": null
+      "active": true,
+      "createdAt": "2024-01-01T12:00:00.000Z",
+      "expires": null,
+      "dailyLimit": null,
+      "lifetimeLimit": null,
+      "lifetimeUsed": 42,
+      "backendFileEnabled": false,
+      "relayAllowed": false,
+      "relayActive": false,
+      "radioEnabled": false,
+      "hlsEnabled": false,
+      "cea708DelayMs": 0,
+      "embedCors": "*"
     }
   ]
 }
@@ -120,14 +131,19 @@ X-Admin-Key: <ADMIN_KEY>
 {
   "key": "key-abc",
   "owner": "Alice",
-  "active": 1,
-  "created_at": "2024-01-01T12:00:00.000Z",
-  "expires_at": null,
-  "daily_limit": null,
-  "lifetime_limit": null,
-  "lifetime_used": 42,
-  "daily_used": 5,
-  "revoked_at": null
+  "active": true,
+  "createdAt": "2024-01-01T12:00:00.000Z",
+  "expires": null,
+  "dailyLimit": null,
+  "lifetimeLimit": null,
+  "lifetimeUsed": 42,
+  "backendFileEnabled": false,
+  "relayAllowed": false,
+  "relayActive": false,
+  "radioEnabled": false,
+  "hlsEnabled": false,
+  "cea708DelayMs": 0,
+  "embedCors": "*"
 }
 ```
 
@@ -169,6 +185,12 @@ Content-Type: application/json
 | `daily_limit` | `number \| null` | No | New daily limit. Pass `null` to remove the limit. |
 | `lifetime_limit` | `number \| null` | No | New lifetime limit. Pass `null` to remove the limit. |
 | `backend_file_enabled` | `boolean` | No | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`/file`](./files.md). |
+| `relay_allowed` | `boolean` | No | Grant permission to use the RTMP relay (`/stream` endpoints). Disabled by default. Requires `RTMP_RELAY_ACTIVE=1` on the server. |
+| `radio_enabled` | `boolean` | No | Enable audio-only HLS radio streaming for this key (`/radio`). Disabled by default. |
+| `hls_enabled` | `boolean` | No | Enable video+audio HLS streaming for this key (`/stream-hls`). Disabled by default. |
+| `graphics_enabled` | `boolean` | No | Enable DSK image uploads for this key (`POST /images`). Disabled by default. Also requires `GRAPHICS_ENABLED=1` on the server. |
+| `cea708_delay_ms` | `number` | No | Video delay in milliseconds applied in CEA-708 caption mode (default `0`). Used to align embedded captions with delayed video. |
+| `embed_cors` | `string \| null` | No | CORS `Access-Control-Allow-Origin` value for the per-key public embed endpoints (`/stream-hls`, `/radio`). Defaults to `'*'`. Pass a specific origin (e.g. `'https://yoursite.com'`) to restrict. Pass `null` to reset to `'*'`. |
 
 **Response — `200 OK`** — Updated key object (same shape as `GET /keys/:key`)
 

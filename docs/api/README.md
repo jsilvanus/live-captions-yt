@@ -22,6 +22,14 @@ title: "lcyt-backend API Reference"
   - [API Keys — `/keys`](#keys)
   - [Statistics — `/stats`, `/usage`](#stats)
   - [Health — `/health`, `/contact`](#health)
+  - [RTMP Relay — `/stream`, `/rtmp`](#rtmp-relay)
+  - [Viewer — `/viewer`](#viewer)
+  - [HLS Streaming — `/stream-hls`, `/radio`](#hls-streaming)
+  - [Preview — `/preview`](#preview)
+  - [DSK Overlay — `/dsk`, `/dsk-rtmp`](#dsk-overlay)
+  - [Images — `/images`](#images)
+  - [Icons — `/icons`](#icons)
+  - [YouTube OAuth — `/youtube`](#youtube-oauth)
 
 ---
 
@@ -90,6 +98,25 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `CONTACT_EMAIL` | none | Email returned by `GET /contact` |
 | `CONTACT_PHONE` | none | Phone number returned by `GET /contact` |
 | `CONTACT_WEBSITE` | none | Website URL returned by `GET /contact` |
+| `RTMP_RELAY_ACTIVE` | unset | Set to `1` to enable the RTMP relay subsystem (`/rtmp`, `/stream`). |
+| `RTMP_APPLICATION` | unset | If set, the `/rtmp` callback rejects requests where the RTMP `app` name does not match. |
+| `RTMP_HOST` | `rtmp.lcyt.fi` | Hostname of the nginx-rtmp ingest server. Reported in `GET /health` when relay is active. |
+| `RTMP_APP` | `stream` | RTMP application name for the main relay. Reported in `GET /health`. |
+| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Comma-separated domains allowed to use `/stream` relay endpoints. Set to `*` to allow all. |
+| `BACKEND_URL` | _(derived from request)_ | Absolute URL of this backend. Used to build embed URLs in player snippets. |
+| `GRAPHICS_ENABLED` | unset | Set to `1` to enable `POST /images` (DSK image upload). |
+| `GRAPHICS_DIR` | `/data/images` | Base directory for DSK image storage. |
+| `GRAPHICS_MAX_FILE_BYTES` | `5242880` (5 MB) | Maximum size per uploaded image. |
+| `GRAPHICS_MAX_STORAGE_BYTES` | `52428800` (50 MB) | Maximum total image storage per API key. |
+| `ICONS_DIR` | `/data/icons` | Base directory for branding icon storage. |
+| `HLS_ROOT` | `/data/hls` | Directory where HLS playlists and segments are written for `/stream-hls`. |
+| `RADIO_HLS_ROOT` | `/data/radio` | Directory where audio-only HLS playlists and segments are written for `/radio`. |
+| `RADIO_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL used by the radio manager. |
+| `PREVIEW_ROOT` | `/data/preview` | Directory where JPEG stream thumbnails are stored. |
+| `DSK_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL for the DSK ingest application. |
+| `DSK_RTMP_APP` | `dsk` | nginx-rtmp application name for DSK RTMP ingest. |
+| `YOUTUBE_CLIENT_ID` | none | Google OAuth 2.0 client ID — enables `GET /youtube/config`. |
+| `TRUST_PROXY` | `true` | Express `trust proxy` setting. Set to `0` to disable, or a number for hop count. |
 
 ---
 
@@ -99,6 +126,9 @@ CORS is handled dynamically:
 
 - **`POST /live`**, **`GET /health`**, **`GET /contact`** — open to all origins
 - **`POST /keys?freetier`** — open to all origins (if `FREE_APIKEY_ACTIVE=1`)
+- **`GET /viewer/:key`** — open to all origins (`*`)
+- **`GET /stream-hls/:key/*`**, **`GET /radio/:key/*`** — open to origins matching the per-key `embedCors` setting (defaults to `*`)
+- **`GET /preview/:key/*`**, **`GET /images/:id`**, **`GET /icons/:id`**, **`GET /dsk/:key/*`** — open to all origins (`*`)
 - **Authenticated routes** — only the `domain` registered in the session is allowed
 - **Admin routes** — no CORS headers (intended for server-side use only)
 
@@ -130,13 +160,104 @@ The SQLite database contains the following tables:
 
 | Table | Purpose |
 |---|---|
-| `api_keys` | Registered API keys with owner, limits, expiry, persisted sequence counter, and `backend_file_enabled` flag |
+| `api_keys` | Registered API keys with owner, limits, expiry, flags (`backend_file_enabled`, `relay_allowed`, `radio_enabled`, `hls_enabled`, `graphics_enabled`), `cea708_delay_ms`, `embed_cors`, and persisted sequence counter |
 | `caption_usage` | Daily per-key caption counts |
 | `session_stats` | Completed session telemetry |
 | `caption_errors` | Caption delivery failure log |
 | `auth_events` | Authentication and usage events |
 | `domain_hourly_stats` | Per-domain aggregated caption statistics |
 | `sessions` | Persistent session metadata for survival across server restarts |
-| `caption_files` | Metadata for caption/translation files saved on the backend (via `backend_file_enabled`) |
+| `caption_files` | Metadata for caption/translation files saved on the backend |
+| `rtmp_relays` | Per-key RTMP relay slot configuration (targetUrl, targetName, captionMode, scale, fps, video/audio bitrate) |
+| `rtmp_stream_stats` | Per-stream RTMP relay statistics (start/end time, duration, captions sent) |
+| `rtmp_anon_daily_stats` | Anonymous daily RTMP relay aggregates by endpoint type and caption mode |
+| `images` | DSK overlay image metadata (shorthand, filename, MIME type, size) |
+| `icons` | Viewer branding icon metadata (filename, MIME type, size) |
+| `viewer_key_daily_stats` | Per-API-key, per-viewer-key daily viewer opens |
+| `viewer_anon_daily_stats` | Anonymous daily viewer open counts |
 
 Additive migrations run automatically on startup.
+
+---
+
+## RTMP Relay
+
+The RTMP relay re-streams one incoming RTMP signal to up to 4 destinations simultaneously using ffmpeg. It requires `RTMP_RELAY_ACTIVE=1` and a configured nginx-rtmp server.
+
+| Endpoint | Purpose |
+|---|---|
+| [`POST/GET/PUT/DELETE /stream`](./stream.md) | Authenticated relay slot CRUD (requires `relay_allowed` on the key) |
+| [`POST /rtmp`](./rtmp-callbacks.md) | nginx-rtmp publish/publish_done callbacks |
+
+---
+
+## Viewer
+
+The viewer system broadcasts live captions to audience members via a public SSE endpoint.
+
+| Endpoint | Purpose |
+|---|---|
+| [`GET /viewer/:key`](./viewer.md) | Public SSE stream — subscribe to live captions for a viewer key |
+
+---
+
+## HLS Streaming
+
+HLS streaming converts incoming RTMP streams to HLS for browser playback. Requires ffmpeg.
+
+| Endpoint | Purpose |
+|---|---|
+| [`GET /stream-hls/:key/*`](./stream-hls.md) | Video+audio HLS stream (playlist, segments, embeddable player) |
+| [`POST /stream-hls[/on_publish[_done]]`](./stream-hls.md) | nginx-rtmp callbacks |
+| [`GET /radio/:key/*`](./radio.md) | Audio-only HLS stream (playlist, segments, embeddable player) |
+| [`POST /radio[/on_publish[_done]]`](./radio.md) | nginx-rtmp callbacks |
+
+---
+
+## Preview
+
+| Endpoint | Purpose |
+|---|---|
+| [`GET /preview/:key/incoming.jpg`](./preview.md) | Latest JPEG thumbnail of the incoming RTMP stream |
+
+---
+
+## DSK Overlay
+
+The Downstream Keyer (DSK) system overlays graphics on the relayed video stream using caption metadata.
+
+| Endpoint | Purpose |
+|---|---|
+| [`GET /dsk/:apikey/images`](./dsk.md) | List images available for the DSK page |
+| [`GET /dsk/:apikey/events`](./dsk.md) | Public SSE stream of graphics events |
+| [`POST /dsk-rtmp[/on_publish[_done]]`](./dsk.md) | nginx-rtmp callbacks for DSK RTMP ingest |
+
+---
+
+## Images
+
+| Endpoint | Purpose |
+|---|---|
+| [`POST /images`](./images.md) | Upload a DSK overlay image (auth required; `GRAPHICS_ENABLED=1`) |
+| [`GET /images`](./images.md) | List images for the authenticated key |
+| [`GET /images/:id`](./images.md) | Serve image bytes publicly (no auth) |
+| [`DELETE /images/:id`](./images.md) | Delete an image |
+
+---
+
+## Icons
+
+| Endpoint | Purpose |
+|---|---|
+| [`POST /icons`](./icons.md) | Upload a branding icon (PNG or SVG) |
+| [`GET /icons`](./icons.md) | List icons for the authenticated key |
+| [`GET /icons/:id`](./icons.md) | Serve icon bytes publicly (no auth) |
+| [`DELETE /icons/:id`](./icons.md) | Delete an icon |
+
+---
+
+## YouTube OAuth
+
+| Endpoint | Purpose |
+|---|---|
+| [`GET /youtube/config`](./youtube.md) | Return the server's YouTube OAuth client ID for client-side GIS sign-in |
