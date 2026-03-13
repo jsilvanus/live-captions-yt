@@ -1,8 +1,12 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled } from '../db.js';
+import { resolve, join, basename } from 'node:path';
+import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled, getImageByShorthand, safeApiKey } from '../db.js';
 import { broadcastToViewers, registerViewerKeyOwner } from './viewer.js';
 import { composeCaptionText, writeToBackendFile } from '../caption-files.js';
+
+// Base directory for uploaded graphics (same default as routes/images.js)
+const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
 
 // Regex to detect and extract <!-- graphics:... --> metadata codes.
 // Matches anywhere in the caption text (own line or inline with text).
@@ -123,6 +127,19 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
                 text: cleanText,
                 ts: Date.now(),
               });
+            }
+
+            // Server-side DSK overlay: update the RTMP relay process with the new images.
+            // Only raster formats (PNG/WebP) are supported; SVG is skipped.
+            if (relayManager) {
+              const imagePaths = graphicsNames.flatMap(name => {
+                const row = getImageByShorthand(db, session.apiKey, name);
+                if (!row || row.mime_type === 'image/svg+xml') return [];
+                // Reconstruct the absolute path using the same convention as routes/images.js
+                return [join(GRAPHICS_BASE_DIR, safeApiKey(session.apiKey), basename(row.filename))];
+              });
+              // Fire-and-forget — DSK update failures are logged inside setDskOverlay
+              relayManager.setDskOverlay(session.apiKey, graphicsNames, imagePaths).catch(() => {});
             }
           }
         }

@@ -39,7 +39,9 @@ export function DskPage() {
 
   // ── State ───────────────────────────────────────────────
   const [images, setImages]         = useState([]); // [{ id, shorthand, mimeType, url }]
-  const [activeNames, setActiveNames] = useState(new Set());
+  // Ordered array from the last <!-- graphics:... --> metacode.
+  // Index 0 = bottom-most layer, index N-1 = top-most layer (matches server-side overlay order).
+  const [activeNames, setActiveNames] = useState([]); // string[]
   const [ccText, setCcText]         = useState('');
   const [status, setStatus]         = useState('connecting'); // 'connecting' | 'connected' | 'error'
 
@@ -79,7 +81,8 @@ export function DskPage() {
       if (!mounted.current) return;
       try {
         const { names } = JSON.parse(e.data);
-        setActiveNames(new Set(Array.isArray(names) ? names : []));
+        // Preserve metacode order: index 0 = bottom layer, last = top layer
+        setActiveNames(Array.isArray(names) ? names : []);
       } catch {}
     });
 
@@ -129,25 +132,39 @@ export function DskPage() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', background: bgColor, overflow: 'hidden' }}>
-      {/* All images pre-loaded; visibility toggled by activeNames */}
+      {/* All images pre-loaded (hidden) for zero-latency visibility toggle */}
       {images.map(img => (
         <img
-          key={img.id}
+          key={`preload-${img.id}`}
           src={`${serverUrl}/images/${img.id}`}
-          alt={img.shorthand}
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            width: '100%',
-            height: 'auto',
-            visibility: activeNames.has(img.shorthand) ? 'visible' : 'hidden',
-            pointerEvents: 'none',
-          }}
-          // Allow cross-origin if server is on a different host
+          alt=""
+          style={{ display: 'none' }}
           crossOrigin="anonymous"
         />
       ))}
+
+      {/* Active images rendered in metacode order: first name = lowest z-index (bottom layer), last = highest (top layer) */}
+      {activeNames.map((name, layerIdx) => {
+        const img = images.find(i => i.shorthand === name);
+        if (!img) return null;
+        return (
+          <img
+            key={`active-${img.id}`}
+            src={`${serverUrl}/images/${img.id}`}
+            alt={img.shorthand}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              height: 'auto',
+              zIndex: layerIdx + 1,
+              pointerEvents: 'none',
+            }}
+            crossOrigin="anonymous"
+          />
+        );
+      })}
 
       {/* CC burn-in text (cc=1 mode only) */}
       {ccMode && ccText && (
@@ -163,6 +180,7 @@ export function DskPage() {
           fontWeight: 'bold',
           textShadow: '0 2px 8px rgba(0,0,0,0.9)',
           pointerEvents: 'none',
+          zIndex: activeNames.length + 2,
         }}>
           {ccText}
         </div>

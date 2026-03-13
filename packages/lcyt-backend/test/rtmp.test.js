@@ -1014,3 +1014,89 @@ describe('POST /stream — transcode field validation', () => {
     assert.strictEqual(body.relay.scale, null);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8: Server-side DSK overlay — RtmpRelayManager unit tests
+// ---------------------------------------------------------------------------
+
+// Test helper: create a minimal meta entry
+function makeDskMeta(overrides = {}) {
+  return {
+    slots: [],
+    startedAt: new Date(),
+    hasCea708: false,
+    hasDsk: false,
+    dskNames: [],
+    srtSeq: 0,
+    captionsSent: 0,
+    cea708DelayMs: 0,
+    ...overrides,
+  };
+}
+
+describe('RtmpRelayManager server-side DSK overlay', () => {
+  it('hasDsk returns false for unknown key', () => {
+    const m = new RtmpRelayManager();
+    assert.strictEqual(m.hasDsk('no-key'), false);
+  });
+
+  it('dskNames returns empty array for unknown key', () => {
+    const m = new RtmpRelayManager();
+    assert.deepStrictEqual(m.dskNames('no-key'), []);
+  });
+
+  it('setDskOverlay stores DSK state', async () => {
+    const m = new RtmpRelayManager();
+    await m.setDskOverlay('k', ['logo', 'lower'], ['/tmp/logo.png', '/tmp/lower.png']);
+    assert.deepStrictEqual(m._dskState.get('k').names, ['logo', 'lower']);
+    assert.deepStrictEqual(m._dskState.get('k').imagePaths, ['/tmp/logo.png', '/tmp/lower.png']);
+  });
+
+  it('setDskOverlay clears DSK state when imagePaths is empty', async () => {
+    const m = new RtmpRelayManager();
+    await m.setDskOverlay('k', ['logo'], ['/tmp/logo.png']);
+    await m.setDskOverlay('k', [], []);
+    assert.strictEqual(m._dskState.has('k'), false);
+  });
+
+  it('hasDsk returns true when meta.hasDsk is true (via meta injection)', () => {
+    const m = new RtmpRelayManager();
+    m._meta.set('k', makeDskMeta({ hasDsk: true, dskNames: ['logo'] }));
+    assert.strictEqual(m.hasDsk('k'), true);
+  });
+
+  it('dskNames returns ordered names from meta', () => {
+    const m = new RtmpRelayManager();
+    m._meta.set('k', makeDskMeta({ hasDsk: true, dskNames: ['bg', 'logo', 'lower'] }));
+    assert.deepStrictEqual(m.dskNames('k'), ['bg', 'logo', 'lower']);
+  });
+
+  it('start() with DSK state picks up _dskState for hasDsk flag in meta', async () => {
+    const m = new RtmpRelayManager({
+      // Provide mock ffmpegCaps so it does not block on ffmpeg binary absence
+      ffmpegCaps: { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false },
+    });
+    m._dskState.set('k', { names: ['logo'], imagePaths: ['/tmp/logo.png'] });
+    // Calling start() with available=false should reject immediately (no ffmpeg binary)
+    // but the DSK state should be readable before that.
+    await assert.rejects(() => m.start('k', [{ slot: 1, targetUrl: 'rtmp://yt.example.com/live2' }]));
+    // DSK state is preserved even after rejection
+    assert.ok(m._dskState.has('k'));
+  });
+
+  it('setDskOverlay skips empty imagePaths entries', async () => {
+    const m = new RtmpRelayManager();
+    // Passing falsy paths (e.g. from SVG images that were filtered out)
+    await m.setDskOverlay('k', ['logo', 'svg-icon'], ['/tmp/logo.png', '']);
+    // Empty string is filtered out; only the valid path survives
+    assert.deepStrictEqual(m._dskState.get('k').imagePaths, ['/tmp/logo.png']);
+  });
+
+  it('setDskOverlay clears state when only empty paths given', async () => {
+    const m = new RtmpRelayManager();
+    await m.setDskOverlay('k', ['logo'], ['/tmp/logo.png']);
+    // Now clear with all-empty paths (simulates all images being SVG and filtered out)
+    await m.setDskOverlay('k', ['svg-only'], ['']);
+    assert.strictEqual(m._dskState.has('k'), false);
+  });
+});

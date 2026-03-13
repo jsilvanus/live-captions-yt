@@ -267,24 +267,40 @@ incompatible with the filter_complex approach). CEA-708 takes priority when both
 
 ---
 
-#### 3c. DSK (Downstream Key) — overlay graphics 📋 *Planned*
+#### 3c. DSK (Downstream Key) — overlay graphics ✅ *Implemented*
 
 **Purpose:** Add a graphics overlay (lower-third, logo, sponsor bug) to the video stream
 before relaying. The overlay image is driven by the `<!-- graphics:shorthand -->` caption
-metadata code and swapped out in real-time via ffmpeg's `movie` filter.
+metadata code.
 
-**Current state:** The DSK system already exists as a *browser-side* solution — `GET /dsk/:key/events`
-sends an SSE stream with graphics events; the web UI renders the overlay in a browser
-window captured by OBS. This approach requires OBS to be running.
+**Current state (implemented):** Both *browser-side* and *server-side* DSK are now available.
 
-**Planned server-side DSK:**
-- ffmpeg `overlay` filter composites the current graphic PNG onto the video stream
-- When a new `<!-- graphics:shorthand -->` code arrives, the backend signals ffmpeg to
-  swap the overlay file (via a named pipe or by restarting ffmpeg with a new image path)
-- No OBS required; works with any RTMP source
+**Browser-side DSK (existing):** `GET /dsk/:key/events` sends an SSE stream with graphics
+events; the `DskPage` renders the overlay in a browser window captured by OBS.
 
-**Integration with existing images:** Images are already stored in `/data/images/` and
-indexed in the `caption_files` table. Server-side DSK will read directly from that path.
+**Server-side DSK (implemented):**
+- `RtmpRelayManager.setDskOverlay(apiKey, names, imagePaths)` — updates the overlay state
+  and restarts the relay process with the new ffmpeg overlay filter configuration
+- ffmpeg `overlay` filter composites up to N images in metacode order:
+  ```
+  [0:v][1:v]overlay=0:0[odsk0]; [odsk0][2:v]overlay=0:0[ovout]
+  ```
+  First name in metacode = bottom layer; last name = top layer (same order on client and server)
+- Requires re-encoding with `-c:v libx264 -preset ultrafast -tune zerolatency`
+- SVG images are silently skipped (ffmpeg does not support SVG as overlay input)
+- When graphics code is cleared (`<!-- graphics: -->`), overlay is removed and relay returns to copy mode
+- Not compatible with CEA-708 mode (CEA-708 takes priority when both are active)
+- Not compatible with per-slot transcoding (each slot gets its own video stream; DSK skipped)
+
+**Client-side DSK ordering fix (implemented):** `DskPage.jsx` now renders active images
+in the exact order specified in the graphics metacode (z-index 1 for first name = bottom,
+incrementing for each subsequent name = higher layers). Previously a `Set` was used, which
+did not preserve order.
+
+**Integration with existing images:** Images are stored in `GRAPHICS_DIR/<safe_apikey>/`
+and indexed in the `caption_files` table. `captions.js` looks up each shorthand name via
+`getImageByShorthand()`, constructs the absolute file path, and passes the ordered path array
+to `relayManager.setDskOverlay()`.
 
 ---
 
@@ -354,7 +370,7 @@ Only activates when at least one slot has `captionMode: 'cea708'` and ffmpeg has
 | 5     | CEA-708 caption delay                                | ✅ Done        |
 | 6     | Caption burn-in                                      | 📋 Planned     |
 | 7     | Resolution / frame-rate transcoding per slot         | ✅ Done        |
-| 8     | Server-side DSK overlay                              | 📋 Planned     |
+| 8     | Server-side DSK overlay                              | ✅ Done        |
 | 9     | STT audio relay (auto-caption from stream)           | 📋 Planned     |
 
 ---
@@ -438,7 +454,7 @@ packages/lcyt-backend/src/
 │   ├── preview.js         ✅ /preview — incoming thumbnail endpoint (JPEG)
 │   ├── rtmp.js            ✅ /rtmp — nginx relay callbacks
 │   ├── stream.js          ✅ /stream — relay CRUD + transcode field validation
-│   └── dsk.js             ✅ /dsk — browser-side DSK SSE + images (existing)
+│   └── dsk.js             ✅ /dsk — browser-side DSK SSE + images (existing; routes /dsk/:key/events, /images)
 └── db/
     ├── relay.js           ✅ isRelayAllowed, isRelayActive, isRadioEnabled, isHlsEnabled
     │                         upsertRelay now stores scale/fps/video_bitrate/audio_bitrate

@@ -110,9 +110,16 @@ export class RtmpRelayManager {
 
     /**
      * Per-key metadata: { slots, startedAt, hasCea708, srtSeq }
-     * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number }>}
+     * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number, cea708DelayMs: number }>}
      */
     this._meta = new Map();
+
+    /**
+     * Server-side DSK overlay state: ordered image paths to composite on the relay stream.
+     * Populated by setDskOverlay(); read by start().
+     * @type {Map<string, { names: string[], imagePaths: string[] }>}
+     */
+    this._dskState = new Map();
 
     /** @type {Set<string>} API keys currently publishing in nginx-rtmp */
     this._publishing = new Set();
@@ -141,6 +148,12 @@ export class RtmpRelayManager {
    * **Per-slot transcoding** (Phase 7): when any relay slot carries transcode options
    * (`scale`, `fps`, `videoBitrate`, `audioBitrate`), ffmpeg uses a `filter_complex` to produce
    * per-output video streams.  Slots without transcode options use stream copy (`-c:v copy`).
+   *
+   * **Server-side DSK overlay** (Phase 8): when `setDskOverlay()` has been called for this
+   * API key with one or more image paths, ffmpeg composites the images on top of the video in
+   * the specified order (first name = bottom layer, last = top layer) using the `overlay` filter.
+   * SVG images are skipped (ffmpeg does not support SVG input natively).  DSK overlay requires
+   * re-encoding (`libx264`) and is not compatible with CEA-708 mode (CEA-708 takes priority).
    *
    * CEA-708 and per-slot transcoding cannot be combined in the same process (the stdin SRT
    * pipe conflicts with the filter_complex approach).  CEA-708 takes priority if both are set.
@@ -180,9 +193,15 @@ export class RtmpRelayManager {
         r => r.scale || r.fps != null || r.videoBitrate || r.audioBitrate
       );
 
+      // Server-side DSK overlay: images composite on top of the video in metacode order.
+      // Not compatible with CEA-708 (CEA-708 takes priority).
+      // Not compatible with per-slot transcoding (each slot gets its own video stream; skip DSK there).
+      const dskState = !hasCea708 && !hasTranscode ? (this._dskState.get(apiKey) ?? null) : null;
+      const hasDsk = !!(dskState && dskState.imagePaths.length > 0);
+
       const src = sourceUrl(apiKey);
       const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
-      console.log(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}): ${src}`);
+      console.log(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}, dsk=${hasDsk}): ${src}`);
 
       let args;
       let stdinMode = 'ignore';
@@ -265,6 +284,37 @@ export class RtmpRelayManager {
         }).join('|');
         args.push('-f', 'tee', teeTargets);
 
+      } else if (hasDsk) {
+        // ── Server-side DSK overlay mode (Phase 8) ─────────────────────────
+        // Add source then each image as a separate input.
+        args = ['-re', '-i', src];
+        for (const imgPath of dskState.imagePaths) {
+          args.push('-i', imgPath);
+        }
+
+        // Build the overlay chain: [0:v][1:v]overlay=0:0[odsk0]; [odsk0][2:v]overlay=0:0[odsk1] ...
+        // The first listed image is the bottom layer; the last is the top layer.
+        const N = dskState.imagePaths.length;
+        const filterParts = [];
+        let prevLabel = '[0:v]';
+        for (let i = 0; i < N; i++) {
+          const imgLabel = `[${i + 1}:v]`;
+          const outLabel = i < N - 1 ? `[odsk${i}]` : '[ovout]';
+          filterParts.push(`${prevLabel}${imgLabel}overlay=0:0${outLabel}`);
+          prevLabel = outLabel;
+        }
+
+        args.push('-filter_complex', filterParts.join('; '));
+        args.push('-map', '[ovout]', '-map', '0:a');
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+        args.push('-c:a', 'copy');
+
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        args.push('-f', 'tee', teeTargets);
+
       } else {
         // ── Simple stream copy mode (Phase 1) ─────────────────────────────
         const teeTargets = relays.map(r => {
@@ -280,7 +330,7 @@ export class RtmpRelayManager {
 
       const startedAt = new Date();
       this._procs.set(apiKey, proc);
-      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, srtSeq: 0, captionsSent: 0 });
+      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs });
 
       for (const r of relays) {
         this._onStreamStarted?.(apiKey, r.slot, {
@@ -506,6 +556,59 @@ export class RtmpRelayManager {
    * @returns {boolean}
    */
   hasCea708(apiKey) { return this._meta.get(apiKey)?.hasCea708 ?? false; }
+
+  /**
+   * Return true if the running process has an active server-side DSK overlay.
+   * @param {string} apiKey
+   * @returns {boolean}
+   */
+  hasDsk(apiKey) { return this._meta.get(apiKey)?.hasDsk ?? false; }
+
+  /**
+   * Return the ordered list of DSK shorthand names currently overlaid on the stream.
+   * First element = bottom layer; last element = top layer.
+   * Returns an empty array when no DSK is active.
+   * @param {string} apiKey
+   * @returns {string[]}
+   */
+  dskNames(apiKey) { return this._meta.get(apiKey)?.dskNames ?? []; }
+
+  /**
+   * Update the server-side DSK overlay for an API key and restart the relay if running.
+   *
+   * Call this whenever a `<!-- graphics:... -->` code is received.  Pass an empty `names`
+   * array (or `imagePaths` of length 0) to clear the overlay and return to copy mode.
+   *
+   * Images are composited in the order they appear in `imagePaths` (first = bottom layer).
+   * SVG images should be excluded by the caller — ffmpeg cannot overlay SVG natively.
+   *
+   * @param {string} apiKey
+   * @param {string[]} names        Shorthand names in metacode order (for metadata tracking)
+   * @param {string[]} imagePaths   Absolute paths to raster image files (PNG/WebP), same order
+   * @returns {Promise<void>}
+   */
+  async setDskOverlay(apiKey, names, imagePaths) {
+    const effective = imagePaths.filter(Boolean);
+    if (effective.length === 0) {
+      this._dskState.delete(apiKey);
+    } else {
+      this._dskState.set(apiKey, { names, imagePaths: effective });
+    }
+
+    // Restart the relay with the updated overlay if it is currently running.
+    // This will cause a brief (~0.5 s) stream interruption at the DSK change point,
+    // which is acceptable — DSK changes happen at known cue points, not continuously.
+    if (this.isRunning(apiKey)) {
+      const meta = this._meta.get(apiKey);
+      if (meta) {
+        try {
+          await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
+        } catch (err) {
+          console.error(`[rtmp] Failed to restart relay after DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
+        }
+      }
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Public: nginx-rtmp publish tracking

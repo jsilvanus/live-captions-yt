@@ -1,6 +1,19 @@
 // ─── Image / graphics helpers ─────────────────────────────────────────────────
 
 /**
+ * Derive a safe per-key directory name component from an API key.
+ * Strips characters not safe for file system paths and caps the length at 40.
+ * Used as the subdirectory name under GRAPHICS_DIR (routes/images.js) and for
+ * constructing image file paths in other modules (routes/captions.js).
+ *
+ * @param {string} apiKey
+ * @returns {string}
+ */
+export function safeApiKey(apiKey) {
+  return apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+}
+
+/**
  * Check whether graphics upload is enabled for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
