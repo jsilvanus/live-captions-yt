@@ -22,6 +22,7 @@ export function formatKey(row) {
     radioEnabled: row.radio_enabled  === 1,
     hlsEnabled:   row.hls_enabled    === 1,
     cea708DelayMs: row.cea708_delay_ms ?? 0,
+    embedCors: row.embed_cors ?? '*',
   };
 }
 
@@ -138,13 +139,13 @@ export function getKeyByEmail(db, email) {
 /**
  * Create a new API key.
  * @param {import('better-sqlite3').Database} db
- * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number }} options
+ * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -157,6 +158,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     (radio_enabled ?? false) ? 1 : 0,
     (hls_enabled ?? false) ? 1 : 0,
     cea708_delay_ms ?? 0,
+    embed_cors ?? '*',
   );
   return getKey(db, resolvedKey);
 }
@@ -253,10 +255,10 @@ export function anonymizeKey(db, key) {
  * Update owner and/or expires_at for a key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key
- * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number }} fields
+ * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors } = {}) {
   const parts = [];
   const params = [];
 
@@ -295,6 +297,10 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (cea708_delay_ms !== undefined) {
     parts.push('cea708_delay_ms = ?');
     params.push(Math.max(0, Math.round(Number(cea708_delay_ms ?? 0))));
+  }
+  if (embed_cors !== undefined) {
+    parts.push('embed_cors = ?');
+    params.push(embed_cors ?? '*');
   }
 
   if (parts.length === 0) return false;

@@ -119,6 +119,7 @@ export function createKeysRouter(db) {
     if ('hls_enabled' in body) updates.hls_enabled = !!body.hls_enabled;
     if ('cea708_delay_ms' in body) updates.cea708_delay_ms = body.cea708_delay_ms;
     if ('graphics_enabled' in body) updates.graphics_enabled = !!body.graphics_enabled;
+    if ('embed_cors' in body) updates.embed_cors = body.embed_cors ?? '*';
 
     updateKey(db, req.params.key, updates);
 

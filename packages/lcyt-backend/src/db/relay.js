@@ -43,6 +43,22 @@ export function isHlsEnabled(db, apiKey) {
   return row ? row.hls_enabled === 1 : false;
 }
 
+// ─── Per-key CORS origin for embeddable player endpoints ──────────────────────
+
+/**
+ * Get the CORS `Access-Control-Allow-Origin` value for the embeddable player.js
+ * and HLS endpoints of an API key.  Defaults to `'*'` (allow all origins) when
+ * the key does not exist or the column is NULL.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {string}  e.g. `'*'` or `'https://example.com'`
+ */
+export function getEmbedCors(db, apiKey) {
+  const row = db.prepare('SELECT embed_cors FROM api_keys WHERE key = ?').get(apiKey);
+  return row?.embed_cors || '*';
+}
+
 /**
  * Check whether the user has activated the RTMP relay for this key.
  * relay_active is a user-controlled toggle (set via PUT /stream/active).

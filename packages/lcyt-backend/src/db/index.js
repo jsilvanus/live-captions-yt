@@ -57,6 +57,9 @@ export function initDb(dbPath) {
   if (!existingCols.has('hls_enabled'))       db.exec('ALTER TABLE api_keys ADD COLUMN hls_enabled INTEGER NOT NULL DEFAULT 0');
   // ms of video delay to add in CEA-708 mode (compensates for STT latency). 0 = no delay.
   if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
+  // CORS origin for embeddable player.js and HLS endpoints. Default '*' (allow all).
+  // Set to a specific origin e.g. 'https://example.com' to restrict access.
+  if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)

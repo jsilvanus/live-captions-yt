@@ -3,7 +3,7 @@ import express from 'express';
 import { createReadStream, existsSync } from 'node:fs';
 import { join, resolve as resolvePath, basename, sep } from 'node:path';
 import rateLimit from 'express-rate-limit';
-import { isRadioEnabled } from '../db.js';
+import { isRadioEnabled, getEmbedCors } from '../db.js';
 
 // Radio key validation: same rules as viewer keys
 const RADIO_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
@@ -22,9 +22,10 @@ const hlsRateLimit = rateLimit({
 /**
  * Return the CORS response headers for public radio endpoints.
  * @param {import('express').Response} res
+ * @param {string} [origin='*']  CORS origin value (per-key embed_cors or '*')
  */
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+function setCorsHeaders(res, origin = '*') {
+  res.setHeader('Access-Control-Allow-Origin', origin);
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Accept, Range');
 }
@@ -185,7 +186,8 @@ export function createRadioRouter(db, radioManager) {
 
   // CORS preflight for HLS/player routes
   router.options('/:key/*', (req, res) => {
-    setCorsHeaders(res);
+    const cors = RADIO_KEY_RE.test(req.params.key) ? getEmbedCors(db, req.params.key) : '*';
+    setCorsHeaders(res, cors);
     res.status(204).end();
   });
 
@@ -201,7 +203,7 @@ export function createRadioRouter(db, radioManager) {
     const backendOrigin = process.env.BACKEND_URL
       || `${req.protocol}://${req.get('host')}`;
 
-    setCorsHeaders(res);
+    setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(buildPlayerSnippet(key, backendOrigin));
@@ -227,7 +229,7 @@ export function createRadioRouter(db, radioManager) {
       return res.status(404).json({ error: 'Stream not found or not currently live' });
     }
 
-    setCorsHeaders(res);
+    setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.setHeader('Cache-Control', 'no-cache, no-store');
     createReadStream(file).pipe(res);
@@ -258,7 +260,7 @@ export function createRadioRouter(db, radioManager) {
       return res.status(404).json({ error: 'Segment not found' });
     }
 
-    setCorsHeaders(res);
+    setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Content-Type', 'video/mp2t');
     res.setHeader('Cache-Control', 'public, max-age=60');
     createReadStream(file).pipe(res);
