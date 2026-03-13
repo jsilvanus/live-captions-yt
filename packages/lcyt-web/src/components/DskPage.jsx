@@ -151,7 +151,8 @@ export function DskPage() {
           <img
             key={`active-${img.id}`}
             src={`${serverUrl}/images/${img.id}`}
-            alt={img.shorthand}
+            alt=""
+            aria-hidden="true"
             style={{
               position: 'absolute',
               top: 0,

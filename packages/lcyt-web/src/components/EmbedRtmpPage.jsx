@@ -127,7 +127,7 @@ function RelayRow({ entry, onChange, onRemove, t }) {
               {t('settings.relay.useOriginal')} — {t('settings.relay.slotFps')}
             </label>
             <input className="settings-field__input" type="number" min="1" max="120" placeholder={t('settings.relay.slotFpsPlaceholder')}
-              value={entry.fps ?? ''} onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })}
+              value={entry.fps ?? ''} onChange={e => { const v = parseInt(e.target.value, 10); onChange({ ...entry, fps: Number.isFinite(v) ? v : null }); }}
               style={entry.fps == null ? { opacity: 0.55 } : {}} />
           </div>
           <div>
@@ -353,7 +353,7 @@ function RelayPanel({ backendUrl, apiKey }) {
                 <input className="settings-field__input" readOnly value={dskUrl}
                   style={{ flex: 1, fontSize: '0.82em', fontFamily: 'monospace' }} />
                 <button className="btn btn--secondary btn--sm"
-                  onClick={() => navigator.clipboard?.writeText(dskUrl)} title="Copy">⎘</button>
+                  onClick={() => navigator.clipboard?.writeText(dskUrl).catch(() => {})} title="Copy">⎘</button>
               </div>
             </div>
           );

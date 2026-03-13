@@ -264,17 +264,17 @@ export class RtmpRelayManager {
           args.push('-map', '0:a:0');
         }
 
-        // Per-stream codec options
+        // Per-stream codec options.
+        // NOTE: All video outputs come from the filter_complex (split filter), so stream-copy
+        // is not possible for any video stream — filtergraph outputs must be re-encoded.
+        // Audio is mapped directly from input (0:a:0) and can still be copied.
         for (let i = 0; i < N; i++) {
           const r = relays[i];
-          const needsEncode = r.scale || r.fps != null || r.videoBitrate || r.audioBitrate;
-          if (needsEncode) {
-            args.push(`-c:v:${i}`, 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
-            if (r.videoBitrate) args.push(`-b:v:${i}`, r.videoBitrate);
-            args.push(`-c:a:${i}`, 'aac');
-            args.push(`-b:a:${i}`, r.audioBitrate || '128k');
+          args.push(`-c:v:${i}`, 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+          if (r.videoBitrate) args.push(`-b:v:${i}`, r.videoBitrate);
+          if (r.audioBitrate) {
+            args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, r.audioBitrate);
           } else {
-            args.push(`-c:v:${i}`, 'copy');
             args.push(`-c:a:${i}`, 'copy');
           }
         }
@@ -485,20 +485,26 @@ export class RtmpRelayManager {
       return streamTimeMs;
     }
 
+    // The video stream is delayed by cea708DelayMs via the setpts filter, so caption cue
+    // timestamps must be shifted forward by the same amount to align with the delayed frames.
+    const delayMs = meta.cea708DelayMs || 0;
+
     let cueStartMs;
     if (speechStart !== undefined && speechStart !== null) {
-      // VAD onset — use as cue start
-      cueStartMs = Math.max(0, toStreamMs(speechStart));
+      // VAD onset — use as cue start, shifted by video delay
+      cueStartMs = Math.max(0, toStreamMs(speechStart) + delayMs);
     } else if (timestamp !== undefined && timestamp !== null) {
-      // ASR finalisation minus offset
-      cueStartMs = Math.max(0, toStreamMs(timestamp) - CEA708_OFFSET_MS);
+      // ASR finalisation minus pre-roll offset, shifted by video delay
+      cueStartMs = Math.max(0, toStreamMs(timestamp) - CEA708_OFFSET_MS + delayMs);
     } else {
-      // No timing info — shift back from current stream time
-      cueStartMs = Math.max(0, streamTimeMs - CEA708_OFFSET_MS);
+      // No timing info — shift back from current stream time, compensating for video delay
+      cueStartMs = Math.max(0, streamTimeMs - CEA708_OFFSET_MS + delayMs);
     }
 
-    // Don't backtrack too far — decoders typically discard stale SEI data
-    const minStartMs = Math.max(0, streamTimeMs - CEA708_MAX_BACKTRACK_MS);
+    // Don't backtrack too far — decoders typically discard stale SEI data.
+    // The reference point is the delayed stream time (current video PTS seen by the decoder).
+    const delayedStreamTimeMs = streamTimeMs + delayMs;
+    const minStartMs = Math.max(0, delayedStreamTimeMs - CEA708_MAX_BACKTRACK_MS);
     cueStartMs = Math.max(minStartMs, cueStartMs);
 
     meta.srtSeq += 1;

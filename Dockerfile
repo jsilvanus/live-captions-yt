@@ -22,11 +22,14 @@ FROM node:20-slim
 WORKDIR /app
 COPY --from=build /app .
 
-# Install ffmpeg when RTMP relay or radio HLS is active
-# (build with --build-arg RTMP_RELAY_ACTIVE=1 or --build-arg RADIO_ACTIVE=1)
+# Install ffmpeg when any feature that uses it is active:
+# RTMP relay, radio HLS, video HLS embed (/stream-hls), or preview thumbnails (/preview).
+# (build with --build-arg RTMP_RELAY_ACTIVE=1, RADIO_ACTIVE=1, HLS_ACTIVE=1, or PREVIEW_ACTIVE=1)
 ARG RTMP_RELAY_ACTIVE=0
 ARG RADIO_ACTIVE=0
-RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ]; then \
+ARG HLS_ACTIVE=0
+ARG PREVIEW_ACTIVE=0
+RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ] || [ "$HLS_ACTIVE" = "1" ] || [ "$PREVIEW_ACTIVE" = "1" ]; then \
       apt-get update && apt-get install -y --no-install-recommends ffmpeg \
       && rm -rf /var/lib/apt/lists/*; \
     fi
@@ -34,6 +37,8 @@ RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ]; then \
 ENV NODE_ENV=production
 ENV RTMP_RELAY_ACTIVE=${RTMP_RELAY_ACTIVE}
 ENV RADIO_ACTIVE=${RADIO_ACTIVE}
+ENV HLS_ACTIVE=${HLS_ACTIVE}
+ENV PREVIEW_ACTIVE=${PREVIEW_ACTIVE}
 
 # Copy process manager entrypoint and make executable, create SQLite data dir
 COPY scripts/entrypoint.sh /entrypoint.sh

@@ -149,7 +149,7 @@ function RelayRow({ entry, onChange, onRemove, t }) {
               min="1" max="120"
               placeholder={t('settings.relay.slotFpsPlaceholder')}
               value={entry.fps ?? ''}
-              onChange={e => onChange({ ...entry, fps: e.target.value ? parseInt(e.target.value, 10) : null })}
+              onChange={e => { const v = parseInt(e.target.value, 10); onChange({ ...entry, fps: Number.isFinite(v) ? v : null }); }}
               style={entry.fps == null ? { opacity: 0.55 } : {}}
             />
           </div>
@@ -211,7 +211,7 @@ function DskRtmpUrlField({ backendUrl, apiKey }) {
     navigator.clipboard?.writeText(rtmpUrl).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    }).catch(() => { setCopied(false); });
   };
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
