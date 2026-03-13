@@ -30,6 +30,7 @@ import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { HlsManager } from './hls-manager.js';
 import { createPreviewRouter } from './routes/preview.js';
 import { PreviewManager } from './preview-manager.js';
+import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -328,6 +329,7 @@ app.use('/viewer', createViewerRouter(db));
 app.use('/radio', createRadioRouter(db, radioManager));
 app.use('/stream-hls', createStreamHlsRouter(db, hlsManager));
 app.use('/preview', createPreviewRouter(previewManager));
+app.use('/dsk-rtmp', createDskRtmpRouter(relayManager));
 app.use('/youtube', createYouTubeRouter(auth));
 
 // ---------------------------------------------------------------------------
