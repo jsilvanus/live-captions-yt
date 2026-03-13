@@ -110,9 +110,17 @@ export class RtmpRelayManager {
 
     /**
      * Per-key metadata: { slots, startedAt, hasCea708, srtSeq }
-     * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number }>}
+     * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number, cea708DelayMs: number }>}
      */
     this._meta = new Map();
+
+    /**
+     * Server-side DSK overlay state: ordered image paths to composite on the relay stream.
+     * Populated by setDskOverlay(); read by start().
+     * For RTMP DSK streams, only `rtmpUrl` is set (no imagePaths).
+     * @type {Map<string, { names: string[], imagePaths: string[], rtmpUrl?: string }>}
+     */
+    this._dskState = new Map();
 
     /** @type {Set<string>} API keys currently publishing in nginx-rtmp */
     this._publishing = new Set();
@@ -132,15 +140,31 @@ export class RtmpRelayManager {
    * Start (or restart) a single ffmpeg process that forwards the source stream for `apiKey`
    * to all provided relay targets via the tee muxer.
    *
-   * If any relay slot has captionMode='cea708', the process uses libx264 re-encoding with the
-   * eia608 subtitle encoder so that CEA-608/708 data is embedded in H.264 SEI NAL units.
-   * Otherwise the stream is forwarded with `-c copy` (no re-encoding).
+   * **CEA-708 mode** (Phase 5): when any relay slot has `captionMode='cea708'` AND the local
+   * ffmpeg binary supports `libx264` + `eia608` + `subrip`, the process re-encodes video with
+   * libx264 and embeds CEA-608/708 caption data from an SRT stdin pipe.  An optional video
+   * delay (`cea708DelayMs`) compensates for speech-to-text latency by shifting the video later
+   * in time so real-time captions appear to arrive early (i.e., in sync with the delayed video).
+   *
+   * **Per-slot transcoding** (Phase 7): when any relay slot carries transcode options
+   * (`scale`, `fps`, `videoBitrate`, `audioBitrate`), ffmpeg uses a `filter_complex` to produce
+   * per-output video streams.  Slots without transcode options use stream copy (`-c:v copy`).
+   *
+   * **Server-side DSK overlay** (Phase 8): when `setDskOverlay()` has been called for this
+   * API key with one or more image paths, ffmpeg composites the images on top of the video in
+   * the specified order (first name = bottom layer, last = top layer) using the `overlay` filter.
+   * SVG images are skipped (ffmpeg does not support SVG input natively).  DSK overlay requires
+   * re-encoding (`libx264`) and is not compatible with CEA-708 mode (CEA-708 takes priority).
+   *
+   * CEA-708 and per-slot transcoding cannot be combined in the same process (the stdin SRT
+   * pipe conflicts with the filter_complex approach).  CEA-708 takes priority if both are set.
    *
    * @param {string} apiKey
-   * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }>} relays
+   * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null }>} relays
+   * @param {{ cea708DelayMs?: number }} [opts]
    * @returns {Promise<void>}
    */
-  start(apiKey, relays) {
+  start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
     return new Promise((resolve, reject) => {
       if (!relays || relays.length === 0) {
         this._stopProc(apiKey);
@@ -155,34 +179,166 @@ export class RtmpRelayManager {
 
       this._stopProc(apiKey);
 
-      // CEA-708 mode disabled for now — force HTTP-only forwarding.
-      const hasCea708 = false;
+      // Determine operating mode.
+      // CEA-708: any slot with captionMode='cea708' AND ffmpeg supports libx264+eia608+subrip.
+      const hasCea708 = !!(
+        (this._ffmpegCaps?.hasLibx264 ?? false) &&
+        (this._ffmpegCaps?.hasEia608  ?? false) &&
+        (this._ffmpegCaps?.hasSubrip  ?? false) &&
+        relays.some(r => r.captionMode === 'cea708')
+      );
 
-      // Build the tee muxer output: "[f=flv]url1|[f=flv]url2|..."
-      const teeTargets = relays
-        .map(r => {
-          const url = r.targetName
-            ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}`
-            : r.targetUrl;
-          return `[f=flv]${url}`;
-        })
-        .join('|');
+      // Per-slot transcoding: any slot with scale/fps/videoBitrate/audioBitrate set.
+      // Not compatible with CEA-708 (takes priority below).
+      const hasTranscode = !hasCea708 && relays.some(
+        r => r.scale || r.fps != null || r.videoBitrate || r.audioBitrate
+      );
+
+      // Server-side DSK overlay: images composite on top of the video in metacode order.
+      // Not compatible with CEA-708 (CEA-708 takes priority).
+      // Not compatible with per-slot transcoding (each slot gets its own video stream; skip DSK there).
+      const dskState = !hasCea708 && !hasTranscode ? (this._dskState.get(apiKey) ?? null) : null;
+      const hasDsk = !!(dskState && (dskState.imagePaths?.length > 0 || dskState.rtmpUrl));
 
       const src = sourceUrl(apiKey);
       const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
-      console.log(`[rtmp] Starting relay (tee, ${relays.length} slot(s), cea708=${hasCea708}): ${src} -> ${teeTargets}`);
+      console.log(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}, dsk=${hasDsk}): ${src}`);
 
       let args;
-      // HTTP mode: forward without re-encoding (copy streams)
-      args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
+      let stdinMode = 'ignore';
+
+      if (hasCea708) {
+        // ── CEA-708 mode ───────────────────────────────────────────────────
+        // Input 0: RTMP source; Input 1: SRT captions from stdin (pipe:0)
+        args = ['-re', '-i', src, '-f', 'subrip', '-i', 'pipe:0'];
+
+        if (cea708DelayMs > 0) {
+          // Delay video and audio to compensate for STT latency.
+          // The delay is specified in seconds to the setpts/asetpts filters.
+          const delayS = cea708DelayMs / 1000;
+          args.push('-vf', `setpts=PTS+(${delayS}/TB)`, '-af', `asetpts=PTS+(${delayS}/TB)`);
+          args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+          // Re-encode audio too so the delay filter is applied
+          args.push('-c:a', 'aac', '-b:a', '128k');
+        } else {
+          args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+          args.push('-c:a', 'copy');
+        }
+
+        args.push('-c:s', 'eia608');
+        args.push('-map', '0:v', '-map', '0:a', '-map', '1:s');
+
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        args.push('-f', 'tee', teeTargets);
+        stdinMode = 'pipe';
+
+      } else if (hasTranscode) {
+        // ── Per-slot transcoding mode (Phase 7) ────────────────────────────
+        // Build filter_complex: split video into N streams, apply per-slot transforms.
+        const N = relays.length;
+        const filterParts = [`[0:v]split=${N}${relays.map((_, i) => `[v${i}]`).join('')}`];
+        const videoLabels = [];
+
+        for (let i = 0; i < N; i++) {
+          const r = relays[i];
+          const filters = [];
+          if (r.scale) filters.push(`scale=${r.scale.replace(/x/, ':')}`); // stored as WxH; ffmpeg wants W:H
+          if (r.fps != null) filters.push(`fps=fps=${r.fps}`);
+
+          if (filters.length > 0) {
+            filterParts.push(`[v${i}]${filters.join(',')}[vout${i}]`);
+            videoLabels.push(`[vout${i}]`);
+          } else {
+            videoLabels.push(`[v${i}]`);
+          }
+        }
+
+        args = ['-re', '-i', src, '-filter_complex', filterParts.join('; ')];
+
+        // Map per-slot video and audio streams
+        for (let i = 0; i < N; i++) {
+          args.push('-map', videoLabels[i]);
+          args.push('-map', '0:a:0');
+        }
+
+        // Per-stream codec options.
+        // NOTE: All video outputs come from the filter_complex (split filter), so stream-copy
+        // is not possible for any video stream — filtergraph outputs must be re-encoded.
+        // Audio is mapped directly from input (0:a:0) and can still be copied.
+        for (let i = 0; i < N; i++) {
+          const r = relays[i];
+          args.push(`-c:v:${i}`, 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+          if (r.videoBitrate) args.push(`-b:v:${i}`, r.videoBitrate);
+          if (r.audioBitrate) {
+            args.push(`-c:a:${i}`, 'aac', `-b:a:${i}`, r.audioBitrate);
+          } else {
+            args.push(`-c:a:${i}`, 'copy');
+          }
+        }
+
+        const teeTargets = relays.map((r, i) => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv:select=v:${i}+a:${i}]${url}`;
+        }).join('|');
+        args.push('-f', 'tee', teeTargets);
+
+      } else if (hasDsk) {
+        // ── Server-side DSK overlay mode (Phase 8) ─────────────────────────
+        if (dskState.rtmpUrl) {
+          // RTMP stream as DSK source (e.g. from OBS pushing to rtmp://server/dsk/<key>)
+          args = ['-re', '-i', src, '-re', '-i', dskState.rtmpUrl];
+          args.push('-filter_complex', '[0:v][1:v]overlay=0:0:shortest=1[ovout]');
+        } else {
+          // Static image files as DSK source
+          args = ['-re', '-i', src];
+          for (const imgPath of dskState.imagePaths) {
+            args.push('-i', imgPath);
+          }
+
+          // Build the overlay chain: [0:v][1:v]overlay=0:0[odsk0]; [odsk0][2:v]overlay=0:0[odsk1] ...
+          // The first listed image is the bottom layer; the last is the top layer.
+          const N = dskState.imagePaths.length;
+          const filterParts = [];
+          let prevLabel = '[0:v]';
+          for (let i = 0; i < N; i++) {
+            const imgLabel = `[${i + 1}:v]`;
+            const outLabel = i < N - 1 ? `[odsk${i}]` : '[ovout]';
+            filterParts.push(`${prevLabel}${imgLabel}overlay=0:0${outLabel}`);
+            prevLabel = outLabel;
+          }
+
+          args.push('-filter_complex', filterParts.join('; '));
+        }
+
+        args.push('-map', '[ovout]', '-map', '0:a');
+        args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
+        args.push('-c:a', 'copy');
+
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        args.push('-f', 'tee', teeTargets);
+
+      } else {
+        // ── Simple stream copy mode (Phase 1) ─────────────────────────────
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
+      }
 
       const proc = spawn('ffmpeg', args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: [stdinMode, 'pipe', 'pipe'],
       });
 
       const startedAt = new Date();
       this._procs.set(apiKey, proc);
-      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, srtSeq: 0, captionsSent: 0 });
+      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs });
 
       for (const r of relays) {
         this._onStreamStarted?.(apiKey, r.slot, {
@@ -241,10 +397,11 @@ export class RtmpRelayManager {
    * Alias for start() — starts one process for all relay slots via tee muxer.
    * @param {string} apiKey
    * @param {Array<{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }>} relays
+   * @param {{ cea708DelayMs?: number }} [opts]
    * @returns {Promise<void>}
    */
-  startAll(apiKey, relays) {
-    return this.start(apiKey, relays);
+  startAll(apiKey, relays, opts) {
+    return this.start(apiKey, relays, opts);
   }
 
   /**
@@ -301,8 +458,68 @@ export class RtmpRelayManager {
    * @returns {boolean}  true if cue was written, false if not in CEA-708 mode or pipe unavailable
    */
   writeCaption(apiKey, text, { speechStart, timestamp } = {}) {
-    // CEA-708 disabled: no-op writeCaption and return false.
-    return false;
+    if (!this.hasCea708(apiKey)) return false;
+
+    const proc = this._procs.get(apiKey);
+    if (!proc || !proc.stdin || proc.stdin.destroyed) return false;
+
+    const meta = this._meta.get(apiKey);
+    if (!meta) return false;
+
+    const now = Date.now();
+    const streamTimeMs = now - meta.startedAt.getTime();
+
+    /**
+     * Convert a wall-clock timestamp value to ms-since-stream-start.
+     * @param {Date|string|number} val
+     * @returns {number}
+     */
+    function toStreamMs(val) {
+      if (val instanceof Date) return val.getTime() - meta.startedAt.getTime();
+      if (typeof val === 'string') return new Date(val).getTime() - meta.startedAt.getTime();
+      if (typeof val === 'number') {
+        // Values >= 1e12 are treated as Unix epoch ms (wall-clock);
+        // smaller values are already stream-relative ms (elapsed since stream start).
+        return val >= 1e12 ? val - meta.startedAt.getTime() : val;
+      }
+      return streamTimeMs;
+    }
+
+    // The video stream is delayed by cea708DelayMs via the setpts filter, so caption cue
+    // timestamps must be shifted forward by the same amount to align with the delayed frames.
+    const delayMs = meta.cea708DelayMs || 0;
+
+    let cueStartMs;
+    if (speechStart !== undefined && speechStart !== null) {
+      // VAD onset — use as cue start, shifted by video delay
+      cueStartMs = Math.max(0, toStreamMs(speechStart) + delayMs);
+    } else if (timestamp !== undefined && timestamp !== null) {
+      // ASR finalisation minus pre-roll offset, shifted by video delay
+      cueStartMs = Math.max(0, toStreamMs(timestamp) - CEA708_OFFSET_MS + delayMs);
+    } else {
+      // No timing info — shift back from current stream time, compensating for video delay
+      cueStartMs = Math.max(0, streamTimeMs - CEA708_OFFSET_MS + delayMs);
+    }
+
+    // Don't backtrack too far — decoders typically discard stale SEI data.
+    // The reference point is the delayed stream time (current video PTS seen by the decoder).
+    const delayedStreamTimeMs = streamTimeMs + delayMs;
+    const minStartMs = Math.max(0, delayedStreamTimeMs - CEA708_MAX_BACKTRACK_MS);
+    cueStartMs = Math.max(minStartMs, cueStartMs);
+
+    meta.srtSeq += 1;
+    meta.captionsSent = (meta.captionsSent || 0) + 1;
+    const cue = buildSrtCue(meta.srtSeq, cueStartMs, CEA708_DURATION_MS, text);
+
+    try {
+      proc.stdin.write(cue);
+      return true;
+    } catch (err) {
+      if (err.code !== 'EPIPE') {
+        console.error(`[rtmp] Failed to write CEA-708 cue for ${apiKey.slice(0, 8)}: ${err.message}`);
+      }
+      return false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -352,7 +569,88 @@ export class RtmpRelayManager {
    * @param {string} apiKey
    * @returns {boolean}
    */
-  hasCea708(apiKey) { return false; }
+  hasCea708(apiKey) { return this._meta.get(apiKey)?.hasCea708 ?? false; }
+
+  /**
+   * Return true if the running process has an active server-side DSK overlay.
+   * @param {string} apiKey
+   * @returns {boolean}
+   */
+  hasDsk(apiKey) { return this._meta.get(apiKey)?.hasDsk ?? false; }
+
+  /**
+   * Return the ordered list of DSK shorthand names currently overlaid on the stream.
+   * First element = bottom layer; last element = top layer.
+   * Returns an empty array when no DSK is active.
+   * @param {string} apiKey
+   * @returns {string[]}
+   */
+  dskNames(apiKey) { return this._meta.get(apiKey)?.dskNames ?? []; }
+
+  /**
+   * Update the server-side DSK overlay for an API key and restart the relay if running.
+   *
+   * Call this whenever a `<!-- graphics:... -->` code is received.  Pass an empty `names`
+   * array (or `imagePaths` of length 0) to clear the overlay and return to copy mode.
+   *
+   * Images are composited in the order they appear in `imagePaths` (first = bottom layer).
+   * SVG images should be excluded by the caller — ffmpeg cannot overlay SVG natively.
+   *
+   * @param {string} apiKey
+   * @param {string[]} names        Shorthand names in metacode order (for metadata tracking)
+   * @param {string[]} imagePaths   Absolute paths to raster image files (PNG/WebP), same order
+   * @returns {Promise<void>}
+   */
+  async setDskOverlay(apiKey, names, imagePaths) {
+    const effective = imagePaths.filter(Boolean);
+    if (effective.length === 0) {
+      this._dskState.delete(apiKey);
+    } else {
+      this._dskState.set(apiKey, { names, imagePaths: effective });
+    }
+
+    // Restart the relay with the updated overlay if it is currently running.
+    // This will cause a brief (~0.5 s) stream interruption at the DSK change point,
+    // which is acceptable — DSK changes happen at known cue points, not continuously.
+    if (this.isRunning(apiKey)) {
+      const meta = this._meta.get(apiKey);
+      if (meta) {
+        try {
+          await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
+        } catch (err) {
+          console.error(`[rtmp] Failed to restart relay after DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
+        }
+      }
+    }
+  }
+
+  /**
+   * Set an RTMP stream as the server-side DSK overlay source for an API key.
+   * Call this when an OBS/broadcaster publishes to the backend's DSK nginx-rtmp endpoint.
+   * Pass `null` for `rtmpUrl` to clear the RTMP DSK overlay.
+   *
+   * @param {string} apiKey     The API key that owns the relay
+   * @param {string|null} rtmpUrl  Full RTMP URL of the DSK source (e.g. rtmp://127.0.0.1:1935/dsk/mykey)
+   * @returns {Promise<void>}
+   */
+  async setDskRtmpSource(apiKey, rtmpUrl) {
+    if (!rtmpUrl) {
+      this._dskState.delete(apiKey);
+    } else {
+      this._dskState.set(apiKey, { names: ['rtmp-dsk'], imagePaths: [], rtmpUrl });
+    }
+
+    if (this.isRunning(apiKey)) {
+      const meta = this._meta.get(apiKey);
+      if (meta) {
+        try {
+          await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
+        } catch (err) {
+          console.error(`[rtmp] Failed to restart relay after RTMP DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
+        }
+      }
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Public: nginx-rtmp publish tracking

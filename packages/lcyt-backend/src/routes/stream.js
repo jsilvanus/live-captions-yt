@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats } from '../db.js';
+import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey } from '../db.js';
 
 const MAX_RELAY_SLOTS = 4;
 
@@ -51,17 +51,43 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
   }
 
   function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode } = req.body || {};
+    const { targetUrl, targetName, captionMode, scale, fps, videoBitrate, audioBitrate } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
     }
-    const validModes = ['http'];
+    const validModes = ['http', 'cea708'];
     const resolvedMode = validModes.includes(captionMode) ? captionMode : 'http';
+
+    // Validate optional per-slot transcode options
+    let resolvedScale = null;
+    if (scale !== undefined && scale !== null && scale !== '') {
+      if (typeof scale !== 'string' || !/^\d+[x:]\d+$/.test(scale)) {
+        res.status(400).json({ error: 'scale must be a string like "1280x720" or "1280:720"' });
+        return null;
+      }
+      resolvedScale = scale.replace(':', 'x'); // normalise to WxH
+    }
+    let resolvedFps = null;
+    if (fps !== undefined && fps !== null && fps !== '') {
+      const n = Number(fps);
+      if (!Number.isInteger(n) || n < 1 || n > 120) {
+        res.status(400).json({ error: 'fps must be an integer between 1 and 120' });
+        return null;
+      }
+      resolvedFps = n;
+    }
+    const resolvedVideoBitrate = (typeof videoBitrate === 'string' && videoBitrate.trim()) ? videoBitrate.trim() : null;
+    const resolvedAudioBitrate = (typeof audioBitrate === 'string' && audioBitrate.trim()) ? audioBitrate.trim() : null;
+
     return {
-      targetUrl:   targetUrl.trim(),
-      targetName:  (typeof targetName === 'string' && targetName.trim()) ? targetName.trim() : null,
-      captionMode: resolvedMode,
+      targetUrl:    targetUrl.trim(),
+      targetName:   (typeof targetName === 'string' && targetName.trim()) ? targetName.trim() : null,
+      captionMode:  resolvedMode,
+      scale:        resolvedScale,
+      fps:          resolvedFps,
+      videoBitrate: resolvedVideoBitrate,
+      audioBitrate: resolvedAudioBitrate,
     };
   }
 
@@ -91,8 +117,12 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
 
     try {
       const relay = upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
-        targetName:  fields.targetName,
-        captionMode: fields.captionMode,
+        targetName:   fields.targetName,
+        captionMode:  fields.captionMode,
+        scale:        fields.scale,
+        fps:          fields.fps,
+        videoBitrate: fields.videoBitrate,
+        audioBitrate: fields.audioBitrate,
       });
       return res.status(201).json({ ok: true, relay });
     } catch (err) {
@@ -136,7 +166,9 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         const relays = getRelays(db, apiKey);
         if (relays.length > 0) {
           try {
-            await relayManager.startAll(apiKey, relays);
+            const keyRow = getKey(db, apiKey);
+            const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
+            await relayManager.startAll(apiKey, relays, { cea708DelayMs });
           } catch (err) {
             console.warn(`[stream] Failed to start fan-out on relay activate: ${err.message}`);
           }
@@ -168,8 +200,12 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
     if (!fields) return;
     try {
       const relay = upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
-        targetName:  fields.targetName,
-        captionMode: fields.captionMode,
+        targetName:   fields.targetName,
+        captionMode:  fields.captionMode,
+        scale:        fields.scale,
+        fps:          fields.fps,
+        videoBitrate: fields.videoBitrate,
+        audioBitrate: fields.audioBitrate,
       });
       return res.status(200).json({ ok: true, relay });
     } catch (err) {
@@ -191,7 +227,9 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
       if (remaining.length > 0) {
         // Restart the single ffmpeg process with the remaining tee targets.
         try {
-          await relayManager.start(apiKey, remaining);
+          const keyRow = getKey(db, apiKey);
+          const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
+          await relayManager.start(apiKey, remaining, { cea708DelayMs });
         } catch (err) {
           console.warn(`[stream] Failed to restart relay after slot ${slot} removal: ${err.message}`);
         }

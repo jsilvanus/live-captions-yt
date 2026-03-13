@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { isRelayAllowed, isRelayActive, getRelays } from '../db.js';
+import { isRelayAllowed, isRelayActive, getRelays, getKey } from '../db.js';
 
 /**
  * Factory for the /rtmp router.
@@ -68,7 +68,9 @@ export function createRtmpRouter(db, relayManager) {
         const relays = getRelays(db, apiKey);
         if (relays.length > 0) {
           try {
-            await relayManager.startAll(apiKey, relays);
+            const keyRow = getKey(db, apiKey);
+            const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
+            await relayManager.startAll(apiKey, relays, { cea708DelayMs });
           } catch (err) {
             console.error(`[rtmp] Failed to start relay fan-out for ${apiKey.slice(0, 8)}…: ${err.message}`);
           }

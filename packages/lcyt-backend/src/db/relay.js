@@ -13,6 +13,52 @@ export function isRelayAllowed(db, apiKey) {
   return row ? row.relay_allowed === 1 : false;
 }
 
+// ─── Radio (RTMP → audio-only HLS) ───────────────────────────────────────────
+
+/**
+ * Check whether the audio-only HLS "radio" feature is enabled for an API key.
+ * The api_key must have radio_enabled = 1 (set by admin via PATCH /keys/:key).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isRadioEnabled(db, apiKey) {
+  const row = db.prepare('SELECT radio_enabled FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.radio_enabled === 1 : false;
+}
+
+// ─── HLS (RTMP → video+audio HLS embed) ──────────────────────────────────────
+
+/**
+ * Check whether the video+audio HLS embed feature is enabled for an API key.
+ * The api_key must have hls_enabled = 1 (set by admin via PATCH /keys/:key).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {boolean}
+ */
+export function isHlsEnabled(db, apiKey) {
+  const row = db.prepare('SELECT hls_enabled FROM api_keys WHERE key = ?').get(apiKey);
+  return row ? row.hls_enabled === 1 : false;
+}
+
+// ─── Per-key CORS origin for embeddable player endpoints ──────────────────────
+
+/**
+ * Get the CORS `Access-Control-Allow-Origin` value for the embeddable player.js
+ * and HLS endpoints of an API key.  Defaults to `'*'` (allow all origins) when
+ * the key does not exist or the column is NULL.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {string}  e.g. `'*'` or `'https://example.com'`
+ */
+export function getEmbedCors(db, apiKey) {
+  const row = db.prepare('SELECT embed_cors FROM api_keys WHERE key = ?').get(apiKey);
+  return row?.embed_cors || '*';
+}
+
 /**
  * Check whether the user has activated the RTMP relay for this key.
  * relay_active is a user-controlled toggle (set via PUT /stream/active).
@@ -47,14 +93,19 @@ export function setRelayActive(db, apiKey, active) {
  */
 function formatRelayRow(row) {
   return {
-    id:          row.id,
-    apiKey:      row.api_key,
-    slot:        row.slot,
-    targetUrl:   row.target_url,
-    targetName:  row.target_name  || null,
-    captionMode: row.caption_mode || 'http',
-    createdAt:   row.created_at,
-    updatedAt:   row.updated_at,
+    id:           row.id,
+    apiKey:       row.api_key,
+    slot:         row.slot,
+    targetUrl:    row.target_url,
+    targetName:   row.target_name  || null,
+    captionMode:  row.caption_mode || 'http',
+    // Per-slot transcoding options (null = use stream copy for this slot)
+    scale:        row.scale        || null,
+    fps:          row.fps          ?? null,
+    videoBitrate: row.video_bitrate || null,
+    audioBitrate: row.audio_bitrate || null,
+    createdAt:    row.created_at,
+    updatedAt:    row.updated_at,
   };
 }
 
@@ -109,22 +160,26 @@ export function buildRelayFfmpegUrl(relay) {
  * @param {string} apiKey
  * @param {number} slot  1-4
  * @param {string} targetUrl
- * @param {{ targetName?: string|null, captionMode?: string }} [opts]
+ * @param {{ targetName?: string|null, captionMode?: string, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null }} [opts]
  * @returns {object}
  */
-export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http' } = {}) {
+export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', scale = null, fps = null, videoBitrate = null, audioBitrate = null } = {}) {
   if (!Number.isInteger(slot) || slot < 1 || slot > MAX_RELAY_SLOTS) {
     throw new RangeError(`slot must be an integer 1-${MAX_RELAY_SLOTS}, got ${slot}`);
   }
   db.prepare(`
-    INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode, scale, fps, video_bitrate, audio_bitrate)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(api_key, slot) DO UPDATE SET
       target_url   = excluded.target_url,
       target_name  = excluded.target_name,
       caption_mode = excluded.caption_mode,
+      scale        = excluded.scale,
+      fps          = excluded.fps,
+      video_bitrate = excluded.video_bitrate,
+      audio_bitrate = excluded.audio_bitrate,
       updated_at   = datetime('now')
-  `).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http');
+  `).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http', scale || null, fps ?? null, videoBitrate || null, audioBitrate || null);
   return getRelaySlot(db, apiKey, slot);
 }
 

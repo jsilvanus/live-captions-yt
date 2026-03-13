@@ -12,6 +12,7 @@ import {
   deleteImage,
   getTotalImageStorageBytes,
   isShorthandTaken,
+  safeApiKey,
 } from '../db.js';
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
@@ -29,13 +30,12 @@ const MAX_STORAGE_BYTES = Number(process.env.GRAPHICS_MAX_STORAGE_BYTES) || 50 *
 const SHORTHAND_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$/;
 
 /**
- * Derive a safe per-key subdirectory name (same convention as caption files).
+ * Ensure the per-key image subdirectory exists and return its absolute path.
  * @param {string} apiKey
  * @returns {string} absolute directory path
  */
 function ensureImageDir(apiKey) {
-  const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-  const dir = join(GRAPHICS_BASE_DIR, safe);
+  const dir = join(GRAPHICS_BASE_DIR, safeApiKey(apiKey));
   mkdirSync(dir, { recursive: true });
   return dir;
 }

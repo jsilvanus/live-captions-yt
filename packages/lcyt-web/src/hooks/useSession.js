@@ -529,20 +529,30 @@ export function useSession({
   /**
    * Configure (create / replace) the relay target.
    * Requires relay_allowed on the API key.
-   * @param {{ slot?: number, targetUrl: string, targetName?: string|null, captionMode?: string }} opts
+   * @param {{ slot?: number, targetUrl: string, targetName?: string|null, captionMode?: string, scale?: string, fps?: number, videoBitrate?: string, audioBitrate?: string }} opts
    */
-  async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
+  async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', scale, fps, videoBitrate, audioBitrate } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    return api.post('/stream', { slot, targetUrl, targetName, captionMode });
+    const body = { slot, targetUrl, targetName, captionMode };
+    if (scale) body.scale = scale;
+    if (fps != null) body.fps = fps;
+    if (videoBitrate) body.videoBitrate = videoBitrate;
+    if (audioBitrate) body.audioBitrate = audioBitrate;
+    return api.post('/stream', body);
   }
 
   /**
    * Update an existing relay slot.
-   * @param {{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string }} opts
+   * @param {{ slot: number, targetUrl: string, targetName?: string|null, captionMode?: string, scale?: string, fps?: number, videoBitrate?: string, audioBitrate?: string }} opts
    */
-  async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http' } = {}) {
+  async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', scale, fps, videoBitrate, audioBitrate } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    return api.put(`/stream/${slot}`, { targetUrl, targetName, captionMode });
+    const body = { targetUrl, targetName, captionMode };
+    if (scale) body.scale = scale;
+    if (fps != null) body.fps = fps;
+    if (videoBitrate) body.videoBitrate = videoBitrate;
+    if (audioBitrate) body.audioBitrate = audioBitrate;
+    return api.put(`/stream/${slot}`, body);
   }
 
   /**

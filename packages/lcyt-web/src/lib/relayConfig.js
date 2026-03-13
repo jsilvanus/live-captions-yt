@@ -79,10 +79,65 @@ export function getSlotCaptionMode(slot) {
   try { return localStorage.getItem(slotKey(slot, 'caption-mode')) || 'http'; } catch { return 'http'; }
 }
 
-/** @param {number} slot @param {'http'} mode */
+/** @param {number} slot @param {'http'|'cea708'} mode */
 export function setSlotCaptionMode(slot, mode) {
   if (slot === 1) { try { localStorage.setItem(KEY_CAPTION_MODE, mode); } catch {} return; }
   try { localStorage.setItem(slotKey(slot, 'caption-mode'), mode); } catch {}
+}
+
+/** @param {number} slot */
+export function getSlotScale(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'scale')) || ''; } catch { return ''; }
+}
+
+/** @param {number} slot @param {string} scale */
+export function setSlotScale(slot, scale) {
+  try {
+    if (scale) { localStorage.setItem(slotKey(slot, 'scale'), scale); }
+    else { localStorage.removeItem(slotKey(slot, 'scale')); }
+  } catch {}
+}
+
+/** @param {number} slot */
+export function getSlotFps(slot) {
+  try {
+    const v = localStorage.getItem(slotKey(slot, 'fps'));
+    return v ? parseInt(v, 10) : null;
+  } catch { return null; }
+}
+
+/** @param {number} slot @param {number|null} fps */
+export function setSlotFps(slot, fps) {
+  try {
+    if (fps != null) { localStorage.setItem(slotKey(slot, 'fps'), String(fps)); }
+    else { localStorage.removeItem(slotKey(slot, 'fps')); }
+  } catch {}
+}
+
+/** @param {number} slot */
+export function getSlotVideoBitrate(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'video-bitrate')) || ''; } catch { return ''; }
+}
+
+/** @param {number} slot @param {string} bitrate */
+export function setSlotVideoBitrate(slot, bitrate) {
+  try {
+    if (bitrate) { localStorage.setItem(slotKey(slot, 'video-bitrate'), bitrate); }
+    else { localStorage.removeItem(slotKey(slot, 'video-bitrate')); }
+  } catch {}
+}
+
+/** @param {number} slot */
+export function getSlotAudioBitrate(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'audio-bitrate')) || ''; } catch { return ''; }
+}
+
+/** @param {number} slot @param {string} bitrate */
+export function setSlotAudioBitrate(slot, bitrate) {
+  try {
+    if (bitrate) { localStorage.setItem(slotKey(slot, 'audio-bitrate'), bitrate); }
+    else { localStorage.removeItem(slotKey(slot, 'audio-bitrate')); }
+  } catch {}
 }
 
 /** Remove all localStorage keys for a slot. */
@@ -95,6 +150,8 @@ export function clearSlot(slot) {
       ['type', 'yt-key', 'generic-url', 'generic-name', 'caption-mode']
         .forEach(f => localStorage.removeItem(slotKey(slot, f)));
     }
+    ['scale', 'fps', 'video-bitrate', 'audio-bitrate']
+      .forEach(f => localStorage.removeItem(slotKey(slot, f)));
   } catch {}
 }
 
@@ -128,16 +185,20 @@ export const MAX_RELAY_SLOTS = 4;
 /**
  * Get config for a specific slot.
  * @param {number} slot 1-4
- * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode }}
+ * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate }}
  */
 export function getSlotConfig(slot) {
   return {
     slot,
-    targetType:  getSlotTargetType(slot),
-    youtubeKey:  getSlotYoutubeKey(slot),
-    genericUrl:  getSlotGenericUrl(slot),
-    genericName: getSlotGenericName(slot),
-    captionMode: getSlotCaptionMode(slot),
+    targetType:   getSlotTargetType(slot),
+    youtubeKey:   getSlotYoutubeKey(slot),
+    genericUrl:   getSlotGenericUrl(slot),
+    genericName:  getSlotGenericName(slot),
+    captionMode:  getSlotCaptionMode(slot),
+    scale:        getSlotScale(slot),
+    fps:          getSlotFps(slot),
+    videoBitrate: getSlotVideoBitrate(slot),
+    audioBitrate: getSlotAudioBitrate(slot),
   };
 }
 

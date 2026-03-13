@@ -24,6 +24,13 @@ import { createStreamRouter } from './routes/stream.js';
 import { createViewerRouter } from './routes/viewer.js';
 import { createIconRouter } from './routes/icons.js';
 import { createYouTubeRouter } from './routes/youtube.js';
+import { createRadioRouter } from './routes/radio.js';
+import { RadioManager } from './radio-manager.js';
+import { createStreamHlsRouter } from './routes/stream-hls.js';
+import { HlsManager } from './hls-manager.js';
+import { createPreviewRouter } from './routes/preview.js';
+import { PreviewManager } from './preview-manager.js';
+import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -151,6 +158,18 @@ const relayManager = new RtmpRelayManager({
     }
   },
 });
+
+// Radio manager: RTMP → audio-only HLS.
+// Always instantiated (no capability flag), but ffmpeg must be installed.
+const radioManager = new RadioManager();
+
+// HLS manager: RTMP → video+audio HLS embed.
+// Always instantiated; ffmpeg must be installed.
+const hlsManager = new HlsManager();
+
+// Preview manager: RTMP → JPEG thumbnail (incoming stream preview).
+// Always instantiated; ffmpeg must be installed.
+const previewManager = new PreviewManager();
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -307,10 +326,14 @@ app.use('/dsk', createDskRouter(db, store));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
+app.use('/radio', createRadioRouter(db, radioManager));
+app.use('/stream-hls', createStreamHlsRouter(db, hlsManager));
+app.use('/preview', createPreviewRouter(previewManager));
+app.use('/dsk-rtmp', createDskRtmpRouter(relayManager));
 app.use('/youtube', createYouTubeRouter(auth));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager };
+export { app, db, store, relayManager, radioManager, hlsManager, previewManager };
