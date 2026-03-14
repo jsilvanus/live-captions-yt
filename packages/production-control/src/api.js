@@ -11,6 +11,7 @@ import { Router } from 'express';
 import { runMigrations } from './db.js';
 import { DeviceRegistry } from './registry.js';
 import { createCamerasRouter } from './routes/cameras.js';
+import { createMixersRouter } from './routes/mixers.js';
 
 /**
  * Run DB migrations and start the device registry.
@@ -38,8 +39,8 @@ export function createProductionRouter(db, registry) {
   const router = Router();
 
   router.use('/cameras', createCamerasRouter(db, registry));
+  router.use('/mixers', createMixersRouter(db, registry));
 
-  // Phase 2: router.use('/mixers', createMixersRouter(db, registry));
   // Phase 4: router.use('/bridge', createBridgeRouter(db));
 
   return router;

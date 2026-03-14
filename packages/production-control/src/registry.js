@@ -6,6 +6,7 @@
 
 import * as amxAdapter from './adapters/camera/amx.js';
 import * as noneAdapter from './adapters/camera/none.js';
+import * as rolandAdapter from './adapters/mixer/roland.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
@@ -17,7 +18,8 @@ const CAMERA_ADAPTERS = {
 };
 
 const MIXER_ADAPTERS = {
-  // Phase 2+: roland, atem, obs
+  roland: rolandAdapter,
+  // Phase 6+: atem, obs
 };
 
 /**
@@ -52,9 +54,9 @@ export class DeviceRegistry {
    */
   constructor(db) {
     this._db = db;
-    /** @type {Map<string, object>} cameraId → connection handle */
+    /** @type {Map<string, { adapter: object, handle: object }>} cameraId → entry */
     this._cameraConnections = new Map();
-    /** @type {Map<string, object>} mixerId → connection handle */
+    /** @type {Map<string, { adapter: object, handle: object }>} mixerId → entry */
     this._mixerConnections = new Map();
   }
 
@@ -84,15 +86,19 @@ export class DeviceRegistry {
   /** Gracefully disconnect all devices. */
   async stop() {
     const cameraDisconnects = [...this._cameraConnections.entries()].map(async ([id, { adapter, handle }]) => {
-      try { await adapter.disconnect(handle); } catch (e) { /* ignore */ }
+      try { await adapter.disconnect(handle); } catch { /* ignore */ }
       this._cameraConnections.delete(id);
     });
     const mixerDisconnects = [...this._mixerConnections.entries()].map(async ([id, { adapter, handle }]) => {
-      try { await adapter.disconnect(handle); } catch (e) { /* ignore */ }
+      try { await adapter.disconnect(handle); } catch { /* ignore */ }
       this._mixerConnections.delete(id);
     });
     await Promise.all([...cameraDisconnects, ...mixerDisconnects]);
   }
+
+  // ---------------------------------------------------------------------------
+  // Camera operations
+  // ---------------------------------------------------------------------------
 
   /**
    * Trigger a preset for a camera by id.
@@ -113,7 +119,7 @@ export class DeviceRegistry {
   async reloadCamera(cameraId) {
     const existing = this._cameraConnections.get(cameraId);
     if (existing) {
-      try { await existing.adapter.disconnect(existing.handle); } catch (e) { /* ignore */ }
+      try { await existing.adapter.disconnect(existing.handle); } catch { /* ignore */ }
       this._cameraConnections.delete(cameraId);
     }
     const camera = this._loadCamera(cameraId);
@@ -127,8 +133,71 @@ export class DeviceRegistry {
   async removeCamera(cameraId) {
     const existing = this._cameraConnections.get(cameraId);
     if (existing) {
-      try { await existing.adapter.disconnect(existing.handle); } catch (e) { /* ignore */ }
+      try { await existing.adapter.disconnect(existing.handle); } catch { /* ignore */ }
       this._cameraConnections.delete(cameraId);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mixer operations
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Switch the program source on a mixer.
+   * @param {string} mixerId
+   * @param {number} inputNumber  1-based input number
+   */
+  async switchSource(mixerId, inputNumber) {
+    const mixer = this._loadMixer(mixerId);
+    const entry = this._mixerConnections.get(mixerId);
+    if (!entry) throw new Error(`No connection for mixer '${mixer.name}'`);
+    await entry.adapter.switchSource(entry.handle, inputNumber);
+  }
+
+  /**
+   * Return the active program source for a mixer, or null if unknown.
+   * @param {string} mixerId
+   * @returns {number|null}
+   */
+  getActiveSource(mixerId) {
+    const entry = this._mixerConnections.get(mixerId);
+    if (!entry) return null;
+    return entry.adapter.getActiveSource(entry.handle);
+  }
+
+  /**
+   * Return whether a mixer TCP connection is currently established.
+   * @param {string} mixerId
+   * @returns {boolean}
+   */
+  isMixerConnected(mixerId) {
+    const entry = this._mixerConnections.get(mixerId);
+    return entry?.handle?.connected === true;
+  }
+
+  /**
+   * Reload a single mixer's connection (e.g. after config update).
+   * @param {string} mixerId
+   */
+  async reloadMixer(mixerId) {
+    const existing = this._mixerConnections.get(mixerId);
+    if (existing) {
+      try { await existing.adapter.disconnect(existing.handle); } catch { /* ignore */ }
+      this._mixerConnections.delete(mixerId);
+    }
+    const mixer = this._loadMixer(mixerId);
+    await this._connectMixer(mixer);
+  }
+
+  /**
+   * Remove a mixer connection (e.g. after deletion).
+   * @param {string} mixerId
+   */
+  async removeMixer(mixerId) {
+    const existing = this._mixerConnections.get(mixerId);
+    if (existing) {
+      try { await existing.adapter.disconnect(existing.handle); } catch { /* ignore */ }
+      this._mixerConnections.delete(mixerId);
     }
   }
 
@@ -160,6 +229,12 @@ export class DeviceRegistry {
     const row = this._db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(cameraId);
     if (!row) throw new Error(`Camera not found: ${cameraId}`);
     return parseCamera(row);
+  }
+
+  _loadMixer(mixerId) {
+    const row = this._db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(mixerId);
+    if (!row) throw new Error(`Mixer not found: ${mixerId}`);
+    return parseMixer(row);
   }
 }
 

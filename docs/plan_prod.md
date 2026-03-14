@@ -199,7 +199,7 @@ Goal: operator can switch the active video source on the Roland mixer. Tapping a
 ### Tasks
 
 #### 2.1 Roland adapter
-- [ ] Implement `src/adapters/mixer/roland.js`
+- [x] Implement `src/adapters/mixer/roland.js`
   - TCP connection to Roland V-series (host + port from `connectionConfig`)
   - `switchSource(connection, inputNumber)` — send Roland TCP command
   - `getActiveSource(connection)` — maintain or poll current active input state
@@ -207,26 +207,27 @@ Goal: operator can switch the active video source on the Roland mixer. Tapping a
   - Reconnect logic
 
 #### 2.2 REST API — mixers and switching
-- [ ] `GET    /production/mixers` — list configured mixers
-- [ ] `POST   /production/mixers` — create mixer
-- [ ] `PUT    /production/mixers/:id` — update mixer
-- [ ] `DELETE /production/mixers/:id` — delete mixer
-- [ ] `POST   /production/mixers/:id/switch/:inputNumber` — switch source
-- [ ] `GET    /production/mixers/:id/active` — current active input
+- [x] `GET    /production/mixers` — list configured mixers
+- [x] `POST   /production/mixers` — create mixer
+- [x] `PUT    /production/mixers/:id` — update mixer
+- [x] `DELETE /production/mixers/:id` — delete mixer
+- [x] `POST   /production/mixers/:id/switch/:inputNumber` — switch source
+- [x] `GET    /production/mixers/:id/active` — current active input
+- [x] `POST   /production/mixers/:id/test` — TCP reachability test (inline, no persistent connection)
 
 #### 2.3 Configuration UI — mixers
-- [ ] Mixer list: name, type badge, connection status indicator
-- [ ] Add/edit mixer form:
+- [x] Mixer list: name, type badge, connection status indicator
+- [x] Add/edit mixer form:
   - Name, type selector (`roland` / ..., extensible)
   - Roland-specific fields: host, port
   - Connection test button — attempts TCP connect, reports success/fail inline
-- [ ] Delete mixer with confirmation
+- [x] Delete mixer with confirmation
 
 #### 2.4 Operator UI — mixer integration
-- [ ] `LIVE` badge on the camera card whose mixer input is currently active
-- [ ] Quick-cut mode toggle: when enabled, tapping a camera card immediately switches the mixer to that camera's input
-- [ ] When quick-cut is off, tapping a camera only triggers presets; mixer switching is a separate explicit action
-- [ ] Roland connection status indicator in the operator UI
+- [x] `LIVE` badge on the camera card whose mixer input is currently active
+- [x] Quick-cut mode toggle: when enabled, tapping a camera card immediately switches the mixer to that camera's input
+- [x] When quick-cut is off, tapping a camera only triggers presets; mixer switching is a separate explicit action
+- [x] Roland connection status indicator in the operator UI (mixer status bar with connected dot + active PGM input)
 
 ---
 
