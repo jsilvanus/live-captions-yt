@@ -31,6 +31,7 @@ import { HlsManager } from './hls-manager.js';
 import { createPreviewRouter } from './routes/preview.js';
 import { PreviewManager } from './preview-manager.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
+import { initProductionControl, createProductionRouter } from 'production-control';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -126,6 +127,9 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 
 const db = initDb();
 const store = new SessionStore({ db });
+
+// Production control — run DB migrations and start device registry
+const { registry: productionRegistry } = await initProductionControl(db);
 
 // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
 const _rtmpStatIds = new Map();
@@ -348,9 +352,10 @@ app.use('/stream-hls', createStreamHlsRouter(db, hlsManager));
 app.use('/preview', createPreviewRouter(previewManager));
 app.use('/dsk-rtmp', createDskRtmpRouter(relayManager));
 app.use('/youtube', createYouTubeRouter(auth));
+app.use('/production', createProductionRouter(db, productionRegistry));
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, previewManager };
+export { app, db, store, relayManager, radioManager, hlsManager, previewManager, productionRegistry };
