@@ -11,18 +11,47 @@ import { incrementViewerKeyStat, incrementViewerAnonStat } from '../db.js';
 const viewerSubs = new Map();
 
 /**
+ * Optional HlsSubsManager instance.
+ * Set via setHlsSubsManager() from server.js during startup.
+ * @type {import('../hls-subs-manager.js').HlsSubsManager | null}
+ */
+let _hlsSubsManager = null;
+
+/**
+ * Register the HlsSubsManager instance so broadcastToViewers() can feed it.
+ * @param {import('../hls-subs-manager.js').HlsSubsManager} mgr
+ */
+export function setHlsSubsManager(mgr) {
+  _hlsSubsManager = mgr;
+}
+
+/**
  * Broadcast a caption event to all SSE clients watching a given viewer key.
+ * Also feeds the caption cues to the HLS subtitle sidecar (if active).
  * Called from captions.js when a viewer target is in the session's extraTargets.
  *
  * @param {string} viewerKey
- * @param {{ text: string, sequence: number, timestamp?: string }} data
+ * @param {{ text: string, sequence: number, timestamp?: string, translations?: object }} data
  */
 export function broadcastToViewers(viewerKey, data) {
   const clients = viewerSubs.get(viewerKey);
-  if (!clients || clients.size === 0) return;
-  const msg = `event: caption\ndata: ${JSON.stringify(data)}\n\n`;
-  for (const client of clients) {
-    try { client.res.write(msg); } catch {}
+  if (clients && clients.size > 0) {
+    const msg = `event: caption\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const client of clients) {
+      try { client.res.write(msg); } catch {}
+    }
+  }
+
+  // Feed caption cues to HLS subtitle sidecar
+  if (_hlsSubsManager && data.timestamp) {
+    if (data.text) {
+      _hlsSubsManager.addCue(viewerKey, 'original', data.text, data.timestamp);
+    }
+    if (data.translations && typeof data.translations === 'object') {
+      for (const [lang, text] of Object.entries(data.translations)) {
+        if (text) _hlsSubsManager.addCue(viewerKey, lang, text, data.timestamp);
+      }
+    }
   }
 }
 

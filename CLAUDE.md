@@ -136,6 +136,9 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `ALLOWED_DOMAINS` | Comma-separated domains for /usage CORS filter | `lcyt.fi,www.lcyt.fi` |
 | `ALLOWED_RTMP_DOMAINS` | Comma-separated domains allowed to use `/stream` relay endpoints; if unset, falls back to `ALLOWED_DOMAINS` | (falls back to `ALLOWED_DOMAINS`) |
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
+| `HLS_SUBS_ROOT` | Directory for WebVTT subtitle segment files | `/tmp/hls-subs` |
+| `HLS_SUBS_SEGMENT_DURATION` | Subtitle segment length in seconds | `6` |
+| `HLS_SUBS_WINDOW_SIZE` | Number of subtitle segments to keep per language | `10` |
 
 **API routes:**
 ```
@@ -154,6 +157,10 @@ DELETE /file/:id          — delete a caption file (Bearer token)
 GET  /usage               — per-domain caption stats (public if USAGE_PUBLIC, else X-Admin-Key)
 POST /mic                 — claim/release soft mic lock for collaborative sessions (Bearer token)
 GET/POST/PATCH/DELETE /keys — admin CRUD (X-Admin-Key header)
+GET  /video/:key              — HLS.js player page (public, CORS *, iframe-embeddable)
+GET  /video/:key/master.m3u8  — HLS master manifest (video + subtitle tracks, public)
+GET  /video/:key/subs/:lang/playlist.m3u8 — HLS subtitle playlist per language (public)
+GET  /video/:key/subs/:lang/:seg.vtt      — WebVTT subtitle segment file (public)
 ```
 
 **Key internals:**
@@ -453,6 +460,8 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + extraTargets per session) |
 | `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream (authenticated, session owner) |
 | `packages/lcyt-backend/src/routes/viewer.js` | Public SSE broadcast stream `GET /viewer/:key` — no auth, CORS `*`; used by viewer targets |
+| `packages/lcyt-backend/src/hls-subs-manager.js` | HLS subtitle sidecar: rolling WebVTT segment writer + in-memory playlist manager |
+| `packages/lcyt-backend/src/routes/video.js` | `GET /video/:key` — HLS.js player, master manifest, subtitle playlist + segment serving |
 | `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
 | `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |

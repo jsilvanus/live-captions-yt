@@ -21,7 +21,9 @@ import { createImagesRouter } from './routes/images.js';
 import { createDskRouter } from './routes/dsk.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
-import { createViewerRouter } from './routes/viewer.js';
+import { createViewerRouter, setHlsSubsManager } from './routes/viewer.js';
+import { createVideoRouter } from './routes/video.js';
+import { HlsSubsManager } from './hls-subs-manager.js';
 import { createIconRouter } from './routes/icons.js';
 import { createYouTubeRouter } from './routes/youtube.js';
 import { createRadioRouter } from './routes/radio.js';
@@ -190,6 +192,12 @@ const radioManager = new RadioManager();
 // Always instantiated; ffmpeg must be installed.
 const hlsManager = new HlsManager();
 
+// HLS subtitle sidecar: caption cues → rolling WebVTT segments per language.
+const hlsSubsManager = new HlsSubsManager();
+setHlsSubsManager(hlsSubsManager);
+// Remove any stale subs directories left by a previous run.
+hlsSubsManager.sweepStaleDir().catch(() => {});
+
 // Preview manager: RTMP → JPEG thumbnail (incoming stream preview).
 // Always instantiated; ffmpeg must be installed.
 const previewManager = new PreviewManager();
@@ -350,6 +358,7 @@ app.use('/dsk', createDskRouter(db, store));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
+app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
 app.use('/radio', createRadioRouter(db, radioManager));
 app.use('/stream-hls', createStreamHlsRouter(db, hlsManager));
 app.use('/preview', createPreviewRouter(previewManager));
@@ -363,4 +372,4 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, previewManager, productionRegistry, productionBridgeManager };
+export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, productionRegistry, productionBridgeManager };
