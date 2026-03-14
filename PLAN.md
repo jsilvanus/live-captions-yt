@@ -173,12 +173,14 @@ Cleanup: `stopSubs(viewerKey)` removes the key's directory. Called automatically
 - Served from an inline HTML template in `video.js` (no separate static file needed at this size).
 - Loads **hls.js 1.5.15** from jsDelivr CDN (same version as the existing `stream-hls` player snippet).
 - Points at `/video/:key/master.m3u8`.
-- Subtitle track selector: a `<select>` populated from `hls.subtitleTracks` on the `SUBTITLE_TRACKS_UPDATED` event.
-- HLS.js manages subtitle rendering natively via the `<video>` element's text track API.
+- **No custom language selector UI.** HLS.js wires subtitle tracks from the master manifest directly to the `<video>` element's `textTracks` API. The browser's **native CC button** in the standard video controls then exposes all languages for user selection — no extra JavaScript or UI needed.
+- Safari/iOS use native HLS and get the same CC button behaviour for free.
 - `?theme=light` query param switches to a light colour scheme; default is dark.
 - No `X-Frame-Options` header → embeddable anywhere.
 - CORS `*` on all `/video/…` routes.
 - Minimal CSS; responsive (`width: 100%; max-width: 960px`).
+
+> **Why native CC?** The browser already presents a polished, accessible, localised CC picker (language names, keyboard nav, screen reader support). Building a custom `<select>` on top of it would be redundant and worse UX. HLS.js takes care of the plumbing; the browser takes care of the UI.
 
 ### 8. Security
 
@@ -360,8 +362,8 @@ Inline in `video.js` (template literal):
 - `<video>` element, `controls`, `autoplay="false"`
 - HLS.js from jsDelivr CDN (version 1.5.15, matching `stream-hls.js`)
 - `hls.loadSource('/video/:key/master.m3u8')`; `hls.attachMedia(video)`
-- `<select id="lang-select">` populated on `Hls.Events.SUBTITLE_TRACKS_UPDATED`
-- `hls.subtitleTrack = selectedIndex` on change
+- HLS.js automatically maps `EXT-X-MEDIA TYPE=SUBTITLES` tracks onto the `<video>` element's native `textTracks` — the **browser's own CC button** handles language selection with no custom UI
+- Set `hls.subtitleDisplay = true` so HLS.js renders the active subtitle track into the video; the CC button controls which track is active
 - CSS: dark theme default, `?theme=light` override, `max-width: 960px`, mobile-safe viewport meta
 - Short "Stream not live" overlay when video errors with `MEDIA_ATTACH_ERROR` or `FATAL`
 
