@@ -30,6 +30,7 @@ title: "lcyt-backend API Reference"
   - [Images — `/images`](#images)
   - [Icons — `/icons`](#icons)
   - [YouTube OAuth — `/youtube`](#youtube-oauth)
+  - [Production Control — `/production`](#production-control)
 
 ---
 
@@ -175,6 +176,9 @@ The SQLite database contains the following tables:
 | `icons` | Viewer branding icon metadata (filename, MIME type, size) |
 | `viewer_key_daily_stats` | Per-API-key, per-viewer-key daily viewer opens |
 | `viewer_anon_daily_stats` | Anonymous daily viewer open counts |
+| `prod_bridge_instances` | Registered lcyt-bridge agents (name, token, status, last_seen) |
+| `prod_cameras` | Camera configuration for production control (control_type, control_config, bridge_instance_id) |
+| `prod_mixers` | Video mixer configuration (type, connection_config, bridge_instance_id) |
 
 Additive migrations run automatically on startup.
 
@@ -261,3 +265,21 @@ The Downstream Keyer (DSK) system overlays graphics on the relayed video stream 
 | Endpoint | Purpose |
 |---|---|
 | [`GET /youtube/config`](./youtube.md) | Return the server's YouTube OAuth client ID for client-side GIS sign-in |
+
+---
+
+## Production Control
+
+The production control subsystem enables camera preset triggering and video mixer source switching from the LCYT operator UI. It is provided by the `production-control` package and is mounted at `/production`.
+
+All `/production` endpoints require `X-Admin-Key` except for the bridge SSE and status endpoints, which use a per-bridge token.
+
+| Endpoint group | Purpose |
+|---|---|
+| [`GET/POST/PUT/DELETE /production/cameras`](./production.md#cameras) | Camera CRUD and preset trigger |
+| [`POST /production/cameras/:id/preset/:presetId`](./production.md#post-productioncamerasidpresetpresetid) | Trigger a camera preset |
+| [`GET/POST/PUT/DELETE /production/mixers`](./production.md#mixers) | Mixer CRUD, source switching, active-source query, reachability test |
+| [`GET/POST/DELETE /production/bridge/instances`](./production.md#bridge-instances) | Bridge instance management |
+| [`GET /production/bridge/instances/:id/env`](./production.md#get-productionbridgeinstancesidenv) | Re-download bridge `.env` config |
+| [`GET /production/bridge/commands`](./production.md#bridge-agent-protocol) | SSE command stream for bridge agents (token auth) |
+| [`POST /production/bridge/status`](./production.md#status-reporting) | Bridge heartbeat and command result reporting (token auth) |
