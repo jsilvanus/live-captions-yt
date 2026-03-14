@@ -9,7 +9,9 @@
     "packages/lcyt-web",
     "packages/lcyt-mcp-stdio",
     "packages/lcyt-mcp-sse",
-    "packages/lcyt-site"
+    "packages/lcyt-site",
+    "packages/production-control",
+    "packages/lcyt-bridge"
   ],
   "scripts": {
     "test": "npm test --workspaces",

@@ -1,0 +1,21 @@
+{
+  "name": "production-control",
+  "version": "0.1.0",
+  "description": "Production control layer for LCYT — camera PTZ presets and mixer source switching",
+  "type": "module",
+  "main": "src/api.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {},
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/production-control"
+  }
+}

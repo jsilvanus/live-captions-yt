@@ -15,6 +15,10 @@ import { EmbedRtmpPage } from './components/EmbedRtmpPage';
 import { DskPage } from './components/DskPage';
 import { EmbedViewerPage } from './components/EmbedViewerPage';
 import { ViewerPage } from './components/ViewerPage';
+import { ProductionCamerasPage } from './components/ProductionCamerasPage';
+import { ProductionMixersPage } from './components/ProductionMixersPage';
+import { ProductionBridgesPage } from './components/ProductionBridgesPage';
+import { ProductionOperatorPage } from './components/ProductionOperatorPage';
 
 const path = window.location.pathname;
 
@@ -32,7 +36,11 @@ function getPage() {
   if (path.startsWith('/embed/rtmp'))     return <EmbedRtmpPage />;
   if (path.startsWith('/dsk/'))           return <DskPage />;
   if (path.startsWith('/embed/viewer'))   return <EmbedViewerPage />;
-  if (path.startsWith('/view/'))          return <ViewerPage />;
+  if (path.startsWith('/view/'))                    return <ViewerPage />;
+  if (path.startsWith('/production/cameras'))       return <ProductionCamerasPage />;
+  if (path.startsWith('/production/mixers'))        return <ProductionMixersPage />;
+  if (path.startsWith('/production/bridges'))       return <ProductionBridgesPage />;
+  if (path.startsWith('/production'))               return <ProductionOperatorPage />;
   return <App />;
 }
 

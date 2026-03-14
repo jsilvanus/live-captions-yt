@@ -10,6 +10,7 @@
 #
 # Symlink setup (run once after first deploy):
 #   ln -sfn ~/lcyt/packages/lcyt-web/dist /var/www/html/lcyt-web
+#   ln -sfn ~/lcyt/packages/lcyt-bridge/dist /var/www/html/lcyt-bridge
 #
 # Then point `root` below at /var/www/html/lcyt-web (or the dist path directly).
 
@@ -29,6 +30,16 @@ server {
     location /assets/ {
         expires 1y;
         add_header Cache-Control "public, immutable";
+    }
+
+    # lcyt-bridge executables — served as direct file downloads.
+    # Symlink: ln -sfn ~/lcyt/packages/lcyt-bridge/dist /var/www/html/lcyt-bridge
+    # Files: lcyt-bridge.exe (Windows), lcyt-bridge-mac (macOS), lcyt-bridge-linux (Linux)
+    location /bridge-downloads/ {
+        alias /var/www/html/lcyt-bridge/;
+        default_type application/octet-stream;
+        add_header Content-Disposition "attachment";
+        add_header Cache-Control "no-cache";
     }
 
     # ssl_certificate / ssl_certificate_key — managed by certbot or similar.
