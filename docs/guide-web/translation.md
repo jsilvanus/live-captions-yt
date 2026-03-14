@@ -45,6 +45,14 @@ Click **+ Add translation** to add a new row. Each row defines one translation o
 
 ---
 
+## Multilingual video player
+
+Every enabled translation language automatically becomes a **selectable subtitle track** in the embeddable video player at `GET /video/:key` — no extra configuration required. Viewers use their browser's built-in CC button to switch languages.
+
+See [Multilingual Video Player](./video-player.md) for setup instructions and embed code.
+
+---
+
 ## Show original
 
 Enable **Show original** to keep the original caption text in the stream alongside the translation. When disabled, only the translation is shown.

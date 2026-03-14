@@ -24,6 +24,7 @@ title: "lcyt-backend API Reference"
   - [Health — `/health`, `/contact`](#health)
   - [RTMP Relay — `/stream`, `/rtmp`](#rtmp-relay)
   - [Viewer — `/viewer`](#viewer)
+  - [Video Player — `/video`](#video-player)
   - [HLS Streaming — `/stream-hls`, `/radio`](#hls-streaming)
   - [Preview — `/preview`](#preview)
   - [DSK Overlay — `/dsk`, `/dsk-rtmp`](#dsk-overlay)
@@ -111,6 +112,9 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `ICONS_DIR` | `/data/icons` | Base directory for branding icon storage. |
 | `HLS_ROOT` | `/data/hls` | Directory where HLS playlists and segments are written for `/stream-hls`. |
 | `RADIO_HLS_ROOT` | `/data/radio` | Directory where audio-only HLS playlists and segments are written for `/radio`. |
+| `HLS_SUBS_ROOT` | `/tmp/hls-subs` | Directory where WebVTT subtitle segment files are written for `/video`. |
+| `HLS_SUBS_SEGMENT_DURATION` | `6` | Subtitle segment length in seconds. |
+| `HLS_SUBS_WINDOW_SIZE` | `10` | Number of subtitle segments kept per language in the rolling playlist window. |
 | `RADIO_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL used by the radio manager. |
 | `PREVIEW_ROOT` | `/data/preview` | Directory where JPEG stream thumbnails are stored. |
 | `DSK_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL for the DSK ingest application. |
@@ -127,6 +131,7 @@ CORS is handled dynamically:
 - **`POST /live`**, **`GET /health`**, **`GET /contact`** — open to all origins
 - **`POST /keys?freetier`** — open to all origins (if `FREE_APIKEY_ACTIVE=1`)
 - **`GET /viewer/:key`** — open to all origins (`*`)
+- **`GET /video/:key/…`** — open to all origins (`*`)
 - **`GET /stream-hls/:key/*`**, **`GET /radio/:key/*`** — open to origins matching the per-key `embedCors` setting (defaults to `*`)
 - **`GET /preview/:key/*`**, **`GET /images/:id`**, **`GET /icons/:id`**, **`GET /dsk/:key/*`** — open to all origins (`*`)
 - **Authenticated routes** — only the `domain` registered in the session is allowed
@@ -198,6 +203,19 @@ The viewer system broadcasts live captions to audience members via a public SSE 
 | Endpoint | Purpose |
 |---|---|
 | [`GET /viewer/:key`](./viewer.md) | Public SSE stream — subscribe to live captions for a viewer key |
+
+---
+
+## Video Player
+
+An embeddable HLS.js player that combines the live video stream with multilingual real-time subtitle tracks generated from caption data. No authentication required; CORS `*`.
+
+| Endpoint | Purpose |
+|---|---|
+| [`GET /video/:key`](./video.md) | HLS.js player page — iframe-embeddable, supports `?theme=dark\|light` |
+| [`GET /video/:key/master.m3u8`](./video.md) | HLS master manifest (video + all active subtitle tracks) |
+| [`GET /video/:key/subs/:lang/playlist.m3u8`](./video.md) | HLS subtitle playlist for a specific language |
+| [`GET /video/:key/subs/:lang/:seg.vtt`](./video.md) | WebVTT subtitle segment file |
 
 ---
 
