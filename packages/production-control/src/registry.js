@@ -7,6 +7,7 @@
 import * as amxAdapter from './adapters/camera/amx.js';
 import * as noneAdapter from './adapters/camera/none.js';
 import * as rolandAdapter from './adapters/mixer/roland.js';
+import * as amxMixerAdapter from './adapters/mixer/amx.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
@@ -19,6 +20,7 @@ const CAMERA_ADAPTERS = {
 
 const MIXER_ADAPTERS = {
   roland: rolandAdapter,
+  amx:    amxMixerAdapter,
   // Phase 6+: atem, obs
 };
 
@@ -151,7 +153,8 @@ export class DeviceRegistry {
     const mixer = this._loadMixer(mixerId);
     const entry = this._mixerConnections.get(mixerId);
     if (!entry) throw new Error(`No connection for mixer '${mixer.name}'`);
-    await entry.adapter.switchSource(entry.handle, inputNumber);
+    // Pass mixer so adapters that need connectionConfig (e.g. AMX) can look up commands
+    await entry.adapter.switchSource(entry.handle, inputNumber, mixer);
   }
 
   /**

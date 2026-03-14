@@ -1,0 +1,40 @@
+{
+  "name": "lcyt-bridge",
+  "version": "0.1.0",
+  "description": "LCYT bridge agent — relays production control commands to AMX and Roland over TCP",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "lcyt-bridge": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "build:win": "pkg . --target node20-win-x64 --output dist/lcyt-bridge.exe",
+    "build:mac": "pkg . --target node20-macos-x64 --output dist/lcyt-bridge-mac",
+    "build:linux": "pkg . --target node20-linux-x64 --output dist/lcyt-bridge-linux"
+  },
+  "pkg": {
+    "assets": [
+      "node_modules/node-systray/resources/**/*"
+    ],
+    "scripts": []
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "eventsource": "^2.0.2",
+    "node-systray": "^2.0.0"
+  },
+  "devDependencies": {
+    "pkg": "^5.8.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt-bridge"
+  }
+}

@@ -215,11 +215,19 @@ Goal: operator can switch the active video source on the Roland mixer. Tapping a
 - [x] `GET    /production/mixers/:id/active` — current active input
 - [x] `POST   /production/mixers/:id/test` — TCP reachability test (inline, no persistent connection)
 
-#### 2.3 Configuration UI — mixers
+#### 2.3 AMX mixer adapter
+- [x] Implement `src/adapters/mixer/amx.js`
+  - TCP connection to AMX NetLinx master
+  - `connectionConfig.inputs[]` maps input numbers to AMX command strings
+  - `switchSource(handle, inputNumber, mixer)` looks up command by input number, sends verbatim
+  - `getSwitchCommand(connectionConfig, inputNumber)` exported for bridge routing
+
+#### 2.4 Configuration UI — mixers
 - [x] Mixer list: name, type badge, connection status indicator
 - [x] Add/edit mixer form:
-  - Name, type selector (`roland` / ..., extensible)
+  - Name, type selector (`roland` / `amx`, extensible)
   - Roland-specific fields: host, port
+  - AMX-specific fields: host, port, input command rows (number + free-text command)
   - Connection test button — attempts TCP connect, reports success/fail inline
 - [x] Delete mixer with confirmation
 
@@ -287,45 +295,45 @@ No ports are opened on the streaming computer. All connections are outbound.
 ### Tasks
 
 #### 4.1 Bridge agent core
-- [ ] New package `packages/lcyt-bridge` (ESM Node.js)
-- [ ] SSE client connecting to `/bridge/commands?token=xxx` (`eventsource` npm package)
-- [ ] HTTP POST client for status reporting to `/bridge/status`
-- [ ] AMX TCP connection + command relay
-- [ ] Roland TCP connection + command relay
-- [ ] Auto-reconnect for SSE and TCP connections on drop
-- [ ] Config loading from `.env` in same directory as exe (`dotenv`)
+- [x] New package `packages/lcyt-bridge` (ESM Node.js)
+- [x] SSE client connecting to `/bridge/commands?token=xxx` (`eventsource` npm package)
+- [x] HTTP POST client for status reporting to `/bridge/status`
+- [x] AMX TCP connection + command relay
+- [x] Roland TCP connection + command relay
+- [x] Auto-reconnect for SSE and TCP connections on drop
+- [x] Config loading from `.env` in same directory as exe (`dotenv`)
 
 #### 4.2 System tray UI
-- [ ] System tray icon using `node-systray`
-- [ ] Right-click context menu:
+- [x] System tray icon using `node-systray`
+- [x] Right-click context menu:
   - **Status** — small status window showing: backend ✓/✗, AMX ✓/✗, Roland ✓/✗, last command timestamp
   - **Reconnect** — force reconnect all connections
   - **Quit** — clean shutdown, close all TCP connections
-- [ ] Tray icon reflects overall health (connected / degraded / disconnected)
+- [x] Tray icon reflects overall health (connected / degraded / disconnected)
 
 #### 4.3 Backend — bridge endpoints
-- [ ] `GET  /bridge/commands` — SSE endpoint, authenticated by bridge token
-- [ ] `POST /bridge/status` — receives heartbeat and command results from bridge
-- [ ] Duplicate connection handling: if a token connects while already connected, kick the first connection
-- [ ] Log reconnection events
+- [x] `GET  /bridge/commands` — SSE endpoint, authenticated by bridge token
+- [x] `POST /bridge/status` — receives heartbeat and command results from bridge
+- [x] Duplicate connection handling: if a token connects while already connected, kick the first connection
+- [x] Log reconnection events
 
 #### 4.4 Settings → Bridges tab
-- [ ] List of bridge instances
+- [x] List of bridge instances
   - **0 bridges**: setup prompt and "Add bridge" button only
   - **1 bridge**: status (connected/disconnected, last seen), "Add bridge" button, delete button — no instance name shown
   - **2+ bridges**: instance names visible on all rows, status per instance, delete buttons
-- [ ] "Add bridge" flow: name input (with org name as default suggestion) → generates token → shows "Download .env" button
-- [ ] Token never shown as plain text — download only
-- [ ] Delete instance:
+- [x] "Add bridge" flow: name input (with org name as default suggestion) → generates token → shows "Download .env" button
+- [x] Token never shown as plain text — download only
+- [x] Delete instance:
   - If cameras or mixers are assigned to it: warn ("X cameras and Y mixers will lose their bridge assignment") — user must confirm
   - On delete: remove instance, set `bridgeInstanceId` to null on affected cameras/mixers
 
 #### 4.5 Progressive disclosure — bridge names in rest of UI
-- [ ] Camera and mixer config cards: show bridge instance name only when 2+ instances exist
-- [ ] Operator UI camera cards: show instance name as secondary label only when 2+ instances exist
+- [x] Camera and mixer config cards: show bridge instance name only when 2+ instances exist
+- [x] Operator UI camera cards: show instance name as secondary label only when 2+ instances exist
 
 #### 4.6 Windows executable build
-- [ ] Build script using `pkg` to produce `lcyt-bridge.exe` (Node.js bundled, no install required)
+- [x] Build script using `pkg` to produce `lcyt-bridge.exe` (Node.js bundled, no install required)
 - [ ] Test on a clean Windows machine with no Node.js installed
 - [ ] Document release process: build exe, make available for download from Settings → Bridges
 

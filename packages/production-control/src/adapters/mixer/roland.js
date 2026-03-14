@@ -174,7 +174,7 @@ export async function disconnect(handle) {
  * @param {object} handle
  * @param {number} inputNumber - 1-based mixer input number
  */
-export async function switchSource(handle, inputNumber) {
+export async function switchSource(handle, inputNumber, _mixer) {
   if (!handle.connected || !handle._socket) {
     throw new Error(`Roland mixer ${handle.host}:${handle.port} is not connected`);
   }
@@ -198,6 +198,17 @@ export async function switchSource(handle, inputNumber) {
  */
 export function getActiveSource(handle) {
   return handle._activeSource;
+}
+
+/**
+ * Build the TCP command string for switching to inputNumber.
+ * Used by bridge routing (generates without executing the TCP send).
+ *
+ * @param {number} inputNumber
+ * @returns {string} newline-terminated JSON command
+ */
+export function getSwitchCommand(_connectionConfig, inputNumber) {
+  return CMD_SWITCH_PROGRAM(inputNumber);
 }
 
 // ---------------------------------------------------------------------------

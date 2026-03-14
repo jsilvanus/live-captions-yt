@@ -2,10 +2,12 @@ import { Router } from 'express';
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { parseMixer } from '../registry.js';
+import { getSwitchCommand as rolandGetSwitchCommand } from '../adapters/mixer/roland.js';
+import { getSwitchCommand as amxGetSwitchCommand } from '../adapters/mixer/amx.js';
 
-const MIXER_TYPES = ['roland'];
+const MIXER_TYPES = ['roland', 'amx'];
 
-export function createMixersRouter(db, registry) {
+export function createMixersRouter(db, registry, bridgeManager = null) {
   const router = Router();
 
   // GET /production/mixers — list all mixers with connection status
@@ -38,7 +40,7 @@ export function createMixersRouter(db, registry) {
 
   // POST /production/mixers — create mixer
   router.post('/', (req, res) => {
-    const { name, type, connectionConfig = {} } = req.body;
+    const { name, type, connectionConfig = {}, bridgeInstanceId = null } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -47,9 +49,9 @@ export function createMixersRouter(db, registry) {
     }
     const id = randomUUID();
     db.prepare(`
-      INSERT INTO prod_mixers (id, name, type, connection_config)
-      VALUES (?, ?, ?, ?)
-    `).run(id, name, type, JSON.stringify(connectionConfig));
+      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>
@@ -68,6 +70,7 @@ export function createMixersRouter(db, registry) {
       name             = existing.name,
       type             = existing.type,
       connectionConfig = JSON.parse(existing.connection_config),
+      bridgeInstanceId = existing.bridge_instance_id,
     } = req.body;
 
     if (type && !MIXER_TYPES.includes(type)) {
@@ -75,8 +78,9 @@ export function createMixersRouter(db, registry) {
     }
 
     db.prepare(`
-      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ? WHERE id = ?
-    `).run(name, type, JSON.stringify(connectionConfig), id);
+      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?
+      WHERE id = ?
+    `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId ?? null, id);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>
@@ -103,14 +107,31 @@ export function createMixersRouter(db, registry) {
     if (!Number.isInteger(input) || input < 1) {
       return res.status(400).json({ error: 'inputNumber must be a positive integer' });
     }
-    const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ error: 'Mixer not found' });
+    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+    if (!row) return res.status(404).json({ error: 'Mixer not found' });
 
     try {
-      await registry.switchSource(id, input);
+      const mixer = parseMixer(row);
+
+      // Bridge routing: if mixer is assigned to a bridge, relay via SSE
+      if (mixer.bridgeInstanceId && bridgeManager) {
+        if (!bridgeManager.isConnected(mixer.bridgeInstanceId)) {
+          return res.status(503).json({ error: 'Bridge is not connected' });
+        }
+        const payload = buildSwitchPayload(mixer, input);
+        await bridgeManager.sendCommand(mixer.bridgeInstanceId, {
+          host:    mixer.connectionConfig.host,
+          port:    mixer.connectionConfig.port,
+          payload,
+        });
+      } else {
+        // Direct TCP via registry
+        await registry.switchSource(id, input);
+      }
+
       res.json({ ok: true, mixerId: id, activeSource: input });
     } catch (err) {
-      const status = err.message.includes('not connected') ? 503 : 400;
+      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
       res.status(status).json({ error: err.message });
     }
   });
@@ -133,7 +154,8 @@ export function createMixersRouter(db, registry) {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Mixer not found' });
 
-    const { host, port = 8023 } = JSON.parse(row.connection_config || '{}');
+    const { host, port = row.type === 'amx' ? 1319 : 8023 } =
+      JSON.parse(row.connection_config || '{}');
     if (!host) return res.status(400).json({ ok: false, error: 'connectionConfig.host is not set' });
 
     const TIMEOUT_MS = 4_000;
@@ -151,4 +173,19 @@ export function createMixersRouter(db, registry) {
   });
 
   return router;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Build the payload string to send for a mixer source switch, by type. */
+function buildSwitchPayload(mixer, inputNumber) {
+  if (mixer.type === 'roland') {
+    return rolandGetSwitchCommand(mixer.connectionConfig, inputNumber);
+  }
+  if (mixer.type === 'amx') {
+    return amxGetSwitchCommand(mixer.connectionConfig, inputNumber);
+  }
+  throw new Error(`No bridge payload builder for mixer type '${mixer.type}'`);
 }
