@@ -4,7 +4,7 @@ import { useLang } from '../contexts/LangContext';
 import { FilesModal } from './FilesModal';
 import {
   getSlotConfig, setSlotTargetType,
-  setSlotYoutubeKey, setSlotGenericUrl, setSlotCaptionMode,
+  setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName, setSlotCaptionMode,
   setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
   buildSlotTarget,
   clearSlot,
@@ -370,9 +370,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   const runningSlots = relayStatus?.runningSlots ?? [];
 
   const hasGraphics = session.graphicsEnabled;
-  const TABS = advancedMode
-    ? ['basic', 'stream', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons']
-    : ['basic', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons'];
+  const TABS = ['basic', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons'];
 
   // ── Credential handlers ────────────────────────────────────
 
