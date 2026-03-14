@@ -65,7 +65,17 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
   );
 }
 
-/** Shown immediately after creation — displays the .env download button */
+const BRIDGE_DOWNLOADS = [
+  { label: 'Windows (.exe)', file: 'lcyt-bridge.exe' },
+  { label: 'macOS',          file: 'lcyt-bridge-mac' },
+  { label: 'Linux',          file: 'lcyt-bridge-linux' },
+];
+
+function bridgeDownloadUrl(file) {
+  return `${window.location.origin}/bridge-downloads/${file}`;
+}
+
+/** Shown immediately after creation — displays exe + .env download buttons */
 function EnvDownloadBanner({ bridge, onDismiss }) {
   function downloadEnv() {
     const blob = new Blob([bridge.envContent], { type: 'text/plain' });
@@ -86,15 +96,20 @@ function EnvDownloadBanner({ bridge, onDismiss }) {
       marginBottom: 16,
     }}>
       <p style={{ margin: '0 0 10px', fontSize: 14 }}>
-        <strong>{bridge.name}</strong> created. Download the configuration file and place it
-        next to <code>lcyt-bridge.exe</code>.
+        <strong>{bridge.name}</strong> created. Download the app and its configuration file,
+        place them in the same folder, then launch the app.
       </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {BRIDGE_DOWNLOADS.map(({ label, file }) => (
+          <a key={file} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(file)} download={file}>
+            ↓ {label}
+          </a>
+        ))}
         <button className="btn btn--primary btn--sm" onClick={downloadEnv}>
-          ↓ Download .env
+          ↓ Config (.env)
         </button>
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          The token is only available in this file — keep it private.
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted)', marginLeft: 4 }}>
+          Keep .env private — it contains your bridge token.
         </span>
         <button className="btn btn--ghost btn--sm" style={{ marginLeft: 'auto' }} onClick={onDismiss}>
           Dismiss
@@ -281,12 +296,19 @@ export function ProductionBridgesPage() {
       {loading ? (
         <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
       ) : bridges.length === 0 ? (
-        <div style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>
-          <p>No bridges configured.</p>
-          <p style={{ fontSize: 13 }}>
+        <div style={{ fontSize: 14 }}>
+          <p style={{ color: 'var(--color-text-muted)' }}>No bridges configured.</p>
+          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
             A bridge is a small program that runs on your streaming computer and relays
             commands to AMX and Roland hardware on the local AV network.
           </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+            {BRIDGE_DOWNLOADS.map(({ label, file }) => (
+              <a key={file} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(file)} download={file}>
+                ↓ {label}
+              </a>
+            ))}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
