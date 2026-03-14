@@ -165,6 +165,33 @@ echo "    Built → $REPO_DIR/packages/lcyt-site/dist"
 echo "    Build log: $SITE_BUILD_LOG"
 
 # ---------------------------------------------------------------------------
+# Step 2d: Build lcyt-bridge executables (served from the backend for download)
+# ---------------------------------------------------------------------------
+
+echo "==> Installing lcyt-bridge dependencies (includes pkg for exe bundling)"
+BRIDGE_INSTALL_LOG="$REPO_DIR/lcyt-bridge-npm-install.log"
+rm -f "$BRIDGE_INSTALL_LOG"
+npm ci \
+  --prefix "$REPO_DIR" \
+  --workspace packages/lcyt-bridge \
+  --include=dev 2>&1 | tee "$BRIDGE_INSTALL_LOG"
+echo "    Install log: $BRIDGE_INSTALL_LOG"
+tail -n 10 "$BRIDGE_INSTALL_LOG" || true
+
+echo "==> Building lcyt-bridge executables (win, mac, linux)"
+BRIDGE_BUILD_LOG="$REPO_DIR/lcyt-bridge-build.log"
+rm -f "$BRIDGE_BUILD_LOG"
+(
+  cd "$REPO_DIR/packages/lcyt-bridge"
+  npm run build:win 2>&1
+  npm run build:mac 2>&1
+  npm run build:linux 2>&1
+) | tee "$BRIDGE_BUILD_LOG" || \
+  echo "Warning: lcyt-bridge build failed (non-fatal) — bridge executables will not be updated."
+echo "    Built → $REPO_DIR/packages/lcyt-bridge/dist"
+echo "    Build log: $BRIDGE_BUILD_LOG"
+
+# ---------------------------------------------------------------------------
 # Step 3: Start / restart the site container via Docker Compose
 # ---------------------------------------------------------------------------
 
@@ -193,4 +220,5 @@ echo "  Main site: in packages/lcyt-site/dist, served by host nginx; see nginx s
 echo "  Backend:   http://localhost:3000/health"
 echo "  MCP SSE:   http://localhost:3001/sse"
 echo "  Web UI:    in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
+echo "  Bridge:    executables in packages/lcyt-bridge/dist/ (win/mac/linux)"
 echo ""
