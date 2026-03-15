@@ -1,4 +1,4 @@
-import { app, db, store, relayManager, radioManager, hlsManager, previewManager } from './server.js';
+import { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager } from './server.js';
 import { cleanRevokedKeys } from './db.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
@@ -57,6 +57,7 @@ async function shutdown() {
   await relayManager.stopAll();
   await radioManager.stopAll();
   await hlsManager.stopAll();
+  await hlsSubsManager.stopAll();
   await previewManager.stopAll();
   for (const session of store.all()) {
     try { await session.sender.end(); } catch {}

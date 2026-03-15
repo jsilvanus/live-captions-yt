@@ -22,6 +22,8 @@ lcyt-web ships **eight** standalone **embed widgets** that you can drop into any
 | **RTMP relay** | `/embed/rtmp` | RTMP relay slot management widget |
 | **Viewer** | `/embed/viewer` | Read-only live caption viewer for audience members |
 
+> **Looking for the video player?** The embeddable multilingual video player is served directly from the backend, not from lcyt-web. Use `<iframe src="https://api.example.com/video/<key>">` — see [Multilingual Video Player](./video-player.md).
+
 ---
 
 ## Live iframe examples
