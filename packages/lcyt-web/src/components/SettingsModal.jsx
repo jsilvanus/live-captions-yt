@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useUserAuth } from '../hooks/useUserAuth';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
 import { FilesModal } from './FilesModal';
@@ -227,6 +228,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   const session = useSessionContext();
   const { showToast } = useToastContext();
   const { lang, setLang, t, LOCALE_CODES } = useLang();
+  const { user: loggedInUser, logout: userLogout } = useUserAuth();
 
   const [activeTab, setActiveTab] = useState('basic');
   const [advancedMode, setAdvancedModeState] = useState(getAdvancedMode);
@@ -466,6 +468,35 @@ export function SettingsModal({ isOpen, onClose, inline }) {
           {/* ── Basic ── */}
           {activeTab === 'basic' && (
             <div className="settings-panel settings-panel--active">
+
+              {loggedInUser && (
+                <div className="settings-field" style={{ background: 'var(--color-surface)', borderRadius: 6, padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                    <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                      Signed in as <strong style={{ color: 'var(--color-text)' }}>{loggedInUser.email}</strong>
+                    </span>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <a href="/projects" className="btn btn--ghost btn--sm" style={{ textDecoration: 'none' }}>
+                        Projects
+                      </a>
+                      <button
+                        className="btn btn--ghost btn--sm"
+                        onClick={userLogout}
+                        style={{ color: 'var(--color-text-muted)' }}
+                      >
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!loggedInUser && (
+                <div className="settings-field" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
+                  <a href="/login" style={{ color: 'var(--color-accent)' }}>Sign in</a>
+                  {' '}to manage your projects, or enter credentials manually below.
+                </div>
+              )}
 
               <div className="settings-field">
                 <label className="settings-field__label">{t('settings.connection.backendUrl')}</label>

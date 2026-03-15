@@ -19,6 +19,9 @@ import { ProductionCamerasPage } from './components/ProductionCamerasPage';
 import { ProductionMixersPage } from './components/ProductionMixersPage';
 import { ProductionBridgesPage } from './components/ProductionBridgesPage';
 import { ProductionOperatorPage } from './components/ProductionOperatorPage';
+import { LoginPage } from './components/LoginPage';
+import { RegisterPage } from './components/RegisterPage';
+import { ProjectsPage } from './components/ProjectsPage';
 
 const path = window.location.pathname;
 
@@ -41,6 +44,9 @@ function getPage() {
   if (path.startsWith('/production/mixers'))        return <ProductionMixersPage />;
   if (path.startsWith('/production/bridges'))       return <ProductionBridgesPage />;
   if (path.startsWith('/production'))               return <ProductionOperatorPage />;
+  if (path.startsWith('/login'))                    return <LoginPage />;
+  if (path.startsWith('/register'))                 return <RegisterPage />;
+  if (path.startsWith('/projects'))                 return <ProjectsPage />;
   return <App />;
 }
 
