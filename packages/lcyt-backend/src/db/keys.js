@@ -150,13 +150,13 @@ export function getKeyByEmail(db, email) {
 /**
  * Create a new API key.
  * @param {import('better-sqlite3').Database} db
- * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string }} options
+ * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, user_id?: number|null }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -170,6 +170,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     (hls_enabled ?? false) ? 1 : 0,
     cea708_delay_ms ?? 0,
     embed_cors ?? '*',
+    user_id ?? null,
   );
   return getKey(db, resolvedKey);
 }

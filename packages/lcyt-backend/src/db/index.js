@@ -16,6 +16,17 @@ export function initDb(dbPath) {
   const db = new Database(resolvedPath);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      email         TEXT    NOT NULL UNIQUE,
+      password_hash TEXT    NOT NULL,
+      name          TEXT,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      active        INTEGER NOT NULL DEFAULT 1
+    )
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS api_keys (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       key            TEXT    NOT NULL UNIQUE,
@@ -60,6 +71,7 @@ export function initDb(dbPath) {
   // CORS origin for embeddable player.js and HLS endpoints. Default '*' (allow all).
   // Set to a specific origin e.g. 'https://example.com' to restrict access.
   if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
+  if (!existingCols.has('user_id'))           db.exec('ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id)');
 
   // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
   // slot (1-4): one row per target; UNIQUE on (api_key, slot)
@@ -296,6 +308,7 @@ export function initDb(dbPath) {
 
 // Re-export all domain modules
 export { currentDateHour } from './helpers.js';
+export * from './users.js';
 export * from './keys.js';
 export * from './sessions.js';
 export * from './sequences.js';

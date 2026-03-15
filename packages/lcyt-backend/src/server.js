@@ -13,6 +13,7 @@ import { createCaptionsRouter } from './routes/captions.js';
 import { createEventsRouter } from './routes/events.js';
 import { createSyncRouter } from './routes/sync.js';
 import { createKeysRouter } from './routes/keys.js';
+import { createAuthRouter } from './routes/auth.js';
 import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
@@ -88,6 +89,13 @@ if (process.env.FREE_APIKEY_ACTIVE !== '1') {
   console.info('ℹ FREE_APIKEY_ACTIVE is not set — POST /keys?freetier is disabled.');
 } else {
   console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
+}
+
+const loginEnabled = process.env.USE_USER_LOGINS !== '0';
+if (loginEnabled) {
+  console.info('✓ User logins enabled. Set USE_USER_LOGINS=0 to disable.');
+} else {
+  console.info('ℹ User logins disabled (USE_USER_LOGINS=0).');
 }
 
 if (process.env.GRAPHICS_ENABLED === '1') {
@@ -315,6 +323,7 @@ app.get('/health', (req, res) => {
     ok: true,
     uptime: Math.floor(process.uptime()),
     activeSessions: store.size(),
+    loginEnabled,
     ...(process.env.RTMP_RELAY_ACTIVE === '1' ? {
       rtmpIngest: {
         host: process.env.RTMP_HOST || 'rtmp.lcyt.fi',
@@ -350,7 +359,8 @@ app.use('/live', createLiveRouter(db, store, jwtSecret));
 app.use('/captions', createCaptionsRouter(store, auth, db, relayManager, _dskCaptionProcessor));
 app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
-app.use('/keys', createKeysRouter(db));
+app.use('/auth', createAuthRouter(db, jwtSecret, { loginEnabled }));
+app.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret }));
 app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
