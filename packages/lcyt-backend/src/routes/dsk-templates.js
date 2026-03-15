@@ -1,18 +1,22 @@
 /**
- * Authenticated DSK template management endpoints.
+ * Authenticated DSK template management and renderer control endpoints.
  *
  * All routes require a valid JWT Bearer token (same auth as /captions etc.).
  * The API key comes from req.session.apiKey set by the auth middleware.
  *
- * GET    /dsk/:apikey/templates         — list templates (name, id, updated_at)
- * POST   /dsk/:apikey/templates         — create / update template by name
- * GET    /dsk/:apikey/templates/:id     — fetch template JSON payload
- * DELETE /dsk/:apikey/templates/:id     — delete template
- * POST   /dsk/:apikey/templates/:id/activate — render template in Playwright renderer
+ * Template CRUD:
+ * GET    /dsk/:apikey/templates               — list templates (name, id, updated_at)
+ * POST   /dsk/:apikey/templates               — create / update template by name
+ * GET    /dsk/:apikey/templates/:id           — fetch template JSON payload
+ * DELETE /dsk/:apikey/templates/:id           — delete template
+ * POST   /dsk/:apikey/templates/:id/activate  — render template in Playwright renderer
+ *
+ * Renderer control (Phase 3):
+ * POST   /dsk/:apikey/renderer/start          — start PNG capture loop → ffmpeg → RTMP
+ * POST   /dsk/:apikey/renderer/stop           — stop capture loop and ffmpeg
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
- * @param {object} renderer  — named exports from dsk-renderer.js
  */
 import { Router } from 'express';
 import {
@@ -21,7 +25,11 @@ import {
   getTemplate,
   deleteTemplate,
 } from '../db.js';
-import { updateTemplate } from '../dsk-renderer.js';
+import { updateTemplate, startRtmpStream, stopRtmpStream } from '../dsk-renderer.js';
+
+// Local RTMP base URL — matches the env vars used by dsk-rtmp.js
+const LOCAL_RTMP_BASE = process.env.DSK_LOCAL_RTMP || process.env.RADIO_LOCAL_RTMP || 'rtmp://127.0.0.1:1935';
+const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 
@@ -102,6 +110,35 @@ export function createDskTemplatesRouter(db, auth) {
     } catch (err) {
       console.error(`[dsk-templates] activate error for key ${req.params.apikey}:`, err.message);
       res.status(500).json({ error: 'Failed to activate template' });
+    }
+  });
+
+  // POST /dsk/:apikey/renderer/start — begin Playwright capture loop → ffmpeg → RTMP
+  router.post('/:apikey/renderer/start', auth, async (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const apiKey = req.params.apikey;
+
+    try {
+      await startRtmpStream(apiKey, LOCAL_RTMP_BASE, DSK_RTMP_APP);
+      const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
+      res.json({ ok: true, rtmpUrl });
+    } catch (err) {
+      console.error(`[dsk-renderer] start error for ${apiKey}:`, err.message);
+      res.status(500).json({ error: 'Failed to start renderer stream' });
+    }
+  });
+
+  // POST /dsk/:apikey/renderer/stop — tear down capture loop and ffmpeg
+  router.post('/:apikey/renderer/stop', auth, async (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const apiKey = req.params.apikey;
+
+    try {
+      await stopRtmpStream(apiKey);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error(`[dsk-renderer] stop error for ${apiKey}:`, err.message);
+      res.status(500).json({ error: 'Failed to stop renderer stream' });
     }
   });
 
