@@ -34,6 +34,7 @@ import { createPreviewRouter } from './routes/preview.js';
 import { PreviewManager } from './preview-manager.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
 import { initProductionControl, createProductionRouter } from 'production-control';
+import { startRenderer as startDskRenderer, stopRenderer as stopDskRenderer } from './dsk-renderer.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -201,6 +202,10 @@ hlsSubsManager.sweepStaleDir().catch(() => {});
 // Preview manager: RTMP → JPEG thumbnail (incoming stream preview).
 // Always instantiated; ffmpeg must be installed.
 const previewManager = new PreviewManager();
+
+// DSK renderer: headless Chromium → ffmpeg → RTMP (Playwright-based).
+// Always started; harmless if PLAYWRIGHT_DSK_CHROMIUM is not configured.
+await startDskRenderer();
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -372,4 +377,4 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, productionRegistry, productionBridgeManager };
+export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, productionRegistry, productionBridgeManager, stopDskRenderer };
