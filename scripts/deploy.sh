@@ -111,14 +111,16 @@ rm -f "$LOG"
 npm ci \
   --prefix "$REPO_DIR" \
   --workspace packages/lcyt-web \
-  --include=dev 2>&1 | tee "$LOG"
+  --include=dev 2>&1 | tee "$LOG" || \
+  echo "Warning: lcyt-web npm install failed (non-fatal) — web UI may not be updated."
 echo "    Install log: $LOG"
 tail -n 20 "$LOG" || true
 
 echo "==> Building lcyt-web"
 BUILD_LOG="$REPO_DIR/lcyt-web-build.log"
 rm -f "$BUILD_LOG"
-npm run build -w packages/lcyt-web --prefix "$REPO_DIR" 2>&1 | tee "$BUILD_LOG"
+npm run build -w packages/lcyt-web --prefix "$REPO_DIR" 2>&1 | tee "$BUILD_LOG" || \
+  echo "Warning: lcyt-web build failed (non-fatal) — web UI dist may not be updated."
 echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
 echo "    Build log: $BUILD_LOG"
 
@@ -129,7 +131,8 @@ echo "    Build log: $BUILD_LOG"
 echo "==> Installing root devDependencies (playwright, etc.)"
 ROOT_DEV_LOG="$REPO_DIR/root-npm-install.log"
 rm -f "$ROOT_DEV_LOG"
-npm ci --prefix "$REPO_DIR" --include=dev 2>&1 | tee "$ROOT_DEV_LOG"
+npm ci --prefix "$REPO_DIR" --include=dev 2>&1 | tee "$ROOT_DEV_LOG" || \
+  echo "Warning: root npm install failed (non-fatal) — screenshots and other dev tools may not run."
 tail -n 10 "$ROOT_DEV_LOG" || true
 
 echo "==> Installing Playwright Chromium browser (with OS-level system dependencies)"
@@ -153,14 +156,16 @@ rm -f "$SITE_LOG"
 npm ci \
   --prefix "$REPO_DIR" \
   --workspace packages/lcyt-site \
-  --include=dev 2>&1 | tee "$SITE_LOG"
+  --include=dev 2>&1 | tee "$SITE_LOG" || \
+  echo "Warning: lcyt-site npm install failed (non-fatal) — site may not be updated."
 echo "    Install log: $SITE_LOG"
 tail -n 20 "$SITE_LOG" || true
 
 echo "==> Building lcyt-site"
 SITE_BUILD_LOG="$REPO_DIR/lcyt-site-build.log"
 rm -f "$SITE_BUILD_LOG"
-npm run build -w packages/lcyt-site --prefix "$REPO_DIR" 2>&1 | tee "$SITE_BUILD_LOG"
+npm run build -w packages/lcyt-site --prefix "$REPO_DIR" 2>&1 | tee "$SITE_BUILD_LOG" || \
+  echo "Warning: lcyt-site build failed (non-fatal) — site dist may not be updated."
 echo "    Built → $REPO_DIR/packages/lcyt-site/dist"
 echo "    Build log: $SITE_BUILD_LOG"
 
@@ -174,7 +179,8 @@ rm -f "$BRIDGE_INSTALL_LOG"
 npm ci \
   --prefix "$REPO_DIR" \
   --workspace packages/lcyt-bridge \
-  --include=dev 2>&1 | tee "$BRIDGE_INSTALL_LOG"
+  --include=dev 2>&1 | tee "$BRIDGE_INSTALL_LOG" || \
+  echo "Warning: lcyt-bridge npm install failed (non-fatal) — bridge executables will not be updated."
 echo "    Install log: $BRIDGE_INSTALL_LOG"
 tail -n 10 "$BRIDGE_INSTALL_LOG" || true
 
