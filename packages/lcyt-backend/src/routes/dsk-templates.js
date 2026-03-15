@@ -35,7 +35,7 @@ import {
   getTemplate,
   deleteTemplate,
 } from '../db.js';
-import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData } from '../dsk-renderer.js';
+import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../dsk-renderer.js';
 
 // Local RTMP base URL — matches the env vars used by dsk-rtmp.js
 const LOCAL_RTMP_BASE = process.env.DSK_LOCAL_RTMP || process.env.RADIO_LOCAL_RTMP || 'rtmp://127.0.0.1:1935';
@@ -168,6 +168,13 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
       console.error(`[dsk-templates] broadcast error:`, err.message);
       res.status(500).json({ error: 'Failed to broadcast data' });
     }
+  });
+
+  // GET /dsk/:apikey/renderer/status — health check: is the renderer running for this key?
+  router.get('/:apikey/renderer/status', auth, (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const status = getStatus(req.params.apikey);
+    res.json(status);
   });
 
   // POST /dsk/:apikey/renderer/start — begin Playwright capture loop → ffmpeg → RTMP

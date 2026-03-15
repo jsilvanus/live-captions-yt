@@ -136,19 +136,71 @@ function escHtml(s) {
 // Browser lifecycle
 // ---------------------------------------------------------------------------
 
+// Whether a graceful shutdown is in progress (prevents crash-recovery restarts).
+let _stopping = false;
+
+async function _launchBrowser() {
+  _browser = await chromium.launch({
+    headless: true,
+    executablePath: CHROMIUM_EXEC,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+    ],
+  });
+
+  // Crash recovery: if Chromium exits unexpectedly, restart it and reload
+  // the last active template for each key that had an active capture loop.
+  _browser.on('disconnected', async () => {
+    if (_stopping) return;
+    console.warn('[dsk-renderer] Chromium disconnected — attempting restart in 2s...');
+    _browser = null;
+
+    // Snapshot the state we need to restore (pages are gone after crash).
+    const toRestore = [];
+    for (const [apiKey, state] of _keys) {
+      toRestore.push({
+        apiKey,
+        templateJson: state.templateJson,
+        wasCapturing: state.capturing,
+        rtmpBase:     state._rtmpBase,
+        rtmpApp:      state._rtmpApp,
+      });
+      // Mark as not running so stop logic in the capture loop exits cleanly.
+      state.capturing = false;
+      state.page      = null;
+      state.ffmpeg    = null;
+    }
+    _keys.clear();
+
+    await new Promise((r) => setTimeout(r, 2000));
+    if (_stopping) return;
+
+    try {
+      await _launchBrowser();
+      console.log('[dsk-renderer] Chromium restarted.');
+
+      for (const { apiKey, templateJson, wasCapturing, rtmpBase, rtmpApp } of toRestore) {
+        try {
+          if (templateJson) await updateTemplate(apiKey, templateJson);
+          if (wasCapturing && rtmpBase) await startRtmpStream(apiKey, rtmpBase, rtmpApp || 'dsk');
+        } catch (err) {
+          console.error(`[dsk-renderer] Recovery failed for ${apiKey}: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      console.error(`[dsk-renderer] Restart failed: ${err.message}`);
+    }
+  });
+}
+
 export async function startRenderer() {
   if (_browser) return; // already running
+  _stopping = false;
   try {
-    _browser = await chromium.launch({
-      headless: true,
-      executablePath: CHROMIUM_EXEC,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-      ],
-    });
+    await _launchBrowser();
     console.log('[dsk-renderer] Chromium started.');
   } catch (err) {
     console.error(`[dsk-renderer] Failed to launch Chromium: ${err.message}`);
@@ -158,6 +210,7 @@ export async function startRenderer() {
 }
 
 export async function stopRenderer() {
+  _stopping = true;
   // Stop all per-key capture loops and ffmpeg processes first.
   for (const [apiKey] of _keys) {
     await stopRtmpStream(apiKey);
@@ -183,7 +236,7 @@ async function _getOrCreatePage(apiKey) {
     _ensureBrowser();
     const page = await _browser.newPage();
     await page.setViewportSize({ width: 1920, height: 1080 });
-    state = { page, templateJson: null, ffmpeg: null, capturing: false };
+    state = { page, templateJson: null, ffmpeg: null, capturing: false, _rtmpBase: null, _rtmpApp: null };
     _keys.set(apiKey, state);
   }
   return state;
@@ -280,8 +333,10 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
     }
   });
 
-  state.ffmpeg = ffmpeg;
+  state.ffmpeg    = ffmpeg;
   state.capturing = true;
+  state._rtmpBase = rtmpBaseUrl;
+  state._rtmpApp  = rtmpApp;
 
   // Capture loop — runs until state.capturing is set to false
   const loop = async () => {
