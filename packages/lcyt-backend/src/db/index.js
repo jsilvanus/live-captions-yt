@@ -301,6 +301,19 @@ export function initDb(dbPath) {
     )
   `);
 
+  // DSK graphics templates: JSON templates for the Playwright-based renderer.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dsk_templates (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key       TEXT    NOT NULL,
+      name          TEXT    NOT NULL,
+      template_json TEXT    NOT NULL,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (api_key, name)
+    )
+  `);
+
   return db;
 }
 
@@ -316,3 +329,4 @@ export * from './icons.js';
 export * from './images.js';
 export * from './relay.js';
 export * from './viewer.js';
+export * from './dsk-templates.js';

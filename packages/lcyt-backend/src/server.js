@@ -33,6 +33,7 @@ import { HlsManager } from './hls-manager.js';
 import { createPreviewRouter } from './routes/preview.js';
 import { PreviewManager } from './preview-manager.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
+import { createDskTemplatesRouter } from './routes/dsk-templates.js';
 import { initProductionControl, createProductionRouter } from 'production-control';
 import { startRenderer as startDskRenderer, stopRenderer as stopDskRenderer } from './dsk-renderer.js';
 
@@ -360,6 +361,7 @@ app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/images', createImagesRouter(db, auth));
 app.use('/dsk', createDskRouter(db, store));
+app.use('/dsk', createDskTemplatesRouter(db, auth));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
