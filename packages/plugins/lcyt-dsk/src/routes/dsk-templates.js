@@ -18,7 +18,7 @@
  * POST   /dsk/:apikey/renderer/stop           — stop capture loop and ffmpeg;
  *                                               clears relayManager DSK RTMP source
  *
- * Broadcast control (Phase 5):
+ * Broadcast control:
  * POST   /dsk/:apikey/template               — activate template by id { id } (convenience alias)
  * POST   /dsk/:apikey/broadcast              — inject live data without page reload:
  *                                               { updates: [{ selector, text }, ...] }
@@ -26,7 +26,7 @@
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
- * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {object} relayManager
  */
 import { Router } from 'express';
 import {
@@ -34,8 +34,8 @@ import {
   listTemplates,
   getTemplate,
   deleteTemplate,
-} from '../db.js';
-import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../dsk-renderer.js';
+} from '../db/dsk-templates.js';
+import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../renderer.js';
 
 // Local RTMP base URL — matches the env vars used by dsk-rtmp.js
 const LOCAL_RTMP_BASE = process.env.DSK_LOCAL_RTMP || process.env.RADIO_LOCAL_RTMP || 'rtmp://127.0.0.1:1935';
@@ -188,8 +188,6 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
     try {
       await startRtmpStream(apiKey, LOCAL_RTMP_BASE, DSK_RTMP_APP);
       // Wire the Playwright RTMP output directly into the relay overlay pipeline.
-      // This is the same path used by Method 2B (external OBS broadcast) so the
-      // ffmpeg overlay filter is identical: [main][dsk]overlay=0:0:shortest=1
       if (relayManager) {
         await relayManager.setDskRtmpSource(apiKey, rtmpUrl);
       }

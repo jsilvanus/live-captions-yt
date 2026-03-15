@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getKey, listImages } from '../db.js';
+import { listImages } from '../db/images.js';
 
 /**
  * Factory for the /dsk router.
@@ -11,7 +11,7 @@ import { getKey, listImages } from '../db.js';
  * GET /dsk/:apikey/events  — SSE stream; emits 'graphics' events when captions with <!-- graphics:... --> are received
  *
  * @param {import('better-sqlite3').Database} db
- * @param {import('../store.js').SessionStore} store
+ * @param {import('../../../../lcyt-backend/src/store.js').SessionStore} store
  * @returns {Router}
  */
 export function createDskRouter(db, store) {
@@ -19,7 +19,7 @@ export function createDskRouter(db, store) {
 
   // Validate API key exists and is active — shared by both endpoints
   function resolveKey(apiKey, res) {
-    const row = getKey(db, apiKey);
+    const row = db.prepare('SELECT key, active FROM api_keys WHERE key = ?').get(apiKey);
     if (!row || row.active !== 1) {
       res.status(404).json({ error: 'API key not found' });
       return null;

@@ -10,8 +10,8 @@
     "packages/lcyt-mcp-stdio",
     "packages/lcyt-mcp-sse",
     "packages/lcyt-site",
-    "packages/production-control",
-    "packages/lcyt-bridge"
+    "packages/lcyt-bridge",
+    "packages/plugins/*"
   ],
   "scripts": {
     "test": "npm test --workspaces",
@@ -37,7 +37,5 @@
     "url": "https://github.com/jsilvanus/live-captions-yt/issues"
   },
   "homepage": "https://github.com/jsilvanus/live-captions-yt#readme",
-  "devDependencies": {
-    "playwright": "^1.58.2"
-  }
+  "devDependencies": {}
 }

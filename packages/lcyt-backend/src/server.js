@@ -17,8 +17,6 @@ import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
-import { createImagesRouter } from './routes/images.js';
-import { createDskRouter } from './routes/dsk.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
 import { createViewerRouter, setHlsSubsManager } from './routes/viewer.js';
@@ -32,10 +30,8 @@ import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { HlsManager } from './hls-manager.js';
 import { createPreviewRouter } from './routes/preview.js';
 import { PreviewManager } from './preview-manager.js';
-import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
-import { createDskTemplatesRouter } from './routes/dsk-templates.js';
-import { initProductionControl, createProductionRouter } from 'production-control';
-import { startRenderer as startDskRenderer, stopRenderer as stopDskRenderer } from './dsk-renderer.js';
+import { initProductionControl, createProductionRouter } from 'lcyt-production';
+import { initDskControl, createDskRouters } from 'lcyt-dsk';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -204,9 +200,9 @@ hlsSubsManager.sweepStaleDir().catch(() => {});
 // Always instantiated; ffmpeg must be installed.
 const previewManager = new PreviewManager();
 
-// DSK renderer: headless Chromium → ffmpeg → RTMP (Playwright-based).
-// Always started; harmless if PLAYWRIGHT_DSK_CHROMIUM is not configured.
-await startDskRenderer();
+// DSK plugin: DB migrations, Playwright renderer, caption processor.
+const { captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, store, relayManager);
+const { dskRouter, dskTemplatesRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, store, auth, relayManager);
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -351,7 +347,7 @@ app.get('/contact', (req, res) => {
 });
 
 app.use('/live', createLiveRouter(db, store, jwtSecret));
-app.use('/captions', createCaptionsRouter(store, auth, db, relayManager));
+app.use('/captions', createCaptionsRouter(store, auth, db, relayManager, _dskCaptionProcessor));
 app.use('/events', createEventsRouter(store, jwtSecret));
 app.use('/sync', createSyncRouter(store, auth));
 app.use('/keys', createKeysRouter(db));
@@ -359,9 +355,10 @@ app.use('/stats', createStatsRouter(db, auth, store));
 app.use('/mic', createMicRouter(store, auth));
 app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
-app.use('/images', createImagesRouter(db, auth));
-app.use('/dsk', createDskRouter(db, store));
-app.use('/dsk', createDskTemplatesRouter(db, auth, relayManager));
+app.use('/images',   imagesRouter);
+app.use('/dsk',      dskRouter);
+app.use('/dsk',      dskTemplatesRouter);
+app.use('/dsk-rtmp', dskRtmpRouter);
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
@@ -369,7 +366,6 @@ app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
 app.use('/radio', createRadioRouter(db, radioManager));
 app.use('/stream-hls', createStreamHlsRouter(db, hlsManager));
 app.use('/preview', createPreviewRouter(previewManager));
-app.use('/dsk-rtmp', createDskRtmpRouter(relayManager));
 app.use('/youtube', createYouTubeRouter(auth));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
@@ -379,4 +375,4 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, productionRegistry, productionBridgeManager, stopDskRenderer };
+export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, productionRegistry, productionBridgeManager, stopDsk };

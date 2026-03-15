@@ -1,39 +1,8 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { resolve, join, basename } from 'node:path';
-import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled, getImageByShorthand, safeApiKey } from '../db.js';
+import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled } from '../db.js';
 import { broadcastToViewers, registerViewerKeyOwner } from './viewer.js';
 import { composeCaptionText, writeToBackendFile } from '../caption-files.js';
-
-// Base directory for uploaded graphics (same default as routes/images.js)
-const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
-
-// Regex to detect and extract <!-- graphics:... --> metadata codes.
-// Matches anywhere in the caption text (own line or inline with text).
-const GRAPHICS_CODE_RE = /<!--\s*graphics\s*:(.*?)-->/i;
-
-/**
- * Strip any <!-- graphics:... --> code from caption text and return
- * the cleaned text plus the parsed list of shorthand names.
- *
- * @param {string} text
- * @returns {{ cleanText: string, graphicsNames: string[]|null }}
- *   graphicsNames is null when no graphics code was present,
- *   an empty array for <!-- graphics: --> (clear command),
- *   or a non-empty array of trimmed names.
- */
-function extractGraphicsCode(text) {
-  const match = text.match(GRAPHICS_CODE_RE);
-  if (!match) return { cleanText: text, graphicsNames: null };
-
-  const names = match[1]
-    .split(',')
-    .map(n => n.trim())
-    .filter(Boolean);
-
-  const cleanText = text.replace(GRAPHICS_CODE_RE, '').trim();
-  return { cleanText, graphicsNames: names };
-}
 
 /**
  * Factory for the /captions router.
@@ -48,7 +17,7 @@ function extractGraphicsCode(text) {
  * @param {import('../rtmp-manager.js').RtmpRelayManager|null} [relayManager]
  * @returns {Router}
  */
-export function createCaptionsRouter(store, auth, db, relayManager = null) {
+export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null) {
   const router = Router();
 
   // POST /captions — Send captions (auth required)
@@ -108,39 +77,11 @@ export function createCaptionsRouter(store, auth, db, relayManager = null) {
     session._sendQueue = session._sendQueue.then(async () => {
       let result;
       try {
-        // Extract graphics codes from captions and emit DSK events.
-        // The graphics code is stripped from the text before delivery to YouTube.
-        for (const caption of resolvedCaptions) {
-          const { cleanText, graphicsNames } = extractGraphicsCode(caption.text || '');
-          if (graphicsNames !== null) {
-            // Mutate in place so downstream processing uses the stripped text
-            caption.text = cleanText;
-            // Emit DSK event to any open /dsk/:apikey/events SSE connections
-            store.emitDskEvent(session.apiKey, 'graphics', {
-              names: graphicsNames,
-              ts: Date.now(),
-            });
-            // In CC mode, also emit the stripped text as a separate event so the
-            // DSK CC overlay can display it
-            if (cleanText) {
-              store.emitDskEvent(session.apiKey, 'text', {
-                text: cleanText,
-                ts: Date.now(),
-              });
-            }
-
-            // Server-side DSK overlay: update the RTMP relay process with the new images.
-            // Only raster formats (PNG/WebP) are supported; SVG is skipped.
-            if (relayManager) {
-              const imagePaths = graphicsNames.flatMap(name => {
-                const row = getImageByShorthand(db, session.apiKey, name);
-                if (!row || row.mime_type === 'image/svg+xml') return [];
-                // Reconstruct the absolute path using the same convention as routes/images.js
-                return [join(GRAPHICS_BASE_DIR, safeApiKey(session.apiKey), basename(row.filename))];
-              });
-              // Fire-and-forget — DSK update failures are logged inside setDskOverlay
-              relayManager.setDskOverlay(session.apiKey, graphicsNames, imagePaths).catch(() => {});
-            }
+        // DSK: strip <!-- graphics:... --> codes and trigger overlay updates.
+        // Handled by the lcyt-dsk plugin processor injected at startup.
+        if (dskProcessor) {
+          for (const caption of resolvedCaptions) {
+            caption.text = await dskProcessor(session.apiKey, caption.text || '');
           }
         }
 

@@ -51,6 +51,17 @@ export function validateApiKey(db, key) {
 }
 
 /**
+ * Check whether the graphics_enabled flag is set for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function isGraphicsEnabled(db, key) {
+  const row = db.prepare('SELECT graphics_enabled FROM api_keys WHERE key = ?').get(key);
+  return row?.graphics_enabled === 1;
+}
+
+/**
  * Check usage limits and, if allowed, atomically increment both daily and lifetime counters.
  * Keys with null limits are always allowed.
  * @param {import('better-sqlite3').Database} db

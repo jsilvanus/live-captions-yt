@@ -1,4 +1,4 @@
-import { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDskRenderer } from './server.js';
+import { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk } from './server.js';
 import { cleanRevokedKeys } from './db.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
@@ -54,7 +54,7 @@ if (REVOKED_KEY_TTL_DAYS > 0) {
 
 async function shutdown() {
   console.log('Shutting down...');
-  await stopDskRenderer();
+  await stopDsk();
   await relayManager.stopAll();
   await radioManager.stopAll();
   await hlsManager.stopAll();
