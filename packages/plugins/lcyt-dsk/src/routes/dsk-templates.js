@@ -36,6 +36,7 @@ import {
   deleteTemplate,
 } from '../db/dsk-templates.js';
 import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../renderer.js';
+import { editorAuthOrBearer } from '../middleware/editor-auth.js';
 
 // Local RTMP base URL — matches the env vars used by dsk-rtmp.js
 const LOCAL_RTMP_BASE = process.env.DSK_LOCAL_RTMP || process.env.RADIO_LOCAL_RTMP || 'rtmp://127.0.0.1:1935';
@@ -43,8 +44,9 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 
-export function createDskTemplatesRouter(db, auth, relayManager) {
+export function createDskTemplatesRouter(db, auth, editorAuth, relayManager) {
   const router = Router();
+  const combinedAuth = editorAuthOrBearer(auth, editorAuth);
 
   // Verify that the token owner matches the URL apikey (prevents cross-key access).
   function checkOwner(req, res, paramKey) {
@@ -56,14 +58,14 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
   }
 
   // GET /dsk/:apikey/templates
-  router.get('/:apikey/templates', auth, (req, res) => {
+  router.get('/:apikey/templates', combinedAuth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const rows = listTemplates(db, req.params.apikey);
     res.json({ templates: rows });
   });
 
   // POST /dsk/:apikey/templates  { name, template }
-  router.post('/:apikey/templates', auth, async (req, res) => {
+  router.post('/:apikey/templates', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name, template } = req.body || {};
 
@@ -84,7 +86,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
   });
 
   // GET /dsk/:apikey/templates/:id
-  router.get('/:apikey/templates/:id', auth, (req, res) => {
+  router.get('/:apikey/templates/:id', combinedAuth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -95,7 +97,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
   });
 
   // DELETE /dsk/:apikey/templates/:id
-  router.delete('/:apikey/templates/:id', auth, (req, res) => {
+  router.delete('/:apikey/templates/:id', combinedAuth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -105,8 +107,37 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
     res.json({ ok: true });
   });
 
+  // PUT /dsk/:apikey/templates/:id — update template name and/or JSON payload
+  router.put('/:apikey/templates/:id', combinedAuth, (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+
+    const { name, template } = req.body || {};
+    if (!name && !template) return res.status(400).json({ error: 'Provide name and/or template' });
+    if (name && !NAME_RE.test(name)) {
+      return res.status(400).json({ error: 'name must be 1-64 alphanumeric/space/dash/underscore chars' });
+    }
+
+    const existing = getTemplate(db, id, req.params.apikey);
+    if (!existing) return res.status(404).json({ error: 'Template not found' });
+
+    const updatedName = name ?? existing.name;
+    const updatedJson = template ?? existing.templateJson;
+    try {
+      // Direct UPDATE by id so renaming works without creating a duplicate record
+      db.prepare(
+        "UPDATE dsk_templates SET name = ?, template_json = ?, updated_at = datetime('now') WHERE id = ?"
+      ).run(updatedName, JSON.stringify(updatedJson), id);
+      res.json({ ok: true, id, name: updatedName });
+    } catch (err) {
+      console.error('[dsk-templates] PUT error:', err.message);
+      res.status(500).json({ error: 'Failed to update template' });
+    }
+  });
+
   // POST /dsk/:apikey/templates/:id/activate — load template into Playwright renderer
-  router.post('/:apikey/templates/:id/activate', auth, async (req, res) => {
+  router.post('/:apikey/templates/:id/activate', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -125,7 +156,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
 
   // POST /dsk/:apikey/template — activate template by id (convenience alias for /templates/:id/activate)
   // Body: { id: number }
-  router.post('/:apikey/template', auth, async (req, res) => {
+  router.post('/:apikey/template', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.body?.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'id must be a number' });
@@ -146,7 +177,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
   // Animations keep running; only the targeted DOM elements are updated.
   // Body: { updates: [{ selector: string, text: string }, ...] }
   //   or: { selector: string, text: string }  (single-item shorthand)
-  router.post('/:apikey/broadcast', auth, async (req, res) => {
+  router.post('/:apikey/broadcast', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { updates, selector, text } = req.body || {};
 
@@ -171,7 +202,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
   });
 
   // GET /dsk/:apikey/renderer/status — health check: is the renderer running for this key?
-  router.get('/:apikey/renderer/status', auth, (req, res) => {
+  router.get('/:apikey/renderer/status', combinedAuth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const status = getStatus(req.params.apikey);
     res.json(status);
@@ -180,7 +211,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
   // POST /dsk/:apikey/renderer/start — begin Playwright capture loop → ffmpeg → RTMP
   // Also calls relayManager.setDskRtmpSource() directly so the ffmpeg overlay compositing
   // picks up the Playwright stream immediately without waiting for nginx on_publish.
-  router.post('/:apikey/renderer/start', auth, async (req, res) => {
+  router.post('/:apikey/renderer/start', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
     const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
@@ -200,7 +231,7 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
 
   // POST /dsk/:apikey/renderer/stop — tear down capture loop and ffmpeg
   // Also clears the DSK RTMP source in relayManager so the relay reverts to copy mode.
-  router.post('/:apikey/renderer/stop', auth, async (req, res) => {
+  router.post('/:apikey/renderer/stop', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
 
