@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-import { initDb, getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey, cleanRevokedKeys } from '../src/db.js';
+import bcrypt from 'bcryptjs';
+import {
+  initDb,
+  getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey, cleanRevokedKeys,
+  createUser, getUserByEmail, getUserById, updateUserPassword, getKeysByUserId,
+} from '../src/db.js';
 
 // ---------------------------------------------------------------------------
 // Argument parsing helpers
@@ -54,6 +59,7 @@ function printKeyTable(keys) {
     padEnd('OWNER', 16),
     padEnd('ACTIVE', 8),
     padEnd('EXPIRES', 14),
+    padEnd('USER', 6),
     'CREATED'
   ].join(' ');
 
@@ -66,6 +72,7 @@ function printKeyTable(keys) {
       padEnd(k.owner, 16),
       padEnd(active, 8),
       padEnd(formatDate(k.expires_at), 14),
+      padEnd(k.user_id ?? '—', 6),
       formatDate(k.created_at)
     ].join(' ');
     console.log('  ' + row);
@@ -80,6 +87,7 @@ function printKey(k) {
   console.log(`key:             ${k.key}`);
   console.log(`owner:           ${k.owner}`);
   console.log(`email:           ${k.email || '—'}`);
+  console.log(`user id:         ${k.user_id ?? '—'}`);
   console.log(`active:          ${k.active ? 'yes' : 'REVOKED'}`);
   console.log(`expires:         ${formatDate(k.expires_at)}`);
   console.log(`daily limit:     ${k.daily_limit ?? 'unlimited'}`);
@@ -94,8 +102,41 @@ function printKey(k) {
   console.log(`created:         ${formatDate(k.created_at)}`);
 }
 
+function printUserTable(users) {
+  const header = [
+    padEnd('ID', 6),
+    padEnd('EMAIL', 32),
+    padEnd('NAME', 20),
+    padEnd('ACTIVE', 8),
+    'CREATED'
+  ].join(' ');
+  console.log('  ' + header);
+  for (const u of users) {
+    const row = [
+      padEnd(u.id, 6),
+      padEnd(u.email, 32),
+      padEnd(u.name || '—', 20),
+      padEnd(u.active ? 'yes' : 'INACTIVE', 8),
+      formatDate(u.created_at)
+    ].join(' ');
+    console.log('  ' + row);
+  }
+}
+
+function printUser(u) {
+  if (!u) {
+    console.error('User not found.');
+    process.exit(1);
+  }
+  console.log(`id:              ${u.id}`);
+  console.log(`email:           ${u.email}`);
+  console.log(`name:            ${u.name || '—'}`);
+  console.log(`active:          ${u.active ? 'yes' : 'INACTIVE'}`);
+  console.log(`created:         ${formatDate(u.created_at)}`);
+}
+
 // ---------------------------------------------------------------------------
-// Commands
+// Key commands
 // ---------------------------------------------------------------------------
 
 function cmdList(db) {
@@ -113,6 +154,24 @@ function cmdAdd(db, flags) {
     console.error('Error: --owner is required');
     process.exit(1);
   }
+
+  // Resolve --user-email to a user_id if provided
+  let userId = undefined;
+  if (flags['user-email']) {
+    const user = getUserByEmail(db, flags['user-email']);
+    if (!user) {
+      console.error(`Error: no user found with email '${flags['user-email']}'`);
+      process.exit(1);
+    }
+    userId = user.id;
+  } else if (flags['user-id']) {
+    userId = Number(flags['user-id']);
+    if (!getUserById(db, userId)) {
+      console.error(`Error: no user found with id ${userId}`);
+      process.exit(1);
+    }
+  }
+
   const created = createKey(db, {
     key: key || undefined,
     owner,
@@ -126,6 +185,7 @@ function cmdAdd(db, flags) {
     hls_enabled: flags['hls'] === true || flags['hls'] === 'true',
     cea708_delay_ms: flags['cea708-delay'] !== undefined ? Number(flags['cea708-delay']) : undefined,
     embed_cors: flags['embed-cors'] || undefined,
+    user_id: userId ?? null,
   });
   console.log('Created API key:');
   printKey(created);
@@ -239,15 +299,124 @@ function cmdClean(db, flags) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// User commands
+// ---------------------------------------------------------------------------
+
+function resolveUser(db, ref) {
+  if (!ref) {
+    console.error('Error: user email or id required');
+    process.exit(1);
+  }
+  const user = /^\d+$/.test(ref)
+    ? getUserById(db, Number(ref))
+    : getUserByEmail(db, ref);
+  if (!user) {
+    console.error(`User not found: ${ref}`);
+    process.exit(1);
+  }
+  return user;
+}
+
+function cmdUsersList(db) {
+  const users = db.prepare('SELECT * FROM users ORDER BY id').all();
+  if (users.length === 0) {
+    console.log('No users found.');
+    return;
+  }
+  printUserTable(users);
+}
+
+function cmdUsersInfo(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  printUser(user);
+  const keys = getKeysByUserId(db, user.id);
+  if (keys.length === 0) {
+    console.log('  (no API keys)');
+  } else {
+    console.log(`\nAPI keys (${keys.length}):`);
+    printKeyTable(keys);
+  }
+}
+
+async function cmdUsersAdd(db, flags) {
+  const { email, name } = flags;
+  const password = flags.password;
+  if (!email) {
+    console.error('Error: --email is required');
+    process.exit(1);
+  }
+  if (!password || password.length < 8) {
+    console.error('Error: --password is required and must be at least 8 characters');
+    process.exit(1);
+  }
+  if (getUserByEmail(db, email)) {
+    console.error(`Error: a user with email '${email}' already exists`);
+    process.exit(1);
+  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = createUser(db, { email, passwordHash, name: name || null });
+  console.log('Created user:');
+  printUser(getUserById(db, user.id));
+}
+
+async function cmdUsersSetPassword(db, positional, flags) {
+  const user = resolveUser(db, positional[2]);
+  const password = flags.password;
+  if (!password || password.length < 8) {
+    console.error('Error: --password is required and must be at least 8 characters');
+    process.exit(1);
+  }
+  const hash = await bcrypt.hash(password, 10);
+  updateUserPassword(db, user.id, hash);
+  console.log(`Password updated for user ${user.id} (${user.email})`);
+}
+
+function cmdUsersDeactivate(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(user.id);
+  console.log(`Deactivated user ${user.id} (${user.email})`);
+}
+
+function cmdUsersActivate(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(user.id);
+  console.log(`Activated user ${user.id} (${user.email})`);
+}
+
+function cmdUsersDelete(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  const keyCount = db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE user_id = ? AND active = 1').get(user.id)?.n ?? 0;
+  if (keyCount > 0) {
+    console.error(`Error: user has ${keyCount} active key(s). Revoke them first, or use --force.`);
+    process.exit(1);
+  }
+  db.prepare('UPDATE api_keys SET user_id = NULL WHERE user_id = ?').run(user.id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  console.log(`Deleted user ${user.id} (${user.email}). ${keyCount === 0 ? '' : `Their keys have been unlinked.`}`);
+}
+
+function cmdUsersDeleteForce(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  db.prepare('UPDATE api_keys SET user_id = NULL WHERE user_id = ?').run(user.id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  console.log(`Deleted user ${user.id} (${user.email}) and unlinked their keys.`);
+}
+
+// ---------------------------------------------------------------------------
+// Usage
+// ---------------------------------------------------------------------------
+
 function usage() {
   console.log(`Usage: lcyt-backend-admin <command> [options]
 
-Commands:
+Key commands:
   list                              List all API keys
   add --owner <name> [--key <key>] [--email <email>] [--expires <date>]
       [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving] [--relay]
       [--radio] [--hls] [--cea708-delay <ms>] [--embed-cors <origin>]
-                                    Create a new API key
+      [--user-email <email>] [--user-id <id>]
+                                    Create a new API key (optionally linked to a user)
   update <key> [--owner <name>] [--expires <date>]
       [--daily-limit <n|none>] [--lifetime-limit <n|none>]
       [--file-saving [true|false]] [--relay [true|false]]
@@ -259,6 +428,18 @@ Commands:
   renew <key> --expires <date>      Extend key expiration
   info <key>                        Show details for a key
   clean [--days 30] [--dry-run]     Purge revoked keys older than N days
+
+User commands:
+  users list                        List all user accounts
+  users info <email|id>             Show user details and their API keys
+  users add --email <email> --password <password> [--name <name>]
+                                    Create a new user account
+  users set-password <email|id> --password <password>
+                                    Reset a user's password
+  users deactivate <email|id>       Disable a user account (login blocked)
+  users activate <email|id>         Re-enable a disabled user account
+  users delete <email|id>           Delete a user (fails if they have active keys)
+  users delete <email|id> --force   Delete a user and unlink their keys
 
 Options:
   --db <path>    Path to the SQLite database (default: ./lcyt-backend.db or DB_PATH env var)
@@ -283,35 +464,67 @@ const db = initDb(dbPath);
 
 const command = positional[0];
 
-switch (command) {
-  case 'list':
-    cmdList(db);
-    break;
-  case 'add':
-    cmdAdd(db, flags);
-    break;
-  case 'update':
-    cmdUpdate(db, positional, flags);
-    break;
-  case 'revoke':
-    cmdRevoke(db, positional);
-    break;
-  case 'delete':
-    cmdDelete(db, positional);
-    break;
-  case 'renew':
-    cmdRenew(db, positional, flags);
-    break;
-  case 'info':
-    cmdInfo(db, positional);
-    break;
-  case 'clean':
-    cmdClean(db, flags);
-    break;
-  default:
-    console.error(`Unknown command: ${command}`);
-    usage();
-    process.exit(1);
+if (command === 'users') {
+  const sub = positional[1];
+  switch (sub) {
+    case 'list':
+      cmdUsersList(db);
+      break;
+    case 'info':
+      cmdUsersInfo(db, positional);
+      break;
+    case 'add':
+      await cmdUsersAdd(db, flags);
+      break;
+    case 'set-password':
+      await cmdUsersSetPassword(db, positional, flags);
+      break;
+    case 'deactivate':
+      cmdUsersDeactivate(db, positional);
+      break;
+    case 'activate':
+      cmdUsersActivate(db, positional);
+      break;
+    case 'delete':
+      if (flags.force) cmdUsersDeleteForce(db, positional);
+      else cmdUsersDelete(db, positional);
+      break;
+    default:
+      console.error(`Unknown users subcommand: ${sub || '(none)'}`);
+      usage();
+      process.exit(1);
+  }
+} else {
+  switch (command) {
+    case 'list':
+      cmdList(db);
+      break;
+    case 'add':
+      await cmdAdd(db, flags);
+      break;
+    case 'update':
+      cmdUpdate(db, positional, flags);
+      break;
+    case 'revoke':
+      cmdRevoke(db, positional);
+      break;
+    case 'delete':
+      cmdDelete(db, positional);
+      break;
+    case 'renew':
+      cmdRenew(db, positional, flags);
+      break;
+    case 'info':
+      cmdInfo(db, positional);
+      break;
+    case 'clean':
+      cmdClean(db, flags);
+      break;
+    default:
+      console.error(`Unknown command: ${command}`);
+      usage();
+      process.exit(1);
+  }
 }
 
 db.close();
