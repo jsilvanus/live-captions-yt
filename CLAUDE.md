@@ -2,7 +2,7 @@
 
 ## Overview
 
-Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, and a Model Context Protocol (MCP) server for AI assistant integration.
+Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a production control layer for cameras/mixers, and a bridge agent for AV hardware.
 
 ---
 
@@ -14,9 +14,12 @@ live-captions-yt/
 │   ├── lcyt/                   # Core library (published to npm as `lcyt`)
 │   ├── lcyt-cli/               # CLI tool (published to npm as `lcyt-cli`)
 │   ├── lcyt-backend/           # Express.js HTTP relay backend
+│   ├── lcyt-bridge/            # Production control bridge agent (TCP relay to AMX/Roland)
 │   ├── lcyt-mcp-stdio/         # MCP server (stdio transport)
 │   ├── lcyt-mcp-sse/           # MCP server (HTTP SSE transport)
-│   └── lcyt-web/               # Browser-based web UI (Vite + React)
+│   ├── lcyt-site/              # Marketing/docs website (Astro)
+│   ├── lcyt-web/               # Browser-based web UI (Vite + React)
+│   └── production-control/     # Production control library (cameras, mixers, bridge)
 ├── python-packages/            # Python packages
 │   ├── lcyt/                   # Core Python library (published to PyPI as `lcyt`)
 │   ├── lcyt-backend/           # Flask backend (cPanel/Passenger compatible)
@@ -24,7 +27,7 @@ live-captions-yt/
 ├── android/                    # Native Android apps
 │   └── lcyt-tv/                # Android TV caption viewer (Kotlin + Compose for TV)
 ├── python/                     # LEGACY — do not use; canonical source is python-packages/
-├── scripts/                    # Shell deployment scripts
+├── scripts/                    # Shell deployment scripts + screenshot capture
 ├── package.json                # Root workspace manifest
 └── CLAUDE.md                   # This file
 ```
@@ -55,6 +58,10 @@ npm test               # Run tests across all Node.js packages
 npm start              # Run lcyt-cli
 npm run start:backend  # Run lcyt-backend Express server
 npm run web            # Run lcyt-web Vite dev server
+npm run build:web      # Build lcyt-web for production → packages/lcyt-web/dist/
+npm run build:site     # Build lcyt-web then lcyt-site (Astro)
+npm run preview:web    # Preview the lcyt-web production build locally
+npm run screenshots    # Run Playwright screenshot capture (scripts/screenshots/capture.mjs)
 ```
 
 ---
@@ -130,19 +137,45 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `SESSION_TTL` | Session timeout (ms) | 7200000 (2h) |
 | `CLEANUP_INTERVAL` | Session cleanup sweep interval (ms) | 300000 (5m) |
 | `PORT` | HTTP port | 3000 |
-| `STATIC_DIR` | Serve static files | none |
+| `STATIC_DIR` | Serve static files from this directory | none |
+| `PUBLIC_URL` | Server's public URL (used in generated .env files) | none |
+| `TRUST_PROXY` | Express `trust proxy` value | unset |
 | `REVOKED_KEY_TTL_DAYS` | Days before revoked keys are purged | 30 |
 | `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval (ms) | 86400000 (24h) |
-| `ALLOWED_DOMAINS` | Comma-separated domains for /usage CORS filter | `lcyt.fi,www.lcyt.fi` |
-| `ALLOWED_RTMP_DOMAINS` | Comma-separated domains allowed to use `/stream` relay endpoints; if unset, falls back to `ALLOWED_DOMAINS` | (falls back to `ALLOWED_DOMAINS`) |
+| `ALLOWED_DOMAINS` | Comma-separated domains for session CORS filter | `lcyt.fi,www.lcyt.fi,localhost` |
+| `ALLOWED_RTMP_DOMAINS` | Domains allowed to use `/stream` relay endpoints; falls back to `ALLOWED_DOMAINS` | (falls back) |
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
+| `FREE_APIKEY_ACTIVE` | If set, enables free API key self-registration endpoint | unset |
 | `HLS_SUBS_ROOT` | Directory for WebVTT subtitle segment files | `/tmp/hls-subs` |
 | `HLS_SUBS_SEGMENT_DURATION` | Subtitle segment length in seconds | `6` |
 | `HLS_SUBS_WINDOW_SIZE` | Number of subtitle segments to keep per language | `10` |
+| `HLS_ROOT` | HLS output directory for video+audio streams | `/tmp/hls-video` |
+| `HLS_LOCAL_RTMP` | Local nginx-rtmp base URL for HLS/preview | `rtmp://127.0.0.1:1935` |
+| `HLS_RTMP_APP` | RTMP application name for HLS/preview | `live` |
+| `RADIO_HLS_ROOT` | HLS output directory for audio-only streams | `/tmp/hls` |
+| `RADIO_LOCAL_RTMP` | Local nginx-rtmp URL for radio streams | `rtmp://127.0.0.1:1935` |
+| `RADIO_RTMP_APP` | RTMP application name for radio | `live` |
+| `RTMP_HOST` | RTMP host for RTMP relay | none |
+| `RTMP_APP` / `RTMP_APPLICATION` | RTMP application name for relay | none |
+| `RTMP_RELAY_ACTIVE` | If set, enables RTMP relay functionality | unset |
+| `RTMP_CONTROL_URL` | nginx-rtmp control URL | none |
+| `PREVIEW_ROOT` | Directory for JPEG thumbnail files | `/tmp/previews` |
+| `PREVIEW_INTERVAL_S` | Seconds between thumbnail updates | `5` |
+| `GRAPHICS_DIR` | Image storage directory for DSK overlays | `/data/images` |
+| `GRAPHICS_ENABLED` | If set, enables image upload/management | unset |
+| `GRAPHICS_MAX_FILE_BYTES` | Max uploaded image size in bytes | 5242880 (5 MB) |
+| `GRAPHICS_MAX_STORAGE_BYTES` | Max total image storage per key in bytes | 52428800 (50 MB) |
+| `YOUTUBE_CLIENT_ID` | Google OAuth 2.0 Web client ID (for client-side token flow) | none |
+| `CONTACT_EMAIL` | Contact info returned by `GET /contact` | none |
+| `CONTACT_NAME` | Contact name returned by `GET /contact` | none |
+| `CONTACT_PHONE` | Contact phone returned by `GET /contact` | none |
+| `CONTACT_WEBSITE` | Contact website returned by `GET /contact` | none |
+| `CEA` | Enable CEA-608/708 caption encoding (experimental) | unset |
 
 **API routes:**
 ```
 GET  /health              — uptime, session count
+GET  /contact             — server contact info (public)
 POST /live                — register session → returns JWT
 GET  /live                — session status (Bearer token)
 DELETE /live              — tear down session (Bearer token)
@@ -161,14 +194,46 @@ GET  /video/:key              — HLS.js player page (public, CORS *, iframe-emb
 GET  /video/:key/master.m3u8  — HLS master manifest (video + subtitle tracks, public)
 GET  /video/:key/subs/:lang/playlist.m3u8 — HLS subtitle playlist per language (public)
 GET  /video/:key/subs/:lang/:seg.vtt      — WebVTT subtitle segment file (public)
+GET  /viewer/:key         — public SSE broadcast stream (no auth, CORS *); viewer targets subscribe here
+GET  /stream-hls/:key/*   — HLS video+audio segments and playlist (public, rate-limited)
+GET  /radio/:key/*        — audio-only HLS segments and playlist (public, rate-limited)
+GET  /preview/:key/incoming.jpg — latest RTMP → JPEG thumbnail (public)
+GET  /dsk/:apikey/images  — list DSK overlay images for an API key (public)
+GET  /dsk/:apikey/events  — SSE stream of graphics events for DSK page (public)
+POST /dsk-rtmp            — nginx-rtmp on_publish/on_publish_done callbacks for DSK RTMP
+POST /dsk-rtmp/on_publish
+POST /dsk-rtmp/on_publish_done
+GET/POST/PUT/DELETE /images/:id — image upload/management for DSK overlays (Bearer token)
+GET  /youtube/config      — return YOUTUBE_CLIENT_ID for client-side OAuth (Bearer token)
+GET/POST/PUT/DELETE /rtmp — RTMP relay slot management (Bearer token)
+GET/POST /stream          — RTMP relay stream control (Bearer token + domain allowlist)
+GET  /production/cameras  — list cameras (admin key)
+POST /production/cameras  — create camera
+PUT/DELETE /production/cameras/:id — update/delete camera
+POST /production/cameras/:id/preset/:preset — trigger camera PTZ preset
+GET  /production/mixers   — list mixers with connection status
+POST /production/mixers   — create mixer
+PUT/DELETE /production/mixers/:id — update/delete mixer
+POST /production/mixers/:id/switch — switch mixer source
+GET  /production/bridge/commands?token=xxx — SSE stream for bridge agents
+POST /production/bridge/status — bridge heartbeat + command result callback
+GET/POST/DELETE /production/bridge/instances — bridge instance CRUD
+GET  /icons/*             — icon assets (authenticated)
 ```
 
 **Key internals:**
-- `src/db.js` — `better-sqlite3` (synchronous). Tables: `api_keys` (key, owner, active, email, daily_limit, lifetime_limit, lifetime_used, revoked_at, expires_at, created_at, sequence, last_caption_at), `caption_usage` (per-key daily count), `session_stats` (per-session telemetry), `caption_errors` (delivery failure log), `sessions` (persistent session metadata for server-restart survival). Additive migrations run on startup. Per-key sequence helpers (`getKeySequence`, `updateKeySequence`, `resetKeySequence`) implement a 2-hour inactivity TTL reset. Session persistence helpers (`saveSession`, `loadSession`, `deleteSession`, `listSessions`, `incSessionSequence`) back the store's `rehydrate()` call on startup.
-- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode (no primary streamKey). `extraTargets` is an array of `{ id, type, sender? }` objects representing all targets. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic. Auto-cleanup on TTL.
+- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `api_keys`, `caption_usage`, `session_stats`, `caption_errors`, `sessions`. Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
+- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
+- `src/hls-manager.js` — `HlsManager`: manages ffmpeg subprocesses for RTMP → video+audio HLS.
+- `src/radio-manager.js` — `RadioManager`: manages ffmpeg subprocesses for RTMP → audio-only HLS.
+- `src/preview-manager.js` — `PreviewManager`: manages ffmpeg for RTMP → JPEG thumbnail generation.
+- `src/rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup.
+- `src/hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.
 - `src/middleware/auth.js` — JWT Bearer verification.
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
+- `src/caption-files.js` — Caption file storage helpers.
+- `src/backup.js` — DB backup utilities.
 
 **SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`.
 
@@ -177,6 +242,66 @@ GET  /video/:key/subs/:lang/:seg.vtt      — WebVTT subtitle segment file (publ
 **Docker:** `Dockerfile` — node:20-slim, exposes port 3000.
 
 **Tests:** `packages/lcyt-backend/test/*.test.js` — uses `node:test`.
+
+---
+
+### `packages/production-control` — Production Control Library (v0.1.0)
+
+Express router plugin for camera PTZ presets and video mixer source switching. Used as an internal dependency by `lcyt-backend`.
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { createProductionRouter, initProductionControl } from 'production-control';
+const { registry, bridgeManager } = await initProductionControl(db);
+app.use('/production', createProductionRouter(db, registry, bridgeManager, { publicUrl }));
+```
+
+**Source files (`src/`):**
+- `api.js` — `initProductionControl(db)` + `createProductionRouter(db, registry, bridgeManager, opts)`.
+- `registry.js` — `DeviceRegistry`: loads cameras and mixers from DB, manages live adapter connections, resolves adapters by device type.
+- `bridge-manager.js` — `BridgeManager`: manages SSE connections from `lcyt-bridge` agents. Dispatches `tcp_send` commands and resolves results via Promise with 10s timeout. Sends SSE heartbeats every 20s.
+- `db.js` — SQLite migrations for `prod_cameras`, `prod_mixers`, `prod_bridge_instances` tables.
+- `routes/cameras.js` — CRUD + PTZ preset trigger.
+- `routes/mixers.js` — CRUD + source switching.
+- `routes/bridge.js` — Bridge instance CRUD + SSE command stream + status callback.
+- `adapters/camera/amx.js` — AMX camera adapter (TCP/IP PTZ control).
+- `adapters/camera/none.js` — No-op camera adapter (software-only targets).
+- `adapters/mixer/roland.js` — Roland video mixer adapter (TCP).
+- `adapters/mixer/amx.js` — AMX mixer adapter (TCP).
+
+**Camera control types:** `amx`, `none`
+**Mixer types:** `roland`, `amx`
+
+**Tests:** `packages/production-control/test/*.test.js` — uses `node:test`.
+
+---
+
+### `packages/lcyt-bridge` — Production Control Bridge Agent (v0.1.0)
+
+Standalone agent that connects to the LCYT backend via SSE and relays commands to physical AV hardware (AMX controllers, Roland mixers) over TCP. Designed to run on-site where the hardware is located.
+
+**Entry:** `src/index.js` (shebang, runs with `node src/index.js` or as a compiled binary)
+**Config:** `.env` file in the same directory as the executable (or `process.env`)
+
+**Required env vars:**
+| Variable | Purpose |
+|---|---|
+| `BACKEND_URL` | Base URL of the LCYT backend |
+| `BRIDGE_TOKEN` | Authentication token from `POST /production/bridge/instances` |
+
+**Source files (`src/`):**
+- `index.js` — Entry point. Loads config, starts the Bridge, optionally shows system tray icon.
+- `bridge.js` — `Bridge` class (`EventEmitter`). Connects to `GET /production/bridge/commands?token=xxx` SSE stream. Dispatches `tcp_send` commands to `TcpPool`. Reports results via `POST /production/bridge/status`. Exponential-backoff reconnect (5s → 60s max).
+- `tcp-pool.js` — `TcpPool`: manages a pool of named TCP connections. Reconnects on drop.
+- `tray.js` — Optional system tray icon (for packaged desktop use).
+
+**Build as standalone executable** (using `pkg`):
+```bash
+npm run build:win    # → dist/lcyt-bridge.exe  (Windows x64)
+npm run build:mac    # → dist/lcyt-bridge-mac  (macOS x64)
+npm run build:linux  # → dist/lcyt-bridge-linux (Linux x64)
+```
 
 ---
 
@@ -205,17 +330,33 @@ Same tools as `lcyt-mcp-stdio`, but exposed over HTTP Server-Sent Events for rem
 
 ---
 
+### `packages/lcyt-site` — Marketing Website (v0.1.0, private)
+
+Static documentation and marketing site built with Astro.
+
+**Build:** `npm run build -w packages/lcyt-site` → `dist/`
+**Dev:** `npm run dev -w packages/lcyt-site`
+
+**Source (`src/`):**
+- `pages/` — Astro pages: `index.astro` (landing), `blog/`, `embed/`, `guide/`, `mcp/`, `api/`, `lib/`.
+- `layouts/` — Shared Astro layouts.
+- `components/` — Astro/HTML components.
+- `content.config.ts` — Astro content collections config.
+- `styles/` — Global CSS.
+
+---
+
 ### `packages/lcyt-web` — Web UI (v1.0.0, private)
 
 Browser-based React app using Vite. Sends captions via the `lcyt-backend` relay.
 
-**Build:** `npm run build -w packages/lcyt-web` → `dist/`
+**Build:** `npm run build:web` → `packages/lcyt-web/dist/`
 **Dev:** `npm run web`
 
 **Source (`src/`):**
 - `main.jsx` — React entry point; path-based routing for the main app and all sub-pages (see below)
 - `App.jsx` — root component (full two-panel layout)
-- `components/` — React JSX components: AudioPanel, CaptionView, DropZone, FileTabs, InputBar, PrivacyModal, SentPanel, SettingsModal, StatsModal, StatusBar, ToastContainer, CCModal, ControlsPanel, StatusPanel, FilesModal, SpeechCapturePage, EmbedAudioPage, EmbedInputPage, EmbedSentLogPage, EmbedFileDropPage, EmbedFilesPage
+- `components/` — React JSX components (see routing table below for embed/production pages; others include AudioPanel, CaptionView, DropZone, FileTabs, InputBar, PrivacyModal, SentPanel, SettingsModal, StatsModal, StatusBar, ToastContainer, CCModal, ControlsPanel, StatusPanel, FilesModal, BroadcastModal, CaptionsModal, ActionsPanel, FloatingPanel, LanguagePicker, MobileAudioBar, NormalizeLinesModal, TranslationModal, EmbedApiKeyGate)
 - `contexts/` — React context providers: AppProviders, FileContext, SentLogContext, SessionContext, ToastContext
 - `hooks/` — Custom React hooks: useSession, useFileStore, useSentLog, useToast
 - `lib/` — Utilities: googleCredential.js, sttConfig.js
@@ -234,6 +375,13 @@ Browser-based React app using Vite. Sends captions via the `lcyt-backend` relay.
 | `/embed/files` | `EmbedFilesPage` | Full file management widget |
 | `/embed/settings` | `EmbedSettingsPage` | Settings widget — General tab (credentials, theme) + CC tab (targets, STT, translations) |
 | `/embed/rtmp` | `EmbedRtmpPage` | RTMP relay-only widget — ingest address + relay slot management |
+| `/embed/viewer` | `EmbedViewerPage` | Embeddable viewer widget |
+| `/dsk/:key` | `DskPage` | DSK green-screen overlay page (no auth; driven by `/dsk/:apikey/events` SSE) |
+| `/view/:key` | `ViewerPage` | Full-screen caption viewer page |
+| `/production/cameras` | `ProductionCamerasPage` | Camera management UI (admin) |
+| `/production/mixers` | `ProductionMixersPage` | Mixer management UI (admin) |
+| `/production/bridges` | `ProductionBridgesPage` | Bridge instance management UI (admin) |
+| `/production` | `ProductionOperatorPage` | Production operator control surface |
 
 **Embed pages** (`/embed/*`) accept `?server=`, `?apikey=`, and `?theme=` URL params and auto-connect when credentials are present. All session-owning embed pages (`/embed/audio`, `/embed/input`, `/embed/file-drop`, `/embed/files`) operate in `embed` mode: they broadcast the JWT token (`lcyt:session`) and each sent caption (`lcyt:caption`) on `BroadcastChannel('lcyt-embed')` so a sibling `/embed/sentlog` can subscribe without owning a session. See `docs/guide/embed.md` for full documentation.
 
@@ -412,7 +560,7 @@ Captions are delivered to one or more **targets** configured in the lcyt-web CC 
 - `start({ targets })` — pass the targets array to register them server-side.
 - `send()` / `sendBatch()` — always the same; the backend handles routing.
 
-
+### Authentication
 1. **JWT Bearer** (`Authorization: Bearer <token>`) — session-level, for `/live`, `/captions`, `/sync`.
 2. **Admin API key** (`X-Admin-Key` header) — server-level, for `/keys` admin routes. Uses constant-time comparison.
 3. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain` where `streamKey` defaults to `''` in target-array mode (no primary stream key).
@@ -450,7 +598,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 | File | Purpose |
 |---|---|
-| `package.json` | Root workspace (workspaces: `packages/lcyt`, `packages/lcyt-cli`, `packages/lcyt-backend`, `packages/lcyt-web`, `packages/lcyt-mcp-stdio`, `packages/lcyt-mcp-sse`) |
+| `package.json` | Root workspace (workspaces: `packages/lcyt`, `packages/lcyt-cli`, `packages/lcyt-backend`, `packages/lcyt-web`, `packages/lcyt-mcp-stdio`, `packages/lcyt-mcp-sse`, `packages/lcyt-site`, `packages/production-control`, `packages/lcyt-bridge`) |
 | `packages/lcyt/src/sender.js` | Core caption sender (Node.js) |
 | `packages/lcyt/src/errors.js` | Error classes (Node.js) |
 | `packages/lcyt/scripts/build-cjs.js` | ESM→CJS build transformer |
@@ -460,14 +608,30 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + extraTargets per session) |
 | `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream (authenticated, session owner) |
 | `packages/lcyt-backend/src/routes/viewer.js` | Public SSE broadcast stream `GET /viewer/:key` — no auth, CORS `*`; used by viewer targets |
+| `packages/lcyt-backend/src/routes/dsk.js` | DSK overlay public endpoints |
+| `packages/lcyt-backend/src/routes/images.js` | Image upload/management for DSK overlays (authenticated) |
+| `packages/lcyt-backend/src/routes/radio.js` | Audio-only HLS streaming (public, rate-limited) |
+| `packages/lcyt-backend/src/routes/stream-hls.js` | Video+audio HLS streaming (public, rate-limited) |
+| `packages/lcyt-backend/src/routes/preview.js` | RTMP → JPEG thumbnail serving (public) |
+| `packages/lcyt-backend/src/routes/youtube.js` | YouTube OAuth client ID endpoint |
 | `packages/lcyt-backend/src/hls-subs-manager.js` | HLS subtitle sidecar: rolling WebVTT segment writer + in-memory playlist manager |
+| `packages/lcyt-backend/src/hls-manager.js` | ffmpeg manager for RTMP → video+audio HLS |
+| `packages/lcyt-backend/src/radio-manager.js` | ffmpeg manager for RTMP → audio-only HLS |
+| `packages/lcyt-backend/src/preview-manager.js` | ffmpeg manager for RTMP → JPEG thumbnails |
+| `packages/lcyt-backend/src/rtmp-manager.js` | RTMP relay session manager |
 | `packages/lcyt-backend/src/routes/video.js` | `GET /video/:key` — HLS.js player, master manifest, subtitle playlist + segment serving |
 | `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
 | `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |
-| `packages/lcyt-backend/src/db.js` | SQLite store: api_keys, caption_usage, session_stats, caption_errors, sessions |
+| `packages/lcyt-backend/src/db.js` | SQLite store re-export (modular, from src/db/) |
 | `packages/lcyt-mcp-stdio/src/server.js` | MCP server — stdio transport |
 | `packages/lcyt-mcp-sse/src/server.js` | MCP server — HTTP SSE transport |
+| `packages/production-control/src/api.js` | Production control router + init function |
+| `packages/production-control/src/registry.js` | DeviceRegistry: camera + mixer adapter management |
+| `packages/production-control/src/bridge-manager.js` | BridgeManager: SSE command dispatch to bridge agents |
+| `packages/lcyt-bridge/src/index.js` | Bridge agent entrypoint |
+| `packages/lcyt-bridge/src/bridge.js` | Bridge SSE client + TCP command dispatcher |
+| `packages/lcyt-bridge/src/tcp-pool.js` | Managed TCP connection pool |
 | `packages/lcyt-web/src/main.jsx` | React entry point + path-based routing for all pages |
 | `packages/lcyt-web/src/App.jsx` | Full two-panel main UI layout |
 | `packages/lcyt-web/src/contexts/AppProviders.jsx` | All context providers; accepts `initConfig`, `autoConnect`, `embed` for embed pages |
@@ -477,6 +641,12 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-web/src/components/EmbedSentLogPage.jsx` | `/embed/sentlog` — read-only delivery log (BroadcastChannel + independent EventSource) |
 | `packages/lcyt-web/src/components/EmbedFileDropPage.jsx` | `/embed/file-drop` — drop-one-file player widget |
 | `packages/lcyt-web/src/components/EmbedFilesPage.jsx` | `/embed/files` — full file management widget (FileTabs + DropZone + CaptionView + InputBar + SentPanel) |
+| `packages/lcyt-web/src/components/DskPage.jsx` | `/dsk/:key` — DSK green-screen overlay page |
+| `packages/lcyt-web/src/components/ViewerPage.jsx` | `/view/:key` — full-screen caption viewer |
+| `packages/lcyt-web/src/components/ProductionOperatorPage.jsx` | `/production` — operator control surface |
+| `packages/lcyt-web/src/components/ProductionCamerasPage.jsx` | `/production/cameras` — camera management |
+| `packages/lcyt-web/src/components/ProductionMixersPage.jsx` | `/production/mixers` — mixer management |
+| `packages/lcyt-web/src/components/ProductionBridgesPage.jsx` | `/production/bridges` — bridge instance management |
 | `python-packages/lcyt/lcyt/sender.py` | Core caption sender (Python) |
 | `python-packages/lcyt-backend/lcyt_backend/app.py` | Flask app factory |
 | `python-packages/lcyt-backend/lcyt_backend/_jwt.py` | Stdlib-only HS256 JWT |
