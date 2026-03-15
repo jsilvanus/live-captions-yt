@@ -13,7 +13,7 @@ import {
   getTotalImageStorageBytes,
   isShorthandTaken,
   safeApiKey,
-} from '../db.js';
+} from '../db/images.js';
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
 

@@ -224,16 +224,6 @@ export function initDb(dbPath) {
     )
   `);
 
-  // Additive migrations for caption_files (images use shorthand and mime_type)
-  {
-    const filesCols = new Set(
-      db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name)
-    );
-    if (!filesCols.has('shorthand')) db.exec('ALTER TABLE caption_files ADD COLUMN shorthand TEXT');
-    // mime_type is nullable; only set for image-type rows
-    if (!filesCols.has('mime_type')) db.exec('ALTER TABLE caption_files ADD COLUMN mime_type TEXT');
-  }
-
   // Per-stream personified RTMP stats (tied to an API key and target endpoint)
   db.exec(`
     CREATE TABLE IF NOT EXISTS rtmp_stream_stats (
@@ -313,6 +303,8 @@ export * from './stats.js';
 export * from './usage.js';
 export * from './files.js';
 export * from './icons.js';
-export * from './images.js';
 export * from './relay.js';
 export * from './viewer.js';
+
+// Re-export DSK image helpers needed by lcyt-backend routes (keys.js delete cascade)
+export { deleteAllImages } from 'lcyt-dsk';
