@@ -6,17 +6,20 @@ COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
 COPY packages/lcyt-mcp-sse/package.json packages/lcyt-mcp-sse/
+COPY packages/production-control/package.json packages/production-control/
 
 # Install workspace dependencies.
 RUN npm ci \
   --workspace=packages/lcyt \
   --workspace=packages/lcyt-backend \
-  --workspace=packages/lcyt-mcp-sse
+  --workspace=packages/lcyt-mcp-sse \
+  --workspace=packages/production-control
 
 # Copy source
 COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
 COPY packages/lcyt-mcp-sse/src/ packages/lcyt-mcp-sse/src/
+COPY packages/production-control/ packages/production-control/
 
 FROM node:20-slim
 WORKDIR /app
