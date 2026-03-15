@@ -30,6 +30,7 @@ import { createDskRouter } from './routes/dsk.js';
 import { createDskTemplatesRouter } from './routes/dsk-templates.js';
 import { createImagesRouter } from './routes/images.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
+import { createEditorAuth } from './middleware/editor-auth.js';
 export { deleteAllImages } from './db/images.js';
 
 /**
@@ -62,11 +63,12 @@ export async function initDskControl(db, store, relayManager) {
  * @returns {{ dskRouter, dskTemplatesRouter, imagesRouter, dskRtmpRouter }}
  */
 export function createDskRouters(db, store, auth, relayManager) {
+  const editorAuth = createEditorAuth(db);
   return {
     /** Mount at /dsk  — public SSE + image list */
     dskRouter: createDskRouter(db, store),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, relayManager),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager),
     /** Mount at /images — authenticated upload; public serve */
     imagesRouter: createImagesRouter(db, auth),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */
