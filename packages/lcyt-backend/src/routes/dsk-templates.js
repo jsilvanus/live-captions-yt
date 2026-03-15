@@ -11,12 +11,16 @@
  * DELETE /dsk/:apikey/templates/:id           — delete template
  * POST   /dsk/:apikey/templates/:id/activate  — render template in Playwright renderer
  *
- * Renderer control (Phase 3):
- * POST   /dsk/:apikey/renderer/start          — start PNG capture loop → ffmpeg → RTMP
- * POST   /dsk/:apikey/renderer/stop           — stop capture loop and ffmpeg
+ * Renderer control:
+ * POST   /dsk/:apikey/renderer/start          — start PNG capture loop → ffmpeg → RTMP;
+ *                                               also calls relayManager.setDskRtmpSource()
+ *                                               directly so no nginx on_publish is needed
+ * POST   /dsk/:apikey/renderer/stop           — stop capture loop and ffmpeg;
+ *                                               clears relayManager DSK RTMP source
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
+ * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  */
 import { Router } from 'express';
 import {
@@ -33,7 +37,7 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 
-export function createDskTemplatesRouter(db, auth) {
+export function createDskTemplatesRouter(db, auth, relayManager) {
   const router = Router();
 
   // Verify that the token owner matches the URL apikey (prevents cross-key access).
@@ -114,13 +118,21 @@ export function createDskTemplatesRouter(db, auth) {
   });
 
   // POST /dsk/:apikey/renderer/start — begin Playwright capture loop → ffmpeg → RTMP
+  // Also calls relayManager.setDskRtmpSource() directly so the ffmpeg overlay compositing
+  // picks up the Playwright stream immediately without waiting for nginx on_publish.
   router.post('/:apikey/renderer/start', auth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
+    const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
 
     try {
       await startRtmpStream(apiKey, LOCAL_RTMP_BASE, DSK_RTMP_APP);
-      const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
+      // Wire the Playwright RTMP output directly into the relay overlay pipeline.
+      // This is the same path used by Method 2B (external OBS broadcast) so the
+      // ffmpeg overlay filter is identical: [main][dsk]overlay=0:0:shortest=1
+      if (relayManager) {
+        await relayManager.setDskRtmpSource(apiKey, rtmpUrl);
+      }
       res.json({ ok: true, rtmpUrl });
     } catch (err) {
       console.error(`[dsk-renderer] start error for ${apiKey}:`, err.message);
@@ -129,12 +141,16 @@ export function createDskTemplatesRouter(db, auth) {
   });
 
   // POST /dsk/:apikey/renderer/stop — tear down capture loop and ffmpeg
+  // Also clears the DSK RTMP source in relayManager so the relay reverts to copy mode.
   router.post('/:apikey/renderer/stop', auth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
 
     try {
       await stopRtmpStream(apiKey);
+      if (relayManager) {
+        await relayManager.setDskRtmpSource(apiKey, null);
+      }
       res.json({ ok: true });
     } catch (err) {
       console.error(`[dsk-renderer] stop error for ${apiKey}:`, err.message);

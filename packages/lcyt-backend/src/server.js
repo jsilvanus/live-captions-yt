@@ -361,7 +361,7 @@ app.use('/usage', createUsageRouter(db));
 app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/images', createImagesRouter(db, auth));
 app.use('/dsk', createDskRouter(db, store));
-app.use('/dsk', createDskTemplatesRouter(db, auth));
+app.use('/dsk', createDskTemplatesRouter(db, auth, relayManager));
 app.use('/rtmp', createRtmpRouter(db, relayManager));
 app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
