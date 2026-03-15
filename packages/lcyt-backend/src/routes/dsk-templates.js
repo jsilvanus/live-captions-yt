@@ -18,6 +18,12 @@
  * POST   /dsk/:apikey/renderer/stop           — stop capture loop and ffmpeg;
  *                                               clears relayManager DSK RTMP source
  *
+ * Broadcast control (Phase 5):
+ * POST   /dsk/:apikey/template               — activate template by id { id } (convenience alias)
+ * POST   /dsk/:apikey/broadcast              — inject live data without page reload:
+ *                                               { updates: [{ selector, text }, ...] }
+ *                                               uses page.evaluate() so animations keep running
+ *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
@@ -29,7 +35,7 @@ import {
   getTemplate,
   deleteTemplate,
 } from '../db.js';
-import { updateTemplate, startRtmpStream, stopRtmpStream } from '../dsk-renderer.js';
+import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData } from '../dsk-renderer.js';
 
 // Local RTMP base URL — matches the env vars used by dsk-rtmp.js
 const LOCAL_RTMP_BASE = process.env.DSK_LOCAL_RTMP || process.env.RADIO_LOCAL_RTMP || 'rtmp://127.0.0.1:1935';
@@ -114,6 +120,53 @@ export function createDskTemplatesRouter(db, auth, relayManager) {
     } catch (err) {
       console.error(`[dsk-templates] activate error for key ${req.params.apikey}:`, err.message);
       res.status(500).json({ error: 'Failed to activate template' });
+    }
+  });
+
+  // POST /dsk/:apikey/template — activate template by id (convenience alias for /templates/:id/activate)
+  // Body: { id: number }
+  router.post('/:apikey/template', auth, async (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const id = Number(req.body?.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'id must be a number' });
+
+    const row = getTemplate(db, id, req.params.apikey);
+    if (!row) return res.status(404).json({ error: 'Template not found' });
+
+    try {
+      await updateTemplate(req.params.apikey, row.templateJson);
+      res.json({ ok: true, id, name: row.name });
+    } catch (err) {
+      console.error(`[dsk-templates] template activate error:`, err.message);
+      res.status(500).json({ error: 'Failed to activate template' });
+    }
+  });
+
+  // POST /dsk/:apikey/broadcast — inject live data via page.evaluate() without page reload.
+  // Animations keep running; only the targeted DOM elements are updated.
+  // Body: { updates: [{ selector: string, text: string }, ...] }
+  //   or: { selector: string, text: string }  (single-item shorthand)
+  router.post('/:apikey/broadcast', auth, async (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const { updates, selector, text } = req.body || {};
+
+    // Accept both array and single-item shorthand
+    const items = updates ?? (selector != null ? [{ selector, text }] : null);
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Provide updates array or {selector, text}' });
+    }
+    for (const item of items) {
+      if (typeof item.selector !== 'string' || !item.selector) {
+        return res.status(400).json({ error: 'Each update must have a non-empty selector string' });
+      }
+    }
+
+    try {
+      await broadcastData(req.params.apikey, items);
+      res.json({ ok: true, updated: items.length });
+    } catch (err) {
+      console.error(`[dsk-templates] broadcast error:`, err.message);
+      res.status(500).json({ error: 'Failed to broadcast data' });
     }
   });
 
