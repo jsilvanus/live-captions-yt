@@ -118,6 +118,21 @@ export function renderTemplateToHtml(templateJson) {
     background:${bg};
   }
   #root { position:relative; width:${w}px; height:${h}px; overflow:hidden; }
+
+  /* LCYT built-in animation keyframes */
+  @keyframes lcyt-fadeIn      { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes lcyt-fadeOut     { from { opacity: 1 } to { opacity: 0 } }
+  @keyframes lcyt-slideInLeft  { from { transform: translateX(-100%) } to { transform: translateX(0) } }
+  @keyframes lcyt-slideInRight { from { transform: translateX(100%)  } to { transform: translateX(0) } }
+  @keyframes lcyt-slideInUp    { from { transform: translateY(100%)  } to { transform: translateY(0) } }
+  @keyframes lcyt-slideInDown  { from { transform: translateY(-100%) } to { transform: translateY(0) } }
+  @keyframes lcyt-slideOutLeft  { from { transform: translateX(0) } to { transform: translateX(-100%) } }
+  @keyframes lcyt-slideOutRight { from { transform: translateX(0) } to { transform: translateX(100%)  } }
+  @keyframes lcyt-zoomIn  { from { transform: scale(0);   opacity: 0 } to { transform: scale(1);   opacity: 1 } }
+  @keyframes lcyt-zoomOut { from { transform: scale(1);   opacity: 1 } to { transform: scale(0);   opacity: 0 } }
+  @keyframes lcyt-pulse   { 0%, 100% { transform: scale(1) } 50% { transform: scale(1.05) } }
+  @keyframes lcyt-blink   { 0%, 100% { opacity: 1 } 50% { opacity: 0 } }
+  @keyframes lcyt-typewriter { from { clip-path: inset(0 100% 0 0) } to { clip-path: inset(0 0% 0 0) } }
 </style>
 </head>
 <body>
