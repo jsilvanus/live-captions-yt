@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { listImages } from '../db/images.js';
+import { listViewports } from '../db/viewports.js';
 
 /**
  * Factory for the /dsk router.
@@ -28,20 +29,44 @@ export function createDskRouter(db, store) {
   }
 
   // GET /dsk/:apikey/images — list images for pre-loading (public)
+  // Includes settingsJson (per-viewport visibility/position/animation) so the
+  // display page has everything it needs in a single fetch.
   router.get('/:apikey/images', (req, res) => {
     const { apikey } = req.params;
     if (!resolveKey(apikey, res)) return;
 
     const rows = listImages(db, apikey);
     const images = rows.map(r => ({
-      id: r.id,
-      shorthand: r.shorthand,
-      mimeType: r.mime_type,
+      id:           r.id,
+      shorthand:    r.shorthand,
+      mimeType:     r.mime_type,
+      settingsJson: parseJson(r.settings_json),
       // The DSK page fetches image bytes from /images/:id (public endpoint)
       url: `/images/${r.id}`,
     }));
     res.set('Cache-Control', 'no-store');
     res.json({ images });
+  });
+
+  // GET /dsk/:apikey/viewports/public — list user-defined viewports without auth (public)
+  // Used by display pages to fetch viewport dimensions on load.
+  // NOTE: this route must be declared before the /:apikey/events route so Express
+  // doesn't interpret "viewports" as an apikey.
+  router.get('/:apikey/viewports/public', (req, res) => {
+    const { apikey } = req.params;
+    if (!resolveKey(apikey, res)) return;
+    const rows = listViewports(db, apikey);
+    res.set('Cache-Control', 'no-store');
+    res.json({
+      viewports: rows.map(r => ({
+        name:         r.name,
+        label:        r.label ?? null,
+        viewportType: r.viewport_type,
+        width:        r.width,
+        height:       r.height,
+        textLayers:   parseJson(r.text_layers_json, []),
+      })),
+    });
   });
 
   // GET /dsk/:apikey/events — SSE stream (public)
@@ -75,4 +100,9 @@ export function createDskRouter(db, store) {
   });
 
   return router;
+}
+
+function parseJson(str, fallback = {}) {
+  if (!str) return fallback;
+  try { return JSON.parse(str); } catch { return fallback; }
 }

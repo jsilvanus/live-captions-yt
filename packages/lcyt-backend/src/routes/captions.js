@@ -81,7 +81,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         // Handled by the lcyt-dsk plugin processor injected at startup.
         if (dskProcessor) {
           for (const caption of resolvedCaptions) {
-            caption.text = await dskProcessor(session.apiKey, caption.text || '');
+            caption.text = await dskProcessor(session.apiKey, caption.text || '', caption.codes ?? {});
           }
         }
 

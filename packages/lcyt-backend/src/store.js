@@ -47,6 +47,12 @@ export class SessionStore {
     this.onSessionEnd = null;
     /** @type {Map<string, Set<import('express').Response>>} DSK SSE subscribers keyed by apiKey */
     this._dskSubscribers = new Map();
+    /**
+     * Server-side active graphics state for delta +/- operations.
+     * Keyed by apiKey.
+     * @type {Map<string, { default: string[], viewports: { [name]: string[] } }>}
+     */
+    this._dskGraphicsState = new Map();
     this._startCleanup();
   }
 
@@ -95,6 +101,28 @@ export class SessionStore {
       }
     }
     if (set.size === 0) this._dskSubscribers.delete(apiKey);
+  }
+
+  /**
+   * Get the current DSK graphics state for an API key.
+   * Creates an empty state if none exists yet.
+   * @param {string} apiKey
+   * @returns {{ default: string[], viewports: { [name]: string[] } }}
+   */
+  getDskGraphicsState(apiKey) {
+    if (!this._dskGraphicsState.has(apiKey)) {
+      this._dskGraphicsState.set(apiKey, { default: [], viewports: {} });
+    }
+    return this._dskGraphicsState.get(apiKey);
+  }
+
+  /**
+   * Persist updated DSK graphics state for an API key.
+   * @param {string} apiKey
+   * @param {{ default: string[], viewports: { [name]: string[] } }} state
+   */
+  setDskGraphicsState(apiKey, state) {
+    this._dskGraphicsState.set(apiKey, state);
   }
 
   // ---------------------------------------------------------------------------

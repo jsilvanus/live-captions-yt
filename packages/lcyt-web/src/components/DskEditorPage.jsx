@@ -188,7 +188,9 @@ function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
   if (layer.type === 'text') {
     return (
       <div key={layer.id} style={merged} onPointerDown={onPointerDown}>
-        {layer.text || ''}
+        {layer.binding
+          ? <span style={{ opacity: 0.55, fontStyle: 'italic' }}>⟳{layer.binding}</span>
+          : (layer.text || '')}
       </div>
     );
   }
@@ -673,6 +675,12 @@ function LayerPropertyEditor({ layer, selectionCount, aspectLock, onAspectLock, 
         <div style={fieldRowStyle}>
           <span style={labelStyle}>Text</span>
           <input type="text" value={layer.text || ''} onChange={e => setField('text', e.target.value)} style={inputStyle} />
+        </div>
+      )}
+      {layer.type === 'text' && (
+        <div style={fieldRowStyle}>
+          <span style={labelStyle} title="When set, text is auto-updated from caption codes (section, stanza, speaker…) via SSE bindings. Leave blank for static text.">Binding</span>
+          <input type="text" value={layer.binding || ''} onChange={e => setField('binding', e.target.value)} style={inputStyle} placeholder="section, stanza, speaker…" />
         </div>
       )}
       {layer.type === 'image' && (
@@ -1391,9 +1399,11 @@ export function DskEditorPage() {
                   <span style={{ fontSize: 11, color: '#666', width: 44, flexShrink: 0 }}>{layer.type}</span>
                   <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {layer.id}
-                    {layer.type === 'text' && layer.text
-                      ? <span style={{ color: '#777', marginLeft: 6 }}>"{layer.text}"</span>
-                      : null}
+                    {layer.type === 'text' && layer.binding
+                      ? <span style={{ color: '#44bb88', marginLeft: 6 }}>⟳{layer.binding}</span>
+                      : layer.type === 'text' && layer.text
+                        ? <span style={{ color: '#777', marginLeft: 6 }}>"{layer.text}"</span>
+                        : null}
                   </span>
                   {gName && (
                     <span style={{ fontSize: 10, color: '#6af', background: '#1a2a3a', borderRadius: 3,

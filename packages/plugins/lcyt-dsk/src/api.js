@@ -28,6 +28,7 @@ import { startRenderer, stopRenderer } from './renderer.js';
 import { createDskCaptionProcessor } from './caption-processor.js';
 import { createDskRouter } from './routes/dsk.js';
 import { createDskTemplatesRouter } from './routes/dsk-templates.js';
+import { createDskViewportsRouter } from './routes/dsk-viewports.js';
 import { createImagesRouter } from './routes/images.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
 import { createEditorAuth, editorAuthOrBearer } from './middleware/editor-auth.js';
@@ -65,11 +66,13 @@ export async function initDskControl(db, store, relayManager) {
 export function createDskRouters(db, store, auth, relayManager) {
   const editorAuth = createEditorAuth(db);
   return {
-    /** Mount at /dsk  — public SSE + image list */
+    /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, store),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
     dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager),
-    /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve */
+    /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
+    dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth)),
+    /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */
     imagesRouter: createImagesRouter(db, editorAuthOrBearer(auth, editorAuth)),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */
     dskRtmpRouter: createDskRtmpRouter(relayManager),

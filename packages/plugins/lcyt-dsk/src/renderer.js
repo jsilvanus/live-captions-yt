@@ -60,15 +60,20 @@ const _keys = new Map();
  *       type: "text" | "rect" | "image",
  *       x: number, y: number,    // px from top-left
  *       width: number, height: number,
- *       text: string,            // for type=text
+ *       text: string,            // for type=text (static content; overridden by binding)
+ *       binding: string,         // for type=text: code key (section, stanza, speaker…)
+ *                                //   element gets data-binding attr + auto-updates via SSE
  *       src: string,             // for type=image (URL or data-URI)
  *       style: { ...cssProps },  // arbitrary inline CSS
  *       animation: string,       // CSS animation shorthand
  *     }
  *   ]
  * }
+ *
+ * @param {object} templateJson
+ * @param {{ apiKey?: string, serverUrl?: string }} [opts]
  */
-export function renderTemplateToHtml(templateJson) {
+export function renderTemplateToHtml(templateJson, opts = {}) {
   const t = templateJson || {};
   const bg = t.background ?? 'transparent';
   const w  = t.width  ?? 1920;
@@ -93,7 +98,10 @@ export function renderTemplateToHtml(templateJson) {
     const style = [baseStyle, extraStyle].filter(Boolean).join(';');
 
     if (layer.type === 'text') {
-      return `<div${id} style="${style}">${escHtml(layer.text ?? '')}</div>`;
+      // When binding is set, add data-binding attr so the SSE subscriber can update the text.
+      const bindingAttr = layer.binding ? ` data-binding="${escHtml(layer.binding)}"` : '';
+      const content = layer.binding ? '' : escHtml(layer.text ?? '');
+      return `<div${id}${bindingAttr} style="${style}">${content}</div>`;
     } else if (layer.type === 'rect') {
       return `<div${id} style="${style}"></div>`;
     } else if (layer.type === 'ellipse') {
@@ -105,6 +113,13 @@ export function renderTemplateToHtml(templateJson) {
     }
     return '';
   }).join('\n    ');
+
+  // Inject SSE bindings subscriber when apiKey is provided and at least one bound text layer exists.
+  const hasBoundLayers = layers.some(l => l.type === 'text' && l.binding);
+  const { apiKey, serverUrl } = opts;
+  const sseScript = (hasBoundLayers && apiKey && serverUrl)
+    ? buildSseBindingsScript(serverUrl, apiKey)
+    : '';
 
   return `<!DOCTYPE html>
 <html>
@@ -139,9 +154,46 @@ export function renderTemplateToHtml(templateJson) {
 <div id="root">
   ${layerHtml}
 </div>
+${sseScript}
 </body>
 </html>`;
 }
+
+/**
+ * Build an inline SSE subscriber <script> that listens for 'bindings' events
+ * from GET {serverUrl}/dsk/{apiKey}/events and updates [data-binding] elements.
+ * Includes exponential-backoff reconnect (1 s → 30 s).
+ */
+function buildSseBindingsScript(serverUrl, apiKey) {
+  const url = `${serverUrl}/dsk/${encodeURIComponent(apiKey)}/events`;
+  return `<script>
+(function() {
+  var url = ${JSON.stringify(url)};
+  var delay = 1000;
+  function connect() {
+    var es = new EventSource(url);
+    es.addEventListener('bindings', function(e) {
+      try {
+        var codes = JSON.parse(e.data).codes;
+        if (!codes) return;
+        for (var key in codes) {
+          var els = document.querySelectorAll('[data-binding="' + key + '"]');
+          for (var i = 0; i < els.length; i++) {
+            els[i].textContent = codes[key] != null ? codes[key] : '';
+          }
+        }
+      } catch(ex) {}
+    });
+    es.onerror = function() {
+      es.close();
+      setTimeout(connect, delay);
+      delay = Math.min(delay * 2, 30000);
+    };
+    es.addEventListener('connected', function() { delay = 1000; });
+  }
+  connect();
+})();
+</script>`;
 
 function escHtml(s) {
   return String(s)
@@ -265,6 +317,11 @@ async function _getOrCreatePage(apiKey) {
 // Template management
 // ---------------------------------------------------------------------------
 
+// Local backend server URL for SSE bindings subscriber injected into Playwright pages.
+// Defaults to http://localhost:<PORT> so the headless page can reach the DSK events endpoint.
+const DSK_LOCAL_SERVER = process.env.DSK_LOCAL_SERVER
+  || `http://localhost:${process.env.PORT || 3000}`;
+
 /**
  * Render a new template for an API key.  Replaces the page content fully.
  * Any ongoing capture loop will pick up the new visuals automatically.
@@ -273,7 +330,7 @@ export async function updateTemplate(apiKey, templateJson) {
   _ensureBrowser();
   const state = await _getOrCreatePage(apiKey);
   state.templateJson = templateJson;
-  const html = renderTemplateToHtml(templateJson);
+  const html = renderTemplateToHtml(templateJson, { apiKey, serverUrl: DSK_LOCAL_SERVER });
   await state.page.setContent(html, { waitUntil: 'load' });
 }
 

@@ -106,6 +106,21 @@ export function deleteImage(db, id, apiKey) {
 }
 
 /**
+ * Update the settings_json column for an image scoped to an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @param {string} apiKey
+ * @param {object} settingsJson  parsed JS object — will be JSON-stringified
+ * @returns {boolean} true if a row was updated
+ */
+export function updateImageSettings(db, id, apiKey, settingsJson) {
+  const result = db.prepare(
+    "UPDATE caption_files SET settings_json = ? WHERE id = ? AND api_key = ? AND type = 'image'"
+  ).run(JSON.stringify(settingsJson), id, apiKey);
+  return result.changes > 0;
+}
+
+/**
  * Delete all image rows for an API key (for hard-delete cascade).
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
