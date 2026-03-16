@@ -17,9 +17,10 @@ import {
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
 
-const ACCEPTED_MIMES = new Set(['image/png', 'image/webp', 'image/svg+xml']);
+const ACCEPTED_MIMES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']);
 const MIME_TO_EXT = {
   'image/png':     '.png',
+  'image/jpeg':    '.jpg',
   'image/webp':    '.webp',
   'image/svg+xml': '.svg',
 };
@@ -123,7 +124,7 @@ export function createImagesRouter(db, auth) {
       // Validate MIME
       if (!ACCEPTED_MIMES.has(mimeType)) {
         fileStream.resume();
-        return abort(400, `Unsupported file type: ${mimeType}. Accepted: PNG, WebP, SVG`);
+        return abort(400, `Unsupported file type: ${mimeType}. Accepted: PNG, JPEG, WebP, SVG`);
       }
 
       const ext = MIME_TO_EXT[mimeType] || extname(originalFilename) || '';
