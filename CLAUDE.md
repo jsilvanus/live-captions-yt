@@ -661,19 +661,19 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ## Test Coverage
 
-*Last updated: 2026-03-16*
+*Last updated: 2026-03-16 (critical/high gaps addressed)*
 
 ### Coverage Summary
 
 | Package | Source LOC | Test LOC | Coverage | Priority | Key Gaps |
 |---------|-----------|----------|----------|----------|-----------|
 | `packages/lcyt` | 1,016 | 1,267 | Excellent | Low | `logger.js`, `config.js` (no direct tests) |
-| `packages/lcyt-cli` | 1,836 | 543 | Poor | **High** | `interactive-ui.js` (1,119 LOC, zero tests), entry-point edge cases |
-| `packages/lcyt-backend` | 4,875 | ~2,000 | Good | **Critical** | ffmpeg managers (~600 LOC), 5 untested routes, CORS middleware, graceful shutdown |
+| `packages/lcyt-cli` | 1,836 | ~900 | Moderate | Medium | entry-point edge cases |
+| `packages/lcyt-backend` | 4,875 | ~2,600 | Good | Medium | CORS middleware, graceful shutdown, `caption-files.js` |
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Medium | `tray.js`, entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
 | `packages/lcyt-mcp-sse` | 1,083 | ~400 | Good | Medium | Tool routing, concurrent sessions |
-| `packages/lcyt-web` | 2,000+ | 295 | Poor | **High** | React components (zero tests), hooks, routing, embed pages |
+| `packages/lcyt-web` | 2,000+ | ~600 | Moderate | Medium | React components (zero tests), hooks, embed pages |
 | `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
 | `python-packages/lcyt-backend` | 1,135 | 800 | Good | Medium | CORS middleware, incomplete feature parity with Node.js backend |
 | `python-packages/lcyt-mcp` | 252 | 300 | Good | Low | None identified |
@@ -691,21 +691,28 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-cli` — CLI Tool
-**Test files:** `test/cli.test.js` (25 tests) — argument parsing, `--heartbeat`, config precedence, session lifecycle.
-**Gaps (High):**
-- `src/interactive-ui.js` (1,119 LOC) — **zero tests**. Covers blessed panel rendering, keyboard/vim navigation, `/load` command parsing, batch mode, file drop zones, sent-captions log. Test approach: mock blessed, snapshot panel state, simulate keyboard events.
+**Test files:** `test/cli.test.js` (25 tests), `test/interactive-ui.test.js` (49 tests, added 2026-03-16).
+**Covered:** Argument parsing, `--heartbeat`, config precedence, session lifecycle. Pure-logic methods of `InteractiveUI`: `loadFile`, `shiftPointer`, `gotoLine`, `isSendableLine`, `sendCurrentLine`, `sendCustomCaption`, `sendBatch`, all `handleCommand` branches (`/load`, `/goto`, `/batch`, `/timestamps`, `/ts`, `/send`, `/stream`, `/reload`), `_parseVideoId`.
+**Gaps (Medium):**
 - `bin/lcyt` entry point — CLI argument error handling, `LCYT_LOG_STDERR` flag, env-variable precedence.
+- Blessed rendering (`initScreen`, `updateTextPreview`, `updateStatus`) — requires a full blessed mock or snapshot approach.
 
 ---
 
 #### `packages/lcyt-backend` — Express Relay Backend
-**Test files:** 19 test files (~80 tests) covering all primary routes (live, captions, events, sync, files, keys, stats, viewer, mic, usage, rtmp, icons, health), session store, DB CRUD, and SSE delivery.
-**Gaps (Critical):**
-- **ffmpeg managers** (`hls-manager.js`, `radio-manager.js`, `preview-manager.js`, `rtmp-manager.js`) — ~600 LOC, zero tests. Test approach: mock `child_process`, test signal handling and cleanup.
-- **Routes (5):** `auth.js`, `preview.js`, `stream.js`, `video.js`, `youtube.js` — ~150 LOC.
-- **Middleware:** `cors.js` (dynamic CORS origin filtering), `user-auth.js`.
+**Test files:** 24 test files (570 tests total as of 2026-03-16) covering all primary routes plus newly added tests.
+**Added 2026-03-16:**
+- `test/managers.test.js` (25 tests) — `HlsManager`, `RadioManager`, `PreviewManager` using `--experimental-test-module-mocks` to mock `child_process`/`fs`. Tests: constructor, `start()`, `stop()`, `stopAll()`, ffmpeg arg verification, directory creation.
+- `test/rtmp-manager.test.js` (27 tests) — `RtmpRelayManager` and `probeFfmpeg`. Tests: all state queries, `start()`/`stop()`/`stopAll()`, `isSlotRunning()`, `runningSlots()`, `writeCaption()`, `dropPublisher()`.
+- `test/auth.test.js` (20 tests) — Full auth lifecycle with in-memory SQLite: register, login, `GET /me`, `POST /change-password`, disabled logins (503).
+- `test/video.test.js` (17 tests) — HLS player HTML (themes, CORS, Cache-Control), master manifest, subtitle playlist, segment serving, CORS preflight. Uses lightweight mock managers.
+- `test/preview-route.test.js` (10 tests) — JPEG thumbnail serving with real temp-dir JPEG; key validation, 404, 200, CORS, Cache-Control, If-Modified-Since, OPTIONS.
+- `test/stream.test.js` (22 tests) — RTMP relay slot CRUD with in-memory DB + mock `RtmpRelayManager`: auth, `relay_allowed` check, POST/GET/PUT/DELETE /stream, PUT /stream/active.
+
+**Gaps (Medium):**
+- **Middleware:** `cors.js` (dynamic CORS origin filtering).
 - **Core:** `server.js` (Express factory), `caption-files.js`, `index.js` (graceful shutdown on SIGTERM/SIGINT).
-- **DB:** `db/sequences.js`, `db/users.js`, `db/helpers.js`.
+- **DB:** `db/sequences.js`, `db/helpers.js`.
 
 ---
 
@@ -733,13 +740,16 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-web` — Browser Web UI
-**Test files:** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests, 295 LOC) — only utility/helper functions.
-**Gaps (High):**
+**Test files:** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests), `test/fileUtils.test.js` (27 tests, added 2026-03-16), `test/i18n.test.js` (11 tests, added 2026-03-16).
+**Added 2026-03-16:**
+- `test/fileUtils.test.js` — `parseFileContent()` pure function: basic parsing, blank lines, metadata comments (`<!-- key: value -->`), stanza blocks, empty-send markers (`_`), lineNumbers sequencing.
+- `test/i18n.test.js` — `translate()` dot-path accessor: nested paths, missing paths fallback to key, object values fallback, null/empty messages, `getMessages()` locale selection and fallback.
+**Gaps (Medium):**
 - **React components** — zero component tests for 30+ components (App, panels, modals, all pages).
-- **Hooks** — `useSession`, `useFileStore`, `useSentLog` state management logic.
+- **Hooks** — `useSession`, `useFileStore`, `useSentLog` — use `localStorage`/React; require jsdom or Vitest setup.
 - **Embed pages** — BroadcastChannel messaging and cross-iframe token/caption coordination.
 - **Production pages** — `/production/*` operator control surface.
-- Test approach: Vitest + jsdom, component snapshots, hook unit tests with `renderHook`.
+- Test approach for components/hooks: Vitest + jsdom, component snapshots, `renderHook`.
 
 ---
 
@@ -765,8 +775,12 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ### Top Priorities for Next Test Expansion
 
-1. **`packages/lcyt-cli/src/interactive-ui.js`** *(High)* — 1,119 LOC with zero tests; largest single untested file in the repo.
-2. **`packages/lcyt-backend` ffmpeg managers** *(Critical)* — `hls-manager.js`, `radio-manager.js`, `preview-manager.js`, `rtmp-manager.js` (~600 LOC combined).
-3. **`packages/lcyt-web` React components and hooks** *(High)* — entire UI layer untested.
-4. **`packages/lcyt-backend` 5 untested routes** *(High)* — `auth.js`, `preview.js`, `stream.js`, `video.js`, `youtube.js`.
-5. **`packages/lcyt-backend/src/index.js`** *(Medium)* — graceful shutdown (SIGTERM/SIGINT) not tested.
+Items marked ✅ were completed 2026-03-16.
+
+1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — `managers.test.js` + `rtmp-manager.test.js` added (52 tests).
+2. ✅ **`packages/lcyt-backend` 5 untested routes** *(High → Done)* — `auth.test.js`, `video.test.js`, `preview-route.test.js`, `stream.test.js`, `youtube.test.js` added (69 tests).
+3. ✅ **`packages/lcyt-cli/src/interactive-ui.js`** *(High → Done)* — `interactive-ui.test.js` added (49 tests).
+4. ✅ **`packages/lcyt-web` pure utilities** *(High → Partially done)* — `fileUtils.test.js` + `i18n.test.js` added (38 tests); React components/hooks still untested.
+5. **`packages/lcyt-web` React components and hooks** *(Medium)* — entire UI layer untested; requires Vitest + jsdom setup.
+6. **`packages/lcyt-backend/src/index.js`** *(Medium)* — graceful shutdown (SIGTERM/SIGINT) not tested.
+7. **`packages/lcyt-backend/src/middleware/cors.js`** *(Medium)* — dynamic CORS origin filtering not tested.
