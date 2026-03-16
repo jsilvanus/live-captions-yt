@@ -7,7 +7,52 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *
  * Allows designing lower-third, bug, and full-screen graphic templates stored
  * as JSON on the backend. Preview mirrors the Playwright renderer output.
+ *
+ * Phase 2: direct manipulation — drag to move layers, 8-point resize handles,
+ * keyboard nudge (arrow keys, Shift+arrow for ×10 step).
  */
+
+// ── Scale ────────────────────────────────────────────────────────────────────
+
+// Preview renders the 1920×1080 canvas at 50% (960×540 display area).
+// Pointer delta in screen space must be divided by SCALE to get template px.
+const SCALE = 0.5;
+
+// ── Resize handles ───────────────────────────────────────────────────────────
+
+const HANDLE_LIST = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const HANDLE_CURSORS = {
+  nw: 'nw-resize', n: 'n-resize',  ne: 'ne-resize',
+  e:  'e-resize',  se: 'se-resize', s:  's-resize',
+  sw: 'sw-resize', w:  'w-resize',
+};
+
+/** Anchor point of a handle in template coordinates (relative to canvas origin). */
+function handleAnchor(handle, layer) {
+  const x = Number(layer.x) || 0;
+  const y = Number(layer.y) || 0;
+  const w = Number(layer.width)  || 0;
+  const h = Number(layer.height) || 0;
+  return {
+    left: handle.includes('e') ? x + w : handle.includes('w') ? x : x + w / 2,
+    top:  handle.includes('s') ? y + h : handle.includes('n') ? y : y + h / 2,
+  };
+}
+
+/** Compute updated { x, y, width, height } after dragging a resize handle by (dx, dy) template px. */
+function applyResize(handle, startRect, dx, dy) {
+  let { x, y, width, height } = startRect;
+  if (handle.includes('e')) width  = width  + dx;
+  if (handle.includes('w')) { x += dx; width  = width  - dx; }
+  if (handle.includes('s')) height = height + dy;
+  if (handle.includes('n')) { y += dy; height = height - dy; }
+  return {
+    x:      Math.round(x),
+    y:      Math.round(y),
+    width:  Math.max(4, Math.round(width)),
+    height: Math.max(4, Math.round(height)),
+  };
+}
 
 // ── Preset templates ────────────────────────────────────────────────────────
 
@@ -94,22 +139,152 @@ const EMPTY_TEMPLATE = {
 /**
  * Renders template JSON layers as React JSX in a scaled container.
  * Mirrors the logic in packages/plugins/lcyt-dsk/src/renderer.js renderTemplateToHtml().
+ *
+ * Phase 2: supports drag-to-move, resize handles, and keyboard nudge.
+ *
+ * Props:
+ *   template         — template JSON object
+ *   selectedLayerId  — id of the currently selected layer (or null)
+ *   onSelectLayer(id) — called when user clicks a layer (parent toggles selection)
+ *   onMoveLayer(id, { x, y }) — called during and after drag-move
+ *   onResizeLayer(id, { x, y, width, height }) — called during and after resize-drag
  */
-function TemplatePreview({ template, selectedLayerId, onSelectLayer }) {
+function TemplatePreview({ template, selectedLayerId, onSelectLayer, onMoveLayer, onResizeLayer }) {
   const t = template || EMPTY_TEMPLATE;
   const layers = Array.isArray(t.layers) ? t.layers : [];
 
+  const containerRef = useRef(null);
+  // dragRef.current: null | { type: 'move'|'resize'|'background', layerId?, handle?,
+  //                            startPointer, startRect?, hasMoved }
+  const dragRef = useRef(null);
+
+  // ── Drag initiation ───────────────────────────────────────────────────────
+
+  function startLayerDrag(e, layerId) {
+    e.stopPropagation();
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer) return;
+    dragRef.current = {
+      type: 'move',
+      layerId,
+      startPointer: { x: e.clientX, y: e.clientY },
+      startRect: {
+        x:      Number(layer.x)      || 0,
+        y:      Number(layer.y)      || 0,
+        width:  Number(layer.width)  || 0,
+        height: Number(layer.height) || 0,
+      },
+      hasMoved: false,
+    };
+    // Capture pointer on the container so pointermove fires there even when
+    // the cursor leaves the layer element during a fast drag.
+    containerRef.current?.setPointerCapture(e.pointerId);
+  }
+
+  function startHandleDrag(e, layerId, handle) {
+    e.stopPropagation();
+    const layer = layers.find(l => l.id === layerId);
+    if (!layer) return;
+    dragRef.current = {
+      type: 'resize',
+      layerId,
+      handle,
+      startPointer: { x: e.clientX, y: e.clientY },
+      startRect: {
+        x:      Number(layer.x)      || 0,
+        y:      Number(layer.y)      || 0,
+        width:  Number(layer.width)  || 0,
+        height: Number(layer.height) || 0,
+      },
+      hasMoved: false,
+    };
+    containerRef.current?.setPointerCapture(e.pointerId);
+  }
+
+  // ── Container pointer handlers ────────────────────────────────────────────
+
+  function onContainerPointerDown(e) {
+    // Fires only for background clicks — layer/handle events call stopPropagation.
+    dragRef.current = { type: 'background' };
+  }
+
+  function onContainerPointerMove(e) {
+    const drag = dragRef.current;
+    if (!drag || drag.type === 'background') return;
+
+    const dx = (e.clientX - drag.startPointer.x) / SCALE;
+    const dy = (e.clientY - drag.startPointer.y) / SCALE;
+
+    // Debounce: require > 3 screen px before marking as a real drag.
+    if (!drag.hasMoved &&
+        (Math.abs(e.clientX - drag.startPointer.x) > 3 ||
+         Math.abs(e.clientY - drag.startPointer.y) > 3)) {
+      drag.hasMoved = true;
+    }
+    if (!drag.hasMoved) return;
+
+    if (drag.type === 'move') {
+      onMoveLayer(drag.layerId, {
+        x: Math.round(drag.startRect.x + dx),
+        y: Math.round(drag.startRect.y + dy),
+      });
+    } else if (drag.type === 'resize') {
+      onResizeLayer(drag.layerId, applyResize(drag.handle, drag.startRect, dx, dy));
+    }
+  }
+
+  function onContainerPointerUp(e) {
+    const drag = dragRef.current;
+    dragRef.current = null;
+    if (!drag) return;
+
+    if (drag.type === 'background') {
+      // Click on empty canvas area → deselect.
+      onSelectLayer(null);
+    } else if (!drag.hasMoved) {
+      // Pointer went down and up without moving → treat as a select/deselect click.
+      onSelectLayer(drag.layerId);
+    }
+  }
+
+  // ── Keyboard nudge ────────────────────────────────────────────────────────
+
+  function onContainerKeyDown(e) {
+    if (!selectedLayerId) return;
+    const layer = layers.find(l => l.id === selectedLayerId);
+    if (!layer) return;
+    const step = e.shiftKey ? 10 : 1;
+    const x = Number(layer.x) || 0;
+    const y = Number(layer.y) || 0;
+    if (e.key === 'ArrowLeft')  { onMoveLayer(selectedLayerId, { x: x - step, y }); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { onMoveLayer(selectedLayerId, { x: x + step, y }); e.preventDefault(); }
+    if (e.key === 'ArrowUp')    { onMoveLayer(selectedLayerId, { x, y: y - step }); e.preventDefault(); }
+    if (e.key === 'ArrowDown')  { onMoveLayer(selectedLayerId, { x, y: y + step }); e.preventDefault(); }
+  }
+
+  // ── Render ────────────────────────────────────────────────────────────────
+
   return (
-    <div style={{
-      width: 960,
-      height: 540,
-      position: 'relative',
-      overflow: 'hidden',
-      flexShrink: 0,
-      border: '2px solid #444',
-      borderRadius: 4,
-      cursor: 'default',
-    }}>
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      style={{
+        width: 960,
+        height: 540,
+        position: 'relative',
+        overflow: 'hidden',
+        flexShrink: 0,
+        border: '2px solid #444',
+        borderRadius: 4,
+        cursor: 'default',
+        outline: 'none',
+        touchAction: 'none',
+      }}
+      onPointerDown={onContainerPointerDown}
+      onPointerMove={onContainerPointerMove}
+      onPointerUp={onContainerPointerUp}
+      onKeyDown={onContainerKeyDown}
+    >
       {/* Canvas at 1920×1080 scaled to 50% */}
       <div style={{
         width: 1920,
@@ -124,24 +299,24 @@ function TemplatePreview({ template, selectedLayerId, onSelectLayer }) {
           ? 'repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 40px 40px'
           : undefined,
       }}>
-        {layers.map((layer) => {
+        {layers.flatMap((layer) => {
           const isSelected = layer.id === selectedLayerId;
           const base = {
             position: 'absolute',
             left: Number(layer.x) || 0,
             top: Number(layer.y) || 0,
-            ...(layer.width != null ? { width: Number(layer.width) } : {}),
+            ...(layer.width  != null ? { width:  Number(layer.width)  } : {}),
             ...(layer.height != null ? { height: Number(layer.height) } : {}),
             outline: isSelected ? '3px solid #4af' : undefined,
-            cursor: 'pointer',
+            cursor: 'move',
             boxSizing: 'border-box',
+            userSelect: 'none',
           };
 
-          // Apply style object (CSS property names as-is from template JSON)
+          // Convert kebab-case CSS keys to camelCase for React
           const styleProps = {};
           if (layer.style) {
             for (const [k, v] of Object.entries(layer.style)) {
-              // Convert kebab-case to camelCase for React
               const camel = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
               styleProps[camel] = v;
             }
@@ -149,31 +324,61 @@ function TemplatePreview({ template, selectedLayerId, onSelectLayer }) {
 
           const merged = { ...base, ...styleProps };
 
-          const handleClick = (e) => {
-            e.stopPropagation();
-            onSelectLayer(layer.id);
-          };
-
+          let layerEl;
           if (layer.type === 'text') {
-            return (
-              <div key={layer.id} style={merged} onClick={handleClick}>
+            layerEl = (
+              <div key={layer.id} style={merged}
+                   onPointerDown={e => startLayerDrag(e, layer.id)}>
                 {layer.text || ''}
               </div>
             );
           } else if (layer.type === 'rect') {
-            return <div key={layer.id} style={merged} onClick={handleClick} />;
+            layerEl = (
+              <div key={layer.id} style={merged}
+                   onPointerDown={e => startLayerDrag(e, layer.id)} />
+            );
           } else if (layer.type === 'image') {
+            layerEl = (
+              <img key={layer.id} src={layer.src || ''} alt=""
+                   draggable={false}
+                   style={merged}
+                   onPointerDown={e => startLayerDrag(e, layer.id)} />
+            );
+          } else {
+            return [];
+          }
+
+          if (!isSelected) return [layerEl];
+
+          // Render 8 resize handles for the selected layer.
+          // Handles are in template px (1920×1080 space) — they scale to 8×8 px
+          // at 50% preview scale (16px template = 8px display).
+          const handles = HANDLE_LIST.map(handle => {
+            const { left, top } = handleAnchor(handle, layer);
             return (
-              <img
-                key={layer.id}
-                src={layer.src || ''}
-                alt=""
-                style={merged}
-                onClick={handleClick}
+              <div
+                key={`${layer.id}-${handle}`}
+                style={{
+                  position: 'absolute',
+                  left,
+                  top,
+                  width: 16,
+                  height: 16,
+                  background: '#4af',
+                  border: '2px solid #fff',
+                  borderRadius: 2,
+                  cursor: HANDLE_CURSORS[handle],
+                  zIndex: 9999,
+                  transform: 'translate(-50%, -50%)',
+                  boxSizing: 'border-box',
+                  touchAction: 'none',
+                }}
+                onPointerDown={e => startHandleDrag(e, layer.id, handle)}
               />
             );
-          }
-          return null;
+          });
+
+          return [layerEl, ...handles];
         })}
       </div>
     </div>
@@ -564,6 +769,24 @@ export function DskEditorPage() {
     isDirty.current = true;
   }
 
+  // ── Direct manipulation callbacks (Phase 2) ───────────────────────────────
+
+  function moveLayerPosition(id, { x, y }) {
+    setTemplate(t => ({
+      ...t,
+      layers: t.layers.map(l => l.id === id ? { ...l, x, y } : l),
+    }));
+    isDirty.current = true;
+  }
+
+  function resizeLayerRect(id, { x, y, width, height }) {
+    setTemplate(t => ({
+      ...t,
+      layers: t.layers.map(l => l.id === id ? { ...l, x, y, width, height } : l),
+    }));
+    isDirty.current = true;
+  }
+
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const selectedLayer = template.layers?.find(l => l.id === selectedLayerId) || null;
@@ -680,6 +903,8 @@ export function DskEditorPage() {
               template={template}
               selectedLayerId={selectedLayerId}
               onSelectLayer={id => setSelectedLayerId(id === selectedLayerId ? null : id)}
+              onMoveLayer={moveLayerPosition}
+              onResizeLayer={resizeLayerRect}
             />
 
             {/* Layer list */}
