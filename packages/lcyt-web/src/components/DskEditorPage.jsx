@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  * Phase 2: drag-to-move, 8-point resize handles, keyboard nudge.
  * Phase 3: undo/redo, multi-selection, snap to grid, snap to layer edges,
  *           ellipse shape type, shape grouping (group/ungroup).
+ * Phase 4: Media Library — image upload, browse, insert, delete (PNG/JPEG/WebP/SVG).
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -580,7 +581,16 @@ export function DskEditorPage() {
   const [status, setStatus]           = useState('');
   const [loading, setLoading]         = useState(false);
 
+  // Media Library state
+  const [images, setImages]               = useState([]);
+  const [imgPending, setImgPending]       = useState(null);   // File awaiting shorthand
+  const [shorthandInput, setShorthandInput] = useState('');
+  const [imgLibOpen, setImgLibOpen]       = useState(true);
+  const [imgUploading, setImgUploading]   = useState(false);
+  const [imgUploadErr, setImgUploadErr]   = useState('');
+
   const isDirty    = useRef(false);
+  const imgInputRef = useRef(null);
   const historyRef = useRef({ past: [], future: [] });
   const templateRef = useRef(template); // mirror for use inside event listeners
   useEffect(() => { templateRef.current = template; }, [template]);
@@ -656,6 +666,17 @@ export function DskEditorPage() {
   }, [serverUrl, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
+
+  const loadImages = useCallback(async () => {
+    if (!serverUrl || !apiKey) return;
+    try {
+      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/images`);
+      const data = await res.json();
+      setImages(data.images || []);
+    } catch {}
+  }, [serverUrl, apiKey]);
+
+  useEffect(() => { loadImages(); }, [loadImages]);
 
   // ── Template lifecycle ───────────────────────────────────────────────────
 
@@ -881,6 +902,60 @@ export function DskEditorPage() {
     isDirty.current = true;
   }
 
+  // ── Media Library ────────────────────────────────────────────────────────
+
+  async function uploadImage(file, shorthand) {
+    setImgUploading(true); setImgUploadErr('');
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('shorthand', shorthand);
+      const res = await fetch(`${serverUrl}/images`, {
+        method: 'POST',
+        headers: { 'X-API-Key': apiKey },
+        body: fd,
+      });
+      if (!res.ok) { const txt = await res.text(); throw new Error(txt); }
+      setImgPending(null); setShorthandInput('');
+      await loadImages();
+    } catch (err) { setImgUploadErr(err.message); }
+    finally { setImgUploading(false); }
+  }
+
+  async function deleteImageById(id) {
+    try {
+      await fetch(`${serverUrl}/images/${id}`, {
+        method: 'DELETE',
+        headers: { 'X-API-Key': apiKey },
+      });
+      await loadImages();
+    } catch {}
+  }
+
+  function handleFileInputChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const base = file.name.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 32);
+    setShorthandInput(base || 'image');
+    setImgPending(file);
+    e.target.value = '';
+  }
+
+  function useImageFromLibrary(img) {
+    const url = `${serverUrl}/images/${img.id}`;
+    if (primaryLayer?.type === 'image') {
+      updateLayer({ ...primaryLayer, src: url });
+    } else {
+      pushHistory(template);
+      const id = newLayerId('image');
+      const newLayer = { id, type: 'image', x: 0, y: 0, width: 400, height: 300, src: url };
+      setTemplate(t => ({ ...t, layers: [...(t.layers || []), newLayer] }));
+      setSelectedIds(new Set([id]));
+      setPrimaryId(id);
+      isDirty.current = true;
+    }
+  }
+
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const primaryLayer    = template.layers?.find(l => l.id === primaryId) || null;
@@ -989,6 +1064,7 @@ export function DskEditorPage() {
               <button onClick={() => addLayer('ellipse')} style={{ ...btnStyle, fontSize: 12 }}>+ Ellipse</button>
               <button onClick={() => addLayer('rect')}    style={{ ...btnStyle, fontSize: 12 }}>+ Rect</button>
               <button onClick={() => addLayer('text')}    style={{ ...btnStyle, fontSize: 12 }}>+ Text</button>
+              <button onClick={() => addLayer('image')}   style={{ ...btnStyle, fontSize: 12 }}>+ Image</button>
               {canGroup   && <button onClick={groupSelected}   title="Group selected layers" style={{ ...btnStyle, fontSize: 12 }}>Group</button>}
               {canUngroup && <button onClick={ungroupSelected} title="Remove from group"     style={{ ...btnDangerStyle, fontSize: 12 }}>Ungroup</button>}
             </div>
@@ -1028,6 +1104,64 @@ export function DskEditorPage() {
                 </div>
               );
             })}
+
+            {/* ── Media Library ── */}
+            <div style={{ borderTop: '1px solid #333', marginTop: 4, paddingTop: 4 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold', flex: 1 }}>Media Library</span>
+                <button onClick={() => imgInputRef.current?.click()} style={{ ...btnStyle, fontSize: 12 }}>Upload</button>
+                <button onClick={() => setImgLibOpen(v => !v)} style={{ ...btnStyle, fontSize: 12, padding: '4px 8px' }}>
+                  {imgLibOpen ? '▲' : '▼'}
+                </button>
+                <input ref={imgInputRef} type="file"
+                       accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                       style={{ display: 'none' }} onChange={handleFileInputChange} />
+              </div>
+
+              {imgLibOpen && (
+                <>
+                  {imgPending && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0 6px', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 12, color: '#aaa' }}>{imgPending.name}</span>
+                      <input type="text" value={shorthandInput}
+                             onChange={e => setShorthandInput(e.target.value)}
+                             placeholder="shorthand" style={{ ...inputStyle, width: 120 }} />
+                      <button onClick={() => uploadImage(imgPending, shorthandInput)}
+                              disabled={imgUploading || !shorthandInput.trim()}
+                              style={{ ...btnPrimaryStyle, fontSize: 12 }}>
+                        {imgUploading ? '…' : 'OK'}
+                      </button>
+                      <button onClick={() => { setImgPending(null); setShorthandInput(''); setImgUploadErr(''); }}
+                              style={{ ...btnStyle, fontSize: 12 }}>Cancel</button>
+                      {imgUploadErr && <span style={{ color: '#f88', fontSize: 12 }}>{imgUploadErr}</span>}
+                    </div>
+                  )}
+
+                  {images.length === 0 && !imgPending && (
+                    <div style={{ color: '#555', fontSize: 13, paddingBottom: 4 }}>No images yet. Click Upload to add one.</div>
+                  )}
+
+                  {images.map(img => (
+                    <div key={img.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
+                      borderBottom: '1px solid #1e1e1e',
+                    }}>
+                      <img src={`${serverUrl}/images/${img.id}`} alt={img.shorthand}
+                           style={{ width: 40, height: 40, objectFit: 'contain', background: '#222', borderRadius: 3, flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                            title={img.shorthand}>{img.shorthand}</span>
+                      <span style={{ fontSize: 11, color: '#666', flexShrink: 0 }}>
+                        {img.mimeType?.split('/')[1]?.toUpperCase()}
+                      </span>
+                      <button onClick={() => useImageFromLibrary(img)} title="Insert into canvas"
+                              style={{ ...btnStyle, padding: '2px 6px', fontSize: 11 }}>Use</button>
+                      <button onClick={() => { if (window.confirm(`Delete image "${img.shorthand}"?`)) deleteImageById(img.id); }}
+                              title="Delete" style={{ ...btnDangerStyle, padding: '2px 6px', fontSize: 11 }}>✕</button>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Properties panel */}
