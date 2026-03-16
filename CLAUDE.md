@@ -506,6 +506,16 @@ npm test -w packages/lcyt-backend  # single package
 
 Test files: `test/*.test.js` inside each package.
 
+### React components and hooks (lcyt-web only)
+`packages/lcyt-web` uses **Vitest** (alongside `node:test`) for React hook and component tests that require a DOM environment.
+
+```bash
+npm run test:components -w packages/lcyt-web   # Vitest run (jsdom, @testing-library/react)
+npm test -w packages/lcyt-web                  # node:test (pure utilities — unchanged)
+```
+
+Test files: `test/components/**/*.test.{js,jsx}`. Config: `packages/lcyt-web/vitest.config.js` (inherits Vite aliases via `mergeConfig`). Setup: `packages/lcyt-web/test/setup.vitest.js`.
+
 ### Python
 Uses `pytest`.
 
@@ -673,7 +683,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Medium | `tray.js`, entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
 | `packages/lcyt-mcp-sse` | 1,083 | ~400 | Good | Medium | Tool routing, concurrent sessions |
-| `packages/lcyt-web` | 2,000+ | ~600 | Moderate | Medium | React components (zero tests), hooks, embed pages |
+| `packages/lcyt-web` | 2,000+ | ~850 | Moderate | Medium | React components (most untested), embed pages, useSentLog |
 | `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
 | `python-packages/lcyt-backend` | 1,135 | 800 | Good | Medium | CORS middleware, incomplete feature parity with Node.js backend |
 | `python-packages/lcyt-mcp` | 252 | 300 | Good | Low | None identified |
@@ -740,16 +750,29 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-web` — Browser Web UI
-**Test files:** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests), `test/fileUtils.test.js` (27 tests, added 2026-03-16), `test/i18n.test.js` (11 tests, added 2026-03-16).
-**Added 2026-03-16:**
-- `test/fileUtils.test.js` — `parseFileContent()` pure function: basic parsing, blank lines, metadata comments (`<!-- key: value -->`), stanza blocks, empty-send markers (`_`), lineNumbers sequencing.
-- `test/i18n.test.js` — `translate()` dot-path accessor: nested paths, missing paths fallback to key, object values fallback, null/empty messages, `getMessages()` locale selection and fallback.
+
+**Test commands:**
+- `npm test -w packages/lcyt-web` → `node --test test/*.test.js` — pure utility functions (59 tests)
+- `npm run test:components -w packages/lcyt-web` → `vitest run` — React hooks/components (75 tests via jsdom)
+
+**Test files (node:test):** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests), `test/fileUtils.test.js` (27 tests, added 2026-03-16), `test/i18n.test.js` (11 tests, added 2026-03-16).
+**Test files (Vitest):** `test/components/useSession.test.jsx` (25 tests), `test/components/useFileStore.test.jsx` (35 tests), `test/components/AppProviders.test.jsx` (15 tests) — all added 2026-03-16.
+
+**Vitest setup (added 2026-03-16):**
+- `vitest.config.js` — `mergeConfig(viteConfig, ...)` inherits `lcyt/*` alias resolution from `vite.config.js` automatically; no manual mapper needed.
+- `test/setup.vitest.js` — `@testing-library/jest-dom`, localStorage/sessionStorage clear between tests, `EventSource` + `BroadcastChannel` global stubs.
+- Mock pattern: `vi.fn(function() { return mockSender; })` (regular function, not arrow, so `new` works).
+
+**Added 2026-03-16 (Vitest):**
+- `test/components/useSession.test.jsx` — initial state, persistence helpers (`getPersistedConfig`, `getAutoConnect`/`setAutoConnect`, `clearPersistedConfig`), `connect()` (sets connected/backendUrl/apiKey/healthStatus, fires `onConnected` with token, persists config, throws on no token), `disconnect()` (sets connected=false, calls `end()`, fires `onDisconnected`, resets sequence, no-op when not connected), `send()` and `sendBatch()` (delegation + callbacks).
+- `test/components/useFileStore.test.jsx` — initial state, `loadFile()` (file parsing, active tracking, `onFileLoaded`/`onActiveChanged` callbacks, localStorage persistence), `removeFile()`, `setActive()`/`cycleActive()`, `setPointer()`/`advancePointer()` (clamping, localStorage, callbacks), `createEmptyFile()`, `updateFileFromRawText()`, localStorage restore on remount.
+- `test/components/AppProviders.test.jsx` — smoke render, `autoConnect` behaviour (connects when valid config, no-op otherwise), embed mode (`BroadcastChannel` opened/closed, `lcyt:session` broadcast on connect, responds to `lcyt:request_session`).
+
 **Gaps (Medium):**
-- **React components** — zero component tests for 30+ components (App, panels, modals, all pages).
-- **Hooks** — `useSession`, `useFileStore`, `useSentLog` — use `localStorage`/React; require jsdom or Vitest setup.
-- **Embed pages** — BroadcastChannel messaging and cross-iframe token/caption coordination.
+- **React components** — 30+ leaf components (App, panels, modals, all pages) have no tests.
+- **Hooks** — `useSentLog` not yet tested with Vitest.
+- **Embed pages** — BroadcastChannel cross-iframe caption coordination.
 - **Production pages** — `/production/*` operator control surface.
-- Test approach for components/hooks: Vitest + jsdom, component snapshots, `renderHook`.
 
 ---
 
@@ -780,7 +803,7 @@ Items marked ✅ were completed 2026-03-16.
 1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — `managers.test.js` + `rtmp-manager.test.js` added (52 tests).
 2. ✅ **`packages/lcyt-backend` 5 untested routes** *(High → Done)* — `auth.test.js`, `video.test.js`, `preview-route.test.js`, `stream.test.js`, `youtube.test.js` added (69 tests).
 3. ✅ **`packages/lcyt-cli/src/interactive-ui.js`** *(High → Done)* — `interactive-ui.test.js` added (49 tests).
-4. ✅ **`packages/lcyt-web` pure utilities** *(High → Partially done)* — `fileUtils.test.js` + `i18n.test.js` added (38 tests); React components/hooks still untested.
-5. **`packages/lcyt-web` React components and hooks** *(Medium)* — entire UI layer untested; requires Vitest + jsdom setup.
+4. ✅ **`packages/lcyt-web` pure utilities** *(High → Done)* — `fileUtils.test.js` + `i18n.test.js` added (38 tests).
+5. ✅ **`packages/lcyt-web` React hooks + Vitest setup** *(Medium → Done)* — Vitest + jsdom added; `useSession.test.jsx` (25 tests), `useFileStore.test.jsx` (35 tests), `AppProviders.test.jsx` (15 tests) added (75 tests total).
 6. **`packages/lcyt-backend/src/index.js`** *(Medium)* — graceful shutdown (SIGTERM/SIGINT) not tested.
 7. **`packages/lcyt-backend/src/middleware/cors.js`** *(Medium)* — dynamic CORS origin filtering not tested.
