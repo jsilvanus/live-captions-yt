@@ -18,6 +18,11 @@
  *             'original' shows the raw original text,
  *             'all' splits the view into one column per language.
  *             Omit (or empty) to show the composed text (original + translation if configured).
+ *   apikey    DSK API key — when set, subscribes to /dsk/:apikey/events and renders
+ *             graphics overlays in addition to caption text. Useful when this viewer
+ *             page is configured as a named DSK viewport.
+ *   viewport  Viewport name — used to select per-viewport image settings and
+ *             metacode targeting. Requires apikey to be set.
  */
 
 import { useState, useEffect, useRef } from 'react';
@@ -59,6 +64,9 @@ export function ViewerPage() {
   const lang       = params.get('lang') || '';
   const showAll    = lang === 'all';
   const iconId     = params.get('icon') ? parseInt(params.get('icon'), 10) : null;
+  // DSK graphics overlay (optional)
+  const dskApiKey     = params.get('apikey')   || null;
+  const dskViewport   = params.get('viewport') || null;
 
   // Single-language display state
   const [text,      setText]      = useState('');
@@ -69,7 +77,13 @@ export function ViewerPage() {
   const [connected, setConnected] = useState(false);
   const [error,     setError]     = useState('');
 
+  // DSK graphics state (populated only when dskApiKey is set)
+  const [dskImages,      setDskImages]      = useState([]);  // [{ id, shorthand, mimeType, settingsJson }]
+  const [dskActiveNames, setDskActiveNames] = useState([]);  // string[]
+
   const esRef        = useRef(null);
+  const dskEsRef     = useRef(null);
+  const dskRetryRef  = useRef(null);
   const reconnectRef = useRef(null);
 
   useEffect(() => {
@@ -137,10 +151,90 @@ export function ViewerPage() {
     };
   }, [viewerKey, backendUrl, lang, showAll]);
 
+  // ── DSK graphics overlay ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!dskApiKey) return;
+
+    let cancelled = false;
+    let retryDelay = 1000;
+
+    // Fetch images (with settingsJson for per-viewport settings)
+    async function fetchDskImages() {
+      try {
+        const res = await fetch(`${backendUrl}/dsk/${encodeURIComponent(dskApiKey)}/images`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        setDskImages(data.images || []);
+      } catch {}
+    }
+
+    function openDskEvents() {
+      if (cancelled) return;
+      const es = new EventSource(`${backendUrl}/dsk/${encodeURIComponent(dskApiKey)}/events`);
+      dskEsRef.current = es;
+
+      es.addEventListener('graphics', (e) => {
+        if (cancelled) return;
+        try {
+          const payload = JSON.parse(e.data);
+          setDskActiveNames(resolveDskNames(payload, dskViewport));
+        } catch {}
+      });
+
+      es.addEventListener('reload', () => { if (!cancelled) fetchDskImages(); });
+
+      es.onerror = () => {
+        es.close();
+        dskEsRef.current = null;
+        if (cancelled) return;
+        dskRetryRef.current = setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, 30000);
+          openDskEvents();
+        }, retryDelay);
+      };
+    }
+
+    fetchDskImages();
+    openDskEvents();
+
+    return () => {
+      cancelled = true;
+      dskEsRef.current?.close();
+      clearTimeout(dskRetryRef.current);
+    };
+  }, [dskApiKey, dskViewport, backendUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const langEntries = Object.entries(langTexts);
 
   return (
     <div style={rootStyle(theme)}>
+      {/* DSK graphics overlay (when apikey + viewport params are set) */}
+      {dskApiKey && dskActiveNames.map((name, layerIdx) => {
+        const img = dskImages.find(i => i.shorthand === name);
+        if (!img) return null;
+        const vpSettings = img.settingsJson?.viewports?.[dskViewport] ?? {};
+        if (vpSettings.visible === false) return null;
+        return (
+          <img
+            key={`dsk-${img.id}`}
+            src={`${backendUrl}/images/${img.id}`}
+            alt=""
+            aria-hidden="true"
+            crossOrigin="anonymous"
+            style={{
+              position:      'absolute',
+              zIndex:        layerIdx + 1,
+              pointerEvents: 'none',
+              left:          vpSettings.x      != null ? vpSettings.x      : 0,
+              top:           vpSettings.y      != null ? vpSettings.y      : 0,
+              width:         vpSettings.width  != null ? vpSettings.width  : '100%',
+              height:        vpSettings.height != null ? vpSettings.height : 'auto',
+              ...(vpSettings.animation ? { animation: vpSettings.animation } : {}),
+            }}
+          />
+        );
+      })}
+
       {/* Section badge — top left */}
       {section && (
         <div style={sectionBadgeStyle}>
@@ -195,6 +289,21 @@ export function ViewerPage() {
       )}
     </div>
   );
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve active image names from a DSK 'graphics' SSE payload for a given viewport.
+ * Supports both the new format { default, viewports } and the legacy format { names }.
+ */
+function resolveDskNames(payload, viewportName) {
+  if (Array.isArray(payload.names)) return payload.names; // legacy
+  const { default: defaultNames, viewports } = payload;
+  if (viewportName && viewports && viewports[viewportName] !== undefined) {
+    return viewports[viewportName];
+  }
+  return Array.isArray(defaultNames) ? defaultNames : [];
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────

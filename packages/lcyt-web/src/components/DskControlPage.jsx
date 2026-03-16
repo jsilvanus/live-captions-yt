@@ -246,6 +246,13 @@ export function DskControlPage() {
           }
         </div>
 
+        <a
+          href={`/dsk-viewports?server=${encodeURIComponent(serverUrl)}&apikey=${encodeURIComponent(apiKey)}`}
+          style={{ ...btnStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', fontSize: 13 }}
+        >
+          Manage Viewports
+        </a>
+
         {statusMsg && (
           <span style={{ fontSize: 12, color: statusMsg.startsWith('Error') || statusMsg.includes('error') ? '#f88' : '#8d8', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {statusMsg}

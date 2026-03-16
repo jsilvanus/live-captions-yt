@@ -15,6 +15,7 @@ import { EmbedRtmpPage } from './components/EmbedRtmpPage';
 import { DskPage } from './components/DskPage';
 import { DskEditorPage } from './components/DskEditorPage';
 import { DskControlPage } from './components/DskControlPage';
+import { DskViewportsPage } from './components/DskViewportsPage';
 import { EmbedViewerPage } from './components/EmbedViewerPage';
 import { ViewerPage } from './components/ViewerPage';
 import { ProductionCamerasPage } from './components/ProductionCamerasPage';
@@ -39,6 +40,7 @@ function getPage() {
   if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
   if (path.startsWith('/embed/settings')) return <EmbedSettingsPage />;
   if (path.startsWith('/embed/rtmp'))     return <EmbedRtmpPage />;
+  if (path.startsWith('/dsk-viewports'))  return <DskViewportsPage />;
   if (path.startsWith('/dsk-editor'))     return <DskEditorPage />;
   if (path.startsWith('/dsk-control/'))   return <DskControlPage />;
   if (path.startsWith('/dsk/'))           return <DskPage />;

@@ -13,6 +13,7 @@ import {
   getTotalImageStorageBytes,
   isShorthandTaken,
   safeApiKey,
+  updateImageSettings,
 } from '../db/images.js';
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
@@ -225,14 +226,37 @@ export function createImagesRouter(db, auth) {
 
     const rows = listImages(db, apiKey);
     const images = rows.map(r => ({
-      id: r.id,
-      shorthand: r.shorthand,
-      filename: r.filename,
-      mimeType: r.mime_type,
-      sizeBytes: r.size_bytes,
-      createdAt: r.created_at,
+      id:          r.id,
+      shorthand:   r.shorthand,
+      filename:    r.filename,
+      mimeType:    r.mime_type,
+      sizeBytes:   r.size_bytes,
+      settingsJson: parseSettingsJson(r.settings_json),
+      createdAt:   r.created_at,
     }));
     return res.json({ images });
+  });
+
+  // PUT /images/:id — update per-viewport settings (auth required)
+  router.put('/:id', auth, (req, res) => {
+    const apiKey = req.session.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
+
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid image id' });
+
+    const { settingsJson } = req.body ?? {};
+    if (settingsJson === undefined) {
+      return res.status(400).json({ error: 'settingsJson is required' });
+    }
+    if (typeof settingsJson !== 'object' || settingsJson === null) {
+      return res.status(400).json({ error: 'settingsJson must be an object' });
+    }
+
+    const updated = updateImageSettings(db, id, apiKey, settingsJson);
+    if (!updated) return res.status(404).json({ error: 'Image not found' });
+
+    return res.json({ ok: true, settingsJson });
   });
 
   // GET /images/:id — serve image publicly (no auth — for DSK page pre-loading)
@@ -283,4 +307,9 @@ export function createImagesRouter(db, auth) {
   });
 
   return router;
+}
+
+function parseSettingsJson(str) {
+  if (!str) return {};
+  try { return JSON.parse(str); } catch { return {}; }
 }
