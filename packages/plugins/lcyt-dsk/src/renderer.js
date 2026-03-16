@@ -96,6 +96,10 @@ export function renderTemplateToHtml(templateJson) {
       return `<div${id} style="${style}">${escHtml(layer.text ?? '')}</div>`;
     } else if (layer.type === 'rect') {
       return `<div${id} style="${style}"></div>`;
+    } else if (layer.type === 'ellipse') {
+      // Render as a rectangle with border-radius:50% — extra style appended last so it wins.
+      const ellipseStyle = [style, 'border-radius:50%'].filter(Boolean).join(';');
+      return `<div${id} style="${ellipseStyle}"></div>`;
     } else if (layer.type === 'image') {
       return `<img${id} src="${escHtml(layer.src ?? '')}" style="${style}" alt="">`;
     }

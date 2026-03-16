@@ -5,20 +5,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
  *
  * URL: /dsk-editor?server=<backendUrl>&apikey=<key>
  *
- * Allows designing lower-third, bug, and full-screen graphic templates stored
- * as JSON on the backend. Preview mirrors the Playwright renderer output.
- *
- * Phase 2: direct manipulation — drag to move layers, 8-point resize handles,
- * keyboard nudge (arrow keys, Shift+arrow for ×10 step).
+ * Phase 1: template CRUD, layer property editor.
+ * Phase 2: drag-to-move, 8-point resize handles, keyboard nudge.
+ * Phase 3: undo/redo, multi-selection, snap to grid, snap to layer edges,
+ *           ellipse shape type, shape grouping (group/ungroup).
  */
 
-// ── Scale ────────────────────────────────────────────────────────────────────
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-// Preview renders the 1920×1080 canvas at 50% (960×540 display area).
-// Pointer delta in screen space must be divided by SCALE to get template px.
-const SCALE = 0.5;
+const SCALE         = 0.5;   // preview is 50% of 1920×1080
+const GRID_SIZE     = 20;    // template px; used by snap-to-grid
+const SNAP_THRESH   = 10;    // template px; used by snap-to-layer-edges
+const MAX_HISTORY   = 50;
 
-// ── Resize handles ───────────────────────────────────────────────────────────
+// ── Resize handles ────────────────────────────────────────────────────────────
 
 const HANDLE_LIST = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const HANDLE_CURSORS = {
@@ -27,7 +27,6 @@ const HANDLE_CURSORS = {
   sw: 'sw-resize', w:  'w-resize',
 };
 
-/** Anchor point of a handle in template coordinates (relative to canvas origin). */
 function handleAnchor(handle, layer) {
   const x = Number(layer.x) || 0;
   const y = Number(layer.y) || 0;
@@ -39,7 +38,6 @@ function handleAnchor(handle, layer) {
   };
 }
 
-/** Compute updated { x, y, width, height } after dragging a resize handle by (dx, dy) template px. */
 function applyResize(handle, startRect, dx, dy) {
   let { x, y, width, height } = startRect;
   if (handle.includes('e')) width  = width  + dx;
@@ -54,54 +52,85 @@ function applyResize(handle, startRect, dx, dy) {
   };
 }
 
-// ── Preset templates ────────────────────────────────────────────────────────
+// ── Snap helpers ──────────────────────────────────────────────────────────────
+
+function gridSnap(v) {
+  return Math.round(v / GRID_SIZE) * GRID_SIZE;
+}
+
+/**
+ * Snap the primary layer's tentative (x, y) to edges of non-moving layers.
+ * Returns { x, y } adjusted by the best snap offset (≤ SNAP_THRESH) on each axis.
+ */
+function snapToLayerEdges(tentX, tentY, primaryLayer, allLayers, movingIds) {
+  const w = Number(primaryLayer?.width)  || 0;
+  const h = Number(primaryLayer?.height) || 0;
+  if (!w || !h) return { x: tentX, y: tentY };
+
+  const others = allLayers.filter(l =>
+    !movingIds.has(l.id) && l.width != null && l.height != null,
+  );
+
+  // Moving layer edges
+  const me = {
+    l: tentX,     r: tentX + w,   cx: tentX + w / 2,
+    t: tentY,     b: tentY + h,   cy: tentY + h / 2,
+  };
+
+  let bestXd = SNAP_THRESH, bestYd = SNAP_THRESH, snapDx = 0, snapDy = 0;
+
+  for (const o of others) {
+    const ox = o.x || 0, oy = o.y || 0, ow = o.width || 0, oh = o.height || 0;
+    const oe = {
+      l: ox,      r: ox + ow,    cx: ox + ow / 2,
+      t: oy,      b: oy + oh,    cy: oy + oh / 2,
+    };
+    for (const mk of ['l', 'r', 'cx']) {
+      for (const ok of ['l', 'r', 'cx']) {
+        const d = Math.abs(me[mk] - oe[ok]);
+        if (d < bestXd) { bestXd = d; snapDx = oe[ok] - me[mk]; }
+      }
+    }
+    for (const mk of ['t', 'b', 'cy']) {
+      for (const ok of ['t', 'b', 'cy']) {
+        const d = Math.abs(me[mk] - oe[ok]);
+        if (d < bestYd) { bestYd = d; snapDy = oe[ok] - me[mk]; }
+      }
+    }
+  }
+  return { x: tentX + snapDx, y: tentY + snapDy };
+}
+
+// ── Preset templates ──────────────────────────────────────────────────────────
 
 const PRESETS = {
   'Lower Third': {
     background: 'transparent',
     width: 1920,
     height: 1080,
+    groups: [{ id: 'lt', name: 'Lower Third' }],
     layers: [
-      {
-        id: 'bg',
-        type: 'rect',
-        x: 0, y: 790, width: 1920, height: 290,
-        style: { background: '#1a1a2e', opacity: '0.92', 'border-radius': '0' },
-      },
-      {
-        id: 'name',
-        type: 'text',
-        x: 80, y: 840, width: 1760,
+      { id: 'bg',    type: 'rect', x: 0,  y: 790, width: 1920, height: 290, groupId: 'lt',
+        style: { background: '#1a1a2e', opacity: '0.92', 'border-radius': '0' } },
+      { id: 'name',  type: 'text', x: 80, y: 840, width: 1760, groupId: 'lt',
         text: 'Speaker Name',
-        style: { 'font-size': '56px', 'font-family': 'Arial, sans-serif', color: '#ffffff', 'font-weight': 'bold', 'white-space': 'nowrap' },
-      },
-      {
-        id: 'title',
-        type: 'text',
-        x: 80, y: 930, width: 1760,
+        style: { 'font-size': '56px', 'font-family': 'Arial, sans-serif', color: '#ffffff', 'font-weight': 'bold', 'white-space': 'nowrap' } },
+      { id: 'title', type: 'text', x: 80, y: 930, width: 1760, groupId: 'lt',
         text: 'Title / Organisation',
-        style: { 'font-size': '38px', 'font-family': 'Arial, sans-serif', color: '#cccccc', 'white-space': 'nowrap' },
-      },
+        style: { 'font-size': '38px', 'font-family': 'Arial, sans-serif', color: '#cccccc', 'white-space': 'nowrap' } },
     ],
   },
   'Corner Bug': {
     background: 'transparent',
     width: 1920,
     height: 1080,
+    groups: [{ id: 'bug', name: 'Corner Bug' }],
     layers: [
-      {
-        id: 'bug-bg',
-        type: 'rect',
-        x: 40, y: 40, width: 320, height: 100,
-        style: { background: '#000000', opacity: '0.75', 'border-radius': '8px' },
-      },
-      {
-        id: 'bug-text',
-        type: 'text',
-        x: 60, y: 62,
+      { id: 'bug-bg',   type: 'rect', x: 40, y: 40, width: 320, height: 100, groupId: 'bug',
+        style: { background: '#000000', opacity: '0.75', 'border-radius': '8px' } },
+      { id: 'bug-text', type: 'text', x: 60, y: 62, groupId: 'bug',
         text: 'LIVE',
-        style: { 'font-size': '48px', 'font-family': 'Arial, sans-serif', color: '#ff3300', 'font-weight': 'bold', 'letter-spacing': '4px' },
-      },
+        style: { 'font-size': '48px', 'font-family': 'Arial, sans-serif', color: '#ff3300', 'font-weight': 'bold', 'letter-spacing': '4px' } },
     ],
   },
   'Full-screen Title': {
@@ -109,20 +138,12 @@ const PRESETS = {
     width: 1920,
     height: 1080,
     layers: [
-      {
-        id: 'title',
-        type: 'text',
-        x: 0, y: 420, width: 1920,
+      { id: 'title',    type: 'text', x: 0, y: 420, width: 1920,
         text: 'Event Title',
-        style: { 'font-size': '96px', 'font-family': 'Arial, sans-serif', color: '#ffffff', 'font-weight': 'bold', 'text-align': 'center' },
-      },
-      {
-        id: 'subtitle',
-        type: 'text',
-        x: 0, y: 560, width: 1920,
+        style: { 'font-size': '96px', 'font-family': 'Arial, sans-serif', color: '#ffffff', 'font-weight': 'bold', 'text-align': 'center' } },
+      { id: 'subtitle', type: 'text', x: 0, y: 560, width: 1920,
         text: 'Subtitle or Date',
-        style: { 'font-size': '52px', 'font-family': 'Arial, sans-serif', color: '#aaaaaa', 'text-align': 'center' },
-      },
+        style: { 'font-size': '52px', 'font-family': 'Arial, sans-serif', color: '#aaaaaa', 'text-align': 'center' } },
     ],
   },
 };
@@ -131,53 +152,115 @@ const EMPTY_TEMPLATE = {
   background: 'transparent',
   width: 1920,
   height: 1080,
+  groups: [],
   layers: [],
 };
 
-// ── Preview rendering ────────────────────────────────────────────────────────
+// ── Render a single layer element ─────────────────────────────────────────────
+
+function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
+  const base = {
+    position: 'absolute',
+    left:  Number(layer.x) || 0,
+    top:   Number(layer.y) || 0,
+    ...(layer.width  != null ? { width:  Number(layer.width)  } : {}),
+    ...(layer.height != null ? { height: Number(layer.height) } : {}),
+    outline: isSelected   ? '3px solid #4af'
+           : isInSelection ? '2px dashed #48c'
+           : undefined,
+    cursor: 'move',
+    boxSizing: 'border-box',
+    userSelect: 'none',
+  };
+
+  const styleProps = {};
+  if (layer.style) {
+    for (const [k, v] of Object.entries(layer.style)) {
+      styleProps[k.replace(/-([a-z])/g, (_, c) => c.toUpperCase())] = v;
+    }
+  }
+  const merged = { ...base, ...styleProps };
+
+  if (layer.type === 'text') {
+    return (
+      <div key={layer.id} style={merged} onPointerDown={onPointerDown}>
+        {layer.text || ''}
+      </div>
+    );
+  }
+  if (layer.type === 'rect') {
+    return <div key={layer.id} style={merged} onPointerDown={onPointerDown} />;
+  }
+  if (layer.type === 'ellipse') {
+    return <div key={layer.id} style={{ ...merged, borderRadius: '50%' }} onPointerDown={onPointerDown} />;
+  }
+  if (layer.type === 'image') {
+    return (
+      <img key={layer.id} src={layer.src || ''} alt=""
+           draggable={false} style={merged} onPointerDown={onPointerDown} />
+    );
+  }
+  return null;
+}
+
+// ── Preview ───────────────────────────────────────────────────────────────────
 
 /**
- * Renders template JSON layers as React JSX in a scaled container.
- * Mirrors the logic in packages/plugins/lcyt-dsk/src/renderer.js renderTemplateToHtml().
- *
- * Phase 2: supports drag-to-move, resize handles, and keyboard nudge.
+ * Phase 3 TemplatePreview.
  *
  * Props:
- *   template         — template JSON object
- *   selectedLayerId  — id of the currently selected layer (or null)
- *   onSelectLayer(id) — called when user clicks a layer (parent toggles selection)
- *   onMoveLayer(id, { x, y }) — called during and after drag-move
- *   onResizeLayer(id, { x, y, width, height }) — called during and after resize-drag
+ *   template        full template JSON
+ *   selectedIds     Set<string> — all highlighted layer IDs
+ *   primaryId       string | null — single "active" layer (for keyboard nudge)
+ *   onSelect        (layerId, additive) => void — null layerId = deselect all
+ *   onDragStart     () => void — push undo history before first movement
+ *   onMoveSelected  (updates: {id, x, y}[]) => void
+ *   onResizeLayer   (id, {x, y, width, height}) => void
+ *   snapGrid        boolean
  */
-function TemplatePreview({ template, selectedLayerId, onSelectLayer, onMoveLayer, onResizeLayer }) {
+function TemplatePreview({
+  template, selectedIds, primaryId,
+  onSelect, onDragStart, onMoveSelected, onResizeLayer, snapGrid,
+}) {
   const t = template || EMPTY_TEMPLATE;
   const layers = Array.isArray(t.layers) ? t.layers : [];
 
   const containerRef = useRef(null);
-  // dragRef.current: null | { type: 'move'|'resize'|'background', layerId?, handle?,
-  //                            startPointer, startRect?, hasMoved }
   const dragRef = useRef(null);
+  // dragRef.current shape:
+  //   { type:'move',   layerId, shiftKey, startPointer, startPositions:Map, dragIds:Set, hasMoved, historyPushed }
+  //   { type:'resize', layerId, handle,   startPointer, startRect, hasMoved, historyPushed }
+  //   { type:'background' }
 
-  // ── Drag initiation ───────────────────────────────────────────────────────
+  // ── Drag start ────────────────────────────────────────────────────────────
 
   function startLayerDrag(e, layerId) {
     e.stopPropagation();
     const layer = layers.find(l => l.id === layerId);
-    if (!layer) return;
+
+    // Which layers will move together?
+    let dragIds;
+    if (selectedIds.has(layerId)) {
+      dragIds = new Set(selectedIds);
+    } else if (layer?.groupId) {
+      dragIds = new Set(layers.filter(l => l.groupId === layer.groupId).map(l => l.id));
+    } else {
+      dragIds = new Set([layerId]);
+    }
+
+    const startPositions = new Map(
+      [...dragIds].map(id => {
+        const l = layers.find(ll => ll.id === id);
+        return [id, { x: Number(l?.x) || 0, y: Number(l?.y) || 0 }];
+      }),
+    );
+
     dragRef.current = {
-      type: 'move',
-      layerId,
+      type: 'move', layerId, shiftKey: e.shiftKey,
       startPointer: { x: e.clientX, y: e.clientY },
-      startRect: {
-        x:      Number(layer.x)      || 0,
-        y:      Number(layer.y)      || 0,
-        width:  Number(layer.width)  || 0,
-        height: Number(layer.height) || 0,
-      },
-      hasMoved: false,
+      startPositions, dragIds,
+      hasMoved: false, historyPushed: false,
     };
-    // Capture pointer on the container so pointermove fires there even when
-    // the cursor leaves the layer element during a fast drag.
     containerRef.current?.setPointerCapture(e.pointerId);
   }
 
@@ -186,25 +269,20 @@ function TemplatePreview({ template, selectedLayerId, onSelectLayer, onMoveLayer
     const layer = layers.find(l => l.id === layerId);
     if (!layer) return;
     dragRef.current = {
-      type: 'resize',
-      layerId,
-      handle,
+      type: 'resize', layerId, handle,
       startPointer: { x: e.clientX, y: e.clientY },
       startRect: {
-        x:      Number(layer.x)      || 0,
-        y:      Number(layer.y)      || 0,
-        width:  Number(layer.width)  || 0,
-        height: Number(layer.height) || 0,
+        x: Number(layer.x) || 0, y: Number(layer.y) || 0,
+        width: Number(layer.width) || 0, height: Number(layer.height) || 0,
       },
-      hasMoved: false,
+      hasMoved: false, historyPushed: false,
     };
     containerRef.current?.setPointerCapture(e.pointerId);
   }
 
-  // ── Container pointer handlers ────────────────────────────────────────────
+  // ── Container pointer events ──────────────────────────────────────────────
 
   function onContainerPointerDown(e) {
-    // Fires only for background clicks — layer/handle events call stopPropagation.
     dragRef.current = { type: 'background' };
   }
 
@@ -212,24 +290,54 @@ function TemplatePreview({ template, selectedLayerId, onSelectLayer, onMoveLayer
     const drag = dragRef.current;
     if (!drag || drag.type === 'background') return;
 
-    const dx = (e.clientX - drag.startPointer.x) / SCALE;
-    const dy = (e.clientY - drag.startPointer.y) / SCALE;
+    const rawDx = (e.clientX - drag.startPointer.x) / SCALE;
+    const rawDy = (e.clientY - drag.startPointer.y) / SCALE;
 
-    // Debounce: require > 3 screen px before marking as a real drag.
-    if (!drag.hasMoved &&
-        (Math.abs(e.clientX - drag.startPointer.x) > 3 ||
-         Math.abs(e.clientY - drag.startPointer.y) > 3)) {
+    if (!drag.hasMoved && (Math.abs(e.clientX - drag.startPointer.x) > 3 ||
+                           Math.abs(e.clientY - drag.startPointer.y) > 3)) {
       drag.hasMoved = true;
     }
     if (!drag.hasMoved) return;
 
+    // Push undo history on first actual movement
+    if (!drag.historyPushed) {
+      drag.historyPushed = true;
+      onDragStart();
+    }
+
     if (drag.type === 'move') {
-      onMoveLayer(drag.layerId, {
-        x: Math.round(drag.startRect.x + dx),
-        y: Math.round(drag.startRect.y + dy),
-      });
+      const primaryLayer = layers.find(l => l.id === drag.layerId);
+      const primaryStart = drag.startPositions.get(drag.layerId);
+
+      // Tentative position for primary layer
+      let tentX = primaryStart.x + rawDx;
+      let tentY = primaryStart.y + rawDy;
+
+      // Grid snap (applied to primary, same delta to all)
+      if (snapGrid) {
+        tentX = gridSnap(tentX);
+        tentY = gridSnap(tentY);
+      }
+
+      // Layer edge snap (applied to primary)
+      if (primaryLayer?.width && primaryLayer?.height) {
+        const snapped = snapToLayerEdges(tentX, tentY, primaryLayer, layers, drag.dragIds);
+        tentX = snapped.x;
+        tentY = snapped.y;
+      }
+
+      const snappedDx = tentX - primaryStart.x;
+      const snappedDy = tentY - primaryStart.y;
+
+      const updates = [...drag.startPositions.entries()].map(([id, sp]) => ({
+        id,
+        x: Math.round(sp.x + snappedDx),
+        y: Math.round(sp.y + snappedDy),
+      }));
+      onMoveSelected(updates);
+
     } else if (drag.type === 'resize') {
-      onResizeLayer(drag.layerId, applyResize(drag.handle, drag.startRect, dx, dy));
+      onResizeLayer(drag.layerId, applyResize(drag.handle, drag.startRect, rawDx, rawDy));
     }
   }
 
@@ -237,29 +345,26 @@ function TemplatePreview({ template, selectedLayerId, onSelectLayer, onMoveLayer
     const drag = dragRef.current;
     dragRef.current = null;
     if (!drag) return;
-
     if (drag.type === 'background') {
-      // Click on empty canvas area → deselect.
-      onSelectLayer(null);
+      onSelect(null, false);
     } else if (!drag.hasMoved) {
-      // Pointer went down and up without moving → treat as a select/deselect click.
-      onSelectLayer(drag.layerId);
+      onSelect(drag.layerId, drag.shiftKey);
     }
   }
 
   // ── Keyboard nudge ────────────────────────────────────────────────────────
 
   function onContainerKeyDown(e) {
-    if (!selectedLayerId) return;
-    const layer = layers.find(l => l.id === selectedLayerId);
+    if (!primaryId) return;
+    const layer = layers.find(l => l.id === primaryId);
     if (!layer) return;
     const step = e.shiftKey ? 10 : 1;
     const x = Number(layer.x) || 0;
     const y = Number(layer.y) || 0;
-    if (e.key === 'ArrowLeft')  { onMoveLayer(selectedLayerId, { x: x - step, y }); e.preventDefault(); }
-    if (e.key === 'ArrowRight') { onMoveLayer(selectedLayerId, { x: x + step, y }); e.preventDefault(); }
-    if (e.key === 'ArrowUp')    { onMoveLayer(selectedLayerId, { x, y: y - step }); e.preventDefault(); }
-    if (e.key === 'ArrowDown')  { onMoveLayer(selectedLayerId, { x, y: y + step }); e.preventDefault(); }
+    if (e.key === 'ArrowLeft')  { onMoveSelected([{ id: primaryId, x: x - step, y }]); e.preventDefault(); }
+    if (e.key === 'ArrowRight') { onMoveSelected([{ id: primaryId, x: x + step, y }]); e.preventDefault(); }
+    if (e.key === 'ArrowUp')    { onMoveSelected([{ id: primaryId, x, y: y - step }]); e.preventDefault(); }
+    if (e.key === 'ArrowDown')  { onMoveSelected([{ id: primaryId, x, y: y + step }]); e.preventDefault(); }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -269,260 +374,161 @@ function TemplatePreview({ template, selectedLayerId, onSelectLayer, onMoveLayer
       ref={containerRef}
       tabIndex={0}
       style={{
-        width: 960,
-        height: 540,
-        position: 'relative',
-        overflow: 'hidden',
-        flexShrink: 0,
-        border: '2px solid #444',
-        borderRadius: 4,
-        cursor: 'default',
-        outline: 'none',
-        touchAction: 'none',
+        width: 960, height: 540, position: 'relative', overflow: 'hidden',
+        flexShrink: 0, border: '2px solid #444', borderRadius: 4,
+        cursor: 'default', outline: 'none', touchAction: 'none',
       }}
       onPointerDown={onContainerPointerDown}
       onPointerMove={onContainerPointerMove}
       onPointerUp={onContainerPointerUp}
       onKeyDown={onContainerKeyDown}
     >
-      {/* Canvas at 1920×1080 scaled to 50% */}
       <div style={{
-        width: 1920,
-        height: 1080,
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        transform: 'scale(0.5)',
-        transformOrigin: 'top left',
+        width: 1920, height: 1080, position: 'absolute', top: 0, left: 0,
+        transform: 'scale(0.5)', transformOrigin: 'top left',
         background: t.background || 'transparent',
         backgroundImage: t.background === 'transparent' || !t.background
           ? 'repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 40px 40px'
           : undefined,
       }}>
         {layers.flatMap((layer) => {
-          const isSelected = layer.id === selectedLayerId;
-          const base = {
-            position: 'absolute',
-            left: Number(layer.x) || 0,
-            top: Number(layer.y) || 0,
-            ...(layer.width  != null ? { width:  Number(layer.width)  } : {}),
-            ...(layer.height != null ? { height: Number(layer.height) } : {}),
-            outline: isSelected ? '3px solid #4af' : undefined,
-            cursor: 'move',
-            boxSizing: 'border-box',
-            userSelect: 'none',
-          };
+          const isSelected    = layer.id === primaryId && selectedIds.size === 1;
+          const isInSelection = selectedIds.has(layer.id);
 
-          // Convert kebab-case CSS keys to camelCase for React
-          const styleProps = {};
-          if (layer.style) {
-            for (const [k, v] of Object.entries(layer.style)) {
-              const camel = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-              styleProps[camel] = v;
-            }
-          }
+          const el = renderLayerElement(
+            layer, isSelected, isInSelection && !isSelected,
+            e => startLayerDrag(e, layer.id),
+          );
+          if (!el) return [];
 
-          const merged = { ...base, ...styleProps };
+          if (!isSelected) return [el];
 
-          let layerEl;
-          if (layer.type === 'text') {
-            layerEl = (
-              <div key={layer.id} style={merged}
-                   onPointerDown={e => startLayerDrag(e, layer.id)}>
-                {layer.text || ''}
-              </div>
-            );
-          } else if (layer.type === 'rect') {
-            layerEl = (
-              <div key={layer.id} style={merged}
-                   onPointerDown={e => startLayerDrag(e, layer.id)} />
-            );
-          } else if (layer.type === 'image') {
-            layerEl = (
-              <img key={layer.id} src={layer.src || ''} alt=""
-                   draggable={false}
-                   style={merged}
-                   onPointerDown={e => startLayerDrag(e, layer.id)} />
-            );
-          } else {
-            return [];
-          }
-
-          if (!isSelected) return [layerEl];
-
-          // Render 8 resize handles for the selected layer.
-          // Handles are in template px (1920×1080 space) — they scale to 8×8 px
-          // at 50% preview scale (16px template = 8px display).
+          // Add 8 resize handles for the single-selected (primary) layer
           const handles = HANDLE_LIST.map(handle => {
             const { left, top } = handleAnchor(handle, layer);
             return (
-              <div
-                key={`${layer.id}-${handle}`}
-                style={{
-                  position: 'absolute',
-                  left,
-                  top,
-                  width: 16,
-                  height: 16,
-                  background: '#4af',
-                  border: '2px solid #fff',
-                  borderRadius: 2,
-                  cursor: HANDLE_CURSORS[handle],
-                  zIndex: 9999,
-                  transform: 'translate(-50%, -50%)',
-                  boxSizing: 'border-box',
-                  touchAction: 'none',
-                }}
-                onPointerDown={e => startHandleDrag(e, layer.id, handle)}
+              <div key={`${layer.id}-${handle}`} style={{
+                position: 'absolute', left, top,
+                width: 16, height: 16,
+                background: '#4af', border: '2px solid #fff', borderRadius: 2,
+                cursor: HANDLE_CURSORS[handle], zIndex: 9999,
+                transform: 'translate(-50%, -50%)', boxSizing: 'border-box',
+                touchAction: 'none',
+              }}
+              onPointerDown={e => startHandleDrag(e, layer.id, handle)}
               />
             );
           });
-
-          return [layerEl, ...handles];
+          return [el, ...handles];
         })}
       </div>
     </div>
   );
 }
 
-// ── Layer property editor ────────────────────────────────────────────────────
+// ── Layer property editor ─────────────────────────────────────────────────────
 
 const COMMON_FIELDS = [
   { key: 'x', label: 'X', type: 'number' },
   { key: 'y', label: 'Y', type: 'number' },
-  { key: 'width', label: 'Width', type: 'number' },
+  { key: 'width',  label: 'Width',  type: 'number' },
   { key: 'height', label: 'Height', type: 'number' },
 ];
 
 const STYLE_FIELDS_RECT = [
+  { key: 'background',   label: 'Background',   type: 'color-text' },
+  { key: 'opacity',      label: 'Opacity',      type: 'text', placeholder: '0.9' },
+  { key: 'border-radius',label: 'Border radius',type: 'text', placeholder: '8px' },
+];
+
+const STYLE_FIELDS_ELLIPSE = [
   { key: 'background', label: 'Background', type: 'color-text' },
-  { key: 'opacity', label: 'Opacity', type: 'text', placeholder: '0.9' },
-  { key: 'border-radius', label: 'Border radius', type: 'text', placeholder: '8px' },
+  { key: 'opacity',    label: 'Opacity',    type: 'text', placeholder: '0.9' },
 ];
 
 const STYLE_FIELDS_TEXT = [
-  { key: 'font-family', label: 'Font family', type: 'text', placeholder: 'Arial, sans-serif' },
-  { key: 'font-size', label: 'Font size', type: 'text', placeholder: '48px' },
-  { key: 'font-weight', label: 'Font weight', type: 'text', placeholder: 'bold' },
-  { key: 'color', label: 'Color', type: 'color-text' },
+  { key: 'font-family',  label: 'Font family',   type: 'text',   placeholder: 'Arial, sans-serif' },
+  { key: 'font-size',    label: 'Font size',      type: 'text',   placeholder: '48px' },
+  { key: 'font-weight',  label: 'Font weight',    type: 'text',   placeholder: 'bold' },
+  { key: 'color',        label: 'Color',          type: 'color-text' },
   { key: 'letter-spacing', label: 'Letter spacing', type: 'text', placeholder: '2px' },
-  { key: 'text-align', label: 'Text align', type: 'select', options: ['left', 'center', 'right'] },
-  { key: 'white-space', label: 'White space', type: 'select', options: ['normal', 'nowrap', 'pre'] },
+  { key: 'text-align',   label: 'Text align',     type: 'select', options: ['left', 'center', 'right'] },
+  { key: 'white-space',  label: 'White space',    type: 'select', options: ['normal', 'nowrap', 'pre'] },
 ];
 
 function ColorTextInput({ value, onChange }) {
   return (
     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-      <input
-        type="color"
+      <input type="color"
         value={value && value.startsWith('#') ? value.slice(0, 7) : '#000000'}
         onChange={e => onChange(e.target.value)}
         style={{ width: 32, height: 24, padding: 0, border: 'none', cursor: 'pointer', flexShrink: 0 }}
       />
-      <input
-        type="text"
-        value={value || ''}
-        onChange={e => onChange(e.target.value)}
-        style={inputStyle}
-      />
+      <input type="text" value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />
     </div>
   );
 }
 
-function LayerPropertyEditor({ layer, onChange }) {
+function LayerPropertyEditor({ layer, selectionCount, onChange }) {
+  if (selectionCount > 1 && !layer) {
+    return <div style={{ color: '#888', fontSize: 13, padding: '16px 0' }}>{selectionCount} layers selected.</div>;
+  }
   if (!layer) {
-    return (
-      <div style={{ color: '#888', fontSize: 13, padding: '16px 0' }}>
-        Select a layer to edit its properties.
-      </div>
-    );
+    return <div style={{ color: '#888', fontSize: 13, padding: '16px 0' }}>Select a layer to edit its properties.</div>;
   }
 
   function setField(key, value) {
-    onChange({ ...layer, [key]: value === '' ? undefined : (key === 'x' || key === 'y' || key === 'width' || key === 'height' ? Number(value) : value) });
+    const numericKeys = ['x', 'y', 'width', 'height'];
+    onChange({ ...layer, [key]: value === '' ? undefined : (numericKeys.includes(key) ? Number(value) : value) });
   }
-
   function setStyle(cssKey, value) {
     const style = { ...(layer.style || {}) };
-    if (value === '' || value === undefined) {
-      delete style[cssKey];
-    } else {
-      style[cssKey] = value;
-    }
+    if (value === '' || value === undefined) delete style[cssKey]; else style[cssKey] = value;
     onChange({ ...layer, style });
   }
 
-  const styleFields = layer.type === 'text' ? STYLE_FIELDS_TEXT : layer.type === 'rect' ? STYLE_FIELDS_RECT : [];
+  const styleFields = layer.type === 'text'    ? STYLE_FIELDS_TEXT
+                    : layer.type === 'rect'    ? STYLE_FIELDS_RECT
+                    : layer.type === 'ellipse' ? STYLE_FIELDS_ELLIPSE
+                    : [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {/* ID & type (read-only display) */}
       <div style={fieldRowStyle}>
         <span style={labelStyle}>ID</span>
-        <input
-          type="text"
-          value={layer.id || ''}
-          onChange={e => setField('id', e.target.value)}
-          style={inputStyle}
-        />
+        <input type="text" value={layer.id || ''} onChange={e => setField('id', e.target.value)} style={inputStyle} />
       </div>
       <div style={fieldRowStyle}>
         <span style={labelStyle}>Type</span>
         <span style={{ color: '#aaa', fontSize: 13 }}>{layer.type}</span>
       </div>
-
-      {/* Text content */}
       {layer.type === 'text' && (
         <div style={fieldRowStyle}>
           <span style={labelStyle}>Text</span>
-          <input
-            type="text"
-            value={layer.text || ''}
-            onChange={e => setField('text', e.target.value)}
-            style={inputStyle}
-          />
+          <input type="text" value={layer.text || ''} onChange={e => setField('text', e.target.value)} style={inputStyle} />
         </div>
       )}
-
-      {/* Position/size */}
-      <div style={{ borderTop: '1px solid #333', paddingTop: 6, marginTop: 2, color: '#777', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>Position & Size</div>
+      <div style={sectionLabelStyle}>Position & Size</div>
       {COMMON_FIELDS.map(f => (
         <div key={f.key} style={fieldRowStyle}>
           <span style={labelStyle}>{f.label}</span>
-          <input
-            type="number"
-            value={layer[f.key] ?? ''}
-            onChange={e => setField(f.key, e.target.value)}
-            style={{ ...inputStyle, width: 100 }}
-          />
+          <input type="number" value={layer[f.key] ?? ''} onChange={e => setField(f.key, e.target.value)}
+                 style={{ ...inputStyle, width: 100 }} />
         </div>
       ))}
-
-      {/* Style fields */}
-      {styleFields.length > 0 && (
-        <div style={{ borderTop: '1px solid #333', paddingTop: 6, marginTop: 2, color: '#777', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1 }}>Style</div>
-      )}
+      {styleFields.length > 0 && <div style={sectionLabelStyle}>Style</div>}
       {styleFields.map(f => (
         <div key={f.key} style={fieldRowStyle}>
           <span style={labelStyle}>{f.label}</span>
           {f.type === 'color-text'
             ? <ColorTextInput value={layer.style?.[f.key] || ''} onChange={v => setStyle(f.key, v)} />
             : f.type === 'select'
-              ? (
-                <select value={layer.style?.[f.key] || ''} onChange={e => setStyle(f.key, e.target.value)} style={inputStyle}>
+              ? <select value={layer.style?.[f.key] || ''} onChange={e => setStyle(f.key, e.target.value)} style={inputStyle}>
                   <option value="">—</option>
                   {f.options.map(o => <option key={o} value={o}>{o}</option>)}
                 </select>
-              )
-              : (
-                <input
-                  type="text"
-                  value={layer.style?.[f.key] || ''}
-                  placeholder={f.placeholder || ''}
-                  onChange={e => setStyle(f.key, e.target.value)}
-                  style={inputStyle}
-                />
-              )
+              : <input type="text" value={layer.style?.[f.key] || ''} placeholder={f.placeholder || ''}
+                       onChange={e => setStyle(f.key, e.target.value)} style={inputStyle} />
           }
         </div>
       ))}
@@ -530,111 +536,128 @@ function LayerPropertyEditor({ layer, onChange }) {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const inputStyle = {
-  background: '#1e1e1e',
-  border: '1px solid #444',
-  color: '#eee',
-  borderRadius: 3,
-  padding: '3px 6px',
-  fontSize: 13,
-  flex: 1,
-  minWidth: 0,
-  boxSizing: 'border-box',
+  background: '#1e1e1e', border: '1px solid #444', color: '#eee',
+  borderRadius: 3, padding: '3px 6px', fontSize: 13,
+  flex: 1, minWidth: 0, boxSizing: 'border-box',
 };
-
-const fieldRowStyle = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
+const fieldRowStyle    = { display: 'flex', alignItems: 'center', gap: 8 };
+const labelStyle       = { color: '#999', fontSize: 12, width: 90, flexShrink: 0, textAlign: 'right' };
+const sectionLabelStyle = {
+  borderTop: '1px solid #333', paddingTop: 6, marginTop: 2,
+  color: '#777', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1,
 };
-
-const labelStyle = {
-  color: '#999',
-  fontSize: 12,
-  width: 90,
-  flexShrink: 0,
-  textAlign: 'right',
-};
-
 const btnStyle = {
-  background: '#2a2a2a',
-  border: '1px solid #555',
-  color: '#ddd',
-  borderRadius: 4,
-  padding: '4px 10px',
-  fontSize: 13,
-  cursor: 'pointer',
+  background: '#2a2a2a', border: '1px solid #555', color: '#ddd',
+  borderRadius: 4, padding: '4px 10px', fontSize: 13, cursor: 'pointer',
 };
+const btnPrimaryStyle = { ...btnStyle, background: '#2255aa', border: '1px solid #4488dd', color: '#fff' };
+const btnDangerStyle  = { ...btnStyle, background: '#550000', border: '1px solid #882222', color: '#ffaaaa' };
+const btnActiveStyle  = { ...btnStyle, background: '#1a3a1a', border: '1px solid #44aa44', color: '#88ee88' };
 
-const btnPrimaryStyle = {
-  ...btnStyle,
-  background: '#2255aa',
-  border: '1px solid #4488dd',
-  color: '#fff',
-};
+// ── Counters ──────────────────────────────────────────────────────────────────
 
-const btnDangerStyle = {
-  ...btnStyle,
-  background: '#550000',
-  border: '1px solid #882222',
-  color: '#ffaaaa',
-};
+let _layerCounter = 0, _groupCounter = 0;
+function newLayerId(type) { _layerCounter += 1; return `${type}-${_layerCounter}`; }
+function newGroupId()     { _groupCounter += 1; return `grp-${_groupCounter}`; }
 
-// ── Main component ───────────────────────────────────────────────────────────
-
-let _layerCounter = 0;
-function newLayerId(type) {
-  _layerCounter += 1;
-  return `${type}-${_layerCounter}`;
-}
+// ── Main component ────────────────────────────────────────────────────────────
 
 export function DskEditorPage() {
-  const params = new URLSearchParams(window.location.search);
-  const apiKey = params.get('apikey') || '';
+  const params    = new URLSearchParams(window.location.search);
+  const apiKey    = params.get('apikey') || '';
   const serverUrl = (params.get('server') || '').replace(/\/$/, '');
 
-  const [templates, setTemplates]       = useState([]);   // { id, name, updated_at }[]
-  const [selectedId, setSelectedId]     = useState(null); // currently loaded template id
+  const [templates, setTemplates]     = useState([]);
+  const [selectedId, setSelectedId]   = useState(null);   // backend template id
   const [templateName, setTemplateName] = useState('');
-  const [template, setTemplate]         = useState(EMPTY_TEMPLATE);
-  const [selectedLayerId, setSelectedLayerId] = useState(null);
-  const [status, setStatus]             = useState('');   // save feedback
-  const [loading, setLoading]           = useState(false);
+  const [template, setTemplate]       = useState(EMPTY_TEMPLATE);
+  const [selectedIds, setSelectedIds] = useState(new Set()); // canvas multi-selection
+  const [primaryId, setPrimaryId]     = useState(null);    // property-panel target
+  const [snapGrid, setSnapGrid]       = useState(false);
+  const [status, setStatus]           = useState('');
+  const [loading, setLoading]         = useState(false);
 
-  const isDirty = useRef(false);
+  const isDirty    = useRef(false);
+  const historyRef = useRef({ past: [], future: [] });
+  const templateRef = useRef(template); // mirror for use inside event listeners
+  useEffect(() => { templateRef.current = template; }, [template]);
 
-  // ── API helpers ──────────────────────────────────────────────────────────
+  // ── Undo / redo ─────────────────────────────────────────────────────────
+
+  function pushHistory(tmpl) {
+    historyRef.current.past.push(JSON.stringify(tmpl));
+    historyRef.current.future = [];
+    if (historyRef.current.past.length > MAX_HISTORY) historyRef.current.past.shift();
+  }
+
+  // Global keyboard handler — attached once so it always has the latest template
+  useEffect(() => {
+    function onGlobalKey(e) {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      if (e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        const { past, future } = historyRef.current;
+        if (!past.length) return;
+        future.push(JSON.stringify(templateRef.current));
+        setTemplate(JSON.parse(past.pop()));
+        isDirty.current = true;
+      }
+      if (e.key === 'y' || (e.key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        const { past, future } = historyRef.current;
+        if (!future.length) return;
+        past.push(JSON.stringify(templateRef.current));
+        setTemplate(JSON.parse(future.pop()));
+        isDirty.current = true;
+      }
+    }
+    window.addEventListener('keydown', onGlobalKey);
+    return () => window.removeEventListener('keydown', onGlobalKey);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const canUndo = historyRef.current.past.length > 0;
+  const canRedo = historyRef.current.future.length > 0;
+
+  function undo() {
+    const { past, future } = historyRef.current;
+    if (!past.length) return;
+    future.push(JSON.stringify(templateRef.current));
+    setTemplate(JSON.parse(past.pop()));
+    isDirty.current = true;
+  }
+  function redo() {
+    const { past, future } = historyRef.current;
+    if (!future.length) return;
+    past.push(JSON.stringify(templateRef.current));
+    setTemplate(JSON.parse(future.pop()));
+    isDirty.current = true;
+  }
+
+  // ── API ──────────────────────────────────────────────────────────────────
 
   function apiFetch(path, opts = {}) {
     return fetch(`${serverUrl}${path}`, {
       ...opts,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
-        ...(opts.headers || {}),
-      },
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey, ...(opts.headers || {}) },
     });
   }
-
-  // ── Template list ────────────────────────────────────────────────────────
 
   const fetchTemplates = useCallback(async () => {
     if (!serverUrl || !apiKey) return;
     try {
       const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates`);
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setTemplates(data.templates || []);
-    } catch (err) {
-      setStatus(`Error loading templates: ${err.message}`);
-    }
+      setTemplates((await res.json()).templates || []);
+    } catch (err) { setStatus(`Error loading templates: ${err.message}`); }
   }, [serverUrl, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
-  // ── Load template for editing ────────────────────────────────────────────
+  // ── Template lifecycle ───────────────────────────────────────────────────
 
   async function loadTemplate(id) {
     try {
@@ -644,22 +667,19 @@ export function DskEditorPage() {
       setSelectedId(row.id);
       setTemplateName(row.name);
       setTemplate(row.templateJson || EMPTY_TEMPLATE);
-      setSelectedLayerId(null);
+      clearSelection();
+      historyRef.current = { past: [], future: [] };
       isDirty.current = false;
       setStatus('');
-    } catch (err) {
-      setStatus(`Error loading template: ${err.message}`);
-    }
+    } catch (err) { setStatus(`Error loading template: ${err.message}`); }
   }
 
-  // ── New template from preset ─────────────────────────────────────────────
-
   function newFromPreset(presetName) {
-    const preset = PRESETS[presetName];
     setSelectedId(null);
     setTemplateName(presetName);
-    setTemplate(JSON.parse(JSON.stringify(preset))); // deep copy
-    setSelectedLayerId(null);
+    setTemplate(JSON.parse(JSON.stringify(PRESETS[presetName])));
+    clearSelection();
+    historyRef.current = { past: [], future: [] };
     isDirty.current = true;
     setStatus('');
   }
@@ -668,95 +688,116 @@ export function DskEditorPage() {
     setSelectedId(null);
     setTemplateName('New Template');
     setTemplate(JSON.parse(JSON.stringify(EMPTY_TEMPLATE)));
-    setSelectedLayerId(null);
+    clearSelection();
+    historyRef.current = { past: [], future: [] };
     isDirty.current = true;
     setStatus('');
   }
 
-  // ── Save ─────────────────────────────────────────────────────────────────
-
   async function saveTemplate() {
     if (!templateName.trim()) { setStatus('Template name is required'); return; }
-    setLoading(true);
-    setStatus('Saving…');
+    setLoading(true); setStatus('Saving…');
     try {
       let res;
       if (selectedId) {
-        // Update existing by id
         res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates/${selectedId}`, {
-          method: 'PUT',
-          body: JSON.stringify({ name: templateName.trim(), template }),
+          method: 'PUT', body: JSON.stringify({ name: templateName.trim(), template }),
         });
       } else {
-        // Create new
         res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates`, {
-          method: 'POST',
-          body: JSON.stringify({ name: templateName.trim(), template }),
+          method: 'POST', body: JSON.stringify({ name: templateName.trim(), template }),
         });
       }
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (!selectedId) setSelectedId(data.id);
-      isDirty.current = false;
-      setStatus('Saved.');
+      isDirty.current = false; setStatus('Saved.');
       await fetchTemplates();
-    } catch (err) {
-      setStatus(`Save error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
+    } catch (err) { setStatus(`Save error: ${err.message}`);
+    } finally { setLoading(false); }
   }
 
-  // ── Delete template ──────────────────────────────────────────────────────
-
-  async function deleteTemplate(id, name) {
+  async function deleteTemplateById(id, name) {
     if (!window.confirm(`Delete template "${name}"?`)) return;
     try {
       const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates/${id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error(await res.text());
-      if (selectedId === id) {
-        setSelectedId(null);
-        setTemplateName('');
-        setTemplate(EMPTY_TEMPLATE);
-        setSelectedLayerId(null);
-      }
-      await fetchTemplates();
-      setStatus('Deleted.');
-    } catch (err) {
-      setStatus(`Delete error: ${err.message}`);
-    }
+      if (selectedId === id) { setSelectedId(null); setTemplateName(''); setTemplate(EMPTY_TEMPLATE); clearSelection(); }
+      await fetchTemplates(); setStatus('Deleted.');
+    } catch (err) { setStatus(`Delete error: ${err.message}`); }
   }
 
-  // ── Layer management ─────────────────────────────────────────────────────
+  // ── Selection ────────────────────────────────────────────────────────────
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+    setPrimaryId(null);
+  }
+
+  /** Called by TemplatePreview on click. id=null = deselect all. */
+  function handleCanvasSelect(id, additive) {
+    if (!id) { clearSelection(); return; }
+    const layer = template.layers.find(l => l.id === id);
+    const groupMemberIds = layer?.groupId
+      ? template.layers.filter(l => l.groupId === layer.groupId).map(l => l.id)
+      : [id];
+
+    if (additive) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        const allIn = groupMemberIds.every(mid => next.has(mid));
+        if (allIn) groupMemberIds.forEach(mid => next.delete(mid));
+        else       groupMemberIds.forEach(mid => next.add(mid));
+        return next;
+      });
+    } else {
+      setSelectedIds(new Set(groupMemberIds));
+    }
+    setPrimaryId(id);
+  }
+
+  function selectLayerFromList(id) {
+    const layer = template.layers.find(l => l.id === id);
+    const groupMemberIds = layer?.groupId
+      ? template.layers.filter(l => l.groupId === layer.groupId).map(l => l.id)
+      : [id];
+    setSelectedIds(new Set(groupMemberIds));
+    setPrimaryId(id);
+  }
+
+  // ── Layer mutations ──────────────────────────────────────────────────────
 
   function addLayer(type) {
+    pushHistory(template);
     const id = newLayerId(type);
-    const newLayer = type === 'rect'
-      ? { id, type: 'rect', x: 100, y: 100, width: 400, height: 100, style: { background: '#333333', opacity: '0.9' } }
-      : type === 'text'
-        ? { id, type: 'text', x: 100, y: 100, text: 'Text', style: { 'font-size': '48px', 'font-family': 'Arial, sans-serif', color: '#ffffff' } }
-        : { id, type: 'image', x: 0, y: 0, width: 400, height: 300, src: '' };
-
+    const defaults = {
+      rect:    { id, type: 'rect',    x: 100, y: 100, width: 400, height: 100, style: { background: '#333333', opacity: '0.9' } },
+      ellipse: { id, type: 'ellipse', x: 200, y: 200, width: 200, height: 200, style: { background: '#336699' } },
+      text:    { id, type: 'text',    x: 100, y: 100, text: 'Text', style: { 'font-size': '48px', 'font-family': 'Arial, sans-serif', color: '#ffffff' } },
+      image:   { id, type: 'image',   x: 0,   y: 0,   width: 400, height: 300, src: '' },
+    };
+    const newLayer = defaults[type] || defaults.rect;
     setTemplate(t => ({ ...t, layers: [...(t.layers || []), newLayer] }));
-    setSelectedLayerId(id);
+    setSelectedIds(new Set([id]));
+    setPrimaryId(id);
     isDirty.current = true;
   }
 
   function updateLayer(updated) {
-    setTemplate(t => ({
-      ...t,
-      layers: t.layers.map(l => l.id === updated.id ? updated : l),
-    }));
+    pushHistory(template);
+    setTemplate(t => ({ ...t, layers: t.layers.map(l => l.id === updated.id ? updated : l) }));
     isDirty.current = true;
   }
 
   function deleteLayer(id) {
+    pushHistory(template);
     setTemplate(t => ({ ...t, layers: t.layers.filter(l => l.id !== id) }));
-    if (selectedLayerId === id) setSelectedLayerId(null);
+    if (primaryId === id) clearSelection();
     isDirty.current = true;
   }
 
-  function moveLayer(id, dir) {
+  function reorderLayer(id, dir) {
+    pushHistory(template);
     setTemplate(t => {
       const layers = [...t.layers];
       const idx = layers.findIndex(l => l.id === id);
@@ -769,29 +810,87 @@ export function DskEditorPage() {
     isDirty.current = true;
   }
 
-  // ── Direct manipulation callbacks (Phase 2) ───────────────────────────────
+  // ── Phase 2 direct-manipulation callbacks ────────────────────────────────
 
-  function moveLayerPosition(id, { x, y }) {
+  /** Called by TemplatePreview when a drag begins (push undo before first move). */
+  function handleDragStart() {
+    pushHistory(template);
+  }
+
+  /** Called continuously during drag with updated positions for all moving layers. */
+  function handleMoveSelected(updates) {
     setTemplate(t => ({
       ...t,
-      layers: t.layers.map(l => l.id === id ? { ...l, x, y } : l),
+      layers: t.layers.map(l => {
+        const upd = updates.find(u => u.id === l.id);
+        return upd ? { ...l, x: upd.x, y: upd.y } : l;
+      }),
     }));
     isDirty.current = true;
   }
 
-  function resizeLayerRect(id, { x, y, width, height }) {
+  function handleResizeLayer(id, rect) {
     setTemplate(t => ({
       ...t,
-      layers: t.layers.map(l => l.id === id ? { ...l, x, y, width, height } : l),
+      layers: t.layers.map(l => l.id === id ? { ...l, ...rect } : l),
     }));
+    isDirty.current = true;
+  }
+
+  // ── Phase 3 group management ─────────────────────────────────────────────
+
+  /** Group all currently selected layers into a new named group. */
+  function groupSelected() {
+    if (selectedIds.size < 2) return;
+    // Don't group if they already all belong to the same group
+    const existingGroupIds = new Set(
+      template.layers.filter(l => selectedIds.has(l.id) && l.groupId).map(l => l.groupId),
+    );
+    if (existingGroupIds.size === 1 &&
+        template.layers.filter(l => l.groupId === [...existingGroupIds][0]).every(l => selectedIds.has(l.id))) {
+      return; // already one coherent group
+    }
+    pushHistory(template);
+    const gid  = newGroupId();
+    const name = `Group ${_groupCounter}`;
+    setTemplate(t => ({
+      ...t,
+      groups: [...(t.groups || []), { id: gid, name }],
+      layers: t.layers.map(l => selectedIds.has(l.id) ? { ...l, groupId: gid } : l),
+    }));
+    isDirty.current = true;
+  }
+
+  /** Remove group membership from all selected layers. */
+  function ungroupSelected() {
+    const groupIds = new Set(
+      template.layers.filter(l => selectedIds.has(l.id) && l.groupId).map(l => l.groupId),
+    );
+    if (!groupIds.size) return;
+    pushHistory(template);
+    setTemplate(t => ({
+      ...t,
+      groups: (t.groups || []).filter(g => !groupIds.has(g.id)),
+      layers: t.layers.map(l => {
+        if (!groupIds.has(l.groupId)) return l;
+        const { groupId: _gid, ...rest } = l;
+        return rest;
+      }),
+    }));
+    clearSelection();
     isDirty.current = true;
   }
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
-  const selectedLayer = template.layers?.find(l => l.id === selectedLayerId) || null;
+  const primaryLayer    = template.layers?.find(l => l.id === primaryId) || null;
+  const canGroup        = selectedIds.size >= 2;
+  const canUngroup      = [...selectedIds].some(id => template.layers.find(l => l.id === id)?.groupId);
 
-  // ── Guard ────────────────────────────────────────────────────────────────
+  // Group name lookup
+  const groupNameById = Object.fromEntries((template.groups || []).map(g => [g.id, g.name]));
+
+  // ── Guard ─────────────────────────────────────────────────────────────────
 
   if (!serverUrl || !apiKey) {
     return (
@@ -801,162 +900,142 @@ export function DskEditorPage() {
     );
   }
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <div style={{ display: 'flex', height: '100vh', background: '#111', color: '#ddd', fontFamily: 'sans-serif', overflow: 'hidden' }}>
 
-      {/* Left panel — template list */}
+      {/* ── Left: template list ── */}
       <div style={{ width: 220, borderRight: '1px solid #333', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid #333', fontWeight: 'bold', fontSize: 14, color: '#bbb' }}>
-          Templates
-        </div>
-
-        {/* Preset buttons */}
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid #333', fontWeight: 'bold', fontSize: 14, color: '#bbb' }}>Templates</div>
         <div style={{ padding: '8px 10px', borderBottom: '1px solid #333', display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>New from preset</div>
           {Object.keys(PRESETS).map(name => (
-            <button key={name} onClick={() => newFromPreset(name)} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>
-              {name}
-            </button>
+            <button key={name} onClick={() => newFromPreset(name)} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>{name}</button>
           ))}
-          <button onClick={newBlank} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>
-            Blank
-          </button>
+          <button onClick={newBlank} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>Blank</button>
         </div>
-
-        {/* Template list */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {templates.length === 0 && (
-            <div style={{ padding: 12, color: '#555', fontSize: 13 }}>No templates yet.</div>
-          )}
+          {templates.length === 0 && <div style={{ padding: 12, color: '#555', fontSize: 13 }}>No templates yet.</div>}
           {templates.map(t => (
-            <div
-              key={t.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '8px 10px',
-                cursor: 'pointer',
-                background: t.id === selectedId ? '#1e3a5f' : 'transparent',
-                borderBottom: '1px solid #222',
-              }}
-              onClick={() => loadTemplate(t.id)}
-            >
+            <div key={t.id} style={{
+              display: 'flex', alignItems: 'center', padding: '8px 10px', cursor: 'pointer',
+              background: t.id === selectedId ? '#1e3a5f' : 'transparent', borderBottom: '1px solid #222',
+            }} onClick={() => loadTemplate(t.id)}>
               <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
-              <button
-                onClick={e => { e.stopPropagation(); deleteTemplate(t.id, t.name); }}
-                title="Delete"
-                style={{ ...btnDangerStyle, padding: '2px 6px', fontSize: 11, marginLeft: 4 }}
-              >
-                ✕
-              </button>
+              <button onClick={e => { e.stopPropagation(); deleteTemplateById(t.id, t.name); }}
+                      title="Delete" style={{ ...btnDangerStyle, padding: '2px 6px', fontSize: 11, marginLeft: 4 }}>✕</button>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Main area */}
+      {/* ── Main area ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Toolbar */}
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
-          <input
-            type="text"
-            value={templateName}
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+          <input type="text" value={templateName}
             onChange={e => { setTemplateName(e.target.value); isDirty.current = true; }}
-            placeholder="Template name"
-            style={{ ...inputStyle, width: 220 }}
-          />
+            placeholder="Template name" style={{ ...inputStyle, width: 200 }} />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#888' }}>Background:</span>
-            <input
-              type="color"
+            <span style={{ fontSize: 12, color: '#888' }}>BG:</span>
+            <input type="color"
               value={template.background && template.background !== 'transparent' ? template.background.slice(0, 7) : '#000000'}
               onChange={e => { setTemplate(t => ({ ...t, background: e.target.value })); isDirty.current = true; }}
-              style={{ width: 32, height: 24, padding: 0, border: 'none', cursor: 'pointer' }}
-            />
-            <input
-              type="text"
-              value={template.background || 'transparent'}
+              style={{ width: 28, height: 22, padding: 0, border: 'none', cursor: 'pointer' }} />
+            <input type="text" value={template.background || 'transparent'}
               onChange={e => { setTemplate(t => ({ ...t, background: e.target.value })); isDirty.current = true; }}
-              style={{ ...inputStyle, width: 120 }}
-            />
+              style={{ ...inputStyle, width: 110 }} />
           </div>
 
-          <span style={{ flex: 1 }} />
-          {status && <span style={{ fontSize: 12, color: status.startsWith('Error') ? '#f88' : '#8d8' }}>{status}</span>}
-          <button onClick={saveTemplate} disabled={loading} style={btnPrimaryStyle}>
-            {loading ? 'Saving…' : 'Save'}
+          {/* Undo / Redo */}
+          <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" style={{ ...btnStyle, opacity: canUndo ? 1 : 0.4 }}>↩</button>
+          <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" style={{ ...btnStyle, opacity: canRedo ? 1 : 0.4 }}>↪</button>
+
+          {/* Snap to grid */}
+          <button onClick={() => setSnapGrid(v => !v)} title="Snap to grid"
+                  style={snapGrid ? btnActiveStyle : btnStyle}>
+            ⊞ {snapGrid ? 'Grid on' : 'Grid'}
           </button>
+
+          <span style={{ flex: 1 }} />
+          {status && <span style={{ fontSize: 12, color: status.startsWith('Error') || status.startsWith('Save error') ? '#f88' : '#8d8' }}>{status}</span>}
+          <button onClick={saveTemplate} disabled={loading} style={btnPrimaryStyle}>{loading ? 'Saving…' : 'Save'}</button>
         </div>
 
         {/* Content area */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-          {/* Preview + layers panel */}
+          {/* Preview + layer list */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 12, gap: 10, overflow: 'auto' }}>
 
-            {/* Preview */}
             <TemplatePreview
               template={template}
-              selectedLayerId={selectedLayerId}
-              onSelectLayer={id => setSelectedLayerId(id === selectedLayerId ? null : id)}
-              onMoveLayer={moveLayerPosition}
-              onResizeLayer={resizeLayerRect}
+              selectedIds={selectedIds}
+              primaryId={primaryId}
+              onSelect={handleCanvasSelect}
+              onDragStart={handleDragStart}
+              onMoveSelected={handleMoveSelected}
+              onResizeLayer={handleResizeLayer}
+              snapGrid={snapGrid}
             />
 
-            {/* Layer list */}
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold' }}>Layers</span>
-                <span style={{ flex: 1 }} />
-                <button onClick={() => addLayer('rect')} style={{ ...btnStyle, fontSize: 12 }}>+ Rect</button>
-                <button onClick={() => addLayer('text')} style={{ ...btnStyle, fontSize: 12 }}>+ Text</button>
-              </div>
-
-              {(template.layers || []).length === 0 && (
-                <div style={{ color: '#555', fontSize: 13 }}>No layers. Add a rect or text layer above.</div>
-              )}
-
-              {[...(template.layers || [])].reverse().map((layer, revIdx) => {
-                const realIdx = (template.layers.length - 1) - revIdx;
-                const isSelected = layer.id === selectedLayerId;
-                return (
-                  <div
-                    key={layer.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '4px 8px',
-                      marginBottom: 2,
-                      background: isSelected ? '#1e3a5f' : '#1a1a1a',
-                      borderRadius: 3,
-                      cursor: 'pointer',
-                      border: isSelected ? '1px solid #4488dd' : '1px solid transparent',
-                    }}
-                    onClick={() => setSelectedLayerId(isSelected ? null : layer.id)}
-                  >
-                    <span style={{ fontSize: 11, color: '#666', width: 40, flexShrink: 0 }}>{layer.type}</span>
-                    <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {layer.id}
-                      {layer.type === 'text' && layer.text ? <span style={{ color: '#777', marginLeft: 8 }}>"{layer.text}"</span> : null}
-                    </span>
-                    <button onClick={e => { e.stopPropagation(); moveLayer(layer.id, -1); }} title="Move up (higher z-index)" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↑</button>
-                    <button onClick={e => { e.stopPropagation(); moveLayer(layer.id, 1); }} title="Move down (lower z-index)" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↓</button>
-                    <button onClick={e => { e.stopPropagation(); deleteLayer(layer.id); }} title="Delete layer" style={{ ...btnDangerStyle, padding: '1px 5px', fontSize: 11, marginLeft: 4 }}>✕</button>
-                  </div>
-                );
-              })}
+            {/* Layer list header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold' }}>Layers</span>
+              <span style={{ flex: 1 }} />
+              <button onClick={() => addLayer('ellipse')} style={{ ...btnStyle, fontSize: 12 }}>+ Ellipse</button>
+              <button onClick={() => addLayer('rect')}    style={{ ...btnStyle, fontSize: 12 }}>+ Rect</button>
+              <button onClick={() => addLayer('text')}    style={{ ...btnStyle, fontSize: 12 }}>+ Text</button>
+              {canGroup   && <button onClick={groupSelected}   title="Group selected layers" style={{ ...btnStyle, fontSize: 12 }}>Group</button>}
+              {canUngroup && <button onClick={ungroupSelected} title="Remove from group"     style={{ ...btnDangerStyle, fontSize: 12 }}>Ungroup</button>}
             </div>
+
+            {(template.layers || []).length === 0 && (
+              <div style={{ color: '#555', fontSize: 13 }}>No layers yet.</div>
+            )}
+
+            {[...(template.layers || [])].reverse().map((layer) => {
+              const isInSel  = selectedIds.has(layer.id);
+              const isPrimary = layer.id === primaryId;
+              const gName    = layer.groupId ? groupNameById[layer.groupId] || layer.groupId : null;
+              return (
+                <div key={layer.id} style={{
+                  display: 'flex', alignItems: 'center', padding: '4px 8px', marginBottom: 2,
+                  background: isInSel ? '#1e3a5f' : '#1a1a1a', borderRadius: 3, cursor: 'pointer',
+                  border: isPrimary ? '1px solid #4488dd' : isInSel ? '1px solid #336' : '1px solid transparent',
+                }} onClick={() => selectLayerFromList(layer.id)}>
+                  <span style={{ fontSize: 11, color: '#666', width: 44, flexShrink: 0 }}>{layer.type}</span>
+                  <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {layer.id}
+                    {layer.type === 'text' && layer.text
+                      ? <span style={{ color: '#777', marginLeft: 6 }}>"{layer.text}"</span>
+                      : null}
+                  </span>
+                  {gName && (
+                    <span style={{ fontSize: 10, color: '#6af', background: '#1a2a3a', borderRadius: 3,
+                                   padding: '1px 5px', marginRight: 4, flexShrink: 0, maxWidth: 80,
+                                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                          title={gName}>
+                      {gName}
+                    </span>
+                  )}
+                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id, -1); }} title="Move up" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↑</button>
+                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id,  1); }} title="Move down" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↓</button>
+                  <button onClick={e => { e.stopPropagation(); deleteLayer(layer.id); }}    title="Delete" style={{ ...btnDangerStyle, padding: '1px 5px', fontSize: 11, marginLeft: 4 }}>✕</button>
+                </div>
+              );
+            })}
           </div>
 
           {/* Properties panel */}
           <div style={{ width: 280, borderLeft: '1px solid #333', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
             <div style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold', marginBottom: 10 }}>Properties</div>
             <LayerPropertyEditor
-              layer={selectedLayer}
+              layer={primaryLayer}
+              selectionCount={selectedIds.size}
               onChange={updateLayer}
             />
           </div>
