@@ -656,3 +656,117 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/CaptionViewModel.kt` | StateFlow state + SharedPreferences persistence |
 | `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/MainActivity.kt` | Compose TV viewer UI + deep-link handling |
 | `android/lcyt-tv/gradle/libs.versions.toml` | Dependency version catalog |
+
+---
+
+## Test Coverage
+
+*Last updated: 2026-03-16*
+
+### Coverage Summary
+
+| Package | Source LOC | Test LOC | Coverage | Priority | Key Gaps |
+|---------|-----------|----------|----------|----------|-----------|
+| `packages/lcyt` | 1,016 | 1,267 | Excellent | Low | `logger.js`, `config.js` (no direct tests) |
+| `packages/lcyt-cli` | 1,836 | 543 | Poor | **High** | `interactive-ui.js` (1,119 LOC, zero tests), entry-point edge cases |
+| `packages/lcyt-backend` | 4,875 | ~2,000 | Good | **Critical** | ffmpeg managers (~600 LOC), 5 untested routes, CORS middleware, graceful shutdown |
+| `packages/lcyt-bridge` | 490 | ~400 | Good | Medium | `tray.js`, entry-point env-var validation |
+| `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
+| `packages/lcyt-mcp-sse` | 1,083 | ~400 | Good | Medium | Tool routing, concurrent sessions |
+| `packages/lcyt-web` | 2,000+ | 295 | Poor | **High** | React components (zero tests), hooks, routing, embed pages |
+| `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
+| `python-packages/lcyt-backend` | 1,135 | 800 | Good | Medium | CORS middleware, incomplete feature parity with Node.js backend |
+| `python-packages/lcyt-mcp` | 252 | 300 | Good | Low | None identified |
+
+---
+
+### Per-Package Detail
+
+#### `packages/lcyt` — Core Library
+**Covered:** Constructor options, URL building, sequence tracking, timestamp formatting (Date/number/ISO), send/sendBatch flow, backend relay, error classes, network error handling.
+**Gaps (Low):**
+- `logger.js` — `setVerbose()`, `setSilent()`, `setUseStderr()`, `setCallback()`, output formatting
+- `config.js` — `loadConfig()` edge cases, `saveConfig()` error paths
+
+---
+
+#### `packages/lcyt-cli` — CLI Tool
+**Test files:** `test/cli.test.js` (25 tests) — argument parsing, `--heartbeat`, config precedence, session lifecycle.
+**Gaps (High):**
+- `src/interactive-ui.js` (1,119 LOC) — **zero tests**. Covers blessed panel rendering, keyboard/vim navigation, `/load` command parsing, batch mode, file drop zones, sent-captions log. Test approach: mock blessed, snapshot panel state, simulate keyboard events.
+- `bin/lcyt` entry point — CLI argument error handling, `LCYT_LOG_STDERR` flag, env-variable precedence.
+
+---
+
+#### `packages/lcyt-backend` — Express Relay Backend
+**Test files:** 19 test files (~80 tests) covering all primary routes (live, captions, events, sync, files, keys, stats, viewer, mic, usage, rtmp, icons, health), session store, DB CRUD, and SSE delivery.
+**Gaps (Critical):**
+- **ffmpeg managers** (`hls-manager.js`, `radio-manager.js`, `preview-manager.js`, `rtmp-manager.js`) — ~600 LOC, zero tests. Test approach: mock `child_process`, test signal handling and cleanup.
+- **Routes (5):** `auth.js`, `preview.js`, `stream.js`, `video.js`, `youtube.js` — ~150 LOC.
+- **Middleware:** `cors.js` (dynamic CORS origin filtering), `user-auth.js`.
+- **Core:** `server.js` (Express factory), `caption-files.js`, `index.js` (graceful shutdown on SIGTERM/SIGINT).
+- **DB:** `db/sequences.js`, `db/users.js`, `db/helpers.js`.
+
+---
+
+#### `packages/lcyt-bridge` — Production Control Bridge Agent
+**Test files:** `test/bridge.test.js` (22 tests), `test/tcp-pool.test.js` (13 tests).
+**Covered:** Bridge SSE connection/reconnect, TCP pool, command dispatch (`tcp_send`), heartbeat, event forwarding.
+**Gaps (Medium):**
+- `tray.js` (105 LOC) — system tray icon/menu/exit handler (desktop only).
+- `src/index.js` (107 LOC) — `BACKEND_URL`/`BRIDGE_TOKEN` validation, `.env` loading, SIGTERM shutdown.
+
+---
+
+#### `packages/lcyt-mcp-stdio` — MCP Server (stdio)
+**Test files:** `test/server.test.js` (~15 tests) — tool invocation, session lifecycle, send/batch/sync/status.
+**Gaps (Low):** Invalid input handling, tool descriptor validation, special-character captions.
+
+---
+
+#### `packages/lcyt-mcp-sse` — MCP Server (HTTP SSE)
+**Test files:** `test/speech.test.js` (~20 tests) — speech session lifecycle, transcript chunking, CORS, error paths.
+**Gaps (Medium):**
+- `src/server.js` — HTTP routing, message dispatch, error responses (zero direct tests).
+- Concurrent session limits.
+
+---
+
+#### `packages/lcyt-web` — Browser Web UI
+**Test files:** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests, 295 LOC) — only utility/helper functions.
+**Gaps (High):**
+- **React components** — zero component tests for 30+ components (App, panels, modals, all pages).
+- **Hooks** — `useSession`, `useFileStore`, `useSentLog` state management logic.
+- **Embed pages** — BroadcastChannel messaging and cross-iframe token/caption coordination.
+- **Production pages** — `/production/*` operator control surface.
+- Test approach: Vitest + jsdom, component snapshots, hook unit tests with `renderHook`.
+
+---
+
+#### `python-packages/lcyt` — Core Python Library
+**Test files:** 4 test files, 121 tests — full coverage of sender, backend relay, config, and errors.
+**Gaps (Low):** None identified.
+
+---
+
+#### `python-packages/lcyt-backend` — Flask Backend
+**Test files:** 8 test files (~70 tests) — all primary routes (live, captions, sync, keys), DB, session store, JWT.
+**Gaps (Medium):**
+- `middleware/cors.py` — dynamic origin validation.
+- Feature parity gaps vs. Node.js backend (no file management, stats, usage, viewer, icons routes tested).
+
+---
+
+#### `python-packages/lcyt-mcp` — Python MCP Server
+**Test files:** `tests/test_server.py` (~15 tests).
+**Gaps (Low):** Error handling for malformed requests, concurrent session limits.
+
+---
+
+### Top Priorities for Next Test Expansion
+
+1. **`packages/lcyt-cli/src/interactive-ui.js`** *(High)* — 1,119 LOC with zero tests; largest single untested file in the repo.
+2. **`packages/lcyt-backend` ffmpeg managers** *(Critical)* — `hls-manager.js`, `radio-manager.js`, `preview-manager.js`, `rtmp-manager.js` (~600 LOC combined).
+3. **`packages/lcyt-web` React components and hooks** *(High)* — entire UI layer untested.
+4. **`packages/lcyt-backend` 5 untested routes** *(High)* — `auth.js`, `preview.js`, `stream.js`, `video.js`, `youtube.js`.
+5. **`packages/lcyt-backend/src/index.js`** *(Medium)* — graceful shutdown (SIGTERM/SIGINT) not tested.
