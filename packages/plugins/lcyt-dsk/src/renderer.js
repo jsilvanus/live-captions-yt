@@ -73,7 +73,7 @@ export function renderTemplateToHtml(templateJson) {
   const bg = t.background ?? 'transparent';
   const w  = t.width  ?? 1920;
   const h  = t.height ?? 1080;
-  const layers = Array.isArray(t.layers) ? t.layers : [];
+  const layers = Array.isArray(t.layers) ? t.layers.filter(l => l.visible !== false) : [];
 
   const layerHtml = layers.map((layer) => {
     const id        = layer.id ? ` id="${escHtml(layer.id)}"` : '';

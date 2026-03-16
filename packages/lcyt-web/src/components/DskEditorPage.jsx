@@ -161,6 +161,7 @@ const EMPTY_TEMPLATE = {
 // ── Render a single layer element ─────────────────────────────────────────────
 
 function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
+  if (layer.visible === false) return null;
   const base = {
     position: 'absolute',
     left:  Number(layer.x) || 0,
@@ -223,7 +224,7 @@ function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
  */
 function TemplatePreview({
   template, selectedIds, primaryId,
-  onSelect, onDragStart, onMoveSelected, onResizeLayer, snapGrid,
+  onSelect, onDragStart, onMoveSelected, onResizeLayer, snapGrid, showSafeArea,
 }) {
   const t = template || EMPTY_TEMPLATE;
   const layers = Array.isArray(t.layers) ? t.layers : [];
@@ -425,6 +426,15 @@ function TemplatePreview({
           return [el, ...handles];
         })}
       </div>
+      {/* Safe area guides — rendered at display (960×540) coords, outside the scaled inner div */}
+      {showSafeArea && (<>
+        <div style={{ position:'absolute', left:'5%', top:'5%', right:'5%', bottom:'5%',
+                      border:'1px dashed rgba(255,255,0,0.6)', pointerEvents:'none', zIndex:10000,
+                      boxSizing:'border-box' }} title="90% title-safe" />
+        <div style={{ position:'absolute', left:'10%', top:'10%', right:'10%', bottom:'10%',
+                      border:'1px dashed rgba(255,140,0,0.5)', pointerEvents:'none', zIndex:10000,
+                      boxSizing:'border-box' }} title="80% action-safe" />
+      </>)}
     </div>
   );
 }
@@ -569,23 +579,30 @@ const COMMON_FIELDS = [
 
 const STYLE_FIELDS_RECT = [
   { key: 'background',   label: 'Background',   type: 'color-text' },
-  { key: 'opacity',      label: 'Opacity',      type: 'text', placeholder: '0.9' },
   { key: 'border-radius',label: 'Border radius',type: 'text', placeholder: '8px' },
 ];
 
 const STYLE_FIELDS_ELLIPSE = [
   { key: 'background', label: 'Background', type: 'color-text' },
-  { key: 'opacity',    label: 'Opacity',    type: 'text', placeholder: '0.9' },
 ];
 
 const STYLE_FIELDS_TEXT = [
   { key: 'font-family',  label: 'Font family',   type: 'text',   placeholder: 'Arial, sans-serif' },
   { key: 'font-size',    label: 'Font size',      type: 'text',   placeholder: '48px' },
-  { key: 'font-weight',  label: 'Font weight',    type: 'text',   placeholder: 'bold' },
+  { key: 'font-weight',  label: 'Font weight',    type: 'select', options: ['normal', 'bold', '100', '200', '300', '400', '500', '600', '700', '800', '900'] },
+  { key: 'font-style',   label: 'Italic',         type: 'select', options: ['normal', 'italic'] },
   { key: 'color',        label: 'Color',          type: 'color-text' },
   { key: 'letter-spacing', label: 'Letter spacing', type: 'text', placeholder: '2px' },
   { key: 'text-align',   label: 'Text align',     type: 'select', options: ['left', 'center', 'right'] },
   { key: 'white-space',  label: 'White space',    type: 'select', options: ['normal', 'nowrap', 'pre'] },
+  { key: 'text-shadow',       label: 'Text shadow',  type: 'text', placeholder: '1px 1px 4px #000' },
+  { key: '-webkit-text-stroke', label: 'Text stroke', type: 'text', placeholder: '1px #000' },
+];
+
+// Shared for all layer types
+const STYLE_FIELDS_BORDER = [
+  { key: 'border',     label: 'Border',  type: 'text', placeholder: '2px solid #fff' },
+  { key: 'box-shadow', label: 'Shadow',  type: 'text', placeholder: '0 2px 8px rgba(0,0,0,0.5)' },
 ];
 
 function ColorTextInput({ value, onChange }) {
@@ -601,7 +618,7 @@ function ColorTextInput({ value, onChange }) {
   );
 }
 
-function LayerPropertyEditor({ layer, selectionCount, onChange }) {
+function LayerPropertyEditor({ layer, selectionCount, aspectLock, onAspectLock, onChange }) {
   if (selectionCount > 1 && !layer) {
     return <div style={{ color: '#888', fontSize: 13, padding: '16px 0' }}>{selectionCount} layers selected.</div>;
   }
@@ -624,6 +641,24 @@ function LayerPropertyEditor({ layer, selectionCount, onChange }) {
                     : layer.type === 'ellipse' ? STYLE_FIELDS_ELLIPSE
                     : [];
 
+  const opacityVal = layer.style?.opacity !== undefined ? Number(layer.style.opacity) : 1;
+
+  function renderStyleField(f) {
+    if (f.type === 'color-text')
+      return <ColorTextInput value={layer.style?.[f.key] || ''} onChange={v => setStyle(f.key, v)} />;
+    if (f.type === 'select')
+      return (
+        <select value={layer.style?.[f.key] || ''} onChange={e => setStyle(f.key, e.target.value)} style={inputStyle}>
+          <option value="">—</option>
+          {f.options.map(o => <option key={o} value={o}>{o}</option>)}
+        </select>
+      );
+    return (
+      <input type="text" value={layer.style?.[f.key] || ''} placeholder={f.placeholder || ''}
+             onChange={e => setStyle(f.key, e.target.value)} style={inputStyle} />
+    );
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={fieldRowStyle}>
@@ -640,6 +675,13 @@ function LayerPropertyEditor({ layer, selectionCount, onChange }) {
           <input type="text" value={layer.text || ''} onChange={e => setField('text', e.target.value)} style={inputStyle} />
         </div>
       )}
+      {layer.type === 'image' && (
+        <div style={fieldRowStyle}>
+          <span style={labelStyle}>Src</span>
+          <input type="text" value={layer.src || ''} onChange={e => setField('src', e.target.value)} style={inputStyle} />
+        </div>
+      )}
+
       <div style={sectionLabelStyle}>Position & Size</div>
       {COMMON_FIELDS.map(f => (
         <div key={f.key} style={fieldRowStyle}>
@@ -648,22 +690,45 @@ function LayerPropertyEditor({ layer, selectionCount, onChange }) {
                  style={{ ...inputStyle, width: 100 }} />
         </div>
       ))}
+      {layer.type === 'image' && (
+        <div style={fieldRowStyle}>
+          <span style={labelStyle}>Aspect lock</span>
+          <button onClick={onAspectLock}
+                  style={aspectLock ? btnActiveStyle : btnStyle}>
+            {aspectLock ? '🔒 On' : '🔓 Off'}
+          </button>
+        </div>
+      )}
+
+      {/* Global opacity for all types */}
+      <div style={sectionLabelStyle}>Opacity</div>
+      <div style={fieldRowStyle}>
+        <span style={labelStyle}>Opacity</span>
+        <input type="range" min="0" max="1" step="0.01" value={opacityVal}
+               onChange={e => setStyle('opacity', e.target.value)}
+               style={{ flex: 1, accentColor: '#4af' }} />
+        <span style={{ color: '#888', fontSize: 11, width: 32, textAlign: 'right', flexShrink: 0 }}>
+          {Math.round(opacityVal * 100)}%
+        </span>
+      </div>
+
       {styleFields.length > 0 && <div style={sectionLabelStyle}>Style</div>}
       {styleFields.map(f => (
         <div key={f.key} style={fieldRowStyle}>
           <span style={labelStyle}>{f.label}</span>
-          {f.type === 'color-text'
-            ? <ColorTextInput value={layer.style?.[f.key] || ''} onChange={v => setStyle(f.key, v)} />
-            : f.type === 'select'
-              ? <select value={layer.style?.[f.key] || ''} onChange={e => setStyle(f.key, e.target.value)} style={inputStyle}>
-                  <option value="">—</option>
-                  {f.options.map(o => <option key={o} value={o}>{o}</option>)}
-                </select>
-              : <input type="text" value={layer.style?.[f.key] || ''} placeholder={f.placeholder || ''}
-                       onChange={e => setStyle(f.key, e.target.value)} style={inputStyle} />
-          }
+          {renderStyleField(f)}
         </div>
       ))}
+
+      <div style={sectionLabelStyle}>Border & Shadow</div>
+      {STYLE_FIELDS_BORDER.map(f => (
+        <div key={f.key} style={fieldRowStyle}>
+          <span style={labelStyle}>{f.label}</span>
+          <input type="text" value={layer.style?.[f.key] || ''} placeholder={f.placeholder || ''}
+                 onChange={e => setStyle(f.key, e.target.value)} style={inputStyle} />
+        </div>
+      ))}
+
       <div style={sectionLabelStyle}>Animation</div>
       <AnimationEditor value={layer.animation || ''} onChange={v => setField('animation', v || undefined)} />
     </div>
@@ -711,6 +776,8 @@ export function DskEditorPage() {
   const [selectedIds, setSelectedIds] = useState(new Set()); // canvas multi-selection
   const [primaryId, setPrimaryId]     = useState(null);    // property-panel target
   const [snapGrid, setSnapGrid]       = useState(false);
+  const [showSafeArea, setShowSafeArea] = useState(false);
+  const [aspectLock, setAspectLock]   = useState(true);
   const [status, setStatus]           = useState('');
   const [loading, setLoading]         = useState(false);
 
@@ -722,8 +789,11 @@ export function DskEditorPage() {
   const [imgUploading, setImgUploading]   = useState(false);
   const [imgUploadErr, setImgUploadErr]   = useState('');
 
-  const isDirty    = useRef(false);
-  const imgInputRef = useRef(null);
+  const isDirty      = useRef(false);
+  const imgInputRef  = useRef(null);
+  const clipboardRef = useRef(null);
+  const selectedIdsRef = useRef(selectedIds);
+  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
   const historyRef = useRef({ past: [], future: [] });
   const templateRef = useRef(template); // mirror for use inside event listeners
   useEffect(() => { templateRef.current = template; }, [template]);
@@ -755,6 +825,27 @@ export function DskEditorPage() {
         if (!future.length) return;
         past.push(JSON.stringify(templateRef.current));
         setTemplate(JSON.parse(future.pop()));
+        isDirty.current = true;
+      }
+      if (e.key === 'c') {
+        const ids = selectedIdsRef.current;
+        if (!ids.size) return;
+        clipboardRef.current = templateRef.current.layers
+          .filter(l => ids.has(l.id))
+          .map(l => JSON.parse(JSON.stringify(l)));
+      }
+      if (e.key === 'v') {
+        e.preventDefault();
+        if (!clipboardRef.current?.length) return;
+        const tmpl = templateRef.current;
+        const pasted = clipboardRef.current.map(l => ({
+          ...l, id: newLayerId(l.type), x: (l.x || 0) + 20, y: (l.y || 0) + 20,
+        }));
+        historyRef.current.past.push(JSON.stringify(tmpl));
+        historyRef.current.future = [];
+        setTemplate(t => ({ ...t, layers: [...t.layers, ...pasted] }));
+        setSelectedIds(new Set(pasted.map(l => l.id)));
+        setPrimaryId(pasted[pasted.length - 1].id);
         isDirty.current = true;
       }
     }
@@ -964,6 +1055,50 @@ export function DskEditorPage() {
     isDirty.current = true;
   }
 
+  function toggleLayerVisibility(id) {
+    const layer = template.layers.find(l => l.id === id);
+    if (!layer) return;
+    updateLayer({ ...layer, visible: layer.visible === false ? undefined : false });
+  }
+
+  function duplicateLayer(id) {
+    pushHistory(template);
+    const src = template.layers.find(l => l.id === id);
+    if (!src) return;
+    const newId = newLayerId(src.type);
+    const copy = { ...JSON.parse(JSON.stringify(src)), id: newId, x: (src.x || 0) + 20, y: (src.y || 0) + 20 };
+    setTemplate(t => ({ ...t, layers: [...t.layers, copy] }));
+    setSelectedIds(new Set([newId]));
+    setPrimaryId(newId);
+    isDirty.current = true;
+  }
+
+  function alignLayers(axis, anchor) {
+    if (selectedIds.size < 1) return;
+    pushHistory(template);
+    const sel = template.layers.filter(l => selectedIds.has(l.id));
+    const minX = Math.min(...sel.map(l => l.x || 0));
+    const maxX = Math.max(...sel.map(l => (l.x || 0) + (l.width || 0)));
+    const minY = Math.min(...sel.map(l => l.y || 0));
+    const maxY = Math.max(...sel.map(l => (l.y || 0) + (l.height || 0)));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    setTemplate(t => ({
+      ...t,
+      layers: t.layers.map(l => {
+        if (!selectedIds.has(l.id)) return l;
+        const w = l.width || 0, h = l.height || 0;
+        if (axis === 'x') {
+          const nx = anchor === 'min' ? minX : anchor === 'center' ? cx - w / 2 : maxX - w;
+          return { ...l, x: Math.round(nx) };
+        } else {
+          const ny = anchor === 'min' ? minY : anchor === 'center' ? cy - h / 2 : maxY - h;
+          return { ...l, y: Math.round(ny) };
+        }
+      }),
+    }));
+    isDirty.current = true;
+  }
+
   // ── Phase 2 direct-manipulation callbacks ────────────────────────────────
 
   /** Called by TemplatePreview when a drag begins (push undo before first move). */
@@ -984,9 +1119,19 @@ export function DskEditorPage() {
   }
 
   function handleResizeLayer(id, rect) {
+    let final = rect;
+    if (aspectLock && primaryLayer?.type === 'image' && primaryLayer.id === id) {
+      const orig = primaryLayer;
+      const ratio = (orig.width || 1) / (orig.height || 1);
+      if (rect.width !== (orig.width || 0)) {
+        final = { ...rect, height: Math.max(4, Math.round(rect.width / ratio)) };
+      } else {
+        final = { ...rect, width: Math.max(4, Math.round(rect.height * ratio)) };
+      }
+    }
     setTemplate(t => ({
       ...t,
-      layers: t.layers.map(l => l.id === id ? { ...l, ...rect } : l),
+      layers: t.layers.map(l => l.id === id ? { ...l, ...final } : l),
     }));
     isDirty.current = true;
   }
@@ -1168,6 +1313,12 @@ export function DskEditorPage() {
             ⊞ {snapGrid ? 'Grid on' : 'Grid'}
           </button>
 
+          {/* Safe area guides */}
+          <button onClick={() => setShowSafeArea(v => !v)} title="Safe area guides"
+                  style={showSafeArea ? btnActiveStyle : btnStyle}>
+            ⬜ Safe
+          </button>
+
           <span style={{ flex: 1 }} />
           {status && <span style={{ fontSize: 12, color: status.startsWith('Error') || status.startsWith('Save error') ? '#f88' : '#8d8' }}>{status}</span>}
           <button onClick={saveTemplate} disabled={loading} style={btnPrimaryStyle}>{loading ? 'Saving…' : 'Save'}</button>
@@ -1188,6 +1339,7 @@ export function DskEditorPage() {
               onMoveSelected={handleMoveSelected}
               onResizeLayer={handleResizeLayer}
               snapGrid={snapGrid}
+              showSafeArea={showSafeArea}
             />
 
             {/* Layer list header */}
@@ -1201,21 +1353,41 @@ export function DskEditorPage() {
               {canGroup   && <button onClick={groupSelected}   title="Group selected layers" style={{ ...btnStyle, fontSize: 12 }}>Group</button>}
               {canUngroup && <button onClick={ungroupSelected} title="Remove from group"     style={{ ...btnDangerStyle, fontSize: 12 }}>Ungroup</button>}
             </div>
+            {/* Alignment tools — shown when ≥2 layers selected */}
+            {selectedIds.size >= 2 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: '#666', marginRight: 2 }}>Align:</span>
+                <button onClick={() => alignLayers('x', 'min')}    title="Align left"            style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>⬅L</button>
+                <button onClick={() => alignLayers('x', 'center')} title="Align center (H)"      style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>⬛C</button>
+                <button onClick={() => alignLayers('x', 'max')}    title="Align right"           style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>R➡</button>
+                <span style={{ width: 4 }} />
+                <button onClick={() => alignLayers('y', 'min')}    title="Align top"             style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>⬆T</button>
+                <button onClick={() => alignLayers('y', 'center')} title="Align middle (V)"      style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>⬛M</button>
+                <button onClick={() => alignLayers('y', 'max')}    title="Align bottom"          style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>B⬇</button>
+              </div>
+            )}
 
             {(template.layers || []).length === 0 && (
               <div style={{ color: '#555', fontSize: 13 }}>No layers yet.</div>
             )}
 
             {[...(template.layers || [])].reverse().map((layer) => {
-              const isInSel  = selectedIds.has(layer.id);
+              const isInSel   = selectedIds.has(layer.id);
               const isPrimary = layer.id === primaryId;
-              const gName    = layer.groupId ? groupNameById[layer.groupId] || layer.groupId : null;
+              const gName     = layer.groupId ? groupNameById[layer.groupId] || layer.groupId : null;
+              const isHidden  = layer.visible === false;
               return (
                 <div key={layer.id} style={{
                   display: 'flex', alignItems: 'center', padding: '4px 8px', marginBottom: 2,
                   background: isInSel ? '#1e3a5f' : '#1a1a1a', borderRadius: 3, cursor: 'pointer',
                   border: isPrimary ? '1px solid #4488dd' : isInSel ? '1px solid #336' : '1px solid transparent',
+                  opacity: isHidden ? 0.4 : 1,
                 }} onClick={() => selectLayerFromList(layer.id)}>
+                  <button onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
+                          title={isHidden ? 'Show layer' : 'Hide layer'}
+                          style={{ ...btnStyle, padding: '1px 5px', fontSize: 11, marginRight: 4, flexShrink: 0 }}>
+                    {isHidden ? '○' : '●'}
+                  </button>
                   <span style={{ fontSize: 11, color: '#666', width: 44, flexShrink: 0 }}>{layer.type}</span>
                   <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {layer.id}
@@ -1231,9 +1403,10 @@ export function DskEditorPage() {
                       {gName}
                     </span>
                   )}
-                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id, -1); }} title="Move up" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↑</button>
-                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id,  1); }} title="Move down" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↓</button>
-                  <button onClick={e => { e.stopPropagation(); deleteLayer(layer.id); }}    title="Delete" style={{ ...btnDangerStyle, padding: '1px 5px', fontSize: 11, marginLeft: 4 }}>✕</button>
+                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id, -1); }}  title="Move up"   style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↑</button>
+                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id,  1); }}  title="Move down" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↓</button>
+                  <button onClick={e => { e.stopPropagation(); duplicateLayer(layer.id); }}    title="Duplicate" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>⧉</button>
+                  <button onClick={e => { e.stopPropagation(); deleteLayer(layer.id); }}       title="Delete"    style={{ ...btnDangerStyle, padding: '1px 5px', fontSize: 11, marginLeft: 4 }}>✕</button>
                 </div>
               );
             })}
@@ -1303,6 +1476,8 @@ export function DskEditorPage() {
             <LayerPropertyEditor
               layer={primaryLayer}
               selectionCount={selectedIds.size}
+              aspectLock={aspectLock}
+              onAspectLock={() => setAspectLock(v => !v)}
               onChange={updateLayer}
             />
           </div>
