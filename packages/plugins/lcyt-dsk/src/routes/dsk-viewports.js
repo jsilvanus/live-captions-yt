@@ -39,7 +39,7 @@ export function createDskViewportsRouter(db, auth) {
   // POST /dsk/:apikey/viewports
   router.post('/:apikey/viewports', auth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const { name, label, viewportType, width, height } = req.body ?? {};
+    const { name, label, viewportType, width, height, textLayers } = req.body ?? {};
 
     if (!name || !SLUG_RE.test(name)) {
       return res.status(400).json({ error: 'name must be a lowercase slug (letters, digits, hyphens, underscores)' });
@@ -59,7 +59,8 @@ export function createDskViewportsRouter(db, auth) {
       return res.status(409).json({ error: 'Viewport with this name already exists' });
     }
 
-    const row = upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h });
+    const textLayersJson = Array.isArray(textLayers) ? JSON.stringify(textLayers) : null;
+    const row = upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h, textLayersJson });
     res.status(201).json({ viewport: formatViewport(row) });
   });
 
@@ -70,18 +71,23 @@ export function createDskViewportsRouter(db, auth) {
     const existing = getViewport(db, req.params.apikey, name);
     if (!existing) return res.status(404).json({ error: 'Viewport not found' });
 
-    const { label, viewportType, width, height } = req.body ?? {};
+    const { label, viewportType, width, height, textLayers } = req.body ?? {};
     const vt = viewportType ?? existing.viewport_type;
     if (!['landscape', 'vertical'].includes(vt)) {
       return res.status(400).json({ error: 'viewportType must be landscape or vertical' });
     }
 
+    const textLayersJson = Array.isArray(textLayers)
+      ? JSON.stringify(textLayers)
+      : (textLayers === null ? null : existing.text_layers_json ?? null);
+
     const row = upsertViewport(db, req.params.apikey, {
       name,
-      label:        label        !== undefined ? label        : existing.label,
-      viewportType: vt,
-      width:        width        !== undefined ? (parseInt(width, 10)  || existing.width)  : existing.width,
-      height:       height       !== undefined ? (parseInt(height, 10) || existing.height) : existing.height,
+      label:           label        !== undefined ? label        : existing.label,
+      viewportType:    vt,
+      width:           width        !== undefined ? (parseInt(width, 10)  || existing.width)  : existing.width,
+      height:          height       !== undefined ? (parseInt(height, 10) || existing.height) : existing.height,
+      textLayersJson,
     });
     res.json({ viewport: formatViewport(row) });
   });
@@ -105,7 +111,13 @@ function formatViewport(row) {
     viewportType: row.viewport_type,
     width:        row.width,
     height:       row.height,
+    textLayers:   parseJsonArray(row.text_layers_json),
     createdAt:    row.created_at,
     updatedAt:    row.updated_at,
   };
+}
+
+function parseJsonArray(str) {
+  if (!str) return [];
+  try { return JSON.parse(str); } catch { return []; }
 }

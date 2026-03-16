@@ -50,12 +50,16 @@ export function DskPage() {
   const serverUrl = resolveServer();
 
   // ── State ───────────────────────────────────────────────
-  const [images, setImages]         = useState([]); // [{ id, shorthand, mimeType, url, settingsJson }]
+  const [images, setImages]           = useState([]); // [{ id, shorthand, mimeType, url, settingsJson }]
   const [activeNames, setActiveNames] = useState([]); // string[]
-  const [ccText, setCcText]         = useState('');
-  const [status, setStatus]         = useState('connecting');
+  const [ccText, setCcText]           = useState('');
+  const [status, setStatus]           = useState('connecting');
   // viewport dimensions (null = use 100vw/100vh)
   const [vpDimensions, setVpDimensions] = useState(null); // { width, height } | null
+  // text layers from viewport config: [{ id, binding, x, y, width, height, fontSize, ... }]
+  const [textLayers, setTextLayers]   = useState([]);
+  // live bindings from caption codes: { section: 'Gospel', stanza: '...', ... }
+  const [bindings, setBindings]       = useState({});
 
   // CSS scale to fit viewport dimensions into the window
   const [scale, setScale] = useState(1);
@@ -76,7 +80,7 @@ export function DskPage() {
     } catch { /* non-fatal */ }
   }
 
-  // ── Viewport dimensions ─────────────────────────────────
+  // ── Viewport dimensions + text layers ───────────────────
   async function fetchViewportDimensions() {
     if (!serverUrl || !apiKey || !viewportName) return;
     try {
@@ -84,7 +88,10 @@ export function DskPage() {
       if (!res.ok) return;
       const data = await res.json();
       const vp = (data.viewports || []).find(v => v.name === viewportName);
-      if (vp) setVpDimensions({ width: vp.width, height: vp.height });
+      if (vp) {
+        setVpDimensions({ width: vp.width, height: vp.height });
+        setTextLayers(Array.isArray(vp.textLayers) ? vp.textLayers : []);
+      }
     } catch { /* non-fatal */ }
   }
 
@@ -109,6 +116,16 @@ export function DskPage() {
       try {
         const payload = JSON.parse(e.data);
         setActiveNames(resolveActiveNames(payload, viewportName));
+      } catch {}
+    });
+
+    es.addEventListener('bindings', (e) => {
+      if (!mounted.current) return;
+      try {
+        const { codes } = JSON.parse(e.data);
+        if (codes && typeof codes === 'object') {
+          setBindings(prev => ({ ...prev, ...codes }));
+        }
       } catch {}
     });
 
@@ -209,6 +226,20 @@ export function DskPage() {
         );
       })}
 
+      {/* Text layers bound to caption codes (section, stanza, speaker, etc.) */}
+      {textLayers.map((layer, idx) => {
+        const value = layer.binding ? (bindings[layer.binding] ?? '') : (layer.text ?? '');
+        if (!value) return null;
+        return (
+          <div
+            key={layer.id || idx}
+            style={buildTextLayerStyle(layer, activeNames.length + idx + 1)}
+          >
+            {value}
+          </div>
+        );
+      })}
+
       {/* CC burn-in text (cc=1 mode only) */}
       {ccMode && ccText && (
         <div style={{
@@ -255,15 +286,33 @@ export function DskPage() {
  * Resolve which image names to show for this viewport given the SSE payload.
  *
  * Supports both the new format { default, viewports, ts } and the legacy format { names, ts }.
+ *
+ * Landscape aliases: when no viewportName is set (default landscape display),
+ * check viewports.landscape / .default / .main before falling back to payload.default.
+ * This allows metacodes like <!-- graphics[landscape]:logo --> to target this display.
  */
+const LANDSCAPE_ALIASES_DISPLAY = ['landscape', 'default', 'main'];
+
 function resolveActiveNames(payload, viewportName) {
   // Legacy format: { names: [...] }
   if (Array.isArray(payload.names)) return payload.names;
 
   // New format: { default: [...], viewports: { name: [...] } }
   const { default: defaultNames, viewports } = payload;
-  if (viewportName && viewports && viewports[viewportName] !== undefined) {
-    return viewports[viewportName];
+
+  if (viewportName) {
+    if (viewports && viewports[viewportName] !== undefined) {
+      return viewports[viewportName];
+    }
+    return Array.isArray(defaultNames) ? defaultNames : [];
+  }
+
+  // No viewportName — this is the landscape default display page.
+  // Check landscape alias slots before falling back to defaultNames.
+  if (viewports) {
+    for (const alias of LANDSCAPE_ALIASES_DISPLAY) {
+      if (viewports[alias] !== undefined) return viewports[alias];
+    }
   }
   return Array.isArray(defaultNames) ? defaultNames : [];
 }
@@ -275,6 +324,30 @@ function resolveActiveNames(payload, viewportName) {
 function getViewportSettings(settingsJson, viewportName) {
   if (!viewportName || !settingsJson?.viewports) return {};
   return settingsJson.viewports[viewportName] ?? {};
+}
+
+/**
+ * Build CSS style for a text layer container.
+ */
+function buildTextLayerStyle(layer, zIndex) {
+  return {
+    position:   'absolute',
+    zIndex,
+    pointerEvents: 'none',
+    left:       layer.x      != null ? layer.x      : 0,
+    top:        layer.y      != null ? layer.y      : 0,
+    width:      layer.width  != null ? layer.width  : 'auto',
+    height:     layer.height != null ? layer.height : 'auto',
+    fontSize:   layer.fontSize   != null ? layer.fontSize   : 48,
+    fontWeight: layer.fontWeight != null ? layer.fontWeight : 'bold',
+    color:      layer.color      || '#ffffff',
+    textAlign:  layer.textAlign  || 'left',
+    textShadow: layer.textShadow || 'none',
+    fontFamily: layer.fontFamily || 'sans-serif',
+    whiteSpace: 'pre-wrap',
+    lineHeight: layer.lineHeight || 1.3,
+    overflow:   'hidden',
+  };
 }
 
 /**

@@ -51,4 +51,10 @@ export function runMigrations(db) {
   if (!filesCols.has('mime_type'))     db.exec('ALTER TABLE caption_files ADD COLUMN mime_type TEXT');
   // settings_json: per-viewport visibility, position, animation overrides for each image
   if (!filesCols.has('settings_json')) db.exec('ALTER TABLE caption_files ADD COLUMN settings_json TEXT');
+
+  // Additive column on dsk_viewports for text layers (bound to caption codes)
+  const vpCols = new Set(
+    db.prepare('PRAGMA table_info(dsk_viewports)').all().map(c => c.name)
+  );
+  if (!vpCols.has('text_layers_json')) db.exec('ALTER TABLE dsk_viewports ADD COLUMN text_layers_json TEXT');
 }

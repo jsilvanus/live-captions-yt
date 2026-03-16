@@ -64,6 +64,7 @@ export function createDskRouter(db, store) {
         viewportType: r.viewport_type,
         width:        r.width,
         height:       r.height,
+        textLayers:   parseJson(r.text_layers_json, []),
       })),
     });
   });
@@ -101,7 +102,7 @@ export function createDskRouter(db, store) {
   return router;
 }
 
-function parseJson(str) {
-  if (!str) return {};
-  try { return JSON.parse(str); } catch { return {}; }
+function parseJson(str, fallback = {}) {
+  if (!str) return fallback;
+  try { return JSON.parse(str); } catch { return fallback; }
 }
