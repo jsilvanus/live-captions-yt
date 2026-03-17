@@ -156,8 +156,9 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
   return (
     <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="settings-field">
-        <label className="settings-field__label">Project name</label>
+        <label className="settings-field__label" htmlFor="create-project-name">Project name</label>
         <input
+          id="create-project-name"
           className="settings-field__input"
           value={name}
           onChange={e => setName(e.target.value)}

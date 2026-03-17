@@ -62,8 +62,9 @@ export function RegisterPage() {
         </h1>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="settings-field">
-            <label className="settings-field__label">Server URL</label>
+            <label className="settings-field__label" htmlFor="reg-backend-url">Server URL</label>
             <input
+              id="reg-backend-url"
               className="settings-field__input"
               type="url"
               value={backendUrl}
@@ -74,8 +75,9 @@ export function RegisterPage() {
             />
           </div>
           <div className="settings-field">
-            <label className="settings-field__label">Name (optional)</label>
+            <label className="settings-field__label" htmlFor="reg-name">Name (optional)</label>
             <input
+              id="reg-name"
               className="settings-field__input"
               type="text"
               value={name}
@@ -86,8 +88,9 @@ export function RegisterPage() {
             />
           </div>
           <div className="settings-field">
-            <label className="settings-field__label">Email</label>
+            <label className="settings-field__label" htmlFor="reg-email">Email</label>
             <input
+              id="reg-email"
               className="settings-field__input"
               type="email"
               value={email}
@@ -98,8 +101,9 @@ export function RegisterPage() {
             />
           </div>
           <div className="settings-field">
-            <label className="settings-field__label">Password</label>
+            <label className="settings-field__label" htmlFor="reg-password">Password</label>
             <input
+              id="reg-password"
               className="settings-field__input"
               type="password"
               value={password}
@@ -111,8 +115,9 @@ export function RegisterPage() {
             />
           </div>
           <div className="settings-field">
-            <label className="settings-field__label">Confirm password</label>
+            <label className="settings-field__label" htmlFor="reg-confirm">Confirm password</label>
             <input
+              id="reg-confirm"
               className="settings-field__input"
               type="password"
               value={confirm}
@@ -131,7 +136,7 @@ export function RegisterPage() {
             disabled={loading}
             style={{ marginTop: 4 }}
           >
-            {loading ? 'Creating account…' : 'Create account'}
+            {loading ? 'Creating account…' : 'Create Account'}
           </button>
         </form>
         <p style={{ marginTop: 20, fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center' }}>
