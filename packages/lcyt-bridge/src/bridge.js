@@ -65,11 +65,19 @@ export class Bridge extends EventEmitter {
   async _connect() {
     if (this._destroyed) return;
 
-    // Dynamic import of eventsource (CommonJS package)
+    // Dynamic import of eventsource — handles both ESM default and CJS shapes
     let EventSource;
     try {
       const mod = await import('eventsource');
-      EventSource = mod.default ?? mod.EventSource;
+      const candidate = mod.default ?? mod;
+      // If the default export is the constructor, use it directly;
+      // otherwise look for a named .EventSource property (CJS re-export).
+      EventSource = typeof candidate === 'function'
+        ? candidate
+        : (candidate.EventSource ?? mod.EventSource);
+      if (typeof EventSource !== 'function') {
+        throw new Error('EventSource constructor not found in module exports');
+      }
     } catch (e) {
       this.emit('error', new Error(`Cannot load eventsource: ${e.message}`));
       return;

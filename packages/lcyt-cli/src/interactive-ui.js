@@ -36,6 +36,7 @@ export class InteractiveUI {
     this.watchVideoId = null;   // YouTube video ID set via /stream <url-or-id>
     this.youtubeStatus = null;  // null = unknown, 'live', 'upcoming', 'offline'
     this.youtubePoller = null;
+    this._ytPollFailures = 0;   // consecutive failure counter for circuit breaker
 
     // UI widgets
     this.screen = null;
@@ -640,21 +641,37 @@ export class InteractiveUI {
       const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
 
       if (!response.ok) {
+        this._ytPollFailures++;
         this.youtubeStatus = null;
+        this._checkYtPollCircuitBreaker();
         this.updateStatus();
         return;
       }
 
+      this._ytPollFailures = 0; // reset on success
       const data = await response.json();
       const lbc = data.items?.[0]?.snippet?.liveBroadcastContent;
       if (lbc === 'live')     this.youtubeStatus = 'live';
       else if (lbc === 'upcoming') this.youtubeStatus = 'upcoming';
       else                    this.youtubeStatus = 'offline';
     } catch {
+      this._ytPollFailures++;
       this.youtubeStatus = null;
+      this._checkYtPollCircuitBreaker();
     }
 
     this.updateStatus();
+  }
+
+  /**
+   * Stop YouTube status polling after 5 consecutive failures.
+   */
+  _checkYtPollCircuitBreaker() {
+    if (this._ytPollFailures >= 5 && this.youtubePoller) {
+      clearInterval(this.youtubePoller);
+      this.youtubePoller = null;
+      this.addToLog('YouTube status polling stopped after 5 consecutive failures', 'error');
+    }
   }
 
   /**
@@ -669,6 +686,7 @@ export class InteractiveUI {
     }
     if (!this.apiKey || !this.watchVideoId) return;
 
+    this._ytPollFailures = 0; // reset on (re)start
     this._fetchYoutubeStatus();
     this.youtubePoller = setInterval(() => this._fetchYoutubeStatus(), 30000);
   }
