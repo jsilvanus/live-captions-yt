@@ -28,6 +28,8 @@ This document identifies concrete problems and proposes targeted improvements gr
 │  [≡]  LCYT                           ● [Sync] [Connect] ⚡  │  ← Top bar (48px)
 ├────────────────┬─────────────────────────────────────────────┤
 │                │                                             │
+│  🏠 Dashboard  │                                             │
+│                │                                             │
 │  ✏ Captions    │                                             │
 │                │                                             │
 │  🎤 Audio      │          (page content area)                │
@@ -60,6 +62,7 @@ This document identifies concrete problems and proposes targeted improvements gr
 ┌──────┬───────────────────────────────────────────┐
 │  ≡   │  LCYT                    ● [Connect] ⚡   │
 ├──────┼───────────────────────────────────────────┤
+│  🏠   │                                           │
 │  ✏   │                                           │
 │  🎤   │                                           │
 │  📡   │                                           │
@@ -92,7 +95,8 @@ This document identifies concrete problems and proposes targeted improvements gr
 Hamburger [≡] opens a slide-over drawer:
 ┌──────────────────┬───────────────────────────┐
 │                  │                           │
-│  ✏ Captions      │    (dimmed page behind)   │
+│  🏠 Dashboard    │    (dimmed page behind)   │
+│  ✏ Captions      │                           │
 │  🎤 Audio        │                           │
 │  📡 Broadcast    │                           │
 │  🖼 Graphics ▾   │                           │
@@ -122,7 +126,8 @@ All sidebar routes share a common layout shell (`SidebarLayout`) with the top ba
 
 | Sidebar item | Route | Component | Notes |
 |---|---|---|---|
-| **Captions** | `/` | `CaptionsPage` | Current `App.jsx` two-panel layout (files + input + sent log) |
+| **Dashboard** | `/` | `DashboardPage` | Dockable mini-panel grid (see Section 1b) |
+| **Captions** | `/captions` | `CaptionsPage` | Current `App.jsx` two-panel layout (files + input + sent log) |
 | **Audio** | `/audio` | `AudioPage` | Current `AudioPanel` promoted to full page; STT engine picker, mic controls, waveform, language |
 | **Broadcast** | `/broadcast` | `BroadcastPage` | Current `BroadcastModal` content (Encoder / YouTube / Stream tabs) as a full page |
 | **Graphics → Editor** | `/graphics/editor` | `DskEditorPage` | Existing component, now inside sidebar shell |
@@ -157,7 +162,7 @@ The top bar (48px) is shared across all sidebar routes:
 | Element | Behavior |
 |---------|----------|
 | **[≡] Hamburger** | Toggle sidebar expanded/collapsed (desktop); open drawer (mobile) |
-| **LCYT** | Brand text; click → navigate to `/` (Captions) |
+| **LCYT** | Brand text; click → navigate to `/` (Dashboard) |
 | **● Health dot** | Green = connected + healthy; Yellow = connected + high latency; Red = disconnected. Hover shows tooltip: "Connected to api.lcyt.fi · 42ms latency · seq #127" |
 | **[⚡ Quick Actions]** | Dropdown/popover with: Sync clock, Heartbeat, Reset sequence, Set sequence, Caption codes. These are the current `ControlsPanel` actions — too transient for a full page |
 | **[Connect / Disconnect]** | Primary action button; same behavior as current `StatusBar` connect button |
@@ -173,7 +178,8 @@ SidebarLayout
 │   ├── QuickActionsPopover     ← replaces ControlsPanel modal
 │   └── ConnectButton
 ├── Sidebar
-│   ├── SidebarItem (Captions)       → "/"
+│   ├── SidebarItem (Dashboard)      → "/"
+│   ├── SidebarItem (Captions)       → "/captions"
 │   ├── SidebarItem (Audio)          → "/audio"
 │   ├── SidebarItem (Broadcast)      → "/broadcast"
 │   ├── SidebarGroup (Graphics)
@@ -210,7 +216,7 @@ Use **`wouter`** (lightweight, ~1.5KB) rather than `react-router` (heavier). It 
 
 ### Active State Highlighting
 
-- Exact match: `SidebarItem` for `/` only highlights on exact `/`
+- Exact match: `SidebarItem` for `/` (Dashboard) only highlights on exact `/`
 - Prefix match: `SidebarItem` for `/production/cameras` highlights on that path
 - Group auto-open: navigating to `/graphics/editor` auto-expands the Graphics group
 - Active item: bold text + left accent border (4px, `var(--color-accent)`)
@@ -230,10 +236,200 @@ The page content still renders (read-only / skeleton state) so users can explore
 
 ### Migration Path (from current UI)
 
-1. **Phase 1:** Add `wouter` router + `SidebarLayout` shell. Mount current `App.jsx` at `/` inside the shell. All other sidebar routes initially render placeholder "Coming soon" or redirect.
+1. **Phase 1:** Add `wouter` router + `SidebarLayout` shell. Mount current `App.jsx` at `/captions` inside the shell. Create `DashboardPage` at `/`. All other sidebar routes initially render placeholder "Coming soon" or redirect.
 2. **Phase 2:** Move `BroadcastModal` content → `/broadcast` page. Move `AudioPanel` → `/audio` page. Mount existing DSK/Production pages inside sidebar shell.
 3. **Phase 3:** Create `/settings` page (merge SettingsModal + CCModal). Replace `ControlsPanel` with `QuickActionsPopover` in top bar.
 4. **Phase 4:** Create `/account` page (merge Login/Register/Projects). Remove old standalone `/login` and `/register` (or redirect to `/account`).
+
+---
+
+### 1b. Dashboard Page (`/`) — Dockable Panel Grid
+
+The Dashboard is the landing page. It shows a configurable grid of mini-panels — lightweight, read-mostly versions of the main pages. Users can add, remove, rearrange, and resize panels.
+
+#### Grid Library
+
+Use **`react-grid-layout`** (~40KB) for drag-to-reorder and resize. It provides:
+- Drag handles on panel headers
+- Responsive breakpoints (lg/md/sm/xs)
+- Persisted layouts (serialize to localStorage)
+- Collision detection and auto-compaction
+
+Install: `npm install react-grid-layout -w packages/lcyt-web`
+
+#### Dashboard Layout
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Dashboard                                          [+ Add]  │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─ Status ──────────┐  ┌─ Sent Log ────────────────────┐   │
+│  │ ● Connected       │  │ ✓✓ Hello world        12:01   │   │
+│  │ api.lcyt.fi       │  │ ✓  Testing 123        12:02   │   │
+│  │ Seq: 127          │  │ ⏳ New caption...      12:03   │   │
+│  │ Targets: 2 YT     │  │                               │   │
+│  └───────────────────┘  └───────────────────────────────┘   │
+│                                                              │
+│  ┌─ Quick Send ──────────────────────────────────────────┐   │
+│  │ [Type a caption...                        ] [Send]    │   │
+│  └───────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─ File Preview ────┐  ┌─ Broadcast ───────────────────┐   │
+│  │ sermon.txt  L42   │  │ Encoder: ● idle               │   │
+│  │   41: ...         │  │ Relay: 2/3 slots active       │   │
+│  │ > 42: Current ln  │  │ RTMP: receiving               │   │
+│  │   43: ...         │  └───────────────────────────────┘   │
+│  └───────────────────┘                                       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Panels are draggable by their header bar and resizable from the bottom-right corner.
+
+#### Available Widgets
+
+| Widget ID | Title | Content | Min size (grid units) | Default size |
+|-----------|-------|---------|----------------------|--------------|
+| `status` | Status | Connection dot, backend URL, sequence, sync offset, target count | 2x2 | 3x3 |
+| `sent-log` | Sent Log | Last 10 captions with status icons (pending/confirmed/error) | 3x2 | 4x4 |
+| `input` | Quick Send | Text input + send button, language badge | 3x1 | 6x1 |
+| `file-preview` | File Preview | Active filename, pointer, ~5 lines around cursor with highlight | 2x3 | 3x4 |
+| `audio-meter` | Audio | Mic toggle + level meter canvas + interim text | 2x2 | 3x2 |
+| `viewer` | Viewer | Subscribe to `/viewer/:key` SSE, show last 5 captions | 3x2 | 4x3 |
+| `broadcast` | Broadcast | Encoder status dot, RTMP relay slot count, active/inactive | 2x2 | 3x2 |
+
+#### Panel Card Component (`DashboardCard`)
+
+Each widget is wrapped in a card:
+
+```
+┌─ Title ─────────────────── [_] [✕] ─┐
+│                                       │  ← drag handle (header)
+│  (widget content)                     │
+│                                       │
+└───────────────────────────── ◢ resize ┘
+```
+
+- **Header:** title text (left), collapse `[_]` and remove `[✕]` buttons (right). Header is the drag handle.
+- **Body:** widget content. Hidden when collapsed.
+- **Resize handle:** bottom-right corner (provided by react-grid-layout).
+- **Collapsed state:** header-only, 1 grid row height.
+
+#### Panel Picker (`[+ Add]` button)
+
+Clicking `[+ Add]` in the dashboard header opens a dropdown/popover:
+
+```
+┌─ Add panels ─────────────────┐
+│ ☑ Status                     │
+│ ☑ Sent Log                   │
+│ ☑ Quick Send                 │
+│ ☐ File Preview               │
+│ ☐ Audio                      │
+│ ☐ Viewer                     │
+│ ☐ Broadcast                  │
+└──────────────────────────────┘
+```
+
+Checked = currently on dashboard. Toggle to add/remove.
+
+#### "Pin to Dashboard" from Main Pages
+
+Each main page header (when sidebar navigation is implemented) gets a small pin icon:
+
+```
+Captions                              [📌]
+```
+
+- Unpinned (outline): click → adds the corresponding widget(s) to dashboard
+- Pinned (filled): click → removes from dashboard
+- Mapping: Captions → `file-preview` + `input`, Audio → `audio-meter`, Broadcast → `broadcast`
+
+The pin state is read from the same `useDashboardConfig()` hook.
+
+#### Config Persistence
+
+**localStorage key:** `lcyt.dashboard`
+
+```json
+{
+  "panels": ["status", "sent-log", "input"],
+  "layouts": {
+    "lg": [
+      { "i": "status", "x": 0, "y": 0, "w": 3, "h": 3 },
+      { "i": "sent-log", "x": 3, "y": 0, "w": 4, "h": 4 },
+      { "i": "input", "x": 0, "y": 3, "w": 6, "h": 1 }
+    ],
+    "md": [...],
+    "sm": [...]
+  }
+}
+```
+
+`panels` array controls which widgets are visible. `layouts` is the react-grid-layout serialized layout per breakpoint. Both updated on every layout change and persisted.
+
+**Default panels** (first visit, no config): `status`, `sent-log`, `input`.
+
+#### Data Flow
+
+All widgets share the existing context tree — no separate sessions or connections:
+
+```
+AppProviders (SessionContext, FileContext, SentLogContext, ToastContext)
+└── SidebarLayout
+    └── DashboardPage
+        └── ResponsiveGridLayout (react-grid-layout)
+            ├── DashboardCard key="status"
+            │   └── StatusWidget        → reads SessionContext
+            ├── DashboardCard key="sent-log"
+            │   └── SentLogWidget       → reads SentLogContext
+            ├── DashboardCard key="input"
+            │   └── InputWidget         → reads/writes SessionContext
+            ├── DashboardCard key="file-preview"
+            │   └── FilePreviewWidget   → reads FileContext
+            ├── DashboardCard key="audio-meter"
+            │   └── AudioMeterWidget    → Web Audio API + SessionContext
+            ├── DashboardCard key="viewer"
+            │   └── ViewerWidget        → independent EventSource
+            └── DashboardCard key="broadcast"
+                └── BroadcastWidget     → reads SessionContext
+```
+
+Exception: `ViewerWidget` creates its own `EventSource` to `/viewer/:key` (same pattern as `ViewerPage`). The viewer key comes from the target config in `SessionContext`.
+
+#### Empty Dashboard
+
+When no panels are configured:
+
+```
+┌──────────────────────────────────────────────┐
+│                                              │
+│  Welcome to LCYT                             │
+│                                              │
+│  Add panels to build your dashboard.         │
+│                                              │
+│  [+ Add panels]       [Go to Captions →]     │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+#### New Files
+
+| File | Purpose | ~LOC |
+|------|---------|------|
+| `src/components/DashboardPage.jsx` | Page: grid layout + panel picker + empty state | ~150 |
+| `src/components/dashboard/DashboardCard.jsx` | Card wrapper: header, collapse, remove, drag handle | ~60 |
+| `src/components/dashboard/StatusWidget.jsx` | Mini status: connection, seq, targets | ~50 |
+| `src/components/dashboard/SentLogWidget.jsx` | Mini sent log: last 10 entries | ~60 |
+| `src/components/dashboard/InputWidget.jsx` | Mini input: text field + send button | ~50 |
+| `src/components/dashboard/FilePreviewWidget.jsx` | Mini file viewer: name, pointer, 5 lines | ~60 |
+| `src/components/dashboard/AudioMeterWidget.jsx` | Mini audio: mic toggle + meter | ~80 |
+| `src/components/dashboard/ViewerWidget.jsx` | Mini viewer: SSE, last 5 captions | ~80 |
+| `src/components/dashboard/BroadcastWidget.jsx` | Mini broadcast: encoder + relay status | ~50 |
+| `src/components/dashboard/PanelPicker.jsx` | Add-panel checkbox dropdown | ~60 |
+| `src/hooks/useDashboardConfig.js` | Config CRUD hook (panels, layouts, localStorage) | ~70 |
+| `src/styles/dashboard.css` | Dashboard grid, card, widget styles | ~120 |
 
 ---
 
@@ -445,8 +641,9 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P0** | 1 Phase 1: `wouter` router + `SidebarLayout` shell | High — foundation for everything | Medium |
-| **P0** | 1 Phase 2: Move Broadcast/Audio/DSK/Production into sidebar | High — unifies navigation | Medium |
+| **P0** | 1 Phase 1: `wouter` router + `SidebarLayout` shell + Dashboard at `/` | High — foundation for everything | Medium |
+| **P0** | 1b: Dashboard dockable panel grid (`react-grid-layout`) | High — landing page + overview | Medium |
+| **P0** | 1 Phase 2: Move Captions to `/captions`, Broadcast/Audio/DSK/Production into sidebar | High — unifies navigation | Medium |
 | **P0** | 6b. Auto-reconnect | High — prevents mid-broadcast failures | Low |
 | **P0** | 6c. Unsaved work protection | High — prevents data loss | Low |
 | **P1** | 1 Phase 3: `/settings` page (merge modals) + QuickActions popover | Medium — reduces confusion | Medium |
