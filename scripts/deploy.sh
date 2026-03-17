@@ -136,7 +136,7 @@ _SCREENSHOTS_PID=""
 (
   echo "==> [bg] Installing root devDependencies (playwright, etc.)"
   rm -f "$ROOT_DEV_LOG"
-  npm ci --prefix "$REPO_DIR" --include=dev >"$ROOT_DEV_LOG" 2>&1 || \
+  npm install --prefix "$REPO_DIR" --include=dev >"$ROOT_DEV_LOG" 2>&1 || \
     { echo "Warning: root npm install failed — screenshots may not run." >>"$ROOT_DEV_LOG"; }
 
   echo "==> [bg] Installing Playwright Chromium browser"
