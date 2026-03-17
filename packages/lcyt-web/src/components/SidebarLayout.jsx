@@ -6,6 +6,7 @@ import { useLang } from '../contexts/LangContext';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getActiveCodes, setActiveCode, clearActiveCode } from '../lib/activeCodes';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
+import { KEYS } from '../lib/storageKeys.js';
 
 // ─── Mobile breakpoint ───────────────────────────────────────────────────────
 
@@ -13,14 +14,14 @@ const MOBILE_BREAKPOINT = 768;
 
 function getSidebarExpanded() {
   try {
-    const v = localStorage.getItem('lcyt.sidebar.expanded');
+    const v = localStorage.getItem(KEYS.ui.sidebarExpanded);
     if (v !== null) return v === 'true';
   } catch { /* ignore */ }
   return window.innerWidth > 1024;
 }
 
 function setSidebarExpanded(val) {
-  try { localStorage.setItem('lcyt.sidebar.expanded', String(val)); } catch { /* ignore */ }
+  try { localStorage.setItem(KEYS.ui.sidebarExpanded, String(val)); } catch { /* ignore */ }
 }
 
 function getGroupOpen(name) {

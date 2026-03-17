@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useUserAuth } from '../hooks/useUserAuth';
+import { KEYS } from '../lib/storageKeys.js';
 
 function getBackendUrl() {
   const params = new URLSearchParams(window.location.search);
   const urlParam = params.get('server');
   if (urlParam) return urlParam;
   try {
-    const cfg = JSON.parse(localStorage.getItem('lcyt-config') || '{}');
+    const cfg = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
     return cfg.backendUrl || '';
   } catch {
     return '';

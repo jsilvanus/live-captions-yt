@@ -5,14 +5,16 @@
  * CCModal, and CaptionsModal.
  */
 
+import { KEYS } from './storageKeys.js';
+
 // ─── Advanced mode ────────────────────────────────────────────
 
 export function getAdvancedMode() {
-  try { return localStorage.getItem('lcyt:advanced-mode') === '1'; } catch { return false; }
+  try { return localStorage.getItem(KEYS.ui.advancedMode) === '1'; } catch { return false; }
 }
 
 export function setAdvancedMode(val) {
-  try { localStorage.setItem('lcyt:advanced-mode', val ? '1' : '0'); } catch {}
+  try { localStorage.setItem(KEYS.ui.advancedMode, val ? '1' : '0'); } catch {}
 }
 
 // ─── Theme ────────────────────────────────────────────────────
@@ -26,12 +28,12 @@ export function applyTheme(value) {
   } else {
     html.removeAttribute('data-theme');
   }
-  try { localStorage.setItem('lcyt-theme', value); } catch {}
+  try { localStorage.setItem(KEYS.ui.theme, value); } catch {}
 }
 
 // ─── Caption text size ────────────────────────────────────────
 
 export function applyTextSize(px) {
   document.documentElement.style.setProperty('--caption-text-size', px + 'px');
-  try { localStorage.setItem('lcyt:textSize', String(px)); } catch {}
+  try { localStorage.setItem(KEYS.ui.textSize, String(px)); } catch {}
 }

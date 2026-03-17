@@ -3,6 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useFileContext } from '../contexts/FileContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { useToastContext } from '../contexts/ToastContext';
+import { KEYS } from '../lib/storageKeys.js';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
@@ -58,7 +59,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
 
   function getBatchIntervalMs() {
     try {
-      const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+      const v = parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10);
       return Math.min(20, Math.max(0, v)) * 1000;
     } catch { return 0; }
   }

@@ -3,6 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
+import { KEYS } from '../lib/storageKeys.js';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
 import { blobToBase64 } from '../lib/fileUtils';
@@ -80,7 +81,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
   // Hold-to-speak mode
   const [holdSpeakEnabled, setHoldSpeakEnabled] = useState(
-    () => { try { return localStorage.getItem('lcyt:hold-to-speak') === '1'; } catch { return false; } }
+    () => { try { return localStorage.getItem(KEYS.audio.holdToSpeak) === '1'; } catch { return false; } }
   );
 
   // Stable refs so imperative handles never have stale closures
@@ -102,7 +103,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   useEffect(() => {
     function onCfgChange()  {
       setEngine(getSttEngine());
-      try { setHoldSpeakEnabled(localStorage.getItem('lcyt:hold-to-speak') === '1'); } catch {}
+      try { setHoldSpeakEnabled(localStorage.getItem(KEYS.audio.holdToSpeak) === '1'); } catch {}
     }
     function onCredChange() { setCredLoaded(!!getGoogleCredential()); }
     window.addEventListener('lcyt:stt-config-changed',     onCfgChange);
@@ -180,7 +181,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   }
 
   function getTimestampWithOffset() {
-    const offsetSec = parseFloat(localStorage.getItem('lcyt:transcription-offset') || '0');
+    const offsetSec = parseFloat(localStorage.getItem(KEYS.audio.transcriptionOffset) || '0');
     const offsetMs = Math.round(offsetSec * 1000);
     const syncOffsetMs = session.syncOffset || 0;
     if (!offsetMs && !syncOffsetMs) return undefined; // let backend use its own clock
@@ -216,11 +217,11 @@ export const AudioPanel = forwardRef(function AudioPanel(
   }
 
   function isUtteranceEndButtonEnabled() {
-    try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; }
+    try { return localStorage.getItem(KEYS.audio.utteranceEndButton) === '1'; } catch { return false; }
   }
 
   function getUtteranceEndTimerSec() {
-    try { return parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10); } catch { return 0; }
+    try { return parseInt(localStorage.getItem(KEYS.audio.utteranceEndTimer) || '0', 10); } catch { return 0; }
   }
 
   // Starts the utterance-end timer if configured. Call when an utterance begins.
@@ -245,7 +246,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
       const timestamp = explicitTimestamp !== undefined ? explicitTimestamp : getTimestampWithOffset();
       try {
         // Honor batching: if batch interval > 0, queue via construct
-        const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+        const v = parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10);
         const intervalMs = Math.min(20, Math.max(0, v)) * 1000;
         const opts = {
           translations: translationsMap,
@@ -323,7 +324,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   async function startWebkit() {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) return;
-    const selectedDeviceId = (() => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } })();
+    const selectedDeviceId = (() => { try { return localStorage.getItem(KEYS.audio.deviceId) || ''; } catch { return ''; } })();
     // Try to pre-select the device by requesting permission for the chosen device.
     // Await the permission so failures surface and we can show a helpful message.
     if (selectedDeviceId && navigator?.mediaDevices?.getUserMedia) {
@@ -395,7 +396,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
           if (!recognitionRef.current) return;
           try { recognition.start(); } catch {}
           // Restart VAD check loop if enabled — it exits early after forcing finalization
-          if (localStorage.getItem('lcyt:client-vad') === '1' && !vadTimerRef.current) {
+          if (localStorage.getItem(KEYS.audio.clientVad) === '1' && !vadTimerRef.current) {
             startVAD(recognition);
           }
         }, 100);
@@ -419,7 +420,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     utteranceStartRef.current = null;
 
     // Optional client-side VAD — enabled via localStorage flag lcyt:client-vad = '1'
-    if (localStorage.getItem('lcyt:client-vad') === '1') {
+    if (localStorage.getItem(KEYS.audio.clientVad) === '1') {
       startVAD(recognition);
     }
   }
@@ -475,8 +476,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
     if (vadStartingRef.current) return;
     vadStartingRef.current = true;
     try {
-      const silenceMs = Math.max(0, parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10));
-      const threshold = Math.max(0, parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'));
+      const silenceMs = Math.max(0, parseInt(localStorage.getItem(KEYS.audio.clientVadSilenceMs) || '500', 10));
+      const threshold = Math.max(0, parseFloat(localStorage.getItem(KEYS.audio.clientVadThreshold) || '0.01'));
 
       // Prefer the already-running meter analyser; fall back to locally-created VAD analyser or create one
       let analyser = analyserRef.current || vadAnalyserRef.current;
@@ -662,7 +663,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
       return;
     }
 
-    const selectedDeviceId = (() => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } })();
+    const selectedDeviceId = (() => { try { return localStorage.getItem(KEYS.audio.deviceId) || ''; } catch { return ''; } })();
     let stream;
     try {
       const audioConstraint = selectedDeviceId

@@ -3,6 +3,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { useSessionContext } from '../contexts/SessionContext';
 import { getAnyTargetNoBatch } from '../lib/targetConfig';
+import { KEYS } from '../lib/storageKeys.js';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { getTargets, setTargets } from '../lib/targetConfig';
 import {
@@ -393,7 +394,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
   const [sttLangQuery, setSttLangQuery] = useState(savedLangEntry ? savedLangEntry.label : savedLang);
   const [micDevices, setMicDevices] = useState([]);
   const [selectedMicId, setSelectedMicId] = useState(
-    () => { try { return localStorage.getItem('lcyt:audioDeviceId') || ''; } catch { return ''; } }
+    () => { try { return localStorage.getItem(KEYS.audio.deviceId) || ''; } catch { return ''; } }
   );
   const [sttLang, setSttLangState] = useState(savedLang);
   const [sttLangDropdownOpen, setSttLangDropdownOpen] = useState(false);
@@ -410,10 +411,10 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
   const [sttLocal, setSttLocalState] = useState(getSttLocalProcessing);
 
   const [utteranceEndButton, setUtteranceEndButton] = useState(
-    () => { try { return localStorage.getItem('lcyt:utterance-end-button') === '1'; } catch { return false; } }
+    () => { try { return localStorage.getItem(KEYS.audio.utteranceEndButton) === '1'; } catch { return false; } }
   );
   const [utteranceEndTimer, setUtteranceEndTimer] = useState(
-    () => { try { return parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10); } catch { return 0; } }
+    () => { try { return parseInt(localStorage.getItem(KEYS.audio.utteranceEndTimer) || '0', 10); } catch { return 0; } }
   );
 
   // ── Receivers tab ─────────────────────────────────────────
@@ -424,13 +425,13 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
   const [batchLocked, setBatchLocked] = useState(false);
   const [transcriptionOffset, setTranscriptionOffset] = useState(0);
   const [vadEnabled, setVadEnabled] = useState(
-    () => { try { return localStorage.getItem('lcyt:client-vad') === '1'; } catch { return false; } }
+    () => { try { return localStorage.getItem(KEYS.audio.clientVad) === '1'; } catch { return false; } }
   );
   const [vadSilenceMs, setVadSilenceMs] = useState(
-    () => { try { return parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10); } catch { return 500; } }
+    () => { try { return parseInt(localStorage.getItem(KEYS.audio.clientVadSilenceMs) || '500', 10); } catch { return 500; } }
   );
   const [vadThreshold, setVadThreshold] = useState(
-    () => { try { return parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01'); } catch { return 0.01; } }
+    () => { try { return parseFloat(localStorage.getItem(KEYS.audio.clientVadThreshold) || '0.01'); } catch { return 0.01; } }
   );
 
   // ── Translation tab ───────────────────────────────────────
@@ -460,24 +461,24 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
     setCredError('');
     setSttLocalState(getSttLocalProcessing());
     if (getSttEngine() === 'webkit') checkLocalAvailability(getSttLang());
-    try { setUtteranceEndButton(localStorage.getItem('lcyt:utterance-end-button') === '1'); } catch {}
-    try { setUtteranceEndTimer(parseInt(localStorage.getItem('lcyt:utterance-end-timer') || '0', 10)); } catch {}
+    try { setUtteranceEndButton(localStorage.getItem(KEYS.audio.utteranceEndButton) === '1'); } catch {}
+    try { setUtteranceEndTimer(parseInt(localStorage.getItem(KEYS.audio.utteranceEndTimer) || '0', 10)); } catch {}
     // Receivers tab
     setTargetsState(getTargets());
     // Details tab
     const noBatch = getAnyTargetNoBatch();
     setBatchLocked(noBatch);
-    let savedBatch = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+    let savedBatch = parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10);
     if (noBatch && savedBatch > 0) {
       savedBatch = 0;
-      try { localStorage.setItem('lcyt-batch-interval', '0'); } catch {}
+      try { localStorage.setItem(KEYS.captions.batchInterval, '0'); } catch {}
     }
     setBatchInterval(savedBatch);
-    const savedOffset = parseFloat(localStorage.getItem('lcyt:transcription-offset') || '0');
+    const savedOffset = parseFloat(localStorage.getItem(KEYS.audio.transcriptionOffset) || '0');
     setTranscriptionOffset(isNaN(savedOffset) ? 0 : savedOffset);
-    try { setVadEnabled(localStorage.getItem('lcyt:client-vad') === '1'); } catch {}
-    try { setVadSilenceMs(parseInt(localStorage.getItem('lcyt:client-vad-silence-ms') || '500', 10)); } catch {}
-    try { setVadThreshold(parseFloat(localStorage.getItem('lcyt:client-vad-threshold') || '0.01')); } catch {}
+    try { setVadEnabled(localStorage.getItem(KEYS.audio.clientVad) === '1'); } catch {}
+    try { setVadSilenceMs(parseInt(localStorage.getItem(KEYS.audio.clientVadSilenceMs) || '500', 10)); } catch {}
+    try { setVadThreshold(parseFloat(localStorage.getItem(KEYS.audio.clientVadThreshold) || '0.01')); } catch {}
     // Translation tab
     setTranslationsState(getTranslations());
     setTranslationVendorState(getTranslationVendor());
@@ -617,13 +618,13 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
     }
     const v = parseInt(value, 10);
     setBatchInterval(v);
-    try { localStorage.setItem('lcyt-batch-interval', String(v)); } catch {}
+    try { localStorage.setItem(KEYS.captions.batchInterval, String(v)); } catch {}
   }
 
   function onTranscriptionOffsetChange(value) {
     const v = parseFloat(value);
     setTranscriptionOffset(v);
-    try { localStorage.setItem('lcyt:transcription-offset', String(v)); } catch {}
+    try { localStorage.setItem(KEYS.audio.transcriptionOffset, String(v)); } catch {}
   }
 
   // ── Translation tab handlers ──────────────────────────────
@@ -721,7 +722,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                     value={selectedMicId}
                     onChange={e => {
                       setSelectedMicId(e.target.value);
-                      try { localStorage.setItem('lcyt:audioDeviceId', e.target.value); } catch {}
+                      try { localStorage.setItem(KEYS.audio.deviceId, e.target.value); } catch {}
                       window.dispatchEvent(new Event('lcyt:stt-config-changed'));
                     }}
                   >
@@ -795,7 +796,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                         checked={utteranceEndButton}
                         onChange={e => {
                           setUtteranceEndButton(e.target.checked);
-                          try { localStorage.setItem('lcyt:utterance-end-button', e.target.checked ? '1' : '0'); } catch {}
+                          try { localStorage.setItem(KEYS.audio.utteranceEndButton, e.target.checked ? '1' : '0'); } catch {}
                           window.dispatchEvent(new Event('lcyt:stt-config-changed'));
                         }}
                       />
@@ -817,7 +818,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                       onChange={e => {
                         const v = parseInt(e.target.value, 10);
                         setUtteranceEndTimer(v);
-                        try { localStorage.setItem('lcyt:utterance-end-timer', String(v)); } catch {}
+                        try { localStorage.setItem(KEYS.audio.utteranceEndTimer, String(v)); } catch {}
                       }}
                     />
                     <span className="settings-field__hint">{t('settings.stt.utteranceEndTimerHint')}</span>
@@ -1017,7 +1018,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                     checked={vadEnabled}
                     onChange={e => {
                       setVadEnabled(e.target.checked);
-                      try { localStorage.setItem('lcyt:client-vad', e.target.checked ? '1' : '0'); } catch {}
+                      try { localStorage.setItem(KEYS.audio.clientVad, e.target.checked ? '1' : '0'); } catch {}
                     }}
                   />
                   {t('settings.vad.enableCheckbox')}
@@ -1039,7 +1040,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                   onChange={e => {
                     const v = parseInt(e.target.value, 10);
                     setVadSilenceMs(v);
-                    try { localStorage.setItem('lcyt:client-vad-silence-ms', String(v)); } catch {}
+                    try { localStorage.setItem(KEYS.audio.clientVadSilenceMs, String(v)); } catch {}
                   }}
                 />
                 <span className="settings-field__hint">{t('settings.vad.silenceDurationHint')}</span>
@@ -1059,7 +1060,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                   onChange={e => {
                     const v = parseFloat(e.target.value);
                     setVadThreshold(v);
-                    try { localStorage.setItem('lcyt:client-vad-threshold', String(v)); } catch {}
+                    try { localStorage.setItem(KEYS.audio.clientVadThreshold, String(v)); } catch {}
                   }}
                 />
                 <span className="settings-field__hint">{t('settings.vad.energyThresholdHint')}</span>

@@ -8,6 +8,7 @@ import {
   listScheduledBroadcasts, transitionBroadcast, enableHttpCaptions,
 } from '../lib/youtubeApi';
 import { useToastContext } from '../contexts/ToastContext';
+import { broadcastKey } from '../lib/storageKeys.js';
 import { useSessionContext } from '../contexts/SessionContext';
 import {
   setSlotTargetType,
@@ -25,10 +26,10 @@ const ENCODER_TYPES = [
 ];
 
 function loadEncoderPref(key, fallback = '') {
-  try { return localStorage.getItem(`lcyt:broadcast:${key}`) || fallback; } catch { return fallback; }
+  try { return localStorage.getItem(broadcastKey(key)) || fallback; } catch { return fallback; }
 }
 function saveEncoderPref(key, val) {
-  try { localStorage.setItem(`lcyt:broadcast:${key}`, val); } catch {}
+  try { localStorage.setItem(broadcastKey(key), val); } catch {}
 }
 
 // ── Encoder Tab ────────────────────────────────────────────────────────────

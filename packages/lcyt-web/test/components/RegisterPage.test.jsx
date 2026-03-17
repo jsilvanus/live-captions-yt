@@ -42,7 +42,7 @@ describe('RegisterPage', () => {
   });
 
   it('reads backend URL from localStorage', () => {
-    localStorage.setItem('lcyt-config', JSON.stringify({ backendUrl: 'https://saved.api' }));
+    localStorage.setItem('lcyt.session.config', JSON.stringify({ backendUrl: 'https://saved.api' }));
     render(<RegisterPage />);
     expect(screen.getByLabelText(/server url/i)).toHaveValue('https://saved.api');
   });

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Router, Route, Switch, Redirect } from 'wouter';
+import { migrateStorageKeys } from './lib/storageKeys.js';
 import './styles/reset.css';
 import './styles/layout.css';
 import './styles/sidebar.css';
@@ -122,6 +123,8 @@ function SidebarApp() {
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
+
+migrateStorageKeys();
 
 const root = isStandalonePath(path)
   ? getStandalonePage()

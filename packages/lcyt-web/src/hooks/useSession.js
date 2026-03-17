@@ -2,12 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
 import { createApi } from '../lib/api';
+import { KEYS } from '../lib/storageKeys.js';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
 
-const CONFIG_KEY = 'lcyt-config';
-const AUTO_CONNECT_KEY = 'lcyt-autoconnect';
+const CONFIG_KEY = KEYS.session.config;
+const AUTO_CONNECT_KEY = KEYS.session.autoConnect;
 
 /**
  * Manages a BackendCaptionSender session, SSE subscription, and config persistence.
@@ -271,7 +272,7 @@ export function useSession({
 
   function getBatchIntervalMs() {
     try {
-      const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+      const v = parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10);
       return Math.min(20, Math.max(0, v)) * 1000;
     } catch { return 0; }
   }
