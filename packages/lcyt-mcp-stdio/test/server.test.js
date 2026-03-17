@@ -61,11 +61,16 @@ describe("lcyt-mcp server", () => {
 
   // -- tool listing ----------------------------------------------------------
 
-  it("lists all six tools", async () => {
+  it("lists all sixteen tools", async () => {
     const { tools } = await handlers.handleListTools();
-    assert.equal(tools.length, 6);
+    assert.equal(tools.length, 16);
     const names = new Set(tools.map((t) => t.name));
-    for (const n of ["start", "send_caption", "send_batch", "sync_clock", "get_status", "stop"]) {
+    for (const n of [
+      "start", "send_caption", "send_batch", "sync_clock", "get_status", "stop",
+      "list_cameras", "camera_preset", "list_mixers", "switch_source",
+      "list_dsk_templates", "activate_dsk_template", "broadcast_dsk_data",
+      "dsk_renderer_status", "start_dsk_renderer", "stop_dsk_renderer",
+    ]) {
       assert.ok(names.has(n), `missing tool: ${n}`);
     }
   });
@@ -225,5 +230,81 @@ describe("lcyt-mcp server", () => {
       () => handlers.handleReadResource("unknown://foo"),
       /Unknown resource URI/
     );
+  });
+
+  // -- production tools: no LCYT_BACKEND_URL configured ----------------------
+
+  it("list_cameras: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("list_cameras", {});
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("camera_preset: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("camera_preset", { camera_id: "1", preset_id: "2" });
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("list_mixers: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("list_mixers", {});
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("switch_source: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("switch_source", { mixer_id: "1", input: 2 });
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  // -- graphics/DSK tools: no LCYT_BACKEND_URL configured --------------------
+
+  it("list_dsk_templates: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("list_dsk_templates", {});
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("activate_dsk_template: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("activate_dsk_template", { template_id: 1 });
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("broadcast_dsk_data: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("broadcast_dsk_data", {
+      updates: [{ selector: ".title", text: "Hello" }],
+    });
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("dsk_renderer_status: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("dsk_renderer_status", {});
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("start_dsk_renderer: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("start_dsk_renderer", {});
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
+  });
+
+  it("stop_dsk_renderer: returns error when LCYT_BACKEND_URL not set", async () => {
+    const result = await handlers.handleCallTool("stop_dsk_renderer", {});
+    const payload = JSON.parse(result.content[0].text);
+    assert.ok("error" in payload);
+    assert.match(payload.error, /LCYT_BACKEND_URL/);
   });
 });

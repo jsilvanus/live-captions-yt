@@ -2,13 +2,49 @@
 
 import asyncio
 import json
+import os
 import secrets
 from datetime import datetime, timezone
 from typing import Any
 
+import httpx
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp import types
+
+# ── Backend helpers ───────────────────────────────────────────────────────────
+
+BACKEND_URL = os.environ.get("LCYT_BACKEND_URL", "").rstrip("/")
+API_KEY     = os.environ.get("LCYT_API_KEY", "")
+ADMIN_KEY   = os.environ.get("LCYT_ADMIN_KEY", "")
+
+
+def _admin_headers() -> dict:
+    return {"X-Admin-Key": ADMIN_KEY}
+
+
+def _editor_headers() -> dict:
+    return {"X-API-Key": API_KEY}
+
+
+async def _backend_get(path: str, headers: dict) -> str:
+    if not BACKEND_URL:
+        return json.dumps({"error": "LCYT_BACKEND_URL is not configured"})
+    async with httpx.AsyncClient() as client:
+        r = await client.get(f"{BACKEND_URL}{path}", headers=headers)
+        return r.text
+
+
+async def _backend_post(path: str, headers: dict, body: dict | None = None) -> str:
+    if not BACKEND_URL:
+        return json.dumps({"error": "LCYT_BACKEND_URL is not configured"})
+    async with httpx.AsyncClient() as client:
+        r = await client.post(
+            f"{BACKEND_URL}{path}",
+            headers={"Content-Type": "application/json", **headers},
+            json=body,
+        )
+        return r.text
 
 # ── Tool definitions ─────────────────────────────────────────────────────────
 
@@ -95,6 +131,97 @@ TOOLS: list[types.Tool] = [
             "properties": {"session_id": {"type": "string"}},
             "required": ["session_id"],
         },
+    ),
+
+    # ── Production tools ──────────────────────────────────────────────────────
+    types.Tool(
+        name="list_cameras",
+        description="List all cameras with their id, name, mixerInput, controlType, and controlConfig.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="camera_preset",
+        description="Trigger a PTZ preset on a camera. Returns { ok, cameraId, presetId }.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "camera_id": {"type": "string", "description": "Camera ID."},
+                "preset_id": {"type": "string", "description": "Preset ID to trigger."},
+            },
+            "required": ["camera_id", "preset_id"],
+        },
+    ),
+    types.Tool(
+        name="list_mixers",
+        description="List all mixers with id, name, type, connected, and activeSource.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="switch_source",
+        description="Switch the mixer's live program source. Returns { ok, mixerId, activeSource }.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "mixer_id": {"type": "string", "description": "Mixer ID."},
+                "input": {"type": "integer", "minimum": 1, "description": "Input number (positive integer)."},
+            },
+            "required": ["mixer_id", "input"],
+        },
+    ),
+
+    # ── Graphics / DSK tools ──────────────────────────────────────────────────
+    types.Tool(
+        name="list_dsk_templates",
+        description="List all saved DSK overlay templates for the API key. Returns [{ id, name, updated_at }].",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="activate_dsk_template",
+        description="Load a DSK template into the Playwright renderer. Returns { ok, id, name }.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "template_id": {"type": "integer", "description": "Template ID to activate."},
+            },
+            "required": ["template_id"],
+        },
+    ),
+    types.Tool(
+        name="broadcast_dsk_data",
+        description="Inject live text into the renderer DOM without page reload. Accepts an array of {selector, text} objects.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "updates": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "selector": {"type": "string", "description": "CSS selector to target."},
+                            "text": {"type": "string", "description": "Text to inject."},
+                        },
+                        "required": ["selector", "text"],
+                    },
+                    "description": "Array of {selector, text} updates.",
+                },
+            },
+            "required": ["updates"],
+        },
+    ),
+    types.Tool(
+        name="dsk_renderer_status",
+        description="Get DSK renderer running state for the API key. Returns { running, rtmpUrl? }.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="start_dsk_renderer",
+        description="Start DSK Playwright capture loop → ffmpeg → nginx-rtmp. Returns { ok, rtmpUrl }.",
+        inputSchema={"type": "object", "properties": {}},
+    ),
+    types.Tool(
+        name="stop_dsk_renderer",
+        description="Stop DSK capture loop and ffmpeg. Returns { ok }.",
+        inputSchema={"type": "object", "properties": {}},
     ),
 ]
 
@@ -204,6 +331,77 @@ def create_handlers(SenderClass=None):
                 session_meta.pop(arguments["session_id"], None)
                 await asyncio.to_thread(sender.end)
                 return [types.TextContent(type="text", text=json.dumps({"ok": True}))]
+
+            # ── Production tools ───────────────────────────────────────────
+
+            case "list_cameras":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_get("/production/cameras", _admin_headers()),
+                )]
+
+            case "camera_preset":
+                cid, pid = arguments["camera_id"], arguments["preset_id"]
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_post(f"/production/cameras/{cid}/preset/{pid}", _admin_headers()),
+                )]
+
+            case "list_mixers":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_get("/production/mixers", _admin_headers()),
+                )]
+
+            case "switch_source":
+                mid, inp = arguments["mixer_id"], arguments["input"]
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_post(f"/production/mixers/{mid}/switch/{inp}", _admin_headers()),
+                )]
+
+            # ── Graphics / DSK tools ───────────────────────────────────────
+
+            case "list_dsk_templates":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_get(f"/dsk/{API_KEY}/templates", _editor_headers()),
+                )]
+
+            case "activate_dsk_template":
+                tid = arguments["template_id"]
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_post(f"/dsk/{API_KEY}/templates/{tid}/activate", _editor_headers()),
+                )]
+
+            case "broadcast_dsk_data":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_post(
+                        f"/dsk/{API_KEY}/broadcast",
+                        _editor_headers(),
+                        {"updates": arguments["updates"]},
+                    ),
+                )]
+
+            case "dsk_renderer_status":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_get(f"/dsk/{API_KEY}/renderer/status", _editor_headers()),
+                )]
+
+            case "start_dsk_renderer":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_post(f"/dsk/{API_KEY}/renderer/start", _editor_headers()),
+                )]
+
+            case "stop_dsk_renderer":
+                return [types.TextContent(
+                    type="text",
+                    text=await _backend_post(f"/dsk/{API_KEY}/renderer/stop", _editor_headers()),
+                )]
 
             case _:
                 raise ValueError(f"Unknown tool: {name!r}")

@@ -82,10 +82,15 @@ def h():
 # ---------------------------------------------------------------------------
 
 
-def test_tools_list_has_six_entries():
-    assert len(TOOLS) == 6
+def test_tools_list_has_sixteen_entries():
+    assert len(TOOLS) == 16
     names = {t.name for t in TOOLS}
-    assert names == {"start", "send_caption", "send_batch", "sync_clock", "get_status", "stop"}
+    assert {"start", "send_caption", "send_batch", "sync_clock", "get_status", "stop"}.issubset(names)
+    assert {"list_cameras", "camera_preset", "list_mixers", "switch_source"}.issubset(names)
+    assert {
+        "list_dsk_templates", "activate_dsk_template", "broadcast_dsk_data",
+        "dsk_renderer_status", "start_dsk_renderer", "stop_dsk_renderer",
+    }.issubset(names)
 
 
 @pytest.mark.asyncio
@@ -225,3 +230,97 @@ async def test_read_resource_returns_snapshot(h):
 async def test_read_resource_unknown_uri_raises(h):
     with pytest.raises(ValueError, match="Unknown resource URI"):
         await h["read_resource"]("unknown://foo")
+
+
+# ---------------------------------------------------------------------------
+# Production and DSK tools — no LCYT_BACKEND_URL configured
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_cameras_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("list_cameras", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_camera_preset_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("camera_preset", {"camera_id": "1", "preset_id": "2"})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_list_mixers_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("list_mixers", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_switch_source_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("switch_source", {"mixer_id": "1", "input": 2})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_list_dsk_templates_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("list_dsk_templates", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_activate_dsk_template_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("activate_dsk_template", {"template_id": 1})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_broadcast_dsk_data_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("broadcast_dsk_data", {"updates": [{"selector": ".x", "text": "hi"}]})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_dsk_renderer_status_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("dsk_renderer_status", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_start_dsk_renderer_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("start_dsk_renderer", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
+
+
+@pytest.mark.asyncio
+async def test_stop_dsk_renderer_returns_error_without_backend_url(h, monkeypatch):
+    monkeypatch.setattr("lcyt_mcp.server.BACKEND_URL", "")
+    result = await h["call_tool"]("stop_dsk_renderer", {})
+    payload = json.loads(result[0].text)
+    assert "error" in payload
+    assert "LCYT_BACKEND_URL" in payload["error"]
