@@ -55,7 +55,7 @@ function NetworkBanner({ privacyPending }) {
 const DEFAULT_RIGHT_PANEL_W = 400; // px — initial right-panel width on first load
 const MIN_PANEL_W = 200;           // px — minimum width for either panel
 
-function AppLayout() {
+export function AppLayout() {
   const session = useSessionContext();
   const fileStore = useFileContext();
   const { showToast } = useToastContext();
@@ -272,7 +272,7 @@ function AppLayout() {
   }
 
   return (
-    <div id="app">
+    <div className="captions-page">
       <StatusBar
         onSettingsOpen={() => setSettingsOpen(true)}
         onCCOpen={() => setCcOpen(true)}

@@ -74,10 +74,27 @@ body {
 }
 
 #app {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Captions page — standalone (old App layout) ────────── */
+
+.captions-page {
   display: grid;
   grid-template-rows: var(--header-height) 1fr var(--footer-height);
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
   overflow: hidden;
+}
+
+/* ─── Captions page — inside sidebar content area ────────── */
+
+.sidebar-content > .captions-page {
+  height: 100%;
 }
 
 /* ─── Header ────────────────────────────────────────────── */
@@ -155,7 +172,7 @@ body {
 
 @media (max-width: 768px) {
   /* App grid: header auto, main flex:1, footer height 0 */
-  #app {
+  .captions-page {
     grid-template-rows: auto 1fr 0;
   }
 
