@@ -1,5 +1,6 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useContext } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 const PRESET_STATE = {
   idle:    'idle',
@@ -195,8 +196,9 @@ function MixerStatusBar({ mixers, onManualSwitch }) {
 // ---------------------------------------------------------------------------
 
 export function ProductionOperatorPage() {
+  const session = useContext(SessionContext);
   const params = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
+  const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey = params.get('apikey') || '';
   const token = params.get('token') || localStorage.getItem(KEYS.session.token) || '';
 

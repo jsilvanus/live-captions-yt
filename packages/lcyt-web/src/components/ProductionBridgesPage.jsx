@@ -1,5 +1,6 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 function ConnectionDot({ connected }) {
   return (
@@ -186,8 +187,9 @@ function DeleteConfirmModal({ bridge, cameras, mixers, onConfirm, onCancel }) {
 }
 
 export function ProductionBridgesPage() {
-  const params = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
+  const session    = useContext(SessionContext);
+  const params     = new URLSearchParams(window.location.search);
+  const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey     = params.get('apikey') || '';
 
   const [bridges, setBridges] = useState([]);

@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback, useId } from 'react';
+import { useContext, useEffect, useState, useCallback, useId } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 /**
  * DSK Viewports Management Page
@@ -62,9 +63,10 @@ const labelStyle = { display: 'block', marginBottom: 4, color: dark.muted, fontS
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function DskViewportsPage() {
+  const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
-  const serverUrl = (params.get('server') || '').replace(/\/$/, '');
-  const apiKey    = params.get('apikey') || '';
+  const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
+  const apiKey    = params.get('apikey') || session?.apiKey || '';
 
   const [viewports, setViewports]       = useState([]);     // user-defined
   const [selected, setSelected]         = useState(null);   // viewport name or 'landscape'
@@ -285,8 +287,10 @@ export function DskViewportsPage() {
 
   if (!serverUrl || !apiKey) {
     return (
-      <div style={{ background: dark.bg, minHeight: '100vh', color: dark.text, fontFamily: 'sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-        <div>Missing <code>?server=</code> and <code>?apikey=</code> parameters.</div>
+      <div style={{ padding: 32, color: 'var(--color-text-muted, #888)', fontFamily: 'sans-serif', fontSize: 16 }}>
+        {session
+          ? 'Connect to a backend first (click Connect in the top bar).'
+          : 'Missing ?server= and ?apikey= URL parameters.'}
       </div>
     );
   }

@@ -1,5 +1,6 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 const CONTROL_TYPES = [
   { value: 'none', label: 'None (mixer only)' },
@@ -201,8 +202,9 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
 }
 
 export function ProductionCamerasPage() {
+  const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
+  const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey     = params.get('apikey') || '';
 
   const [cameras,       setCameras]       = useState([]);

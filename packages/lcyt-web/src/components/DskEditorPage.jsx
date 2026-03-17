@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 /**
  * DSK Graphics Template Editor
@@ -773,9 +774,10 @@ function newGroupId()     { _groupCounter += 1; return `grp-${_groupCounter}`; }
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function DskEditorPage() {
+  const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
-  const apiKey    = params.get('apikey') || '';
-  const serverUrl = (params.get('server') || '').replace(/\/$/, '');
+  const apiKey    = params.get('apikey') || session?.apiKey || '';
+  const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
 
   const [templates, setTemplates]     = useState([]);
   const [selectedId, setSelectedId]   = useState(null);   // backend template id
@@ -1255,8 +1257,10 @@ export function DskEditorPage() {
 
   if (!serverUrl || !apiKey) {
     return (
-      <div style={{ background: '#111', color: '#fff', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', fontSize: 16 }}>
-        Missing <code>?server=</code> and <code>?apikey=</code> URL parameters.
+      <div style={{ padding: 32, color: 'var(--color-text-muted, #888)', fontFamily: 'sans-serif', fontSize: 16 }}>
+        {session
+          ? 'Connect to a backend first (click Connect in the top bar).'
+          : 'Missing ?server= and ?apikey= URL parameters.'}
       </div>
     );
   }

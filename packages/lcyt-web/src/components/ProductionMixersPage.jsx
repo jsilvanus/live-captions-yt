@@ -1,5 +1,6 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 const MIXER_TYPES = [
   { value: 'roland', label: 'Roland V-series' },
@@ -243,8 +244,9 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
 }
 
 export function ProductionMixersPage() {
+  const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
+  const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey     = params.get('apikey') || '';
 
   const [mixers,        setMixers]        = useState([]);
