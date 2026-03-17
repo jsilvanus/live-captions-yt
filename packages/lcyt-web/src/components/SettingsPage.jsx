@@ -44,6 +44,7 @@ export function SettingsPage() {
         setImportResult({ ok: false, count: 0, errors: ['Could not parse JSON file'] });
       }
     };
+    reader.onerror = () => setImportResult({ ok: false, count: 0, errors: ['Failed to read file'] });
     reader.readAsText(file);
     e.target.value = '';
   }

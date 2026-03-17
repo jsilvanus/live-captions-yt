@@ -54,7 +54,7 @@ export function importSettings(data) {
   let count = 0;
   const errors = [];
   for (const [key, value] of Object.entries(data.settings)) {
-    if (!key.startsWith('lcyt.')) {
+    if (!key.startsWith('lcyt.') || /(__proto__|constructor|prototype)/.test(key)) {
       errors.push(`Skipped unknown key: ${key}`);
       continue;
     }

@@ -131,15 +131,15 @@ function ConnectButton() {
 function StatusPopover({ onClose }) {
   const { connected, healthStatus, backendUrl, sequence, syncOffset, startedAt, latencyMs } = useSessionContext();
 
-  const [targets] = useState(() => {
+  const targets = (() => {
     try { return JSON.parse(localStorage.getItem(KEYS.targets.list) || '[]'); } catch { return []; }
-  });
-  const [batchInterval] = useState(() => {
+  })();
+  const batchInterval = (() => {
     try { return parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10); } catch { return 0; }
-  });
-  const [translations] = useState(() => {
+  })();
+  const translations = (() => {
     try { return JSON.parse(localStorage.getItem(KEYS.translation.list) || '[]'); } catch { return []; }
-  });
+  })();
 
   const enabledTargets = targets.filter(t => t.enabled);
   const ytTargets = enabledTargets.filter(t => t.type === 'youtube');
@@ -172,9 +172,9 @@ function StatusPopover({ onClose }) {
       {enabledTargets.length > 0 && (
         <div className="status-popover__section">
           <div className="status-popover__label">Targets</div>
-          {ytTargets.length > 0 && <div className="status-popover__value">▶ YouTube ×{ytTargets.length}</div>}
-          {viewerTargets.length > 0 && <div className="status-popover__value">👁 Viewer ×{viewerTargets.length}</div>}
-          {genericTargets.length > 0 && <div className="status-popover__value">⚡ Generic ×{genericTargets.length}</div>}
+          {ytTargets.length > 0 && <div className="status-popover__value" aria-label={`YouTube targets: ${ytTargets.length}`}><span aria-hidden="true">▶</span> YouTube ×{ytTargets.length}</div>}
+          {viewerTargets.length > 0 && <div className="status-popover__value" aria-label={`Viewer targets: ${viewerTargets.length}`}><span aria-hidden="true">👁</span> Viewer ×{viewerTargets.length}</div>}
+          {genericTargets.length > 0 && <div className="status-popover__value" aria-label={`Generic targets: ${genericTargets.length}`}><span aria-hidden="true">⚡</span> Generic ×{genericTargets.length}</div>}
         </div>
       )}
 
