@@ -867,3 +867,34 @@
   color: var(--color-success);
   font-size: 13px;
 }
+
+/* ─── Settings IO tab ────────────────────────────────────────────────────────── */
+
+.settings-page__io {
+  padding: 24px;
+  max-width: 500px;
+}
+.settings-page__io-desc {
+  color: var(--color-text-dim);
+  font-size: 0.875rem;
+  margin-bottom: 20px;
+}
+.settings-page__io-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.settings-page__io-result {
+  margin-top: 16px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 0.875rem;
+}
+.settings-page__io-result--ok {
+  background: var(--success-bg, #14532d22);
+  color: var(--color-success, #4ade80);
+}
+.settings-page__io-result--error {
+  background: var(--error-bg, #7f1d1d22);
+  color: var(--color-error, #f87171);
+}
