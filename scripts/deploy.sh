@@ -125,49 +125,31 @@ echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
 echo "    Build log: $BUILD_LOG"
 
 # ---------------------------------------------------------------------------
-# Step 2b: Capture UI screenshots (requires lcyt-web dist to be built first)
+# Step 2b: Capture UI screenshots in the background
+# (requires lcyt-web dist; result is needed before lcyt-site build)
 # ---------------------------------------------------------------------------
 
-echo "==> Installing root devDependencies (playwright, etc.)"
 ROOT_DEV_LOG="$REPO_DIR/root-npm-install.log"
-rm -f "$ROOT_DEV_LOG"
-npm ci --prefix "$REPO_DIR" --include=dev 2>&1 | tee "$ROOT_DEV_LOG" || \
-  echo "Warning: root npm install failed (non-fatal) — screenshots and other dev tools may not run."
-tail -n 10 "$ROOT_DEV_LOG" || true
-
-echo "==> Installing Playwright Chromium browser (with OS-level system dependencies)"
-npx --prefix "$REPO_DIR" playwright install chromium 2>&1 || true
-
-echo "==> Capturing UI screenshots"
 SCREENSHOTS_LOG="$REPO_DIR/screenshots.log"
-rm -f "$SCREENSHOTS_LOG"
-npm run screenshots --prefix "$REPO_DIR" 2>&1 | tee "$SCREENSHOTS_LOG" || \
-  echo "Warning: screenshot capture failed (non-fatal) — site will build without updated screenshots."
-echo "    Screenshots log: $SCREENSHOTS_LOG"
+_SCREENSHOTS_PID=""
 
-# ---------------------------------------------------------------------------
-# Step 2c: Build lcyt-site on the host (served by nginx, not included in Docker)
-# ---------------------------------------------------------------------------
+(
+  echo "==> [bg] Installing root devDependencies (playwright, etc.)"
+  rm -f "$ROOT_DEV_LOG"
+  npm ci --prefix "$REPO_DIR" --include=dev >"$ROOT_DEV_LOG" 2>&1 || \
+    { echo "Warning: root npm install failed — screenshots may not run." >>"$ROOT_DEV_LOG"; }
 
-echo "==> Installing lcyt-site dependencies (includes devDependencies for Astro build)"
-SITE_LOG="$REPO_DIR/lcyt-site-npm-install.log"
-rm -f "$SITE_LOG"
-# Use --include=dev so devDependencies (Astro) are installed even if NODE_ENV=production
-npm ci \
-  --prefix "$REPO_DIR" \
-  --workspace packages/lcyt-site \
-  --include=dev 2>&1 | tee "$SITE_LOG" || \
-  echo "Warning: lcyt-site npm install failed (non-fatal) — site may not be updated."
-echo "    Install log: $SITE_LOG"
-tail -n 20 "$SITE_LOG" || true
+  echo "==> [bg] Installing Playwright Chromium browser"
+  npx --prefix "$REPO_DIR" playwright install chromium >>"$ROOT_DEV_LOG" 2>&1 || true
 
-echo "==> Building lcyt-site"
-SITE_BUILD_LOG="$REPO_DIR/lcyt-site-build.log"
-rm -f "$SITE_BUILD_LOG"
-npm run build -w packages/lcyt-site --prefix "$REPO_DIR" 2>&1 | tee "$SITE_BUILD_LOG" || \
-  echo "Warning: lcyt-site build failed (non-fatal) — site dist may not be updated."
-echo "    Built → $REPO_DIR/packages/lcyt-site/dist"
-echo "    Build log: $SITE_BUILD_LOG"
+  echo "==> [bg] Capturing UI screenshots"
+  rm -f "$SCREENSHOTS_LOG"
+  npm run screenshots --prefix "$REPO_DIR" >"$SCREENSHOTS_LOG" 2>&1 || \
+    echo "Warning: screenshot capture failed (non-fatal) — site will build without updated screenshots." >>"$SCREENSHOTS_LOG"
+  echo "    Screenshots log: $SCREENSHOTS_LOG"
+) &
+_SCREENSHOTS_PID=$!
+echo "==> UI screenshot capture started in background (PID $_SCREENSHOTS_PID)"
 
 # ---------------------------------------------------------------------------
 # Step 2d: Build lcyt-bridge executables (served from the backend for download)
@@ -205,16 +187,48 @@ if [[ -d /var/www/html ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 3: Start / restart the site container via Docker Compose
+# Step 3: Start / restart the backend container via Docker Compose
+# (done before lcyt-site build so the backend is live as soon as possible)
 # ---------------------------------------------------------------------------
 
 COMPOSE_DIR="$REPO_DIR"
 
-echo "==> Starting lcyt-site (docker compose up -d)"
+echo "==> Starting backend (docker compose up -d)"
 docker compose \
   --project-directory "$COMPOSE_DIR" \
   -f "$COMPOSE_DIR/docker-compose.yml" \
   up -d --build --remove-orphans
+
+# ---------------------------------------------------------------------------
+# Step 2c (cont.): Wait for screenshots, then build lcyt-site
+# ---------------------------------------------------------------------------
+
+# Screenshots must be ready before the Astro build copies them into the site.
+if [[ -n "$_SCREENSHOTS_PID" ]]; then
+  echo "==> Waiting for background screenshot capture (PID $_SCREENSHOTS_PID) to finish…"
+  wait "$_SCREENSHOTS_PID" || echo "Warning: screenshot background job exited non-zero — continuing."
+  echo "==> Screenshots done."
+fi
+
+echo "==> Installing lcyt-site dependencies (includes devDependencies for Astro build)"
+SITE_LOG="$REPO_DIR/lcyt-site-npm-install.log"
+rm -f "$SITE_LOG"
+# Use --include=dev so devDependencies (Astro) are installed even if NODE_ENV=production
+npm ci \
+  --prefix "$REPO_DIR" \
+  --workspace packages/lcyt-site \
+  --include=dev 2>&1 | tee "$SITE_LOG" || \
+  echo "Warning: lcyt-site npm install failed (non-fatal) — site may not be updated."
+echo "    Install log: $SITE_LOG"
+tail -n 20 "$SITE_LOG" || true
+
+echo "==> Building lcyt-site"
+SITE_BUILD_LOG="$REPO_DIR/lcyt-site-build.log"
+rm -f "$SITE_BUILD_LOG"
+npm run build -w packages/lcyt-site --prefix "$REPO_DIR" 2>&1 | tee "$SITE_BUILD_LOG" || \
+  echo "Warning: lcyt-site build failed (non-fatal) — site dist may not be updated."
+echo "    Built → $REPO_DIR/packages/lcyt-site/dist"
+echo "    Build log: $SITE_BUILD_LOG"
 
 # Give services a moment to initialize, then show logs for troubleshooting
 echo "==> Showing docker compose logs (follow). Press Ctrl-C to exit."
