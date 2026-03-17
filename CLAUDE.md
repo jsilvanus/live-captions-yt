@@ -671,21 +671,21 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ## Test Coverage
 
-*Last updated: 2026-03-16 (critical/high gaps addressed)*
+*Last updated: 2026-03-17 (medium gaps addressed)*
 
 ### Coverage Summary
 
 | Package | Source LOC | Test LOC | Coverage | Priority | Key Gaps |
 |---------|-----------|----------|----------|----------|-----------|
 | `packages/lcyt` | 1,016 | 1,267 | Excellent | Low | `logger.js`, `config.js` (no direct tests) |
-| `packages/lcyt-cli` | 1,836 | ~900 | Moderate | Medium | entry-point edge cases |
-| `packages/lcyt-backend` | 4,875 | ~2,600 | Good | Medium | CORS middleware, graceful shutdown, `caption-files.js` |
-| `packages/lcyt-bridge` | 490 | ~400 | Good | Medium | `tray.js`, entry-point env-var validation |
+| `packages/lcyt-cli` | 1,836 | ~900 | Moderate | Low | Blessed rendering (requires full blessed mock) |
+| `packages/lcyt-backend` | 4,875 | ~2,750 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
+| `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
-| `packages/lcyt-mcp-sse` | 1,083 | ~400 | Good | Medium | Tool routing, concurrent sessions |
-| `packages/lcyt-web` | 2,000+ | ~850 | Moderate | Medium | React components (most untested), embed pages, useSentLog |
+| `packages/lcyt-mcp-sse` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via SSE (requires MCP client harness) |
+| `packages/lcyt-web` | 2,000+ | ~1,000 | Good | Low | React components (App, panels, modals), embed pages, production pages |
 | `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
-| `python-packages/lcyt-backend` | 1,135 | 800 | Good | Medium | CORS middleware, incomplete feature parity with Node.js backend |
+| `python-packages/lcyt-backend` | 1,135 | 800 | Good | Low | `middleware/cors.py`, incomplete feature parity with Node.js backend |
 | `python-packages/lcyt-mcp` | 252 | 300 | Good | Low | None identified |
 
 ---
@@ -710,7 +710,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-backend` — Express Relay Backend
-**Test files:** 24 test files (570 tests total as of 2026-03-16) covering all primary routes plus newly added tests.
+**Test files:** 26 test files (608 tests total as of 2026-03-17) covering all primary routes plus newly added tests.
 **Added 2026-03-16:**
 - `test/managers.test.js` (25 tests) — `HlsManager`, `RadioManager`, `PreviewManager` using `--experimental-test-module-mocks` to mock `child_process`/`fs`. Tests: constructor, `start()`, `stop()`, `stopAll()`, ffmpeg arg verification, directory creation.
 - `test/rtmp-manager.test.js` (27 tests) — `RtmpRelayManager` and `probeFfmpeg`. Tests: all state queries, `start()`/`stop()`/`stopAll()`, `isSlotRunning()`, `runningSlots()`, `writeCaption()`, `dropPublisher()`.
@@ -719,9 +719,12 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 - `test/preview-route.test.js` (10 tests) — JPEG thumbnail serving with real temp-dir JPEG; key validation, 404, 200, CORS, Cache-Control, If-Modified-Since, OPTIONS.
 - `test/stream.test.js` (22 tests) — RTMP relay slot CRUD with in-memory DB + mock `RtmpRelayManager`: auth, `relay_allowed` check, POST/GET/PUT/DELETE /stream, PUT /stream/active.
 
-**Gaps (Medium):**
-- **Middleware:** `cors.js` (dynamic CORS origin filtering).
-- **Core:** `server.js` (Express factory), `caption-files.js`, `index.js` (graceful shutdown on SIGTERM/SIGINT).
+**Added 2026-03-17:**
+- `test/cors.test.js` (19 tests) — `createCorsMiddleware`: free-tier signup, admin routes (no CORS), permissive routes (POST /live, GET /health, GET /contact, OPTIONS), dynamic origin matching via session store.
+- `test/caption-files.test.js` (21 tests) — Pure-function exports: `composeCaptionText` (all translation/showOriginal branches), `formatVttTime` (edge cases: 0ms, sub-second, multi-hour), `buildVttCue` (format, end newline).
+
+**Gaps (Low):**
+- **Core:** `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT).
 - **DB:** `db/sequences.js`, `db/helpers.js`.
 
 ---
@@ -742,10 +745,11 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-mcp-sse` — MCP Server (HTTP SSE)
-**Test files:** `test/speech.test.js` (~20 tests) — speech session lifecycle, transcript chunking, CORS, error paths.
-**Gaps (Medium):**
-- `src/server.js` — HTTP routing, message dispatch, error responses (zero direct tests).
-- Concurrent session limits.
+**Test files:** `test/speech.test.js` (20 tests), `test/server.test.js` (6 tests, added 2026-03-17).
+**Added 2026-03-17:**
+- `test/server.test.js` (6 tests) — HTTP route logic: `POST /messages` returns 404 for unknown/missing sessionId, delegates to `transport.handlePostMessage` for known session; `GET /sse` returns 200 with `text/event-stream` when auth not required, 401 when `REQUIRE_API_KEY` is set; transport session isolation.
+**Gaps (Low):**
+- Full MCP tool-call flow (start → send_caption → stop) via SSE requires a real MCP client harness and is better covered by E2E tests.
 
 ---
 
@@ -768,9 +772,12 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 - `test/components/useFileStore.test.jsx` — initial state, `loadFile()` (file parsing, active tracking, `onFileLoaded`/`onActiveChanged` callbacks, localStorage persistence), `removeFile()`, `setActive()`/`cycleActive()`, `setPointer()`/`advancePointer()` (clamping, localStorage, callbacks), `createEmptyFile()`, `updateFileFromRawText()`, localStorage restore on remount.
 - `test/components/AppProviders.test.jsx` — smoke render, `autoConnect` behaviour (connects when valid config, no-op otherwise), embed mode (`BroadcastChannel` opened/closed, `lcyt:session` broadcast on connect, responds to `lcyt:request_session`).
 
-**Gaps (Medium):**
+**Added 2026-03-17 (Vitest):**
+- `test/components/useSentLog.test.jsx` (30 tests) — initial state, localStorage restore on mount (invalid JSON, non-array), `add()` (prepend order, pending flag, timestamp, localStorage persistence), `confirm()` (string + object arg, sequence update, no-op for unknown), `markError()` (error flag, clears pending, no-op for unknown, not persisted), `updateRequestId()`, `clear()` (empties entries + storage).
+- `test/components/useToast.test.jsx` (18 tests) — `useToast`: initial state, `showToast()` (type default, custom type, unique IDs, auto-dismiss timer, no-dismiss when duration=0), `dismissToast()` (removes matching, partial, no-op for unknown); `ToastContainer`: no-crash empty, renders messages, CSS class, multiple toasts, click-to-dismiss with 200ms fade.
+
+**Gaps (Low):**
 - **React components** — 30+ leaf components (App, panels, modals, all pages) have no tests.
-- **Hooks** — `useSentLog` not yet tested with Vitest.
 - **Embed pages** — BroadcastChannel cross-iframe caption coordination.
 - **Production pages** — `/production/*` operator control surface.
 
@@ -798,12 +805,15 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ### Top Priorities for Next Test Expansion
 
-Items marked ✅ were completed 2026-03-16.
+Items marked ✅ were completed 2026-03-16 or 2026-03-17.
 
 1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — `managers.test.js` + `rtmp-manager.test.js` added (52 tests).
 2. ✅ **`packages/lcyt-backend` 5 untested routes** *(High → Done)* — `auth.test.js`, `video.test.js`, `preview-route.test.js`, `stream.test.js`, `youtube.test.js` added (69 tests).
 3. ✅ **`packages/lcyt-cli/src/interactive-ui.js`** *(High → Done)* — `interactive-ui.test.js` added (49 tests).
 4. ✅ **`packages/lcyt-web` pure utilities** *(High → Done)* — `fileUtils.test.js` + `i18n.test.js` added (38 tests).
 5. ✅ **`packages/lcyt-web` React hooks + Vitest setup** *(Medium → Done)* — Vitest + jsdom added; `useSession.test.jsx` (25 tests), `useFileStore.test.jsx` (35 tests), `AppProviders.test.jsx` (15 tests) added (75 tests total).
-6. **`packages/lcyt-backend/src/index.js`** *(Medium)* — graceful shutdown (SIGTERM/SIGINT) not tested.
-7. **`packages/lcyt-backend/src/middleware/cors.js`** *(Medium)* — dynamic CORS origin filtering not tested.
+6. ✅ **`packages/lcyt-backend/src/middleware/cors.js`** *(Medium → Done)* — `cors.test.js` added (19 tests).
+7. ✅ **`packages/lcyt-backend/src/caption-files.js`** *(Medium → Done)* — `caption-files.test.js` added (21 tests, pure functions).
+8. ✅ **`packages/lcyt-web` useSentLog + ToastContainer** *(Medium → Done)* — `useSentLog.test.jsx` (30 tests) + `useToast.test.jsx` (18 tests) added.
+9. ✅ **`packages/lcyt-mcp-sse/src/server.js` HTTP routes** *(Medium → Done)* — `server.test.js` added (6 tests).
+10. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
