@@ -351,6 +351,36 @@ function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragS
   );
 }
 
+// ─── Quick-add caption bar ────────────────────────────────────────────────────
+
+function PlannerQuickAdd({ onAdd }) {
+  const [value, setValue] = useState('');
+  const inputRef = useRef(null);
+
+  function submit() {
+    const text = value.trim();
+    if (!text) return;
+    onAdd(text);
+    setValue('');
+    inputRef.current?.focus();
+  }
+
+  return (
+    <div className="planner-quick-add">
+      <input
+        ref={inputRef}
+        className="planner-quick-add__input"
+        type="text"
+        placeholder="Type a caption and press Enter to add to end…"
+        value={value}
+        onChange={e => setValue(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+      />
+      <button className="btn btn--primary btn--sm" onClick={submit}>Add</button>
+    </div>
+  );
+}
+
 // ─── Toolbar ──────────────────────────────────────────────────────────────────
 
 function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNew, onImport, onExport, onToDashboard, onInsert }) {
@@ -451,7 +481,8 @@ export function PlannerPage() {
 
   function insertBlock(afterId, newBlock) {
     setBlocks(prev => {
-      const idx = afterId != null ? prev.findIndex(b => b.id === afterId) : -1;
+      if (afterId == null) return [...prev, newBlock];
+      const idx = prev.findIndex(b => b.id === afterId);
       const arr = [...prev];
       arr.splice(idx + 1, 0, newBlock);
       return arr;
@@ -509,6 +540,10 @@ export function PlannerPage() {
     const file = new File([text], fname, { type: 'text/plain' });
     fileStore.loadFile(file);
     showToast(`"${fname}" loaded into Dashboard`, 'success');
+  }
+
+  function handleQuickAdd(text) {
+    insertBlock(null, { ...makeBlock('caption'), text });
   }
 
   // Drag-and-drop reorder
@@ -573,6 +608,7 @@ export function PlannerPage() {
             />
           );
         })}
+        <PlannerQuickAdd onAdd={handleQuickAdd} />
       </div>
     </div>
   );
