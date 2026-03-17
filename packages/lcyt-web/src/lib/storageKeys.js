@@ -42,6 +42,9 @@ export const KEYS = {
   relay: {
     mode: 'lcyt.relay.mode',
   },
+  dashboard: {
+    config: 'lcyt.dashboard',
+  },
 };
 
 /** Dynamic key builder for relay per-slot fields */
