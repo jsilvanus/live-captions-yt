@@ -35,6 +35,17 @@ function setGroupOpen(name, val) {
   try { localStorage.setItem(`lcyt.sidebar.${name}.open`, String(val)); } catch { /* ignore */ }
 }
 
+// ─── Uptime formatter ─────────────────────────────────────────────────────────
+
+function formatUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
 // ─── Nav config ──────────────────────────────────────────────────────────────
 
 const NAV_ITEMS = [
@@ -115,25 +126,120 @@ function ConnectButton() {
   );
 }
 
+// ─── Status popover ───────────────────────────────────────────────────────────
+
+function StatusPopover({ onClose }) {
+  const { connected, healthStatus, backendUrl, sequence, syncOffset, startedAt, latencyMs } = useSessionContext();
+
+  const [targets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(KEYS.targets.list) || '[]'); } catch { return []; }
+  });
+  const [batchInterval] = useState(() => {
+    try { return parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10); } catch { return 0; }
+  });
+  const [translations] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(KEYS.translation.list) || '[]'); } catch { return []; }
+  });
+
+  const enabledTargets = targets.filter(t => t.enabled);
+  const ytTargets = enabledTargets.filter(t => t.type === 'youtube');
+  const viewerTargets = enabledTargets.filter(t => t.type === 'viewer');
+  const genericTargets = enabledTargets.filter(t => t.type === 'generic');
+  const enabledTranslations = translations.filter(t => t.enabled);
+
+  const uptimeStr = startedAt ? formatUptime(Date.now() - new Date(startedAt).getTime()) : null;
+
+  return (
+    <div className="status-popover">
+      <div className="status-popover__section">
+        <div className="status-popover__label">Backend</div>
+        <div className={`status-popover__value status-popover__value--${connected ? 'ok' : healthStatus}`}>
+          {connected ? 'Connected' : healthStatus === 'ok' ? 'Reachable' : healthStatus === 'unreachable' ? 'Unreachable' : 'Unknown'}
+          {latencyMs != null && <span className="status-popover__latency"> {latencyMs}ms</span>}
+        </div>
+        {backendUrl && <div className="status-popover__sub">{backendUrl}</div>}
+      </div>
+
+      {connected && (
+        <div className="status-popover__section">
+          <div className="status-popover__label">Session</div>
+          <div className="status-popover__value">seq #{sequence}</div>
+          {syncOffset !== 0 && <div className="status-popover__sub">offset {syncOffset > 0 ? '+' : ''}{syncOffset}ms</div>}
+          {uptimeStr && <div className="status-popover__sub">up {uptimeStr}</div>}
+        </div>
+      )}
+
+      {enabledTargets.length > 0 && (
+        <div className="status-popover__section">
+          <div className="status-popover__label">Targets</div>
+          {ytTargets.length > 0 && <div className="status-popover__value">▶ YouTube ×{ytTargets.length}</div>}
+          {viewerTargets.length > 0 && <div className="status-popover__value">👁 Viewer ×{viewerTargets.length}</div>}
+          {genericTargets.length > 0 && <div className="status-popover__value">⚡ Generic ×{genericTargets.length}</div>}
+        </div>
+      )}
+
+      {batchInterval > 0 && (
+        <div className="status-popover__section">
+          <div className="status-popover__label">Batch</div>
+          <div className="status-popover__value">On · {batchInterval}ms window</div>
+        </div>
+      )}
+
+      {enabledTranslations.length > 0 && (
+        <div className="status-popover__section">
+          <div className="status-popover__label">Translations</div>
+          <div className="status-popover__value">{enabledTranslations.map(t => t.lang).join(', ')}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Health dot ───────────────────────────────────────────────────────────────
 
 function HealthDot() {
-  const { connected, healthStatus, backendUrl, sequence } = useSessionContext();
+  const { connected, healthStatus, latencyMs } = useSessionContext();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handler(e) { if (e.key === 'Escape') setOpen(false); }
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open]);
 
   let dotClass = 'top-bar__health-dot';
-  let title = 'Not connected';
+  let label = 'Not connected';
   if (connected) {
     dotClass += ' top-bar__health-dot--ok';
-    title = `Connected to ${backendUrl} · seq #${sequence}`;
+    label = `Connected${latencyMs != null ? ` · ${latencyMs}ms` : ''}`;
   } else if (healthStatus === 'ok') {
     dotClass += ' top-bar__health-dot--idle';
-    title = `Reachable: ${backendUrl}`;
+    label = `Reachable${latencyMs != null ? ` · ${latencyMs}ms` : ''}`;
   } else if (healthStatus === 'unreachable') {
     dotClass += ' top-bar__health-dot--error';
-    title = `Unreachable: ${backendUrl}`;
+    label = 'Unreachable';
   }
 
-  return <span className={dotClass} title={title} aria-label={title} />;
+  return (
+    <div className="top-bar__health-wrap" ref={ref}>
+      <button
+        className={`${dotClass} top-bar__health-dot--btn`}
+        title={label}
+        aria-label={`Connection status: ${label}`}
+        onClick={() => setOpen(o => !o)}
+      />
+      {open && <StatusPopover onClose={() => setOpen(false)} />}
+    </div>
+  );
 }
 
 // ─── Quick Actions Popover ────────────────────────────────────────────────────

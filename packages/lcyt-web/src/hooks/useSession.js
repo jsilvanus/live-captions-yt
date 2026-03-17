@@ -43,6 +43,7 @@ export function useSession({
   const [graphicsEnabled, setGraphicsEnabled] = useState(false);
   // 'unknown' | 'checking' | 'ok' | 'unreachable'
   const [healthStatus, setHealthStatus] = useState('unknown');
+  const [latencyMs, setLatencyMs] = useState(null);
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
@@ -58,6 +59,13 @@ export function useSession({
 
   // Close EventSource on unmount
   useEffect(() => () => { esRef.current?.close(); }, []);
+
+  // Periodic health poll while connected
+  useEffect(() => {
+    if (!connected) return;
+    const id = setInterval(() => { checkHealth().catch(() => {}); }, 30_000);
+    return () => clearInterval(id);
+  }, [connected]);
 
   // ─── Persistence ────────────────────────────────────────
 
@@ -125,17 +133,26 @@ export function useSession({
 
   async function checkHealth(url) {
     const target = url ?? backendUrlRef.current;
-    if (!target) { setHealthStatus('unknown'); return false; }
+    if (!target) { setHealthStatus('unknown'); setLatencyMs(null); return false; }
     setHealthStatus('checking');
     try {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 5000);
+      const t0 = Date.now();
       const res = await fetch(`${target}/health`, { signal: ac.signal, cache: 'no-store' });
+      const rtt = Date.now() - t0;
       clearTimeout(timer);
-      setHealthStatus(res.ok ? 'ok' : 'unreachable');
+      if (res.ok) {
+        setHealthStatus('ok');
+        setLatencyMs(rtt);
+      } else {
+        setHealthStatus('unreachable');
+        setLatencyMs(null);
+      }
       return res.ok;
     } catch {
       setHealthStatus('unreachable');
+      setLatencyMs(null);
       return false;
     }
   }
@@ -609,7 +626,7 @@ export function useSession({
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
-    healthStatus, checkHealth,
+    healthStatus, latencyMs, checkHealth,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,
