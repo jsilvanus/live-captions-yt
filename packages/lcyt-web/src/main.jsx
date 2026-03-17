@@ -1,4 +1,4 @@
-import { StrictMode } from 'react';
+import { StrictMode, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Router, Route, Switch, Redirect } from 'wouter';
 import { migrateStorageKeys } from './lib/storageKeys.js';
@@ -11,9 +11,7 @@ import { AppProviders } from './contexts/AppProviders';
 import { SidebarLayout } from './components/SidebarLayout';
 import { DashboardPage } from './components/DashboardPage';
 import { AudioPage } from './components/AudioPage';
-import { BroadcastPage } from './components/BroadcastPage';
 import { SettingsPage } from './components/SettingsPage';
-import { SpeechCapturePage } from './components/SpeechCapturePage';
 import { EmbedAudioPage } from './components/EmbedAudioPage';
 import { EmbedInputPage } from './components/EmbedInputPage';
 import { EmbedSentLogPage } from './components/EmbedSentLogPage';
@@ -21,21 +19,26 @@ import { EmbedFileDropPage } from './components/EmbedFileDropPage';
 import { EmbedFilesPage } from './components/EmbedFilesPage';
 import { EmbedSettingsPage } from './components/EmbedSettingsPage';
 import { EmbedRtmpPage } from './components/EmbedRtmpPage';
-import { DskPage } from './components/DskPage';
-import { DskEditorPage } from './components/DskEditorPage';
-import { DskControlPage } from './components/DskControlPage';
-import { DskViewportsPage } from './components/DskViewportsPage';
 import { EmbedViewerPage } from './components/EmbedViewerPage';
-import { ViewerPage } from './components/ViewerPage';
-import { ProductionCamerasPage } from './components/ProductionCamerasPage';
-import { ProductionMixersPage } from './components/ProductionMixersPage';
-import { ProductionBridgesPage } from './components/ProductionBridgesPage';
-import { ProductionOperatorPage } from './components/ProductionOperatorPage';
 import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
 import { ProjectsPage } from './components/ProjectsPage';
 import { AccountPage } from './components/AccountPage';
-import { PlannerPage } from './components/PlannerPage';
+
+// ─── Lazy-loaded pages (heavy or path-gated) ──────────────────────────────────
+
+const BroadcastPage        = lazy(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
+const DskEditorPage        = lazy(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
+const DskViewportsPage     = lazy(() => import('./components/DskViewportsPage').then(m => ({ default: m.DskViewportsPage })));
+const ProductionOperatorPage = lazy(() => import('./components/ProductionOperatorPage').then(m => ({ default: m.ProductionOperatorPage })));
+const ProductionCamerasPage  = lazy(() => import('./components/ProductionCamerasPage').then(m => ({ default: m.ProductionCamerasPage })));
+const ProductionMixersPage   = lazy(() => import('./components/ProductionMixersPage').then(m => ({ default: m.ProductionMixersPage })));
+const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
+const PlannerPage          = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
+const SpeechCapturePage    = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
+const DskPage              = lazy(() => import('./components/DskPage').then(m => ({ default: m.DskPage })));
+const DskControlPage       = lazy(() => import('./components/DskControlPage').then(m => ({ default: m.DskControlPage })));
+const ViewerPage           = lazy(() => import('./components/ViewerPage').then(m => ({ default: m.ViewerPage })));
 
 const path = window.location.pathname;
 
@@ -54,25 +57,25 @@ function isStandalonePath(p) {
 }
 
 function getStandalonePage() {
+  let page;
   if (path.startsWith('/mcp/')) {
     const sessionId = path.split('/')[2];
-    return <SpeechCapturePage sessionId={sessionId} />;
-  }
-  if (path.startsWith('/embed/audio'))     return <EmbedAudioPage />;
-  if (path.startsWith('/embed/input'))     return <EmbedInputPage />;
-  if (path.startsWith('/embed/sentlog'))   return <EmbedSentLogPage />;
-  if (path.startsWith('/embed/file-drop')) return <EmbedFileDropPage />;
-  if (path.startsWith('/embed/files'))     return <EmbedFilesPage />;
-  if (path.startsWith('/embed/settings'))  return <EmbedSettingsPage />;
-  if (path.startsWith('/embed/rtmp'))      return <EmbedRtmpPage />;
-  if (path.startsWith('/embed/viewer'))    return <EmbedViewerPage />;
-  if (path.startsWith('/dsk-control/'))    return <DskControlPage />;
-  if (path.startsWith('/dsk/'))            return <DskPage />;
-  if (path.startsWith('/view/'))           return <ViewerPage />;
-  if (path.startsWith('/login'))           return <LoginPage />;
-  if (path.startsWith('/register'))        return <RegisterPage />;
-  // Should not reach here since isStandalonePath guards the call
-  return <SidebarApp />;
+    page = <SpeechCapturePage sessionId={sessionId} />;
+  } else if (path.startsWith('/embed/audio'))     page = <EmbedAudioPage />;
+  else if (path.startsWith('/embed/input'))     page = <EmbedInputPage />;
+  else if (path.startsWith('/embed/sentlog'))   page = <EmbedSentLogPage />;
+  else if (path.startsWith('/embed/file-drop')) page = <EmbedFileDropPage />;
+  else if (path.startsWith('/embed/files'))     page = <EmbedFilesPage />;
+  else if (path.startsWith('/embed/settings'))  page = <EmbedSettingsPage />;
+  else if (path.startsWith('/embed/rtmp'))      page = <EmbedRtmpPage />;
+  else if (path.startsWith('/embed/viewer'))    page = <EmbedViewerPage />;
+  else if (path.startsWith('/dsk-control/'))    page = <DskControlPage />;
+  else if (path.startsWith('/dsk/'))            page = <DskPage />;
+  else if (path.startsWith('/view/'))           page = <ViewerPage />;
+  else if (path.startsWith('/login'))           page = <LoginPage />;
+  else if (path.startsWith('/register'))        page = <RegisterPage />;
+  else page = <SidebarApp />;
+  return <Suspense fallback={null}>{page}</Suspense>;
 }
 
 // ─── Stub page for routes not yet fully implemented ───────────────────────────
@@ -94,6 +97,7 @@ function SidebarApp() {
     <AppProviders>
       <Router>
         <SidebarLayout>
+          <Suspense fallback={null}>
           <Switch>
             <Route path="/" component={DashboardPage} />
             <Route path="/captions" component={AppLayout} />
@@ -118,6 +122,7 @@ function SidebarApp() {
             {/* Fallback */}
             <Route><Redirect to="/" /></Route>
           </Switch>
+          </Suspense>
         </SidebarLayout>
       </Router>
     </AppProviders>

@@ -86,7 +86,7 @@ Cache-Control: no-cache, no-store
 
 **Example response (two subtitle languages active):**
 
-```m3u8
+```plaintext
 #EXTM3U
 #EXT-X-VERSION:3
 
@@ -128,7 +128,7 @@ Cache-Control: no-cache, no-store
 
 **Example response:**
 
-```m3u8
+```plaintext
 #EXTM3U
 #EXT-X-VERSION:3
 #EXT-X-TARGETDURATION:7
@@ -182,7 +182,7 @@ Cache-Control: public, max-age=60
 
 **Example WebVTT segment (with cues):**
 
-```webvtt
+```plaintext
 WEBVTT
 
 00:00:01.500 --> 00:00:04.000
@@ -194,7 +194,7 @@ Today we will be discussing...
 
 **Example WebVTT segment (empty — no captions in this interval):**
 
-```webvtt
+```plaintext
 WEBVTT
 ```
 
