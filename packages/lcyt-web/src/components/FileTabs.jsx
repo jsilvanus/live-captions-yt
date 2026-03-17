@@ -36,7 +36,7 @@ export function FileTabs({ dropZoneVisible, onToggleDropZone }) {
   async function onFileChange(e) {
     const txtFiles = [];
     for (const file of Array.from(e.target.files)) {
-      if (!file.name.endsWith('.txt') && !file.type.startsWith('text/')) continue;
+      if (!file.name.endsWith('.txt') && !file.name.endsWith('.md') && !file.type.startsWith('text/')) continue;
       try {
         const rawLines = await readFileAsLines(file);
         txtFiles.push({ name: file.name, rawLines });
@@ -103,7 +103,7 @@ export function FileTabs({ dropZoneVisible, onToggleDropZone }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".txt,text/plain"
+          accept=".txt,.md,text/plain,text/markdown"
           multiple
           style={{ display: 'none' }}
           onChange={onFileChange}

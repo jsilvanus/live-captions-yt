@@ -99,6 +99,17 @@ export const AudioPanel = forwardRef(function AudioPanel(
     utteranceEndClick: () => handleUtteranceEndClick(),
   }), []);
 
+  // ── Audio capture toggle from script metacodes (<!-- audio: start/stop -->) ──
+  useEffect(() => {
+    function onAudioCapture(e) {
+      const { action } = e.detail;
+      if (action === 'start' && !listening) toggleFnRef.current?.();
+      if (action === 'stop'  &&  listening) toggleFnRef.current?.();
+    }
+    window.addEventListener('lcyt:audio-capture', onAudioCapture);
+    return () => window.removeEventListener('lcyt:audio-capture', onAudioCapture);
+  }, [listening]);
+
   // ── Sync engine/credential from settings events ──────────────────────────
   useEffect(() => {
     function onCfgChange()  {

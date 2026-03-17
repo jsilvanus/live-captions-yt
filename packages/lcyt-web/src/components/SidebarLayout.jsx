@@ -55,6 +55,7 @@ const NAV_ITEMS = [
   { id: 'captions',   icon: '✏️',  label: 'Captions',   path: '/captions' },
   { id: 'audio',      icon: '🎤', label: 'Audio',       path: '/audio' },
   { id: 'broadcast',  icon: '📡', label: 'Broadcast',   path: '/broadcast' },
+  { id: 'planner',    icon: '📋', label: 'Planner',     path: '/planner' },
 ];
 
 const NAV_GROUPS = [

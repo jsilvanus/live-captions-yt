@@ -26,14 +26,27 @@ export function readFileAsLines(file) {
  */
 const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 
-/** @type {RegExp} Matches <!-- key: value --> metadata comment lines. */
-const METADATA_COMMENT_RE = /^<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->$/i;
+/**
+ * Matches any single <!-- key: value --> block (used with matchAll for multi-code lines).
+ * Not anchored — finds all occurrences in a line.
+ */
+const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->/gi;
 
 /** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza */
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
 
 /** Sentinel for an empty-send line. Captures optional label after the underscore. */
 const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
+
+/**
+ * Returns true if a line consists entirely of <!-- key: value --> comment(s) and whitespace.
+ * Supports multiple metacodes on one line, e.g.:
+ *   <!-- section: Intro --><!-- speaker: Alice -->
+ * @param {string} raw
+ */
+function isMetadataOnlyLine(raw) {
+  return raw.replace(MULTI_META_RE, '').trim() === '';
+}
 
 /**
  * Parse raw file content and extract text lines with associated metadata codes.
@@ -46,6 +59,14 @@ const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
  *   <!-- no-translate: true -->
  *   <!-- my-custom-code: any value -->
  *   <!-- lang: -->      ← empty value removes the code
+ *
+ * Multiple metadata codes may appear on the same line:
+ *   <!-- section: Intro --><!-- speaker: Alice --><!-- lang: fi-FI -->
+ *
+ * Audio capture toggle (one-shot action line, produces an entry in lines[]):
+ *   <!-- audio: start -->   ← fires lcyt:audio-capture start, does not persist
+ *   <!-- audio: stop -->    ← fires lcyt:audio-capture stop, does not persist
+ * These produce lineCodes[i].audioCapture = 'start'|'stop' on an empty caption line.
  *
  * Multi-line stanza blocks set a `stanza` metadata code on all subsequent lines.
  * The stanza text is newline-joined and carried as codes.stanza to the viewer.
@@ -105,12 +126,18 @@ export function parseFileContent(rawText) {
         lines.push('');
         lineCodes.push({ ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) });
         lineNumbers.push(++textLineCount);
-      } else {
-        const match = raw.match(METADATA_COMMENT_RE);
-        if (match) {
-          const key = match[1].toLowerCase();
-          const value = match[2].trim();
-          if (value === '') {
+      } else if (isMetadataOnlyLine(raw)) {
+        // Metadata-only line: may contain multiple <!-- key: value --> codes.
+        // Process each in order. `<!-- audio: start/stop -->` is a one-shot action
+        // that produces an entry in lines[] (like emptySend) and does NOT persist.
+        // All other codes update currentCodes normally.
+        let audioAction = null;
+        for (const m of raw.matchAll(MULTI_META_RE)) {
+          const key = m[1].toLowerCase();
+          const value = m[2].trim();
+          if (key === 'audio' && (value === 'start' || value === 'stop')) {
+            audioAction = value; // captured; will emit as action line after loop
+          } else if (value === '') {
             delete currentCodes[key];
           } else {
             let parsed = value;
@@ -119,12 +146,18 @@ export function parseFileContent(rawText) {
             }
             currentCodes[key] = parsed;
           }
-          // Comment lines are metadata only — not added to output
-        } else {
-          lines.push(raw);
-          lineCodes.push({ ...currentCodes });
-          lineNumbers.push(++textLineCount); // running count of text-only lines
         }
+        if (audioAction) {
+          // Audio action line: fires once at this position (does not update currentCodes).
+          lines.push('');
+          lineCodes.push({ ...currentCodes, audioCapture: audioAction });
+          lineNumbers.push(++textLineCount);
+        }
+        // Non-audio metadata lines are consumed — not added to output
+      } else {
+        lines.push(raw);
+        lineCodes.push({ ...currentCodes });
+        lineNumbers.push(++textLineCount); // running count of text-only lines
       }
     }
   }

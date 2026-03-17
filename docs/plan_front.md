@@ -642,30 +642,58 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 ---
 
-## Implementation Priority
+## Implementation Status & Priority
+
+> **Last audited: 2026-03-17**
+
+### ✅ Done
+
+| Item | Notes |
+|------|-------|
+| **1 Phase 1** — `wouter` router + `SidebarLayout` shell + Dashboard at `/` | `SidebarLayout.jsx` implemented with `HealthDot`, `QuickActionsPopover`, `StatusPopover`, hamburger, connect button, collapse persistence (`lcyt.ui.sidebarExpanded`) |
+| **1b** — Dashboard dockable panel grid | `DashboardPage.jsx` + `dashboard/` folder: `DashboardCard`, `StatusWidget`, `SentLogWidget`, `InputWidget`, `FileWidget`, `AudioWidget`, `BroadcastWidget`, `ViewerWidget`, `ViewportsWidget`, `PanelPicker` |
+| **1 Phase 2** — All pages moved into sidebar shell | `/captions`, `/audio` (`AudioPage`), `/broadcast` (`BroadcastPage`), `/graphics/editor`, `/graphics/control`, `/graphics/viewports`, `/production`, `/production/cameras`, `/production/mixers`, `/production/bridges` all mounted inside `SidebarLayout` |
+| **1 Phase 3** — `/settings` page + `QuickActionsPopover` | `SettingsPage.jsx` with General / CC / I/O tabs. `QuickActionsPopover` in top bar replaces old ControlsPanel modal |
+| **1 Phase 4** — `/projects` sidebar entry + `/account` profile | `ProjectsPage` at `/projects`; `AccountPage` at `/account` (login prompt or profile + change-password) |
+| **3b** — Settings export/import | `settingsIO.js` + I/O tab in `SettingsPage` (`downloadSettings` / `importSettings`) |
+| **3c** — Normalize localStorage keys | `storageKeys.js` — all keys under `lcyt.{category}.{key}` convention |
+| **6a** — Connection health dot in top bar | `HealthDot` + `StatusPopover` in `SidebarLayout` (latency, seq, targets, uptime) |
+
+### 🔴 P0 — Do now
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P0** | 1 Phase 1: `wouter` router + `SidebarLayout` shell + Dashboard at `/` | High — foundation for everything | Medium |
-| **P0** | 1b: Dashboard dockable panel grid (`react-grid-layout`) | High — landing page + overview | Medium |
-| **P0** | 1 Phase 2: Move Captions to `/captions`, Broadcast/Audio/DSK/Production into sidebar | High — unifies navigation | Medium |
-| **P0** | 6b. Auto-reconnect | High — prevents mid-broadcast failures | Low |
-| **P0** | 6c. Unsaved work protection | High — prevents data loss | Low |
-| **P1** | 1 Phase 3: `/settings` page (merge modals) + QuickActions popover | Medium — reduces confusion | Medium |
-| **P1** | 1 Phase 4: `/projects` sidebar entry + `/account` profile page (split from old merged Account) | Medium — primary project/key switcher; Projects are shared across users/teams | Low |
-| **P1** | 2a. Guided setup flow | High — unblocks new users | Medium |
-| **P1** | 6a. Connection health dot in top bar | Low-Medium — operational awareness | Low |
-| **P2** | 5a. Command palette | Medium — power user productivity | Medium |
-| **P2** | 4a. Context-aware layout modes per section | Medium — better use of screen space | High |
-| **P2** | 5b. Keyboard shortcuts help | Low — discoverability | Low |
-| **P2** | 7b. Context splitting | Low — performance improvement | Medium |
-| **P3** | 4b. Detachable panels | Low — niche use case | Medium |
-| **P3** | 4c. Mobile-first redesign | Medium — mobile usability | High |
-| **P3** | 3b. Settings export/import | Low — convenience | Low |
-| **P3** | 5e. Workflow presets | Low — convenience | Medium |
-| **P3** | 5d. DSK metacode helper | Low — niche | Medium |
-| **P3** | 7a. Virtual scrolling SentPanel | Low — edge case | Low |
-| **P3** | 7c. Lazy-load heavy pages | Low — marginal gains | Low |
+| **P0** | **6b. Auto-reconnect with backoff** — on session expiry / network drop, auto-retry with exponential backoff; "Reconnecting…" banner; preserve target config across reconnect | High — prevents mid-broadcast failures | Low |
+| **P0** | **6c. Unsaved work protection** — `beforeunload` guard when batch queue items, unsaved raw edits, or active STT session are detected | High — prevents data loss | Low |
+
+### 🟠 P1 — Next up
+
+| Priority | Item | Impact | Effort |
+|----------|------|--------|--------|
+| **P1** | **2a. Guided setup flow** — step-by-step wizard (server → auth → target → test) when no config exists; `lcyt:onboarded` flag skips for returning users | High — unblocks new users | Medium |
+| **P1** | **2b. Empty-state guidance** — contextual cards in Dashboard/Captions when no file loaded and no session active | Medium — reduces confusion for new users | Low |
+
+### 🟡 P2 — Nice to have
+
+| Priority | Item | Impact | Effort |
+|----------|------|--------|--------|
+| **P2** | **5a. Command palette** (Ctrl/Cmd+K) — searchable action list (sync, heartbeat, language, DSK, shortcuts) | Medium — power user productivity | Medium |
+| **P2** | **4a. Context-aware layout modes** — left/right panel content adapts to active section (Caption/Audio/Broadcast/Graphics/Production) | Medium — better screen use | High |
+| **P2** | **5b. Keyboard shortcuts help** (`?` or Ctrl+/) — overlay listing all shortcuts | Low — discoverability | Low |
+| **P2** | **7b. Context splitting** — split `SessionContext` (623 lines) into `ConnectionContext` / `CaptionContext` / `SessionApiContext` | Low — reduces re-renders | Medium |
+
+### 🔵 P3 — Backlog
+
+| Priority | Item | Impact | Effort |
+|----------|------|--------|--------|
+| **P3** | **4b. Detachable panels** — "Pop out" button on panels using `BroadcastChannel` (infrastructure already exists) | Low — niche use case | Medium |
+| **P3** | **4c. Mobile-first redesign** — swipeable card layout for captions, bottom sheet for file tabs, FAB for quick actions | Medium — mobile usability | High |
+| **P3** | **5e. Workflow presets** — named localStorage configs (e.g. "Sunday service") | Low — convenience | Medium |
+| **P3** | **5d. DSK metacode helper** — `<!--` autocomplete in input bar fetching template/viewport names | Low — niche | Medium |
+| **P3** | **7a. Virtual scrolling SentPanel** — only needed when entries > 100 | Low — edge case | Low |
+| **P3** | **7c. Lazy-load heavy pages** — `React.lazy()` for DskEditorPage, ProductionOperatorPage, BroadcastModal | Low — marginal gains | Low |
+| **P3** | **2c. Inline hints on first use** — `lcyt:hints-dismissed` set, tooltips on feature first touch | Low — nice to have | Low |
+| **P3** | **6d. localStorage quota monitoring** — `navigator.storage.estimate()` warning | Low — edge case | Low |
 
 ---
 
@@ -673,6 +701,4 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support. The main gaps are **discoverability** (new users can't find features), **navigation** (features live in disconnected modals and separate pages), and **resilience** (no auto-reconnect, no unsaved-work protection).
 
-The central change is the **sidebar navigation** (Section 1): a responsive collapsible sidebar using `wouter` for SPA routing. It unifies all features — Captions, Audio, Broadcast, Graphics, Production, Projects, Account, Settings — into a single navigable shell. All sections are always visible (greyed-out hints when disconnected), the sidebar auto-collapses on mobile into a slide-over drawer, and settings become a full page while quick actions (sync, heartbeat, caption codes) live in a top-bar popover.
-
-The 4-phase migration path allows incremental delivery: Phase 1 (router + shell) → Phase 2 (move existing pages into shell) → Phase 3 (unified settings page) → Phase 4 (Projects sidebar entry + Account profile page). The **Projects** entry sits above Account in the sidebar; each project maps to one API key which serves as the session credential and can be shared by multiple users and/or teams. Combined with auto-reconnect (P0) and a guided setup flow (P1), this transforms the frontend from a captioning tool with bolted-on features into a cohesive production platform.
+**As of 2026-03-17, the structural foundation is complete.** The sidebar navigation (Phases 1–4), Dashboard dockable panel grid, Settings page (with export/import), `/account` and `/projects` pages, normalized `storageKeys.js`, `HealthDot`/`StatusPopover`, and `QuickActionsPopover` are all shipped. The remaining work is resilience (auto-reconnect, unsaved-work guard), onboarding (guided setup, empty-state cards), and power-user features (command palette, context-aware layouts, keyboard shortcuts help).

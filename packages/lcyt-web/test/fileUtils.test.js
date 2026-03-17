@@ -178,4 +178,105 @@ describe('parseFileContent() — lineNumbers', () => {
     const { lineNumbers } = parseFileContent(raw);
     assert.deepEqual(lineNumbers, [1, 2, 3]);
   });
+
+  it('counts audio action lines in line numbers', () => {
+    const raw = '<!-- audio: start -->\nLine 1\n<!-- audio: stop -->';
+    const { lineNumbers } = parseFileContent(raw);
+    assert.deepEqual(lineNumbers, [1, 2, 3]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audio action metacode (<!-- audio: start/stop -->)
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — audio action metacode', () => {
+  it('parses <!-- audio: start --> as an action line with audioCapture=start', () => {
+    const { lines, lineCodes } = parseFileContent('<!-- audio: start -->');
+    assert.deepEqual(lines, ['']);
+    assert.equal(lineCodes[0].audioCapture, 'start');
+  });
+
+  it('parses <!-- audio: stop --> as an action line with audioCapture=stop', () => {
+    const { lines, lineCodes } = parseFileContent('<!-- audio: stop -->');
+    assert.deepEqual(lines, ['']);
+    assert.equal(lineCodes[0].audioCapture, 'stop');
+  });
+
+  it('audio lines are interleaved with caption lines', () => {
+    const raw = '<!-- audio: start -->\nHello\n<!-- audio: stop -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.deepEqual(lines, ['', 'Hello', '']);
+    assert.equal(lineCodes[0].audioCapture, 'start');
+    assert.equal(lineCodes[1].audioCapture, undefined);
+    assert.equal(lineCodes[2].audioCapture, 'stop');
+  });
+
+  it('audio action does NOT persist into currentCodes for subsequent lines', () => {
+    const raw = '<!-- audio: start -->\nLine 1\nLine 2';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[1].audioCapture, undefined);
+    assert.equal(lineCodes[2].audioCapture, undefined);
+  });
+
+  it('audio action inherits currentCodes but does not add to them', () => {
+    const raw = '<!-- lang: fi-FI -->\n<!-- audio: start -->\nLine 1';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].audioCapture, 'start');
+    assert.equal(lineCodes[0].lang, 'fi-FI');   // inherits
+    assert.equal(lineCodes[1].audioCapture, undefined);
+    assert.equal(lineCodes[1].lang, 'fi-FI');   // lang persists normally
+  });
+
+  it('ignores unknown audio values (neither start nor stop)', () => {
+    // "pause" is not a valid audio action — treated as regular metadata
+    const raw = '<!-- audio: pause -->\nLine 1';
+    const { lines } = parseFileContent(raw);
+    assert.deepEqual(lines, ['Line 1']); // not added as an action line
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multiple metacodes on one line
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — multi-metacode lines', () => {
+  it('parses two codes on one line', () => {
+    const raw = '<!-- section: Intro --><!-- speaker: Alice -->\nHello';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.deepEqual(lines, ['Hello']);
+    assert.equal(lineCodes[0].section, 'Intro');
+    assert.equal(lineCodes[0].speaker, 'Alice');
+  });
+
+  it('parses three codes on one line', () => {
+    const raw = '<!-- section: Act1 --><!-- speaker: Host --><!-- lang: fi-FI -->\nCaption';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].section, 'Act1');
+    assert.equal(lineCodes[0].speaker, 'Host');
+    assert.equal(lineCodes[0].lang, 'fi-FI');
+  });
+
+  it('mixed audio action + other code on one line: audio fires, other code persists', () => {
+    const raw = '<!-- section: Intro --><!-- audio: start -->\nCaption';
+    const { lines, lineCodes } = parseFileContent(raw);
+    // audio action line produced + caption line
+    assert.deepEqual(lines, ['', 'Caption']);
+    assert.equal(lineCodes[0].audioCapture, 'start');
+    assert.equal(lineCodes[0].section, 'Intro'); // section was set before audio action was emitted
+    assert.equal(lineCodes[1].section, 'Intro'); // persists to caption
+    assert.equal(lineCodes[1].audioCapture, undefined);
+  });
+
+  it('single-metacode lines still parse correctly (backward compat)', () => {
+    const raw = '<!-- lang: en-US -->\nLine 1';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].lang, 'en-US');
+  });
+
+  it('multi-metacode line does not appear as a caption line', () => {
+    const raw = '<!-- section: S1 --><!-- speaker: Bob -->\nCaption';
+    const { lines } = parseFileContent(raw);
+    assert.deepEqual(lines, ['Caption']);
+  });
 });

@@ -34,8 +34,8 @@ export function DropZone({ visible = true }) {
   async function handleFiles(files) {
     const txtFiles = [];
     for (const file of files) {
-      if (!file.name.endsWith('.txt') && !file.type.startsWith('text/')) {
-        showError(`Only .txt files supported (skipped: ${file.name})`);
+      if (!file.name.endsWith('.txt') && !file.name.endsWith('.md') && !file.type.startsWith('text/')) {
+        showError(`Only .txt/.md files supported (skipped: ${file.name})`);
         continue;
       }
       try {
@@ -100,13 +100,13 @@ export function DropZone({ visible = true }) {
         <div className="drop-zone__inner">
           <div className="drop-zone__icon">📄</div>
           <div className="drop-zone__title">Drop text files here</div>
-          <div className="drop-zone__sub">or click to browse<br />(.txt files)</div>
+          <div className="drop-zone__sub">or click to browse<br />(.txt / .md files)</div>
           {error && <div className="drop-zone__error">{error}</div>}
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".txt,text/plain"
+          accept=".txt,.md,text/plain,text/markdown"
           multiple
           style={{ display: 'none' }}
           onChange={onFileChange}

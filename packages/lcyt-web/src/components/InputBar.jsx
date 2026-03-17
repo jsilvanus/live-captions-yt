@@ -174,28 +174,58 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
         return;
       }
 
-      const isSkippable = line => !line?.trim() || line.startsWith('#');
-      if (isSkippable(file.lines[file.pointer])) {
-        let targetPointer = file.pointer + 1;
-        while (targetPointer < file.lines.length && isSkippable(file.lines[targetPointer])) {
-          targetPointer++;
+      // Advance past blank / #-comment / audio-action lines, firing audio events.
+      // Audio action lines have empty text so they fall into the skip path naturally.
+      const isSkippable = (lineText, lc) => (!lineText?.trim() && !lc?.audioCapture) || lineText?.startsWith('#');
+      let ptr = file.pointer;
+      // Drain audio/skip lines at the current position first
+      while (ptr < file.lines.length) {
+        const lc = file.lineCodes?.[ptr] || {};
+        const lineText = file.lines[ptr];
+        if (lc.audioCapture) {
+          window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: lc.audioCapture } }));
+          ptr++;
+        } else if (isSkippable(lineText, lc)) {
+          ptr++;
+        } else {
+          break;
         }
-        fileStore.setPointer(file.id, Math.min(targetPointer, file.lines.length - 1));
+      }
+      if (ptr >= file.lines.length) {
+        fileStore.setPointer(file.id, file.lines.length - 1);
+        showToast('End of file reached', 'info', 2500);
+        return;
+      }
+      // If we skipped ahead without finding an audio line, just move the pointer
+      if (ptr !== file.pointer) {
+        fileStore.setPointer(file.id, ptr);
         return;
       }
 
-      const lineText = file.lines[file.pointer];
-      const lc = file.lineCodes?.[file.pointer] || {};
-      const prevPointer = file.pointer;
+      const lineText = file.lines[ptr];
+      const lc = file.lineCodes?.[ptr] || {};
+      const prevPointer = ptr;
 
       try {
         await doSend(lineText, lc);
         fileStore.setLastSentLine({ fileId: file.id, lineIndex: prevPointer });
 
-        if (file.pointer < file.lines.length - 1) {
-          fileStore.advancePointer(file.id);
-        } else {
+        // Advance past the sent line, draining any immediately following audio lines
+        let nextPtr = ptr + 1;
+        while (nextPtr < file.lines.length) {
+          const nextLc = file.lineCodes?.[nextPtr] || {};
+          if (nextLc.audioCapture) {
+            window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: nextLc.audioCapture } }));
+            nextPtr++;
+          } else {
+            break;
+          }
+        }
+        if (nextPtr >= file.lines.length) {
+          fileStore.setPointer(file.id, file.lines.length - 1);
           showToast('End of file reached', 'info', 2500);
+        } else {
+          fileStore.setPointer(file.id, nextPtr);
         }
       } catch (err) {
         handleSendError(err);

@@ -35,6 +35,7 @@ import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
 import { ProjectsPage } from './components/ProjectsPage';
 import { AccountPage } from './components/AccountPage';
+import { PlannerPage } from './components/PlannerPage';
 
 const path = window.location.pathname;
 
@@ -107,6 +108,7 @@ function SidebarApp() {
             <Route path="/production/mixers" component={ProductionMixersPage} />
             <Route path="/production/bridges" component={ProductionBridgesPage} />
             <Route path="/production" component={ProductionOperatorPage} />
+            <Route path="/planner" component={PlannerPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
