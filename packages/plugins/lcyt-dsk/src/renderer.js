@@ -194,6 +194,7 @@ function buildSseBindingsScript(serverUrl, apiKey) {
   connect();
 })();
 </script>`;
+}
 
 function escHtml(s) {
   return String(s)

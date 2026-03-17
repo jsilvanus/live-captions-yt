@@ -616,6 +616,16 @@ npm test -w packages/plugins/lcyt-production    # plugin package
 
 Test files: `test/*.test.js` inside each package.
 
+### React components and hooks (lcyt-web only)
+`packages/lcyt-web` uses **Vitest** (alongside `node:test`) for React hook and component tests that require a DOM environment.
+
+```bash
+npm run test:components -w packages/lcyt-web   # Vitest run (jsdom, @testing-library/react)
+npm test -w packages/lcyt-web                  # node:test (pure utilities — unchanged)
+```
+
+Test files: `test/components/**/*.test.{js,jsx}`. Config: `packages/lcyt-web/vitest.config.js` (inherits Vite aliases via `mergeConfig`). Setup: `packages/lcyt-web/test/setup.vitest.js`.
+
 ### Python
 Uses `pytest`.
 
@@ -809,3 +819,154 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/CaptionViewModel.kt` | StateFlow state + SharedPreferences persistence |
 | `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/MainActivity.kt` | Compose TV viewer UI + deep-link handling |
 | `android/lcyt-tv/gradle/libs.versions.toml` | Dependency version catalog |
+
+---
+
+## Test Coverage
+
+*Last updated: 2026-03-17 (medium gaps addressed)*
+
+### Coverage Summary
+
+| Package | Source LOC | Test LOC | Coverage | Priority | Key Gaps |
+|---------|-----------|----------|----------|----------|-----------|
+| `packages/lcyt` | 1,016 | 1,267 | Excellent | Low | `logger.js`, `config.js` (no direct tests) |
+| `packages/lcyt-cli` | 1,836 | ~900 | Moderate | Low | Blessed rendering (requires full blessed mock) |
+| `packages/lcyt-backend` | 4,875 | ~2,750 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
+| `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
+| `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
+| `packages/lcyt-mcp-sse` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via SSE (requires MCP client harness) |
+| `packages/lcyt-web` | 2,000+ | ~1,000 | Good | Low | React components (App, panels, modals), embed pages, production pages |
+| `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
+| `python-packages/lcyt-backend` | 1,135 | 800 | Good | Low | `middleware/cors.py`, incomplete feature parity with Node.js backend |
+| `python-packages/lcyt-mcp` | 252 | 300 | Good | Low | None identified |
+
+---
+
+### Per-Package Detail
+
+#### `packages/lcyt` — Core Library
+**Covered:** Constructor options, URL building, sequence tracking, timestamp formatting (Date/number/ISO), send/sendBatch flow, backend relay, error classes, network error handling.
+**Gaps (Low):**
+- `logger.js` — `setVerbose()`, `setSilent()`, `setUseStderr()`, `setCallback()`, output formatting
+- `config.js` — `loadConfig()` edge cases, `saveConfig()` error paths
+
+---
+
+#### `packages/lcyt-cli` — CLI Tool
+**Test files:** `test/cli.test.js` (25 tests), `test/interactive-ui.test.js` (49 tests, added 2026-03-16).
+**Covered:** Argument parsing, `--heartbeat`, config precedence, session lifecycle. Pure-logic methods of `InteractiveUI`: `loadFile`, `shiftPointer`, `gotoLine`, `isSendableLine`, `sendCurrentLine`, `sendCustomCaption`, `sendBatch`, all `handleCommand` branches (`/load`, `/goto`, `/batch`, `/timestamps`, `/ts`, `/send`, `/stream`, `/reload`), `_parseVideoId`.
+**Gaps (Medium):**
+- `bin/lcyt` entry point — CLI argument error handling, `LCYT_LOG_STDERR` flag, env-variable precedence.
+- Blessed rendering (`initScreen`, `updateTextPreview`, `updateStatus`) — requires a full blessed mock or snapshot approach.
+
+---
+
+#### `packages/lcyt-backend` — Express Relay Backend
+**Test files:** 26 test files (608 tests total as of 2026-03-17) covering all primary routes plus newly added tests.
+**Added 2026-03-16:**
+- `test/managers.test.js` (25 tests) — `HlsManager`, `RadioManager`, `PreviewManager` using `--experimental-test-module-mocks` to mock `child_process`/`fs`. Tests: constructor, `start()`, `stop()`, `stopAll()`, ffmpeg arg verification, directory creation.
+- `test/rtmp-manager.test.js` (27 tests) — `RtmpRelayManager` and `probeFfmpeg`. Tests: all state queries, `start()`/`stop()`/`stopAll()`, `isSlotRunning()`, `runningSlots()`, `writeCaption()`, `dropPublisher()`.
+- `test/auth.test.js` (20 tests) — Full auth lifecycle with in-memory SQLite: register, login, `GET /me`, `POST /change-password`, disabled logins (503).
+- `test/video.test.js` (17 tests) — HLS player HTML (themes, CORS, Cache-Control), master manifest, subtitle playlist, segment serving, CORS preflight. Uses lightweight mock managers.
+- `test/preview-route.test.js` (10 tests) — JPEG thumbnail serving with real temp-dir JPEG; key validation, 404, 200, CORS, Cache-Control, If-Modified-Since, OPTIONS.
+- `test/stream.test.js` (22 tests) — RTMP relay slot CRUD with in-memory DB + mock `RtmpRelayManager`: auth, `relay_allowed` check, POST/GET/PUT/DELETE /stream, PUT /stream/active.
+
+**Added 2026-03-17:**
+- `test/cors.test.js` (19 tests) — `createCorsMiddleware`: free-tier signup, admin routes (no CORS), permissive routes (POST /live, GET /health, GET /contact, OPTIONS), dynamic origin matching via session store.
+- `test/caption-files.test.js` (21 tests) — Pure-function exports: `composeCaptionText` (all translation/showOriginal branches), `formatVttTime` (edge cases: 0ms, sub-second, multi-hour), `buildVttCue` (format, end newline).
+
+**Gaps (Low):**
+- **Core:** `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT).
+- **DB:** `db/sequences.js`, `db/helpers.js`.
+
+---
+
+#### `packages/lcyt-bridge` — Production Control Bridge Agent
+**Test files:** `test/bridge.test.js` (22 tests), `test/tcp-pool.test.js` (13 tests).
+**Covered:** Bridge SSE connection/reconnect, TCP pool, command dispatch (`tcp_send`), heartbeat, event forwarding.
+**Gaps (Medium):**
+- `tray.js` (105 LOC) — system tray icon/menu/exit handler (desktop only).
+- `src/index.js` (107 LOC) — `BACKEND_URL`/`BRIDGE_TOKEN` validation, `.env` loading, SIGTERM shutdown.
+
+---
+
+#### `packages/lcyt-mcp-stdio` — MCP Server (stdio)
+**Test files:** `test/server.test.js` (~15 tests) — tool invocation, session lifecycle, send/batch/sync/status.
+**Gaps (Low):** Invalid input handling, tool descriptor validation, special-character captions.
+
+---
+
+#### `packages/lcyt-mcp-sse` — MCP Server (HTTP SSE)
+**Test files:** `test/speech.test.js` (20 tests), `test/server.test.js` (6 tests, added 2026-03-17).
+**Added 2026-03-17:**
+- `test/server.test.js` (6 tests) — HTTP route logic: `POST /messages` returns 404 for unknown/missing sessionId, delegates to `transport.handlePostMessage` for known session; `GET /sse` returns 200 with `text/event-stream` when auth not required, 401 when `REQUIRE_API_KEY` is set; transport session isolation.
+**Gaps (Low):**
+- Full MCP tool-call flow (start → send_caption → stop) via SSE requires a real MCP client harness and is better covered by E2E tests.
+
+---
+
+#### `packages/lcyt-web` — Browser Web UI
+
+**Test commands:**
+- `npm test -w packages/lcyt-web` → `node --test test/*.test.js` — pure utility functions (59 tests)
+- `npm run test:components -w packages/lcyt-web` → `vitest run` — React hooks/components (75 tests via jsdom)
+
+**Test files (node:test):** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests), `test/fileUtils.test.js` (27 tests, added 2026-03-16), `test/i18n.test.js` (11 tests, added 2026-03-16).
+**Test files (Vitest):** `test/components/useSession.test.jsx` (25 tests), `test/components/useFileStore.test.jsx` (35 tests), `test/components/AppProviders.test.jsx` (15 tests) — all added 2026-03-16.
+
+**Vitest setup (added 2026-03-16):**
+- `vitest.config.js` — `mergeConfig(viteConfig, ...)` inherits `lcyt/*` alias resolution from `vite.config.js` automatically; no manual mapper needed.
+- `test/setup.vitest.js` — `@testing-library/jest-dom`, localStorage/sessionStorage clear between tests, `EventSource` + `BroadcastChannel` global stubs.
+- Mock pattern: `vi.fn(function() { return mockSender; })` (regular function, not arrow, so `new` works).
+
+**Added 2026-03-16 (Vitest):**
+- `test/components/useSession.test.jsx` — initial state, persistence helpers (`getPersistedConfig`, `getAutoConnect`/`setAutoConnect`, `clearPersistedConfig`), `connect()` (sets connected/backendUrl/apiKey/healthStatus, fires `onConnected` with token, persists config, throws on no token), `disconnect()` (sets connected=false, calls `end()`, fires `onDisconnected`, resets sequence, no-op when not connected), `send()` and `sendBatch()` (delegation + callbacks).
+- `test/components/useFileStore.test.jsx` — initial state, `loadFile()` (file parsing, active tracking, `onFileLoaded`/`onActiveChanged` callbacks, localStorage persistence), `removeFile()`, `setActive()`/`cycleActive()`, `setPointer()`/`advancePointer()` (clamping, localStorage, callbacks), `createEmptyFile()`, `updateFileFromRawText()`, localStorage restore on remount.
+- `test/components/AppProviders.test.jsx` — smoke render, `autoConnect` behaviour (connects when valid config, no-op otherwise), embed mode (`BroadcastChannel` opened/closed, `lcyt:session` broadcast on connect, responds to `lcyt:request_session`).
+
+**Added 2026-03-17 (Vitest):**
+- `test/components/useSentLog.test.jsx` (30 tests) — initial state, localStorage restore on mount (invalid JSON, non-array), `add()` (prepend order, pending flag, timestamp, localStorage persistence), `confirm()` (string + object arg, sequence update, no-op for unknown), `markError()` (error flag, clears pending, no-op for unknown, not persisted), `updateRequestId()`, `clear()` (empties entries + storage).
+- `test/components/useToast.test.jsx` (18 tests) — `useToast`: initial state, `showToast()` (type default, custom type, unique IDs, auto-dismiss timer, no-dismiss when duration=0), `dismissToast()` (removes matching, partial, no-op for unknown); `ToastContainer`: no-crash empty, renders messages, CSS class, multiple toasts, click-to-dismiss with 200ms fade.
+
+**Gaps (Low):**
+- **React components** — 30+ leaf components (App, panels, modals, all pages) have no tests.
+- **Embed pages** — BroadcastChannel cross-iframe caption coordination.
+- **Production pages** — `/production/*` operator control surface.
+
+---
+
+#### `python-packages/lcyt` — Core Python Library
+**Test files:** 4 test files, 121 tests — full coverage of sender, backend relay, config, and errors.
+**Gaps (Low):** None identified.
+
+---
+
+#### `python-packages/lcyt-backend` — Flask Backend
+**Test files:** 8 test files (~70 tests) — all primary routes (live, captions, sync, keys), DB, session store, JWT.
+**Gaps (Medium):**
+- `middleware/cors.py` — dynamic origin validation.
+- Feature parity gaps vs. Node.js backend (no file management, stats, usage, viewer, icons routes tested).
+
+---
+
+#### `python-packages/lcyt-mcp` — Python MCP Server
+**Test files:** `tests/test_server.py` (~15 tests).
+**Gaps (Low):** Error handling for malformed requests, concurrent session limits.
+
+---
+
+### Top Priorities for Next Test Expansion
+
+Items marked ✅ were completed 2026-03-16 or 2026-03-17.
+
+1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — `managers.test.js` + `rtmp-manager.test.js` added (52 tests).
+2. ✅ **`packages/lcyt-backend` 5 untested routes** *(High → Done)* — `auth.test.js`, `video.test.js`, `preview-route.test.js`, `stream.test.js`, `youtube.test.js` added (69 tests).
+3. ✅ **`packages/lcyt-cli/src/interactive-ui.js`** *(High → Done)* — `interactive-ui.test.js` added (49 tests).
+4. ✅ **`packages/lcyt-web` pure utilities** *(High → Done)* — `fileUtils.test.js` + `i18n.test.js` added (38 tests).
+5. ✅ **`packages/lcyt-web` React hooks + Vitest setup** *(Medium → Done)* — Vitest + jsdom added; `useSession.test.jsx` (25 tests), `useFileStore.test.jsx` (35 tests), `AppProviders.test.jsx` (15 tests) added (75 tests total).
+6. ✅ **`packages/lcyt-backend/src/middleware/cors.js`** *(Medium → Done)* — `cors.test.js` added (19 tests).
+7. ✅ **`packages/lcyt-backend/src/caption-files.js`** *(Medium → Done)* — `caption-files.test.js` added (21 tests, pure functions).
+8. ✅ **`packages/lcyt-web` useSentLog + ToastContainer** *(Medium → Done)* — `useSentLog.test.jsx` (30 tests) + `useToast.test.jsx` (18 tests) added.
+9. ✅ **`packages/lcyt-mcp-sse/src/server.js` HTTP routes** *(Medium → Done)* — `server.test.js` added (6 tests).
+10. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
