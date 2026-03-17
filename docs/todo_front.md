@@ -110,12 +110,13 @@ Replace stub pages with real implementations. Move modal content to full pages.
 
 ---
 
-## Phase 4 — Account page ⬜ To Do
+## Phase 4 — Account page ✅ Done
 
-| Task | Status |
-|------|--------|
-| `/account` page — login/register form (anonymous) or user profile + password change (logged in) | ⬜ To Do |
-| Redirect `/login` and `/register` deep-links to `/account` (optional) | ⬜ To Do |
+| Task | Status | Notes |
+|------|--------|-------|
+| `/account` page — login/register links (anonymous) or user profile + password change (logged in) | ✅ Done | `AccountPage.jsx` — two states: anonymous (links to /login, /register) and logged-in (email, name, server, Projects link, change password form, sign out) |
+| `/login` and `/register` kept as standalone deep-link routes | ✅ Done | Per plan: both still work standalone |
+| `AccountPage.test.jsx` — loading, anonymous, logged-in, password change | ✅ Done | 25 tests |
 
 ---
 

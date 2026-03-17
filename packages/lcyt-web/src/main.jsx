@@ -33,6 +33,7 @@ import { ProductionOperatorPage } from './components/ProductionOperatorPage';
 import { LoginPage } from './components/LoginPage';
 import { RegisterPage } from './components/RegisterPage';
 import { ProjectsPage } from './components/ProjectsPage';
+import { AccountPage } from './components/AccountPage';
 
 const path = window.location.pathname;
 
@@ -106,9 +107,7 @@ function SidebarApp() {
             <Route path="/production/bridges" component={ProductionBridgesPage} />
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/projects" component={ProjectsPage} />
-            <Route path="/account">
-              <StubPage icon="👤" title="Account" description="User profile and password management will live here in Phase 4." />
-            </Route>
+            <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
             {/* Legacy URL aliases — redirect to sidebar equivalents */}
             <Route path="/dsk-editor"><Redirect to="/graphics/editor" /></Route>

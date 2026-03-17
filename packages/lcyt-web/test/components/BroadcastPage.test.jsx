@@ -75,16 +75,19 @@ beforeEach(() => {
 
 describe('BroadcastPage', () => {
   it('renders all three tab buttons', () => {
-    renderPage();
-    expect(screen.getByRole('button', { name: /encoder/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /youtube/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /stream/i })).toBeInTheDocument();
+    const { container } = renderPage();
+    const tabBar = container.querySelector('.settings-modal__tabs');
+    const tabBtns = Array.from(tabBar.querySelectorAll('.settings-tab'));
+    const labels = tabBtns.map(b => b.textContent.trim());
+    expect(labels).toContain('Encoder');
+    expect(labels).toContain('YouTube');
+    expect(labels).toContain('Stream');
   });
 
   it('shows Encoder tab content by default', () => {
     renderPage();
-    // The Encoder tab renders the encoder type select
-    expect(screen.getByText(/matrox monarch hdx/i)).toBeInTheDocument();
+    // Encoder IP address placeholder is unique to the Encoder tab body
+    expect(screen.getByPlaceholderText('192.168.1.100')).toBeInTheDocument();
   });
 
   it('does not render a modal backdrop (inline mode)', () => {
@@ -98,21 +101,26 @@ describe('BroadcastPage', () => {
   });
 
   it('switches to YouTube tab on click', () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /youtube/i }));
-    // YouTube tab renders a "Sign in with Google" button or similar auth UI
-    expect(screen.getByRole('button', { name: /youtube/i }).className).toContain('settings-tab--active');
+    const { container } = renderPage();
+    const tabBar = container.querySelector('.settings-modal__tabs');
+    const ytTab = Array.from(tabBar.querySelectorAll('.settings-tab')).find(b => b.textContent.trim() === 'YouTube');
+    fireEvent.click(ytTab);
+    expect(ytTab.className).toContain('settings-tab--active');
   });
 
   it('switches to Stream tab on click', () => {
-    renderPage();
-    fireEvent.click(screen.getByRole('button', { name: /stream/i }));
-    expect(screen.getByRole('button', { name: /stream/i }).className).toContain('settings-tab--active');
+    const { container } = renderPage();
+    const tabBar = container.querySelector('.settings-modal__tabs');
+    const streamTab = Array.from(tabBar.querySelectorAll('.settings-tab')).find(b => b.textContent.trim() === 'Stream');
+    fireEvent.click(streamTab);
+    expect(streamTab.className).toContain('settings-tab--active');
   });
 
   it('Encoder tab is active by default', () => {
-    renderPage();
-    expect(screen.getByRole('button', { name: /encoder/i }).className).toContain('settings-tab--active');
+    const { container } = renderPage();
+    const tabBar = container.querySelector('.settings-modal__tabs');
+    const encoderTab = Array.from(tabBar.querySelectorAll('.settings-tab')).find(b => b.textContent.trim() === 'Encoder');
+    expect(encoderTab.className).toContain('settings-tab--active');
   });
 
   it('wraps content in settings-page class', () => {
