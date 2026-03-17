@@ -561,3 +561,186 @@
 .dashboard-quick-link:hover {
   color: var(--color-accent);
 }
+
+/* ─── Settings page ──────────────────────────────────────────── */
+
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.settings-page__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  flex-shrink: 0;
+}
+
+.settings-page__tab {
+  padding: 10px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  color: var(--color-text-dim);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-page__tab:hover {
+  color: var(--color-text);
+}
+
+.settings-page__tab--active {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-text);
+}
+
+.settings-page__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─── Broadcast page ─────────────────────────────────────────── */
+/* BroadcastModal inline: no extra CSS needed — reuses settings-modal__box */
+
+/* ─── Audio page ─────────────────────────────────────────────── */
+
+.audio-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.audio-page__panel {
+  flex: 1;
+  overflow-y: auto;
+  /* Audio panel has its own scrolling */
+}
+
+.audio-page__interim {
+  padding: 10px 14px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+  font-size: 13px;
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.audio-page__interim-text {
+  font-style: italic;
+}
+
+/* ─── Quick actions popover (TopBar) ─────────────────────────── */
+
+.quick-actions {
+  position: relative;
+}
+
+.quick-actions__btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--color-text-dim);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  position: relative;
+}
+
+.quick-actions__btn:hover,
+.quick-actions__btn--open {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border);
+  color: var(--color-text);
+}
+
+.quick-actions__btn--codes {
+  color: var(--color-accent);
+}
+
+.quick-actions__code-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-accent);
+  position: absolute;
+  top: 3px;
+  right: 3px;
+}
+
+.quick-actions__panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 280px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  padding: 12px;
+  z-index: 1000;
+}
+
+.quick-actions__section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-dim);
+  margin-bottom: 8px;
+}
+
+.quick-actions__section-label--mt {
+  margin-top: 12px;
+}
+
+.quick-actions__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.quick-actions__row--seq {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.quick-actions__seq-input {
+  width: 80px !important;
+  padding: 3px 6px !important;
+  font-size: 12px !important;
+}
+
+.quick-actions__result {
+  margin-left: 4px;
+  font-size: 11px;
+  color: var(--color-success);
+  font-family: var(--font-mono);
+}
+
+.quick-actions__codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-actions__code-wrap {
+  position: relative;
+}

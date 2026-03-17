@@ -4,10 +4,7 @@ import { useSessionContext } from './contexts/SessionContext';
 import { useFileContext } from './contexts/FileContext';
 import { useLang } from './contexts/LangContext';
 import { StatusBar } from './components/StatusBar';
-import { SettingsModal } from './components/SettingsModal';
-import { CCModal } from './components/CCModal';
 import { ControlsPanel } from './components/ControlsPanel';
-import { getEnabledTargets } from './lib/targetConfig';
 import { PrivacyModal } from './components/PrivacyModal';
 import { DropZone } from './components/DropZone';
 import { FileTabs } from './components/FileTabs';
@@ -16,9 +13,7 @@ import { SentPanel } from './components/SentPanel';
 import { InputBar } from './components/InputBar';
 import { AudioPanel } from './components/AudioPanel';
 import { ToastContainer } from './components/ToastContainer';
-import { BroadcastModal } from './components/BroadcastModal';
 import { MobileAudioBar } from './components/MobileAudioBar';
-import { useToastContext } from './contexts/ToastContext';
 
 // Persistent banner shown when the backend cannot be reached
 function NetworkBanner({ privacyPending }) {
@@ -58,13 +53,9 @@ const MIN_PANEL_W = 200;           // px — minimum width for either panel
 export function AppLayout() {
   const session = useSessionContext();
   const fileStore = useFileContext();
-  const { showToast } = useToastContext();
 
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [ccOpen, setCcOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [broadcastOpen, setBroadcastOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
   const [micListening, setMicListening] = useState(false);
@@ -274,11 +265,8 @@ export function AppLayout() {
   return (
     <div className="captions-page">
       <StatusBar
-        onSettingsOpen={() => setSettingsOpen(true)}
-        onCCOpen={() => setCcOpen(true)}
         onControlsOpen={() => setControlsOpen(true)}
         onPrivacyOpen={handlePrivacyOpen}
-        onBroadcastOpen={() => setBroadcastOpen(true)}
       />
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
 
@@ -342,20 +330,6 @@ export function AppLayout() {
         inputBarRef={inputBarRef}
       />
 
-      <BroadcastModal isOpen={broadcastOpen} onClose={() => setBroadcastOpen(false)} />
-      <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
-      {ccOpen && <CCModal
-        isOpen={ccOpen}
-        connected={session.connected}
-        onClose={() => {
-          setCcOpen(false);
-          if (session.connected) {
-            session.updateTargets(getEnabledTargets()).catch(err => {
-              showToast(err?.message || 'Failed to update targets', 'error');
-            });
-          }
-        }}
-      />}
       {controlsOpen && <ControlsPanel onClose={() => setControlsOpen(false)} />}
       <PrivacyModal
         isOpen={privacyOpen}

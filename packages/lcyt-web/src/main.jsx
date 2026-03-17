@@ -9,6 +9,9 @@ import { AppLayout } from './App';
 import { AppProviders } from './contexts/AppProviders';
 import { SidebarLayout } from './components/SidebarLayout';
 import { DashboardPage } from './components/DashboardPage';
+import { AudioPage } from './components/AudioPage';
+import { BroadcastPage } from './components/BroadcastPage';
+import { SettingsPage } from './components/SettingsPage';
 import { SpeechCapturePage } from './components/SpeechCapturePage';
 import { EmbedAudioPage } from './components/EmbedAudioPage';
 import { EmbedInputPage } from './components/EmbedInputPage';
@@ -91,15 +94,11 @@ function SidebarApp() {
           <Switch>
             <Route path="/" component={DashboardPage} />
             <Route path="/captions" component={AppLayout} />
-            <Route path="/audio">
-              <StubPage icon="🎤" title="Audio / STT" description="Audio capture and speech-to-text controls will live here." />
-            </Route>
-            <Route path="/broadcast">
-              <StubPage icon="📡" title="Broadcast" description="RTMP relay, encoder control, and YouTube OAuth will live here." />
-            </Route>
+            <Route path="/audio" component={AudioPage} />
+            <Route path="/broadcast" component={BroadcastPage} />
             <Route path="/graphics/editor" component={DskEditorPage} />
             <Route path="/graphics/control">
-              <StubPage icon="🖼️" title="DSK Control" description="Access DSK Control via /dsk-control/:apikey or connect to your backend first. Full sidebar integration coming in Phase 2." />
+              <StubPage icon="🖼️" title="DSK Control" description="Access DSK Control via /dsk-control/:apikey. Full sidebar integration planned for a later phase." />
             </Route>
             <Route path="/graphics/viewports" component={DskViewportsPage} />
             <Route path="/production/cameras" component={ProductionCamerasPage} />
@@ -108,11 +107,9 @@ function SidebarApp() {
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/account">
-              <StubPage icon="👤" title="Account" description="User profile and password management will live here." />
+              <StubPage icon="👤" title="Account" description="User profile and password management will live here in Phase 4." />
             </Route>
-            <Route path="/settings">
-              <StubPage icon="⚙️" title="Settings" description="Unified settings page coming soon. Use the Settings button in the Captions page for now." />
-            </Route>
+            <Route path="/settings" component={SettingsPage} />
             {/* Legacy URL aliases — redirect to sidebar equivalents */}
             <Route path="/dsk-editor"><Redirect to="/graphics/editor" /></Route>
             <Route path="/dsk-viewports"><Redirect to="/graphics/viewports" /></Route>
