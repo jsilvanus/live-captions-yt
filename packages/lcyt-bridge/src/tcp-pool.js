@@ -9,6 +9,7 @@ import { EventEmitter } from 'node:events';
 
 const RECONNECT_DELAY_MS = 5_000;
 const KEEPALIVE_INTERVAL_MS = 30_000;
+const WRITE_TIMEOUT_MS = 10_000;
 
 export class TcpPool extends EventEmitter {
   constructor() {
@@ -46,7 +47,17 @@ export class TcpPool extends EventEmitter {
       throw new Error(`TCP ${key} is not connected`);
     }
     return new Promise((resolve, reject) => {
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(`TCP write to ${key} timed out after ${WRITE_TIMEOUT_MS}ms`));
+        }
+      }, WRITE_TIMEOUT_MS);
       entry.socket.write(payload, 'utf8', (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         if (err) return reject(new Error(`TCP write to ${key} failed: ${err.message}`));
         resolve();
       });
