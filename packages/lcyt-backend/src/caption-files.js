@@ -95,7 +95,12 @@ export function writeToBackendFile(context, text, timestamp, db) {
     } else {
       line = text + '\n';
     }
+    const WRITE_TIMEOUT_MS = 5000;
+    const writeTimer = setTimeout(() => {
+      console.warn('[captions] Backend file write timed out after 5 s:', handle.filepath);
+    }, WRITE_TIMEOUT_MS);
     handle.stream.write(line, () => {
+      clearTimeout(writeTimer);
       try {
         const { size } = statSync(handle.filepath);
         updateCaptionFileSize(db, handle.dbId, size);

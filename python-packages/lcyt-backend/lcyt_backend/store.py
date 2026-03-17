@@ -1,11 +1,14 @@
 """In-memory session store for lcyt-backend."""
 
 import hashlib
+import logging
 import os
 import threading
 import time
 from datetime import datetime, timezone
 from typing import Iterable, Iterator, Optional
+
+_log = logging.getLogger(__name__)
 
 DEFAULT_SESSION_TTL = int(os.environ.get("SESSION_TTL", str(2 * 60 * 60)))  # 2 hours (seconds)
 DEFAULT_CLEANUP_INTERVAL = int(os.environ.get("CLEANUP_INTERVAL", str(5 * 60)))  # 5 minutes
@@ -164,7 +167,7 @@ class SessionStore:
                 try:
                     session["sender"].end()
                 except Exception:
-                    pass  # best-effort cleanup
+                    _log.warning("Sender cleanup failed for session %s", sid, exc_info=True)
 
     def stop_cleanup(self) -> None:
         """Stop the periodic cleanup thread. Call during graceful shutdown."""

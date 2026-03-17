@@ -1,5 +1,6 @@
 """POST/GET/DELETE /live — session registration and management."""
 
+import logging
 import os
 import time
 
@@ -82,7 +83,7 @@ def register_session():
         sync_result = _sync_sender(sender)
         sync_offset = sync_result["sync_offset"]
     except Exception:
-        pass  # not fatal
+        logging.getLogger(__name__).warning("Initial clock sync failed", exc_info=True)
 
     # Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
     try:
@@ -150,7 +151,7 @@ def remove_session():
     try:
         session["sender"].end()
     except Exception:
-        pass
+        logging.getLogger(__name__).warning("Sender cleanup failed on DELETE /live", exc_info=True)
 
     store.remove(session_id)
     return jsonify({"removed": True, "sessionId": session_id}), 200
