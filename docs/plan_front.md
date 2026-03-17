@@ -48,6 +48,7 @@ This document identifies concrete problems and proposes targeted improvements gr
 │    └ Bridges   │                                             │
 │                │                                             │
 │  ────────────  │                                             │
+│  📁 Projects   │                                             │
 │  👤 Account    │                                             │
 │  ⚙ Settings    │                                             │
 │                │                                             │
@@ -69,6 +70,7 @@ This document identifies concrete problems and proposes targeted improvements gr
 │  🖼   │          (page content)                   │
 │  🎬   │                                           │
 │ ──── │                                           │
+│  📁   │                                           │
 │  👤   │                                           │
 │  ⚙   │                                           │
 └──────┴───────────────────────────────────────────┘
@@ -109,6 +111,7 @@ Hamburger [≡] opens a slide-over drawer:
 │    ├ Mixers      │                           │
 │    └ Bridges     │                           │
 │  ────────────    │                           │
+│  📁 Projects     │                           │
 │  👤 Account      │                           │
 │  ⚙ Settings      │                           │
 │                  │                           │
@@ -137,7 +140,8 @@ All sidebar routes share a common layout shell (`SidebarLayout`) with the top ba
 | **Production → Cameras** | `/production/cameras` | `ProductionCamerasPage` | Existing component, now inside sidebar shell |
 | **Production → Mixers** | `/production/mixers` | `ProductionMixersPage` | Existing component, now inside sidebar shell |
 | **Production → Bridges** | `/production/bridges` | `ProductionBridgesPage` | Existing component, now inside sidebar shell |
-| **Account** | `/account` | `AccountPage` | Login/Register (if anonymous) or Projects list (if logged in) |
+| **Projects** | `/projects` | `ProjectsPage` | Each project = one API key = the session; projects can be shared across multiple users and/or teams. Shows the user's own projects when logged in; prompts login/register when anonymous. |
+| **Account** | `/account` | `AccountPage` | Login/Register (if anonymous) or user profile/password when logged in |
 | **Settings** | `/settings` | `SettingsPage` | Unified settings — all tabs (see Section 3) |
 
 #### Standalone routes (NO sidebar, full-screen)
@@ -192,6 +196,7 @@ SidebarLayout
 │   │   ├── SidebarItem (Mixers)     → "/production/mixers"
 │   │   └── SidebarItem (Bridges)    → "/production/bridges"
 │   ├── SidebarDivider
+│   ├── SidebarItem (Projects)       → "/projects"      ← each project = one API key = the session
 │   ├── SidebarItem (Account)        → "/account"
 │   └── SidebarItem (Settings)       → "/settings"
 └── PageContent                       ← router outlet
@@ -239,7 +244,7 @@ The page content still renders (read-only / skeleton state) so users can explore
 1. **Phase 1:** Add `wouter` router + `SidebarLayout` shell. Mount current `App.jsx` at `/captions` inside the shell. Create `DashboardPage` at `/`. All other sidebar routes initially render placeholder "Coming soon" or redirect.
 2. **Phase 2:** Move `BroadcastModal` content → `/broadcast` page. Move `AudioPanel` → `/audio` page. Mount existing DSK/Production pages inside sidebar shell.
 3. **Phase 3:** Create `/settings` page (merge SettingsModal + CCModal). Replace `ControlsPanel` with `QuickActionsPopover` in top bar.
-4. **Phase 4:** Create `/account` page (merge Login/Register/Projects). Remove old standalone `/login` and `/register` (or redirect to `/account`).
+4. **Phase 4:** Move `ProjectsPage` into the sidebar shell at `/projects` (above Account). Create `/account` page for user profile and password management. Projects are the primary entry point — each project is an API key that doubles as the session credential and can be shared by multiple users and/or teams. Remove old standalone `/login` and `/register` (or redirect to `/account`).
 
 ---
 
@@ -647,7 +652,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 | **P0** | 6b. Auto-reconnect | High — prevents mid-broadcast failures | Low |
 | **P0** | 6c. Unsaved work protection | High — prevents data loss | Low |
 | **P1** | 1 Phase 3: `/settings` page (merge modals) + QuickActions popover | Medium — reduces confusion | Medium |
-| **P1** | 1 Phase 4: `/account` page (merge Login/Register/Projects) | Medium — unified auth flow | Low |
+| **P1** | 1 Phase 4: `/projects` sidebar entry + `/account` profile page (split from old merged Account) | Medium — primary project/key switcher; Projects are shared across users/teams | Low |
 | **P1** | 2a. Guided setup flow | High — unblocks new users | Medium |
 | **P1** | 6a. Connection health dot in top bar | Low-Medium — operational awareness | Low |
 | **P2** | 5a. Command palette | Medium — power user productivity | Medium |
@@ -668,6 +673,6 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support. The main gaps are **discoverability** (new users can't find features), **navigation** (features live in disconnected modals and separate pages), and **resilience** (no auto-reconnect, no unsaved-work protection).
 
-The central change is the **sidebar navigation** (Section 1): a responsive collapsible sidebar using `wouter` for SPA routing. It unifies all features — Captions, Audio, Broadcast, Graphics, Production, Account, Settings — into a single navigable shell. All sections are always visible (greyed-out hints when disconnected), the sidebar auto-collapses on mobile into a slide-over drawer, and settings become a full page while quick actions (sync, heartbeat, caption codes) live in a top-bar popover.
+The central change is the **sidebar navigation** (Section 1): a responsive collapsible sidebar using `wouter` for SPA routing. It unifies all features — Captions, Audio, Broadcast, Graphics, Production, Projects, Account, Settings — into a single navigable shell. All sections are always visible (greyed-out hints when disconnected), the sidebar auto-collapses on mobile into a slide-over drawer, and settings become a full page while quick actions (sync, heartbeat, caption codes) live in a top-bar popover.
 
-The 4-phase migration path allows incremental delivery: Phase 1 (router + shell) → Phase 2 (move existing pages into shell) → Phase 3 (unified settings page) → Phase 4 (unified account page). Combined with auto-reconnect (P0) and a guided setup flow (P1), this transforms the frontend from a captioning tool with bolted-on features into a cohesive production platform.
+The 4-phase migration path allows incremental delivery: Phase 1 (router + shell) → Phase 2 (move existing pages into shell) → Phase 3 (unified settings page) → Phase 4 (Projects sidebar entry + Account profile page). The **Projects** entry sits above Account in the sidebar; each project maps to one API key which serves as the session credential and can be shared by multiple users and/or teams. Combined with auto-reconnect (P0) and a guided setup flow (P1), this transforms the frontend from a captioning tool with bolted-on features into a cohesive production platform.
