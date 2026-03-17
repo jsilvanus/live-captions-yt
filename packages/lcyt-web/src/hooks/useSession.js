@@ -60,12 +60,14 @@ export function useSession({
   // Close EventSource on unmount
   useEffect(() => () => { esRef.current?.close(); }, []);
 
-  // Periodic health poll while connected
+  // Periodic health poll while connected.
+  // checkHealth only accesses refs and stable setState functions, so omitting it
+  // from the dependency array is safe — the interval always calls the current version.
   useEffect(() => {
     if (!connected) return;
     const id = setInterval(() => { checkHealth().catch(() => {}); }, 30_000);
     return () => clearInterval(id);
-  }, [connected]);
+  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Persistence ────────────────────────────────────────
 

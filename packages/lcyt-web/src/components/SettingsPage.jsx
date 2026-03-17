@@ -34,6 +34,11 @@ export function SettingsPage() {
   function handleImport(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 1_048_576) {
+      setImportResult({ ok: false, count: 0, errors: ['File is too large (max 1 MB)'] });
+      e.target.value = '';
+      return;
+    }
     const reader = new FileReader();
     reader.onload = (ev) => {
       try {
