@@ -2,12 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
 import { createApi } from '../lib/api';
+import { KEYS } from '../lib/storageKeys.js';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
 
-const CONFIG_KEY = 'lcyt-config';
-const AUTO_CONNECT_KEY = 'lcyt-autoconnect';
+const CONFIG_KEY = KEYS.session.config;
+const AUTO_CONNECT_KEY = KEYS.session.autoConnect;
 
 /**
  * Manages a BackendCaptionSender session, SSE subscription, and config persistence.
@@ -42,6 +43,7 @@ export function useSession({
   const [graphicsEnabled, setGraphicsEnabled] = useState(false);
   // 'unknown' | 'checking' | 'ok' | 'unreachable'
   const [healthStatus, setHealthStatus] = useState('unknown');
+  const [latencyMs, setLatencyMs] = useState(null);
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
@@ -57,6 +59,15 @@ export function useSession({
 
   // Close EventSource on unmount
   useEffect(() => () => { esRef.current?.close(); }, []);
+
+  // Periodic health poll while connected.
+  // checkHealth only accesses refs and stable setState functions, so omitting it
+  // from the dependency array is safe — the interval always calls the current version.
+  useEffect(() => {
+    if (!connected) return;
+    const id = setInterval(() => { checkHealth().catch(() => {}); }, 30_000);
+    return () => clearInterval(id);
+  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Persistence ────────────────────────────────────────
 
@@ -124,17 +135,26 @@ export function useSession({
 
   async function checkHealth(url) {
     const target = url ?? backendUrlRef.current;
-    if (!target) { setHealthStatus('unknown'); return false; }
+    if (!target) { setHealthStatus('unknown'); setLatencyMs(null); return false; }
     setHealthStatus('checking');
     try {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 5000);
+      const t0 = Date.now();
       const res = await fetch(`${target}/health`, { signal: ac.signal, cache: 'no-store' });
+      const rtt = Date.now() - t0;
       clearTimeout(timer);
-      setHealthStatus(res.ok ? 'ok' : 'unreachable');
+      if (res.ok) {
+        setHealthStatus('ok');
+        setLatencyMs(rtt);
+      } else {
+        setHealthStatus('unreachable');
+        setLatencyMs(null);
+      }
       return res.ok;
     } catch {
       setHealthStatus('unreachable');
+      setLatencyMs(null);
       return false;
     }
   }
@@ -271,7 +291,7 @@ export function useSession({
 
   function getBatchIntervalMs() {
     try {
-      const v = parseInt(localStorage.getItem('lcyt-batch-interval') || '0', 10);
+      const v = parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10);
       return Math.min(20, Math.max(0, v)) * 1000;
     } catch { return 0; }
   }
@@ -608,7 +628,7 @@ export function useSession({
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
-    healthStatus, checkHealth,
+    healthStatus, latencyMs, checkHealth,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,

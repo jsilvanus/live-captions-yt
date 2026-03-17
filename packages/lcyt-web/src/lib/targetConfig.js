@@ -1,4 +1,6 @@
-const KEY_TARGETS = 'lcyt:caption-targets';
+import { KEYS } from './storageKeys.js';
+
+const KEY_TARGETS = KEYS.targets.list;
 
 /**
  * Load the list of configured caption targets from localStorage.

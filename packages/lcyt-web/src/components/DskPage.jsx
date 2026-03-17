@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { KEYS } from '../lib/storageKeys.js';
 
 /**
  * DSK (downstream keyer) display page.
@@ -43,7 +44,7 @@ export function DskPage() {
     const fromUrl = params.get('server');
     if (fromUrl) return fromUrl.replace(/\/$/, '');
     try {
-      const cfg = JSON.parse(localStorage.getItem('lcyt-config') || '{}');
+      const cfg = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
       return (cfg.backendUrl || '').replace(/\/$/, '');
     } catch { return ''; }
   }

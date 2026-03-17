@@ -16,7 +16,9 @@
     "events": "^3.3.0",
     "lcyt": "*",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0"
+    "react-dom": "^18.3.0",
+    "react-grid-layout": "^2.2.2",
+    "wouter": "^3.9.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",

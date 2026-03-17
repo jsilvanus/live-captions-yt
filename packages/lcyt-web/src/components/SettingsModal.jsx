@@ -18,8 +18,9 @@ import {
 import { useToastContext } from '../contexts/ToastContext';
 import { getAdvancedMode, setAdvancedMode, applyTheme, applyTextSize } from '../lib/settings';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { KEYS } from '../lib/storageKeys.js';
 
-const CONFIG_KEY = 'lcyt-config';
+const CONFIG_KEY = KEYS.session.config;
 
 function persist(patch) {
   try {
@@ -239,7 +240,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   const [autoConnect, setAutoConnect] = useState(false);
   const [theme, setTheme] = useState('auto');
   const [textSize, setTextSize] = useState(
-    () => { try { return parseInt(localStorage.getItem('lcyt:textSize') || '13', 10); } catch { return 13; } }
+    () => { try { return parseInt(localStorage.getItem(KEYS.ui.textSize) || '13', 10); } catch { return 13; } }
   );
   const [showApiKey, setShowApiKey] = useState(false);
 
@@ -268,8 +269,8 @@ export function SettingsModal({ isOpen, onClose, inline }) {
     setBackendUrl(cfg.backendUrl || '');
     setApiKey(cfg.apiKey || '');
     setAutoConnect(session.getAutoConnect());
-    try { setTheme(localStorage.getItem('lcyt-theme') || 'auto'); } catch {}
-    const savedSize = parseInt(localStorage.getItem('lcyt:textSize') || '13', 10);
+    try { setTheme(localStorage.getItem(KEYS.ui.theme) || 'auto'); } catch {}
+    const savedSize = parseInt(localStorage.getItem(KEYS.ui.textSize) || '13', 10);
     setTextSize(savedSize);
     applyTextSize(savedSize);
     setAdvancedModeState(getAdvancedMode());

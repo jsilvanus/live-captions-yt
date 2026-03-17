@@ -6,6 +6,16 @@ import { ToastContext } from '../../src/contexts/ToastContext.jsx';
 import { LangProvider } from '../../src/contexts/LangContext.jsx';
 
 // ---------------------------------------------------------------------------
+// Mock wouter — StatusBar now uses useLocation() to navigate to /settings etc.
+// ---------------------------------------------------------------------------
+
+const mockNavigate = vi.fn();
+
+vi.mock('wouter', () => ({
+  useLocation: () => ['/captions', mockNavigate],
+}));
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -33,11 +43,8 @@ function renderStatusBar({ session, toast, ...props } = {}) {
   const s = session || mockSession();
   const t = toast || mockToast();
   const callbacks = {
-    onSettingsOpen: vi.fn(),
-    onCCOpen: vi.fn(),
     onControlsOpen: vi.fn(),
     onPrivacyOpen: vi.fn(),
-    onBroadcastOpen: vi.fn(),
     ...props,
   };
 
@@ -103,16 +110,15 @@ describe('StatusBar', () => {
     });
   });
 
-  it('opens settings when connecting with no config', async () => {
+  it('navigates to /settings when connecting with no config', async () => {
     const session = mockSession({
       getPersistedConfig: vi.fn(() => ({ backendUrl: '', apiKey: '' })),
     });
-    const callbacks = { onSettingsOpen: vi.fn() };
-    renderStatusBar({ session, ...callbacks });
+    renderStatusBar({ session });
 
     fireEvent.click(screen.getByTitle(/connect/i));
 
-    expect(callbacks.onSettingsOpen).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith('/settings');
     expect(session.connect).not.toHaveBeenCalled();
   });
 
@@ -129,27 +135,27 @@ describe('StatusBar', () => {
     });
   });
 
-  it('fires onSettingsOpen callback', () => {
-    const callbacks = { onSettingsOpen: vi.fn() };
-    renderStatusBar(callbacks);
-
-    // Find Settings button by title
+  it('navigates to /settings on Settings button click', () => {
+    renderStatusBar();
     fireEvent.click(screen.getByTitle('Settings'));
-    expect(callbacks.onSettingsOpen).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith('/settings');
   });
 
-  it('fires onCCOpen callback', () => {
-    const callbacks = { onCCOpen: vi.fn() };
-    renderStatusBar(callbacks);
-
+  it('navigates to /settings?tab=cc on CC button click', () => {
+    renderStatusBar();
     fireEvent.click(screen.getByTitle('CC'));
-    expect(callbacks.onCCOpen).toHaveBeenCalled();
+    expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=cc');
+  });
+
+  it('navigates to /broadcast on Broadcast button click', () => {
+    renderStatusBar();
+    fireEvent.click(screen.getByTitle('Broadcast'));
+    expect(mockNavigate).toHaveBeenCalledWith('/broadcast');
   });
 
   it('fires onControlsOpen callback', () => {
     const callbacks = { onControlsOpen: vi.fn() };
     renderStatusBar(callbacks);
-
     fireEvent.click(screen.getByTitle('Controls'));
     expect(callbacks.onControlsOpen).toHaveBeenCalled();
   });
@@ -157,17 +163,8 @@ describe('StatusBar', () => {
   it('fires onPrivacyOpen callback', () => {
     const callbacks = { onPrivacyOpen: vi.fn() };
     renderStatusBar(callbacks);
-
     fireEvent.click(screen.getByTitle('Privacy'));
     expect(callbacks.onPrivacyOpen).toHaveBeenCalled();
-  });
-
-  it('fires onBroadcastOpen callback', () => {
-    const callbacks = { onBroadcastOpen: vi.fn() };
-    renderStatusBar(callbacks);
-
-    fireEvent.click(screen.getByTitle('Broadcast'));
-    expect(callbacks.onBroadcastOpen).toHaveBeenCalled();
   });
 
   it('disables connect button while connecting', async () => {
@@ -179,7 +176,6 @@ describe('StatusBar', () => {
     fireEvent.click(screen.getByTitle(/connect/i));
 
     await waitFor(() => {
-      // Find the connect button by its CSS class
       const btn = document.querySelector('.status-bar__btn--connecting');
       expect(btn).not.toBeNull();
       expect(btn).toBeDisabled();
@@ -188,3 +184,4 @@ describe('StatusBar', () => {
     resolveConnect();
   });
 });
+

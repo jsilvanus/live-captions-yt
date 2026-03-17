@@ -1,15 +1,12 @@
 // Persist RTMP relay settings to localStorage.
 // All access is wrapped in try-catch (private browsing may throw).
 
-const KEY_MODE         = 'lcyt-relay-mode';          // 'caption' | 'rtmp'
-const KEY_TARGET_TYPE  = 'lcyt-relay-target-type';   // 'youtube' | 'generic' (slot 1 default)
-const KEY_YT_KEY       = 'lcyt-relay-youtube-key';   // YouTube stream key for RTMP (slot 1 default)
-const KEY_GENERIC_URL  = 'lcyt-relay-generic-url';   // base rtmp:// URL (slot 1 default)
-const KEY_GENERIC_NAME = 'lcyt-relay-generic-name';  // RTMP stream name / key (slot 1 default)
-const KEY_CAPTION_MODE = 'lcyt-relay-caption-mode';  // 'http' (slot 1 default)
+import { KEYS, relaySlotKey } from './storageKeys.js';
+
+const KEY_MODE = KEYS.relay.mode;
 
 // Per-slot keys (slots 1-4):
-function slotKey(slot, field) { return `lcyt-relay-slot-${slot}-${field}`; }
+function slotKey(slot, field) { return relaySlotKey(slot, field); }
 
 /** @returns {'caption'|'rtmp'} */
 export function getRelayMode() {
@@ -25,64 +22,52 @@ export function setRelayMode(mode) {
 
 /** @param {number} slot 1-4 */
 export function getSlotTargetType(slot) {
-  if (slot === 1) {
-    try { return localStorage.getItem(KEY_TARGET_TYPE) || 'youtube'; } catch { return 'youtube'; }
-  }
   try { return localStorage.getItem(slotKey(slot, 'type')) || 'youtube'; } catch { return 'youtube'; }
 }
 
 /** @param {number} slot @param {'youtube'|'generic'} type */
 export function setSlotTargetType(slot, type) {
-  if (slot === 1) { try { localStorage.setItem(KEY_TARGET_TYPE, type); } catch {} return; }
   try { localStorage.setItem(slotKey(slot, 'type'), type); } catch {}
 }
 
 /** @param {number} slot */
 export function getSlotYoutubeKey(slot) {
-  if (slot === 1) { try { return localStorage.getItem(KEY_YT_KEY) || ''; } catch { return ''; } }
-  try { return localStorage.getItem(slotKey(slot, 'yt-key')) || ''; } catch { return ''; }
+  try { return localStorage.getItem(slotKey(slot, 'ytKey')) || ''; } catch { return ''; }
 }
 
 /** @param {number} slot @param {string} key */
 export function setSlotYoutubeKey(slot, key) {
-  if (slot === 1) { try { localStorage.setItem(KEY_YT_KEY, key); } catch {} return; }
-  try { localStorage.setItem(slotKey(slot, 'yt-key'), key); } catch {}
+  try { localStorage.setItem(slotKey(slot, 'ytKey'), key); } catch {}
 }
 
 /** @param {number} slot */
 export function getSlotGenericUrl(slot) {
-  if (slot === 1) { try { return localStorage.getItem(KEY_GENERIC_URL) || ''; } catch { return ''; } }
-  try { return localStorage.getItem(slotKey(slot, 'generic-url')) || ''; } catch { return ''; }
+  try { return localStorage.getItem(slotKey(slot, 'genericUrl')) || ''; } catch { return ''; }
 }
 
 /** @param {number} slot @param {string} url */
 export function setSlotGenericUrl(slot, url) {
-  if (slot === 1) { try { localStorage.setItem(KEY_GENERIC_URL, url); } catch {} return; }
-  try { localStorage.setItem(slotKey(slot, 'generic-url'), url); } catch {}
+  try { localStorage.setItem(slotKey(slot, 'genericUrl'), url); } catch {}
 }
 
 /** @param {number} slot */
 export function getSlotGenericName(slot) {
-  if (slot === 1) { try { return localStorage.getItem(KEY_GENERIC_NAME) || ''; } catch { return ''; } }
-  try { return localStorage.getItem(slotKey(slot, 'generic-name')) || ''; } catch { return ''; }
+  try { return localStorage.getItem(slotKey(slot, 'genericName')) || ''; } catch { return ''; }
 }
 
 /** @param {number} slot @param {string} name */
 export function setSlotGenericName(slot, name) {
-  if (slot === 1) { try { localStorage.setItem(KEY_GENERIC_NAME, name); } catch {} return; }
-  try { localStorage.setItem(slotKey(slot, 'generic-name'), name); } catch {}
+  try { localStorage.setItem(slotKey(slot, 'genericName'), name); } catch {}
 }
 
 /** @param {number} slot */
 export function getSlotCaptionMode(slot) {
-  if (slot === 1) { try { return localStorage.getItem(KEY_CAPTION_MODE) || 'http'; } catch { return 'http'; } }
-  try { return localStorage.getItem(slotKey(slot, 'caption-mode')) || 'http'; } catch { return 'http'; }
+  try { return localStorage.getItem(slotKey(slot, 'captionMode')) || 'http'; } catch { return 'http'; }
 }
 
 /** @param {number} slot @param {'http'|'cea708'} mode */
 export function setSlotCaptionMode(slot, mode) {
-  if (slot === 1) { try { localStorage.setItem(KEY_CAPTION_MODE, mode); } catch {} return; }
-  try { localStorage.setItem(slotKey(slot, 'caption-mode'), mode); } catch {}
+  try { localStorage.setItem(slotKey(slot, 'captionMode'), mode); } catch {}
 }
 
 /** @param {number} slot */
@@ -116,41 +101,36 @@ export function setSlotFps(slot, fps) {
 
 /** @param {number} slot */
 export function getSlotVideoBitrate(slot) {
-  try { return localStorage.getItem(slotKey(slot, 'video-bitrate')) || ''; } catch { return ''; }
+  try { return localStorage.getItem(slotKey(slot, 'videoBitrate')) || ''; } catch { return ''; }
 }
 
 /** @param {number} slot @param {string} bitrate */
 export function setSlotVideoBitrate(slot, bitrate) {
   try {
-    if (bitrate) { localStorage.setItem(slotKey(slot, 'video-bitrate'), bitrate); }
-    else { localStorage.removeItem(slotKey(slot, 'video-bitrate')); }
+    if (bitrate) { localStorage.setItem(slotKey(slot, 'videoBitrate'), bitrate); }
+    else { localStorage.removeItem(slotKey(slot, 'videoBitrate')); }
   } catch {}
 }
 
 /** @param {number} slot */
 export function getSlotAudioBitrate(slot) {
-  try { return localStorage.getItem(slotKey(slot, 'audio-bitrate')) || ''; } catch { return ''; }
+  try { return localStorage.getItem(slotKey(slot, 'audioBitrate')) || ''; } catch { return ''; }
 }
 
 /** @param {number} slot @param {string} bitrate */
 export function setSlotAudioBitrate(slot, bitrate) {
   try {
-    if (bitrate) { localStorage.setItem(slotKey(slot, 'audio-bitrate'), bitrate); }
-    else { localStorage.removeItem(slotKey(slot, 'audio-bitrate')); }
+    if (bitrate) { localStorage.setItem(slotKey(slot, 'audioBitrate'), bitrate); }
+    else { localStorage.removeItem(slotKey(slot, 'audioBitrate')); }
   } catch {}
 }
 
 /** Remove all localStorage keys for a slot. */
 export function clearSlot(slot) {
   try {
-    if (slot === 1) {
-      [KEY_TARGET_TYPE, KEY_YT_KEY, KEY_GENERIC_URL, KEY_GENERIC_NAME, KEY_CAPTION_MODE]
-        .forEach(k => localStorage.removeItem(k));
-    } else {
-      ['type', 'yt-key', 'generic-url', 'generic-name', 'caption-mode']
-        .forEach(f => localStorage.removeItem(slotKey(slot, f)));
-    }
-    ['scale', 'fps', 'video-bitrate', 'audio-bitrate']
+    ['type', 'ytKey', 'genericUrl', 'genericName', 'captionMode']
+      .forEach(f => localStorage.removeItem(slotKey(slot, f)));
+    ['scale', 'fps', 'videoBitrate', 'audioBitrate']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
   } catch {}
 }

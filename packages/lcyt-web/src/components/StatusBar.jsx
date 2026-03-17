@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 
-export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyOpen, onBroadcastOpen }) {
+export function StatusBar({ onControlsOpen, onPrivacyOpen }) {
+  const [, navigate] = useLocation();
   const session = useSessionContext();
   const { showToast } = useToastContext();
   const { t } = useLang();
@@ -16,7 +18,7 @@ export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyO
     }
     const cfg = session.getPersistedConfig();
     if (!cfg.backendUrl || !cfg.apiKey) {
-      onSettingsOpen();
+      navigate('/settings');
       return;
     }
     setConnecting(true);
@@ -40,7 +42,7 @@ export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyO
       <span className="status-bar__brand">lcyt-web</span>
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">
-        <button className="status-bar__btn status-bar__btn--icon" onClick={onBroadcastOpen} title="Broadcast">
+        <button className="status-bar__btn status-bar__btn--icon" onClick={() => navigate('/broadcast')} title="Broadcast">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
             <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
           </svg>
@@ -48,8 +50,8 @@ export function StatusBar({ onSettingsOpen, onCCOpen, onControlsOpen, onPrivacyO
         <button className={connectBtnClass} onClick={handleConnectClick} disabled={connecting} title={session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}>
           {connecting ? t('settings.footer.connecting') : session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}
         </button>
-        <button className="status-bar__btn" onClick={onSettingsOpen} title="Settings">{t('statusBar.settings')}</button>
-        <button className="status-bar__btn" onClick={onCCOpen} title="CC">{t('statusBar.cc')}</button>
+        <button className="status-bar__btn" onClick={() => navigate('/settings')} title="Settings">{t('statusBar.settings')}</button>
+        <button className="status-bar__btn" onClick={() => navigate('/settings?tab=cc')} title="CC">{t('statusBar.cc')}</button>
         <button className="status-bar__btn" onClick={onControlsOpen} title="Controls">{t('statusBar.controls')}</button>
         <button className="status-bar__btn" onClick={onPrivacyOpen} title="Privacy">{t('statusBar.privacy')}</button>
       </div>

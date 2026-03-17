@@ -1,9 +1,11 @@
-const KEY_VENDOR        = 'lcyt:translation-vendor';
-const KEY_API_KEY       = 'lcyt:translation-vendor-key';
-const KEY_LIBRE_URL     = 'lcyt:translation-libre-url';
-const KEY_LIBRE_KEY     = 'lcyt:translation-libre-key';
-const KEY_SHOW_ORIGINAL = 'lcyt:translation-show-original';
-const KEY_TRANSLATIONS  = 'lcyt:translations';
+import { KEYS } from './storageKeys.js';
+
+const KEY_VENDOR        = KEYS.translation.vendor;
+const KEY_API_KEY       = KEYS.translation.vendorKey;
+const KEY_LIBRE_URL     = KEYS.translation.libreUrl;
+const KEY_LIBRE_KEY     = KEYS.translation.libreKey;
+const KEY_SHOW_ORIGINAL = KEYS.translation.showOriginal;
+const KEY_TRANSLATIONS  = KEYS.translation.list;
 
 // Legacy keys kept for one-time migration
 const _KEY_ENABLED_LEGACY = 'lcyt:translation-enabled';

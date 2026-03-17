@@ -1,3 +1,4 @@
+import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useRef } from 'react';
 
 const PRESET_STATE = {
@@ -195,9 +196,9 @@ function MixerStatusBar({ mixers, onManualSwitch }) {
 
 export function ProductionOperatorPage() {
   const params = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem('lcyt-backend-url') || '';
+  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey = params.get('apikey') || '';
-  const token = params.get('token') || localStorage.getItem('lcyt-token') || '';
+  const token = params.get('token') || localStorage.getItem(KEYS.session.token) || '';
 
   const [cameras, setCameras] = useState([]);
   const [mixers, setMixers] = useState([]);

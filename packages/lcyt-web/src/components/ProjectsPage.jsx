@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useUserAuth } from '../hooks/useUserAuth';
+import { KEYS } from '../lib/storageKeys.js';
 
 function copyToClipboard(text) {
   navigator.clipboard?.writeText(text).catch(() => {});
@@ -155,8 +156,9 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
   return (
     <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="settings-field">
-        <label className="settings-field__label">Project name</label>
+        <label className="settings-field__label" htmlFor="create-project-name">Project name</label>
         <input
+          id="create-project-name"
           className="settings-field__input"
           value={name}
           onChange={e => setName(e.target.value)}
@@ -213,14 +215,14 @@ export function ProjectsPage() {
 
   function handleUseProject(project) {
     try {
-      const existing = JSON.parse(localStorage.getItem('lcyt-config') || '{}');
-      localStorage.setItem('lcyt-config', JSON.stringify({
+      const existing = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
+      localStorage.setItem(KEYS.session.config, JSON.stringify({
         ...existing,
         backendUrl,
         apiKey: project.key,
       }));
     } catch {
-      localStorage.setItem('lcyt-config', JSON.stringify({ backendUrl, apiKey: project.key }));
+      localStorage.setItem(KEYS.session.config, JSON.stringify({ backendUrl, apiKey: project.key }));
     }
     window.location.href = '/';
   }

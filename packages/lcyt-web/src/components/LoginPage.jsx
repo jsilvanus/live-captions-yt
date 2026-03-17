@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useUserAuth } from '../hooks/useUserAuth';
+import { KEYS } from '../lib/storageKeys.js';
 
 function getBackendUrl() {
   // Read from URL param or localStorage
@@ -7,7 +8,7 @@ function getBackendUrl() {
   const urlParam = params.get('server');
   if (urlParam) return urlParam;
   try {
-    const cfg = JSON.parse(localStorage.getItem('lcyt-config') || '{}');
+    const cfg = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
     return cfg.backendUrl || '';
   } catch {
     return '';
@@ -52,8 +53,9 @@ export function LoginPage() {
         </h1>
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div className="settings-field">
-            <label className="settings-field__label">Server URL</label>
+            <label className="settings-field__label" htmlFor="login-backend-url">Server URL</label>
             <input
+              id="login-backend-url"
               className="settings-field__input"
               type="url"
               value={backendUrl}
@@ -64,8 +66,9 @@ export function LoginPage() {
             />
           </div>
           <div className="settings-field">
-            <label className="settings-field__label">Email</label>
+            <label className="settings-field__label" htmlFor="login-email">Email</label>
             <input
+              id="login-email"
               className="settings-field__input"
               type="email"
               value={email}
@@ -77,8 +80,9 @@ export function LoginPage() {
             />
           </div>
           <div className="settings-field">
-            <label className="settings-field__label">Password</label>
+            <label className="settings-field__label" htmlFor="login-password">Password</label>
             <input
+              id="login-password"
               className="settings-field__input"
               type="password"
               value={password}
@@ -97,7 +101,7 @@ export function LoginPage() {
             disabled={loading}
             style={{ marginTop: 4 }}
           >
-            {loading ? 'Signing in…' : 'Sign in'}
+            {loading ? 'Signing in…' : 'Sign In'}
           </button>
         </form>
         <p style={{ marginTop: 20, fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center' }}>

@@ -1,3 +1,4 @@
+import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback } from 'react';
 
 const CONTROL_TYPES = [
@@ -201,7 +202,7 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
 
 export function ProductionCamerasPage() {
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem('lcyt-backend-url') || '';
+  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey     = params.get('apikey') || '';
 
   const [cameras,       setCameras]       = useState([]);

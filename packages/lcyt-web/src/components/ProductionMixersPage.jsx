@@ -1,3 +1,4 @@
+import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback } from 'react';
 
 const MIXER_TYPES = [
@@ -243,7 +244,7 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
 
 export function ProductionMixersPage() {
   const params     = new URLSearchParams(window.location.search);
-  const backendUrl = params.get('server') || localStorage.getItem('lcyt-backend-url') || '';
+  const backendUrl = params.get('server') || localStorage.getItem(KEYS.session.backendUrl) || '';
   const apiKey     = params.get('apikey') || '';
 
   const [mixers,        setMixers]        = useState([]);

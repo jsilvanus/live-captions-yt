@@ -40,7 +40,7 @@ describe('LoginPage', () => {
   });
 
   it('reads backend URL from localStorage', () => {
-    localStorage.setItem('lcyt-config', JSON.stringify({ backendUrl: 'https://test.api' }));
+    localStorage.setItem('lcyt.session.config', JSON.stringify({ backendUrl: 'https://test.api' }));
     render(<LoginPage />);
     expect(screen.getByLabelText(/server url/i)).toHaveValue('https://test.api');
   });
