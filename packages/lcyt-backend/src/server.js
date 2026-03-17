@@ -210,7 +210,6 @@ const previewManager = new PreviewManager();
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
 const { captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, store, relayManager);
-const { dskRouter, dskTemplatesRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, store, auth, relayManager);
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -266,6 +265,9 @@ const app = express();
 // Auth middleware instance — created here so /icons can be mounted before the
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
+
+// DSK routers require auth — must be created after auth is initialized.
+const { dskRouter, dskTemplatesRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, store, auth, relayManager);
 
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.

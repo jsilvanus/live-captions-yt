@@ -18,7 +18,11 @@ const DEFAULT_ALLOWED_DOMAINS = 'https://lcyt.fi,https://www.lcyt.fi,http://loca
 function isAllowedDomain(domain) {
   const raw = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
   if (raw === '*') return true;
-  return raw.split(',').map(d => d.trim()).includes(domain);
+  // Strip scheme so both "app.lcyt.fi" and "https://app.lcyt.fi" match regardless
+  // of whether ALLOWED_DOMAINS entries include the scheme or not.
+  const stripScheme = s => s.trim().replace(/^https?:\/\//, '');
+  const incoming = stripScheme(domain);
+  return raw.split(',').some(d => stripScheme(d) === incoming);
 }
 
 /**
