@@ -9,40 +9,427 @@
 
 The lcyt-web frontend has grown organically from a simple captioning tool into a full production platform (captioning + RTMP relay + DSK graphics + production control + user accounts). The UI still reflects its captioning-first heritage: a flat two-panel layout with features stacked into modals. As the product scope expanded, several structural issues have emerged that make the tool harder to learn, harder to navigate, and harder to maintain.
 
-This document identifies concrete problems and proposes targeted improvements grouped into five themes.
+This document identifies concrete problems and proposes targeted improvements grouped into themes, followed by a detailed sidebar navigation specification.
 
 ---
 
-## 1. Navigation & Information Architecture
+## 1. Sidebar Navigation — Detailed Specification
 
-### Problem
+### Design Decisions
 
-There is no persistent navigation. The main app (`/`) is a single screen with all features accessed via header buttons that open modals (Settings, CC, Controls, Broadcast, Privacy). Meanwhile, DSK, Production, and User Account pages are completely separate full-page routes with no shared navigation — users must know the URL or find a link.
+- **Responsive default:** Expanded (icon + label, 200px) on desktop (>1024px), collapsed (icon-only, 48px) on mobile/tablet. User can toggle either way; preference persisted in localStorage.
+- **All sections always visible:** No progressive disclosure — every section is shown regardless of connection state. Disconnected features show inline hints ("Connect to use this feature") rather than being hidden. This avoids confusion about where features went.
+- **Hybrid settings approach:** Settings becomes a full routed page (`/settings`). Quick actions (connect/disconnect, sync, heartbeat) stay as a popover accessible from the header.
 
-The header shows five buttons at all times regardless of whether the user is connected or what role they have. A new user sees "Broadcast", "Controls", and "CC" buttons before they even have an API key.
+### Layout Structure
 
-### Proposals
+```
+┌──────────────────────────────────────────────────────────────┐
+│  [≡]  LCYT                           ● [Sync] [Connect] ⚡  │  ← Top bar (48px)
+├────────────────┬─────────────────────────────────────────────┤
+│                │                                             │
+│  🏠 Dashboard  │                                             │
+│                │                                             │
+│  ✏ Captions    │                                             │
+│                │                                             │
+│  🎤 Audio      │          (page content area)                │
+│                │                                             │
+│  📡 Broadcast  │                                             │
+│                │                                             │
+│  🖼 Graphics   │                                             │
+│    ├ Editor    │                                             │
+│    ├ Control   │                                             │
+│    └ Viewports │                                             │
+│                │                                             │
+│  🎬 Production │                                             │
+│    ├ Operator  │                                             │
+│    ├ Cameras   │                                             │
+│    ├ Mixers    │                                             │
+│    └ Bridges   │                                             │
+│                │                                             │
+│  ────────────  │                                             │
+│  👤 Account    │                                             │
+│  ⚙ Settings    │                                             │
+│                │                                             │
+└────────────────┴─────────────────────────────────────────────┘
+     200px (expanded)          remaining width
+      48px (collapsed)
+```
 
-**1a. Add a persistent sidebar or top nav bar** that replaces the flat header buttons. Group features into logical sections:
+### Collapsed State (48px, icon-only)
 
-| Section | Contains |
+```
+┌──────┬───────────────────────────────────────────┐
+│  ≡   │  LCYT                    ● [Connect] ⚡   │
+├──────┼───────────────────────────────────────────┤
+│  🏠   │                                           │
+│  ✏   │                                           │
+│  🎤   │                                           │
+│  📡   │                                           │
+│  🖼   │          (page content)                   │
+│  🎬   │                                           │
+│ ──── │                                           │
+│  👤   │                                           │
+│  ⚙   │                                           │
+└──────┴───────────────────────────────────────────┘
+ 48px
+```
+
+- Hover on a collapsed icon shows a tooltip with the section name
+- Click navigates to that section's default route
+- Sections with sub-pages (Graphics, Production): click goes to default sub-page; no expand in collapsed mode
+
+### Mobile (<768px)
+
+```
+┌──────────────────────────────────────────────┐
+│  [≡]  LCYT                   ● [Connect] ⚡  │
+├──────────────────────────────────────────────┤
+│                                              │
+│           (page content, full width)         │
+│                                              │
+│                                              │
+│                                              │
+└──────────────────────────────────────────────┘
+
+Hamburger [≡] opens a slide-over drawer:
+┌──────────────────┬───────────────────────────┐
+│                  │                           │
+│  🏠 Dashboard    │    (dimmed page behind)   │
+│  ✏ Captions      │                           │
+│  🎤 Audio        │                           │
+│  📡 Broadcast    │                           │
+│  🖼 Graphics ▾   │                           │
+│    ├ Editor      │                           │
+│    ├ Control     │                           │
+│    └ Viewports   │                           │
+│  🎬 Production ▾ │                           │
+│    ├ Operator    │                           │
+│    ├ Cameras     │                           │
+│    ├ Mixers      │                           │
+│    └ Bridges     │                           │
+│  ────────────    │                           │
+│  👤 Account      │                           │
+│  ⚙ Settings      │                           │
+│                  │                           │
+└──────────────────┴───────────────────────────┘
+      280px              backdrop (click to close)
+```
+
+Drawer auto-closes on navigation. Swipe-left to dismiss.
+
+### Route Map
+
+All sidebar routes share a common layout shell (`SidebarLayout`) with the top bar + sidebar. Public/embed routes remain standalone.
+
+#### Sidebar routes (inside `SidebarLayout`)
+
+| Sidebar item | Route | Component | Notes |
+|---|---|---|---|
+| **Dashboard** | `/` | `DashboardPage` | Dockable mini-panel grid (see Section 1b) |
+| **Captions** | `/captions` | `CaptionsPage` | Current `App.jsx` two-panel layout (files + input + sent log) |
+| **Audio** | `/audio` | `AudioPage` | Current `AudioPanel` promoted to full page; STT engine picker, mic controls, waveform, language |
+| **Broadcast** | `/broadcast` | `BroadcastPage` | Current `BroadcastModal` content (Encoder / YouTube / Stream tabs) as a full page |
+| **Graphics → Editor** | `/graphics/editor` | `DskEditorPage` | Existing component, now inside sidebar shell |
+| **Graphics → Control** | `/graphics/control` | `DskControlPage` | Existing component; `:key` from session context instead of URL |
+| **Graphics → Viewports** | `/graphics/viewports` | `DskViewportsPage` | Existing component, now inside sidebar shell |
+| **Production → Operator** | `/production` | `ProductionOperatorPage` | Existing component, now inside sidebar shell |
+| **Production → Cameras** | `/production/cameras` | `ProductionCamerasPage` | Existing component, now inside sidebar shell |
+| **Production → Mixers** | `/production/mixers` | `ProductionMixersPage` | Existing component, now inside sidebar shell |
+| **Production → Bridges** | `/production/bridges` | `ProductionBridgesPage` | Existing component, now inside sidebar shell |
+| **Account** | `/account` | `AccountPage` | Login/Register (if anonymous) or Projects list (if logged in) |
+| **Settings** | `/settings` | `SettingsPage` | Unified settings — all tabs (see Section 3) |
+
+#### Standalone routes (NO sidebar, full-screen)
+
+| Route | Component | Reason |
+|---|---|---|
+| `/view/:key` | `ViewerPage` | Public viewer — needs full screen, no chrome |
+| `/dsk/:key` | `DskPage` | Public green-screen overlay — no chrome, transparent bg |
+| `/embed/*` | `Embed*Page` | Iframe widgets — must be minimal, no sidebar |
+| `/mcp/:sessionId` | `SpeechCapturePage` | AI-driven session — standalone |
+| `/login` | `LoginPage` | Kept as standalone for direct-link access (also accessible via `/account`) |
+| `/register` | `RegisterPage` | Kept as standalone for direct-link access (also accessible via `/account`) |
+
+### Top Bar
+
+The top bar (48px) is shared across all sidebar routes:
+
+```
+[≡]  LCYT              ● health    [⚡ Quick Actions ▾]    [Connect / Disconnect]
+```
+
+| Element | Behavior |
 |---------|----------|
-| **Captions** | File viewer, Input bar, Sent log (current main view) |
-| **Audio/STT** | Microphone, STT engine selection, VAD settings |
-| **Broadcast** | Encoder control, YouTube live, RTMP relay |
-| **Graphics** | DSK editor, DSK control, Viewports |
-| **Production** | Cameras, Mixers, Bridges, Operator panel |
-| **Account** | Login/Register, Projects, Settings |
+| **[≡] Hamburger** | Toggle sidebar expanded/collapsed (desktop); open drawer (mobile) |
+| **LCYT** | Brand text; click → navigate to `/` (Dashboard) |
+| **● Health dot** | Green = connected + healthy; Yellow = connected + high latency; Red = disconnected. Hover shows tooltip: "Connected to api.lcyt.fi · 42ms latency · seq #127" |
+| **[⚡ Quick Actions]** | Dropdown/popover with: Sync clock, Heartbeat, Reset sequence, Set sequence, Caption codes. These are the current `ControlsPanel` actions — too transient for a full page |
+| **[Connect / Disconnect]** | Primary action button; same behavior as current `StatusBar` connect button |
 
-On mobile, collapse to a hamburger menu or bottom tab bar. On desktop, use a collapsible sidebar (icon-only when collapsed).
+### Sidebar Component Architecture
 
-**1b. Adopt a client-side router** (e.g. `react-router` or a lightweight alternative like `wouter`). Currently `main.jsx` evaluates `window.location.pathname` once at mount — page transitions require full reloads. A router enables:
-- SPA transitions between sections (no reload, state preserved)
-- URL-based deep linking (share a link to `/broadcast/stream` or `/graphics/editor`)
-- Browser back/forward navigation
-- Code splitting per route (lazy load Production, DSK pages)
+```
+SidebarLayout
+├── TopBar
+│   ├── HamburgerButton
+│   ├── BrandLink
+│   ├── HealthDot
+│   ├── QuickActionsPopover     ← replaces ControlsPanel modal
+│   └── ConnectButton
+├── Sidebar
+│   ├── SidebarItem (Dashboard)      → "/"
+│   ├── SidebarItem (Captions)       → "/captions"
+│   ├── SidebarItem (Audio)          → "/audio"
+│   ├── SidebarItem (Broadcast)      → "/broadcast"
+│   ├── SidebarGroup (Graphics)
+│   │   ├── SidebarItem (Editor)     → "/graphics/editor"
+│   │   ├── SidebarItem (Control)    → "/graphics/control"
+│   │   └── SidebarItem (Viewports)  → "/graphics/viewports"
+│   ├── SidebarGroup (Production)
+│   │   ├── SidebarItem (Operator)   → "/production"
+│   │   ├── SidebarItem (Cameras)    → "/production/cameras"
+│   │   ├── SidebarItem (Mixers)     → "/production/mixers"
+│   │   └── SidebarItem (Bridges)    → "/production/bridges"
+│   ├── SidebarDivider
+│   ├── SidebarItem (Account)        → "/account"
+│   └── SidebarItem (Settings)       → "/settings"
+└── PageContent                       ← router outlet
+```
 
-**1c. Progressive disclosure** — hide advanced sections behind feature flags or behind the connection state. A disconnected user should see: Connect, Settings, and maybe File viewer. Broadcast, CC targets, Controls, Production, and Graphics should only appear after a session is established or when explicitly enabled in settings.
+### Router Choice
+
+Use **`wouter`** (lightweight, ~1.5KB) rather than `react-router` (heavier). It supports:
+- Path patterns with params (`/graphics/control` etc.)
+- `useLocation()` hook for active-state highlighting
+- `<Link>` component for SPA navigation
+- Nested routes via `<Router base="...">` or flat route list
+- No extra dependencies
+
+### Sidebar State Persistence
+
+| Key | Value | Default |
+|-----|-------|---------|
+| `lcyt.sidebar.expanded` | `boolean` | `true` on desktop, `false` on mobile |
+| `lcyt.sidebar.graphics.open` | `boolean` | `false` (sub-group collapsed) |
+| `lcyt.sidebar.production.open` | `boolean` | `false` (sub-group collapsed) |
+
+### Active State Highlighting
+
+- Exact match: `SidebarItem` for `/` (Dashboard) only highlights on exact `/`
+- Prefix match: `SidebarItem` for `/production/cameras` highlights on that path
+- Group auto-open: navigating to `/graphics/editor` auto-expands the Graphics group
+- Active item: bold text + left accent border (4px, `var(--color-accent)`)
+
+### Disconnected Hints
+
+When not connected, pages that require a session show an inline banner at the top of the page content:
+
+```
+┌─────────────────────────────────────────────────┐
+│ ⚠ Not connected. Connect to a backend to use    │
+│ this feature.                     [Connect now]  │
+└─────────────────────────────────────────────────┘
+```
+
+The page content still renders (read-only / skeleton state) so users can explore what's available.
+
+### Migration Path (from current UI)
+
+1. **Phase 1:** Add `wouter` router + `SidebarLayout` shell. Mount current `App.jsx` at `/captions` inside the shell. Create `DashboardPage` at `/`. All other sidebar routes initially render placeholder "Coming soon" or redirect.
+2. **Phase 2:** Move `BroadcastModal` content → `/broadcast` page. Move `AudioPanel` → `/audio` page. Mount existing DSK/Production pages inside sidebar shell.
+3. **Phase 3:** Create `/settings` page (merge SettingsModal + CCModal). Replace `ControlsPanel` with `QuickActionsPopover` in top bar.
+4. **Phase 4:** Create `/account` page (merge Login/Register/Projects). Remove old standalone `/login` and `/register` (or redirect to `/account`).
+
+---
+
+### 1b. Dashboard Page (`/`) — Dockable Panel Grid
+
+The Dashboard is the landing page. It shows a configurable grid of mini-panels — lightweight, read-mostly versions of the main pages. Users can add, remove, rearrange, and resize panels.
+
+#### Grid Library
+
+Use **`react-grid-layout`** (~40KB) for drag-to-reorder and resize. It provides:
+- Drag handles on panel headers
+- Responsive breakpoints (lg/md/sm/xs)
+- Persisted layouts (serialize to localStorage)
+- Collision detection and auto-compaction
+
+Install: `npm install react-grid-layout -w packages/lcyt-web`
+
+#### Dashboard Layout
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  Dashboard                                          [+ Add]  │
+├──────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌─ Status ──────────┐  ┌─ Sent Log ────────────────────┐   │
+│  │ ● Connected       │  │ ✓✓ Hello world        12:01   │   │
+│  │ api.lcyt.fi       │  │ ✓  Testing 123        12:02   │   │
+│  │ Seq: 127          │  │ ⏳ New caption...      12:03   │   │
+│  │ Targets: 2 YT     │  │                               │   │
+│  └───────────────────┘  └───────────────────────────────┘   │
+│                                                              │
+│  ┌─ Quick Send ──────────────────────────────────────────┐   │
+│  │ [Type a caption...                        ] [Send]    │   │
+│  └───────────────────────────────────────────────────────┘   │
+│                                                              │
+│  ┌─ File Preview ────┐  ┌─ Broadcast ───────────────────┐   │
+│  │ sermon.txt  L42   │  │ Encoder: ● idle               │   │
+│  │   41: ...         │  │ Relay: 2/3 slots active       │   │
+│  │ > 42: Current ln  │  │ RTMP: receiving               │   │
+│  │   43: ...         │  └───────────────────────────────┘   │
+│  └───────────────────┘                                       │
+│                                                              │
+└──────────────────────────────────────────────────────────────┘
+```
+
+Panels are draggable by their header bar and resizable from the bottom-right corner.
+
+#### Available Widgets
+
+| Widget ID | Title | Content | Min size (grid units) | Default size |
+|-----------|-------|---------|----------------------|--------------|
+| `status` | Status | Connection dot, backend URL, sequence, sync offset, target count | 2x2 | 3x3 |
+| `sent-log` | Sent Log | Last 10 captions with status icons (pending/confirmed/error) | 3x2 | 4x4 |
+| `input` | Quick Send | Text input + send button, language badge | 3x1 | 6x1 |
+| `file-preview` | File Preview | Active filename, pointer, ~5 lines around cursor with highlight | 2x3 | 3x4 |
+| `audio-meter` | Audio | Mic toggle + level meter canvas + interim text | 2x2 | 3x2 |
+| `viewer` | Viewer | Subscribe to `/viewer/:key` SSE, show last 5 captions | 3x2 | 4x3 |
+| `broadcast` | Broadcast | Encoder status dot, RTMP relay slot count, active/inactive | 2x2 | 3x2 |
+
+#### Panel Card Component (`DashboardCard`)
+
+Each widget is wrapped in a card:
+
+```
+┌─ Title ─────────────────── [_] [✕] ─┐
+│                                       │  ← drag handle (header)
+│  (widget content)                     │
+│                                       │
+└───────────────────────────── ◢ resize ┘
+```
+
+- **Header:** title text (left), collapse `[_]` and remove `[✕]` buttons (right). Header is the drag handle.
+- **Body:** widget content. Hidden when collapsed.
+- **Resize handle:** bottom-right corner (provided by react-grid-layout).
+- **Collapsed state:** header-only, 1 grid row height.
+
+#### Panel Picker (`[+ Add]` button)
+
+Clicking `[+ Add]` in the dashboard header opens a dropdown/popover:
+
+```
+┌─ Add panels ─────────────────┐
+│ ☑ Status                     │
+│ ☑ Sent Log                   │
+│ ☑ Quick Send                 │
+│ ☐ File Preview               │
+│ ☐ Audio                      │
+│ ☐ Viewer                     │
+│ ☐ Broadcast                  │
+└──────────────────────────────┘
+```
+
+Checked = currently on dashboard. Toggle to add/remove.
+
+#### "Pin to Dashboard" from Main Pages
+
+Each main page header (when sidebar navigation is implemented) gets a small pin icon:
+
+```
+Captions                              [📌]
+```
+
+- Unpinned (outline): click → adds the corresponding widget(s) to dashboard
+- Pinned (filled): click → removes from dashboard
+- Mapping: Captions → `file-preview` + `input`, Audio → `audio-meter`, Broadcast → `broadcast`
+
+The pin state is read from the same `useDashboardConfig()` hook.
+
+#### Config Persistence
+
+**localStorage key:** `lcyt.dashboard`
+
+```json
+{
+  "panels": ["status", "sent-log", "input"],
+  "layouts": {
+    "lg": [
+      { "i": "status", "x": 0, "y": 0, "w": 3, "h": 3 },
+      { "i": "sent-log", "x": 3, "y": 0, "w": 4, "h": 4 },
+      { "i": "input", "x": 0, "y": 3, "w": 6, "h": 1 }
+    ],
+    "md": [...],
+    "sm": [...]
+  }
+}
+```
+
+`panels` array controls which widgets are visible. `layouts` is the react-grid-layout serialized layout per breakpoint. Both updated on every layout change and persisted.
+
+**Default panels** (first visit, no config): `status`, `sent-log`, `input`.
+
+#### Data Flow
+
+All widgets share the existing context tree — no separate sessions or connections:
+
+```
+AppProviders (SessionContext, FileContext, SentLogContext, ToastContext)
+└── SidebarLayout
+    └── DashboardPage
+        └── ResponsiveGridLayout (react-grid-layout)
+            ├── DashboardCard key="status"
+            │   └── StatusWidget        → reads SessionContext
+            ├── DashboardCard key="sent-log"
+            │   └── SentLogWidget       → reads SentLogContext
+            ├── DashboardCard key="input"
+            │   └── InputWidget         → reads/writes SessionContext
+            ├── DashboardCard key="file-preview"
+            │   └── FilePreviewWidget   → reads FileContext
+            ├── DashboardCard key="audio-meter"
+            │   └── AudioMeterWidget    → Web Audio API + SessionContext
+            ├── DashboardCard key="viewer"
+            │   └── ViewerWidget        → independent EventSource
+            └── DashboardCard key="broadcast"
+                └── BroadcastWidget     → reads SessionContext
+```
+
+Exception: `ViewerWidget` creates its own `EventSource` to `/viewer/:key` (same pattern as `ViewerPage`). The viewer key comes from the target config in `SessionContext`.
+
+#### Empty Dashboard
+
+When no panels are configured:
+
+```
+┌──────────────────────────────────────────────┐
+│                                              │
+│  Welcome to LCYT                             │
+│                                              │
+│  Add panels to build your dashboard.         │
+│                                              │
+│  [+ Add panels]       [Go to Captions →]     │
+│                                              │
+└──────────────────────────────────────────────┘
+```
+
+#### New Files
+
+| File | Purpose | ~LOC |
+|------|---------|------|
+| `src/components/DashboardPage.jsx` | Page: grid layout + panel picker + empty state | ~150 |
+| `src/components/dashboard/DashboardCard.jsx` | Card wrapper: header, collapse, remove, drag handle | ~60 |
+| `src/components/dashboard/StatusWidget.jsx` | Mini status: connection, seq, targets | ~50 |
+| `src/components/dashboard/SentLogWidget.jsx` | Mini sent log: last 10 entries | ~60 |
+| `src/components/dashboard/InputWidget.jsx` | Mini input: text field + send button | ~50 |
+| `src/components/dashboard/FilePreviewWidget.jsx` | Mini file viewer: name, pointer, 5 lines | ~60 |
+| `src/components/dashboard/AudioMeterWidget.jsx` | Mini audio: mic toggle + meter | ~80 |
+| `src/components/dashboard/ViewerWidget.jsx` | Mini viewer: SSE, last 5 captions | ~80 |
+| `src/components/dashboard/BroadcastWidget.jsx` | Mini broadcast: encoder + relay status | ~50 |
+| `src/components/dashboard/PanelPicker.jsx` | Add-panel checkbox dropdown | ~60 |
+| `src/hooks/useDashboardConfig.js` | Config CRUD hook (panels, layouts, localStorage) | ~70 |
+| `src/styles/dashboard.css` | Dashboard grid, card, widget styles | ~120 |
 
 ---
 
@@ -254,16 +641,17 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P0** | 2a. Guided setup flow | High — unblocks new users | Medium |
+| **P0** | 1 Phase 1: `wouter` router + `SidebarLayout` shell + Dashboard at `/` | High — foundation for everything | Medium |
+| **P0** | 1b: Dashboard dockable panel grid (`react-grid-layout`) | High — landing page + overview | Medium |
+| **P0** | 1 Phase 2: Move Captions to `/captions`, Broadcast/Audio/DSK/Production into sidebar | High — unifies navigation | Medium |
 | **P0** | 6b. Auto-reconnect | High — prevents mid-broadcast failures | Low |
 | **P0** | 6c. Unsaved work protection | High — prevents data loss | Low |
-| **P1** | 1b. Client-side router | High — enables all navigation improvements | Medium |
-| **P1** | 1a. Sidebar navigation | High — discoverability of all features | Medium |
-| **P1** | 3a. Unified settings page | Medium — reduces confusion | Medium |
-| **P1** | 1c. Progressive disclosure | Medium — reduces cognitive load | Low |
+| **P1** | 1 Phase 3: `/settings` page (merge modals) + QuickActions popover | Medium — reduces confusion | Medium |
+| **P1** | 1 Phase 4: `/account` page (merge Login/Register/Projects) | Medium — unified auth flow | Low |
+| **P1** | 2a. Guided setup flow | High — unblocks new users | Medium |
+| **P1** | 6a. Connection health dot in top bar | Low-Medium — operational awareness | Low |
 | **P2** | 5a. Command palette | Medium — power user productivity | Medium |
-| **P2** | 4a. Context-aware layout modes | Medium — better use of screen space | High |
-| **P2** | 6a. Connection health indicator | Low-Medium — operational awareness | Low |
+| **P2** | 4a. Context-aware layout modes per section | Medium — better use of screen space | High |
 | **P2** | 5b. Keyboard shortcuts help | Low — discoverability | Low |
 | **P2** | 7b. Context splitting | Low — performance improvement | Medium |
 | **P3** | 4b. Detachable panels | Low — niche use case | Medium |
@@ -280,4 +668,6 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support. The main gaps are **discoverability** (new users can't find features), **navigation** (features live in disconnected modals and separate pages), and **resilience** (no auto-reconnect, no unsaved-work protection).
 
-The highest-impact changes are: a guided setup flow (P0), auto-reconnect (P0), a client-side router with sidebar navigation (P1), and a unified settings page (P1). These four changes would transform the frontend from a captioning tool with bolted-on features into a cohesive production platform.
+The central change is the **sidebar navigation** (Section 1): a responsive collapsible sidebar using `wouter` for SPA routing. It unifies all features — Captions, Audio, Broadcast, Graphics, Production, Account, Settings — into a single navigable shell. All sections are always visible (greyed-out hints when disconnected), the sidebar auto-collapses on mobile into a slide-over drawer, and settings become a full page while quick actions (sync, heartbeat, caption codes) live in a top-bar popover.
+
+The 4-phase migration path allows incremental delivery: Phase 1 (router + shell) → Phase 2 (move existing pages into shell) → Phase 3 (unified settings page) → Phase 4 (unified account page). Combined with auto-reconnect (P0) and a guided setup flow (P1), this transforms the frontend from a captioning tool with bolted-on features into a cohesive production platform.
