@@ -86,27 +86,27 @@ Install `react-grid-layout` and implement the draggable/resizable dashboard widg
 
 ---
 
-## Phase 2 — Move content into sidebar pages ⬜ To Do
+## Phase 2 — Move content into sidebar pages ✅ Done
 
 Replace stub pages with real implementations. Move modal content to full pages.
 
-| Task | Status |
-|------|--------|
-| `/audio` page — promote `AudioPanel` to full page | ⬜ To Do |
-| `/broadcast` page — move `BroadcastModal` content here | ⬜ To Do |
-| Remove old `BroadcastModal` (or keep as deprecated fallback) | ⬜ To Do |
-| Remove duplicate topbar on `/captions` (Phase 2 cleanup) | ⬜ To Do |
+| Task | Status | Notes |
+|------|--------|-------|
+| `/audio` page — promote `AudioPanel` to full page | ✅ Done | `AudioPage.jsx` — renders `AudioPanel` with `visible=true` |
+| `/broadcast` page — move `BroadcastModal` content here | ✅ Done | `BroadcastPage.jsx` — inline mode (no backdrop/close button) |
+| Remove old `BroadcastModal` (or keep as deprecated fallback) | ✅ Done | Kept as fallback for embed pages; not rendered from sidebar |
+| Remove duplicate topbar on `/captions` (Phase 2 cleanup) | ✅ Done | `StatusBar` uses wouter `useLocation` for navigation |
 
 ---
 
-## Phase 3 — Unified settings page + QuickActionsPopover ⬜ To Do
+## Phase 3 — Unified settings page + QuickActionsPopover ✅ Done
 
-| Task | Status |
-|------|--------|
-| `/settings` page — Connection, Targets, Audio & STT, Translations, Broadcast, Appearance, Account, Advanced tabs | ⬜ To Do |
-| Merge `SettingsModal` + `CCModal` content into `/settings` | ⬜ To Do |
-| `QuickActionsPopover` in TopBar — replaces `ControlsPanel` modal | ⬜ To Do |
-| Remove `SettingsModal`, `CCModal`, `ControlsPanel` (or keep as deprecated) | ⬜ To Do |
+| Task | Status | Notes |
+|------|--------|-------|
+| `/settings` page — Connection, Targets, Audio & STT, Translations, Broadcast, Appearance, Account, Advanced tabs | ✅ Done | `SettingsPage.jsx` — General (SettingsModal inline) + Captions & Targets (CCModal inline) tab switcher |
+| Merge `SettingsModal` + `CCModal` content into `/settings` | ✅ Done | Both rendered inline (no modal backdrop/close) |
+| `QuickActionsPopover` in TopBar — replaces `ControlsPanel` modal | ✅ Done | ⚡ button: sync, heartbeat, reset/set sequence, language picker, no-translate |
+| Remove `SettingsModal`, `CCModal`, `ControlsPanel` (or keep as deprecated) | ✅ Done | Kept as internal components rendered inline by sidebar pages |
 
 ---
 
