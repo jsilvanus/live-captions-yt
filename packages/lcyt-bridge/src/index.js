@@ -15,6 +15,17 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseDotenv } from 'dotenv';
 
 // ---------------------------------------------------------------------------
+// Portable module-directory helper (works in both ESM and CJS bundles)
+// ---------------------------------------------------------------------------
+
+function getModuleDir() {
+  // __dirname is defined in CJS bundles (esbuild output); import.meta.url is
+  // available when running directly as ESM with `node src/index.js`.
+  if (typeof __dirname !== 'undefined') return __dirname;
+  return dirname(fileURLToPath(import.meta.url));
+}
+
+// ---------------------------------------------------------------------------
 // Load .env from the same directory as the executable (or fallback to cwd)
 // ---------------------------------------------------------------------------
 
@@ -24,7 +35,7 @@ function loadConfig() {
   // process.execPath's directory for the real .env location.
   const exeDir = process.pkg
     ? dirname(process.execPath)
-    : dirname(fileURLToPath(import.meta.url));
+    : getModuleDir();
 
   const envPath = join(exeDir, '.env');
 
@@ -50,62 +61,66 @@ function loadConfig() {
 // Main
 // ---------------------------------------------------------------------------
 
-const config = loadConfig();
-const version = getVersion();
+async function main() {
+  const config = loadConfig();
+  const version = getVersion();
 
-process.title = `lcyt-bridge v${version}`;
-console.info(`[lcyt-bridge] v${version} starting`);
-console.info(`[lcyt-bridge] Backend: ${config.backendUrl}`);
+  process.title = `lcyt-bridge v${version}`;
+  console.info(`[lcyt-bridge] v${version} starting`);
+  console.info(`[lcyt-bridge] Backend: ${config.backendUrl}`);
 
-// No token — run a health check against the backend and exit.
-if (!config.token) {
-  console.info('[lcyt-bridge] No BRIDGE_TOKEN configured — running health check and exiting.');
-  console.info('[lcyt-bridge] Set BACKEND_URL and BRIDGE_TOKEN in a .env file to run as a relay agent.');
-  try {
-    const res = await fetch(`${config.backendUrl}/health`);
-    const body = await res.json().catch(() => ({}));
-    if (res.ok) {
-      console.info(`[lcyt-bridge] Backend healthy: ${JSON.stringify(body)}`);
-      process.exit(0);
-    } else {
-      console.warn(`[lcyt-bridge] Backend returned HTTP ${res.status}: ${JSON.stringify(body)}`);
+  // No token — run a health check against the backend and exit.
+  if (!config.token) {
+    console.info('[lcyt-bridge] No BRIDGE_TOKEN configured — running health check and exiting.');
+    console.info('[lcyt-bridge] Set BACKEND_URL and BRIDGE_TOKEN in a .env file to run as a relay agent.');
+    try {
+      const res = await fetch(`${config.backendUrl}/health`);
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) {
+        console.info(`[lcyt-bridge] Backend healthy: ${JSON.stringify(body)}`);
+        process.exit(0);
+      } else {
+        console.warn(`[lcyt-bridge] Backend returned HTTP ${res.status}: ${JSON.stringify(body)}`);
+        process.exit(1);
+      }
+    } catch (err) {
+      console.error(`[lcyt-bridge] Health check failed: ${err.message}`);
       process.exit(1);
     }
-  } catch (err) {
-    console.error(`[lcyt-bridge] Health check failed: ${err.message}`);
-    process.exit(1);
   }
-}
 
-const { Bridge } = await import('./bridge.js');
-const { createTray } = await import('./tray.js');
+  const { Bridge } = await import('./bridge.js');
+  const { createTray } = await import('./tray.js');
 
-const bridge = new Bridge(config);
+  const bridge = new Bridge(config);
 
-// System tray (optional — gracefully skipped if unavailable)
-createTray({
-  bridge,
-  onQuit() {
-    console.info('[lcyt-bridge] Quit requested from tray');
+  // System tray (optional — gracefully skipped if unavailable)
+  await createTray({
+    bridge,
+    onQuit() {
+      console.info('[lcyt-bridge] Quit requested from tray');
+      bridge.destroy();
+      process.exit(0);
+    },
+  });
+
+  // Start the bridge
+  bridge.start();
+  bridge.startHeartbeat(30_000);
+
+  // Graceful shutdown on Ctrl+C / SIGTERM
+  function shutdown() {
+    console.info('[lcyt-bridge] Shutting down…');
     bridge.destroy();
     process.exit(0);
-  },
-});
+  }
+  process.on('SIGINT',  shutdown);
+  process.on('SIGTERM', shutdown);
 
-// Start the bridge
-bridge.start();
-bridge.startHeartbeat(30_000);
-
-// Graceful shutdown on Ctrl+C / SIGTERM
-function shutdown() {
-  console.info('[lcyt-bridge] Shutting down…');
-  bridge.destroy();
-  process.exit(0);
+  console.info('[lcyt-bridge] Running. Press Ctrl+C to quit.');
 }
-process.on('SIGINT',  shutdown);
-process.on('SIGTERM', shutdown);
 
-console.info('[lcyt-bridge] Running. Press Ctrl+C to quit.');
+main().catch(err => { console.error('[lcyt-bridge] Fatal:', err); process.exit(1); });
 
 // ---------------------------------------------------------------------------
 
@@ -114,7 +129,7 @@ function getVersion() {
   // Falls back to reading package.json when running directly with `node src/index.js`.
   if (typeof __BRIDGE_VERSION__ !== 'undefined') return __BRIDGE_VERSION__;
   try {
-    const __dir = dirname(fileURLToPath(import.meta.url));
+    const __dir = getModuleDir();
     const pkg   = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8'));
     return pkg.version ?? '?';
   } catch {

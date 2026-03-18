@@ -15,20 +15,20 @@
 const ICON_CONNECTED    = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='; // 1×1 green placeholder
 const ICON_DISCONNECTED = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwADhQGAWjR9awAAAABJRU5ErkJggg=='; // 1×1 grey placeholder
 
-let SysTray;
-try {
-  const mod = await import('node-systray');
-  SysTray = mod.default ?? mod.SysTray;
-} catch {
-  // node-systray not available (headless, pkg issue, etc.) — skip tray
-}
-
 const IDX_STATUS_SSE = 0;
 const IDX_STATUS_TCP = 1;
 const IDX_RECONNECT  = 3;
 const IDX_QUIT       = 5;
 
-export function createTray({ bridge, onQuit }) {
+export async function createTray({ bridge, onQuit }) {
+  let SysTray;
+  try {
+    const mod = await import('node-systray');
+    SysTray = mod.default ?? mod.SysTray;
+  } catch {
+    // node-systray not available (headless, pkg issue, etc.) — skip tray
+  }
+
   if (!SysTray) {
     console.info('[lcyt-bridge] System tray not available — running in console mode.');
     // Still wire up status logging
