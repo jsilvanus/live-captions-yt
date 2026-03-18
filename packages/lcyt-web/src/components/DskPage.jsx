@@ -61,8 +61,8 @@ export function DskPage() {
   const [textLayers, setTextLayers]   = useState([]);
   // live bindings from caption codes: { section: 'Gospel', stanza: '...', ... }
   const [bindings, setBindings]       = useState({});
-  // active template from server-side activate: full template JSON or null
-  const [activeTemplate, setActiveTemplate] = useState(null);
+  // active templates from server-side broadcast: array of template JSON objects
+  const [activeTemplates, setActiveTemplates] = useState([]);
   // live text overrides from broadcast: { layerId: text }
   const [layerOverrides, setLayerOverrides] = useState({});
 
@@ -147,12 +147,26 @@ export function DskPage() {
       fetchImages();
     });
 
-    // Template activated from control panel — render on this page too
+    // templates event (multi-select broadcast) — render all selected templates simultaneously
+    es.addEventListener('templates', (e) => {
+      if (!mounted.current) return;
+      try {
+        const { templates: tmpls } = JSON.parse(e.data);
+        if (Array.isArray(tmpls) && tmpls.length > 0) {
+          setActiveTemplates(tmpls);
+          setLayerOverrides({});
+          const first = tmpls[0];
+          setVpDimensions({ width: first.width || 1920, height: first.height || 1080 });
+        }
+      } catch {}
+    });
+
+    // template event (legacy single-template, e.g. from activate endpoint) — backward compat
     es.addEventListener('template', (e) => {
       if (!mounted.current) return;
       try {
         const { template: tmpl } = JSON.parse(e.data);
-        setActiveTemplate(tmpl ?? null);
+        setActiveTemplates(tmpl ? [tmpl] : []);
         setLayerOverrides({});
         if (tmpl) {
           setVpDimensions({ width: tmpl.width || 1920, height: tmpl.height || 1080 });
@@ -214,8 +228,9 @@ export function DskPage() {
   // ── Container sizing ────────────────────────────────────
   // When a viewport with specific dimensions is set, scale the fixed-size container to fit
   // the window (same approach as DskEditorPage canvas scaling).
-  const activeBg = (activeTemplate?.background && activeTemplate.background !== 'transparent')
-    ? activeTemplate.background
+  const firstTemplate = activeTemplates[0];
+  const activeBg = (firstTemplate?.background && firstTemplate.background !== 'transparent')
+    ? firstTemplate.background
     : bgColor;
   const containerStyle = buildContainerStyle(vpDimensions, scale, activeBg);
 
@@ -231,7 +246,7 @@ export function DskPage() {
   return (
     <div style={containerStyle}>
       {/* CSS keyframes for template layer animations */}
-      {activeTemplate && <style>{LCYT_KEYFRAMES}</style>}
+      {activeTemplates.length > 0 && <style>{LCYT_KEYFRAMES}</style>}
 
       {/* All images pre-loaded (hidden) for zero-latency visibility toggle */}
       {images.map(img => (
@@ -279,9 +294,11 @@ export function DskPage() {
         );
       })}
 
-      {/* Template layers — rendered on top of image overlays when a template is active */}
-      {activeTemplate && (activeTemplate.layers || []).map((layer, idx) =>
-        renderTemplateLayer(layer, 100 + idx, serverUrl, layerOverrides, bindings)
+      {/* Template layers — all selected templates rendered in selection order */}
+      {activeTemplates.flatMap((tmpl, tmplIdx) =>
+        (tmpl.layers || []).map((layer, layerIdx) =>
+          renderTemplateLayer(layer, 100 + tmplIdx * 100 + layerIdx, serverUrl, layerOverrides, bindings)
+        )
       )}
 
       {/* CC burn-in text (cc=1 mode only) */}

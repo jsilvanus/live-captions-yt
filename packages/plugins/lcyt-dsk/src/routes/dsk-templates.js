@@ -169,16 +169,24 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
 
   // POST /dsk/:apikey/broadcast — inject live data via page.evaluate() without page reload.
   // Animations keep running; only the targeted DOM elements are updated.
-  // Body: { updates: [{ selector: string, text: string }, ...] }
-  //   or: { selector: string, text: string }  (single-item shorthand)
+  // Body: { templateIds?: number[], updates?: [{ selector, text }, ...] }
+  //   or: { selector: string, text: string }  (single-item shorthand, no templateIds)
+  //   or: { templateIds: number[] }            (template-push only, no text updates)
   router.post('/:apikey/broadcast', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const { updates, selector, text, templateId } = req.body || {};
+    const { updates, selector, text, templateId, templateIds } = req.body || {};
 
-    // Accept both array and single-item shorthand
-    const items = updates ?? (selector != null ? [{ selector, text }] : null);
-    if (!Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Provide updates array or {selector, text}' });
+    // Build update items — allow empty list when templateIds is provided
+    const items = updates ?? (selector != null ? [{ selector, text }] : []);
+    const idList = Array.isArray(templateIds)
+      ? templateIds.map(Number).filter(n => Number.isInteger(n))
+      : templateId != null ? [Number(templateId)].filter(n => Number.isInteger(n)) : [];
+
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: 'updates must be an array' });
+    }
+    if (items.length === 0 && idList.length === 0) {
+      return res.status(400).json({ error: 'Provide updates array, {selector, text}, or templateIds' });
     }
     for (const item of items) {
       if (typeof item.selector !== 'string' || !item.selector) {
@@ -186,25 +194,36 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
       }
     }
 
-    // Push text updates to client-side overlay subscribers (selector '#layerId' → id 'layerId')
+    // Push to client-side overlay subscribers via SSE
     if (store) {
-      // If a template id is provided, push the full template JSON atomically with the text data
-      if (templateId != null) {
-        const tmplRow = getTemplate(db, Number(templateId), req.params.apikey);
-        if (tmplRow) {
-          store.emitDskEvent(req.params.apikey, 'template', { template: tmplRow.templateJson, ts: Date.now() });
+      if (idList.length > 0) {
+        const templateJsons = idList
+          .map(id => getTemplate(db, id, req.params.apikey))
+          .filter(Boolean)
+          .map(row => row.templateJson);
+        if (templateJsons.length > 0) {
+          store.emitDskEvent(req.params.apikey, 'templates', { templates: templateJsons, ts: Date.now() });
         }
       }
-      const layerUpdates = items.map(({ selector, text }) => ({
-        id: selector.startsWith('#') ? selector.slice(1) : selector,
-        text,
-      }));
-      store.emitDskEvent(req.params.apikey, 'layer_update', { updates: layerUpdates, ts: Date.now() });
+      if (items.length > 0) {
+        const layerUpdates = items.map(({ selector, text }) => ({
+          id: selector.startsWith('#') ? selector.slice(1) : selector,
+          text,
+        }));
+        store.emitDskEvent(req.params.apikey, 'layer_update', { updates: layerUpdates, ts: Date.now() });
+      }
     }
 
+    // Server-side renderer: activate the last selected template, then inject text
+    if (idList.length > 0) {
+      const lastRow = getTemplate(db, idList[idList.length - 1], req.params.apikey);
+      if (lastRow) {
+        try { await updateTemplate(req.params.apikey, lastRow.templateJson); } catch { /* non-fatal */ }
+      }
+    }
     try {
-      await broadcastData(req.params.apikey, items);
-      res.json({ ok: true, updated: items.length });
+      if (items.length > 0) await broadcastData(req.params.apikey, items);
+      res.json({ ok: true, updated: items.length, templates: idList.length });
     } catch (err) {
       console.error(`[dsk-templates] broadcast error:`, err.message);
       res.status(500).json({ error: 'Failed to broadcast data' });

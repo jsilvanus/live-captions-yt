@@ -67,11 +67,11 @@ export function DskControlPage() {
   const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
 
   const [templates, setTemplates]         = useState([]);  // { id, name, updated_at, templateJson? }
-  const [activeId, setActiveId]           = useState(null); // currently activated template id
-  const [liveData, setLiveData]           = useState({});   // { layerId: text }
+  const [activeIds, setActiveIds]         = useState([]);  // selected template ids (multi-select)
+  const [liveData, setLiveData]           = useState({});  // { layerId: text }
   const [rendererStatus, setRendererStatus] = useState(null); // { running, template, browserAlive }
   const [statusMsg, setStatusMsg]         = useState('');
-  const [activating, setActivating]       = useState(false);
+  const [loading, setLoading]             = useState(false);
   const [images, setImages]               = useState([]);   // { id, shorthand, mimeType }
   const [activeOverlayImages, setActiveOverlayImages] = useState([]); // shorthands currently shown
 
@@ -143,49 +143,49 @@ export function DskControlPage() {
     } catch { return null; }
   }
 
-  // ── Activate template ────────────────────────────────────────────────────
+  // ── Toggle template selection (multi-select) ────────────────────────────
 
-  async function activateTemplate(id) {
-    setActivating(true);
-    setStatusMsg('Activating…');
+  async function toggleTemplate(id) {
+    const isSelected = activeIds.includes(id);
+    if (isSelected) {
+      setActiveIds(prev => prev.filter(x => x !== id));
+      return;
+    }
+    // Adding: load JSON to reveal text layers in live data panel
+    setLoading(true);
+    setActiveIds(prev => [...prev, id]);
     try {
-      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates/${id}/activate`, { method: 'POST' });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setActiveId(id);
-      setStatusMsg(data.rendererOk === false ? 'Activated (renderer not running).' : 'Activated.');
-      // Pre-load the template JSON so we know which fields to show
       const json = await loadTemplateJson(id);
       if (json) {
-        // Reset live data fields to template defaults
+        // Seed liveData with defaults for any new layers not already present
         const defaults = {};
         for (const layer of json.layers || []) {
-          if (layer.type === 'text') defaults[layer.id] = layer.text || '';
+          if (layer.type === 'text' && !(layer.id in liveData)) {
+            defaults[layer.id] = layer.text || '';
+          }
         }
-        setLiveData(defaults);
+        if (Object.keys(defaults).length > 0) {
+          setLiveData(d => ({ ...d, ...defaults }));
+        }
       }
-      fetchRendererStatus();
-    } catch (err) {
-      setStatusMsg(`Activate error: ${err.message}`);
     } finally {
-      setActivating(false);
+      setLoading(false);
     }
   }
 
   // ── Broadcast live data ──────────────────────────────────────────────────
 
   async function broadcastData() {
-    if (!activeId) { setStatusMsg('No active template. Activate one first.'); return; }
+    if (activeIds.length === 0) { setStatusMsg('Select at least one template first.'); return; }
     const updates = Object.entries(liveData)
       .filter(([, v]) => v !== undefined)
       .map(([id, text]) => ({ selector: `#${id}`, text }));
-    if (updates.length === 0) { setStatusMsg('No data to broadcast.'); return; }
 
     setStatusMsg('Broadcasting…');
     try {
       const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/broadcast`, {
         method: 'POST',
-        body: JSON.stringify({ templateId: activeId, updates }),
+        body: JSON.stringify({ templateIds: activeIds, updates }),
       });
       if (!res.ok) throw new Error(await res.text());
       setStatusMsg('Broadcast sent.');
@@ -260,9 +260,10 @@ export function DskControlPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
-  const activeTemplate = templates.find(t => t.id === activeId);
-  const activeJson = activeTemplate?.templateJson;
-  const textLayers = activeJson?.layers?.filter(l => l.type === 'text') || [];
+  const textLayers = activeIds.flatMap(id => {
+    const t = templates.find(t => t.id === id);
+    return t?.templateJson?.layers?.filter(l => l.type === 'text') || [];
+  });
 
   // ── Guard ────────────────────────────────────────────────────────────────
 
@@ -323,7 +324,7 @@ export function DskControlPage() {
         {/* Template grid */}
         <div style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
           <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
-            Templates — click to activate (client-side overlay + server-side renderer)
+            Templates — click to select, Broadcast to publish
           </div>
 
           {templates.length === 0 && (
@@ -338,12 +339,12 @@ export function DskControlPage() {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             {templates.map(t => {
-              const isActive = t.id === activeId;
+              const isActive = activeIds.includes(t.id);
               return (
                 <button
                   key={t.id}
-                  onClick={() => activateTemplate(t.id)}
-                  disabled={activating}
+                  onClick={() => toggleTemplate(t.id)}
+                  disabled={loading}
                   style={{
                     ...(isActive ? btnActiveStyle : btnStyle),
                     minWidth: 160,
@@ -370,8 +371,8 @@ export function DskControlPage() {
             Live Data
           </div>
 
-          {!activeId && (
-            <div style={{ color: '#555', fontSize: 13 }}>Activate a template to edit live data.</div>
+          {activeIds.length === 0 && (
+            <div style={{ color: '#555', fontSize: 13 }}>Select a template to edit live data.</div>
           )}
 
           {textLayers.map(layer => (
@@ -389,11 +390,11 @@ export function DskControlPage() {
             </div>
           ))}
 
-          {activeId && textLayers.length === 0 && (
-            <div style={{ color: '#555', fontSize: 13 }}>This template has no text layers.</div>
+          {activeIds.length > 0 && textLayers.length === 0 && (
+            <div style={{ color: '#555', fontSize: 13 }}>Selected templates have no text layers.</div>
           )}
 
-          {activeId && (
+          {activeIds.length > 0 && (
             <button onClick={broadcastData} style={{ ...btnPrimaryStyle, marginTop: 8 }}>
               Broadcast
             </button>
