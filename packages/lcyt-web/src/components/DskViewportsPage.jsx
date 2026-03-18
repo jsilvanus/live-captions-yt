@@ -65,8 +65,8 @@ const labelStyle = { display: 'block', marginBottom: 4, color: dark.muted, fontS
 export function DskViewportsPage() {
   const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
-  const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
-  const apiKey    = params.get('apikey') || session?.apiKey || '';
+  const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
+  const apiKey    = session?.apiKey || params.get('apikey') || '';
 
   const [viewports, setViewports]       = useState([]);     // user-defined
   const [selected, setSelected]         = useState(null);   // viewport name or 'landscape'

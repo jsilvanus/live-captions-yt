@@ -20,11 +20,31 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+const CODE_LABEL_MAP = {
+  lang: 'lang', section: 'section', speaker: 'speaker',
+  lyrics: 'lyrics', 'no-translate': 'no-tr',
+};
+
+function MetacodeBadges({ codes }) {
+  if (!codes) return null;
+  const badges = [];
+  for (const [key, val] of Object.entries(codes)) {
+    if (key === 'emptySend' || key === 'emptySendLabel') continue;
+    const label = CODE_LABEL_MAP[key] ?? key;
+    const text = val === true ? label : `${label}:${val}`;
+    badges.push(
+      <span key={key} className="db-file-line__code-badge">{text}</span>
+    );
+  }
+  return badges.length > 0 ? <span className="db-file-line__codes">{badges}</span> : null;
+}
+
 export function FileWidget({ id, size }) {
   const { files, setPointer, advancePointer } = useFileContext();
   const { connected, send } = useSessionContext();
   const [selectedId, setSelectedId] = useState(() => getStoredFileId(id));
   const [sending, setSending] = useState(false);
+  const [showCodes, setShowCodes] = useState(false);
   const listRef = useRef(null);
 
   // Resolve the active file: prefer selected, fall back to first
@@ -114,6 +134,15 @@ export function FileWidget({ id, size }) {
         <span className="db-widget__muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
           L{pointer + 1}/{lines.length}
         </span>
+        <label className="db-file-codes-toggle" title="Show metacodes">
+          <input
+            type="checkbox"
+            checked={showCodes}
+            onChange={e => setShowCodes(e.target.checked)}
+            style={{ marginRight: 3 }}
+          />
+          <span style={{ fontSize: 10, whiteSpace: 'nowrap' }}>codes</span>
+        </label>
         <button
           className="btn btn--ghost btn--xs"
           onClick={() => listRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
@@ -154,6 +183,7 @@ export function FileWidget({ id, size }) {
                     dangerouslySetInnerHTML={{ __html: escapeHtml(displayText) }}
                   />
               }
+              {showCodes && <MetacodeBadges codes={codes} />}
             </div>
           );
         })}
@@ -180,3 +210,4 @@ export function FileWidget({ id, size }) {
     </div>
   );
 }
+

@@ -3322,3 +3322,29 @@
   margin: 0 0 8px;
   line-height: 1.5;
 }
+
+/* ─── Production Devices page ─── */
+
+.devices-page__columns {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+}
+
+.devices-page__col {
+  min-width: 0;
+  border-right: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+.devices-page__col:last-child { border-right: none; }
+
+@media (max-width: 900px) {
+  .devices-page__columns {
+    grid-template-columns: 1fr;
+  }
+  .devices-page__col { border-right: none; border-bottom: 1px solid var(--color-border); }
+  .devices-page__col:last-child { border-bottom: none; }
+}

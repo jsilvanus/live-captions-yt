@@ -95,10 +95,18 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
       : undefined,
   });
 
-  // Auto-connect on mount when credentials are provided via URL params.
+  // Auto-connect on mount:
+  //   1. If initConfig + autoConnect prop are provided (embed / URL-param mode), use those.
+  //   2. Otherwise, if the user previously enabled "auto-connect", reload the persisted config
+  //      so the session survives a page refresh.
   useEffect(() => {
     if (autoConnect && initConfig?.backendUrl && initConfig?.apiKey) {
       session.connect(initConfig).catch(() => {});
+    } else if (!autoConnect) {
+      const persisted = session.getPersistedConfig();
+      if (session.getAutoConnect() && persisted?.backendUrl && persisted?.apiKey) {
+        session.connect(persisted).catch(() => {});
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

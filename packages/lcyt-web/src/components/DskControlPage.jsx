@@ -60,12 +60,11 @@ const inputStyle = {
 export function DskControlPage() {
   const session = useContext(SessionContext);
   const pathParts = window.location.pathname.split('/');
-  // /dsk-control/:apikey (standalone) or /graphics/control (sidebar)
-  const apiKey = window.location.pathname.startsWith('/dsk-control/')
-    ? (pathParts[2] || session?.apiKey || '')
-    : (session?.apiKey || '');
+  // /dsk-control/:apikey (standalone) or /graphics/control (sidebar) — context takes priority
+  const apiKey = session?.apiKey
+    || (window.location.pathname.startsWith('/dsk-control/') ? (pathParts[2] || '') : '');
   const params = new URLSearchParams(window.location.search);
-  const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
+  const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
 
   const [templates, setTemplates]         = useState([]);  // { id, name, updated_at, templateJson? }
   const [activeIds, setActiveIds]         = useState([]);  // selected template ids (multi-select)
