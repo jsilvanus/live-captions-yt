@@ -5,14 +5,13 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
-import {
-  initDb,
-  createKey,
-  updateKey,
-  isRadioEnabled,
-} from '../src/db.js';
-import { createRadioRouter } from '../src/routes/radio.js';
-import { RadioManager } from '../src/radio-manager.js';
+import { initDb, createKey, updateKey } from '../src/db.js';
+import { runMigrations } from 'lcyt-rtmp/src/db.js';
+
+function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+import { isRadioEnabled } from 'lcyt-rtmp/src/db.js';
+import { createRadioRouter } from 'lcyt-rtmp/src/routes/radio.js';
+import { RadioManager } from 'lcyt-rtmp/src/radio-manager.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -42,7 +41,7 @@ async function getJson(server, path) {
 describe('radio_enabled DB column', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('defaults to false on createKey', () => {
@@ -118,7 +117,7 @@ describe('POST /radio (nginx-rtmp single-URL callbacks)', () => {
   let db, server, manager;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
 
     // Fake RadioManager to avoid spawning real ffmpeg
     manager = {
@@ -184,7 +183,7 @@ describe('POST /radio/on_publish and /radio/on_publish_done', () => {
   let db, server, manager;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
 
     manager = {
       _started: new Set(),
@@ -238,7 +237,7 @@ describe('GET /radio/:key/index.m3u8', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     tmpRoot = join(tmpdir(), `radio-hls-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });
@@ -300,7 +299,7 @@ describe('GET /radio/:key/:segment', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     tmpRoot = join(tmpdir(), `radio-seg-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });
@@ -356,7 +355,7 @@ describe('GET /radio/:key/player.js', () => {
   let db, server, manager;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     const tmpRoot = join(tmpdir(), `radio-player-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });

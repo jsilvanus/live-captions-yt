@@ -56,7 +56,7 @@ await mock.module('node:child_process', {
 });
 
 // Dynamically import after mocks are set up
-const { RtmpRelayManager, probeFfmpeg } = await import('../src/rtmp-manager.js');
+const { RtmpRelayManager, probeFfmpeg } = await import('lcyt-rtmp/src/rtmp-manager.js');
 
 // ---------------------------------------------------------------------------
 // Helper: reset between tests

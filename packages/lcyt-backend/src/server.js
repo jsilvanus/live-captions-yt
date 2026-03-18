@@ -2,10 +2,8 @@ import { randomBytes } from 'node:crypto';
 import express from 'express';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
-  writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat,
 } from './db.js';
 import { SessionStore } from './store.js';
-import { RtmpRelayManager, probeFfmpeg } from './rtmp-manager.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createLiveRouter } from './routes/live.js';
@@ -18,21 +16,13 @@ import { createStatsRouter } from './routes/stats.js';
 import { createMicRouter } from './routes/mic.js';
 import { createUsageRouter } from './routes/usage.js';
 import { createFileRouter } from './routes/files.js';
-import { createRtmpRouter } from './routes/rtmp.js';
-import { createStreamRouter } from './routes/stream.js';
 import { createViewerRouter, setHlsSubsManager } from './routes/viewer.js';
 import { createVideoRouter } from './routes/video.js';
-import { HlsSubsManager } from './hls-subs-manager.js';
 import { createIconRouter } from './routes/icons.js';
 import { createYouTubeRouter } from './routes/youtube.js';
-import { createRadioRouter } from './routes/radio.js';
-import { RadioManager } from './radio-manager.js';
-import { createStreamHlsRouter } from './routes/stream-hls.js';
-import { HlsManager } from './hls-manager.js';
-import { createPreviewRouter } from './routes/preview.js';
-import { PreviewManager } from './preview-manager.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
+import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -142,71 +132,14 @@ const {
   bridgeManager: productionBridgeManager,
 } = await initProductionControl(db);
 
-// Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
-const _rtmpStatIds = new Map();
+// RTMP plugin — run DB migrations, create all manager instances.
+// Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
+const rtmp = await initRtmpControl(db);
+const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager } = rtmp;
 
-const _rtmpRelayActive = process.env.RTMP_RELAY_ACTIVE === '1';
-if (!_rtmpRelayActive) {
-  console.info('ℹ RTMP_RELAY_ACTIVE is not set — RTMP relay disabled. Set RTMP_RELAY_ACTIVE=1 to enable.');
-}
-const _ffprobe = _rtmpRelayActive
-  ? probeFfmpeg()
-  : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
-
-const relayManager = new RtmpRelayManager({
-  ffmpegCaps: _ffprobe,
-  onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
-    try {
-      const id = writeRtmpStreamStart(db, {
-        apiKey,
-        slot,
-        targetUrl,
-        targetName,
-        captionMode,
-        startedAt: startedAt.toISOString(),
-      });
-      _rtmpStatIds.set(`${apiKey}:${slot}`, id);
-    } catch (err) {
-      console.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
-    }
-  },
-  onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs, captionsSent = 0 }) {
-    try {
-      const statKey = `${apiKey}:${slot}`;
-      const statId  = _rtmpStatIds.get(statKey);
-      _rtmpStatIds.delete(statKey);
-      if (statId) {
-        writeRtmpStreamEnd(db, {
-          streamStatId: statId,
-          endedAt: endedAt.toISOString(),
-          durationMs,
-          captionsSent: captionsSent || 0,
-        });
-      }
-      incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
-    } catch (err) {
-      console.error(`[rtmp] Failed to write stream end stat: ${err.message}`);
-    }
-  },
-});
-
-// Radio manager: RTMP → audio-only HLS.
-// Always instantiated (no capability flag), but ffmpeg must be installed.
-const radioManager = new RadioManager();
-
-// HLS manager: RTMP → video+audio HLS embed.
-// Always instantiated; ffmpeg must be installed.
-const hlsManager = new HlsManager();
-
-// HLS subtitle sidecar: caption cues → rolling WebVTT segments per language.
-const hlsSubsManager = new HlsSubsManager();
+// Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
-// Remove any stale subs directories left by a previous run.
 hlsSubsManager.sweepStaleDir().catch(() => {});
-
-// Preview manager: RTMP → JPEG thumbnail (incoming stream preview).
-// Always instantiated; ffmpeg must be installed.
-const previewManager = new PreviewManager();
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
 // Only initialised when GRAPHICS_ENABLED=1 (same flag that gates image upload and Chromium install).
@@ -376,17 +309,23 @@ app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use('/rtmp', createRtmpRouter(db, relayManager));
-app.use('/stream', createStreamRouter(db, auth, relayManager, _allowedRtmpDomains));
 app.use('/viewer', createViewerRouter(db));
 app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
-app.use('/radio', createRadioRouter(db, radioManager));
-app.use('/stream-hls', createStreamHlsRouter(db, hlsManager));
-app.use('/preview', createPreviewRouter(previewManager));
 app.use('/youtube', createYouTubeRouter(auth));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
 }));
+
+// RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1
+if (process.env.RTMP_RELAY_ACTIVE === '1') {
+  const { rtmpRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter } =
+    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains });
+  app.use('/rtmp',       rtmpRouter);
+  app.use('/stream',     streamRouter);
+  app.use('/stream-hls', streamHlsRouter);
+  app.use('/radio',      radioRouter);
+  app.use('/preview',    previewRouter);
+}
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)

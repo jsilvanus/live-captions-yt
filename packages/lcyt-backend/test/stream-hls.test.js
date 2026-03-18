@@ -5,17 +5,15 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
-import {
-  initDb,
-  createKey,
-  updateKey,
-  isHlsEnabled,
-  formatKey,
-} from '../src/db.js';
-import { createStreamHlsRouter } from '../src/routes/stream-hls.js';
-import { createPreviewRouter } from '../src/routes/preview.js';
-import { HlsManager } from '../src/hls-manager.js';
-import { PreviewManager } from '../src/preview-manager.js';
+import { initDb, createKey, updateKey, formatKey } from '../src/db.js';
+import { runMigrations } from 'lcyt-rtmp/src/db.js';
+
+function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+import { isHlsEnabled } from 'lcyt-rtmp/src/db.js';
+import { createStreamHlsRouter } from 'lcyt-rtmp/src/routes/stream-hls.js';
+import { createPreviewRouter } from 'lcyt-rtmp/src/routes/preview.js';
+import { HlsManager } from 'lcyt-rtmp/src/hls-manager.js';
+import { PreviewManager } from 'lcyt-rtmp/src/preview-manager.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -45,7 +43,7 @@ async function getJson(server, path) {
 describe('hls_enabled DB column', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('defaults to false on createKey', () => {
@@ -187,7 +185,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-nginx-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
@@ -248,7 +246,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-playlist-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot });
@@ -309,7 +307,7 @@ describe('GET /stream-hls/:key/:segment', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-seg-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot });
@@ -364,7 +362,7 @@ describe('GET /stream-hls/:key/player.js', () => {
   let db, server, manager;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = initTestDb();
     const tmpRoot = join(tmpdir(), `hls-player-test-${Date.now()}`);
     mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot });

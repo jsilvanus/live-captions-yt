@@ -1,3 +1,14 @@
+/**
+ * Get a full api_keys row by key value.
+ * Used by RTMP routes to read per-key config (e.g. cea708_delay_ms).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @returns {object|null}
+ */
+export function getKey(db, key) {
+  return db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key) ?? null;
+}
+
 // ─── RTMP relay config per API key (fan-out: up to 4 slots) ──────────────────
 
 const MAX_RELAY_SLOTS = 4;

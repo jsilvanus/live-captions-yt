@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
-import { createPreviewRouter } from '../src/routes/preview.js';
+import { createPreviewRouter } from 'lcyt-rtmp/src/routes/preview.js';
 
 // ---------------------------------------------------------------------------
 // Temp directory + mock JPEG

@@ -57,90 +57,16 @@ export function initDb(dbPath) {
   if (!existingCols.has('last_caption_at')) db.exec('ALTER TABLE api_keys ADD COLUMN last_caption_at TEXT');
   // 0 = disabled (default/free tier), 1 = enabled (allows per-session file saving via /file endpoint)
   if (!existingCols.has('backend_file_enabled')) db.exec('ALTER TABLE api_keys ADD COLUMN backend_file_enabled INTEGER NOT NULL DEFAULT 0');
-  // 0 = not allowed (default), 1 = allowed to configure RTMP relay via /stream
-  if (!existingCols.has('relay_allowed'))     db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
-  if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
   // 0 = graphics upload disabled (default), 1 = enabled (allows image upload via /images)
   if (!existingCols.has('graphics_enabled'))  db.exec('ALTER TABLE api_keys ADD COLUMN graphics_enabled INTEGER NOT NULL DEFAULT 0');
-  // 0 = radio (RTMP → audio-only HLS) disabled (default), 1 = enabled
-  if (!existingCols.has('radio_enabled'))     db.exec('ALTER TABLE api_keys ADD COLUMN radio_enabled INTEGER NOT NULL DEFAULT 0');
-  // 0 = HLS video+audio embed disabled (default), 1 = enabled
-  if (!existingCols.has('hls_enabled'))       db.exec('ALTER TABLE api_keys ADD COLUMN hls_enabled INTEGER NOT NULL DEFAULT 0');
-  // ms of video delay to add in CEA-708 mode (compensates for STT latency). 0 = no delay.
-  if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
-  // CORS origin for embeddable player.js and HLS endpoints. Default '*' (allow all).
-  // Set to a specific origin e.g. 'https://example.com' to restrict access.
-  if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
   if (!existingCols.has('user_id'))           db.exec('ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id)');
-
-  // ── rtmp_relays: one incoming stream fans out to up to 4 target URLs ──────────
-  // slot (1-4): one row per target; UNIQUE on (api_key, slot)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rtmp_relays (
-      id           INTEGER PRIMARY KEY AUTOINCREMENT,
-      api_key      TEXT    NOT NULL,
-      slot         INTEGER NOT NULL DEFAULT 1,
-      target_url   TEXT    NOT NULL,
-      target_name  TEXT,
-      caption_mode TEXT    NOT NULL DEFAULT 'http',
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      UNIQUE(api_key, slot)
-    )
-  `);
-
-  // Migration: if rtmp_relays has the old single-target schema (no slot column),
-  // recreate it with the fan-out schema (UNIQUE api_key → UNIQUE (api_key, slot)).
-  {
-    const relaysCols = new Set(
-      db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name)
-    );
-    if (!relaysCols.has('slot')) {
-      // Old schema: UNIQUE(api_key). Recreate with fan-out schema.
-      db.transaction(() => {
-        db.exec('ALTER TABLE rtmp_relays RENAME TO rtmp_relays_legacy');
-        db.exec(`
-          CREATE TABLE rtmp_relays (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            api_key      TEXT    NOT NULL,
-            slot         INTEGER NOT NULL DEFAULT 1,
-            target_url   TEXT    NOT NULL,
-            target_name  TEXT,
-            caption_mode TEXT    NOT NULL DEFAULT 'http',
-            created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-            updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-            UNIQUE(api_key, slot)
-          )
-        `);
-        const legacyCols = new Set(
-          db.prepare('PRAGMA table_info(rtmp_relays_legacy)').all().map(c => c.name)
-        );
-        db.exec(`
-          INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode, created_at, updated_at)
-          SELECT api_key, 1, target_url,
-                 ${legacyCols.has('target_name')  ? 'target_name'                 : 'NULL'},
-                 ${legacyCols.has('caption_mode') ? "COALESCE(caption_mode,'http')" : "'http'"},
-                 created_at, updated_at
-          FROM rtmp_relays_legacy
-        `);
-        db.exec('DROP TABLE rtmp_relays_legacy');
-      })();
-    } else {
-      // Table already has slot column; apply any remaining additive migrations
-      if (!relaysCols.has('target_name'))  db.exec('ALTER TABLE rtmp_relays ADD COLUMN target_name TEXT');
-      if (!relaysCols.has('caption_mode')) db.exec("ALTER TABLE rtmp_relays ADD COLUMN caption_mode TEXT NOT NULL DEFAULT 'http'");
-    }
-    // Per-slot transcoding options (nullable = use stream copy for that slot)
-    {
-      const latestCols = new Set(
-        db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name)
-      );
-      if (!latestCols.has('scale'))         db.exec('ALTER TABLE rtmp_relays ADD COLUMN scale TEXT');
-      if (!latestCols.has('fps'))           db.exec('ALTER TABLE rtmp_relays ADD COLUMN fps INTEGER');
-      if (!latestCols.has('video_bitrate')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN video_bitrate TEXT');
-      if (!latestCols.has('audio_bitrate')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN audio_bitrate TEXT');
-    }
-  }
+  // RTMP/relay extension columns (used by lcyt-rtmp plugin; kept here so createKey always works)
+  if (!existingCols.has('relay_allowed'))     db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('radio_enabled'))     db.exec('ALTER TABLE api_keys ADD COLUMN radio_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('hls_enabled'))       db.exec('ALTER TABLE api_keys ADD COLUMN hls_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -167,21 +93,21 @@ export function initDb(dbPath) {
     )
   `);
 
-    // Sessions table: persistent session metadata and sequence counter
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS sessions (
-        session_id   TEXT PRIMARY KEY,
-        api_key      TEXT,
-        stream_key   TEXT,
-        domain       TEXT,
-        sequence     INTEGER NOT NULL DEFAULT 0,
-        started_at   TEXT,
-        last_activity TEXT,
-        sync_offset  INTEGER,
-        mic_holder   TEXT,
-        data         TEXT
-      )
-    `);
+  // Sessions table: persistent session metadata and sequence counter
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      session_id   TEXT PRIMARY KEY,
+      api_key      TEXT,
+      stream_key   TEXT,
+      domain       TEXT,
+      sequence     INTEGER NOT NULL DEFAULT 0,
+      started_at   TEXT,
+      last_activity TEXT,
+      sync_offset  INTEGER,
+      mic_holder   TEXT,
+      data         TEXT
+    )
+  `);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_errors (
@@ -236,44 +162,6 @@ export function initDb(dbPath) {
     )
   `);
 
-  // Per-stream personified RTMP stats (tied to an API key and target endpoint)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rtmp_stream_stats (
-      id            INTEGER PRIMARY KEY AUTOINCREMENT,
-      api_key       TEXT    NOT NULL,
-      slot          INTEGER NOT NULL DEFAULT 1,
-      target_url    TEXT    NOT NULL,
-      target_name   TEXT,
-      caption_mode  TEXT    NOT NULL DEFAULT 'http',
-      started_at    TEXT    NOT NULL,
-      ended_at      TEXT,
-      duration_ms   INTEGER NOT NULL DEFAULT 0,
-      captions_sent INTEGER NOT NULL DEFAULT 0
-    )
-  `);
-  // Additive migration: add slot column if missing
-  {
-    const statsCols = new Set(
-      db.prepare('PRAGMA table_info(rtmp_stream_stats)').all().map(c => c.name)
-    );
-    if (!statsCols.has('slot')) {
-      db.exec('ALTER TABLE rtmp_stream_stats ADD COLUMN slot INTEGER NOT NULL DEFAULT 1');
-    }
-  }
-
-  // Anonymous daily RTMP usage statistics (no API key, no target URL)
-  // endpoint_type: 'youtube' | 'custom'
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS rtmp_anon_daily_stats (
-      date             TEXT    NOT NULL,
-      endpoint_type    TEXT    NOT NULL,
-      caption_mode     TEXT    NOT NULL DEFAULT 'http',
-      streams_count    INTEGER NOT NULL DEFAULT 0,
-      duration_seconds INTEGER NOT NULL DEFAULT 0,
-      PRIMARY KEY (date, endpoint_type, caption_mode)
-    )
-  `);
-
   db.exec(`
     CREATE TABLE IF NOT EXISTS icons (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -316,7 +204,6 @@ export * from './stats.js';
 export * from './usage.js';
 export * from './files.js';
 export * from './icons.js';
-export * from './relay.js';
 export * from './viewer.js';
 
 // Re-export DSK image helpers needed by lcyt-backend routes (keys.js delete cascade)

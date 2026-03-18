@@ -11,8 +11,9 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
+import { runMigrations } from 'lcyt-rtmp/src/db.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
-import { createStreamRouter } from '../src/routes/stream.js';
+import { createStreamRouter } from 'lcyt-rtmp/src/routes/stream.js';
 
 const JWT_SECRET = 'test-stream-secret';
 const TEST_API_KEY = 'stream-test-key-abc123';
@@ -51,6 +52,7 @@ let server, baseUrl, db, mockRelay, authToken;
 
 before(() => new Promise((resolve) => {
   db = initDb(':memory:');
+  runMigrations(db);
 
   // Insert a relay-allowed API key
   db.prepare(

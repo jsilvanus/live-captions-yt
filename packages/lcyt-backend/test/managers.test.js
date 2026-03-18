@@ -68,9 +68,9 @@ await mock.module('node:fs', {
 });
 
 // Now dynamically import managers (they use the mocked modules)
-const { HlsManager }     = await import('../src/hls-manager.js');
-const { RadioManager }   = await import('../src/radio-manager.js');
-const { PreviewManager } = await import('../src/preview-manager.js');
+const { HlsManager }     = await import('lcyt-rtmp/src/hls-manager.js');
+const { RadioManager }   = await import('lcyt-rtmp/src/radio-manager.js');
+const { PreviewManager } = await import('lcyt-rtmp/src/preview-manager.js');
 
 // ---------------------------------------------------------------------------
 // Helper: reset call counters between tests

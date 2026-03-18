@@ -2,12 +2,11 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { createServer } from 'node:http';
 import express from 'express';
+import { initDb, createKey, getKey, updateKey, formatKey } from '../src/db.js';
+import { runMigrations } from 'lcyt-rtmp/src/db.js';
+
+function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
 import {
-  initDb,
-  createKey,
-  getKey,
-  updateKey,
-  formatKey,
   isRelayAllowed,
   isRelayActive,
   setRelayActive,
@@ -18,12 +17,12 @@ import {
   deleteRelay,
   deleteRelaySlot,
   deleteAllRelays,
-} from '../src/db.js';
+} from 'lcyt-rtmp/src/db.js';
 import { createKeysRouter } from '../src/routes/keys.js';
-import { createRtmpRouter } from '../src/routes/rtmp.js';
-import { createStreamRouter } from '../src/routes/stream.js';
+import { createRtmpRouter } from 'lcyt-rtmp/src/routes/rtmp.js';
+import { createStreamRouter } from 'lcyt-rtmp/src/routes/stream.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
-import { RtmpRelayManager } from '../src/rtmp-manager.js';
+import { RtmpRelayManager } from 'lcyt-rtmp/src/rtmp-manager.js';
 import jwt from 'jsonwebtoken';
 
 const ADMIN_KEY = 'test-admin-key';
@@ -48,7 +47,7 @@ function bearerHeaders(token) {
 describe('relay_allowed column', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('defaults to false on createKey', () => {
@@ -86,7 +85,7 @@ describe('relay_allowed column', () => {
 describe('relay_active column', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('defaults to false on createKey', () => {
@@ -121,7 +120,7 @@ describe('relay_active column', () => {
 describe('rtmp_relays DB helpers (fan-out)', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('getRelaySlot returns null when no relay configured', () => {
@@ -202,7 +201,7 @@ describe('PATCH /keys/:key relay_allowed', () => {
   let db, server, baseUrl;
 
   before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
+    db = initTestDb();
     const app = express();
     app.use(express.json());
     app.use('/keys', createKeysRouter(db));
@@ -346,7 +345,7 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   let db, server, baseUrl, relayManager;
 
   before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
+    db = initTestDb();
     relayManager = new RtmpRelayManager();
     const app = express();
     // Note: createRtmpRouter registers express.urlencoded() internally,
@@ -462,7 +461,7 @@ describe('/stream CRUD (fan-out)', () => {
   let apiKey, token;
 
   before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
+    db = initTestDb();
     relayManager = new RtmpRelayManager();
     const auth = createAuthMiddleware(JWT_SECRET);
     const app = express();
@@ -659,7 +658,7 @@ describe('/stream CRUD (fan-out)', () => {
 describe('cea708_delay_ms per-key column', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('defaults to 0 on createKey', () => {
@@ -788,7 +787,7 @@ describe('PATCH /keys/:key cea708_delay_ms', () => {
   let db, server, baseUrl;
 
   before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
+    db = initTestDb();
     const app = express();
     app.use(express.json());
     app.use('/keys', createKeysRouter(db));
@@ -837,7 +836,7 @@ describe('POST /stream captionMode cea708 accepted', () => {
   let db, server, baseUrl, token;
 
   before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
+    db = initTestDb();
     const auth = createAuthMiddleware(JWT_SECRET);
     const app = express();
     app.use(express.json());
@@ -887,7 +886,7 @@ describe('POST /stream captionMode cea708 accepted', () => {
 describe('upsertRelay — per-slot transcoding fields', () => {
   let db;
 
-  before(() => { db = initDb(':memory:'); });
+  before(() => { db = initTestDb(); });
   after(() => { db.close(); });
 
   it('stores scale, fps, videoBitrate, audioBitrate in the DB', () => {
@@ -933,7 +932,7 @@ describe('POST /stream — transcode field validation', () => {
   let db, server, baseUrl, token;
 
   before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
+    db = initTestDb();
     const auth = createAuthMiddleware(JWT_SECRET);
     const app = express();
     app.use(express.json());

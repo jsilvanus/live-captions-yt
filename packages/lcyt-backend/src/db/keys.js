@@ -206,8 +206,10 @@ export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
     db.prepare(`DELETE FROM session_stats WHERE api_key IN (${placeholders})`).run(...keys);
     db.prepare(`DELETE FROM caption_usage WHERE api_key IN (${placeholders})`).run(...keys);
     db.prepare(`DELETE FROM auth_events WHERE api_key IN (${placeholders})`).run(...keys);
-    db.prepare(`DELETE FROM rtmp_stream_stats WHERE api_key IN (${placeholders})`).run(...keys);
-    db.prepare(`DELETE FROM rtmp_relays WHERE api_key IN (${placeholders})`).run(...keys);
+    try {
+      db.prepare(`DELETE FROM rtmp_stream_stats WHERE api_key IN (${placeholders})`).run(...keys);
+      db.prepare(`DELETE FROM rtmp_relays WHERE api_key IN (${placeholders})`).run(...keys);
+    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
     db.prepare(`DELETE FROM api_keys WHERE key IN (${placeholders})`).run(...keys);
   })();
 
@@ -257,8 +259,10 @@ export function anonymizeKey(db, key) {
     db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
     db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
     db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
+    try {
+      db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
+      db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
+    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
   })();
   return true;
 }

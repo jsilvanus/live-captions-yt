@@ -74,7 +74,7 @@ const BRIDGE_DOWNLOADS = [
 ];
 
 function bridgeDownloadUrl(file) {
-  return `${window.location.origin}/bridge-downloads/${file}`;
+  return `${window.location.origin}/downloads/bridge/${file}`;
 }
 
 /** Shown immediately after creation — displays exe + .env download buttons */

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createReadStream, existsSync } from 'node:fs';
 import { join, resolve as resolvePath, basename, sep } from 'node:path';
 import rateLimit from 'express-rate-limit';
-import { langName } from '../hls-subs-manager.js';
+import { langName } from 'lcyt-rtmp/src/hls-subs-manager.js';
 
 // Key validation: same rules as viewer / HLS video keys
 const VIDEO_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;

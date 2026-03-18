@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm, readFile } from 'node:fs/promises';
-import { formatVttTime, buildWebVTT, buildPlaylist, HlsSubsManager } from '../src/hls-subs-manager.js';
+import { formatVttTime, buildWebVTT, buildPlaylist, HlsSubsManager } from 'lcyt-rtmp/src/hls-subs-manager.js';
 
 // ---------------------------------------------------------------------------
 // Pure function tests

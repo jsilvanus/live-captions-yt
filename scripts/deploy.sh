@@ -179,11 +179,12 @@ rm -f "$BRIDGE_BUILD_LOG"
 echo "    Built → $REPO_DIR/packages/lcyt-bridge/dist"
 echo "    Build log: $BRIDGE_BUILD_LOG"
 
-# Keep the nginx-served symlink up to date so /bridge-downloads/ serves
-# the freshly built executables without any backend involvement.
-if [[ -d /var/www/html ]]; then
-  ln -sfn "$REPO_DIR/packages/lcyt-bridge/dist" /var/www/html/lcyt-bridge
-  echo "==> Symlinked /var/www/html/lcyt-bridge → $REPO_DIR/packages/lcyt-bridge/dist"
+# Symlink the bridge dist into the web UI dist so nginx serves the
+# executables at /downloads/bridge/ through the existing lcyt-web location.
+if [[ -d "$REPO_DIR/packages/lcyt-web/dist" ]]; then
+  mkdir -p "$REPO_DIR/packages/lcyt-web/dist/downloads"
+  ln -sfn "$REPO_DIR/packages/lcyt-bridge/dist" "$REPO_DIR/packages/lcyt-web/dist/downloads/bridge"
+  echo "==> Symlinked lcyt-web/dist/downloads/bridge → $REPO_DIR/packages/lcyt-bridge/dist"
 fi
 
 # ---------------------------------------------------------------------------
@@ -247,5 +248,5 @@ echo "  Main site: in packages/lcyt-site/dist, served by host nginx; see nginx s
 echo "  Backend:   http://localhost:3000/health"
 echo "  MCP SSE:   http://localhost:3001/sse"
 echo "  Web UI:    in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
-echo "  Bridge:    executables at /bridge-downloads/ (nginx) — win/mac/linux"
+echo "  Bridge:    executables at /downloads/bridge/ (served via lcyt-web dist) — win/mac/linux"
 echo ""
