@@ -342,7 +342,7 @@ export function createLiveRouter(db, store, jwtSecret) {
     // Clean up extra YouTube target senders
     for (const t of (session.extraTargets || [])) {
       if (t.type === 'youtube' && t.sender) {
-        t.sender.end().catch(() => {});
+        t.sender.end();
       }
     }
 
