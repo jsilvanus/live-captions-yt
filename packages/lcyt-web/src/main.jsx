@@ -6,7 +6,7 @@ import './styles/reset.css';
 import './styles/layout.css';
 import './styles/sidebar.css';
 import './styles/components.css';
-import { AppLayout } from './App';
+import { AppLayout, App } from './App';
 import { AppProviders } from './contexts/AppProviders';
 import { AudioProvider } from './contexts/AudioContext';
 import { SidebarLayout } from './components/SidebarLayout';
