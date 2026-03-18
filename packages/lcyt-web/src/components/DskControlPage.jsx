@@ -60,7 +60,9 @@ export function DskControlPage() {
   const session = useContext(SessionContext);
   const pathParts = window.location.pathname.split('/');
   // /dsk-control/:apikey (standalone) or /graphics/control (sidebar)
-  const apiKey = pathParts[2] || session?.apiKey || '';
+  const apiKey = window.location.pathname.startsWith('/dsk-control/')
+    ? (pathParts[2] || session?.apiKey || '')
+    : (session?.apiKey || '');
   const params = new URLSearchParams(window.location.search);
   const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
 
