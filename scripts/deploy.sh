@@ -108,10 +108,7 @@ echo "==> Installing lcyt-web dependencies (includes devDependencies for Vite bu
 LOG="$REPO_DIR/lcyt-web-npm-install.log"
 rm -f "$LOG"
 # Use --include=dev so devDependencies (Vite) are installed even if NODE_ENV=production
-npm ci \
-  --prefix "$REPO_DIR" \
-  --workspace packages/lcyt-web \
-  --include=dev 2>&1 | tee "$LOG" || \
+(cd "$REPO_DIR" && npm ci --workspace packages/lcyt-web --include=dev) 2>&1 | tee "$LOG" || \
   echo "Warning: lcyt-web npm install failed (non-fatal) — web UI may not be updated."
 echo "    Install log: $LOG"
 tail -n 20 "$LOG" || true
@@ -119,7 +116,7 @@ tail -n 20 "$LOG" || true
 echo "==> Building lcyt-web"
 BUILD_LOG="$REPO_DIR/lcyt-web-build.log"
 rm -f "$BUILD_LOG"
-npm run build -w packages/lcyt-web --prefix "$REPO_DIR" 2>&1 | tee "$BUILD_LOG" || \
+(cd "$REPO_DIR" && npm run build -w packages/lcyt-web) 2>&1 | tee "$BUILD_LOG" || \
   echo "Warning: lcyt-web build failed (non-fatal) — web UI dist may not be updated."
 echo "    Built → $REPO_DIR/packages/lcyt-web/dist"
 echo "    Build log: $BUILD_LOG"
@@ -136,7 +133,7 @@ _SCREENSHOTS_PID=""
 (
   echo "==> [bg] Installing root devDependencies (playwright, etc.)"
   rm -f "$ROOT_DEV_LOG"
-  npm install --prefix "$REPO_DIR" --include=dev >"$ROOT_DEV_LOG" 2>&1 || \
+  (cd "$REPO_DIR" && npm install --include=dev) >"$ROOT_DEV_LOG" 2>&1 || \
     { echo "Warning: root npm install failed — screenshots may not run." >>"$ROOT_DEV_LOG"; }
 
   echo "==> [bg] Installing Playwright Chromium browser"
@@ -158,10 +155,7 @@ echo "==> UI screenshot capture started in background (PID $_SCREENSHOTS_PID)"
 echo "==> Installing lcyt-bridge dependencies (includes pkg for exe bundling)"
 BRIDGE_INSTALL_LOG="$REPO_DIR/lcyt-bridge-npm-install.log"
 rm -f "$BRIDGE_INSTALL_LOG"
-npm ci \
-  --prefix "$REPO_DIR" \
-  --workspace packages/lcyt-bridge \
-  --include=dev 2>&1 | tee "$BRIDGE_INSTALL_LOG" || \
+(cd "$REPO_DIR" && npm ci --workspace packages/lcyt-bridge --include=dev) 2>&1 | tee "$BRIDGE_INSTALL_LOG" || \
   echo "Warning: lcyt-bridge npm install failed (non-fatal) — bridge executables will not be updated."
 echo "    Install log: $BRIDGE_INSTALL_LOG"
 tail -n 10 "$BRIDGE_INSTALL_LOG" || true
@@ -198,7 +192,7 @@ echo "==> Starting backend (docker compose up -d)"
 docker compose \
   --project-directory "$COMPOSE_DIR" \
   -f "$COMPOSE_DIR/docker-compose.yml" \
-  up -d --build --remove-orphans
+  up -d --build --pull=always --remove-orphans
 
 # ---------------------------------------------------------------------------
 # Step 2c (cont.): Wait for screenshots, then build lcyt-site
@@ -215,10 +209,7 @@ echo "==> Installing lcyt-site dependencies (includes devDependencies for Astro 
 SITE_LOG="$REPO_DIR/lcyt-site-npm-install.log"
 rm -f "$SITE_LOG"
 # Use --include=dev so devDependencies (Astro) are installed even if NODE_ENV=production
-npm ci \
-  --prefix "$REPO_DIR" \
-  --workspace packages/lcyt-site \
-  --include=dev 2>&1 | tee "$SITE_LOG" || \
+(cd "$REPO_DIR" && npm ci --workspace packages/lcyt-site --include=dev) 2>&1 | tee "$SITE_LOG" || \
   echo "Warning: lcyt-site npm install failed (non-fatal) — site may not be updated."
 echo "    Install log: $SITE_LOG"
 tail -n 20 "$SITE_LOG" || true
@@ -226,7 +217,7 @@ tail -n 20 "$SITE_LOG" || true
 echo "==> Building lcyt-site"
 SITE_BUILD_LOG="$REPO_DIR/lcyt-site-build.log"
 rm -f "$SITE_BUILD_LOG"
-npm run build -w packages/lcyt-site --prefix "$REPO_DIR" 2>&1 | tee "$SITE_BUILD_LOG" || \
+(cd "$REPO_DIR" && npm run build -w packages/lcyt-site) 2>&1 | tee "$SITE_BUILD_LOG" || \
   echo "Warning: lcyt-site build failed (non-fatal) — site dist may not be updated."
 echo "    Built → $REPO_DIR/packages/lcyt-site/dist"
 echo "    Build log: $SITE_BUILD_LOG"
