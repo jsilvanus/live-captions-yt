@@ -94,6 +94,7 @@ function printKey(k) {
   console.log(`lifetime limit:  ${k.lifetime_limit ?? 'unlimited'}`);
   console.log(`lifetime used:   ${k.lifetime_used ?? 0}`);
   console.log(`file saving:     ${k.backend_file_enabled ? 'enabled' : 'disabled'}`);
+  console.log(`graphics:        ${k.graphics_enabled ? 'enabled' : 'disabled'}`);
   console.log(`rtmp relay:      ${k.relay_allowed ? 'allowed' : 'not allowed'}`);
   console.log(`radio:           ${k.radio_enabled ? 'enabled' : 'disabled'}`);
   console.log(`hls:             ${k.hls_enabled ? 'enabled' : 'disabled'}`);
@@ -180,6 +181,7 @@ function cmdAdd(db, flags) {
     daily_limit: parseLimit(flags['daily-limit']),
     lifetime_limit: parseLimit(flags['lifetime-limit']),
     backend_file_enabled: flags['file-saving'] === true || flags['file-saving'] === 'true',
+    graphics_enabled: flags['graphics'] === true || flags['graphics'] === 'true',
     relay_allowed: flags['relay'] === true || flags['relay'] === 'true',
     radio_enabled: flags['radio'] === true || flags['radio'] === 'true',
     hls_enabled: flags['hls'] === true || flags['hls'] === 'true',
@@ -208,6 +210,7 @@ function cmdUpdate(db, positional, flags) {
   if ('daily-limit' in flags) updates.daily_limit = parseLimit(flags['daily-limit']);
   if ('lifetime-limit' in flags) updates.lifetime_limit = parseLimit(flags['lifetime-limit']);
   if ('file-saving' in flags) updates.backend_file_enabled = flags['file-saving'] === true || flags['file-saving'] === 'true';
+  if ('graphics' in flags) updates.graphics_enabled = flags['graphics'] === true || flags['graphics'] === 'true';
   if ('relay' in flags) updates.relay_allowed = flags['relay'] === true || flags['relay'] === 'true';
   if ('radio' in flags) updates.radio_enabled = flags['radio'] === true || flags['radio'] === 'true';
   if ('hls' in flags) updates.hls_enabled = flags['hls'] === true || flags['hls'] === 'true';
@@ -215,7 +218,7 @@ function cmdUpdate(db, positional, flags) {
   if ('embed-cors' in flags) updates.embed_cors = flags['embed-cors'];
 
   if (Object.keys(updates).length === 0) {
-    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, --lifetime-limit, --file-saving, --relay, --radio, --hls, --cea708-delay, or --embed-cors');
+    console.error('Error: nothing to update. Use --owner, --expires, --daily-limit, --lifetime-limit, --file-saving, --graphics, --relay, --radio, --hls, --cea708-delay, or --embed-cors');
     process.exit(1);
   }
 
@@ -413,14 +416,14 @@ function usage() {
 Key commands:
   list                              List all API keys
   add --owner <name> [--key <key>] [--email <email>] [--expires <date>]
-      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving] [--relay]
-      [--radio] [--hls] [--cea708-delay <ms>] [--embed-cors <origin>]
+      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving] [--graphics]
+      [--relay] [--radio] [--hls] [--cea708-delay <ms>] [--embed-cors <origin>]
       [--user-email <email>] [--user-id <id>]
                                     Create a new API key (optionally linked to a user)
   update <key> [--owner <name>] [--expires <date>]
       [--daily-limit <n|none>] [--lifetime-limit <n|none>]
-      [--file-saving [true|false]] [--relay [true|false]]
-      [--radio [true|false]] [--hls [true|false]]
+      [--file-saving [true|false]] [--graphics [true|false]]
+      [--relay [true|false]] [--radio [true|false]] [--hls [true|false]]
       [--cea708-delay <ms>] [--embed-cors <origin>]
                                     Update key fields (use 'none' to remove a limit)
   revoke <key>                      Revoke (soft-delete) a key
