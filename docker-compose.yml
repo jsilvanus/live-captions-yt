@@ -8,6 +8,7 @@ services:
       args:
         RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
         GRAPHICS_ENABLED: ${GRAPHICS_ENABLED:-0}
+        APT_MIRROR: ${APT_MIRROR:-}
     image: lcyt-site:latest
     ports:
       - "127.0.0.1:3000:3000"

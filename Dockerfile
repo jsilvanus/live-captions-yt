@@ -31,6 +31,14 @@ FROM node:20-slim
 WORKDIR /app
 COPY --from=build /app .
 
+# Optional apt mirror — set APT_MIRROR to speed up installs on hosted servers.
+# Example (Hetzner): --build-arg APT_MIRROR=http://mirror.hetzner.com/debian/packages
+ARG APT_MIRROR=
+RUN if [ -n "$APT_MIRROR" ]; then \
+      sed -i "s|URIs: http://deb.debian.org/debian|URIs: $APT_MIRROR|g" /etc/apt/sources.list.d/debian.sources 2>/dev/null || \
+      sed -i "s|http://deb.debian.org/debian|$APT_MIRROR|g" /etc/apt/sources.list 2>/dev/null || true; \
+    fi
+
 # Install ffmpeg when any feature that uses it is active:
 # RTMP relay, radio HLS, video HLS embed (/stream-hls), or preview thumbnails (/preview).
 # (build with --build-arg RTMP_RELAY_ACTIVE=1, RADIO_ACTIVE=1, HLS_ACTIVE=1, or PREVIEW_ACTIVE=1)
