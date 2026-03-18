@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useState } from 'react';
+import { SessionContext } from '../contexts/SessionContext';
 
 /**
  * DSK Broadcast Control Panel
@@ -56,11 +57,12 @@ const inputStyle = {
 };
 
 export function DskControlPage() {
+  const session = useContext(SessionContext);
   const pathParts = window.location.pathname.split('/');
-  // /dsk-control/:apikey
-  const apiKey = pathParts[2] || '';
+  // /dsk-control/:apikey (standalone) or /graphics/control (sidebar)
+  const apiKey = pathParts[2] || session?.apiKey || '';
   const params = new URLSearchParams(window.location.search);
-  const serverUrl = (params.get('server') || '').replace(/\/$/, '');
+  const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
 
   const [templates, setTemplates]         = useState([]);  // { id, name, updated_at, templateJson? }
   const [activeId, setActiveId]           = useState(null); // currently activated template id
@@ -213,8 +215,10 @@ export function DskControlPage() {
 
   if (!serverUrl || !apiKey) {
     return (
-      <div style={{ background: '#0d0d0d', color: '#fff', width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'sans-serif', fontSize: 16 }}>
-        Missing API key in URL path or <code>?server=</code> parameter.
+      <div style={{ padding: 32, color: 'var(--color-text-muted, #888)', fontFamily: 'sans-serif', fontSize: 16 }}>
+        {session
+          ? 'Connect to a backend first (click Connect in the top bar).'
+          : 'Missing API key in URL path or ?server= parameter.'}
       </div>
     );
   }

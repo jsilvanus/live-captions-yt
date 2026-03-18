@@ -104,9 +104,7 @@ function SidebarApp() {
             <Route path="/audio" component={AudioPage} />
             <Route path="/broadcast" component={BroadcastPage} />
             <Route path="/graphics/editor" component={DskEditorPage} />
-            <Route path="/graphics/control">
-              <StubPage icon="🖼️" title="DSK Control" description="Access DSK Control via /dsk-control/:apikey. Full sidebar integration planned for a later phase." />
-            </Route>
+            <Route path="/graphics/control" component={DskControlPage} />
             <Route path="/graphics/viewports" component={DskViewportsPage} />
             <Route path="/production/cameras" component={ProductionCamerasPage} />
             <Route path="/production/mixers" component={ProductionMixersPage} />
