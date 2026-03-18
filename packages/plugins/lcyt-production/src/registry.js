@@ -6,24 +6,27 @@
 
 import * as amxAdapter from './adapters/camera/amx.js';
 import * as noneAdapter from './adapters/camera/none.js';
+import * as viscaIpAdapter from './adapters/camera/visca-ip.js';
 import * as rolandAdapter from './adapters/mixer/roland.js';
 import * as amxMixerAdapter from './adapters/mixer/amx.js';
 import * as atemAdapter from './adapters/mixer/atem.js';
+import * as obsAdapter from './adapters/mixer/obs.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
 // ---------------------------------------------------------------------------
 
 const CAMERA_ADAPTERS = {
-  amx:  amxAdapter,
-  none: noneAdapter,
+  amx:        amxAdapter,
+  none:       noneAdapter,
+  'visca-ip': viscaIpAdapter,
 };
 
 const MIXER_ADAPTERS = {
   roland: rolandAdapter,
   amx:    amxMixerAdapter,
   atem:   atemAdapter,
-  // Phase 6+: obs
+  obs:    obsAdapter,
 };
 
 /**

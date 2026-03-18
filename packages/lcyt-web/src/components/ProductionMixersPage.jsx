@@ -6,9 +6,11 @@ const MIXER_TYPES = [
   { value: 'roland', label: 'Roland V-series' },
   { value: 'amx',    label: 'AMX NetLinx' },
   { value: 'atem',   label: 'Blackmagic ATEM' },
+  { value: 'obs',    label: 'OBS Studio' },
 ];
 
-const EMPTY_INPUT = (n) => ({ number: n, command: '' });
+const EMPTY_INPUT     = (n) => ({ number: n, command: '' });
+const EMPTY_OBS_INPUT = (n) => ({ number: n, sceneName: '' });
 
 function ConnectionDot({ connected }) {
   return (
@@ -49,18 +51,50 @@ function InputRow({ entry, onChange, onRemove }) {
   );
 }
 
+function ObsInputRow({ entry, onChange, onRemove }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+      <input
+        className="settings-field__input"
+        type="number"
+        min={1}
+        placeholder="#"
+        value={entry.number}
+        onChange={e => onChange({ ...entry, number: Number(e.target.value) })}
+        style={{ width: 60 }}
+      />
+      <input
+        className="settings-field__input"
+        placeholder="OBS scene name (e.g. Wide Shot)"
+        value={entry.sceneName}
+        onChange={e => onChange({ ...entry, sceneName: e.target.value })}
+        style={{ flex: 1 }}
+      />
+      <button className="btn btn--sm btn--ghost" onClick={onRemove} title="Remove input" style={{ flexShrink: 0 }}>
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) {
+  const initType = initial?.type ?? 'roland';
+
   const [name,             setName]             = useState(initial?.name ?? '');
-  const [type,             setType]             = useState(initial?.type ?? 'roland');
+  const [type,             setType]             = useState(initType);
   const [host,             setHost]             = useState(initial?.connectionConfig?.host ?? '');
   const [port,             setPort]             = useState(
-    initial?.connectionConfig?.port ?? (initial?.type === 'amx' ? 1319 : initial?.type === 'atem' ? '' : 8023)
+    initial?.connectionConfig?.port ?? (initType === 'amx' ? 1319 : initType === 'atem' ? '' : initType === 'obs' ? 4455 : 8023)
   );
   const [meIndex,          setMeIndex]          = useState(
     initial?.connectionConfig?.meIndex != null ? String(initial.connectionConfig.meIndex) : ''
   );
   const [inputs,           setInputs]           = useState(
-    initial?.connectionConfig?.inputs?.map(i => ({ ...i })) ?? []
+    initType === 'amx' ? (initial?.connectionConfig?.inputs?.map(i => ({ ...i })) ?? []) : []
+  );
+  const [obsPassword,      setObsPassword]      = useState(initial?.connectionConfig?.password ?? '');
+  const [obsInputs,        setObsInputs]        = useState(
+    initType === 'obs' ? (initial?.connectionConfig?.inputs?.map(i => ({ ...i })) ?? []) : []
   );
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
   const [testResult,       setTestResult]       = useState(null);
@@ -70,9 +104,10 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
   function handleTypeChange(newType) {
     setType(newType);
     if (!initial?.connectionConfig?.port) {
-      if (newType === 'amx')  setPort(1319);
+      if (newType === 'amx')       setPort(1319);
       else if (newType === 'atem') setPort('');
-      else                    setPort(8023);
+      else if (newType === 'obs')  setPort(4455);
+      else                         setPort(8023);
     }
   }
 
@@ -80,6 +115,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
     if (type === 'roland') return { host, port: Number(port) };
     if (type === 'amx')    return { host, port: Number(port), inputs };
     if (type === 'atem')   return { host, ...(meIndex !== '' ? { meIndex: Number(meIndex) } : {}) };
+    if (type === 'obs')    return { host, port: Number(port), password: obsPassword, inputs: obsInputs };
     return {};
   }
 
@@ -103,6 +139,13 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
   function updateInput(idx, updated) { setInputs(prev => prev.map((i, n) => n === idx ? updated : i)); }
   function removeInput(idx)          { setInputs(prev => prev.filter((_, n) => n !== idx)); }
 
+  function addObsInput() {
+    const nextNum = obsInputs.length > 0 ? Math.max(...obsInputs.map(i => i.number)) + 1 : 1;
+    setObsInputs(prev => [...prev, EMPTY_OBS_INPUT(nextNum)]);
+  }
+  function updateObsInput(idx, updated) { setObsInputs(prev => prev.map((i, n) => n === idx ? updated : i)); }
+  function removeObsInput(idx)          { setObsInputs(prev => prev.filter((_, n) => n !== idx)); }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div className="settings-field">
@@ -125,13 +168,13 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
           <input className="settings-field__input" value={host} onChange={e => setHost(e.target.value)}
             placeholder={type === 'amx' ? '192.168.2.50' : '192.168.2.100'} />
         </div>
-        {/* TCP port — hidden for ATEM (UDP on 9910, managed by atem-connection) */}
+        {/* Port — hidden for ATEM (UDP on 9910, managed by atem-connection) */}
         {type !== 'atem' && (
           <div className="settings-field" style={{ flex: 1 }}>
-            <label className="settings-field__label">TCP port</label>
+            <label className="settings-field__label">{type === 'obs' ? 'WebSocket port' : 'TCP port'}</label>
             <input className="settings-field__input" type="number" value={port}
               onChange={e => setPort(e.target.value)}
-              placeholder={type === 'amx' ? '1319' : '8023'} />
+              placeholder={type === 'amx' ? '1319' : type === 'obs' ? '4455' : '8023'} />
           </div>
         )}
       </div>
@@ -176,6 +219,45 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         </div>
       )}
 
+      {/* OBS-specific: password + scene inputs */}
+      {type === 'obs' && (
+        <>
+          <div className="settings-field">
+            <label className="settings-field__label">Password</label>
+            <input
+              className="settings-field__input"
+              type="password"
+              value={obsPassword}
+              onChange={e => setObsPassword(e.target.value)}
+              placeholder="OBS WebSocket password (leave blank if disabled)"
+              autoComplete="new-password"
+            />
+          </div>
+
+          <div className="settings-field">
+            <label className="settings-field__label">
+              Scene inputs
+              <button className="btn btn--sm btn--ghost" style={{ marginLeft: 8 }} onClick={addObsInput}>
+                + Add input
+              </button>
+            </label>
+            {obsInputs.length === 0 && (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: 12, margin: '4px 0' }}>
+                No inputs. Click "Add input" to map input numbers to OBS scene names.
+              </p>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4 }}>
+              Input # → OBS scene name (must match exactly)
+            </div>
+            {obsInputs.map((inp, i) => (
+              <ObsInputRow key={i} entry={inp}
+                onChange={updated => updateObsInput(i, updated)}
+                onRemove={() => removeObsInput(i)} />
+            ))}
+          </div>
+        </>
+      )}
+
       {/* Bridge selector — only shown when bridges exist */}
       {bridges.length > 0 && (
         <div className="settings-field">
@@ -212,8 +294,8 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         <button
           className="btn btn--ghost btn--sm"
           onClick={handleTest}
-          disabled={testing || type === 'atem'}
-          title={type === 'atem' ? 'UDP-based; connection test requires bridge' : undefined}
+          disabled={testing || type === 'atem' || type === 'obs'}
+          title={type === 'atem' ? 'UDP-based; connection test requires bridge' : type === 'obs' ? 'WebSocket; save first and check mixer status' : undefined}
           style={{ marginRight: 'auto' }}
         >
           {testing ? 'Testing…' : 'Test connection'}
@@ -247,7 +329,7 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
           <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
             {mixer.type === 'atem'
               ? cfg.host
-              : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : 8023)}`}
+              : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : mixer.type === 'obs' ? 4455 : 8023)}`}
           </span>
         )}
         {bridge && (
@@ -260,7 +342,7 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
         fontSize: 11, padding: '2px 6px', borderRadius: 3,
         background: 'var(--color-surface-alt)', color: 'var(--color-text-muted)', whiteSpace: 'nowrap',
       }}>{typeLabel}</span>
-      {mixer.type === 'amx' && (
+      {(mixer.type === 'amx' || mixer.type === 'obs') && (
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
           {cfg.inputs?.length ?? 0} input{(cfg.inputs?.length ?? 0) !== 1 ? 's' : ''}
         </span>

@@ -8,7 +8,8 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "atem-connection": "^2.0.0"
+    "atem-connection": "^2.0.0",
+    "obs-websocket-js": "^5.0.6"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",

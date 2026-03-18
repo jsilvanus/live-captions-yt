@@ -3,11 +3,13 @@ import { useState, useEffect, useCallback, useContext } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 
 const CONTROL_TYPES = [
-  { value: 'none', label: 'None (mixer only)' },
-  { value: 'amx',  label: 'AMX NetLinx' },
+  { value: 'none',     label: 'None (mixer only)' },
+  { value: 'amx',     label: 'AMX NetLinx' },
+  { value: 'visca-ip', label: 'VISCA over IP' },
 ];
 
-const EMPTY_PRESET = () => ({ id: crypto.randomUUID(), name: '', command: '' });
+const EMPTY_PRESET       = () => ({ id: crypto.randomUUID(), name: '', command: '' });
+const EMPTY_VISCA_PRESET = () => ({ id: crypto.randomUUID(), name: '', presetNumber: 0 });
 
 function PresetRow({ preset, onChange, onRemove }) {
   return (
@@ -33,21 +35,76 @@ function PresetRow({ preset, onChange, onRemove }) {
   );
 }
 
+function ViscaPresetRow({ preset, onChange, onRemove }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+      <input
+        className="settings-field__input"
+        placeholder="Preset name (e.g. Wide)"
+        value={preset.name}
+        onChange={e => onChange({ ...preset, name: e.target.value })}
+        style={{ width: 140 }}
+      />
+      <input
+        className="settings-field__input"
+        type="number"
+        min={0}
+        max={127}
+        placeholder="Slot # (0–127)"
+        value={preset.presetNumber}
+        onChange={e => onChange({ ...preset, presetNumber: e.target.value })}
+        style={{ width: 110 }}
+      />
+      <button className="btn btn--sm btn--ghost" onClick={onRemove} title="Remove preset" style={{ flexShrink: 0 }}>
+        ✕
+      </button>
+    </div>
+  );
+}
+
 function CameraForm({ initial, bridges, onSave, onCancel }) {
+  const initType = initial?.controlType ?? 'none';
+
   const [name,             setName]             = useState(initial?.name ?? '');
   const [mixerInput,       setMixerInput]       = useState(initial?.mixerInput ?? '');
-  const [controlType,      setControlType]      = useState(initial?.controlType ?? 'none');
+  const [controlType,      setControlType]      = useState(initType);
   const [host,             setHost]             = useState(initial?.controlConfig?.host ?? '');
-  const [port,             setPort]             = useState(initial?.controlConfig?.port ?? 1319);
+  const [port,             setPort]             = useState(
+    initial?.controlConfig?.port ?? (initType === 'visca-ip' ? 52381 : 1319)
+  );
   const [presets,          setPresets]          = useState(
-    initial?.controlConfig?.presets?.map(p => ({ ...p, id: p.id || crypto.randomUUID() })) ?? []
+    initType === 'amx'
+      ? (initial?.controlConfig?.presets?.map(p => ({ ...p, id: p.id || crypto.randomUUID() })) ?? [])
+      : []
+  );
+  const [viscaProtocol,     setViscaProtocol]     = useState(initial?.controlConfig?.protocol ?? 'udp');
+  const [viscaCameraAddress, setViscaCameraAddress] = useState(initial?.controlConfig?.cameraAddress ?? 1);
+  const [viscaPresets,      setViscaPresets]      = useState(
+    initType === 'visca-ip'
+      ? (initial?.controlConfig?.presets?.map(p => ({ ...p, id: p.id || crypto.randomUUID() })) ?? [])
+      : []
   );
   const [sortOrder,        setSortOrder]        = useState(initial?.sortOrder ?? 0);
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
 
+  function handleControlTypeChange(newType) {
+    if (newType === 'visca-ip' && Number(port) === 1319) setPort(52381);
+    if (newType === 'amx'      && Number(port) === 52381) setPort(1319);
+    setControlType(newType);
+  }
+
   function buildControlConfig() {
     if (controlType === 'amx') {
       return { host, port: Number(port), presets: presets.map(({ id, name, command }) => ({ id, name, command })) };
+    }
+    if (controlType === 'visca-ip') {
+      return {
+        host,
+        port: Number(port),
+        protocol: viscaProtocol,
+        cameraAddress: Number(viscaCameraAddress),
+        presets: viscaPresets.map(({ id, name, presetNumber }) => ({ id, name, presetNumber: Number(presetNumber) })),
+      };
     }
     return {};
   }
@@ -66,6 +123,8 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
 
   function updatePreset(idx, updated) { setPresets(prev => prev.map((p, i) => i === idx ? updated : p)); }
   function removePreset(idx)          { setPresets(prev => prev.filter((_, i) => i !== idx)); }
+  function updateViscaPreset(idx, updated) { setViscaPresets(prev => prev.map((p, i) => i === idx ? updated : p)); }
+  function removeViscaPreset(idx)          { setViscaPresets(prev => prev.filter((_, i) => i !== idx)); }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -90,7 +149,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
 
       <div className="settings-field">
         <label className="settings-field__label">Control type</label>
-        <select className="settings-field__input" value={controlType} onChange={e => setControlType(e.target.value)}>
+        <select className="settings-field__input" value={controlType} onChange={e => handleControlTypeChange(e.target.value)}>
           {CONTROL_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
         </select>
       </div>
@@ -127,6 +186,59 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
               <PresetRow key={p.id} preset={p}
                 onChange={updated => updatePreset(i, updated)}
                 onRemove={() => removePreset(i)} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {controlType === 'visca-ip' && (
+        <>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div className="settings-field" style={{ flex: 2 }}>
+              <label className="settings-field__label">Camera host (IP)</label>
+              <input className="settings-field__input" value={host} onChange={e => setHost(e.target.value)}
+                placeholder="192.168.1.100" />
+            </div>
+            <div className="settings-field" style={{ flex: 1 }}>
+              <label className="settings-field__label">Port</label>
+              <input className="settings-field__input" type="number" value={port}
+                onChange={e => setPort(e.target.value)} placeholder="52381" />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div className="settings-field" style={{ flex: 1 }}>
+              <label className="settings-field__label">Protocol</label>
+              <select className="settings-field__input" value={viscaProtocol}
+                onChange={e => setViscaProtocol(e.target.value)}>
+                <option value="udp">UDP (Sony / PTZOptics default)</option>
+                <option value="tcp">TCP</option>
+              </select>
+            </div>
+            <div className="settings-field" style={{ flex: 1 }}>
+              <label className="settings-field__label">Camera address (1–7)</label>
+              <input className="settings-field__input" type="number" min={1} max={7}
+                value={viscaCameraAddress} onChange={e => setViscaCameraAddress(e.target.value)} placeholder="1" />
+            </div>
+          </div>
+
+          <div className="settings-field">
+            <label className="settings-field__label">
+              Presets
+              <button className="btn btn--sm btn--ghost" style={{ marginLeft: 8 }}
+                onClick={() => setViscaPresets(prev => [...prev, EMPTY_VISCA_PRESET()])}>
+                + Add preset
+              </button>
+            </label>
+            {viscaPresets.length === 0 && (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: 12, margin: '4px 0' }}>
+                No presets. Click "Add preset" to add one.
+              </p>
+            )}
+            {viscaPresets.map((p, i) => (
+              <ViscaPresetRow key={p.id} preset={p}
+                onChange={updated => updateViscaPreset(i, updated)}
+                onRemove={() => removeViscaPreset(i)} />
             ))}
           </div>
         </>
