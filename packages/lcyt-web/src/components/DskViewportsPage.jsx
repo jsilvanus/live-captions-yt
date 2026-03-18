@@ -238,9 +238,9 @@ export function DskViewportsPage() {
   }
 
   function getDisplayUrl(vp) {
-    const base = `${serverUrl}/dsk/${encodeURIComponent(apiKey)}`;
+    const base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
     if (!vp || vp._builtin) return base;
-    const u = new URL(base, window.location.href);
+    const u = new URL(base);
     u.searchParams.set('viewport', vp.name);
     return u.toString();
   }
