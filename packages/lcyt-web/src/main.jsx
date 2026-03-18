@@ -26,6 +26,7 @@ const ProductionOperatorPage = lazy(() => import('./components/ProductionOperato
 const ProductionCamerasPage  = lazy(() => import('./components/ProductionCamerasPage').then(m => ({ default: m.ProductionCamerasPage })));
 const ProductionMixersPage   = lazy(() => import('./components/ProductionMixersPage').then(m => ({ default: m.ProductionMixersPage })));
 const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
+const ProductionDevicesPage  = lazy(() => import('./components/ProductionDevicesPage').then(m => ({ default: m.ProductionDevicesPage })));
 const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
 const TranslationsPage       = lazy(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
 
@@ -117,6 +118,7 @@ function SidebarApp() {
             <Route path="/production/cameras" component={ProductionCamerasPage} />
             <Route path="/production/mixers" component={ProductionMixersPage} />
             <Route path="/production/bridges" component={ProductionBridgesPage} />
+            <Route path="/production/devices" component={ProductionDevicesPage} />
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />

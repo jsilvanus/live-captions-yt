@@ -2838,10 +2838,31 @@
 }
 
 /* Editor */
+.planner-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
 .planner-editor {
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
+  min-width: 280px;
+}
+
+.planner-resize-handle {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 2px solid transparent;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+  user-select: none;
+}
+.planner-resize-handle:hover,
+.planner-resize-handle:active {
+  border-left-color: var(--color-accent);
 }
 
 .planner-empty-state {

@@ -33,6 +33,14 @@ export function ViewportsWidget({ size }) {
     return () => { es.close(); esRef.current = null; };
   }, [backendUrl, apiKey]);
 
+  function openViewport(vp) {
+    const params = new URLSearchParams({ server: backendUrl });
+    const url = `/dsk/${encodeURIComponent(apiKey)}?${params}&viewport=${encodeURIComponent(vp.name)}`;
+    const w = vp.width || 1920;
+    const h = vp.height || 1080;
+    window.open(url, `viewport-${vp.name}`, `width=${w},height=${h},noopener`);
+  }
+
   if (!connected) {
     return <div className="db-widget db-empty-note">Not connected.</div>;
   }
@@ -64,9 +72,18 @@ export function ViewportsWidget({ size }) {
                 </div>
               )}
             </div>
-            <div className="db-viewport-thumb__label">
-              {vp.label || vp.name}
-              {active.length > 0 && <span className="db-dot db-dot--ok" style={{ marginLeft: 4 }} />}
+            <div className="db-viewport-thumb__footer">
+              <span className="db-viewport-thumb__label">
+                {vp.label || vp.name}
+                {active.length > 0 && <span className="db-dot db-dot--ok" style={{ marginLeft: 4 }} />}
+              </span>
+              <button
+                className="btn btn--ghost btn--xs db-viewport-thumb__open-btn"
+                onClick={() => openViewport(vp)}
+                title={`Open ${vp.label || vp.name} viewport`}
+              >
+                ↗
+              </button>
             </div>
           </div>
         );
