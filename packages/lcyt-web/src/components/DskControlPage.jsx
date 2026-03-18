@@ -72,6 +72,8 @@ export function DskControlPage() {
   const [rendererStatus, setRendererStatus] = useState(null); // { running, template, browserAlive }
   const [statusMsg, setStatusMsg]         = useState('');
   const [activating, setActivating]       = useState(false);
+  const [images, setImages]               = useState([]);   // { id, shorthand, mimeType }
+  const [activeOverlayImages, setActiveOverlayImages] = useState([]); // shorthands currently shown
 
   // ── API helper ──────────────────────────────────────────────────────────
 
@@ -108,12 +110,23 @@ export function DskControlPage() {
     } catch { /* non-fatal */ }
   }, [serverUrl, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const fetchImages = useCallback(async () => {
+    if (!serverUrl || !apiKey) return;
+    try {
+      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/images`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setImages(data.images || []);
+    } catch { /* non-fatal */ }
+  }, [serverUrl, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     fetchTemplates();
     fetchRendererStatus();
+    fetchImages();
     const interval = setInterval(fetchRendererStatus, 10000);
     return () => clearInterval(interval);
-  }, [fetchTemplates, fetchRendererStatus]);
+  }, [fetchTemplates, fetchRendererStatus, fetchImages]);
 
   // ── Load a template's full JSON to extract text layer ids ───────────────
 
@@ -177,6 +190,43 @@ export function DskControlPage() {
       setStatusMsg('Broadcast sent.');
     } catch (err) {
       setStatusMsg(`Broadcast error: ${err.message}`);
+    }
+  }
+
+  // ── Client-side overlay control ──────────────────────────────────────────
+
+  function toggleOverlayImage(shorthand) {
+    setActiveOverlayImages(prev =>
+      prev.includes(shorthand) ? prev.filter(n => n !== shorthand) : [...prev, shorthand]
+    );
+  }
+
+  async function pushOverlay() {
+    setStatusMsg('Pushing to overlay…');
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/graphics`, {
+        method: 'POST',
+        body: JSON.stringify({ default: activeOverlayImages }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setStatusMsg('Overlay updated.');
+    } catch (err) {
+      setStatusMsg(`Overlay error: ${err.message}`);
+    }
+  }
+
+  async function clearOverlay() {
+    setActiveOverlayImages([]);
+    setStatusMsg('Clearing overlay…');
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/graphics`, {
+        method: 'POST',
+        body: JSON.stringify({ default: [] }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setStatusMsg('Overlay cleared.');
+    } catch (err) {
+      setStatusMsg(`Clear error: ${err.message}`);
     }
   }
 
@@ -348,8 +398,46 @@ export function DskControlPage() {
             </button>
           )}
 
+          {/* Client-side overlay */}
+          <div style={{ paddingTop: 16, borderTop: '1px solid #222' }}>
+            <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
+              Client-side Overlay
+            </div>
+
+            {images.length === 0 && (
+              <div style={{ color: '#555', fontSize: 13 }}>No images uploaded.</div>
+            )}
+
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {images.map(img => {
+                const isOn = activeOverlayImages.includes(img.shorthand);
+                return (
+                  <button
+                    key={img.id}
+                    onClick={() => toggleOverlayImage(img.shorthand)}
+                    style={{ ...(isOn ? btnActiveStyle : btnStyle), fontSize: 12, padding: '4px 10px', minWidth: 0 }}
+                    title={img.shorthand}
+                  >
+                    {img.shorthand}
+                  </button>
+                );
+              })}
+            </div>
+
+            {images.length > 0 && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={pushOverlay} style={{ ...btnPrimaryStyle, flex: 1, fontSize: 13 }}>
+                  Push to overlay
+                </button>
+                <button onClick={clearOverlay} style={{ ...btnStyle, fontSize: 13 }}>
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Link to editor */}
-          <div style={{ marginTop: 'auto', paddingTop: 16, borderTop: '1px solid #222' }}>
+          <div style={{ paddingTop: 16, borderTop: '1px solid #222' }}>
             <a
               href={`/dsk-editor?server=${encodeURIComponent(serverUrl)}&apikey=${encodeURIComponent(apiKey)}`}
               style={{ color: '#4488dd', fontSize: 13, textDecoration: 'none' }}

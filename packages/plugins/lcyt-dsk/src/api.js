@@ -61,7 +61,7 @@ export async function initDskControl(db, store, relayManager) {
  * @param {object} store
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager
- * @returns {{ dskRouter, dskTemplatesRouter, imagesRouter, dskRtmpRouter }}
+ * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
 export function createDskRouters(db, store, auth, relayManager) {
   const editorAuth = createEditorAuth(db);
@@ -69,7 +69,7 @@ export function createDskRouters(db, store, auth, relayManager) {
     /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, store),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, store),
     /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
     dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth)),
     /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */

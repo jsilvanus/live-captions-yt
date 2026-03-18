@@ -44,7 +44,7 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 
-export function createDskTemplatesRouter(db, auth, editorAuth, relayManager) {
+export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, store) {
   const router = Router();
   const combinedAuth = editorAuthOrBearer(auth, editorAuth);
 
@@ -227,6 +227,26 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager) {
       console.error(`[dsk-renderer] start error for ${apiKey}:`, err.message);
       res.status(500).json({ error: 'Failed to start renderer stream' });
     }
+  });
+
+  // POST /dsk/:apikey/graphics — manually push a 'graphics' SSE event to all client-side overlay
+  // subscribers, updating which image shorthands are visible on /dsk/:key pages.
+  // Body: { default?: string[], viewports?: { [name]: string[] } }
+  router.post('/:apikey/graphics', combinedAuth, (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const { default: defaultNames, viewports } = req.body || {};
+
+    const newState = {
+      default: Array.isArray(defaultNames) ? defaultNames : [],
+      viewports: (viewports && typeof viewports === 'object' && !Array.isArray(viewports)) ? viewports : {},
+    };
+
+    if (store) {
+      store.setDskGraphicsState(req.params.apikey, newState);
+      store.emitDskEvent(req.params.apikey, 'graphics', { ...newState, ts: Date.now() });
+    }
+
+    res.json({ ok: true, ...newState });
   });
 
   // POST /dsk/:apikey/renderer/stop — tear down capture loop and ffmpeg
