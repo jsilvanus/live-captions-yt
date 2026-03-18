@@ -247,8 +247,8 @@ export function DskControlPage() {
             {rendererStatus?.running ? 'Streaming' : rendererStatus === null ? 'Unknown' : 'Idle'}
           </span>
           {rendererStatus?.running
-            ? <button onClick={stopRenderer} style={btnDangerStyle}>Stop renderer</button>
-            : <button onClick={startRenderer} style={btnPrimaryStyle}>Start renderer</button>
+            ? <button onClick={stopRenderer} style={btnDangerStyle}>Stop server-side renderer</button>
+            : <button onClick={startRenderer} style={btnPrimaryStyle}>Start server-side renderer</button>
           }
         </div>
 
