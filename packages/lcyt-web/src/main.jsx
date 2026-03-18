@@ -9,24 +9,15 @@ import './styles/components.css';
 import { AppLayout } from './App';
 import { AppProviders } from './contexts/AppProviders';
 import { SidebarLayout } from './components/SidebarLayout';
-import { DashboardPage } from './components/DashboardPage';
 import { AudioPage } from './components/AudioPage';
-import { SettingsPage } from './components/SettingsPage';
-import { EmbedAudioPage } from './components/EmbedAudioPage';
-import { EmbedInputPage } from './components/EmbedInputPage';
-import { EmbedSentLogPage } from './components/EmbedSentLogPage';
-import { EmbedFileDropPage } from './components/EmbedFileDropPage';
-import { EmbedFilesPage } from './components/EmbedFilesPage';
-import { EmbedSettingsPage } from './components/EmbedSettingsPage';
-import { EmbedRtmpPage } from './components/EmbedRtmpPage';
-import { EmbedViewerPage } from './components/EmbedViewerPage';
-import { LoginPage } from './components/LoginPage';
-import { RegisterPage } from './components/RegisterPage';
-import { ProjectsPage } from './components/ProjectsPage';
-import { AccountPage } from './components/AccountPage';
 
 // --- Lazy-loaded pages (heavy or path-gated) ----------------------------------
 
+// Sidebar routes
+const DashboardPage          = lazy(() => import('./components/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const SettingsPage           = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const ProjectsPage           = lazy(() => import('./components/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const AccountPage            = lazy(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
 const BroadcastPage          = lazy(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
 const DskEditorPage          = lazy(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
 const DskViewportsPage       = lazy(() => import('./components/DskViewportsPage').then(m => ({ default: m.DskViewportsPage })));
@@ -35,10 +26,22 @@ const ProductionCamerasPage  = lazy(() => import('./components/ProductionCameras
 const ProductionMixersPage   = lazy(() => import('./components/ProductionMixersPage').then(m => ({ default: m.ProductionMixersPage })));
 const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
 const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
+
+// Standalone / path-gated pages
 const SpeechCapturePage      = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
 const DskPage                = lazy(() => import('./components/DskPage').then(m => ({ default: m.DskPage })));
 const DskControlPage         = lazy(() => import('./components/DskControlPage').then(m => ({ default: m.DskControlPage })));
 const ViewerPage             = lazy(() => import('./components/ViewerPage').then(m => ({ default: m.ViewerPage })));
+const LoginPage              = lazy(() => import('./components/LoginPage').then(m => ({ default: m.LoginPage })));
+const RegisterPage           = lazy(() => import('./components/RegisterPage').then(m => ({ default: m.RegisterPage })));
+const EmbedAudioPage         = lazy(() => import('./components/EmbedAudioPage').then(m => ({ default: m.EmbedAudioPage })));
+const EmbedInputPage         = lazy(() => import('./components/EmbedInputPage').then(m => ({ default: m.EmbedInputPage })));
+const EmbedSentLogPage       = lazy(() => import('./components/EmbedSentLogPage').then(m => ({ default: m.EmbedSentLogPage })));
+const EmbedFileDropPage      = lazy(() => import('./components/EmbedFileDropPage').then(m => ({ default: m.EmbedFileDropPage })));
+const EmbedFilesPage         = lazy(() => import('./components/EmbedFilesPage').then(m => ({ default: m.EmbedFilesPage })));
+const EmbedSettingsPage      = lazy(() => import('./components/EmbedSettingsPage').then(m => ({ default: m.EmbedSettingsPage })));
+const EmbedRtmpPage          = lazy(() => import('./components/EmbedRtmpPage').then(m => ({ default: m.EmbedRtmpPage })));
+const EmbedViewerPage        = lazy(() => import('./components/EmbedViewerPage').then(m => ({ default: m.EmbedViewerPage })));
 
 const path = window.location.pathname;
 
