@@ -151,8 +151,9 @@ export function DskControlPage() {
     try {
       const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates/${id}/activate`, { method: 'POST' });
       if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
       setActiveId(id);
-      setStatusMsg('Activated.');
+      setStatusMsg(data.rendererOk === false ? 'Activated (renderer not running).' : 'Activated.');
       // Pre-load the template JSON so we know which fields to show
       const json = await loadTemplateJson(id);
       if (json) {
@@ -322,7 +323,7 @@ export function DskControlPage() {
         {/* Template grid */}
         <div style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
           <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
-            Templates — click to activate
+            Templates — click to activate (client-side overlay + server-side renderer)
           </div>
 
           {templates.length === 0 && (

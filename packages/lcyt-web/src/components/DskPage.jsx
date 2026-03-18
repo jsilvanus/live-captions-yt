@@ -61,6 +61,10 @@ export function DskPage() {
   const [textLayers, setTextLayers]   = useState([]);
   // live bindings from caption codes: { section: 'Gospel', stanza: '...', ... }
   const [bindings, setBindings]       = useState({});
+  // active template from server-side activate: full template JSON or null
+  const [activeTemplate, setActiveTemplate] = useState(null);
+  // live text overrides from broadcast: { layerId: text }
+  const [layerOverrides, setLayerOverrides] = useState({});
 
   // CSS scale to fit viewport dimensions into the window
   const [scale, setScale] = useState(1);
@@ -143,6 +147,34 @@ export function DskPage() {
       fetchImages();
     });
 
+    // Template activated from control panel — render on this page too
+    es.addEventListener('template', (e) => {
+      if (!mounted.current) return;
+      try {
+        const { template: tmpl } = JSON.parse(e.data);
+        setActiveTemplate(tmpl ?? null);
+        setLayerOverrides({});
+        if (tmpl) {
+          setVpDimensions({ width: tmpl.width || 1920, height: tmpl.height || 1080 });
+        }
+      } catch {}
+    });
+
+    // Live text update from Broadcast button — update text layers without reload
+    es.addEventListener('layer_update', (e) => {
+      if (!mounted.current) return;
+      try {
+        const { updates } = JSON.parse(e.data);
+        if (Array.isArray(updates)) {
+          setLayerOverrides(prev => {
+            const next = { ...prev };
+            for (const { id, text } of updates) next[id] = text;
+            return next;
+          });
+        }
+      } catch {}
+    });
+
     es.onerror = () => {
       es.close();
       esRef.current = null;
@@ -182,7 +214,8 @@ export function DskPage() {
   // ── Container sizing ────────────────────────────────────
   // When a viewport with specific dimensions is set, scale the fixed-size container to fit
   // the window (same approach as DskEditorPage canvas scaling).
-  const containerStyle = buildContainerStyle(vpDimensions, scale, bgColor);
+  const activeBg = activeTemplate?.background || bgColor;
+  const containerStyle = buildContainerStyle(vpDimensions, scale, activeBg);
 
   // ── Render ──────────────────────────────────────────────
   if (!serverUrl || !apiKey) {
@@ -195,6 +228,9 @@ export function DskPage() {
 
   return (
     <div style={containerStyle}>
+      {/* CSS keyframes for template layer animations */}
+      {activeTemplate && <style>{LCYT_KEYFRAMES}</style>}
+
       {/* All images pre-loaded (hidden) for zero-latency visibility toggle */}
       {images.map(img => (
         <img
@@ -240,6 +276,11 @@ export function DskPage() {
           </div>
         );
       })}
+
+      {/* Template layers — rendered on top of image overlays when a template is active */}
+      {activeTemplate && (activeTemplate.layers || []).map((layer, idx) =>
+        renderTemplateLayer(layer, 100 + idx, serverUrl, layerOverrides, bindings)
+      )}
 
       {/* CC burn-in text (cc=1 mode only) */}
       {ccMode && ccText && (
@@ -400,3 +441,79 @@ function buildImageStyle(layerIdx, vpSettings, vpDimensions) {
   // Default: full-width (original landscape behaviour)
   return { ...base, top: 0, left: 0, width: '100%', height: 'auto' };
 }
+
+/**
+ * Render a single template layer as a positioned React element.
+ * Mirrors the server-side renderer's HTML output so the same template JSON
+ * looks identical whether viewed through Playwright (RTMP) or the browser overlay.
+ */
+function renderTemplateLayer(layer, zIndex, serverUrl, layerOverrides, bindings) {
+  if (layer.visible === false) return null;
+
+  const base = {
+    position: 'absolute',
+    left:     layer.x ?? 0,
+    top:      layer.y ?? 0,
+    width:    layer.width  ?? undefined,
+    height:   layer.height ?? undefined,
+    zIndex,
+    pointerEvents: 'none',
+    ...(layer.animation ? { animation: layer.animation } : {}),
+    ...(layer.style ? kebabToCamel(layer.style) : {}),
+  };
+
+  if (layer.type === 'text') {
+    const content = layer.binding
+      ? (bindings[layer.binding] ?? '')
+      : (layerOverrides[layer.id] ?? layer.text ?? '');
+    return <div key={layer.id} id={layer.id} style={base}>{content}</div>;
+  }
+
+  if (layer.type === 'rect') {
+    return <div key={layer.id} id={layer.id} style={base} />;
+  }
+
+  if (layer.type === 'ellipse') {
+    return <div key={layer.id} id={layer.id} style={{ ...base, borderRadius: '50%' }} />;
+  }
+
+  if (layer.type === 'image') {
+    const src = layer.src
+      ? (layer.src.startsWith('http') || layer.src.startsWith('data:') || layer.src.startsWith('/')
+          ? layer.src
+          : `${serverUrl}${layer.src}`)
+      : '';
+    if (!src) return null;
+    return <img key={layer.id} id={layer.id} src={src} alt="" style={base} crossOrigin="anonymous" />;
+  }
+
+  return null;
+}
+
+/** Convert an object with kebab-case CSS keys to React camelCase style keys. */
+function kebabToCamel(styleObj) {
+  const result = {};
+  for (const [key, value] of Object.entries(styleObj)) {
+    const camel = key.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+    result[camel] = value;
+  }
+  return result;
+}
+
+/** Built-in animation keyframes injected by the editor and renderer — included here so
+ *  client-side template rendering has the same named animations available. */
+const LCYT_KEYFRAMES = `
+@keyframes lcyt-fadeIn    { from { opacity:0 } to { opacity:1 } }
+@keyframes lcyt-fadeOut   { from { opacity:1 } to { opacity:0 } }
+@keyframes lcyt-slideInLeft  { from { transform:translateX(-100%) } to { transform:translateX(0) } }
+@keyframes lcyt-slideInRight { from { transform:translateX(100%)  } to { transform:translateX(0) } }
+@keyframes lcyt-slideInUp    { from { transform:translateY(100%)  } to { transform:translateY(0) } }
+@keyframes lcyt-slideInDown  { from { transform:translateY(-100%) } to { transform:translateY(0) } }
+@keyframes lcyt-slideOutLeft  { from { transform:translateX(0) } to { transform:translateX(-100%) } }
+@keyframes lcyt-slideOutRight { from { transform:translateX(0) } to { transform:translateX(100%) } }
+@keyframes lcyt-zoomIn  { from { transform:scale(0);   opacity:0 } to { transform:scale(1);   opacity:1 } }
+@keyframes lcyt-zoomOut { from { transform:scale(1);   opacity:1 } to { transform:scale(0);   opacity:0 } }
+@keyframes lcyt-pulse   { 0%,100% { transform:scale(1) } 50% { transform:scale(1.05) } }
+@keyframes lcyt-blink   { 0%,100% { opacity:1 } 50% { opacity:0 } }
+@keyframes lcyt-typewriter { from { clip-path:inset(0 100% 0 0) } to { clip-path:inset(0 0% 0 0) } }
+`;

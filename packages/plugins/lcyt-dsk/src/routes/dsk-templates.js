@@ -145,13 +145,15 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     const row = getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
 
-    try {
-      await updateTemplate(req.params.apikey, row.templateJson);
-      res.json({ ok: true, id, name: row.name });
-    } catch (err) {
-      console.error(`[dsk-templates] activate error for key ${req.params.apikey}:`, err.message);
-      res.status(500).json({ error: 'Failed to activate template' });
+    // Always push to client-side overlay subscribers regardless of renderer state
+    if (store) {
+      store.emitDskEvent(req.params.apikey, 'template', { template: row.templateJson, ts: Date.now() });
     }
+
+    // Update server-side renderer — non-fatal if renderer has not been started
+    let rendererOk = true;
+    try { await updateTemplate(req.params.apikey, row.templateJson); } catch { rendererOk = false; }
+    res.json({ ok: true, id, name: row.name, rendererOk });
   });
 
   // POST /dsk/:apikey/template — activate template by id (convenience alias for /templates/:id/activate)
@@ -164,13 +166,15 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     const row = getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
 
-    try {
-      await updateTemplate(req.params.apikey, row.templateJson);
-      res.json({ ok: true, id, name: row.name });
-    } catch (err) {
-      console.error(`[dsk-templates] template activate error:`, err.message);
-      res.status(500).json({ error: 'Failed to activate template' });
+    // Always push to client-side overlay subscribers regardless of renderer state
+    if (store) {
+      store.emitDskEvent(req.params.apikey, 'template', { template: row.templateJson, ts: Date.now() });
     }
+
+    // Update server-side renderer — non-fatal if renderer has not been started
+    let rendererOk = true;
+    try { await updateTemplate(req.params.apikey, row.templateJson); } catch { rendererOk = false; }
+    res.json({ ok: true, id, name: row.name, rendererOk });
   });
 
   // POST /dsk/:apikey/broadcast — inject live data via page.evaluate() without page reload.
@@ -190,6 +194,15 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
       if (typeof item.selector !== 'string' || !item.selector) {
         return res.status(400).json({ error: 'Each update must have a non-empty selector string' });
       }
+    }
+
+    // Push text updates to client-side overlay subscribers (selector '#layerId' → id 'layerId')
+    if (store) {
+      const layerUpdates = items.map(({ selector, text }) => ({
+        id: selector.startsWith('#') ? selector.slice(1) : selector,
+        text,
+      }));
+      store.emitDskEvent(req.params.apikey, 'layer_update', { updates: layerUpdates, ts: Date.now() });
     }
 
     try {
