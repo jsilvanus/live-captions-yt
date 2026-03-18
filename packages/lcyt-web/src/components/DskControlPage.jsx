@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { templateSlug } from '../lib/formatting.js';
 
 /**
  * DSK Broadcast Control Panel
@@ -304,7 +305,7 @@ export function DskControlPage() {
         </div>
 
         <a
-          href={`/dsk-viewports?server=${encodeURIComponent(serverUrl)}&apikey=${encodeURIComponent(apiKey)}`}
+          href={`/graphics/viewports?server=${encodeURIComponent(serverUrl)}&apikey=${encodeURIComponent(apiKey)}`}
           style={{ ...btnStyle, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', fontSize: 13 }}
         >
           Manage Viewports
@@ -357,6 +358,7 @@ export function DskControlPage() {
                   }}
                 >
                   <span style={{ fontSize: 16, fontWeight: 'bold' }}>{t.name}</span>
+                  <span style={{ fontSize: 11, color: isActive ? '#44cc88' : '#556', fontFamily: 'monospace' }}>{templateSlug(t.name)}</span>
                   {isActive && <span style={{ fontSize: 11, color: '#44ff88' }}>ACTIVE</span>}
                 </button>
               );
