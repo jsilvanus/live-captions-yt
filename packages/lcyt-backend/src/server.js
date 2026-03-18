@@ -205,7 +205,7 @@ const app = express();
 const auth = createAuthMiddleware(jwtSecret);
 
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, store, auth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, store, auth, relayManager);
 
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
@@ -312,6 +312,7 @@ app.use('/file', createFileRouter(db, auth, store, jwtSecret));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
+app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use('/viewer', createViewerRouter(db));
 app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
