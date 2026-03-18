@@ -214,7 +214,9 @@ export function DskPage() {
   // ── Container sizing ────────────────────────────────────
   // When a viewport with specific dimensions is set, scale the fixed-size container to fit
   // the window (same approach as DskEditorPage canvas scaling).
-  const activeBg = activeTemplate?.background || bgColor;
+  const activeBg = (activeTemplate?.background && activeTemplate.background !== 'transparent')
+    ? activeTemplate.background
+    : bgColor;
   const containerStyle = buildContainerStyle(vpDimensions, scale, activeBg);
 
   // ── Render ──────────────────────────────────────────────

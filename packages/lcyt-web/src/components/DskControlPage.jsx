@@ -185,7 +185,7 @@ export function DskControlPage() {
     try {
       const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/broadcast`, {
         method: 'POST',
-        body: JSON.stringify({ updates }),
+        body: JSON.stringify({ templateId: activeId, updates }),
       });
       if (!res.ok) throw new Error(await res.text());
       setStatusMsg('Broadcast sent.');

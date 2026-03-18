@@ -145,11 +145,6 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     const row = getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
 
-    // Always push to client-side overlay subscribers regardless of renderer state
-    if (store) {
-      store.emitDskEvent(req.params.apikey, 'template', { template: row.templateJson, ts: Date.now() });
-    }
-
     // Update server-side renderer — non-fatal if renderer has not been started
     let rendererOk = true;
     try { await updateTemplate(req.params.apikey, row.templateJson); } catch { rendererOk = false; }
@@ -166,11 +161,6 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     const row = getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
 
-    // Always push to client-side overlay subscribers regardless of renderer state
-    if (store) {
-      store.emitDskEvent(req.params.apikey, 'template', { template: row.templateJson, ts: Date.now() });
-    }
-
     // Update server-side renderer — non-fatal if renderer has not been started
     let rendererOk = true;
     try { await updateTemplate(req.params.apikey, row.templateJson); } catch { rendererOk = false; }
@@ -183,7 +173,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
   //   or: { selector: string, text: string }  (single-item shorthand)
   router.post('/:apikey/broadcast', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const { updates, selector, text } = req.body || {};
+    const { updates, selector, text, templateId } = req.body || {};
 
     // Accept both array and single-item shorthand
     const items = updates ?? (selector != null ? [{ selector, text }] : null);
@@ -198,6 +188,13 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
 
     // Push text updates to client-side overlay subscribers (selector '#layerId' → id 'layerId')
     if (store) {
+      // If a template id is provided, push the full template JSON atomically with the text data
+      if (templateId != null) {
+        const tmplRow = getTemplate(db, Number(templateId), req.params.apikey);
+        if (tmplRow) {
+          store.emitDskEvent(req.params.apikey, 'template', { template: tmplRow.templateJson, ts: Date.now() });
+        }
+      }
       const layerUpdates = items.map(({ selector, text }) => ({
         id: selector.startsWith('#') ? selector.slice(1) : selector,
         text,
