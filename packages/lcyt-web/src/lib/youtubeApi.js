@@ -27,16 +27,23 @@ async function ytFetch(url, token, options = {}) {
 
 /**
  * List upcoming (scheduled) live broadcasts for the authenticated user.
- * Returns the items array from the API response.
+ * Fetches all pages (up to 50 per page) and returns the full items array.
  */
 export async function listScheduledBroadcasts(token) {
-  const params = new URLSearchParams({
-    part: 'id,snippet,status,contentDetails',
-    broadcastStatus: 'upcoming',
-    maxResults: '10',
-  });
-  const data = await ytFetch(`${YT_API}/liveBroadcasts?${params}`, token);
-  return data.items || [];
+  const items = [];
+  let pageToken = undefined;
+  do {
+    const params = new URLSearchParams({
+      part: 'id,snippet,status,contentDetails',
+      broadcastStatus: 'upcoming',
+      maxResults: '50',
+    });
+    if (pageToken) params.set('pageToken', pageToken);
+    const data = await ytFetch(`${YT_API}/liveBroadcasts?${params}`, token);
+    if (data.items) items.push(...data.items);
+    pageToken = data.nextPageToken;
+  } while (pageToken);
+  return items;
 }
 
 /**

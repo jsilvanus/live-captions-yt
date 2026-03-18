@@ -2928,7 +2928,6 @@
 .planner-row__content {
   flex: 1;
   min-width: 0;
-  max-width: 720px;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -3187,7 +3186,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  max-width: 720px;
 }
 
 .planner-stanza__add-line {
@@ -3220,6 +3218,86 @@
 }
 .planner-empty-send__text:hover { color: var(--color-text); }
 
+.planner-empty-send__text--empty {
+  color: var(--color-error);
+}
+
 /* Audio row full-width highlighting */
 .planner-row--audio-start { background: color-mix(in srgb, var(--color-success) 6%, transparent); }
 .planner-row--audio-stop  { background: color-mix(in srgb, var(--color-error)   6%, transparent); }
+
+/* ─── Heading block in Planner ───────────────────────────────────────────── */
+.planner-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.planner-heading-text {
+  flex: 1;
+  font-weight: 700;
+  color: var(--color-accent);
+  font-size: 14px;
+  padding: 2px 0;
+}
+
+.planner-heading-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-accent);
+  outline: none;
+  color: var(--color-accent);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 2px 0;
+  font-family: var(--font-ui);
+}
+
+.planner-row--heading {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+/* ─── Translations Page ──────────────────────────────────────────────────── */
+.translations-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.translations-page__inner {
+  max-width: 700px;
+  padding: 24px 20px;
+  width: 100%;
+}
+
+.translations-page__title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 20px;
+  color: var(--color-text);
+}
+
+.translations-page__section {
+  margin-bottom: 24px;
+}
+
+.translations-page__section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-dim);
+  margin: 0 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.translations-page__hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0 0 8px;
+  line-height: 1.5;
+}

@@ -36,37 +36,38 @@ function makeStore(matchingDomains = []) {
 }
 
 // ---------------------------------------------------------------------------
-// Admin routes (/keys)
+// /keys routes — permissive CORS (user JWT Bearer + admin key protected in handler)
 // ---------------------------------------------------------------------------
 
-describe('cors — /keys admin routes', () => {
-  it('returns 204 for OPTIONS /keys', () => {
+describe('cors — /keys routes', () => {
+  it('returns 204 for OPTIONS /keys with CORS headers', () => {
     const mw = createCorsMiddleware(makeStore());
-    const req = makeReq({ method: 'OPTIONS', path: '/keys', origin: 'https://evil.example' });
+    const req = makeReq({ method: 'OPTIONS', path: '/keys', origin: 'https://app.example' });
     const res = makeRes();
     let nextCalled = false;
     mw(req, res, () => { nextCalled = true; });
     assert.equal(res.statusCode, 204);
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.example');
     assert.equal(nextCalled, false);
   });
 
-  it('does NOT set CORS headers for GET /keys', () => {
+  it('sets CORS headers for GET /keys (user project list)', () => {
     const mw = createCorsMiddleware(makeStore());
-    const req = makeReq({ method: 'GET', path: '/keys', origin: 'https://any.example' });
+    const req = makeReq({ method: 'GET', path: '/keys', origin: 'https://app.example' });
     const res = makeRes();
     let nextCalled = false;
     mw(req, res, () => { nextCalled = true; });
-    assert.equal(res.headers['Access-Control-Allow-Origin'], undefined);
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.example');
     assert.equal(nextCalled, true);
   });
 
-  it('does NOT set CORS headers for DELETE /keys/123', () => {
+  it('sets CORS headers for DELETE /keys/123', () => {
     const mw = createCorsMiddleware(makeStore());
-    const req = makeReq({ method: 'DELETE', path: '/keys/abc123', origin: 'https://any.example' });
+    const req = makeReq({ method: 'DELETE', path: '/keys/abc123', origin: 'https://app.example' });
     const res = makeRes();
     let nextCalled = false;
     mw(req, res, () => { nextCalled = true; });
-    assert.equal(res.headers['Access-Control-Allow-Origin'], undefined);
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.example');
     assert.equal(nextCalled, true);
   });
 });

@@ -973,6 +973,25 @@ export function DskEditorPage() {
     } finally { setLoading(false); }
   }
 
+  async function duplicateTemplate() {
+    if (!templateName.trim()) { setStatus('Template name is required'); return; }
+    const newName = window.prompt('Name for duplicate:', `${templateName.trim()} copy`);
+    if (!newName || !newName.trim()) return;
+    setLoading(true); setStatus('Saving duplicate…');
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/templates`, {
+        method: 'POST', body: JSON.stringify({ name: newName.trim(), template }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setSelectedId(data.id);
+      setTemplateName(newName.trim());
+      isDirty.current = false; setStatus('Duplicate saved.');
+      await fetchTemplates();
+    } catch (err) { setStatus(`Save error: ${err.message}`);
+    } finally { setLoading(false); }
+  }
+
   async function deleteTemplateById(id, name) {
     if (!window.confirm(`Delete template "${name}"?`)) return;
     try {
@@ -1366,6 +1385,7 @@ export function DskEditorPage() {
 
           <span style={{ flex: 1 }} />
           {status && <span style={{ fontSize: 12, color: status.startsWith('Error') || status.startsWith('Save error') ? '#f88' : '#8d8' }}>{status}</span>}
+          <button onClick={duplicateTemplate} disabled={loading} style={btnStyle} title="Save as a new copy with a different name">Duplicate</button>
           <button onClick={saveTemplate} disabled={loading} style={btnPrimaryStyle}>{loading ? 'Saving…' : 'Save'}</button>
         </div>
 

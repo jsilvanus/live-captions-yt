@@ -7,7 +7,7 @@ const CORS_METHODS = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
  * - POST /live and GET /health: permissive — any origin may call (API key is the real gate)
  * - /dsk/* and /images: permissive — authenticated by X-API-Key or Bearer JWT, not session domain
  * - /events with ?token=: permissive — authenticated by token, origin is not the security gate
- * - /keys routes: no CORS headers — admin endpoints are server-side only
+ * - /keys routes: permissive CORS — user project CRUD uses Bearer JWT from the browser; admin key is protected by the route handler
  * - All other routes: look up sessions by domain; allow only registered origins
  *
  * @param {import('../store.js').SessionStore} store
@@ -29,8 +29,16 @@ export function createCorsMiddleware(store) {
       return next();
     }
 
-    // Admin endpoints — no CORS headers at all
+    // /keys routes — user project CRUD uses Bearer JWT (needs CORS for browser apps like
+    // the Projects page at app.lcyt.fi). Admin operations are protected by X-Admin-Key in
+    // the route handler; CORS being open here does not weaken that protection.
     if (path.startsWith('/keys')) {
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
+        res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
       if (method === 'OPTIONS') {
         res.sendStatus(204);
         return;

@@ -8,6 +8,7 @@ export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 function makeBlock(type) {
   switch (type) {
     case 'caption':     return { id: uid(), type: 'caption',    text: '' };
+    case 'heading':     return { id: uid(), type: 'heading',    text: '' };
     case 'audio-start': return { id: uid(), type: 'audio-start' };
     case 'audio-stop':  return { id: uid(), type: 'audio-stop' };
     case 'graphics':    return { id: uid(), type: 'graphics',   value: '' };
@@ -22,6 +23,7 @@ function makeBlock(type) {
 
 const BLOCK_TYPES = [
   { type: 'caption',     icon: '✏️', label: 'Caption' },
+  { type: 'heading',     icon: '#',  label: 'Heading' },
   { type: 'audio-start', icon: '🎙', label: 'Audio On' },
   { type: 'audio-stop',  icon: '⏹', label: 'Audio Off' },
   { type: 'graphics',    icon: '🎨', label: 'Graphics' },
@@ -229,6 +231,44 @@ function StanzaBlock({ block, onUpdate, onDelete }) {
   );
 }
 
+function HeadingBlock({ block, onUpdate, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(block.text ?? '');
+
+  function commit() { onUpdate({ text: value }); setEditing(false); }
+
+  return (
+    <div className="planner-heading-row">
+      <span aria-hidden="true" style={{ color: 'var(--color-accent)', fontWeight: 700, flexShrink: 0 }}>#</span>
+      {editing ? (
+        <input
+          autoFocus
+          className="planner-heading-input"
+          value={value}
+          placeholder="Heading text…"
+          onChange={e => setValue(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') commit();
+            if (e.key === 'Escape') { setValue(block.text ?? ''); setEditing(false); }
+          }}
+        />
+      ) : (
+        <span
+          className="planner-heading-text"
+          role="button"
+          tabIndex={0}
+          onClick={() => setEditing(true)}
+          onKeyDown={e => e.key === 'Enter' && setEditing(true)}
+        >
+          {value || <em className="planner-placeholder">click to set heading</em>}
+        </span>
+      )}
+      <button className="planner-chip__delete" onClick={onDelete} title="Remove" aria-label="Remove">×</button>
+    </div>
+  );
+}
+
 function EmptySendBlock({ block, onUpdate, onDelete }) {
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(block.label ?? '');
@@ -249,7 +289,13 @@ function EmptySendBlock({ block, onUpdate, onDelete }) {
           onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') setEditing(false); }}
         />
       ) : (
-        <span className="planner-empty-send__text" role="button" tabIndex={0} onClick={() => setEditing(true)} onKeyDown={e => e.key === 'Enter' && setEditing(true)}>
+        <span
+          className={`planner-empty-send__text${block.label ? '' : ' planner-empty-send__text--empty'}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => setEditing(true)}
+          onKeyDown={e => e.key === 'Enter' && setEditing(true)}
+        >
           {block.label ? block.label : <em>(sends codes only, no caption)</em>}
         </span>
       )}
@@ -261,6 +307,7 @@ function EmptySendBlock({ block, onUpdate, onDelete }) {
 function BlockContent({ block, onUpdate, onDelete }) {
   switch (block.type) {
     case 'caption':     return <CaptionBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'heading':     return <HeadingBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
     case 'audio-start': return <AudioBlock      type="start"  onDelete={onDelete} />;
     case 'audio-stop':  return <AudioBlock      type="stop"   onDelete={onDelete} />;
     case 'graphics':    return <GraphicsBlock   block={block} onUpdate={onUpdate} onDelete={onDelete} />;
@@ -313,6 +360,7 @@ function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragS
 
   const rowCls = [
     'planner-row',
+    block.type === 'heading'      ? 'planner-row--heading'      : '',
     block.type === 'empty-send'   ? 'planner-row--empty-send'  : '',
     block.type === 'audio-start'  ? 'planner-row--audio-start' : '',
     block.type === 'audio-stop'   ? 'planner-row--audio-stop'  : '',
