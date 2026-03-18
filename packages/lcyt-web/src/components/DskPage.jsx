@@ -31,11 +31,11 @@ import { KEYS } from '../lib/storageKeys.js';
  */
 export function DskPage() {
   // ── URL params ──────────────────────────────────────────
+  const params = new URLSearchParams(window.location.search);
   const pathParts = window.location.pathname.split('/');
   // /dsk/<apikey>  →  pathParts[2]
-  const apiKey = pathParts[2] || '';
-
-  const params = new URLSearchParams(window.location.search);
+  // Also accept ?apikey=<key> as a fallback for embed contexts (OBS, iframes)
+  const apiKey = pathParts[2] || params.get('apikey') || '';
   const ccMode      = params.get('cc') === '1';
   const bgColor     = params.get('bg') || '#00B140';
   const viewportName = params.get('viewport') || null;
@@ -45,8 +45,17 @@ export function DskPage() {
     if (fromUrl) return fromUrl.replace(/\/$/, '');
     try {
       const cfg = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
-      return (cfg.backendUrl || '').replace(/\/$/, '');
-    } catch { return ''; }
+      if (cfg.backendUrl) return (cfg.backendUrl || '').replace(/\/$/, '');
+    } catch { /* ignore */ }
+
+    // Auto-map known frontend host to backend host so `?server=` isn't required
+    // Example: if served from app.lcyt.fi, use api.lcyt.fi as the backend.
+    try {
+      const host = window.location.hostname;
+      if (host === 'app.lcyt.fi') return `${window.location.protocol}//api.lcyt.fi`;
+    } catch { /* ignore in non-browser env */ }
+
+    return window.location.origin.replace(/\/$/, '');
   }
   const serverUrl = resolveServer();
 
