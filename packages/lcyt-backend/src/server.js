@@ -252,14 +252,14 @@ const app = express();
 // proxy (nginx, load balancer) the `X-Forwarded-*` headers are set and certain
 // middleware (eg. express-rate-limit) requires `trust proxy` to be enabled so
 // it can correctly identify client IPs. Control via the `TRUST_PROXY` env var:
-//  - unset (default): enabled
+//  - unset (default): 1 hop (single reverse proxy in front)
 //  - '0' or 'false': disabled
 //  - numeric string: number of hops to trust
 //  - other string: passed through to Express as-is
 {
   const tp = process.env.TRUST_PROXY;
   let val;
-  if (tp === undefined) val = true;
+  if (tp === undefined) val = 1;
   else if (tp === '0' || tp?.toLowerCase() === 'false') val = false;
   else if (/^\d+$/.test(tp)) val = Number(tp);
   else val = tp;

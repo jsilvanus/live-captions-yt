@@ -120,7 +120,7 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `DSK_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL for the DSK ingest application. |
 | `DSK_RTMP_APP` | `dsk` | nginx-rtmp application name for DSK RTMP ingest. |
 | `YOUTUBE_CLIENT_ID` | none | Google OAuth 2.0 client ID — enables `GET /youtube/config`. |
-| `TRUST_PROXY` | `true` | Express `trust proxy` setting. Set to `0` to disable, or a number for hop count. |
+| `TRUST_PROXY` | `1` | Express `trust proxy` setting. Set to `0` to disable, or a number for hop count. |
 
 ---
 
