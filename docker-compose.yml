@@ -36,6 +36,15 @@ services:
       # Revoked key cleanup (days + interval ms)
       REVOKED_KEY_TTL_DAYS: ${REVOKED_KEY_TTL_DAYS:-30}
       REVOKED_KEY_CLEANUP_INTERVAL: ${REVOKED_KEY_CLEANUP_INTERVAL:-86400000}
+      # MCP SSE → backend bridge (production + DSK tools)
+      LCYT_BACKEND_URL: ${LCYT_BACKEND_URL:-http://localhost:3000}
+      LCYT_API_KEY: ${LCYT_API_KEY:-}
+      LCYT_ADMIN_KEY: ${LCYT_ADMIN_KEY:-}
+      MCP_SESSION_TTL_MS: ${MCP_SESSION_TTL_MS:-7200000}
+      # YouTube OAuth (suppresses startup warning if set)
+      YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
+      # Server public URL (used in generated .env file downloads)
+      PUBLIC_URL: ${PUBLIC_URL:-}
     restart: unless-stopped
     volumes:
       - lcyt-db:/data
