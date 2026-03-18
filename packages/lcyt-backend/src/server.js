@@ -209,7 +209,12 @@ hlsSubsManager.sweepStaleDir().catch(() => {});
 const previewManager = new PreviewManager();
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
-const { captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, store, relayManager);
+// Only initialised when GRAPHICS_ENABLED=1 (same flag that gates image upload and Chromium install).
+let _dskCaptionProcessor = null;
+let stopDsk = async () => {};
+if (process.env.GRAPHICS_ENABLED === '1') {
+  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, store, relayManager));
+}
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();

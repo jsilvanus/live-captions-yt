@@ -7,14 +7,13 @@ services:
       dockerfile: Dockerfile
       args:
         RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
-        DSK_ACTIVE: ${DSK_ACTIVE:-0}
+        GRAPHICS_ENABLED: ${GRAPHICS_ENABLED:-0}
     image: lcyt-site:latest
     ports:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:3001:3001"
     environment:
       RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
-      DSK_ACTIVE: ${DSK_ACTIVE:-0}
       JWT_SECRET: ${JWT_SECRET}
       DB_PATH: /data/lcyt.sqlite
       FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}

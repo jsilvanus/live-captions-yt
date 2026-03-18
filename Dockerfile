@@ -40,8 +40,8 @@ RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ] || [ "$HLS_AC
       && rm -rf /var/lib/apt/lists/*; \
     fi
 
-ARG DSK_ACTIVE=0
-RUN if [ "$DSK_ACTIVE" = "1" ]; then \
+ARG GRAPHICS_ENABLED=0
+RUN if [ "$GRAPHICS_ENABLED" = "1" ]; then \
       apt-get update && apt-get install -y --no-install-recommends chromium \
       && rm -rf /var/lib/apt/lists/*; \
     fi
