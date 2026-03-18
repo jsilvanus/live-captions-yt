@@ -14,6 +14,8 @@ applyTo:
   - ".github/**"
 useSkills:
   - ".github/skills/director-orchestrator/SKILL.md"
+usePrompts:
+  - ".github/prompts/director.prompt.md"
 whenToUse: |
   - When a task requires multiple specialized skills (tests, infra, docs, security).
   - When you want a step-by-step plan with delegated subtasks and checkpoints.
@@ -49,3 +51,11 @@ selectionHints: |
 Summary
 
 The Director / Workflow Orchestrator breaks complex tasks into subtasks, assigns them to specialized agents, enforces constraints, and assembles patches for review. It ensures checkpoints and documents rationale/rollback steps.
+
+Research guidance:
+
+- **When to use Research Synthesizer:** For substantive research tasks that require aggregation, synthesis, comparison of multiple sources, or producing a concise actionable summary or literature review. Examples: "Survey caption ingestion rate limits across cloud providers and summarise trade-offs", "Aggregate API differences between YouTube regions and recommend implementation approach".
+
+- **When to use Web Researcher (researcher):** For small, focused lookups such as fetching a single API doc excerpt, confirming a CLI flag, or retrieving a short code snippet. Prefer this for quick facts or when an explicit, single-source citation is sufficient.
+
+- **Rule for the Director:** Default to assigning larger or multi-source research tasks to `Research Synthesizer`. Use `Web Researcher` only for lightweight lookups or quick verification steps. Always ask the user if the scope is unclear before scheduling a long synthesis job.
