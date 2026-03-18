@@ -7,10 +7,19 @@ import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getActiveCodes, setActiveCode, clearActiveCode } from '../lib/activeCodes';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 import { KEYS } from '../lib/storageKeys.js';
+import { ControlsPanel } from './ControlsPanel';
 
 // ─── Mobile breakpoint ───────────────────────────────────────────────────────
 
 const MOBILE_BREAKPOINT = 768;
+
+function getShowAdvanced() {
+  try { return localStorage.getItem('lcyt.sidebar.showAdvanced') === 'true'; } catch { return false; }
+}
+
+function setShowAdvanced(val) {
+  try { localStorage.setItem('lcyt.sidebar.showAdvanced', String(val)); } catch { /* ignore */ }
+}
 
 function getSidebarExpanded() {
   try {
@@ -252,6 +261,7 @@ function QuickActionsPopover() {
   const { showToast } = useToastContext();
   const { t } = useLang();
   const [open, setOpen] = useState(false);
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [customSequence, setCustomSequence] = useState(0);
   const [hbResult, setHbResult] = useState(null);
   const [syncResult, setSyncResult] = useState(null);
@@ -353,8 +363,15 @@ function QuickActionsPopover() {
         ⚡{hasActiveCodes ? <span className="quick-actions__code-dot" /> : null}
       </button>
 
+      {controlsOpen && <ControlsPanel onClose={() => setControlsOpen(false)} />}
+
       {open && (
         <div className="quick-actions__panel" role="menu">
+          <div className="quick-actions__row">
+            <button className="btn btn--secondary btn--sm" onClick={() => { setOpen(false); setControlsOpen(true); }}>
+              ⚙ Controls
+            </button>
+          </div>
           <div className="quick-actions__section-label">Session</div>
           <div className="quick-actions__row">
             <button className="btn btn--secondary btn--sm" onClick={handleSync} disabled={!session.connected}>
@@ -560,6 +577,14 @@ function SidebarGroup({ group, expanded, onNavigate }) {
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 function Sidebar({ expanded, onNavigate }) {
+  const [showAdvanced, setShowAdvancedState] = useState(getShowAdvanced);
+
+  function toggleAdvanced() {
+    const next = !showAdvanced;
+    setShowAdvancedState(next);
+    setShowAdvanced(next);
+  }
+
   return (
     <nav className={['sidebar', expanded ? 'sidebar--expanded' : 'sidebar--collapsed'].join(' ')} aria-label="Main navigation">
       <div className="sidebar__main">
@@ -569,12 +594,30 @@ function Sidebar({ expanded, onNavigate }) {
         {NAV_GROUPS.map(group => (
           <SidebarGroup key={group.id} group={group} expanded={expanded} onNavigate={onNavigate} />
         ))}
+        {showAdvanced && (
+          <a
+            href="/legacy"
+            className="sidebar__item"
+            title={!expanded ? 'Legacy' : undefined}
+          >
+            <span className="sidebar__item-icon" aria-hidden="true">⏮</span>
+            {expanded && <span className="sidebar__item-label">Legacy</span>}
+          </a>
+        )}
       </div>
       <div className="sidebar__divider" role="separator" />
       <div className="sidebar__bottom">
         {NAV_BOTTOM.map(item => (
           <SidebarItem key={item.id} {...item} expanded={expanded} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
         ))}
+        <button
+          className="sidebar__item sidebar__item--btn"
+          onClick={toggleAdvanced}
+          title={expanded ? undefined : (showAdvanced ? 'Hide advanced' : 'Show advanced')}
+        >
+          <span className="sidebar__item-icon" aria-hidden="true">{showAdvanced ? '▴' : '▾'}</span>
+          {expanded && <span className="sidebar__item-label sidebar__item-label--dim">{showAdvanced ? 'Less' : 'Advanced'}</span>}
+        </button>
       </div>
     </nav>
   );
