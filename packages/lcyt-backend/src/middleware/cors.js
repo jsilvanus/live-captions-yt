@@ -43,7 +43,7 @@ export function createCorsMiddleware(store) {
     if (isPermissive && origin) {
       res.setHeader('Access-Control-Allow-Origin', origin);
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Admin-Key, X-API-Key');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       if (method === 'OPTIONS') {
         res.sendStatus(204);
@@ -58,7 +58,7 @@ export function createCorsMiddleware(store) {
       if (matches.length > 0) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
       // No match → omit CORS headers (browser will block the request)
