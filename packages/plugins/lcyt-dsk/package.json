@@ -8,7 +8,7 @@
     "test": "echo 'No tests yet'"
   },
   "dependencies": {
-    "playwright": "^1.51"
+    "playwright-core": "^1.51"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",

@@ -40,6 +40,13 @@ RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ] || [ "$HLS_AC
       && rm -rf /var/lib/apt/lists/*; \
     fi
 
+ARG DSK_ACTIVE=0
+RUN if [ "$DSK_ACTIVE" = "1" ]; then \
+      apt-get update && apt-get install -y --no-install-recommends chromium \
+      && rm -rf /var/lib/apt/lists/*; \
+    fi
+ENV PLAYWRIGHT_DSK_CHROMIUM=/usr/bin/chromium
+
 ENV NODE_ENV=production
 ENV RTMP_RELAY_ACTIVE=${RTMP_RELAY_ACTIVE}
 ENV RADIO_ACTIVE=${RADIO_ACTIVE}

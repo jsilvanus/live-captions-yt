@@ -21,7 +21,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { chromium } from 'playwright';
+import { chromium } from 'playwright-core';
 
 // ---------------------------------------------------------------------------
 // Chromium executable
