@@ -116,6 +116,7 @@ body {
   display: flex;
   flex-direction: row;
   overflow: hidden;
+  grid-row: 2;
 }
 
 .panel {
@@ -138,6 +139,7 @@ body {
   align-items: center;
   padding: 0 8px;
   gap: 8px;
+  grid-row: 3;
 }
 
 /* ─── Audio panel docked at bottom of left column (desktop) ─ */

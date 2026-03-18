@@ -272,6 +272,7 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  grid-template-rows: auto 1fr var(--footer-height);
 }
 
 /* ─── Mobile: hide desktop sidebar, show hamburger-only ─── */
