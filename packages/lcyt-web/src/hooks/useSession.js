@@ -528,6 +528,11 @@ export function useSession({
     return res.json();
   }, []);
 
+  const updateImageSettings = useCallback(async function updateImageSettings(id, settings) {
+    // settings: object that will be stored as settingsJson on the image row
+    return api.put(`/images/${id}`, { settingsJson: settings });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const getImageViewUrl = useCallback(function getImageViewUrl(id) {
     const url = backendUrlRef.current;
     if (!url) return null;
@@ -645,6 +650,7 @@ export function useSession({
     getStats, eraseSelf,
     listFiles, getFileDownloadUrl, deleteFile,
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
+    updateImageSettings,
     listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getYouTubeConfig,

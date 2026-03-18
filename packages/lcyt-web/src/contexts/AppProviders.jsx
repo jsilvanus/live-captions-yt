@@ -193,6 +193,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     deleteFile:       session.deleteFile,
     uploadImage:      session.uploadImage,
     listImages:       session.listImages,
+    updateImageSettings: session.updateImageSettings,
     deleteImage:      session.deleteImage,
     getImageViewUrl:  session.getImageViewUrl,
     getDskUrl:        session.getDskUrl,

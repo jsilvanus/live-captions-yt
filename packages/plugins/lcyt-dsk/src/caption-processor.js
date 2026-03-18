@@ -42,6 +42,15 @@
 import { join, resolve, basename } from 'node:path';
 import { getImageByShorthand, safeApiKey } from './db/images.js';
 
+function safeParseJson(raw) {
+  try {
+    if (!raw) return {};
+    return typeof raw === 'object' ? raw : JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
 // Matches <!-- graphics[v1,v2]:name1, name2 --> (viewport-targeted section)
 const VP_CODE_RE = /<!--\s*graphics\[([^\]]+)\]\s*:\s*(.*?)-->/gi;
 // Matches <!-- graphics:name1, name2 --> (default / all-viewports section)
@@ -179,10 +188,23 @@ export function createDskCaptionProcessor({ db, store, relayManager }) {
 
     store.setDskGraphicsState(apiKey, state);
 
+    // Build per-image metadata map by reading image.settings_json for names
+    const imageMeta = {};
+    const allNames = new Set();
+    if (Array.isArray(newDefault)) newDefault.forEach(n => allNames.add(n));
+    for (const arr of Object.values(newViewports)) if (Array.isArray(arr)) arr.forEach(n => allNames.add(n));
+    for (const name of allNames) {
+      const row = getImageByShorthand(db, apiKey, name);
+      if (!row) continue;
+      const meta = safeParseJson(row.settings_json);
+      imageMeta[name] = meta?.viewports ?? {};
+    }
+
     // Emit SSE 'graphics' event to all open /dsk/:apikey/events subscribers
     store.emitDskEvent(apiKey, 'graphics', {
       default:   newDefault,         // null if no default section touched this time
       viewports: newViewports,
+      imageMeta: imageMeta,
       ts:        Date.now(),
     });
 
@@ -193,11 +215,16 @@ export function createDskCaptionProcessor({ db, store, relayManager }) {
     // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
     // SVG is not supported by ffmpeg's overlay filter; only PNG/WebP are included.
     if (relayManager && newDefault !== null) {
-      const imagePaths = newDefault.flatMap(name => {
+      // Respect per-image viewport visibility for the landscape/default slot.
+      const imagePaths = [];
+      for (const name of newDefault) {
         const row = getImageByShorthand(db, apiKey, name);
-        if (!row || row.mime_type === 'image/svg+xml') return [];
-        return [join(GRAPHICS_BASE_DIR, safeApiKey(apiKey), basename(row.filename))];
-      });
+        if (!row || row.mime_type === 'image/svg+xml') continue;
+        const meta = safeParseJson(row.settings_json);
+        const vpMeta = meta?.viewports?.landscape ?? meta?.viewports?.default ?? {};
+        if (vpMeta?.visible === false) continue; // skip if explicitly disabled for landscape
+        imagePaths.push(join(GRAPHICS_BASE_DIR, safeApiKey(apiKey), basename(row.filename)));
+      }
       relayManager.setDskOverlay(apiKey, newDefault, imagePaths).catch(() => {});
     }
 
