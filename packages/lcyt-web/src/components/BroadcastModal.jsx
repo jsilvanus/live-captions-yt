@@ -666,7 +666,17 @@ function YouTubeTab() {
         <>
           {/* Broadcast selector */}
           <div className="settings-field">
-            <label className="settings-field__label">Scheduled stream</label>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <label className="settings-field__label" style={{ margin: 0 }}>Scheduled stream</label>
+              <button
+                className="btn btn--secondary btn--sm"
+                onClick={() => fetchBroadcasts(token)}
+                disabled={loadingBroadcasts}
+                title="Refresh scheduled streams list"
+              >
+                {loadingBroadcasts ? '…' : '↻ Refresh'}
+              </button>
+            </div>
             {loadingBroadcasts ? (
               <p className="broadcast-hint">Loading broadcasts…</p>
             ) : broadcasts.length === 0 ? (

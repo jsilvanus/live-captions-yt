@@ -15,6 +15,7 @@ export function serializePlan(blocks) {
   return blocks.map(b => {
     switch (b.type) {
       case 'caption':     return b.text ?? '';
+      case 'heading':     return `# ${b.text ?? ''}`;
       case 'audio-start': return '<!-- audio: start -->';
       case 'audio-stop':  return '<!-- audio: stop -->';
       case 'graphics':    return `<!-- graphics: ${b.value ?? ''} -->`;
@@ -40,6 +41,12 @@ export function deserializePlan(rawText) {
   for (let i = 0; i < rawLines.length; i++) {
     const raw = rawLines[i].trim();
     if (!raw) continue;
+
+    // Heading
+    if (raw.startsWith('#')) {
+      blocks.push({ id: uid(), type: 'heading', text: raw.replace(/^#+\s*/, '') });
+      continue;
+    }
 
     // Stanza block
     if (/^<!--\s*stanza\s*$/i.test(raw)) {
