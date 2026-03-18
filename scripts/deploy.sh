@@ -149,16 +149,33 @@ _SCREENSHOTS_PID=$!
 echo "==> UI screenshot capture started in background (PID $_SCREENSHOTS_PID)"
 
 # ---------------------------------------------------------------------------
-# Step 2d: Build lcyt-bridge executables (served from the backend for download)
+# Step 3: Start / restart the backend container via Docker Compose
+# (done before lcyt-site build so the backend is live as soon as possible)
 # ---------------------------------------------------------------------------
 
-echo "==> Installing lcyt-bridge dependencies (includes pkg for exe bundling)"
-BRIDGE_INSTALL_LOG="$REPO_DIR/lcyt-bridge-npm-install.log"
-rm -f "$BRIDGE_INSTALL_LOG"
-(cd "$REPO_DIR" && npm ci --workspace packages/lcyt-bridge --include=dev) 2>&1 | tee "$BRIDGE_INSTALL_LOG" || \
-  echo "Warning: lcyt-bridge npm install failed (non-fatal) — bridge executables will not be updated."
-echo "    Install log: $BRIDGE_INSTALL_LOG"
-tail -n 10 "$BRIDGE_INSTALL_LOG" || true
+COMPOSE_DIR="$REPO_DIR"
+
+echo "==> Starting backend (docker compose up -d)"
+docker compose \
+  --project-directory "$COMPOSE_DIR" \
+  -f "$COMPOSE_DIR/docker-compose.yml" \
+  up -d --build --pull=always --remove-orphans
+
+# ---------------------------------------------------------------------------
+# Step 2c (cont.): Wait for background job (root npm install + screenshots)
+# ---------------------------------------------------------------------------
+
+# Wait for background job to finish — it installs all devDependencies (including
+# esbuild for lcyt-bridge) and captures screenshots needed by the Astro build.
+if [[ -n "$_SCREENSHOTS_PID" ]]; then
+  echo "==> Waiting for background job (npm install + screenshots, PID $_SCREENSHOTS_PID)…"
+  wait "$_SCREENSHOTS_PID" || echo "Warning: screenshot background job exited non-zero — continuing."
+  echo "==> Background job done."
+fi
+
+# ---------------------------------------------------------------------------
+# Step 2d: Build lcyt-bridge executables (after root npm install completes)
+# ---------------------------------------------------------------------------
 
 echo "==> Building lcyt-bridge executables (win, mac, linux)"
 BRIDGE_BUILD_LOG="$REPO_DIR/lcyt-bridge-build.log"
@@ -179,30 +196,6 @@ if [[ -d "$REPO_DIR/packages/lcyt-web/dist" ]]; then
   mkdir -p "$REPO_DIR/packages/lcyt-web/dist/downloads"
   ln -sfn "$REPO_DIR/packages/lcyt-bridge/dist" "$REPO_DIR/packages/lcyt-web/dist/downloads/bridge"
   echo "==> Symlinked lcyt-web/dist/downloads/bridge → $REPO_DIR/packages/lcyt-bridge/dist"
-fi
-
-# ---------------------------------------------------------------------------
-# Step 3: Start / restart the backend container via Docker Compose
-# (done before lcyt-site build so the backend is live as soon as possible)
-# ---------------------------------------------------------------------------
-
-COMPOSE_DIR="$REPO_DIR"
-
-echo "==> Starting backend (docker compose up -d)"
-docker compose \
-  --project-directory "$COMPOSE_DIR" \
-  -f "$COMPOSE_DIR/docker-compose.yml" \
-  up -d --build --pull=always --remove-orphans
-
-# ---------------------------------------------------------------------------
-# Step 2c (cont.): Wait for screenshots, then build lcyt-site
-# ---------------------------------------------------------------------------
-
-# Screenshots must be ready before the Astro build copies them into the site.
-if [[ -n "$_SCREENSHOTS_PID" ]]; then
-  echo "==> Waiting for background screenshot capture (PID $_SCREENSHOTS_PID) to finish…"
-  wait "$_SCREENSHOTS_PID" || echo "Warning: screenshot background job exited non-zero — continuing."
-  echo "==> Screenshots done."
 fi
 
 echo "==> Installing lcyt-site dependencies (includes devDependencies for Astro build)"
