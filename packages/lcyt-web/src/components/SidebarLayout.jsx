@@ -85,9 +85,7 @@ const NAV_GROUPS = [
     label: 'Production',
     items: [
       { id: 'prod-operator', label: 'Operator', path: '/production' },
-      { id: 'prod-cameras',  label: 'Cameras',  path: '/production/cameras' },
-      { id: 'prod-mixers',   label: 'Mixers',   path: '/production/mixers' },
-      { id: 'prod-bridges',  label: 'Bridges',  path: '/production/bridges' },
+      { id: 'prod-devices',  label: 'Devices',  path: '/production/devices' },
     ],
   },
 ];

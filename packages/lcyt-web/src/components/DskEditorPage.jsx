@@ -778,8 +778,8 @@ function newGroupId()     { _groupCounter += 1; return `grp-${_groupCounter}`; }
 export function DskEditorPage() {
   const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
-  const apiKey    = params.get('apikey') || session?.apiKey || '';
-  const serverUrl = (params.get('server') || session?.backendUrl || '').replace(/\/$/, '');
+  const apiKey    = session?.apiKey || params.get('apikey') || '';
+  const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
 
   const [templates, setTemplates]     = useState([]);
   const [selectedId, setSelectedId]   = useState(null);   // backend template id

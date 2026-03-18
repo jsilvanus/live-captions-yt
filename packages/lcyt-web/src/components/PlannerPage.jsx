@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useFileContext } from '../contexts/FileContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
@@ -490,10 +490,38 @@ function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, on
 
 const PLANNER_DRAFT_KEY = 'lcyt:planner-draft';
 const PLANNER_FILENAME_KEY = 'lcyt:planner-filename';
+const PLANNER_WIDTH_KEY = 'lcyt:planner-width';
+
+function usePlannerResize() {
+  const [editorWidth, setEditorWidth] = useState(() => {
+    try { const v = parseInt(localStorage.getItem(PLANNER_WIDTH_KEY)); return v > 200 ? v : null; } catch { return null; }
+  });
+  const editorRef = useRef(null);
+
+  const startResize = useCallback((e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = editorRef.current ? editorRef.current.offsetWidth : 600;
+    function onMove(e) {
+      const newWidth = Math.max(280, startWidth + (e.clientX - startX));
+      setEditorWidth(newWidth);
+      try { localStorage.setItem(PLANNER_WIDTH_KEY, String(newWidth)); } catch {}
+    }
+    function onUp() {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, []);
+
+  return { editorWidth, editorRef, startResize };
+}
 
 export function PlannerPage() {
   const fileStore = useFileContext();
   const { showToast } = useToastContext();
+  const { editorWidth, editorRef, startResize } = usePlannerResize();
 
   const [blocks, setBlocks] = useState(() => {
     try {
@@ -655,30 +683,41 @@ export function PlannerPage() {
           onSkip={() => setShowNormalizeModal(false)}
         />
       )}
-      <div className="planner-editor">
-        {blocks.length === 0 && (
-          <div className="planner-empty-state">
-            <div className="planner-empty-state__icon" aria-hidden="true">📋</div>
-            <p className="planner-empty-state__text">No script yet.<br />Use the Insert buttons above to add lines, or Import a file.</p>
-          </div>
-        )}
-        {blocks.map(block => {
-          if (block.type === 'caption' || block.type === 'empty-send') lineNum++;
-          const num = (block.type === 'caption' || block.type === 'empty-send') ? lineNum : null;
-          return (
-            <PlannerRow
-              key={block.id}
-              block={block}
-              lineNum={num}
-              onUpdate={patch => updateBlock(block.id, patch)}
-              onDelete={() => deleteBlock(block.id)}
-              onInsertAfter={type => insertBlock(block.id, makeBlock(type))}
-              onDragStart={() => onDragStart(block.id)}
-              onDrop={() => onDrop(block.id)}
-            />
-          );
-        })}
-        <PlannerQuickAdd onAdd={handleQuickAdd} />
+      <div className="planner-body">
+        <div
+          className="planner-editor"
+          ref={editorRef}
+          style={editorWidth ? { width: editorWidth, flexShrink: 0 } : {}}
+        >
+          {blocks.length === 0 && (
+            <div className="planner-empty-state">
+              <div className="planner-empty-state__icon" aria-hidden="true">📋</div>
+              <p className="planner-empty-state__text">No script yet.<br />Use the Insert buttons above to add lines, or Import a file.</p>
+            </div>
+          )}
+          {blocks.map(block => {
+            if (block.type === 'caption' || block.type === 'empty-send') lineNum++;
+            const num = (block.type === 'caption' || block.type === 'empty-send') ? lineNum : null;
+            return (
+              <PlannerRow
+                key={block.id}
+                block={block}
+                lineNum={num}
+                onUpdate={patch => updateBlock(block.id, patch)}
+                onDelete={() => deleteBlock(block.id)}
+                onInsertAfter={type => insertBlock(block.id, makeBlock(type))}
+                onDragStart={() => onDragStart(block.id)}
+                onDrop={() => onDrop(block.id)}
+              />
+            );
+          })}
+          <PlannerQuickAdd onAdd={handleQuickAdd} />
+        </div>
+        <div
+          className="planner-resize-handle"
+          onPointerDown={startResize}
+          title="Drag to resize editor width"
+        />
       </div>
     </div>
   );

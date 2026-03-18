@@ -14,8 +14,11 @@ import { ViewerWidget } from './dashboard/ViewerWidget';
 import { ViewportsWidget } from './dashboard/ViewportsWidget';
 import { PanelPicker } from './dashboard/PanelPicker';
 
+import { MetacodeWidget } from './dashboard/MetacodeWidget';
+
 function WidgetContent({ id, size, minimized }) {
   if (id.startsWith('file')) return <FileWidget id={id} size={size} minimized={minimized} />;
+  if (id.startsWith('viewports')) return <ViewportsWidget id={id} size={size} />;
   switch (id) {
     case 'status':    return <StatusWidget size={size} minimized={minimized} />;
     case 'sent-log':  return <SentLogWidget size={size} />;
@@ -23,7 +26,7 @@ function WidgetContent({ id, size, minimized }) {
     case 'input':     return <InputWidget size={size} />;
     case 'broadcast': return <BroadcastWidget size={size} />;
     case 'viewer':    return <ViewerWidget size={size} />;
-    case 'viewports': return <ViewportsWidget size={size} />;
+    case 'metacode':  return <MetacodeWidget size={size} />;
     default: return <div className="db-empty-note">Unknown widget: {id}</div>;
   }
 }
