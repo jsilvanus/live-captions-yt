@@ -153,10 +153,10 @@ export function getKeyByEmail(db, email) {
  * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, user_id?: number|null }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -165,6 +165,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     daily_limit ?? null,
     lifetime_limit ?? null,
     (backend_file_enabled ?? false) ? 1 : 0,
+    (graphics_enabled ?? false) ? 1 : 0,
     (relay_allowed ?? false) ? 1 : 0,
     (radio_enabled ?? false) ? 1 : 0,
     (hls_enabled ?? false) ? 1 : 0,
@@ -274,7 +275,7 @@ export function anonymizeKey(db, key) {
  * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors } = {}) {
   const parts = [];
   const params = [];
 
@@ -297,6 +298,10 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (backend_file_enabled !== undefined) {
     parts.push('backend_file_enabled = ?');
     params.push(backend_file_enabled ? 1 : 0);
+  }
+  if (graphics_enabled !== undefined) {
+    parts.push('graphics_enabled = ?');
+    params.push(graphics_enabled ? 1 : 0);
   }
   if (relay_allowed !== undefined) {
     parts.push('relay_allowed = ?');
