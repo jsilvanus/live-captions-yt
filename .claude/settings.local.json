@@ -9,7 +9,8 @@
       "Bash(node scripts/build-cjs.js:*)",
       "Bash(node -e:*)",
       "Bash(node --test:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(npm install:*)"
     ]
   }
 }

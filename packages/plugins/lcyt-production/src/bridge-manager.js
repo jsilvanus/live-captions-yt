@@ -109,10 +109,16 @@ export class BridgeManager {
   }
 
   /**
-   * Send a TCP relay command to the bridge and await its status response.
+   * Send a command to the bridge and await its status response.
+   *
+   * If `command.type` is set, the command object is sent as-is (with `requestId`
+   * added). This allows typed commands such as `{ type: 'atem_switch', host, meIndex, inputNumber }`.
+   *
+   * If `command.type` is absent, falls back to the legacy `tcp_send` shape for
+   * backward compatibility: `{ type: 'tcp_send', host, port, payload }`.
    *
    * @param {string} instanceId
-   * @param {{ host: string, port: number, payload: string }} command
+   * @param {{ type?: string, host?: string, port?: number, payload?: string, [key: string]: any }} command
    * @returns {Promise<{ ok: boolean, error?: string }>}
    */
   sendCommand(instanceId, command) {
@@ -131,13 +137,11 @@ export class BridgeManager {
 
       this._pending.set(requestId, { resolve, reject, timer });
 
-      this._write(conn.res, 'command', {
-        type: 'tcp_send',
-        requestId,
-        host: command.host,
-        port: command.port,
-        payload: command.payload,
-      });
+      const event = command.type
+        ? { ...command, requestId }
+        : { type: 'tcp_send', requestId, host: command.host, port: command.port, payload: command.payload };
+
+      this._write(conn.res, 'command', event);
     });
   }
 

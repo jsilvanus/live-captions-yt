@@ -8,6 +8,7 @@ import * as amxAdapter from './adapters/camera/amx.js';
 import * as noneAdapter from './adapters/camera/none.js';
 import * as rolandAdapter from './adapters/mixer/roland.js';
 import * as amxMixerAdapter from './adapters/mixer/amx.js';
+import * as atemAdapter from './adapters/mixer/atem.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
@@ -21,7 +22,8 @@ const CAMERA_ADAPTERS = {
 const MIXER_ADAPTERS = {
   roland: rolandAdapter,
   amx:    amxMixerAdapter,
-  // Phase 6+: atem, obs
+  atem:   atemAdapter,
+  // Phase 6+: obs
 };
 
 /**

@@ -8,6 +8,7 @@
 
 import { EventEmitter } from 'node:events';
 import { TcpPool } from './tcp-pool.js';
+import { AtemPool } from './atem-pool.js';
 
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_DELAY_MAX_MS = 60_000;
@@ -21,6 +22,7 @@ export class Bridge extends EventEmitter {
     this._backendUrl = backendUrl.replace(/\/$/, '');
     this._token = token;
     this._tcpPool = new TcpPool();
+    this._atemPool = new AtemPool();
     this._es = null;
     this._destroyed = false;
     this._reconnectDelay = RECONNECT_DELAY_MS;
@@ -30,6 +32,11 @@ export class Bridge extends EventEmitter {
     this._tcpPool.on('connected',    (key) => { this.emit('tcp:connected', key); });
     this._tcpPool.on('disconnected', (key) => { this.emit('tcp:disconnected', key); });
     this._tcpPool.on('error',        (key, err) => { this.emit('tcp:error', key, err); });
+
+    // Forward ATEM pool events
+    this._atemPool.on('atem:connected',    (host) => { this.emit('atem:connected', host); });
+    this._atemPool.on('atem:disconnected', (host) => { this.emit('atem:disconnected', host); });
+    this._atemPool.on('atem:error',        (host, err) => { this.emit('atem:error', host, err); });
   }
 
   /** Start the SSE connection. */
@@ -50,13 +57,15 @@ export class Bridge extends EventEmitter {
     if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
     if (this._es) { try { this._es.close(); } catch { /* ignore */ } }
     this._tcpPool.destroy();
+    this._atemPool.destroy();
   }
 
-  /** @returns {{ sse: boolean, tcp: Array<{ key: string, connected: boolean }> }} */
+  /** @returns {{ sse: boolean, tcp: Array<{ key: string, connected: boolean }>, atem: Array<{ host: string, connected: boolean }> }} */
   status() {
     return {
-      sse: this._es?.readyState === 1 /* OPEN */,
-      tcp: this._tcpPool.status(),
+      sse:  this._es?.readyState === 1 /* OPEN */,
+      tcp:  this._tcpPool.status(),
+      atem: this._atemPool.status(),
     };
   }
 
@@ -135,6 +144,16 @@ export class Bridge extends EventEmitter {
       } catch (err) {
         await this._postStatus({ requestId, ok: false, error: err.message });
         this.emit('command:error', { host, port, error: err.message });
+      }
+    } else if (cmd.type === 'atem_switch') {
+      const { requestId, host, meIndex = 0, inputNumber } = cmd;
+      try {
+        await this._atemPool.switch(host, meIndex, inputNumber);
+        await this._postStatus({ requestId, ok: true });
+        this.emit('command:ok', { host, type: 'atem_switch', inputNumber });
+      } catch (err) {
+        await this._postStatus({ requestId, ok: false, error: err.message });
+        this.emit('command:error', { host, type: 'atem_switch', error: err.message });
       }
     } else {
       this.emit('error', new Error(`Unknown command type: ${cmd.type}`));

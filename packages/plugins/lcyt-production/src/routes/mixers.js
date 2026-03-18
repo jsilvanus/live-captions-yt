@@ -4,8 +4,9 @@ import { randomUUID } from 'node:crypto';
 import { parseMixer } from '../registry.js';
 import { getSwitchCommand as rolandGetSwitchCommand } from '../adapters/mixer/roland.js';
 import { getSwitchCommand as amxGetSwitchCommand } from '../adapters/mixer/amx.js';
+import { getSwitchCommand as atemGetSwitchCommand } from '../adapters/mixer/atem.js';
 
-const MIXER_TYPES = ['roland', 'amx'];
+const MIXER_TYPES = ['roland', 'amx', 'atem'];
 
 export function createMixersRouter(db, registry, bridgeManager = null) {
   const router = Router();
@@ -118,12 +119,8 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
         if (!bridgeManager.isConnected(mixer.bridgeInstanceId)) {
           return res.status(503).json({ error: 'Bridge is not connected' });
         }
-        const payload = buildSwitchPayload(mixer, input);
-        await bridgeManager.sendCommand(mixer.bridgeInstanceId, {
-          host:    mixer.connectionConfig.host,
-          port:    mixer.connectionConfig.port,
-          payload,
-        });
+        const command = buildSwitchCommand(mixer, input);
+        await bridgeManager.sendCommand(mixer.bridgeInstanceId, command);
       } else {
         // Direct TCP via registry
         await registry.switchSource(id, input);
@@ -154,6 +151,10 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Mixer not found' });
 
+    if (row.type === 'atem') {
+      return res.status(400).json({ ok: false, error: 'Connection test not supported for UDP-based ATEM devices' });
+    }
+
     const { host, port = row.type === 'amx' ? 1319 : 8023 } =
       JSON.parse(row.connection_config || '{}');
     if (!host) return res.status(400).json({ ok: false, error: 'connectionConfig.host is not set' });
@@ -179,13 +180,34 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Build the payload string to send for a mixer source switch, by type. */
-function buildSwitchPayload(mixer, inputNumber) {
+/**
+ * Build the bridge command object for a mixer source switch.
+ *
+ * Roland/AMX return `{ host, port, payload }` (no `type`), which BridgeManager
+ * treats as a legacy `tcp_send` command. ATEM returns a typed object
+ * `{ type: 'atem_switch', host, meIndex, inputNumber }`.
+ *
+ * @param {object} mixer
+ * @param {number} inputNumber
+ * @returns {object} command passed to BridgeManager.sendCommand()
+ */
+function buildSwitchCommand(mixer, inputNumber) {
   if (mixer.type === 'roland') {
-    return rolandGetSwitchCommand(mixer.connectionConfig, inputNumber);
+    return {
+      host:    mixer.connectionConfig.host,
+      port:    mixer.connectionConfig.port ?? 8023,
+      payload: rolandGetSwitchCommand(mixer.connectionConfig, inputNumber),
+    };
   }
   if (mixer.type === 'amx') {
-    return amxGetSwitchCommand(mixer.connectionConfig, inputNumber);
+    return {
+      host:    mixer.connectionConfig.host,
+      port:    mixer.connectionConfig.port ?? 1319,
+      payload: amxGetSwitchCommand(mixer.connectionConfig, inputNumber),
+    };
   }
-  throw new Error(`No bridge payload builder for mixer type '${mixer.type}'`);
+  if (mixer.type === 'atem') {
+    return atemGetSwitchCommand(mixer.connectionConfig, inputNumber);
+  }
+  throw new Error(`No bridge command builder for mixer type '${mixer.type}'`);
 }

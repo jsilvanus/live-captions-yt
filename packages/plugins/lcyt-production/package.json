@@ -7,7 +7,9 @@
   "scripts": {
     "test": "node --test test/*.test.js"
   },
-  "dependencies": {},
+  "dependencies": {
+    "atem-connection": "^2.0.0"
+  },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",
   "engines": {

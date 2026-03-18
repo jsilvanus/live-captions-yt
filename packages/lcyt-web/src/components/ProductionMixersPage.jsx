@@ -5,6 +5,7 @@ import { SessionContext } from '../contexts/SessionContext';
 const MIXER_TYPES = [
   { value: 'roland', label: 'Roland V-series' },
   { value: 'amx',    label: 'AMX NetLinx' },
+  { value: 'atem',   label: 'Blackmagic ATEM' },
 ];
 
 const EMPTY_INPUT = (n) => ({ number: n, command: '' });
@@ -53,7 +54,10 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
   const [type,             setType]             = useState(initial?.type ?? 'roland');
   const [host,             setHost]             = useState(initial?.connectionConfig?.host ?? '');
   const [port,             setPort]             = useState(
-    initial?.connectionConfig?.port ?? (initial?.type === 'amx' ? 1319 : 8023)
+    initial?.connectionConfig?.port ?? (initial?.type === 'amx' ? 1319 : initial?.type === 'atem' ? '' : 8023)
+  );
+  const [meIndex,          setMeIndex]          = useState(
+    initial?.connectionConfig?.meIndex != null ? String(initial.connectionConfig.meIndex) : ''
   );
   const [inputs,           setInputs]           = useState(
     initial?.connectionConfig?.inputs?.map(i => ({ ...i })) ?? []
@@ -66,13 +70,16 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
   function handleTypeChange(newType) {
     setType(newType);
     if (!initial?.connectionConfig?.port) {
-      setPort(newType === 'amx' ? 1319 : 8023);
+      if (newType === 'amx')  setPort(1319);
+      else if (newType === 'atem') setPort('');
+      else                    setPort(8023);
     }
   }
 
   function buildConnectionConfig() {
     if (type === 'roland') return { host, port: Number(port) };
     if (type === 'amx')    return { host, port: Number(port), inputs };
+    if (type === 'atem')   return { host, ...(meIndex !== '' ? { meIndex: Number(meIndex) } : {}) };
     return {};
   }
 
@@ -111,20 +118,38 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         </select>
       </div>
 
-      {/* Host + port — shown for all types */}
+      {/* Host — shown for all types */}
       <div style={{ display: 'flex', gap: 12 }}>
         <div className="settings-field" style={{ flex: 2 }}>
           <label className="settings-field__label">Host (IP)</label>
           <input className="settings-field__input" value={host} onChange={e => setHost(e.target.value)}
             placeholder={type === 'amx' ? '192.168.2.50' : '192.168.2.100'} />
         </div>
-        <div className="settings-field" style={{ flex: 1 }}>
-          <label className="settings-field__label">TCP port</label>
-          <input className="settings-field__input" type="number" value={port}
-            onChange={e => setPort(e.target.value)}
-            placeholder={type === 'amx' ? '1319' : '8023'} />
-        </div>
+        {/* TCP port — hidden for ATEM (UDP on 9910, managed by atem-connection) */}
+        {type !== 'atem' && (
+          <div className="settings-field" style={{ flex: 1 }}>
+            <label className="settings-field__label">TCP port</label>
+            <input className="settings-field__input" type="number" value={port}
+              onChange={e => setPort(e.target.value)}
+              placeholder={type === 'amx' ? '1319' : '8023'} />
+          </div>
+        )}
       </div>
+
+      {/* ATEM-specific: M/E index */}
+      {type === 'atem' && (
+        <div className="settings-field">
+          <label className="settings-field__label">
+            M/E Index
+            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6, fontWeight: 400 }}>
+              (0 = M/E 1, 1 = M/E 2 — leave blank for M/E 1)
+            </span>
+          </label>
+          <input className="settings-field__input" type="number" min={0}
+            value={meIndex} onChange={e => setMeIndex(e.target.value)}
+            placeholder="0" style={{ width: 80 }} />
+        </div>
+      )}
 
       {/* AMX-specific: input command rows */}
       {type === 'amx' && (
@@ -184,7 +209,13 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
       )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap' }}>
-        <button className="btn btn--ghost btn--sm" onClick={handleTest} disabled={testing} style={{ marginRight: 'auto' }}>
+        <button
+          className="btn btn--ghost btn--sm"
+          onClick={handleTest}
+          disabled={testing || type === 'atem'}
+          title={type === 'atem' ? 'UDP-based; connection test requires bridge' : undefined}
+          style={{ marginRight: 'auto' }}
+        >
           {testing ? 'Testing…' : 'Test connection'}
         </button>
         <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
@@ -214,7 +245,9 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
         <span style={{ fontWeight: 600 }}>{mixer.name}</span>
         {cfg.host && (
           <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
-            {cfg.host}:{cfg.port ?? (mixer.type === 'amx' ? 1319 : 8023)}
+            {mixer.type === 'atem'
+              ? cfg.host
+              : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : 8023)}`}
           </span>
         )}
         {bridge && (
