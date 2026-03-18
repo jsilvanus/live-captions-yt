@@ -73,7 +73,15 @@ export function createEventsRouter(store, jwtSecret) {
       cleanup();
     }
 
+    // Heartbeat every 25 s to keep long-lived SSE connections alive through proxies
+    // (nginx proxy_read_timeout defaults to 60 s; without this the connection drops
+    // during quiet periods with no captions, causing ERR_INCOMPLETE_CHUNKED_ENCODING)
+    const heartbeat = setInterval(() => {
+      try { res.write(': heartbeat\n\n'); } catch { cleanup(); }
+    }, 25000);
+
     function cleanup() {
+      clearInterval(heartbeat);
       session.emitter.off('caption_result', onResult);
       session.emitter.off('caption_error', onError);
       session.emitter.off('mic_state', onMicState);
