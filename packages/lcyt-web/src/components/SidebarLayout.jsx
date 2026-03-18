@@ -605,6 +605,20 @@ function MobileDrawer({ open, onClose }) {
   );
 }
 
+// ─── Reconnect banner ─────────────────────────────────────────────────────────
+
+function ReconnectBanner() {
+  const { reconnecting, reconnectNow } = useSessionContext();
+  if (!reconnecting) return null;
+  return (
+    <div className="reconnect-banner" role="alert" aria-live="polite">
+      <span className="reconnect-banner__icon" aria-hidden="true">🔄</span>
+      <span className="reconnect-banner__msg">Session disconnected — reconnecting…</span>
+      <button className="reconnect-banner__btn" onClick={reconnectNow}>Reconnect now</button>
+    </div>
+  );
+}
+
 // ─── SidebarLayout ────────────────────────────────────────────────────────────
 
 export function SidebarLayout({ children }) {
@@ -637,6 +651,7 @@ export function SidebarLayout({ children }) {
   return (
     <div className="sidebar-shell">
       <TopBar expanded={expanded} onToggle={handleToggle} />
+      <ReconnectBanner />
       <div className="sidebar-body">
         {/* Desktop sidebar */}
         <Sidebar expanded={expanded} onNavigate={path => navigate(path)} />

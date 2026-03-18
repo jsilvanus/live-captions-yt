@@ -153,6 +153,18 @@ export function AppLayout() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [fileStore]);
 
+  // Unsaved work protection (P0 6c): warn before page unload if mic/STT is active
+  useEffect(() => {
+    function onBeforeUnload(e) {
+      if (micListening) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    }
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [micListening]);
+
   // Auto-open privacy modal on first visit (before user has accepted)
   useEffect(() => {
     try {
