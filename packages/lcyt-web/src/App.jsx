@@ -50,7 +50,7 @@ function NetworkBanner({ privacyPending }) {
 const DEFAULT_RIGHT_PANEL_W = 400; // px — initial right-panel width on first load
 const MIN_PANEL_W = 200;           // px — minimum width for either panel
 
-export function AppLayout() {
+export function AppLayout({ standalone = true }) {
   const session = useSessionContext();
   const fileStore = useFileContext();
 
@@ -276,10 +276,12 @@ export function AppLayout() {
 
   return (
     <div className="captions-page">
-      <StatusBar
-        onControlsOpen={() => setControlsOpen(true)}
-        onPrivacyOpen={handlePrivacyOpen}
-      />
+      {standalone && (
+        <StatusBar
+          onControlsOpen={() => setControlsOpen(true)}
+          onPrivacyOpen={handlePrivacyOpen}
+        />
+      )}
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
 
       <main id="main">

@@ -55,7 +55,8 @@ function isStandalonePath(p) {
     p.startsWith('/dsk-control/') ||
     p.startsWith('/view/') ||
     p.startsWith('/login') ||
-    p.startsWith('/register')
+    p.startsWith('/register') ||
+    p.startsWith('/legacy')
   );
 }
 
@@ -77,6 +78,7 @@ function getStandalonePage() {
   else if (path.startsWith('/view/'))              page = <ViewerPage />;
   else if (path.startsWith('/login'))              page = <LoginPage />;
   else if (path.startsWith('/register'))           page = <RegisterPage />;
+  else if (path.startsWith('/legacy'))             page = <App />;
   else page = <SidebarApp />;
   return <Suspense fallback={null}>{page}</Suspense>;
 }
@@ -103,7 +105,7 @@ function SidebarApp() {
           <Suspense fallback={null}>
           <Switch>
             <Route path="/" component={DashboardPage} />
-            <Route path="/captions" component={AppLayout} />
+            <Route path="/captions">{() => <AppLayout standalone={false} />}</Route>
             <Route path="/audio" component={AudioPage} />
             <Route path="/broadcast" component={BroadcastPage} />
             <Route path="/graphics/editor" component={DskEditorPage} />

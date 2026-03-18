@@ -196,6 +196,19 @@
   white-space: nowrap;
 }
 
+/* button variant of sidebar item (no default button styles) */
+.sidebar__item--btn {
+  width: 100%;
+  background: none;
+  border: none;
+  text-align: left;
+}
+
+.sidebar__item-label--dim {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
 /* ─── Sidebar group ──────────────────────────────────────── */
 
 .sidebar__group-header {
