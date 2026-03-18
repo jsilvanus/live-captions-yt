@@ -4,7 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 
-export function StatusBar({ onControlsOpen, onPrivacyOpen }) {
+export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCOpen }) {
   const [, navigate] = useLocation();
   const session = useSessionContext();
   const { showToast } = useToastContext();
@@ -18,7 +18,8 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen }) {
     }
     const cfg = session.getPersistedConfig();
     if (!cfg.backendUrl || !cfg.apiKey) {
-      navigate('/settings');
+      if (onSettingsOpen) onSettingsOpen();
+      else navigate('/settings');
       return;
     }
     setConnecting(true);
@@ -50,8 +51,8 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen }) {
         <button className={connectBtnClass} onClick={handleConnectClick} disabled={connecting} title={session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}>
           {connecting ? t('settings.footer.connecting') : session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}
         </button>
-        <button className="status-bar__btn" onClick={() => navigate('/settings')} title="Settings">{t('statusBar.settings')}</button>
-        <button className="status-bar__btn" onClick={() => navigate('/settings?tab=cc')} title="CC">{t('statusBar.cc')}</button>
+        <button className="status-bar__btn" onClick={onSettingsOpen ?? (() => navigate('/settings'))} title="Settings">{t('statusBar.settings')}</button>
+        <button className="status-bar__btn" onClick={onCCOpen ?? (() => navigate('/settings?tab=cc'))} title="CC">{t('statusBar.cc')}</button>
         <button className="status-bar__btn" onClick={onControlsOpen} title="Controls">{t('statusBar.controls')}</button>
         <button className="status-bar__btn" onClick={onPrivacyOpen} title="Privacy">{t('statusBar.privacy')}</button>
       </div>

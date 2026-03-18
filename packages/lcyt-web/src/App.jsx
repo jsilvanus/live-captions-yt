@@ -6,6 +6,8 @@ import { useLang } from './contexts/LangContext';
 import { StatusBar } from './components/StatusBar';
 import { ControlsPanel } from './components/ControlsPanel';
 import { PrivacyModal } from './components/PrivacyModal';
+import { SettingsModal } from './components/SettingsModal';
+import { CCModal } from './components/CCModal';
 import { DropZone } from './components/DropZone';
 import { FileTabs } from './components/FileTabs';
 import { CaptionView } from './components/CaptionView';
@@ -55,6 +57,8 @@ export function AppLayout({ standalone = true }) {
   const fileStore = useFileContext();
 
   const [controlsOpen, setControlsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [ccOpen, setCcOpen] = useState(false);
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
@@ -280,6 +284,8 @@ export function AppLayout({ standalone = true }) {
         <StatusBar
           onControlsOpen={() => setControlsOpen(true)}
           onPrivacyOpen={handlePrivacyOpen}
+          onSettingsOpen={() => setSettingsOpen(true)}
+          onCCOpen={() => setCcOpen(true)}
         />
       )}
       <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
@@ -345,6 +351,8 @@ export function AppLayout({ standalone = true }) {
       />
 
       {controlsOpen && <ControlsPanel onClose={() => setControlsOpen(false)} />}
+      {standalone && <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />}
+      {standalone && <CCModal isOpen={ccOpen} onClose={() => setCcOpen(false)} connected={session.connected} />}
       <PrivacyModal
         isOpen={privacyOpen}
         onClose={() => setPrivacyOpen(false)}
