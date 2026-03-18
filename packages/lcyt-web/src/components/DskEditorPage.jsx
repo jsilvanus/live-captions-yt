@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { templateSlug } from '../lib/formatting.js';
 
 /**
  * DSK Graphics Template Editor
@@ -610,7 +611,7 @@ const STYLE_FIELDS_BORDER = [
 
 function ColorTextInput({ value, onChange }) {
   return (
-    <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flex: 1, minWidth: 0 }}>
       <input type="color"
         value={value && value.startsWith('#') ? value.slice(0, 7) : '#000000'}
         onChange={e => onChange(e.target.value)}
@@ -631,7 +632,8 @@ function LayerPropertyEditor({ layer, selectionCount, aspectLock, onAspectLock, 
 
   function setField(key, value) {
     const numericKeys = ['x', 'y', 'width', 'height'];
-    onChange({ ...layer, [key]: value === '' ? undefined : (numericKeys.includes(key) ? Number(value) : value) });
+    const val = value === '' ? undefined : (numericKeys.includes(key) ? Number(value) : value);
+    onChange({ ...layer, [key]: val }, key === 'id' ? layer.id : undefined);
   }
   function setStyle(cssKey, value) {
     const style = { ...(layer.style || {}) };
@@ -821,6 +823,22 @@ export function DskEditorPage() {
   useEffect(() => {
     function onGlobalKey(e) {
       const mod = e.ctrlKey || e.metaKey;
+      // Delete / Backspace — remove selected layers (only when no text input is focused)
+      if (!mod && (e.key === 'Delete' || e.key === 'Backspace')) {
+        const tag = document.activeElement?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || document.activeElement?.isContentEditable) return;
+        const ids = selectedIdsRef.current;
+        if (!ids.size) return;
+        e.preventDefault();
+        historyRef.current.past.push(JSON.stringify(templateRef.current));
+        historyRef.current.future = [];
+        if (historyRef.current.past.length > MAX_HISTORY) historyRef.current.past.shift();
+        setTemplate(t => ({ ...t, layers: t.layers.filter(l => !ids.has(l.id)) }));
+        setSelectedIds(new Set());
+        setPrimaryId(null);
+        isDirty.current = true;
+        return;
+      }
       if (!mod) return;
       if (e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
@@ -1090,9 +1108,19 @@ export function DskEditorPage() {
     isDirty.current = true;
   }
 
-  function updateLayer(updated) {
+  function updateLayer(updated, prevId) {
+    const searchId = prevId ?? updated.id;
     pushHistory(template);
-    setTemplate(t => ({ ...t, layers: t.layers.map(l => l.id === updated.id ? updated : l) }));
+    setTemplate(t => ({ ...t, layers: t.layers.map(l => l.id === searchId ? updated : l) }));
+    // If the ID was changed, update selection state to use the new ID
+    if (prevId && prevId !== updated.id) {
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        if (next.has(prevId)) { next.delete(prevId); next.add(updated.id); }
+        return next;
+      });
+      if (primaryId === prevId) setPrimaryId(updated.id);
+    }
     isDirty.current = true;
   }
 
@@ -1339,7 +1367,10 @@ export function DskEditorPage() {
               display: 'flex', alignItems: 'center', padding: '8px 10px', cursor: 'pointer',
               background: t.id === selectedId ? '#1e3a5f' : 'transparent', borderBottom: '1px solid #222',
             }} onClick={() => loadTemplate(t.id)}>
-              <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+                <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
+                <div style={{ fontSize: 10, color: '#556', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{templateSlug(t.name)}</div>
+              </span>
               <button onClick={e => { e.stopPropagation(); deleteTemplateById(t.id, t.name); }}
                       title="Delete" style={{ ...btnDangerStyle, padding: '2px 6px', fontSize: 11, marginLeft: 4 }}>✕</button>
             </div>
@@ -1355,6 +1386,12 @@ export function DskEditorPage() {
           <input type="text" value={templateName}
             onChange={e => { setTemplateName(e.target.value); isDirty.current = true; }}
             placeholder="Template name" style={{ ...inputStyle, width: 200 }} />
+          {templateName && (
+            <span style={{ fontSize: 11, color: '#556', fontFamily: 'monospace' }}
+                  title="Template slug — use in metacodes: &lt;!-- template:slug --&gt;">
+              {templateSlug(templateName)}
+            </span>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: 12, color: '#888' }}>BG:</span>
@@ -1470,8 +1507,8 @@ export function DskEditorPage() {
                       {gName}
                     </span>
                   )}
-                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id, -1); }}  title="Move up"   style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↑</button>
-                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id,  1); }}  title="Move down" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↓</button>
+                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id,  1); }}  title="Move up"   style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↑</button>
+                  <button onClick={e => { e.stopPropagation(); reorderLayer(layer.id, -1); }}  title="Move down" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>↓</button>
                   <button onClick={e => { e.stopPropagation(); duplicateLayer(layer.id); }}    title="Duplicate" style={{ ...btnStyle, padding: '1px 5px', fontSize: 11 }}>⧉</button>
                   <button onClick={e => { e.stopPropagation(); deleteLayer(layer.id); }}       title="Delete"    style={{ ...btnDangerStyle, padding: '1px 5px', fontSize: 11, marginLeft: 4 }}>✕</button>
                 </div>
