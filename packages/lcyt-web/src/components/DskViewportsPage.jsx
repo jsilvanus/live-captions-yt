@@ -74,6 +74,8 @@ export function DskViewportsPage() {
   const [msg, setMsg]                   = useState('');
   const [screens, setScreens]           = useState(null);   // ScreenDetailed[] | null
   const [screenApiSupported, setScreenApiSupported] = useState(null); // null=unknown
+  const [presentBg, setPresentBg] = useState('');
+  const [presentTransparent, setPresentTransparent] = useState(false);
 
   // ── API helpers ──────────────────────────────────────────────────────────
 
@@ -239,9 +241,10 @@ export function DskViewportsPage() {
 
   function getDisplayUrl(vp) {
     const base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
-    if (!vp || vp._builtin) return base;
     const u = new URL(base);
-    u.searchParams.set('viewport', vp.name);
+    if (vp && !vp._builtin) u.searchParams.set('viewport', vp.name);
+    if (presentTransparent) u.searchParams.set('bg', 'transparent');
+    else if (presentBg) u.searchParams.set('bg', presentBg);
     return u.toString();
   }
 
@@ -450,6 +453,14 @@ export function DskViewportsPage() {
                 {screenApiSupported && !screens && (
                   <button style={btnBase} onClick={handleRequestScreens}>List Connected Screens</button>
                 )}
+                <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <label style={{ fontSize: 12, color: dark.muted }}>Background</label>
+                  <input type="color" value={presentBg || '#00B140'} onChange={e => { setPresentBg(e.target.value); setPresentTransparent(false); }} style={{ width: 48, height: 30, padding: 0, borderRadius: 6 }} />
+                  <label style={{ fontSize: 12, color: dark.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={presentTransparent} onChange={e => setPresentTransparent(e.target.checked)} />
+                    Transparent
+                  </label>
+                </div>
                 {screens && (
                   <div>
                     {screens.length === 0 && <div style={{ color: dark.muted, fontSize: 12 }}>No screens found.</div>}
