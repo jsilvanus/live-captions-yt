@@ -7,7 +7,7 @@ export const WIDGET_REGISTRY = [
   { id: 'sent-log',   title: 'Sent Log',         defaultLayout: { w: 4, h: 6, minW: 3, minH: 3 } },
   { id: 'audio',      title: 'Audio Capture',    defaultLayout: { w: 3, h: 3, minW: 2, minH: 2 } },
   { id: 'input',      title: 'Quick Send',       defaultLayout: { w: 6, h: 2, minW: 3, minH: 2 } },
-  { id: 'file',       title: 'File Preview',     defaultLayout: { w: 3, h: 5, minW: 2, minH: 3 } },
+  { id: 'file',       title: 'File',             defaultLayout: { w: 3, h: 5, minW: 2, minH: 3 }, allowMultiple: true },
   { id: 'broadcast',  title: 'Broadcast',        defaultLayout: { w: 3, h: 4, minW: 2, minH: 3 } },
   { id: 'viewer',     title: 'Viewer',           defaultLayout: { w: 4, h: 4, minW: 3, minH: 3 } },
   { id: 'viewports',  title: 'Viewports',        defaultLayout: { w: 6, h: 5, minW: 4, minH: 4 } },

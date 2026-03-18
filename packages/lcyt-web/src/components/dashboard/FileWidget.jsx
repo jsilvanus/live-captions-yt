@@ -1,8 +1,35 @@
+import { useState, useEffect } from 'react';
 import { useFileContext } from '../../contexts/FileContext';
 
-export function FileWidget({ size }) {
-  const { files, activeId } = useFileContext();
-  const active = files.find(f => f.id === activeId) || files[0] || null;
+function getStoredFileId(widgetId) {
+  try { return localStorage.getItem(`lcyt.dashboard.file.${widgetId}`) || null; } catch { return null; }
+}
+function setStoredFileId(widgetId, fileId) {
+  try {
+    if (fileId) localStorage.setItem(`lcyt.dashboard.file.${widgetId}`, fileId);
+    else localStorage.removeItem(`lcyt.dashboard.file.${widgetId}`);
+  } catch {}
+}
+
+export function FileWidget({ id, size }) {
+  const { files, setPointer, advancePointer } = useFileContext();
+  const [selectedId, setSelectedId] = useState(() => getStoredFileId(id));
+
+  // Resolve the active file: prefer selected, fall back to first
+  const active = (selectedId && files.find(f => f.id === selectedId))
+    || files[0]
+    || null;
+
+  // Keep localStorage in sync
+  useEffect(() => {
+    setStoredFileId(id, active?.id ?? null);
+  }, [id, active?.id]);
+
+  function handleSelectChange(e) {
+    const fid = e.target.value;
+    setSelectedId(fid);
+    setStoredFileId(id, fid);
+  }
 
   if (!active) {
     return <div className="db-widget db-empty-note">No file loaded. Load a file from the Captions page.</div>;
@@ -17,7 +44,12 @@ export function FileWidget({ size }) {
     const next = lines[pointer + 1] ?? '';
     return (
       <div className="db-widget db-widget--file-sm">
-        <div className="db-file-name">{active.name}</div>
+        {files.length > 1 && (
+          <select className="db-file-select" value={active.id} onChange={handleSelectChange}>
+            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        )}
+        {files.length <= 1 && <div className="db-file-name">{active.name}</div>}
         <div className="db-file-lines">
           {prev && <div className="db-file-line db-file-line--prev">{prev}</div>}
           <div className="db-file-line db-file-line--current">▶ {current}</div>
@@ -37,9 +69,15 @@ export function FileWidget({ size }) {
 
   return (
     <div className="db-widget">
-      <div className="db-file-name">
-        {active.name}
-        <span className="db-widget__muted" style={{ marginLeft: 8, fontWeight: 400 }}>
+      <div className="db-file-header">
+        {files.length > 1 ? (
+          <select className="db-file-select" value={active.id} onChange={handleSelectChange}>
+            {files.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+          </select>
+        ) : (
+          <div className="db-file-name">{active.name}</div>
+        )}
+        <span className="db-widget__muted" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
           L{pointer + 1}/{lines.length}
         </span>
       </div>
@@ -52,6 +90,25 @@ export function FileWidget({ size }) {
             {isCurrent ? '▶ ' : '   '}{line || <span className="db-widget__muted">(empty)</span>}
           </div>
         ))}
+      </div>
+      <div className="db-row" style={{ marginTop: 8, gap: 6 }}>
+        <button
+          className="btn btn--secondary btn--sm"
+          onClick={() => setPointer(active.id, pointer - 1)}
+          disabled={pointer <= 0}
+          title="Previous line"
+        >
+          ▲
+        </button>
+        <button
+          className="btn btn--secondary btn--sm"
+          onClick={() => advancePointer(active.id)}
+          disabled={pointer >= lines.length - 1}
+          title="Next line"
+          style={{ flex: 1 }}
+        >
+          ↓ Advance
+        </button>
       </div>
     </div>
   );

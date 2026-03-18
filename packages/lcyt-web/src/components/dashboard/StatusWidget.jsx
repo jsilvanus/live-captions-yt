@@ -2,7 +2,7 @@ import { useSessionContext } from '../../contexts/SessionContext';
 import { getEnabledTargets } from '../../lib/targetConfig';
 import { useState, useEffect } from 'react';
 
-export function StatusWidget({ size }) {
+export function StatusWidget({ size, minimized }) {
   const { connected, backendUrl, sequence, syncOffset, healthStatus, latencyMs, startedAt } = useSessionContext();
   const [targetCount, setTargetCount] = useState(0);
 
@@ -15,7 +15,7 @@ export function StatusWidget({ size }) {
 
   const dotClass = `db-dot ${connected ? 'db-dot--ok' : healthStatus === 'unreachable' ? 'db-dot--error' : 'db-dot--idle'}`;
 
-  if (size === 'small') {
+  if (size === 'small' || minimized) {
     return (
       <div className="db-widget db-widget--status-sm">
         <span className={dotClass} />

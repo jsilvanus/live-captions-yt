@@ -19,6 +19,13 @@ export function PanelPicker({ activePanels, onChange }) {
     onChange(next);
   }
 
+  function addInstance(id) {
+    // Generate a unique ID for the new instance: file-2, file-3, etc.
+    const existingCount = activePanels.filter(p => p === id || p.startsWith(id + '-')).length;
+    const newId = existingCount === 0 ? id : `${id}-${existingCount + 1}`;
+    onChange([...activePanels, newId]);
+  }
+
   return (
     <div className="db-panel-picker" ref={ref}>
       <button className="btn btn--secondary btn--sm db-add-btn" onClick={() => setOpen(o => !o)}>
@@ -26,16 +33,33 @@ export function PanelPicker({ activePanels, onChange }) {
       </button>
       {open && (
         <div className="db-panel-picker__menu">
-          {WIDGET_REGISTRY.map(w => (
-            <label key={w.id} className="db-panel-picker__item">
-              <input
-                type="checkbox"
-                checked={activePanels.includes(w.id)}
-                onChange={() => toggle(w.id)}
-              />
-              {w.title}
-            </label>
-          ))}
+          {WIDGET_REGISTRY.map(w => {
+            if (w.allowMultiple) {
+              const count = activePanels.filter(p => p === w.id || p.startsWith(w.id + '-')).length;
+              return (
+                <div key={w.id} className="db-panel-picker__item db-panel-picker__item--multi">
+                  <span className="db-panel-picker__multi-label">{w.title}</span>
+                  {count > 0 && <span className="db-panel-picker__multi-count">{count} open</span>}
+                  <button
+                    className="btn btn--secondary btn--xs db-panel-picker__add-btn"
+                    onClick={() => addInstance(w.id)}
+                  >
+                    + Add
+                  </button>
+                </div>
+              );
+            }
+            return (
+              <label key={w.id} className="db-panel-picker__item">
+                <input
+                  type="checkbox"
+                  checked={activePanels.includes(w.id)}
+                  onChange={() => toggle(w.id)}
+                />
+                {w.title}
+              </label>
+            );
+          })}
         </div>
       )}
     </div>

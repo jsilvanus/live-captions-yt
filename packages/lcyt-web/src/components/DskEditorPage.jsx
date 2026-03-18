@@ -806,6 +806,7 @@ export function DskEditorPage() {
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
   const historyRef = useRef({ past: [], future: [] });
   const templateRef = useRef(template); // mirror for use inside event listeners
+  const lastClickedIdRef = useRef(null); // anchor for shift-range layer selection
   useEffect(() => { templateRef.current = template; }, [template]);
 
   // ── Undo / redo ─────────────────────────────────────────────────────────
@@ -1011,13 +1012,45 @@ export function DskEditorPage() {
     setPrimaryId(id);
   }
 
-  function selectLayerFromList(id) {
-    const layer = template.layers.find(l => l.id === id);
-    const groupMemberIds = layer?.groupId
-      ? template.layers.filter(l => l.groupId === layer.groupId).map(l => l.id)
-      : [id];
-    setSelectedIds(new Set(groupMemberIds));
-    setPrimaryId(id);
+  function selectLayerFromList(id, { ctrlKey = false, shiftKey = false, metaKey = false } = {}) {
+    function resolveIds(layerId) {
+      const l = template.layers.find(x => x.id === layerId);
+      return l?.groupId
+        ? template.layers.filter(x => x.groupId === l.groupId).map(x => x.id)
+        : [layerId];
+    }
+
+    if (shiftKey && lastClickedIdRef.current) {
+      // Range select: pick all layers between anchor and clicked (in display order)
+      const displayOrder = [...(template.layers || [])].reverse().map(l => l.id);
+      const a = displayOrder.indexOf(lastClickedIdRef.current);
+      const b = displayOrder.indexOf(id);
+      const [lo, hi] = a <= b ? [a, b] : [b, a];
+      const rangeIds = displayOrder.slice(lo, hi + 1);
+      const expanded = new Set(rangeIds.flatMap(resolveIds));
+      setSelectedIds(expanded);
+      setPrimaryId(id);
+      // anchor stays fixed; don't update lastClickedIdRef
+    } else if (ctrlKey || metaKey) {
+      // Toggle: add or remove clicked layer (and its group) from selection
+      const ids = resolveIds(id);
+      const alreadySelected = ids.every(x => selectedIds.has(x));
+      const next = new Set(selectedIds);
+      if (alreadySelected) {
+        ids.forEach(x => next.delete(x));
+      } else {
+        ids.forEach(x => next.add(x));
+      }
+      setSelectedIds(next);
+      setPrimaryId(alreadySelected ? ([...next][0] ?? null) : id);
+      lastClickedIdRef.current = id;
+    } else {
+      // Normal click: replace selection
+      const ids = resolveIds(id);
+      setSelectedIds(new Set(ids));
+      setPrimaryId(id);
+      lastClickedIdRef.current = id;
+    }
   }
 
   // ── Layer mutations ──────────────────────────────────────────────────────
@@ -1394,7 +1427,7 @@ export function DskEditorPage() {
                   background: isInSel ? '#1e3a5f' : '#1a1a1a', borderRadius: 3, cursor: 'pointer',
                   border: isPrimary ? '1px solid #4488dd' : isInSel ? '1px solid #336' : '1px solid transparent',
                   opacity: isHidden ? 0.4 : 1,
-                }} onClick={() => selectLayerFromList(layer.id)}>
+                }} onClick={e => selectLayerFromList(layer.id, e)}>
                   <button onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
                           title={isHidden ? 'Show layer' : 'Hide layer'}
                           style={{ ...btnStyle, padding: '1px 5px', fontSize: 11, marginRight: 4, flexShrink: 0 }}>

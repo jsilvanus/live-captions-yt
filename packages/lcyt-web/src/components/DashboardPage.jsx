@@ -14,13 +14,13 @@ import { ViewerWidget } from './dashboard/ViewerWidget';
 import { ViewportsWidget } from './dashboard/ViewportsWidget';
 import { PanelPicker } from './dashboard/PanelPicker';
 
-function WidgetContent({ id, size }) {
+function WidgetContent({ id, size, minimized }) {
+  if (id.startsWith('file')) return <FileWidget id={id} size={size} minimized={minimized} />;
   switch (id) {
-    case 'status':    return <StatusWidget size={size} />;
+    case 'status':    return <StatusWidget size={size} minimized={minimized} />;
     case 'sent-log':  return <SentLogWidget size={size} />;
     case 'audio':     return <AudioWidget size={size} />;
     case 'input':     return <InputWidget size={size} />;
-    case 'file':      return <FileWidget size={size} />;
     case 'broadcast': return <BroadcastWidget size={size} />;
     case 'viewer':    return <ViewerWidget size={size} />;
     case 'viewports': return <ViewportsWidget size={size} />;
@@ -31,10 +31,13 @@ function WidgetContent({ id, size }) {
 export function DashboardPage() {
   const { config, setPanels, updateLayouts, removePanel } = useDashboardConfig();
   const [sizes, setSizes] = useState({});
+  const [collapsed, setCollapsed] = useState({});
+  const [editMode, setEditMode] = useState(false);
   const { width, containerRef, mounted } = useContainerWidth();
 
   function getSize(id) { return sizes[id] || 'large'; }
   function setSize(id, sz) { setSizes(prev => ({ ...prev, [id]: sz })); }
+  function toggleCollapsed(id) { setCollapsed(prev => ({ ...prev, [id]: !prev[id] })); }
 
   const panels = config.panels || [];
   const layouts = config.layouts || {};
@@ -59,6 +62,13 @@ export function DashboardPage() {
     <div className="dashboard-page">
       <div className="dashboard-page__header">
         <h1 className="dashboard-page__title">Dashboard</h1>
+        <button
+          className={`btn btn--sm ${editMode ? 'btn--primary' : 'btn--secondary'} db-edit-btn`}
+          onClick={() => setEditMode(v => !v)}
+          title={editMode ? 'Lock layout' : 'Edit layout'}
+        >
+          {editMode ? '🔓 Editing' : '✏️ Edit'}
+        </button>
         <PanelPicker activePanels={panels} onChange={setPanels} />
       </div>
       <div ref={containerRef} className="db-grid">
@@ -70,12 +80,16 @@ export function DashboardPage() {
             cols={{ lg: 12, md: 8, sm: 4 }}
             rowHeight={40}
             draggableHandle=".db-card__drag-handle"
+            isDraggable={editMode}
+            isResizable={editMode}
             onLayoutChange={(layout, allLayouts) => updateLayouts(allLayouts)}
             margin={[12, 12]}
           >
             {panels.map(id => {
-              const def = WIDGET_REGISTRY.find(w => w.id === id);
+              const baseId = id.startsWith('file') ? 'file' : id;
+              const def = WIDGET_REGISTRY.find(w => w.id === baseId);
               const title = def?.title || id;
+              const isCollapsed = !!collapsed[id];
               return (
                 <div key={id}>
                   <DashboardCard
@@ -84,8 +98,11 @@ export function DashboardPage() {
                     onRemove={removePanel}
                     size={getSize(id)}
                     onSizeChange={(sz) => setSize(id, sz)}
+                    editMode={editMode}
+                    collapsed={isCollapsed}
+                    onToggleCollapse={() => toggleCollapsed(id)}
                   >
-                    <WidgetContent id={id} size={getSize(id)} />
+                    <WidgetContent id={id} size={getSize(id)} minimized={isCollapsed} />
                   </DashboardCard>
                 </div>
               );

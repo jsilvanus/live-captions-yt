@@ -154,6 +154,10 @@ body {
   gap: 8px;
 }
 
+.audio-panel--hidden {
+  display: none;
+}
+
 /* Resize handle: vertical ew-resize divider on desktop, ns-resize on mobile */
 .panel-resize-handle {
   display: block;

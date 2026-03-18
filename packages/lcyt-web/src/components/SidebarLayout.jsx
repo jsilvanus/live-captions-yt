@@ -63,6 +63,7 @@ const NAV_ITEMS = [
   { id: 'dashboard',  icon: '🏠', label: 'Dashboard',  path: '/',         exact: true },
   { id: 'captions',   icon: '✏️',  label: 'Captions',   path: '/captions' },
   { id: 'audio',      icon: '🎤', label: 'Audio',       path: '/audio' },
+  { id: 'translations', icon: '🌐', label: 'Translations', path: '/translations' },
   { id: 'broadcast',  icon: '📡', label: 'Broadcast',   path: '/broadcast' },
   { id: 'planner',    icon: '📋', label: 'Planner',     path: '/planner' },
 ];

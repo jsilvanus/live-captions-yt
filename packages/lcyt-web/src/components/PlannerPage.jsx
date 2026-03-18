@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useFileContext } from '../contexts/FileContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
+import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
 export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 
 function makeBlock(type) {
@@ -38,17 +39,20 @@ function CaptionBlock({ block, onUpdate, onDelete }) {
   const [value, setValue] = useState(block.text ?? '');
 
   return (
-    <input
-      className="planner-caption-input"
-      type="text"
-      value={value}
-      placeholder="Caption text…"
-      onChange={e => setValue(e.target.value)}
-      onBlur={() => onUpdate({ text: value })}
-      onKeyDown={e => {
-        if ((e.key === 'Delete' || e.key === 'Backspace') && !value) onDelete();
-      }}
-    />
+    <div className="planner-caption-row">
+      <input
+        className="planner-caption-input"
+        type="text"
+        value={value}
+        placeholder="Caption text…"
+        onChange={e => setValue(e.target.value)}
+        onBlur={() => onUpdate({ text: value })}
+        onKeyDown={e => {
+          if ((e.key === 'Delete' || e.key === 'Backspace') && !value) onDelete();
+        }}
+      />
+      <button className="planner-chip__delete" onClick={onDelete} title="Remove" aria-label="Remove">×</button>
+    </div>
   );
 }
 
@@ -383,7 +387,7 @@ function PlannerQuickAdd({ onAdd }) {
 
 // ─── Toolbar ──────────────────────────────────────────────────────────────────
 
-function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNew, onImport, onExport, onToDashboard, onInsert }) {
+function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNew, onImport, onNormalize, onExport, onToDashboard, onInsert }) {
   return (
     <div className="planner-toolbar">
       <div className="planner-toolbar__top">
@@ -412,6 +416,7 @@ function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, on
         <div className="planner-toolbar__actions">
           <button className="btn btn--secondary btn--sm" onClick={onNew}>New</button>
           <button className="btn btn--secondary btn--sm" onClick={onImport}>Import</button>
+          <button className="btn btn--secondary btn--sm" onClick={onNormalize}>Normalize</button>
           <button className="btn btn--secondary btn--sm" onClick={onExport}>Export .md</button>
           <button className="btn btn--primary btn--sm" onClick={onToDashboard}>→ Dashboard</button>
         </div>
@@ -454,6 +459,7 @@ export function PlannerPage() {
   });
   const [editingFilename, setEditingFilename] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [showNormalizeModal, setShowNormalizeModal] = useState(false);
 
   const saveTimer = useRef(null);
 
@@ -546,6 +552,13 @@ export function PlannerPage() {
     insertBlock(null, { ...makeBlock('caption'), text });
   }
 
+  function handleNormalizeConfirm(normalizedLines) {
+    const text = normalizedLines.join('\n');
+    setBlocks(deserializePlan(text));
+    setDirty(true);
+    setShowNormalizeModal(false);
+  }
+
   // Drag-and-drop reorder
   const dragSrcId = useRef(null);
 
@@ -579,12 +592,21 @@ export function PlannerPage() {
         onEditingFilename={setEditingFilename}
         onNew={handleNew}
         onImport={handleImport}
+        onNormalize={() => setShowNormalizeModal(true)}
         onExport={handleExport}
         onToDashboard={handleToDashboard}
         onInsert={type => {
           insertBlock(null, makeBlock(type));
         }}
       />
+      {showNormalizeModal && (
+        <NormalizeLinesModal
+          fileName={filename}
+          rawLines={serializePlan(blocks).split('\n')}
+          onConfirm={handleNormalizeConfirm}
+          onSkip={() => setShowNormalizeModal(false)}
+        />
+      )}
       <div className="planner-editor">
         {blocks.length === 0 && (
           <div className="planner-empty-state">

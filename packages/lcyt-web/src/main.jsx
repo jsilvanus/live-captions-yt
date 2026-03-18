@@ -8,6 +8,7 @@ import './styles/sidebar.css';
 import './styles/components.css';
 import { AppLayout } from './App';
 import { AppProviders } from './contexts/AppProviders';
+import { AudioProvider } from './contexts/AudioContext';
 import { SidebarLayout } from './components/SidebarLayout';
 import { AudioPage } from './components/AudioPage';
 
@@ -26,6 +27,7 @@ const ProductionCamerasPage  = lazy(() => import('./components/ProductionCameras
 const ProductionMixersPage   = lazy(() => import('./components/ProductionMixersPage').then(m => ({ default: m.ProductionMixersPage })));
 const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
 const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
+const TranslationsPage       = lazy(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
 
 // Standalone / path-gated pages
 const SpeechCapturePage      = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
@@ -100,6 +102,7 @@ function StubPage({ icon, title, description }) {
 function SidebarApp() {
   return (
     <AppProviders>
+      <AudioProvider>
       <Router>
         <SidebarLayout>
           <Suspense fallback={null}>
@@ -116,6 +119,7 @@ function SidebarApp() {
             <Route path="/production/bridges" component={ProductionBridgesPage} />
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/planner" component={PlannerPage} />
+            <Route path="/translations" component={TranslationsPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
@@ -128,6 +132,7 @@ function SidebarApp() {
           </Suspense>
         </SidebarLayout>
       </Router>
+      </AudioProvider>
     </AppProviders>
   );
 }
