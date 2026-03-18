@@ -67,6 +67,7 @@ export function createImagesRouter(db, auth) {
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 
     if (!isGraphicsEnabled(db, apiKey)) {
+      console.warn(`[images] upload rejected: graphics_enabled=false for apiKey=${apiKey}`);
       return res.status(403).json({ error: 'Graphics upload not enabled for this API key' });
     }
 
