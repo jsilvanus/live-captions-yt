@@ -65,7 +65,7 @@ const labelStyle = { display: 'block', marginBottom: 4, color: dark.muted, fontS
 export function DskViewportsPage() {
   const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
-  const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
+  const serverUrl = (session?.backendUrl || params.get('server') || window.location.origin).replace(/\/$/, '');
   const apiKey    = session?.apiKey || params.get('apikey') || '';
 
   const [viewports, setViewports]       = useState([]);     // user-defined
@@ -288,12 +288,12 @@ export function DskViewportsPage() {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  if (!serverUrl || !apiKey) {
+  if (!apiKey) {
     return (
       <div style={{ padding: 32, color: 'var(--color-text-muted, #888)', fontFamily: 'sans-serif', fontSize: 16 }}>
         {session
-          ? 'Connect to a backend first (click Connect in the top bar).'
-          : 'Missing ?server= and ?apikey= URL parameters.'}
+          ? 'Missing API key — connect or provide an apikey parameter.'
+          : 'Missing ?apikey= URL parameter.'}
       </div>
     );
   }

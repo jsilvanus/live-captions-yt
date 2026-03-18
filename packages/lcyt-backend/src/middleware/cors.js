@@ -58,11 +58,19 @@ export function createCorsMiddleware(store) {
       (path === '/events' && req.query.token) ||
       method === 'OPTIONS';
 
-    if (isPermissive && origin) {
-      res.setHeader('Access-Control-Allow-Origin', origin);
-      res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
-      res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    if (isPermissive) {
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
+        res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      } else {
+        // No Origin header (embedded browsers or file:// contexts). Allow
+        // access from any origin but do not enable credentials when using '*'.
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
+        res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
+      }
       if (method === 'OPTIONS') {
         res.sendStatus(204);
         return;
