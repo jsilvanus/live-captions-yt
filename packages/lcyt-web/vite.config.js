@@ -28,6 +28,7 @@ export default defineConfig({
   server: {
     headers: {
       'Permissions-Policy': 'on-device-speech-recognition=*',
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
     proxy: {
       '/live': 'http://localhost:3000',

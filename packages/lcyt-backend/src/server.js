@@ -249,7 +249,11 @@ app.use((_req, res, next) => {
 if (process.env.STATIC_DIR) {
   const { resolve } = await import('node:path');
   const staticDir = resolve(process.env.STATIC_DIR);
-  app.use(express.static(staticDir));
+  app.use(express.static(staticDir, {
+    setHeaders(res) {
+      res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+    },
+  }));
   console.info(`✓ Serving static client from: ${staticDir}`);
 }
 
