@@ -10,10 +10,10 @@
   "scripts": {
     "test": "node --test test/*.test.js",
     "start": "node src/index.js",
-    "build:bundle": "esbuild src/index.js --bundle --platform=node --target=node18 --format=cjs --outfile=dist/bundle.cjs",
-    "build:win": "npm run build:bundle && npx @yao-pkg/pkg dist/bundle.cjs --target node18-win-x64 --output dist/lcyt-bridge.exe",
-    "build:mac": "npm run build:bundle && npx @yao-pkg/pkg dist/bundle.cjs --target node18-macos-x64 --output dist/lcyt-bridge-mac",
-    "build:linux": "npm run build:bundle && npx @yao-pkg/pkg dist/bundle.cjs --target node18-linux-x64 --output dist/lcyt-bridge-linux"
+    "build:bundle": "node scripts/build.cjs",
+    "build:win": "node scripts/build.cjs win",
+    "build:mac": "node scripts/build.cjs mac",
+    "build:linux": "node scripts/build.cjs linux"
   },
   "pkg": {
     "assets": [],

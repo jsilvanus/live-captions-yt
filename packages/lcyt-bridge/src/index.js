@@ -51,8 +51,10 @@ function loadConfig() {
 // ---------------------------------------------------------------------------
 
 const config = loadConfig();
+const version = getVersion();
 
-console.info(`[lcyt-bridge] v${getVersion()} starting`);
+process.title = `lcyt-bridge v${version}`;
+console.info(`[lcyt-bridge] v${version} starting`);
 console.info(`[lcyt-bridge] Backend: ${config.backendUrl}`);
 
 // No token — run a health check against the backend and exit.
@@ -108,6 +110,9 @@ console.info('[lcyt-bridge] Running. Press Ctrl+C to quit.');
 // ---------------------------------------------------------------------------
 
 function getVersion() {
+  // __BRIDGE_VERSION__ is replaced at build time by scripts/build.cjs via esbuild --define.
+  // Falls back to reading package.json when running directly with `node src/index.js`.
+  if (typeof __BRIDGE_VERSION__ !== 'undefined') return __BRIDGE_VERSION__;
   try {
     const __dir = dirname(fileURLToPath(import.meta.url));
     const pkg   = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8'));
