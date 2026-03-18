@@ -40,17 +40,8 @@ function loadConfig() {
   // Merge with process.env (process.env takes precedence over .env file)
   const get = (key) => process.env[key] ?? vars[key];
 
-  const backendUrl = get('BACKEND_URL');
+  const backendUrl = get('BACKEND_URL') || 'https://api.lcyt.fi';
   const token      = get('BRIDGE_TOKEN');
-
-  if (!backendUrl) {
-    console.error('[lcyt-bridge] BACKEND_URL is required. Set it in .env or as an environment variable.');
-    process.exit(1);
-  }
-  if (!token) {
-    console.error('[lcyt-bridge] BRIDGE_TOKEN is required. Set it in .env or as an environment variable.');
-    process.exit(1);
-  }
 
   return { backendUrl, token };
 }
@@ -63,6 +54,26 @@ const config = loadConfig();
 
 console.info(`[lcyt-bridge] v${getVersion()} starting`);
 console.info(`[lcyt-bridge] Backend: ${config.backendUrl}`);
+
+// No token — run a health check against the backend and exit.
+if (!config.token) {
+  console.info('[lcyt-bridge] No BRIDGE_TOKEN configured — running health check and exiting.');
+  console.info('[lcyt-bridge] Set BACKEND_URL and BRIDGE_TOKEN in a .env file to run as a relay agent.');
+  try {
+    const res = await fetch(`${config.backendUrl}/health`);
+    const body = await res.json().catch(() => ({}));
+    if (res.ok) {
+      console.info(`[lcyt-bridge] Backend healthy: ${JSON.stringify(body)}`);
+      process.exit(0);
+    } else {
+      console.warn(`[lcyt-bridge] Backend returned HTTP ${res.status}: ${JSON.stringify(body)}`);
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`[lcyt-bridge] Health check failed: ${err.message}`);
+    process.exit(1);
+  }
+}
 
 const { Bridge } = await import('./bridge.js');
 const { createTray } = await import('./tray.js');
