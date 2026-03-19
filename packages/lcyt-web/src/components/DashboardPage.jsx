@@ -82,7 +82,7 @@ export function DashboardPage() {
             breakpoints={{ lg: 1200, md: 768, sm: 480 }}
             cols={{ lg: 12, md: 8, sm: 4 }}
             rowHeight={40}
-            draggableHandle=".db-card__drag-handle"
+            draggableHandle={editMode ? '.db-card__drag-handle' : undefined}
             isDraggable={editMode}
             isResizable={editMode}
             onLayoutChange={(layout, allLayouts) => updateLayouts(allLayouts)}
@@ -94,7 +94,12 @@ export function DashboardPage() {
               const title = def?.title || id;
               const isCollapsed = !!collapsed[id];
               return (
-                <div key={id}>
+                <div
+                  key={id}
+                  onMouseDown={e => { if (!editMode) e.stopPropagation(); }}
+                  onTouchStart={e => { if (!editMode) e.stopPropagation(); }}
+                  onPointerDown={e => { if (!editMode) e.stopPropagation(); }}
+                >
                   <DashboardCard
                     id={id}
                     title={title}

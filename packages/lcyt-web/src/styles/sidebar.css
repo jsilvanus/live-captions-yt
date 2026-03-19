@@ -444,6 +444,11 @@
 .db-card--locked .db-card__header { cursor: default; }
 .db-card--locked .db-card__header:active { cursor: default; }
 
+/* Hidden drag handle when not in edit mode: keep header layout but remove drag affordance */
+.db-card__drag-handle--hidden { cursor: default; }
+.db-card__drag-handle--hidden { pointer-events: none; }
+.db-card__drag-handle--hidden .db-card__title { color: var(--color-text); }
+
 .db-card__title {
   font-size: 11px;
   font-weight: 600;
@@ -700,17 +705,14 @@
 }
 
 .db-file-line {
-  font-size: 12px;
-  font-family: var(--font-mono);
-  padding: 2px 4px;
+  font-size: 13px;
+  font-family: inherit;
+  padding: 4px 6px;
   border-radius: 3px;
   color: var(--color-text-dim);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   display: flex;
-  align-items: center;
-  gap: 3px;
+  align-items: flex-start;
+  gap: 6px;
   cursor: pointer;
 }
 
@@ -735,9 +737,9 @@
 
 .db-file-line__text {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  white-space: pre-wrap; /* preserve existing line breaks */
+  overflow-wrap: anywhere; /* allow long words to break if needed */
 }
 
 .db-file-line__empty-label {

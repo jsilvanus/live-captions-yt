@@ -1,7 +1,7 @@
 export function DashboardCard({ id, title, onRemove, children, size, onSizeChange, editMode, collapsed, onToggleCollapse }) {
   return (
     <div className={`db-card${collapsed ? ' db-card--collapsed' : ''}${!editMode ? ' db-card--locked' : ''}`}>
-      <div className="db-card__header db-card__drag-handle">
+      <div className={`db-card__header ${editMode ? 'db-card__drag-handle' : 'db-card__drag-handle--hidden'}`}>
         <span className="db-card__title">{title}</span>
         <div className="db-card__actions">
           {editMode && onSizeChange && (
