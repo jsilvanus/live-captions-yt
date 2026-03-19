@@ -479,31 +479,7 @@ export function DskViewportsPage() {
                 )}
               </Section>
 
-              {/* Per-image settings */}
-              <Section title="Image Settings for this Viewport" style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 12, color: dark.muted, marginBottom: 12 }}>
-                  Control visibility and position of each uploaded image on <strong>{selectedVp.label || selectedVp.name}</strong>.
-                  Blank position fields = full-width default. Animation: CSS shorthand e.g. <code>lcyt-fadeIn 0.5s</code>.
-                </div>
-                {selectedVp._builtin && (
-                  <div style={{ fontSize: 12, color: dark.muted, marginBottom: 12 }}>
-                    Metacode aliases for this viewport: <code>landscape</code>, <code>default</code>, <code>main</code>.
-                    Use e.g. <code>{'<!-- graphics[landscape]:logo -->'}</code> to target only this display.
-                  </div>
-                )}
-                {images.length === 0 && (
-                  <div style={{ color: dark.muted, fontSize: 13 }}>No images uploaded yet.</div>
-                )}
-                {images.length > 0 && (
-                  <ImageSettingsTable
-                    images={images}
-                    viewportName={selectedVp._builtin ? 'landscape' : selectedVp.name}
-                    getImgVpSettings={getImgVpSettings}
-                    saveImgVpSettings={saveImgVpSettings}
-                    serverUrl={serverUrl}
-                  />
-                )}
-              </Section>
+              {/* Per-image settings moved to the Editor — no longer shown here */}
 
               {/* Text layers — only for user-defined viewports */}
               {!selectedVp._builtin && (
@@ -542,6 +518,9 @@ export function DskViewportsPage() {
     </div>
   );
 }
+
+// Export ImageSettingsTable for reuse in the Editor
+export { ImageSettingsTable };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 

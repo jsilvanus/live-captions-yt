@@ -1,6 +1,7 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { templateSlug } from '../lib/formatting.js';
+import { ImageSettingsTable } from './DskViewportsPage';
 
 /**
  * DSK Graphics Template Editor
@@ -785,6 +786,8 @@ export function DskEditorPage() {
   const [selectedId, setSelectedId]   = useState(null);   // backend template id
   const [templateName, setTemplateName] = useState('');
   const [template, setTemplate]       = useState(EMPTY_TEMPLATE);
+  const [viewportsList, setViewportsList] = useState([]);
+  const [selectedViewport, setSelectedViewport] = useState('landscape');
   const [selectedIds, setSelectedIds] = useState(new Set()); // canvas multi-selection
   const [primaryId, setPrimaryId]     = useState(null);    // property-panel target
   const [snapGrid, setSnapGrid]       = useState(false);
@@ -931,6 +934,20 @@ export function DskEditorPage() {
 
   useEffect(() => { loadImages(); }, [loadImages]);
 
+  // Load available viewports (public list) for this key
+  useEffect(() => {
+    async function loadVps() {
+      if (!serverUrl || !apiKey) return;
+      try {
+        const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setViewportsList(data.viewports || []);
+      } catch {}
+    }
+    loadVps();
+  }, [serverUrl, apiKey]);
+
   // ── Template lifecycle ───────────────────────────────────────────────────
 
   async function loadTemplate(id) {
@@ -985,7 +1002,32 @@ export function DskEditorPage() {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       if (!selectedId) setSelectedId(data.id);
-      isDirty.current = false; setStatus('Saved.');
+      // If server renamed any element ids, apply them locally and notify the user
+      if (data.renames && typeof data.renames === 'object') {
+        const renameMap = data.renames;
+        // Apply renames to template layers ids and groupIds
+        function applyRenamesToObj(obj) {
+          if (!obj || typeof obj !== 'object') return;
+          for (const [k, v] of Object.entries(obj)) {
+            if (k === 'id' && typeof v === 'string' && renameMap[v]) obj[k] = renameMap[v];
+            else if (k === 'groupId' && typeof v === 'string' && renameMap[v]) obj[k] = renameMap[v];
+            else applyRenamesToObj(v);
+          }
+        }
+        const updated = JSON.parse(JSON.stringify(template));
+        applyRenamesToObj(updated);
+        setTemplate(updated);
+        // Update selection state
+        setSelectedIds(prev => {
+          const next = new Set();
+          for (const id of prev) next.add(renameMap[id] || id);
+          return next;
+        });
+        setPrimaryId(prev => (prev ? (renameMap[prev] || prev) : prev));
+        setStatus(`Saved. Renamed IDs: ${Object.entries(renameMap).map(([a,b])=>`${a}→${b}`).join(', ')}`);
+      } else {
+        isDirty.current = false; setStatus('Saved.');
+      }
       await fetchTemplates();
     } catch (err) { setStatus(`Save error: ${err.message}`);
     } finally { setLoading(false); }
@@ -1004,7 +1046,24 @@ export function DskEditorPage() {
       const data = await res.json();
       setSelectedId(data.id);
       setTemplateName(newName.trim());
-      isDirty.current = false; setStatus('Duplicate saved.');
+      // Apply renames if provided
+      if (data.renames && typeof data.renames === 'object') {
+        const renameMap = data.renames;
+        const updated = JSON.parse(JSON.stringify(template));
+        function applyRenamesToObj(obj) {
+          if (!obj || typeof obj !== 'object') return;
+          for (const [k, v] of Object.entries(obj)) {
+            if (k === 'id' && typeof v === 'string' && renameMap[v]) obj[k] = renameMap[v];
+            else if (k === 'groupId' && typeof v === 'string' && renameMap[v]) obj[k] = renameMap[v];
+            else applyRenamesToObj(v);
+          }
+        }
+        applyRenamesToObj(updated);
+        setTemplate(updated);
+        setStatus(`Duplicate saved. Renamed IDs: ${Object.entries(renameMap).map(([a,b])=>`${a}→${b}`).join(', ')}`);
+      } else {
+        isDirty.current = false; setStatus('Duplicate saved.');
+      }
       await fetchTemplates();
     } catch (err) { setStatus(`Save error: ${err.message}`);
     } finally { setLoading(false); }
@@ -1385,13 +1444,22 @@ export function DskEditorPage() {
         <div style={{ padding: '8px 12px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
           <input type="text" value={templateName}
             onChange={e => { setTemplateName(e.target.value); isDirty.current = true; }}
-            placeholder="Template name" style={{ ...inputStyle, width: 200 }} />
+            placeholder="Template name" style={{ ...inputStyle, width: 160 }} />
           {templateName && (
             <span style={{ fontSize: 11, color: '#556', fontFamily: 'monospace' }}
                   title="Template slug — use in metacodes: &lt;!-- template:slug --&gt;">
               {templateSlug(templateName)}
             </span>
           )}
+
+          {/* Viewport selector: affects preview size */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <select value={selectedViewport} onChange={e => setSelectedViewport(e.target.value)} style={{ ...inputStyle, width: 140 }}>
+              {([{ name: 'landscape', label: 'Landscape', width: 1920, height: 1080 }]).concat(viewportsList).map(vp => (
+                <option key={vp.name} value={vp.name}>{vp.label || vp.name} — {vp.width}×{vp.height}</option>
+              ))}
+            </select>
+          </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ fontSize: 12, color: '#888' }}>BG:</span>
@@ -1442,6 +1510,8 @@ export function DskEditorPage() {
               onResizeLayer={handleResizeLayer}
               snapGrid={snapGrid}
               showSafeArea={showSafeArea}
+              vpWidth={(selectedViewport === 'landscape' ? 1920 : (viewportsList.find(v => v.name === selectedViewport)?.width)) || 1920}
+              vpHeight={(selectedViewport === 'landscape' ? 1080 : (viewportsList.find(v => v.name === selectedViewport)?.height)) || 1080}
             />
 
             {/* Layer list header */}
