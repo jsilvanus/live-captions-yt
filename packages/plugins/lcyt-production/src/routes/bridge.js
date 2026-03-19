@@ -1,6 +1,23 @@
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
 
+// Simple in-memory rate limiter: max 30 command requests per minute per IP
+const _commandRateCounts = new Map(); // ip → { count, resetAt }
+function commandRateLimit(req, res, next) {
+  const ip  = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+  const now = Date.now();
+  const entry = _commandRateCounts.get(ip);
+  if (!entry || now >= entry.resetAt) {
+    _commandRateCounts.set(ip, { count: 1, resetAt: now + 60_000 });
+    return next();
+  }
+  entry.count += 1;
+  if (entry.count > 30) {
+    return res.status(429).json({ error: 'Too many requests, please try again later' });
+  }
+  next();
+}
+
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {import('../bridge-manager.js').BridgeManager} bridgeManager
@@ -97,6 +114,27 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '') {
 
     bridgeManager.disconnect(id);
     res.status(204).end();
+  });
+
+  // POST /production/bridge/instances/:id/command — send a typed command to the bridge
+  // Body: { type: 'tcp_send', host, port, payload }
+  //     | { type: 'http_request', method?, url, headers?, body? }
+  router.post('/instances/:id/command', commandRateLimit, async (req, res) => {
+    const { id } = req.params;
+
+    const { type, ...rest } = req.body ?? {};
+    if (!type) return res.status(400).json({ error: 'type is required' });
+
+    if (!bridgeManager.isConnected(id)) {
+      return res.status(503).json({ error: 'Bridge is not connected' });
+    }
+
+    try {
+      const result = await bridgeManager.sendCommand(id, { type, ...rest });
+      res.json(result);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
   });
 
   // GET /production/bridge/instances/:id/env — re-download the .env file
