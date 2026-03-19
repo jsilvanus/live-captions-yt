@@ -43,8 +43,30 @@ echo -n "PING" | nc 127.0.0.1 9999
 telnet 127.0.0.1 9999
 ```
 
+## Building standalone executables
+
+The server can be compiled into self-contained executables that run without Node.js installed,
+using [esbuild](https://esbuild.github.io/) for bundling and [@yao-pkg/pkg](https://github.com/yao-pkg/pkg) for packaging.
+
+```bash
+# Install build dependencies first (one-time)
+npm install
+
+# Build for a specific platform
+npm run build:win          # → dist/tcp-echo-server-1.0.0.exe    (Windows x64)
+npm run build:mac          # → dist/tcp-echo-server-1.0.0-mac    (macOS x64)
+npm run build:linux        # → dist/tcp-echo-server-1.0.0-linux  (Linux x64)
+npm run build:linux-arm64  # → dist/tcp-echo-server-1.0.0-linux-arm64 (Linux ARM64)
+
+# Build all platforms at once
+npm run build:all
+```
+
+All platforms can be cross-compiled from any host operating system.
+The `dist/` directory is gitignored; binaries are not committed to the repository.
+
 ## Notes
 
-- **Not a workspace package** — this tool lives in `packages/tools/` but is intentionally excluded from the npm workspace to keep it dependency-free.
-- No external dependencies; uses Node.js `node:net` only.
+- **Not a workspace package** — this tool lives in `packages/tools/` but is intentionally excluded from the npm workspace glob.
+- Runtime has no external dependencies; uses Node.js `node:net` only.
 - Suitable for local dev and on-site network diagnostics.
