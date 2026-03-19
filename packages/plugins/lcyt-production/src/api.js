@@ -14,6 +14,7 @@ import { BridgeManager } from './bridge-manager.js';
 import { createCamerasRouter } from './routes/cameras.js';
 import { createMixersRouter } from './routes/mixers.js';
 import { createBridgeRouter } from './routes/bridge.js';
+import { createEncodersRouter } from './routes/encoders.js';
 
 /**
  * Run DB migrations and start the device registry and bridge manager.
@@ -44,9 +45,10 @@ export async function initProductionControl(db) {
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   const router = Router();
 
-  router.use('/cameras', createCamerasRouter(db, registry, bridgeManager));
-  router.use('/mixers',  createMixersRouter(db, registry, bridgeManager));
-  router.use('/bridge',  createBridgeRouter(db, bridgeManager, opts.publicUrl));
+  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager));
+  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager));
+  router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl));
+  router.use('/encoders', createEncodersRouter(db, bridgeManager));
 
   return router;
 }

@@ -42,7 +42,7 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
 
   // POST /production/mixers — create mixer
   router.post('/', (req, res) => {
-    const { name, type, connectionConfig = {}, bridgeInstanceId = null } = req.body;
+    const { name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend' } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -51,9 +51,9 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     }
     const id = randomUUID();
     db.prepare(`
-      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId);
+      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>
@@ -73,6 +73,7 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
       type             = existing.type,
       connectionConfig = JSON.parse(existing.connection_config),
       bridgeInstanceId = existing.bridge_instance_id,
+      connectionSource = existing.connection_source ?? 'backend',
     } = req.body;
 
     if (type && !MIXER_TYPES.includes(type)) {
@@ -80,9 +81,9 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     }
 
     db.prepare(`
-      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?
+      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?, connection_source = ?
       WHERE id = ?
-    `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId ?? null, id);
+    `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId ?? null, connectionSource, id);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>

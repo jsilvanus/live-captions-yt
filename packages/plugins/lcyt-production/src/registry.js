@@ -255,12 +255,13 @@ export class DeviceRegistry {
 export function parseCamera(row) {
   return {
     ...row,
-    mixerInput: row.mixer_input,
-    controlType: row.control_type,
-    controlConfig: JSON.parse(row.control_config || '{}'),
+    mixerInput:       row.mixer_input,
+    controlType:      row.control_type,
+    controlConfig:    JSON.parse(row.control_config || '{}'),
+    connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
-    sortOrder: row.sort_order,
-    createdAt: row.created_at,
+    sortOrder:        row.sort_order,
+    createdAt:        row.created_at,
   };
 }
 
@@ -268,7 +269,18 @@ export function parseMixer(row) {
   return {
     ...row,
     connectionConfig: JSON.parse(row.connection_config || '{}'),
+    connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
-    createdAt: row.created_at,
+    createdAt:        row.created_at,
+  };
+}
+
+export function parseEncoder(row) {
+  return {
+    ...row,
+    connectionConfig: JSON.parse(row.connection_config || '{}'),
+    connectionSource: row.connection_source ?? 'backend',
+    bridgeInstanceId: row.bridge_instance_id,
+    createdAt:        row.created_at,
   };
 }

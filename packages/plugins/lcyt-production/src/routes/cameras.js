@@ -26,16 +26,16 @@ export function createCamerasRouter(db, registry, bridgeManager = null) {
   router.post('/', (req, res) => {
     const {
       name, mixerInput, controlType = 'none', controlConfig = {},
-      sortOrder = 0, bridgeInstanceId = null,
+      sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
     } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
     const id = randomUUID();
     db.prepare(`
-      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder);
+      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
@@ -57,15 +57,16 @@ export function createCamerasRouter(db, registry, bridgeManager = null) {
       controlConfig    = JSON.parse(existing.control_config),
       sortOrder        = existing.sort_order,
       bridgeInstanceId = existing.bridge_instance_id,
+      connectionSource = existing.connection_source ?? 'backend',
     } = req.body;
 
     db.prepare(`
       UPDATE prod_cameras
       SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
-          bridge_instance_id = ?, sort_order = ?
+          bridge_instance_id = ?, sort_order = ?, connection_source = ?
       WHERE id = ?
     `).run(name, mixerInput ?? null, controlType, JSON.stringify(controlConfig),
-           bridgeInstanceId ?? null, sortOrder, id);
+           bridgeInstanceId ?? null, sortOrder, connectionSource, id);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
