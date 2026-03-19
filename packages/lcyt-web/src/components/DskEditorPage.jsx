@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useToastContext } from '../contexts/ToastContext';
 import { templateSlug } from '../lib/formatting.js';
 import { ImageSettingsTable } from './DskViewportsPage';
 
@@ -230,6 +231,7 @@ function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
 function TemplatePreview({
   template, selectedIds, primaryId,
   onSelect, onDragStart, onMoveSelected, onResizeLayer, snapGrid, showSafeArea,
+  vpWidth, vpHeight, previewTargetWidth = 960,
 }) {
   const t = template || EMPTY_TEMPLATE;
   const layers = Array.isArray(t.layers) ? t.layers : [];
@@ -299,8 +301,13 @@ function TemplatePreview({
     const drag = dragRef.current;
     if (!drag || drag.type === 'background') return;
 
-    const rawDx = (e.clientX - drag.startPointer.x) / SCALE;
-    const rawDy = (e.clientY - drag.startPointer.y) / SCALE;
+    // compute preview scale based on desired viewport size
+    const displayWidth = vpWidth || (t.width || 1920);
+    const displayHeight = vpHeight || (t.height || 1080);
+    const scale = previewTargetWidth / displayWidth;
+
+    const rawDx = (e.clientX - drag.startPointer.x) / scale;
+    const rawDy = (e.clientY - drag.startPointer.y) / scale;
 
     if (!drag.hasMoved && (Math.abs(e.clientX - drag.startPointer.x) > 3 ||
                            Math.abs(e.clientY - drag.startPointer.y) > 3)) {
@@ -383,7 +390,7 @@ function TemplatePreview({
       ref={containerRef}
       tabIndex={0}
       style={{
-        width: 960, height: 540, position: 'relative', overflow: 'hidden',
+        width: previewTargetWidth, height: (vpHeight || (t.height || 1080)) * (previewTargetWidth / (vpWidth || (t.width || 1920))), position: 'relative', overflow: 'hidden',
         flexShrink: 0, border: '2px solid #444', borderRadius: 4,
         cursor: 'default', outline: 'none', touchAction: 'none',
       }}
@@ -393,8 +400,8 @@ function TemplatePreview({
       onKeyDown={onContainerKeyDown}
     >
       <div style={{
-        width: 1920, height: 1080, position: 'absolute', top: 0, left: 0,
-        transform: 'scale(0.5)', transformOrigin: 'top left',
+        width: vpWidth || (t.width || 1920), height: vpHeight || (t.height || 1080), position: 'absolute', top: 0, left: 0,
+        transform: `scale(${previewTargetWidth / (vpWidth || (t.width || 1920))})`, transformOrigin: 'top left',
         background: t.background || 'transparent',
         backgroundImage: t.background === 'transparent' || !t.background
           ? 'repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 40px 40px'
@@ -801,6 +808,7 @@ export function DskEditorPage() {
   const [imgPending, setImgPending]       = useState(null);   // File awaiting shorthand
   const [shorthandInput, setShorthandInput] = useState('');
   const [imgLibOpen, setImgLibOpen]       = useState(true);
+  const { showToast } = useToastContext();
   const [imgUploading, setImgUploading]   = useState(false);
   const [imgUploadErr, setImgUploadErr]   = useState('');
 
@@ -934,6 +942,32 @@ export function DskEditorPage() {
 
   useEffect(() => { loadImages(); }, [loadImages]);
 
+  // Image viewport settings helpers (re-used from Viewports page)
+  function getImgVpSettings(img, vpName) {
+    if (!vpName || vpName === 'landscape') return img.settingsJson?.viewports?.landscape ?? {};
+    return img.settingsJson?.viewports?.[vpName] ?? {};
+  }
+
+  async function saveImgVpSettings(img, vpName, patch) {
+    const key = vpName === 'landscape' ? 'landscape' : vpName;
+    const existing = img.settingsJson ?? {};
+    const merged = {
+      ...existing,
+      viewports: {
+        ...(existing.viewports ?? {}),
+        [key]: { ...(getImgVpSettings(img, vpName)), ...patch },
+      },
+    };
+    try {
+      const res = await apiFetch(`/images/${img.id}`, {
+        method: 'PUT',
+        body:   JSON.stringify({ settingsJson: merged }),
+      });
+      if (!res.ok) { setStatus('Save failed'); return; }
+      setImages(imgs => imgs.map(i => i.id === img.id ? { ...i, settingsJson: merged } : i));
+    } catch { setStatus('Network error'); }
+  }
+
   // Load available viewports (public list) for this key
   useEffect(() => {
     async function loadVps() {
@@ -1024,7 +1058,9 @@ export function DskEditorPage() {
           return next;
         });
         setPrimaryId(prev => (prev ? (renameMap[prev] || prev) : prev));
-        setStatus(`Saved. Renamed IDs: ${Object.entries(renameMap).map(([a,b])=>`${a}→${b}`).join(', ')}`);
+        const msg = `Saved. Renamed IDs: ${Object.entries(renameMap).map(([a,b])=>`${a}→${b}`).join(', ')}`;
+        setStatus(msg);
+        try { showToast(msg, 'info', 7000); } catch (e) { /* noop if toast not available */ }
       } else {
         isDirty.current = false; setStatus('Saved.');
       }
@@ -1060,7 +1096,9 @@ export function DskEditorPage() {
         }
         applyRenamesToObj(updated);
         setTemplate(updated);
-        setStatus(`Duplicate saved. Renamed IDs: ${Object.entries(renameMap).map(([a,b])=>`${a}→${b}`).join(', ')}`);
+        const dmsg = `Duplicate saved. Renamed IDs: ${Object.entries(renameMap).map(([a,b])=>`${a}→${b}`).join(', ')}`;
+        setStatus(dmsg);
+        try { showToast(dmsg, 'info', 7000); } catch (e) { /* noop */ }
       } else {
         isDirty.current = false; setStatus('Duplicate saved.');
       }
@@ -1654,6 +1692,18 @@ export function DskEditorPage() {
               onAspectLock={() => setAspectLock(v => !v)}
               onChange={updateLayer}
             />
+
+            {/* Viewport-specific image settings (moved from Viewports page) */}
+            <div style={{ marginTop: 18 }}>
+              <div style={{ fontSize: 12, color: '#aaa', fontWeight: 'bold', marginBottom: 8 }}>Viewport Image Settings</div>
+              <ImageSettingsTable
+                images={images}
+                viewportName={selectedViewport}
+                getImgVpSettings={getImgVpSettings}
+                saveImgVpSettings={saveImgVpSettings}
+                serverUrl={serverUrl}
+              />
+            </div>
           </div>
 
         </div>
