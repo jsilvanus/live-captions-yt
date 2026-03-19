@@ -367,15 +367,21 @@ export class SessionStore {
         if (this.db) {
           try { deleteSession(this.db, sessionId); } catch (_) {}
         }
-        try {
-          await session.sender.end();
-        } catch {
-          // Best-effort cleanup
+        if (session.sender) {
+          try {
+            session.sender.end();
+          } catch {
+            // Best-effort cleanup
+          }
         }
         // Clean up secondary YouTube senders
         for (const target of (session.extraTargets || [])) {
           if (target.type === 'youtube' && target.sender) {
-            target.sender.end().catch(() => {});
+            try {
+              target.sender.end();
+            } catch {
+              // Best-effort cleanup
+            }
           }
         }
       }
