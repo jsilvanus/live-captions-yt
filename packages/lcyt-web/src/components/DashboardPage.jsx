@@ -82,7 +82,10 @@ export function DashboardPage() {
             breakpoints={{ lg: 1200, md: 768, sm: 480 }}
             cols={{ lg: 12, md: 8, sm: 4 }}
             rowHeight={40}
-            draggableHandle={editMode ? '.db-card__drag-handle' : undefined}
+            /* Always set the draggable handle selector; use draggableCancel to
+               defensively prevent dragging when a card has the locked class. */
+            draggableHandle={'.db-card__drag-handle'}
+            draggableCancel={'.db-card--locked *'}
             isDraggable={editMode}
             isResizable={editMode}
             onLayoutChange={(layout, allLayouts) => updateLayouts(allLayouts)}

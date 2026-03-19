@@ -93,6 +93,13 @@ The DSK page renders the named images as layers (stacked in array order) over a 
 
 ---
 
+## Element id uniqueness
+
+Templates contain per-layer element `id` properties used by the renderer and the live broadcast API to target individual layers for updates. To avoid live-data mixing between templates, element `id` values must be unique across all templates for the same API key. When a template is created or updated, the server validates that no other template owned by the same API key contains any of the same element ids; the API will return `409 Conflict` with details about overlapping ids if a clash is detected.
+
+Clients (the graphics editor) should either generate globally-unique ids when creating layers, or query existing templates before renaming an element and warn the user (or auto-suffix the id) when a conflict would arise.
+
+
 # /dsk-rtmp — DSK RTMP Ingest Callbacks
 
 nginx-rtmp callbacks for the DSK application. When a broadcaster publishes an RTMP stream to `rtmp://<server>/dsk/<apiKey>`, the relay process for that key is restarted with the DSK stream composited as an overlay using ffmpeg's `overlay` filter.

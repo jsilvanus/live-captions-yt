@@ -34,6 +34,8 @@ import {
   listTemplates,
   getTemplate,
   deleteTemplate,
+  findTemplatesWithAnyElementIds,
+  autoRenameConflictingIds,
 } from '../db/dsk-templates.js';
 import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../renderer.js';
 import { editorAuthOrBearer } from '../middleware/editor-auth.js';
@@ -77,8 +79,12 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     }
 
     try {
-      const id = saveTemplate(db, { apiKey: req.params.apikey, name, templateJson: template });
-      res.status(201).json({ ok: true, id, name });
+      // Auto-rename conflicting element ids instead of rejecting
+      const { updatedTemplateJson, renameMap } = autoRenameConflictingIds(db, req.params.apikey, template);
+      const id = saveTemplate(db, { apiKey: req.params.apikey, name, templateJson: updatedTemplateJson });
+      const resp = { ok: true, id, name };
+      if (Object.keys(renameMap).length > 0) resp.renames = renameMap;
+      res.status(201).json(resp);
     } catch (err) {
       console.error('[dsk-templates] saveTemplate error:', err.message);
       res.status(500).json({ error: 'Failed to save template' });
@@ -125,11 +131,16 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     const updatedName = name ?? existing.name;
     const updatedJson = template ?? existing.templateJson;
     try {
+      // Auto-rename conflicting element ids instead of rejecting
+      const { updatedTemplateJson, renameMap } = autoRenameConflictingIds(db, req.params.apikey, updatedJson, id);
+
       // Direct UPDATE by id so renaming works without creating a duplicate record
       db.prepare(
         "UPDATE dsk_templates SET name = ?, template_json = ?, updated_at = datetime('now') WHERE id = ?"
-      ).run(updatedName, JSON.stringify(updatedJson), id);
-      res.json({ ok: true, id, name: updatedName });
+      ).run(updatedName, JSON.stringify(updatedTemplateJson), id);
+      const resp = { ok: true, id, name: updatedName };
+      if (Object.keys(renameMap).length > 0) resp.renames = renameMap;
+      res.json(resp);
     } catch (err) {
       console.error('[dsk-templates] PUT error:', err.message);
       res.status(500).json({ error: 'Failed to update template' });

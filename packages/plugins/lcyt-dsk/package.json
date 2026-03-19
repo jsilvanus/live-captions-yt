@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/api.js",
   "scripts": {
-    "test": "echo 'No tests yet'"
+    "test": "node --test ./test/index.js"
   },
   "dependencies": {
     "playwright-core": "^1.51"
