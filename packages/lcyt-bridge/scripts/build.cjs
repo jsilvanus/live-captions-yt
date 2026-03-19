@@ -16,9 +16,10 @@ const { execSync } = require('child_process');
 const { version }  = require('../package.json');
 
 const targets = {
-  win:   { target: 'node18-win-x64',   output: `dist/lcyt-bridge-${version}.exe` },
-  mac:   { target: 'node18-macos-x64', output: `dist/lcyt-bridge-${version}-mac` },
-  linux: { target: 'node18-linux-x64', output: `dist/lcyt-bridge-${version}-linux` },
+  win:          { target: 'node18-win-x64',       output: `dist/lcyt-bridge-${version}.exe` },
+  mac:          { target: 'node18-macos-x64',     output: `dist/lcyt-bridge-${version}-mac` },
+  linux:        { target: 'node18-linux-x64',     output: `dist/lcyt-bridge-${version}-linux` },
+  'linux-arm64':{ target: 'node18-linux-arm64',   output: `dist/lcyt-bridge-${version}-linux-arm64` },
 };
 
 const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit' }); };

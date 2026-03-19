@@ -523,3 +523,129 @@ describe('Bridge — reconnectAll()', () => {
     bridge.destroy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// _handleCommand() — http_request
+// ---------------------------------------------------------------------------
+
+describe('Bridge — _handleCommand() http_request', () => {
+  it('makes a GET request and posts { ok: true, status } on success', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+
+    // Stub _httpRequest directly
+    bridge._httpRequest = async ({ method, url }) => {
+      return { status: 200, body: { state: 'READY' } };
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'http_request',
+      requestId: 'req-http-1',
+      method: 'GET',
+      url: 'http://192.168.1.50/Monarch/sdk/status',
+    }));
+
+    const call = statusCalls.find(c => c.requestId === 'req-http-1');
+    assert.ok(call, 'should have posted status');
+    assert.equal(call.ok, true);
+    assert.equal(call.status, 200);
+    bridge.destroy();
+  });
+
+  it('posts { ok: false } when the HTTP request throws', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+
+    bridge._httpRequest = async () => {
+      throw new Error('ECONNREFUSED');
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'http_request',
+      requestId: 'req-http-fail',
+      method: 'POST',
+      url: 'http://192.168.1.50/Monarch/sdk/encoder1/start',
+      headers: {},
+      body: {},
+    }));
+
+    const call = statusCalls.find(c => c.requestId === 'req-http-fail');
+    assert.ok(call, 'should have posted status');
+    assert.equal(call.ok, false);
+    assert.ok(call.error.includes('ECONNREFUSED'));
+    bridge.destroy();
+  });
+
+  it('emits "command:ok" after a successful http_request', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    mockFetch(bridge);
+
+    bridge._httpRequest = async () => ({ status: 200, body: {} });
+
+    const okEvent = new Promise(r => bridge.once('command:ok', r));
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'http_request',
+      requestId: 'r-http',
+      method: 'POST',
+      url: 'http://10.0.0.5/Monarch/sdk/encoder1/start',
+    }));
+
+    const evt = await okEvent;
+    assert.equal(evt.type, 'http_request');
+    assert.ok(evt.url.includes('encoder1/start'));
+    bridge.destroy();
+  });
+
+  it('emits "command:error" when http_request fails', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    mockFetch(bridge);
+
+    bridge._httpRequest = async () => { throw new Error('timeout'); };
+
+    const errEvent = new Promise(r => bridge.once('command:error', r));
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'http_request',
+      requestId: 'r-http-err',
+      method: 'GET',
+      url: 'http://10.0.0.5/Monarch/sdk/status',
+    }));
+
+    const evt = await errEvent;
+    assert.equal(evt.type, 'http_request');
+    assert.ok(evt.error.includes('timeout'));
+    bridge.destroy();
+  });
+
+  it('_httpRequest serialises object body as JSON', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge.destroy(); // not starting SSE
+
+    const fetchCalls = [];
+    const origFetch = global.fetch;
+    global.fetch = async (url, init) => {
+      fetchCalls.push({ url, method: init.method, body: init.body, headers: init.headers });
+      return {
+        ok: true,
+        status: 200,
+        text: async () => '{}',
+      };
+    };
+
+    await bridge._httpRequest({
+      method: 'POST',
+      url: 'http://10.0.0.5/Monarch/sdk/encoder1/start',
+      headers: { Authorization: 'Basic dXNlcjpwYXNz' },
+      body: { foo: 'bar' },
+    });
+
+    global.fetch = origFetch;
+
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].method, 'POST');
+    assert.equal(fetchCalls[0].body, JSON.stringify({ foo: 'bar' }));
+    assert.equal(fetchCalls[0].headers['Content-Type'], 'application/json');
+    assert.equal(fetchCalls[0].headers['Authorization'], 'Basic dXNlcjpwYXNz');
+  });
+});

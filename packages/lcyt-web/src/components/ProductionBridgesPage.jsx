@@ -68,13 +68,17 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
 }
 
 const BRIDGE_DOWNLOADS = [
-  { label: 'Windows (.exe)', file: 'lcyt-bridge.exe' },
-  { label: 'macOS',          file: 'lcyt-bridge-mac' },
-  { label: 'Linux',          file: 'lcyt-bridge-linux' },
+  { label: 'Windows (.exe)',     file: 'lcyt-bridge.exe' },
+  { label: 'macOS',              file: 'lcyt-bridge-mac' },
+  { label: 'Linux (x64)',        file: 'lcyt-bridge-linux' },
+  { label: 'Linux (ARM64/RPi4)', file: 'lcyt-bridge-linux-arm64' },
 ];
 
 function bridgeDownloadUrl(file) {
-  return `${window.location.origin}/downloads/bridge/${file}`;
+  const siteBase = import.meta.env?.VITE_SITE_URL
+    ? import.meta.env.VITE_SITE_URL.replace(/\/$/, '')
+    : window.location.origin;
+  return `${siteBase}/downloads/bridge/${file}`;
 }
 
 /** Shown immediately after creation — displays exe + .env download buttons */
