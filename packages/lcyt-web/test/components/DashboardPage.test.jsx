@@ -27,16 +27,15 @@ vi.mock('../../src/hooks/useDashboardConfig', () => ({
 }));
 
 // Stub individual dashboard widgets so tests don't require providers
-const stubWidget = (name) => ({ default: () => (<div data-testid={name}>{name}</div>) });
-vi.mock('../../src/components/dashboard/StatusWidget', () => stubWidget('status-widget'));
-vi.mock('../../src/components/dashboard/SentLogWidget', () => stubWidget('sentlog-widget'));
-vi.mock('../../src/components/dashboard/AudioWidget', () => stubWidget('audio-widget'));
-vi.mock('../../src/components/dashboard/InputWidget', () => stubWidget('input-widget'));
-vi.mock('../../src/components/dashboard/FileWidget', () => stubWidget('file-widget'));
-vi.mock('../../src/components/dashboard/BroadcastWidget', () => stubWidget('broadcast-widget'));
-vi.mock('../../src/components/dashboard/ViewerWidget', () => stubWidget('viewer-widget'));
-vi.mock('../../src/components/dashboard/ViewportsWidget', () => stubWidget('viewports-widget'));
-vi.mock('../../src/components/dashboard/MetacodeWidget', () => stubWidget('metacode-widget'));
+vi.mock('../../src/components/dashboard/StatusWidget', () => ({ default: () => (<div data-testid="status-widget">status-widget</div>) }));
+vi.mock('../../src/components/dashboard/SentLogWidget', () => ({ default: () => (<div data-testid="sentlog-widget">sentlog-widget</div>) }));
+vi.mock('../../src/components/dashboard/AudioWidget', () => ({ default: () => (<div data-testid="audio-widget">audio-widget</div>) }));
+vi.mock('../../src/components/dashboard/InputWidget', () => ({ default: () => (<div data-testid="input-widget">input-widget</div>) }));
+vi.mock('../../src/components/dashboard/FileWidget', () => ({ default: () => (<div data-testid="file-widget">file-widget</div>) }));
+vi.mock('../../src/components/dashboard/BroadcastWidget', () => ({ default: () => (<div data-testid="broadcast-widget">broadcast-widget</div>) }));
+vi.mock('../../src/components/dashboard/ViewerWidget', () => ({ default: () => (<div data-testid="viewer-widget">viewer-widget</div>) }));
+vi.mock('../../src/components/dashboard/ViewportsWidget', () => ({ default: () => (<div data-testid="viewports-widget">viewports-widget</div>) }));
+vi.mock('../../src/components/dashboard/MetacodeWidget', () => ({ default: () => (<div data-testid="metacode-widget">metacode-widget</div>) }));
 
 import { DashboardPage } from '../../src/components/DashboardPage.jsx';
 

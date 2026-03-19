@@ -39,12 +39,30 @@ const btnActiveStyle = {
   fontWeight: 'bold',
 };
 
+const btnSelectedStyle = {
+  ...btnStyle,
+  background: '#0f2b66',
+  border: '1px solid #3b6cff',
+  color: '#dfe9ff',
+  fontWeight: '600',
+};
+
+const btnBroadcastedStyle = {
+  ...btnPrimaryStyle,
+  background: '#116633',
+  border: '2px solid #44ff88',
+  color: '#ffffff',
+  fontWeight: 'bold',
+};
+
 const btnDangerStyle = {
   ...btnStyle,
   background: '#3a0000',
   border: '1px solid #882222',
   color: '#ffaaaa',
 };
+
+const btnSmall = { ...btnStyle, padding: '4px 8px', fontSize: 12 };
 
 const inputStyle = {
   background: '#1a1a1a',
@@ -74,6 +92,10 @@ export function DskControlPage() {
   const [loading, setLoading]             = useState(false);
   const [images, setImages]               = useState([]);   // { id, shorthand, mimeType }
   const [activeOverlayImages, setActiveOverlayImages] = useState([]); // shorthands currently shown
+  const [broadcastedIds, setBroadcastedIds] = useState([]); // ids that were broadcasted recently
+  const [viewportsList, setViewportsList] = useState([]);
+  const [selectedViewport, setSelectedViewport] = useState('landscape');
+  const [previewOpen, setPreviewOpen] = useState(true);
 
   // ── API helper ──────────────────────────────────────────────────────────
 
@@ -120,13 +142,24 @@ export function DskControlPage() {
     } catch { /* non-fatal */ }
   }, [serverUrl, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const fetchPublicViewports = useCallback(async () => {
+    if (!serverUrl || !apiKey) return;
+    try {
+      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setViewportsList(data.viewports || []);
+    } catch {}
+  }, [serverUrl, apiKey]);
+
   useEffect(() => {
     fetchTemplates();
     fetchRendererStatus();
     fetchImages();
+    fetchPublicViewports();
     const interval = setInterval(fetchRendererStatus, 10000);
     return () => clearInterval(interval);
-  }, [fetchTemplates, fetchRendererStatus, fetchImages]);
+  }, [fetchTemplates, fetchRendererStatus, fetchImages, fetchPublicViewports]);
 
   // ── Load a template's full JSON to extract text layer ids ───────────────
 
@@ -189,6 +222,8 @@ export function DskControlPage() {
       });
       if (!res.ok) throw new Error(await res.text());
       setStatusMsg('Broadcast sent.');
+      // mark templates as broadcasted for UI state
+      setBroadcastedIds(prev => Array.from(new Set([...(prev || []), ...activeIds])));
     } catch (err) {
       setStatusMsg(`Broadcast error: ${err.message}`);
     }
@@ -265,6 +300,25 @@ export function DskControlPage() {
     return t?.templateJson?.layers?.filter(l => l.type === 'text') || [];
   });
 
+  function getLayerState(layerId) {
+    // on-screen: any broadcasted template contains this layer
+    const onScreen = templates.some(t => broadcastedIds.includes(t.id) && t.templateJson?.layers?.some(l => l.id === layerId));
+    if (onScreen) return 'on';
+    const selected = templates.some(t => activeIds.includes(t.id) && t.templateJson?.layers?.some(l => l.id === layerId));
+    if (selected) return 'selected';
+    return 'none';
+  }
+
+  const LANDSCAPE = { name: 'landscape', label: 'Landscape (default)', viewportType: 'landscape', width: 1920, height: 1080, textLayers: [], _builtin: true };
+  const allViewports = [LANDSCAPE, ...viewportsList];
+  const selViewportObj = allViewports.find(v => v.name === selectedViewport) || LANDSCAPE;
+  const filteredImages = images.filter(img => {
+    const vpSettings = img.settingsJson?.viewports?.[selectedViewport] ?? img.settingsJson?.viewports?.landscape;
+    if (!vpSettings) return false;
+    if (!vpSettings.width || !vpSettings.height) return false;
+    return vpSettings.width === selViewportObj.width && vpSettings.height === selViewportObj.height;
+  });
+
   // ── Guard ────────────────────────────────────────────────────────────────
 
   if (!serverUrl || !apiKey) {
@@ -339,14 +393,16 @@ export function DskControlPage() {
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
             {templates.map(t => {
-              const isActive = activeIds.includes(t.id);
+              const isSelected = activeIds.includes(t.id);
+              const isBroadcasted = broadcastedIds.includes(t.id);
+              const style = isBroadcasted ? btnBroadcastedStyle : isSelected ? btnSelectedStyle : btnStyle;
               return (
                 <button
                   key={t.id}
                   onClick={() => toggleTemplate(t.id)}
                   disabled={loading}
                   style={{
-                    ...(isActive ? btnActiveStyle : btnStyle),
+                    ...style,
                     minWidth: 160,
                     minHeight: 80,
                     display: 'flex',
@@ -358,8 +414,9 @@ export function DskControlPage() {
                   }}
                 >
                   <span style={{ fontSize: 16, fontWeight: 'bold' }}>{t.name}</span>
-                  <span style={{ fontSize: 11, color: isActive ? '#44cc88' : '#556', fontFamily: 'monospace' }}>{templateSlug(t.name)}</span>
-                  {isActive && <span style={{ fontSize: 11, color: '#44ff88' }}>ACTIVE</span>}
+                  <span style={{ fontSize: 11, color: isSelected || isBroadcasted ? '#aef' : '#556', fontFamily: 'monospace' }}>{templateSlug(t.name)}</span>
+                  {isBroadcasted && <span style={{ fontSize: 11, color: '#44ff88' }}>BROADCASTED</span>}
+                  {!isBroadcasted && isSelected && <span style={{ fontSize: 11, color: '#66aaff' }}>SELECTED</span>}
                 </button>
               );
             })}
@@ -372,15 +429,53 @@ export function DskControlPage() {
             Live Data
           </div>
 
+          {/* Collapsible client-side viewport preview */}
+          <div style={{ marginTop: 8, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button onClick={() => setPreviewOpen(p => !p)} style={{ ...btnSmall, padding: '4px 8px' }}>{previewOpen ? '▾' : '▸'} Preview</button>
+            <div style={{ fontSize: 12, color: '#888' }}>{selViewportObj.label || selViewportObj.name} — {selViewportObj.width}×{selViewportObj.height}</div>
+            <div style={{ flex: 1 }} />
+          </div>
+          {previewOpen && (
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+              <div style={{ border: '1px solid #222', background: '#0a0a0a', padding: 8 }}>
+                {(() => {
+                  const PREVIEW_W = 260;
+                  const scale = PREVIEW_W / selViewportObj.width;
+                  const PREVIEW_H = Math.round(selViewportObj.height * scale);
+                  return (
+                    <div style={{ width: PREVIEW_W, height: PREVIEW_H, position: 'relative', background: '#101010' }}>
+                      {/* grid */}
+                      <div style={{ position: 'absolute', inset: 0, backgroundImage: 'linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)', backgroundSize: `${PREVIEW_W/8}px ${PREVIEW_H/8}px` }} />
+                      {/* Draw layers from selected templates */}
+                      {activeIds.flatMap(id => templates.find(t => t.id === id)?.templateJson?.layers || []).filter(l => l.type === 'text').map((layer, i) => {
+                        const state = getLayerState(layer.id);
+                        const border = state === 'on' ? '2px solid #44ff88' : state === 'selected' ? '1px solid #3b6cff' : '1px dashed rgba(255,255,255,0.05)';
+                        return (
+                          <div key={`${layer.id}-${i}`} style={{ position: 'absolute', left: (layer.x || 0) * scale, top: (layer.y || 0) * scale, width: (layer.width || 400) * scale, height: (layer.height || 120) * scale, border, boxSizing: 'border-box', background: state === 'on' ? 'rgba(68,255,136,0.06)' : 'transparent', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: Math.max(10, (layer.fontSize || 48) * scale), overflow: 'hidden', padding: '2px' }}>{layer.binding || layer.text || layer.id}</div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
           {activeIds.length === 0 && (
             <div style={{ color: '#555', fontSize: 13 }}>Select a template to edit live data.</div>
           )}
 
           {textLayers.map(layer => (
             <div key={layer.id}>
-              <label style={{ display: 'block', fontSize: 12, color: '#888', marginBottom: 4 }}>
-                {layer.id}
-              </label>
+              {(() => {
+                const st = getLayerState(layer.id);
+                const lblColor = st === 'on' ? '#44ff88' : st === 'selected' ? '#66aaff' : '#888';
+                return (
+                  <label style={{ display: 'block', fontSize: 12, color: lblColor, marginBottom: 4 }}>
+                    {layer.id}
+                  </label>
+                );
+              })()}
               <input
                 type="text"
                 value={liveData[layer.id] ?? layer.text ?? ''}
@@ -404,15 +499,19 @@ export function DskControlPage() {
           {/* Client-side overlay */}
           <div style={{ paddingTop: 16, borderTop: '1px solid #222' }}>
             <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 }}>
-              Client-side Overlay
+              Full Image Overlays
+              <select value={selectedViewport} onChange={e => setSelectedViewport(e.target.value)} style={{ marginLeft: 8, background: '#111', color: '#ddd', border: '1px solid #333', padding: '4px 8px', borderRadius: 4 }}>
+                <option value="landscape">Landscape (default)</option>
+                {viewportsList.map(v => <option key={v.name} value={v.name}>{v.label || v.name} ({v.width}×{v.height})</option>)}
+              </select>
             </div>
 
-            {images.length === 0 && (
-              <div style={{ color: '#555', fontSize: 13 }}>No images uploaded.</div>
+            {filteredImages.length === 0 && (
+              <div style={{ color: '#555', fontSize: 13 }}>No matching images for selected viewport.</div>
             )}
 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {images.map(img => {
+              {filteredImages.map(img => {
                 const isOn = activeOverlayImages.includes(img.shorthand);
                 return (
                   <button
@@ -427,7 +526,7 @@ export function DskControlPage() {
               })}
             </div>
 
-            {images.length > 0 && (
+            {filteredImages.length > 0 && (
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={pushOverlay} style={{ ...btnPrimaryStyle, flex: 1, fontSize: 13 }}>
                   Push to overlay
