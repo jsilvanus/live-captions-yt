@@ -22,13 +22,7 @@ whenToUse: |
   - When modifying UI components, routing, or client-side state and build config.
   - When addressing web performance, bundle size, hydration issues, or accessibility.
   - When adding Vitest/React component tests, Storybook/preview pages, or embed widget fixes.
-tools:
-  - read_file
-  - grep_search
-  - search_subagent
-  - run_in_terminal
-  - apply_patch
-  - create_file
+tools: [vscode, execute, read, agent, edit, search, web, todo]
 constraints: |
   - Avoid making large UI rewrites without a migration plan and visual tests.
   - Avoid committing unreviewed production UI changes directly.
