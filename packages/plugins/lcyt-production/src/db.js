@@ -42,6 +42,30 @@ export function runMigrations(db) {
       created_at          TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // encoders — one row per hardware encoder (e.g. Matrox Monarch HD/HDx)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS prod_encoders (
+      id                  TEXT PRIMARY KEY,
+      name                TEXT NOT NULL,
+      type                TEXT NOT NULL,
+      connection_config   TEXT NOT NULL DEFAULT '{}',
+      connection_source   TEXT NOT NULL DEFAULT 'backend',
+      bridge_instance_id  TEXT REFERENCES prod_bridge_instances(id) ON DELETE SET NULL,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  // Additive migrations: add connection_source to cameras/mixers if missing
+  const cameraCols = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols.includes('connection_source')) {
+    db.exec("ALTER TABLE prod_cameras ADD COLUMN connection_source TEXT NOT NULL DEFAULT 'backend'");
+  }
+
+  const mixerCols = db.prepare("PRAGMA table_info(prod_mixers)").all().map(c => c.name);
+  if (!mixerCols.includes('connection_source')) {
+    db.exec("ALTER TABLE prod_mixers ADD COLUMN connection_source TEXT NOT NULL DEFAULT 'backend'");
+  }
 }
 
 /**

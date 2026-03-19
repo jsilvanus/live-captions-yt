@@ -1,6 +1,7 @@
 import { ProductionCamerasPage } from './ProductionCamerasPage';
 import { ProductionMixersPage } from './ProductionMixersPage';
 import { ProductionBridgesPage } from './ProductionBridgesPage';
+import { ProductionEncodersPage } from './ProductionEncodersPage';
 
 export function ProductionDevicesPage() {
   return (
@@ -19,6 +20,9 @@ export function ProductionDevicesPage() {
         </div>
         <div className="devices-page__col">
           <ProductionMixersPage />
+        </div>
+        <div className="devices-page__col">
+          <ProductionEncodersPage />
         </div>
         <div className="devices-page__col">
           <ProductionBridgesPage />

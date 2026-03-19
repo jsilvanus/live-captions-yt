@@ -68,13 +68,17 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
 }
 
 const BRIDGE_DOWNLOADS = [
-  { label: 'Windows (.exe)', file: 'lcyt-bridge.exe' },
-  { label: 'macOS',          file: 'lcyt-bridge-mac' },
-  { label: 'Linux',          file: 'lcyt-bridge-linux' },
+  { label: 'Windows (.exe)',     file: 'lcyt-bridge.exe' },
+  { label: 'macOS',              file: 'lcyt-bridge-mac' },
+  { label: 'Linux (x64)',        file: 'lcyt-bridge-linux' },
+  { label: 'Linux (ARM64/RPi4)', file: 'lcyt-bridge-linux-arm64' },
 ];
 
 function bridgeDownloadUrl(file) {
-  return `${window.location.origin}/downloads/bridge/${file}`;
+  const siteBase = import.meta.env?.VITE_SITE_URL
+    ? import.meta.env.VITE_SITE_URL.replace(/\/$/, '')
+    : window.location.origin;
+  return `${siteBase}/downloads/bridge/${file}`;
 }
 
 /** Shown immediately after creation — displays exe + .env download buttons */
@@ -121,7 +125,139 @@ function EnvDownloadBanner({ bridge, onDismiss }) {
   );
 }
 
-function BridgeRow({ bridge, showName, onDelete, onRedownload }) {
+/** Modal for sending a manual TCP or HTTP command to a bridge */
+function SendCommandModal({ bridge, type, backendUrl, headers, onClose }) {
+  const isTcp  = type === 'tcp';
+  const title  = isTcp ? 'Send TCP command' : 'Send HTTP request';
+
+  // TCP fields
+  const [host,    setHost]    = useState('');
+  const [port,    setPort]    = useState('9999');
+  const [payload, setPayload] = useState('PING\r\n');
+
+  // HTTP fields
+  const [method,   setMethod]   = useState('GET');
+  const [url,      setUrl]      = useState('');
+  const [httpBody, setHttpBody] = useState('');
+
+  const [sending, setSending] = useState(false);
+  const [result,  setResult]  = useState(null); // { ok, error?, status?, body? }
+
+  async function handleSend() {
+    setSending(true);
+    setResult(null);
+    try {
+      const cmd = isTcp
+        ? { type: 'tcp_send', host: host.trim(), port: Number(port), payload }
+        : { type: 'http_request', method, url: url.trim(), body: httpBody || undefined };
+
+      const r = await fetch(
+        `${backendUrl}/production/bridge/instances/${bridge.id}/command`,
+        { method: 'POST', headers, body: JSON.stringify(cmd) },
+      );
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      setResult({ ok: true, ...data });
+    } catch (e) {
+      setResult({ ok: false, error: e.message });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const canSend = isTcp
+    ? host.trim() && port && !sending
+    : url.trim() && !sending;
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+    }}>
+      <div style={{
+        background: 'var(--color-surface)', borderRadius: 8, padding: 24,
+        maxWidth: 480, width: '90%',
+      }}>
+        <p style={{ margin: '0 0 16px', fontWeight: 600, fontSize: 15 }}>{title}</p>
+        {bridge.name && (
+          <p style={{ margin: '0 0 14px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Bridge: <strong>{bridge.name}</strong>
+          </p>
+        )}
+
+        {isTcp ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div className="settings-field" style={{ flex: 2 }}>
+                <label className="settings-field__label">Host / IP</label>
+                <input className="settings-field__input" value={host} onChange={e => setHost(e.target.value)} placeholder="192.168.1.100" autoFocus />
+              </div>
+              <div className="settings-field" style={{ flex: 1 }}>
+                <label className="settings-field__label">Port</label>
+                <input className="settings-field__input" value={port} onChange={e => setPort(e.target.value)} placeholder="9999" type="number" min="1" max="65535" />
+              </div>
+            </div>
+            <div className="settings-field">
+              <label className="settings-field__label">Payload</label>
+              <input className="settings-field__input" value={payload} onChange={e => setPayload(e.target.value)} placeholder="PING\r\n" />
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div className="settings-field" style={{ flex: 1 }}>
+                <label className="settings-field__label">Method</label>
+                <select className="settings-field__input" value={method} onChange={e => setMethod(e.target.value)}>
+                  {['GET','POST','PUT','PATCH','DELETE'].map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+              <div className="settings-field" style={{ flex: 3 }}>
+                <label className="settings-field__label">URL</label>
+                <input className="settings-field__input" value={url} onChange={e => setUrl(e.target.value)} placeholder="http://192.168.1.1/api/action" autoFocus />
+              </div>
+            </div>
+            <div className="settings-field">
+              <label className="settings-field__label">Body (optional, JSON or text)</label>
+              <textarea
+                className="settings-field__input"
+                value={httpBody}
+                onChange={e => setHttpBody(e.target.value)}
+                rows={3}
+                placeholder='{"key": "value"}'
+                style={{ resize: 'vertical', fontFamily: 'monospace', fontSize: 12 }}
+              />
+            </div>
+          </div>
+        )}
+
+        {result && (
+          <div style={{
+            marginTop: 12, padding: '8px 12px', borderRadius: 4, fontSize: 13,
+            background: result.ok ? 'var(--color-success-bg, rgba(16,185,129,0.1))' : 'var(--color-error-bg, rgba(239,68,68,0.1))',
+            color: result.ok ? 'var(--color-success)' : 'var(--color-error)',
+            fontFamily: 'monospace',
+            wordBreak: 'break-all',
+          }}>
+            {result.ok
+              ? result.status !== undefined
+                ? `✓ HTTP ${result.status} — ${JSON.stringify(result.body)}`
+                : '✓ OK'
+              : `✗ ${result.error}`}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button className="btn btn--ghost" onClick={onClose}>Close</button>
+          <button className="btn btn--primary" onClick={handleSend} disabled={!canSend}>
+            {sending ? 'Sending…' : 'Send'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BridgeRow({ bridge, showName, onDelete, onRedownload, onSendTcp, onSendHttp }) {
   const lastSeen = bridge.lastSeen
     ? new Date(bridge.lastSeen + 'Z').toLocaleString()
     : 'Never';
@@ -142,6 +278,20 @@ function BridgeRow({ bridge, showName, onDelete, onRedownload }) {
           {bridge.status === 'connected' ? 'Connected' : `Last seen: ${lastSeen}`}
         </span>
       </div>
+      {bridge.status === 'connected' && (
+        <>
+          <button
+            className="btn btn--sm btn--ghost"
+            onClick={() => onSendTcp(bridge)}
+            title="Send a TCP command via this bridge"
+          >TCP</button>
+          <button
+            className="btn btn--sm btn--ghost"
+            onClick={() => onSendHttp(bridge)}
+            title="Send an HTTP request via this bridge"
+          >HTTP</button>
+        </>
+      )}
       <button
         className="btn btn--sm btn--ghost"
         onClick={() => onRedownload(bridge)}
@@ -198,6 +348,7 @@ export function ProductionBridgesPage() {
   const [adding, setAdding] = useState(false);
   const [newBridge, setNewBridge] = useState(null);     // { id, name, envContent } shown after create
   const [confirmDelete, setConfirmDelete] = useState(null); // { bridge, cameras, mixers }
+  const [sendCommand, setSendCommand] = useState(null);  // { bridge, type: 'tcp'|'http' }
 
   const headers = { 'Content-Type': 'application/json', ...(apiKey ? { 'X-Admin-Key': apiKey } : {}) };
 
@@ -322,6 +473,8 @@ export function ProductionBridgesPage() {
               showName={showNames}
               onDelete={confirmDeleteBridge}
               onRedownload={handleRedownload}
+              onSendTcp={bridge => setSendCommand({ bridge, type: 'tcp' })}
+              onSendHttp={bridge => setSendCommand({ bridge, type: 'http' })}
             />
           ))}
         </div>
@@ -334,6 +487,16 @@ export function ProductionBridgesPage() {
           mixers={confirmDelete.mixers}
           onConfirm={() => forceDelete(confirmDelete.bridge)}
           onCancel={() => setConfirmDelete(null)}
+        />
+      )}
+
+      {sendCommand && (
+        <SendCommandModal
+          bridge={sendCommand.bridge}
+          type={sendCommand.type}
+          backendUrl={backendUrl}
+          headers={headers}
+          onClose={() => setSendCommand(null)}
         />
       )}
     </div>

@@ -155,6 +155,16 @@ export class Bridge extends EventEmitter {
         await this._postStatus({ requestId, ok: false, error: err.message });
         this.emit('command:error', { host, type: 'atem_switch', error: err.message });
       }
+    } else if (cmd.type === 'http_request') {
+      const { requestId, method = 'GET', url, headers = {}, body } = cmd;
+      try {
+        const result = await this._httpRequest({ method, url, headers, body });
+        await this._postStatus({ requestId, ok: true, status: result.status, body: result.body });
+        this.emit('command:ok', { type: 'http_request', url, status: result.status });
+      } catch (err) {
+        await this._postStatus({ requestId, ok: false, error: err.message });
+        this.emit('command:error', { type: 'http_request', url, error: err.message });
+      }
     } else {
       this.emit('error', new Error(`Unknown command type: ${cmd.type}`));
     }
@@ -173,6 +183,26 @@ export class Bridge extends EventEmitter {
     } catch (err) {
       this.emit('error', new Error(`Status POST failed: ${err.message}`));
     }
+  }
+
+  async _httpRequest({ method, url, headers, body }) {
+    const init = {
+      method: method.toUpperCase(),
+      headers: { ...headers },
+    };
+    if (body !== undefined && body !== null) {
+      if (typeof body === 'object' && !Array.isArray(body)) {
+        init.headers['Content-Type'] = init.headers['Content-Type'] || 'application/json';
+        init.body = JSON.stringify(body);
+      } else {
+        init.body = String(body);
+      }
+    }
+    const response = await fetch(url, init);
+    const text = await response.text().catch(() => '');
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+    return { status: response.status, body: parsed };
   }
 
   /** Send a periodic heartbeat to the backend. */

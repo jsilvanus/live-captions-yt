@@ -3332,7 +3332,7 @@
   flex: 1;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0;
 }
 
@@ -3344,7 +3344,15 @@
 
 .devices-page__col:last-child { border-right: none; }
 
-@media (max-width: 900px) {
+@media (max-width: 1200px) {
+  .devices-page__columns {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .devices-page__col:nth-child(2) { border-right: none; }
+  .devices-page__col:nth-child(3) { border-top: 1px solid var(--color-border); }
+}
+
+@media (max-width: 700px) {
   .devices-page__columns {
     grid-template-columns: 1fr;
   }

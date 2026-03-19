@@ -1,0 +1,28 @@
+{
+  "name": "tcp-echo-server",
+  "version": "1.0.0",
+  "description": "Minimal TCP echo server for lcyt-bridge connection testing",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "build:bundle": "node scripts/build.cjs",
+    "build:win": "node scripts/build.cjs win",
+    "build:mac": "node scripts/build.cjs mac",
+    "build:linux": "node scripts/build.cjs linux",
+    "build:linux-arm64": "node scripts/build.cjs linux-arm64",
+    "build:all": "node scripts/build.cjs win && node scripts/build.cjs mac && node scripts/build.cjs linux && node scripts/build.cjs linux-arm64"
+  },
+  "pkg": {
+    "assets": [],
+    "scripts": []
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT",
+  "private": true,
+  "devDependencies": {
+    "@yao-pkg/pkg": "^5.16.1",
+    "esbuild": "^0.25.0"
+  }
+}

@@ -232,7 +232,7 @@ fi
 # ---------------------------------------------------------------------------
 
 if _should_run bridge; then
-  echo "==> Building lcyt-bridge executables (win, mac, linux)"
+  echo "==> Building lcyt-bridge executables (win, mac, linux, linux-arm64)"
   BRIDGE_BUILD_LOG="$REPO_DIR/lcyt-bridge-build.log"
   rm -f "$BRIDGE_BUILD_LOG"
   (
@@ -240,17 +240,18 @@ if _should_run bridge; then
     npm run build:win 2>&1
     npm run build:mac 2>&1
     npm run build:linux 2>&1
+    npm run build:linux-arm64 2>&1
   ) | tee "$BRIDGE_BUILD_LOG" || \
     echo "Warning: lcyt-bridge build failed (non-fatal) — bridge executables will not be updated."
   echo "    Built → $REPO_DIR/packages/lcyt-bridge/dist"
   echo "    Build log: $BRIDGE_BUILD_LOG"
 
-  # Symlink the bridge dist into the web UI dist so nginx serves the
-  # executables at /downloads/bridge/ through the existing lcyt-web location.
-  if [[ -d "$REPO_DIR/packages/lcyt-web/dist" ]]; then
-    mkdir -p "$REPO_DIR/packages/lcyt-web/dist/downloads"
-    ln -sfn "$REPO_DIR/packages/lcyt-bridge/dist" "$REPO_DIR/packages/lcyt-web/dist/downloads/bridge"
-    echo "==> Symlinked lcyt-web/dist/downloads/bridge → $REPO_DIR/packages/lcyt-bridge/dist"
+  # Symlink the bridge dist into lcyt-site/dist so nginx serves the
+  # executables at /downloads/bridge/ through the public marketing site.
+  if [[ -d "$REPO_DIR/packages/lcyt-site/dist" ]]; then
+    mkdir -p "$REPO_DIR/packages/lcyt-site/dist/downloads"
+    ln -sfn "$REPO_DIR/packages/lcyt-bridge/dist" "$REPO_DIR/packages/lcyt-site/dist/downloads/bridge"
+    echo "==> Symlinked lcyt-site/dist/downloads/bridge → $REPO_DIR/packages/lcyt-bridge/dist"
   fi
 fi
 
@@ -297,5 +298,5 @@ echo "  Main site: in packages/lcyt-site/dist, served by host nginx; see nginx s
 echo "  Backend:   http://localhost:3000/health"
 echo "  MCP SSE:   http://localhost:3001/sse"
 echo "  Web UI:    in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
-echo "  Bridge:    executables at /downloads/bridge/ (served via lcyt-web dist) — win/mac/linux"
+echo "  Bridge:    executables at /downloads/bridge/ (served via lcyt-site dist) — win/mac/linux/linux-arm64"
 echo ""

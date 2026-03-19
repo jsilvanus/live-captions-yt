@@ -1,6 +1,7 @@
 import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
 
 const MIXER_TYPES = [
   { value: 'roland', label: 'Roland V-series' },
@@ -97,6 +98,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
     initType === 'obs' ? (initial?.connectionConfig?.inputs?.map(i => ({ ...i })) ?? []) : []
   );
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
+  const [connectionSource, setConnectionSource] = useState(initial?.connectionSource ?? 'backend');
   const [testResult,       setTestResult]       = useState(null);
   const [testing,          setTesting]          = useState(false);
 
@@ -258,27 +260,16 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         </>
       )}
 
-      {/* Bridge selector — only shown when bridges exist */}
-      {bridges.length > 0 && (
-        <div className="settings-field">
-          <label className="settings-field__label">
-            Bridge{bridges.length >= 2 ? ' instance' : ''}
-            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6, fontWeight: 400 }}>
-              (required for hardware on isolated AV network)
-            </span>
-          </label>
-          <select className="settings-field__input" value={bridgeInstanceId}
-            onChange={e => setBridgeInstanceId(e.target.value)}>
-            <option value="">None (direct TCP from backend)</option>
-            {bridges.map(b => (
-              <option key={b.id} value={b.id}>
-                {bridges.length >= 2 ? b.name : 'Use bridge'}
-                {b.status === 'connected' ? ' ●' : ' ○'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* Unified connection source dropdown */}
+      <ConnectionSourceSelect
+        connectionSource={connectionSource}
+        bridgeInstanceId={bridgeInstanceId}
+        bridges={bridges}
+        onChange={({ connectionSource: cs, bridgeInstanceId: bid }) => {
+          setConnectionSource(cs);
+          setBridgeInstanceId(bid ?? '');
+        }}
+      />
 
       {testResult && (
         <div style={{
@@ -302,7 +293,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         </button>
         <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
         <button className="btn btn--primary"
-          onClick={() => onSave({ name: name.trim(), type, connectionConfig: buildConnectionConfig(), bridgeInstanceId: bridgeInstanceId || null })}
+          onClick={() => onSave({ name: name.trim(), type, connectionConfig: buildConnectionConfig(), connectionSource, bridgeInstanceId: bridgeInstanceId || null })}
           disabled={!name.trim()}>
           Save
         </button>

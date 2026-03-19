@@ -1,6 +1,7 @@
 import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
 
 const CONTROL_TYPES = [
   { value: 'none',     label: 'None (mixer only)' },
@@ -85,6 +86,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
       : []
   );
   const [sortOrder,        setSortOrder]        = useState(initial?.sortOrder ?? 0);
+  const [connectionSource, setConnectionSource] = useState(initial?.connectionSource ?? 'backend');
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
 
   function handleControlTypeChange(newType) {
@@ -117,6 +119,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
       controlType,
       controlConfig: buildControlConfig(),
       sortOrder: Number(sortOrder),
+      connectionSource,
       bridgeInstanceId: bridgeInstanceId || null,
     });
   }
@@ -244,27 +247,16 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
         </>
       )}
 
-      {/* Bridge selector — only shown when bridges exist */}
-      {bridges.length > 0 && (
-        <div className="settings-field">
-          <label className="settings-field__label">
-            Bridge{bridges.length >= 2 ? ' instance' : ''}
-            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginLeft: 6, fontWeight: 400 }}>
-              (required for hardware on isolated AV network)
-            </span>
-          </label>
-          <select className="settings-field__input" value={bridgeInstanceId}
-            onChange={e => setBridgeInstanceId(e.target.value)}>
-            <option value="">None (direct TCP from backend)</option>
-            {bridges.map(b => (
-              <option key={b.id} value={b.id}>
-                {bridges.length >= 2 ? b.name : 'Use bridge'}
-                {b.status === 'connected' ? ' ●' : ' ○'}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* Unified connection source dropdown */}
+      <ConnectionSourceSelect
+        connectionSource={connectionSource}
+        bridgeInstanceId={bridgeInstanceId}
+        bridges={bridges}
+        onChange={({ connectionSource: cs, bridgeInstanceId: bid }) => {
+          setConnectionSource(cs);
+          setBridgeInstanceId(bid ?? '');
+        }}
+      />
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
         <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>

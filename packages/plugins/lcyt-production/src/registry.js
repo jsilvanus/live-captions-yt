@@ -11,6 +11,7 @@ import * as rolandAdapter from './adapters/mixer/roland.js';
 import * as amxMixerAdapter from './adapters/mixer/amx.js';
 import * as atemAdapter from './adapters/mixer/atem.js';
 import * as obsAdapter from './adapters/mixer/obs.js';
+import * as monarchHdxAdapter from './adapters/mixer/monarch_hdx.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
@@ -23,10 +24,11 @@ const CAMERA_ADAPTERS = {
 };
 
 const MIXER_ADAPTERS = {
-  roland: rolandAdapter,
-  amx:    amxMixerAdapter,
-  atem:   atemAdapter,
-  obs:    obsAdapter,
+  roland:       rolandAdapter,
+  amx:          amxMixerAdapter,
+  atem:         atemAdapter,
+  obs:          obsAdapter,
+  monarch_hdx:  monarchHdxAdapter,
 };
 
 /**
@@ -253,12 +255,13 @@ export class DeviceRegistry {
 export function parseCamera(row) {
   return {
     ...row,
-    mixerInput: row.mixer_input,
-    controlType: row.control_type,
-    controlConfig: JSON.parse(row.control_config || '{}'),
+    mixerInput:       row.mixer_input,
+    controlType:      row.control_type,
+    controlConfig:    JSON.parse(row.control_config || '{}'),
+    connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
-    sortOrder: row.sort_order,
-    createdAt: row.created_at,
+    sortOrder:        row.sort_order,
+    createdAt:        row.created_at,
   };
 }
 
@@ -266,7 +269,18 @@ export function parseMixer(row) {
   return {
     ...row,
     connectionConfig: JSON.parse(row.connection_config || '{}'),
+    connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
-    createdAt: row.created_at,
+    createdAt:        row.created_at,
+  };
+}
+
+export function parseEncoder(row) {
+  return {
+    ...row,
+    connectionConfig: JSON.parse(row.connection_config || '{}'),
+    connectionSource: row.connection_source ?? 'backend',
+    bridgeInstanceId: row.bridge_instance_id,
+    createdAt:        row.created_at,
   };
 }
