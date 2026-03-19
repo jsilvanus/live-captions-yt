@@ -107,6 +107,27 @@ function snapToLayerEdges(tentX, tentY, primaryLayer, allLayers, movingIds) {
   return { x: tentX + snapDx, y: tentY + snapDy };
 }
 
+// Return effective x/y/width/height for a layer taking into account
+// per-viewport overrides stored in `layer.viewports[vpName]`.
+function getLayerViewportPos(layer, selectedViewport) {
+  if (!layer) return { x: 0, y: 0 };
+  if (!selectedViewport || selectedViewport === 'landscape') {
+    return {
+      x: Number(layer.x) || 0,
+      y: Number(layer.y) || 0,
+      width: layer.width != null ? Number(layer.width) : undefined,
+      height: layer.height != null ? Number(layer.height) : undefined,
+    };
+  }
+  const vp = (layer.viewports && layer.viewports[selectedViewport]) || {};
+  return {
+    x: vp.x != null ? Number(vp.x) : (Number(layer.x) || 0),
+    y: vp.y != null ? Number(vp.y) : (Number(layer.y) || 0),
+    width: vp.width != null ? Number(vp.width) : (layer.width != null ? Number(layer.width) : undefined),
+    height: vp.height != null ? Number(vp.height) : (layer.height != null ? Number(layer.height) : undefined),
+  };
+}
+
 // ── Preset templates ──────────────────────────────────────────────────────────
 
 const PRESETS = {
@@ -229,12 +250,15 @@ function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
  *   snapGrid        boolean
  */
 function TemplatePreview({
-  template, selectedIds, primaryId,
+  template, selectedIds, primaryId, selectedViewport,
   onSelect, onDragStart, onMoveSelected, onResizeLayer, snapGrid, showSafeArea,
   vpWidth, vpHeight, previewTargetWidth = 960,
 }) {
   const t = template || EMPTY_TEMPLATE;
   const layers = Array.isArray(t.layers) ? t.layers : [];
+
+  // Compute effective layer positions for the currently selected viewport
+  const effectiveLayers = layers.map(l => ({ ...l, ...getLayerViewportPos(l, selectedViewport) }));
 
   const containerRef = useRef(null);
   const dragRef = useRef(null);
@@ -247,7 +271,7 @@ function TemplatePreview({
 
   function startLayerDrag(e, layerId) {
     e.stopPropagation();
-    const layer = layers.find(l => l.id === layerId);
+    const layer = effectiveLayers.find(l => l.id === layerId);
 
     // Which layers will move together?
     let dragIds;
@@ -261,7 +285,7 @@ function TemplatePreview({
 
     const startPositions = new Map(
       [...dragIds].map(id => {
-        const l = layers.find(ll => ll.id === id);
+        const l = effectiveLayers.find(ll => ll.id === id);
         return [id, { x: Number(l?.x) || 0, y: Number(l?.y) || 0 }];
       }),
     );
@@ -277,7 +301,7 @@ function TemplatePreview({
 
   function startHandleDrag(e, layerId, handle) {
     e.stopPropagation();
-    const layer = layers.find(l => l.id === layerId);
+    const layer = effectiveLayers.find(l => l.id === layerId);
     if (!layer) return;
     dragRef.current = {
       type: 'resize', layerId, handle,
@@ -322,7 +346,7 @@ function TemplatePreview({
     }
 
     if (drag.type === 'move') {
-      const primaryLayer = layers.find(l => l.id === drag.layerId);
+      const primaryLayer = effectiveLayers.find(l => l.id === drag.layerId);
       const primaryStart = drag.startPositions.get(drag.layerId);
 
       // Tentative position for primary layer
@@ -337,7 +361,7 @@ function TemplatePreview({
 
       // Layer edge snap (applied to primary)
       if (primaryLayer?.width && primaryLayer?.height) {
-        const snapped = snapToLayerEdges(tentX, tentY, primaryLayer, layers, drag.dragIds);
+        const snapped = snapToLayerEdges(tentX, tentY, primaryLayer, effectiveLayers, drag.dragIds);
         tentX = snapped.x;
         tentY = snapped.y;
       }
@@ -372,7 +396,7 @@ function TemplatePreview({
 
   function onContainerKeyDown(e) {
     if (!primaryId) return;
-    const layer = layers.find(l => l.id === primaryId);
+    const layer = effectiveLayers.find(l => l.id === primaryId);
     if (!layer) return;
     const step = e.shiftKey ? 10 : 1;
     const x = Number(layer.x) || 0;
@@ -407,7 +431,7 @@ function TemplatePreview({
           ? 'repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 40px 40px'
           : undefined,
       }}>
-        {layers.flatMap((layer) => {
+        {effectiveLayers.flatMap((layer) => {
           const isSelected    = layer.id === primaryId && selectedIds.size === 1;
           const isInSelection = selectedIds.has(layer.id);
 
@@ -1299,7 +1323,16 @@ export function DskEditorPage() {
       ...t,
       layers: t.layers.map(l => {
         const upd = updates.find(u => u.id === l.id);
-        return upd ? { ...l, x: upd.x, y: upd.y } : l;
+        if (!upd) return l;
+        if (selectedViewport && selectedViewport !== 'landscape') {
+          const existingVp = (l.viewports && l.viewports[selectedViewport]) || {};
+          const curW = existingVp.width != null ? existingVp.width : (l.width != null ? l.width : undefined);
+          const curH = existingVp.height != null ? existingVp.height : (l.height != null ? l.height : undefined);
+          const vp = { ...(l.viewports || {}) };
+          vp[selectedViewport] = { x: upd.x, y: upd.y, width: curW, height: curH };
+          return { ...l, viewports: vp };
+        }
+        return { ...l, x: upd.x, y: upd.y };
       }),
     }));
     isDirty.current = true;
@@ -1318,7 +1351,15 @@ export function DskEditorPage() {
     }
     setTemplate(t => ({
       ...t,
-      layers: t.layers.map(l => l.id === id ? { ...l, ...final } : l),
+      layers: t.layers.map(l => {
+        if (l.id !== id) return l;
+        if (selectedViewport && selectedViewport !== 'landscape') {
+          const vp = { ...(l.viewports || {}) };
+          vp[selectedViewport] = { x: final.x, y: final.y, width: final.width, height: final.height };
+          return { ...l, viewports: vp };
+        }
+        return { ...l, ...final };
+      }),
     }));
     isDirty.current = true;
   }
@@ -1542,6 +1583,7 @@ export function DskEditorPage() {
               template={template}
               selectedIds={selectedIds}
               primaryId={primaryId}
+              selectedViewport={selectedViewport}
               onSelect={handleCanvasSelect}
               onDragStart={handleDragStart}
               onMoveSelected={handleMoveSelected}
