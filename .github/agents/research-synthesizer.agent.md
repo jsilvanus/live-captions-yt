@@ -25,17 +25,17 @@ payloadTemplates:
     runSubagent:
       description: "Parallel research run"
       payload:
-        - agent: web-researcher
+        - agent: Web Researcher
           args: { query: "<topic>", topN: 5 }
-        - agent: web-researcher
+        - agent: Web Researcher
           args: { code: "<symbol-or-path>", topN: 3 }
   - name: synthesize-with-security
     description: Run web + security research agents and highlight conflicts
     runSubagent:
       payload:
-        - agent: web-researcher
+          - agent: Web Researcher
           args: { query: "<topic>" }
-        - agent: security-engineer
+          - agent: Security Engineer
           args: { query: "<topic> security implications" }
 whenToUse: |
   - When you need a consolidated summary of multiple research outputs on a

@@ -1,5 +1,5 @@
 ---
-name: Director / Workflow Orchestrator
+name: Director - Workflow Orchestrator
 description: |
   Orchestrates larger tasks by breaking them into subtasks, assigning work to
   specialized agents, enforcing given constraints, and producing an executable
@@ -16,6 +16,95 @@ useSkills:
   - ".github/skills/director-orchestrator/SKILL.md"
 usePrompts:
   - ".github/prompts/director.prompt.md"
+
+payloadTemplates:
+  - name: backend-engineer-template
+    description: Assign Backend Engineer to implement a backend task.
+    runSubagent:
+      description: "Delegate to Backend Engineer"
+      agentName: "Backend Engineer"
+      args:
+        task: "<describe backend task>"
+
+  - name: compliance-template
+    description: Assign Compliance Agent to review a change for regulatory risks.
+    runSubagent:
+      description: "Delegate to Compliance Agent"
+      agentName: "Compliance Agent"
+      args:
+        scope: "<legal/regulatory scope>"
+
+  - name: design-systems-template
+    description: Assign Design Systems to propose UI token and component changes.
+    runSubagent:
+      description: "Delegate to Design Systems"
+      agentName: "Design Systems"
+      args:
+        component: "<component name>"
+
+  - name: documentation-template
+    description: Assign Documentation Steward to update docs or runbooks.
+    runSubagent:
+      description: "Delegate to Documentation Steward"
+      agentName: "Documentation Steward"
+      args:
+        docPath: "<docs path or topic>"
+
+  - name: frontend-engineer-template
+    description: Assign Frontend Engineer to implement UI changes.
+    runSubagent:
+      description: "Delegate to Frontend Engineer"
+      agentName: "Frontend Engineer"
+      args:
+        task: "<frontend task>"
+
+  - name: platform-engineer-template
+    description: Assign Platform Engineer to add CI/CD or infra changes.
+    runSubagent:
+      description: "Delegate to Platform Engineer"
+      agentName: "Platform Engineer"
+      args:
+        infraTask: "<infra task>"
+
+  - name: research-synthesizer-template
+    description: Ask Research Synthesizer to aggregate multiple research outputs.
+    runSubagent:
+      description: "Delegate to Research Synthesizer"
+      agentName: "Research Synthesizer"
+      args:
+        topic: "<research topic>"
+
+  - name: security-engineer-template
+    description: Assign Security Engineer to review threat models and hardening.
+    runSubagent:
+      description: "Delegate to Security Engineer"
+      agentName: "Security Engineer"
+      args:
+        area: "<area to secure>"
+
+  - name: system-architect-template
+    description: Assign System Architect to propose high-level architecture.
+    runSubagent:
+      description: "Delegate to System Architect"
+      agentName: "System Architect"
+      args:
+        goal: "<architecture goal>"
+
+  - name: tester-template
+    description: Assign Testing Agent to write targeted tests or CI steps.
+    runSubagent:
+      description: "Delegate to Testing Agent"
+      agentName: "Tester"
+      args:
+        testsFor: "<module or feature>"
+
+  - name: web-researcher-template
+    description: Assign Web Researcher to fetch and summarize public docs.
+    runSubagent:
+      description: "Delegate to Web Researcher"
+      agentName: "Web Researcher"
+      args:
+        query: "<search query>"
 whenToUse: |
   - When a task requires multiple specialized skills (tests, infra, docs, security).
   - When you want a step-by-step plan with delegated subtasks and checkpoints.
