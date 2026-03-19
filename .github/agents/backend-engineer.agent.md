@@ -24,17 +24,7 @@ whenToUse: |
   - When designing/optimizing ingestion pipelines, background queues, or job workers.
   - When proposing DB schema changes, migrations, or advising between SQLite/Postgres.
   - When troubleshooting CORS, SSE, JWT, session/token middleware, or performance issues.
-tools:
-  prefer:
-    - read_file
-    - grep_search
-    - semantic_search
-    - run_in_terminal
-    - apply_patch
-    - create_file
-  avoid:
-    - committing direct changes to main without review (prepare patches by default)
-    - making large refactors without tests and an RFC
+tools: read_file, grep_search, semantic_search, run_in_terminal, apply_patch, create_file
 constraints: |
   - Prepare patches via apply_patch; do not commit changes or open PRs — await user approval, unless documentation-only changes are requested.
   - Keep changes minimal and well-tested; add unit/integration tests when touching logic.
