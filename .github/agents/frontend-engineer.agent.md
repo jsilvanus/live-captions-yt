@@ -23,17 +23,15 @@ whenToUse: |
   - When addressing web performance, bundle size, hydration issues, or accessibility.
   - When adding Vitest/React component tests, Storybook/preview pages, or embed widget fixes.
 tools:
-  prefer:
-    - read_file
-    - grep_search
-    - search_subagent
-    - run_in_terminal
-    - apply_patch
-    - create_file
-  avoid:
-    - making large UI rewrites without a migration plan and visual tests
-    - committing unreviewed production UI changes directly
+  - read_file
+  - grep_search
+  - search_subagent
+  - run_in_terminal
+  - apply_patch
+  - create_file
 constraints: |
+  - Avoid making large UI rewrites without a migration plan and visual tests.
+  - Avoid committing unreviewed production UI changes directly.
   - Prepare patches via apply_patch; do not commit changes or open PRs — await user approval.
   - Include component tests (Vitest) or preview pages for visual changes where feasible.
   - Preserve public-facing routes and embed behavior unless a breaking-change plan is provided.

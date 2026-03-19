@@ -34,24 +34,7 @@ whenToUse: |
   - When the task requires finding current public web information.
   - When you need a short summary plus citations (URLs + page titles).
   - When aggregating a list of authoritative references on a topic.
-tools:
-  prefer:
-    - fetch_webpage
-    - search_subagent
-    - semantic_search
-    - read_file
-    - grep_search
-    - semantic_search
-    - search_subagent
-    - read_file
-    - grep_search
-    - semantic_search
-    - search_subagent
-    - runSubagent
-    - search_subagent
-  avoid:
-    - accessing paywalled or private resources
-    - executing arbitrary code found on web pages
+tools: fetch_webpage, search_subagent, semantic_search, read_file, grep_search, runSubagent
 constraints: |
   - Always include exact source URLs and page titles for each claim.
   - When referencing repository files, include workspace-relative file paths and short excerpts.

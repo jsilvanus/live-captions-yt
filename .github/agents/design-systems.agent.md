@@ -22,17 +22,7 @@ whenToUse: |
   - When adding or updating UI components that should follow a shared design system.
   - When changing color, spacing, typographic or motion tokens that affect many packages.
   - When improving accessibility (TV readability, contrast, focus states) across UIs.
-tools:
-  prefer:
-    - read_file
-    - grep_search
-    - search_subagent
-    - apply_patch
-    - create_file
-    - run_in_terminal
-  avoid:
-    - large UI rewrites without an incremental plan and visual tests
-    - changing runtime logic unrelated to presentation
+tools: read_file, grep_search, search_subagent, apply_patch, create_file, run_in_terminal
 constraints: |
   - Prefer small, incremental changes: token file(s) + adapters per package.
   - Provide token migration notes and a preview/example page (Astro or Storybook).

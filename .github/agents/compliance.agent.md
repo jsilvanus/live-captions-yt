@@ -22,17 +22,10 @@ whenToUse: |
   - When adding features that process personal data or make automated decisions.
   - When drafting privacy/cookie notices, data retention policies, or GDPR compliance flows.
   - When implementing endpoints for user rights (e.g., erase, export) or logging/audit trails.
-tools:
-  prefer:
-    - read_file
-    - grep_search
-    - search_subagent
-    - apply_patch
-    - create_file
-    - run_in_terminal
-  avoid:
-    - committing legal text without review by responsible parties
-    - providing definitive legal advice (consult legal counsel for binding decisions)
+tools: read_file, grep_search, search_subagent, apply_patch, create_file, run_in_terminal
+constraints: |
+  - Do not commit changes without legal review; avoid committing legal text without responsible-party approval.
+  - Do not provide definitive legal advice (consult legal counsel for binding decisions).
 constraints: |
   - Prepare patches via apply_patch; do not commit changes or open PRs — await user approval.
   - Include clear references to relevant laws/regulations and a short non-binding summary.

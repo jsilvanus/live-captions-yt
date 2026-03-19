@@ -24,16 +24,12 @@ whenToUse: |
   - When auditing docs for accuracy and completeness before releases.
   - When creating or updating API reference, CLI guides, or example snippets.
 tools:
-  prefer:
-    - read_file
-    - grep_search
-    - search_subagent
-    - apply_patch
-    - create_file
-    - run_in_terminal
-  avoid:
-    - making large unrelated code refactors
-    - changing tests unrelated to documentation
+  - read_file
+  - grep_search
+  - search_subagent
+  - apply_patch
+  - create_file
+  - run_in_terminal
 constraints: |
   - Keep documentation changes focused and tied to code changes or PRs.
   - Prefer examples that are copy/paste runnable (commands, HTTP snippets).

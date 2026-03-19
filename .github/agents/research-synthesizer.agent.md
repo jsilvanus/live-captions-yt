@@ -16,7 +16,6 @@ applyTo:
 useSkills:
   - ".github/skills/research-synthesizer/SKILL.md"
   - ".github/skills/web-researcher/SKILL.md"
-
 payloadTemplates:
   - name: synthesize-multi-research
     description: |
@@ -33,27 +32,16 @@ payloadTemplates:
     description: Run web + security research agents and highlight conflicts
     runSubagent:
       payload:
-          - agent: Web Researcher
+        - agent: Web Researcher
           args: { query: "<topic>" }
-          - agent: Security Engineer
+        - agent: Security Engineer
           args: { query: "<topic> security implications" }
 whenToUse: |
   - When you need a consolidated summary of multiple research outputs on a
     topic (literature survey, feature comparison, policy scoping).
   - When you want the agent to run several research agents in parallel and
     aggregate results into a single actionable summary.
-tools:
-  prefer:
-    - runSubagent
-    - search_subagent
-    - fetch_webpage
-    - semantic_search
-    - read_file
-    - grep_search
-    - run_in_terminal
-  avoid:
-    - running agents that access private or paywalled resources without explicit approval
-    - executing arbitrary code discovered in search results
+tools: runSubagent, search_subagent, fetch_webpage, semantic_search, read_file, grep_search, run_in_terminal
 constraints: |
   - Do not perform deep implementation work; delegate implementation to the
     appropriate specialist agent.

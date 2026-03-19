@@ -20,16 +20,7 @@ whenToUse: |
   - When creating or updating unit tests, component tests, or test harnesses.
   - When diagnosing and fixing failing tests or flaky tests.
   - When adding CI/test runner configuration (e.g. GitHub Actions, npm scripts, pytest).
-tools:
-  prefer:
-    - run_in_terminal    # run test commands locally (Node test, pytest, vitest)
-    - mcp_pylance_mcp_s_pylanceRunCodeSnippet
-    - read_file
-    - apply_patch
-    - create_file
-  avoid:
-    - making large refactors unrelated to tests
-    - editing unrelated production code without tests
+tools: run_in_terminal, read_file, apply_patch, create_file
 constraints: |
   - Keep changes minimal and focused on test correctness and reliability.
   - Use repository's existing test frameworks: `node:test`, `vitest`, `pytest`.

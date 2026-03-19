@@ -30,18 +30,7 @@ whenToUse: |
     automation guidance.
   - When evaluating Kubernetes vs. Docker Compose for deployment and drafting
     minimal Helm charts or manifests.
-tools:
-  prefer:
-    - run_in_terminal
-    - read_file
-    - grep_search
-    - search_subagent
-    - create_file
-    - apply_patch
-    - runSubagent
-  avoid:
-    - modifying production credentials or secrets directly
-    - making large-scale infra changes without an RFC and your approval
+tools: run_in_terminal, read_file, grep_search, search_subagent, create_file, apply_patch, runSubagent
 constraints: |
   - Produce minimal, reviewable patches (Dockerfile, workflow, helm chart snippet).
   - Never write plaintext secrets; use environment variables and GitHub secrets.

@@ -21,17 +21,7 @@ whenToUse: |
   - When designing API security: CORS, CSRF, input validation, scopes, and ACLs.
   - When adding rate limiting, throttling, or abuse protection (Redis, leaky-bucket).
   - When recommending secret management (Vault, AWS Secrets Manager, GitHub Secrets).
-tools:
-  prefer:
-    - read_file
-    - grep_search
-    - search_subagent
-    - apply_patch
-    - create_file
-    - run_in_terminal
-  avoid:
-    - committing plaintext secrets or environment secrets into the repository
-    - making breaking auth changes without an RFC and migration plan
+tools: read_file, grep_search, search_subagent, apply_patch, create_file, run_in_terminal
 constraints: |
   - Prepare patches via apply_patch; do not commit changes or open PRs — await user approval.
   - Never include secrets in commits or generated files; reference env vars or secret stores.

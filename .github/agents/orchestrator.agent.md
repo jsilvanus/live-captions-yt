@@ -110,17 +110,13 @@ whenToUse: |
   - When you want a step-by-step plan with delegated subtasks and checkpoints.
   - When you need a consolidated patch or PR assembled from smaller patches.
 tools:
-  prefer:
-    - runSubagent
-    - search_subagent
-    - read_file
-    - grep_search
-    - apply_patch
-    - create_file
-    - run_in_terminal
-  avoid:
-    - making large unilateral changes without an approved plan
-    - bypassing reviewers for policy-sensitive areas (security, compliance)
+  - runSubagent
+  - search_subagent
+  - read_file
+  - grep_search
+  - apply_patch
+  - create_file
+  - run_in_terminal
 constraints: |
   - Break tasks into clear subtasks, assign an agent to each, and require explicit
     approval at each major checkpoint.
