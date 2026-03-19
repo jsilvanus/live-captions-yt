@@ -3015,16 +3015,19 @@
 /* Caption input */
 .planner-caption-input {
   width: 100%;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid transparent;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
   color: var(--color-text);
   font-size: 14px;
   font-family: inherit;
-  padding: 4px 6px;
+  padding: 8px 10px;
   outline: none;
+  box-sizing: border-box;
+  min-height: 36px;
+  line-height: 1.4;
 }
-.planner-caption-input:focus { border-bottom-color: var(--color-accent); }
+.planner-caption-input:focus { border-color: var(--color-accent); }
 .planner-caption-input::placeholder { color: var(--color-text-muted); }
 
 /* Chips (base) */
