@@ -1,0 +1,11 @@
+{
+  "name": "tcp-echo-server",
+  "version": "1.0.0",
+  "description": "Minimal TCP echo server for lcyt-bridge connection testing",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "private": true
+}
