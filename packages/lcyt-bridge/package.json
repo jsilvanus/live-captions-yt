@@ -13,7 +13,8 @@
     "build:bundle": "node scripts/build.cjs",
     "build:win": "node scripts/build.cjs win",
     "build:mac": "node scripts/build.cjs mac",
-    "build:linux": "node scripts/build.cjs linux"
+    "build:linux": "node scripts/build.cjs linux",
+    "build:linux-arm64": "node scripts/build.cjs linux-arm64"
   },
   "pkg": {
     "assets": [],

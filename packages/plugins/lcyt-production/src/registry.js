@@ -11,6 +11,7 @@ import * as rolandAdapter from './adapters/mixer/roland.js';
 import * as amxMixerAdapter from './adapters/mixer/amx.js';
 import * as atemAdapter from './adapters/mixer/atem.js';
 import * as obsAdapter from './adapters/mixer/obs.js';
+import * as monarchHdxAdapter from './adapters/mixer/monarch_hdx.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
@@ -23,10 +24,11 @@ const CAMERA_ADAPTERS = {
 };
 
 const MIXER_ADAPTERS = {
-  roland: rolandAdapter,
-  amx:    amxMixerAdapter,
-  atem:   atemAdapter,
-  obs:    obsAdapter,
+  roland:       rolandAdapter,
+  amx:          amxMixerAdapter,
+  atem:         atemAdapter,
+  obs:          obsAdapter,
+  monarch_hdx:  monarchHdxAdapter,
 };
 
 /**
