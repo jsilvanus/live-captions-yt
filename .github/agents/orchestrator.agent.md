@@ -109,7 +109,7 @@ whenToUse: |
   - When a task requires multiple specialized skills (tests, infra, docs, security).
   - When you want a step-by-step plan with delegated subtasks and checkpoints.
   - When you need a consolidated patch or PR assembled from smaller patches.
-tools: [runSubagent, search_subagent, read_file, grep_search, apply_patch, create_patch, agent, todo, create_file, run_in_terminal]
+tools: [execute, read, agent, edit, browser, todo]
 constraints: |
   - Break tasks into clear subtasks, assign an agent to each, and require explicit
     approval at each major checkpoint.
