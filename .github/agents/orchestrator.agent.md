@@ -105,11 +105,19 @@ payloadTemplates:
       agentName: "Web Researcher"
       args:
         query: "<search query>"
+  
+  - name: secretary-template
+    description: Assign Secretary to produce plans, checklists, or small scaffolds for orchestrator tasks.
+    runSubagent:
+      description: "Delegate to Secretary"
+      agentName: "Secretary"
+      args:
+        task: "<concise task for the Secretary: plan, scaffold, env-vars, checklist>"
 whenToUse: |
   - When a task requires multiple specialized skills (tests, infra, docs, security).
   - When you want a step-by-step plan with delegated subtasks and checkpoints.
   - When you need a consolidated patch or PR assembled from smaller patches.
-tools: [execute, read, agent, edit, browser, todo]
+tools: [execute, read, agent, browser, todo]
 constraints: |
   - Break tasks into clear subtasks, assign an agent to each, and require explicit
     approval at each major checkpoint.
