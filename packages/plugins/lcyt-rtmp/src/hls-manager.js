@@ -9,15 +9,14 @@ const DEFAULT_RTMP_APP   = process.env.HLS_RTMP_APP   || process.env.RTMP_APPLIC
 export class HlsManager {
   constructor({ hlsRoot, localRtmp, rtmpApp, runner } = {}) {
     this._procs = new Map();
+
     this._hlsRoot = hlsRoot   ?? DEFAULT_HLS_ROOT;
     this._local   = localRtmp ?? DEFAULT_LOCAL_RTMP;
     this._app     = rtmpApp   ?? DEFAULT_RTMP_APP;
-    this._runner  = runner ?? process.env.FFMPEG_RUNNER || 'spawn';
+    this._runner  = runner ?? process.env.FFMPEG_RUNNER ?? 'spawn';
   }
 
-  hlsDir(hlsKey) {
-    return join(this._hlsRoot, hlsKey);
-  }
+  hlsDir(hlsKey) { return join(this._hlsRoot, hlsKey); }
 
   start(hlsKey) {
     return new Promise((resolve, reject) => {
@@ -45,7 +44,7 @@ export class HlsManager {
       console.log(`${tag} Starting HLS: ${src} → ${playlist}`);
 
       const runner = createFfmpegRunner({ runner: this._runner, cmd: 'ffmpeg', args, name: tag });
-      const proc = runner.start();
+      runner.start();
       this._procs.set(hlsKey, runner);
 
       if (runner.stdout) runner.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
@@ -89,9 +88,7 @@ export class HlsManager {
     try {
       if (typeof runner.stop === 'function') runner.stop();
       else if (runner.proc && typeof runner.proc.kill === 'function') runner.proc.kill('SIGTERM');
-      const t = setTimeout(() => {
-        try { if (runner.proc && typeof runner.proc.kill === 'function') runner.proc.kill('SIGKILL'); } catch {}
-      }, 3000);
+      const t = setTimeout(() => { try { if (runner.proc && typeof runner.proc.kill === 'function') runner.proc.kill('SIGKILL'); } catch {} }, 3000);
       if (t.unref) t.unref();
     } catch {}
   }
