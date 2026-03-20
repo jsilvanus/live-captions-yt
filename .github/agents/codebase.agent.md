@@ -1,8 +1,3 @@
-<!--
-AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Codebase Expert agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
--->
-When this agent finishes, it must output the required JSON object described above.
-
 ---
 name: Codebase Expert
 description: |
@@ -56,3 +51,8 @@ Example Prompts
 - "Where should I add a new config option for the DSK plugin system?"
 - "Update the README with instructions for running tests in `lcyt-backend`."
 
+
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Codebase Expert agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.

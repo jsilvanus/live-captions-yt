@@ -1,8 +1,3 @@
-<!--
-AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Backend Engineer agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
--->
-When this agent finishes, it must output the required JSON object described above.
-
 ---
 name: Backend Engineer
 description: |
@@ -49,3 +44,8 @@ selectionHints: |
 Summary
 
 The Backend Engineer agent focuses on backend architecture and implementation: Node.js/Express middleware, ingestion pipelines, queue systems, and database schema design. It prepares small, test-covered patches for review and includes migration/rollback guidance for DB changes.
+
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Backend Engineer agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.

@@ -1,8 +1,3 @@
-<!--
-AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: System Architect agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
--->
-When this agent finishes, it must output the required JSON object described above.
-
 ---
 name: System Architect
 description: |
@@ -62,3 +57,8 @@ Quick prompts to try
 - "Architect: Should caption translation run in `lcyt-backend` or client-side? Give recommendation + 3 alternatives."
 - "Architect: Draft an RFC to add per-key rate-limiting and where to place metrics collection."
 - "Architect: Evaluate moving DSK renderer into a separate service — pros/cons and migration steps."
+
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: System Architect agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.

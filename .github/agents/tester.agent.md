@@ -1,8 +1,3 @@
-<!--
-AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Testing Agent agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
--->
-When this agent finishes, it must output the required JSON object described above.
-
 ---
 name: Testing Agent
 description: |
@@ -54,3 +49,8 @@ Example prompts to try
 - Add unit tests for `packages/lcyt/src/logger.js` covering `setVerbose` and `setUseStderr`.
 - Diagnose and fix the failing tests in `packages/lcyt-backend/test/auth.test.js`.
 - Create a GitHub Actions workflow that runs `npm test -w` and `pytest` across packages.
+
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Testing Agent agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.

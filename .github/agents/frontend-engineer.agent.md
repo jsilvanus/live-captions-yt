@@ -1,8 +1,3 @@
-<!--
-AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Frontend Engineer agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
--->
-When this agent finishes, it must output the required JSON object described above.
-
 ---
 name: Frontend Engineer
 description: |
@@ -48,3 +43,8 @@ selectionHints: |
 Summary
 
 The Frontend Engineer handles runtime UI fixes, component tests, accessibility audits, and build/tooling improvements for the web and embed UIs. It produces small, test-covered patches for review.
+
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Frontend Engineer agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.
