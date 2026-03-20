@@ -25,7 +25,7 @@ whenToUse: |
   - When evaluating where to implement a new feature (backend vs plugin vs web UI).
   - When planning cross-cutting changes that affect architecture, deployment or cost.
   - When preparing RFCs, migration plans, or upgrade paths for production services.
-tools: read_file, grep_search, search_subagent, semantic_search, run_in_terminal, create_file, apply_patch
+tools: read, agent, edit, search, browser, todo
 constraints: |
   - Provide actionable recommendations with clear trade-offs (performance, complexity,
     deployment, operational cost, security).

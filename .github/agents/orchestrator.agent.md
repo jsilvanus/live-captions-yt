@@ -137,3 +137,137 @@ Research guidance:
 - **When to use Web Researcher (researcher):** For small, focused lookups such as fetching a single API doc excerpt, confirming a CLI flag, or retrieving a short code snippet. Prefer this for quick facts or when an explicit, single-source citation is sufficient.
 
 - **Rule for the Director:** Default to assigning larger or multi-source research tasks to `Research Synthesizer`. Use `Web Researcher` only for lightweight lookups or quick verification steps. Always ask the user if the scope is unclear before scheduling a long synthesis job.
+
+**Orchestrator Example Payloads**
+
+Below are concise example payloads the orchestrator can use to invoke each specialized agent via `runSubagent`. Use these as templates when delegating subtasks.
+
+- **Backend Engineer**:
+
+  ```yaml
+  runSubagent:
+    description: "Implement backend task"
+    agentName: "Backend Engineer"
+    args:
+      task: "Add paginated /api/keys endpoint"
+      requirements: "SQLite-compatible, include tests, respects API key scoping"
+  ```
+
+- **Compliance Agent**:
+
+  ```yaml
+  runSubagent:
+    description: "Regulatory review"
+    agentName: "Compliance Agent"
+    args:
+      scope: "GDPR data retention for caption files"
+      deliverable: "Risks, mitigation, required DB changes"
+  ```
+
+- **Design Systems Architect**:
+
+  ```yaml
+  runSubagent:
+    description: "Design tokens + component proposal"
+    agentName: "Design Systems"
+    args:
+      component: "CaptionViewer"
+      variants: "compact, accessible, high-contrast"
+  ```
+
+- **Documentation Steward**:
+
+  ```yaml
+  runSubagent:
+    description: "Docs update"
+    agentName: "Documentation Steward"
+    args:
+      docPath: "docs/guide/embed.md"
+      changes: "Add embed token rotation example and troubleshooting section"
+  ```
+
+- **Frontend Engineer**:
+
+  ```yaml
+  runSubagent:
+    description: "Frontend task"
+    agentName: "Frontend Engineer"
+    args:
+      task: "Add theme toggle to AppProviders"
+      constraints: "Preserve embed mode BroadcastChannel behaviour"
+  ```
+
+- **Codebase Expert**:
+
+  ```yaml
+  runSubagent:
+    description: "Codebase analysis"
+    agentName: "Codebase Expert"
+    args:
+      request: "Locate all usages of build-cjs.js and list breakage risk"
+  ```
+
+- **Platform Engineer**:
+
+  ```yaml
+  runSubagent:
+    description: "Infra task"
+    agentName: "Platform Engineer"
+    args:
+      infraTask: "Add GitHub Actions job to run node:test for packages/*"
+      target: "matrix across node 20/22"
+  ```
+
+- **Research Synthesizer**:
+
+  ```yaml
+  runSubagent:
+    description: "Aggregate research"
+    agentName: "Research Synthesizer"
+    args:
+      topic: "YouTube ingestion rate limits and retry strategies"
+      outputs: "summary, recommended approach, citations"
+  ```
+
+- **Security Engineer**:
+
+  ```yaml
+  runSubagent:
+    description: "Security review"
+    agentName: "Security Engineer"
+    args:
+      area: "JWT signing key handling and rotation"
+      goal: "Threat model + remediation steps"
+  ```
+
+- **System Architect**:
+
+  ```yaml
+  runSubagent:
+    description: "Architecture proposal"
+    agentName: "System Architect"
+    args:
+      goal: "Design scalable caption fanout for 10k concurrent viewers"
+  ```
+
+- **Tester**:
+
+  ```yaml
+  runSubagent:
+    description: "Test authoring"
+    agentName: "Tester"
+    args:
+      testsFor: "packages/lcyt-backend/src/hls-manager.js"
+      requirements: "Mock ffmpeg, deterministic timing"
+  ```
+
+- **Web Researcher**:
+
+  ```yaml
+  runSubagent:
+    description: "Quick web lookup"
+    agentName: "Web Researcher"
+    args:
+      query: "YouTube live captions ingestion API max line length"
+  ```
+

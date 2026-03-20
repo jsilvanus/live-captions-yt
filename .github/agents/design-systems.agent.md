@@ -22,7 +22,7 @@ whenToUse: |
   - When adding or updating UI components that should follow a shared design system.
   - When changing color, spacing, typographic or motion tokens that affect many packages.
   - When improving accessibility (TV readability, contrast, focus states) across UIs.
-tools: read_file, grep_search, search_subagent, apply_patch, create_file, run_in_terminal
+tools: vscode/memory, execute, read, agent, edit, browser, todo
 constraints: |
   - Prefer small, incremental changes: token file(s) + adapters per package.
   - Provide token migration notes and a preview/example page (Astro or Storybook).
