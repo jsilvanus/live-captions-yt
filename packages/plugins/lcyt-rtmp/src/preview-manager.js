@@ -1,6 +1,6 @@
-import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createFfmpegRunner } from '../../../lcyt-backend/src/ffmpeg/index.js';
 
 const DEFAULT_PREVIEW_ROOT = process.env.PREVIEW_ROOT    || '/tmp/previews';
 const DEFAULT_LOCAL_RTMP   = process.env.HLS_LOCAL_RTMP  || process.env.RADIO_LOCAL_RTMP || 'rtmp://127.0.0.1:1935';
@@ -89,19 +89,19 @@ export class PreviewManager {
       const tag = `[preview:${key.slice(0, 8)}]`;
       console.log(`${tag} Starting preview: ${src} → ${out}`);
 
-      const proc = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-      this._procs.set(key, proc);
+      const runner = createFfmpegRunner({ runner: 'spawn', cmd: 'ffmpeg', args, name: tag });
+      this._procs.set(key, runner);
 
-      proc.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
-      proc.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
+      if (runner.stdout) runner.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
+      if (runner.stderr) runner.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
 
-      proc.on('error', err => {
+      runner.on('error', err => {
         this._procs.delete(key);
         console.error(`${tag} ffmpeg error: ${err.message}`);
         reject(err);
       });
 
-      proc.on('close', code => {
+      runner.on('close', code => {
         this._procs.delete(key);
         if (code !== 0 && code !== null) {
           console.warn(`${tag} ffmpeg exited with code ${code}`);
@@ -111,6 +111,7 @@ export class PreviewManager {
         this._cleanup(key);
       });
 
+      runner.start();
       setImmediate(resolve);
     });
   }
@@ -172,11 +173,16 @@ export class PreviewManager {
     if (!proc) return;
     this._procs.delete(key);
     try {
-      proc.kill('SIGTERM');
-      const t = setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch {}
-      }, 3000);
-      if (t.unref) t.unref();
+      // Support both ChildProcess and LocalFfmpegRunner
+      if (typeof proc.stop === 'function') {
+        proc.stop();
+      } else if (typeof proc.kill === 'function') {
+        proc.kill('SIGTERM');
+        const t = setTimeout(() => {
+          try { proc.kill('SIGKILL'); } catch {}
+        }, 3000);
+        if (t.unref) t.unref();
+      }
     } catch {}
   }
 }
