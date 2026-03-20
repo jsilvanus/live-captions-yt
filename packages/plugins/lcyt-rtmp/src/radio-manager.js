@@ -12,7 +12,7 @@ export class RadioManager {
     this._hlsRoot = hlsRoot  ?? DEFAULT_HLS_ROOT;
     this._local   = localRtmp ?? DEFAULT_LOCAL_RTMP;
     this._app     = rtmpApp  ?? DEFAULT_RTMP_APP;
-    this._runner  = runner ?? process.env.FFMPEG_RUNNER || 'spawn';
+    this._runner  = runner ?? process.env.FFMPEG_RUNNER ?? 'spawn';
   }
 
   hlsDir(radioKey) { return join(this._hlsRoot, radioKey); }
