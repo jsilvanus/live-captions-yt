@@ -1,3 +1,8 @@
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Design Systems Architect agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.
+
 ---
 name: Design Systems Architect
 description: |
@@ -22,7 +27,7 @@ whenToUse: |
   - When adding or updating UI components that should follow a shared design system.
   - When changing color, spacing, typographic or motion tokens that affect many packages.
   - When improving accessibility (TV readability, contrast, focus states) across UIs.
-tools: vscode/memory, execute, read, agent, edit, browser, todo
+tools: [vscode/memory, execute, read, agent, edit, web, todo]
 constraints: |
   - Prefer small, incremental changes: token file(s) + adapters per package.
   - Provide token migration notes and a preview/example page (Astro or Storybook).

@@ -1,3 +1,8 @@
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: System Architect agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.
+
 ---
 name: System Architect
 description: |
@@ -25,7 +30,7 @@ whenToUse: |
   - When evaluating where to implement a new feature (backend vs plugin vs web UI).
   - When planning cross-cutting changes that affect architecture, deployment or cost.
   - When preparing RFCs, migration plans, or upgrade paths for production services.
-tools: read, agent, edit, search, browser, todo
+tools: [read, agent, edit, search, web, todo]
 constraints: |
   - Provide actionable recommendations with clear trade-offs (performance, complexity,
     deployment, operational cost, security).

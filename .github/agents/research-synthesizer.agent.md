@@ -1,3 +1,8 @@
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Research Synthesizer agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.
+
 ---
 name: Research Synthesizer
 description: |
@@ -41,7 +46,7 @@ whenToUse: |
     topic (literature survey, feature comparison, policy scoping).
   - When you want the agent to run several research agents in parallel and
     aggregate results into a single actionable summary.
-tools: runSubagent, search_subagent, fetch_webpage, semantic_search, read_file, grep_search, run_in_terminal
+tools: [agent, search/codebase, search/searchResults, search/searchSubagent, web] 
 constraints: |
   - Do not perform deep implementation work; delegate implementation to the
     appropriate specialist agent.

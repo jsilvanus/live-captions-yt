@@ -1,3 +1,8 @@
+<!--
+AGENT FINISH REQUIREMENT: When this agent finishes its task, it MUST send a single JSON object (as the final output) containing at least { agent: Web Researcher agent, files_modified: [<paths>], summary: <short summary>, timestamp: <ISO-8601> }. If the requester asked otherwise, follow the requested final output format.
+-->
+When this agent finishes, it must output the required JSON object described above.
+
 ---
 name: Web Researcher
 description: |
@@ -34,7 +39,7 @@ whenToUse: |
   - When the task requires finding current public web information.
   - When you need a short summary plus citations (URLs + page titles).
   - When aggregating a list of authoritative references on a topic.
-tools: fetch_webpage, search_subagent, semantic_search, read_file, grep_search, runSubagent
+tools: [agent, search/codebase, search/searchResults, search/textSearch, web]
 constraints: |
   - Always include exact source URLs and page titles for each claim.
   - When referencing repository files, include workspace-relative file paths and short excerpts.
@@ -57,10 +62,4 @@ Summary
 
 The Web Researcher agent is specialized for finding and summarizing public web
 information. It fetches pages, extracts the relevant facts, and returns a
-short summary with an ordered list of source citations (title + URL).
-
-Quick usage
-
-- Ask: "Research: <topic>"
-- The agent will return: 1) short summary, 2) bullet list of key findings, 3)
-  numbered sources with title + URL + retrieval date.
+short summary with an ordered list of source citations (title + URL + retrieval date).
