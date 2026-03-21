@@ -1,0 +1,14 @@
+{
+  "name": "lcyt-worker-daemon",
+  "version": "0.0.0",
+  "description": "Minimal worker daemon for ffmpeg orchestration (test-friendly)",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/daemon.basic.test.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}

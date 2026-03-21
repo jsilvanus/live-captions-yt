@@ -1,5 +1,6 @@
 import { LocalFfmpegRunner } from './local-runner.js';
 import { DockerFfmpegRunner } from './docker-runner.js';
+import { WorkerFfmpegRunner } from './worker-runner.js';
 
 // Environment-driven defaults
 const ENV_RUNNER = process.env.FFMPEG_RUNNER || 'spawn';
@@ -19,9 +20,11 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, ...opts } = {}) {
     case 'docker':
       // ensure image default is taken from env when not provided
       return new DockerFfmpegRunner(Object.assign({ image: ENV_IMAGE }, opts));
+    case 'worker':
+      return new WorkerFfmpegRunner(opts);
     default:
       throw new Error(`Unknown ffmpeg runner: ${runner}`);
   }
 }
 
-export { LocalFfmpegRunner, DockerFfmpegRunner };
+export { LocalFfmpegRunner, DockerFfmpegRunner, WorkerFfmpegRunner };
