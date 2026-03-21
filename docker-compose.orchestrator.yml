@@ -1,0 +1,43 @@
+version: "3.8"
+
+services:
+  lcyt-backend:
+    image: lcyt-backend:latest
+    environment:
+      - PORT=3000
+      - JWT_SECRET=devsecret
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    # mount for local dev (optional)
+    volumes:
+      - ./:/workspace:ro
+
+  lcyt-orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    # For local development we run the package directly from the repo
+    command: sh -c "cd packages/lcyt-orchestrator && npm install --no-audit --no-fund && npm start"
+    environment:
+      - PORT=4000
+      - BACKEND_URL=http://lcyt-backend:3000
+    ports:
+      - "4000:4000"
+    depends_on:
+      - lcyt-backend
+    restart: unless-stopped
+    volumes:
+      - ./:/workspace
+
+  lcyt-worker-daemon:
+    image: lcyt-worker-daemon:latest
+    environment:
+      - ORCHESTRATOR_URL=http://lcyt-orchestrator:4000
+      - WORKER_ID=worker-local-1
+      - WORKER_MAX_JOBS=2
+    restart: unless-stopped
+
+# Notes:
+# - lcyt-backend and lcyt-worker-daemon use placeholder images for local development.
+# - lcyt-orchestrator is run from the workspace so changes are visible immediately.
