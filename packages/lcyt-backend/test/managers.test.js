@@ -11,6 +11,7 @@
 
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
 // ---------------------------------------------------------------------------
@@ -97,7 +98,8 @@ describe('HlsManager — constructor', () => {
   it('hlsDir() returns root/key path', () => {
     const m = new HlsManager({ hlsRoot: '/tmp/hls' });
     assert.ok(m.hlsDir('mykey').endsWith('mykey'));
-    assert.ok(m.hlsDir('mykey').includes('/tmp/hls'));
+    const p = m.hlsDir('mykey').replace(/\\\\/g, '/');
+    assert.ok(p.includes('/tmp/hls'));
   });
 
   it('isRunning() returns false initially', () => {
@@ -210,7 +212,8 @@ describe('RadioManager', () => {
 
   it('hlsDir() returns root/key', () => {
     const m = new RadioManager({ hlsRoot: '/tmp/radio' });
-    assert.ok(m.hlsDir('rkey').includes('/tmp/radio'));
+    const p = m.hlsDir('rkey').replace(/\\\\/g, '/');
+    assert.ok(p.includes('/tmp/radio'));
   });
 
   it('start() marks key as running and spawns ffmpeg', async () => {
@@ -252,7 +255,7 @@ describe('RadioManager', () => {
 describe('PreviewManager — constructor', () => {
   it('previewPath() returns root/key/incoming.jpg', () => {
     const m = new PreviewManager({ previewRoot: '/tmp/prev' });
-    const p = m.previewPath('mykey');
+    const p = m.previewPath('mykey').replace(/\\\\/g, '/');
     assert.ok(p.includes('/tmp/prev'));
     assert.ok(p.includes('mykey'));
     assert.ok(p.endsWith('incoming.jpg'));

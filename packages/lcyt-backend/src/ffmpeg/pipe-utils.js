@@ -12,14 +12,19 @@ export function isFifo(path) {
 }
 
 export function makeFifo(path) {
-  // On non-Windows try mkfifo; on Windows fall back to creating an empty file.
-  if (process.platform === 'win32') {
-    writeFileSync(path, '');
-    return { path, createdAsFifo: false };
-  }
-
-  // POSIX: use mkfifo
+  // Return a Promise always for consistent async handling
   return new Promise((resolve, reject) => {
+    // On Windows, create an empty file as fallback (not a real FIFO)
+    if (process.platform === 'win32') {
+      try {
+        writeFileSync(path, '');
+        return resolve({ path, createdAsFifo: false });
+      } catch (e) {
+        return reject(e);
+      }
+    }
+
+    // POSIX: use mkfifo
     const p = spawn('mkfifo', ['-m', '600', path]);
     p.on('error', err => reject(err));
     p.on('close', code => {

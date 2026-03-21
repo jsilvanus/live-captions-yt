@@ -43,7 +43,7 @@ export class HlsManager {
       const tag = `[hls:${hlsKey.slice(0,8)}]`;
       console.log(`${tag} Starting HLS: ${src} → ${playlist}`);
 
-      const runner = createFfmpegRunner({ runner: this._runner, cmd: 'ffmpeg', args, name: tag });
+      const runner = createFfmpegRunner({ runner: this._runner, cmd: 'ffmpeg', args, name: tag, stdin: 'ignore' });
       runner.start();
       this._procs.set(hlsKey, runner);
 

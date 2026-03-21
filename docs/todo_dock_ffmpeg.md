@@ -1,7 +1,7 @@
 # TODO: FFmpeg Container Migration — Phase-by-Phase Checklist
 
 Date: 2026-03-20
-Based on: docs/plan_dock_ffmpeg.md
+Based on: docs/plan_dock_ffmpeg.md (v2)
 
 Purpose
 - Convert the high-level migration plan into small, testable tasks that can be implemented incrementally.
@@ -14,6 +14,20 @@ PHASE 1 — Runner abstraction (no behavior change)
 - 1.2 Implement `local-runner.js` (wraps current spawn behavior) — Owner: Backend, Estimate: small. Acceptance: start/stop/isRunning, stderr passthrough tests.
 - 1.3 Refactor `PreviewManager` to use the factory — Owner: Backend, Estimate: small. Acceptance: backend behaves identically with `FFMPEG_RUNNER=spawn` and existing tests pass.
 - 1.4 Add unit tests for `local-runner` and a PreviewManager integration smoke test — Owner: Tester, Estimate: small. Acceptance: CI runs unit tests; smoke test passes locally.
+
+Implemented (2026-03-20):
+- Added `docker/ffmpeg/Dockerfile` and `images/ffmpeg/README.md` (minimal ffmpeg image).
+- Added `scripts/ffmpeg-in-container.sh` wrapper to run host or docker ffmpeg.
+- Updated `packages/lcyt-backend/src/ffmpeg/docker-runner.js` to forward stdin (-i), pipe stdio and accept entrypoint setting.
+- Updated `packages/lcyt-backend/src/ffmpeg/index.js` to use env defaults (`FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_WRAPPER`).
+- Added gated integration smoke test at `packages/lcyt-backend/test/integration/ffmpeg.docker.smoke.test.js` (skip unless `DOCKER_AVAILABLE=1`).
+
+Next steps (short):
+- Run local smoke: `DOCKER_AVAILABLE=1 npm test -- -w packages/lcyt-backend test/integration/ffmpeg.docker.smoke.test.js`.
+- Wire `PreviewManager` to use runner factory (if not already done) and test with `FFMPEG_RUNNER=docker`.
+- Add unit tests for `DockerFfmpegRunner` mocking `child_process.spawn`.
+ - Ensure Python test prerequisites are installed before running Python tests: `pip install -r python-packages/lcyt-backend/requirements.txt` (use a virtualenv).
+ - On Windows, run Python tests inside WSL or a Python virtualenv; the test runner and some scripts assume a Unix-like shell environment.
 
 PHASE 2 — Docker runner for stateless jobs
 - 2.1 Implement `docker-runner.js` wrapping `docker run` options (image, volumes, network, cpu/memory) — Owner: Backend, Estimate: medium. Acceptance: can start/stop a container, map volumes, capture stderr.

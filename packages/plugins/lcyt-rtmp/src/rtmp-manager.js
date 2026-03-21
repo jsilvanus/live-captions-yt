@@ -1,4 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
+import { createFfmpegRunner } from '../../../lcyt-backend/src/ffmpeg/index.js';
+import { makeFifo } from '../../../lcyt-backend/src/ffmpeg/pipe-utils.js';
+import { createWriteStream } from 'node:fs';
 
 const DEFAULT_RTMP_HOST = process.env.RTMP_HOST || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP  = process.env.RTMP_APP  || 'stream';
@@ -332,13 +335,53 @@ export class RtmpRelayManager {
         args = ['-re', '-i', src, '-c', 'copy', '-f', 'tee', teeTargets];
       }
 
-      const proc = spawn('ffmpeg', args, {
-        stdio: [stdinMode, 'pipe', 'pipe'],
-      });
+      const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
+
+      // Optionally use FIFO-based stdin instead of pipe (disabled by default).
+      const useFifo = process.env.FFMPEG_USE_FIFO === '1';
+
+      // If using FIFO and we are in CEA-708 mode, replace pipe:0 with a FIFO path.
+      let fifoPath = null;
+      if (useFifo && stdinMode === 'pipe' && hasCea708) {
+        fifoPath = `/tmp/lcyt-ffmpeg-${apiKey}.srt`;
+        // replace the 'pipe:0' usage with the fifo path
+        const idx = args.indexOf('pipe:0');
+        if (idx !== -1) {
+          args[idx] = fifoPath;
+        }
+      }
+
+      // Build runner options: pass stdin mode if using pipe; Local runner will accept 'pipe' or 'ignore'
+      const runnerOpts = {
+        runner: process.env.FFMPEG_RUNNER ?? 'spawn',
+        cmd: 'ffmpeg',
+        args,
+        name: tag,
+        stdin: stdinMode,
+      };
+
+      const runner = createFfmpegRunner(runnerOpts);
+
+      const proc = runner.start();
 
       const startedAt = new Date();
       this._procs.set(apiKey, proc);
-      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs });
+      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs, fifoPath });
+
+      // If FIFO requested, create it and a writer stream for caption injection
+      if (fifoPath) {
+        makeFifo(fifoPath).then(() => {
+          try {
+            const ws = createWriteStream(fifoPath, { flags: 'a' });
+            const meta = this._meta.get(apiKey);
+            if (meta) meta._fifoWriter = ws;
+          } catch (e) {
+            console.warn(`[rtmp] Failed to open FIFO writer for ${apiKey.slice(0,8)}: ${e.message}`);
+          }
+        }).catch(err => {
+          console.warn(`[rtmp] makeFifo failed for ${fifoPath}: ${err.message}`);
+        });
+      }
 
       for (const r of relays) {
         this._onStreamStarted?.(apiKey, r.slot, {
@@ -349,20 +392,26 @@ export class RtmpRelayManager {
         });
       }
 
-      proc.stdout.on('data', (d) => process.stdout.write(`${tag} ${d}`));
-      proc.stderr.on('data', (d) => process.stderr.write(`${tag} ${d}`));
+      if (proc && proc.stdout) proc.stdout.on('data', (d) => process.stdout.write(`${tag} ${d}`));
+      if (proc && proc.stderr) proc.stderr.on('data', (d) => process.stderr.write(`${tag} ${d}`));
 
-      proc.on('error', (err) => {
+      // Runner emits 'error' and 'close' events like child process
+      runner.on('error', (err) => {
         this._procs.delete(apiKey);
         this._meta.delete(apiKey);
         console.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
         reject(err);
       });
 
-      proc.on('close', (code) => {
+      runner.on('close', (code) => {
         this._procs.delete(apiKey);
         const meta = this._meta.get(apiKey);
         this._meta.delete(apiKey);
+
+        // Close any FIFO writer
+        if (meta && meta._fifoWriter) {
+          try { meta._fifoWriter.end(); } catch (e) {}
+        }
 
         const endedAt = new Date();
         if (meta) {
@@ -512,8 +561,19 @@ export class RtmpRelayManager {
     const cue = buildSrtCue(meta.srtSeq, cueStartMs, CEA708_DURATION_MS, text);
 
     try {
-      proc.stdin.write(cue);
-      return true;
+      const meta = this._meta.get(apiKey);
+      // FIFO mode: write to FIFO writer if present
+      if (meta && meta._fifoWriter) {
+        meta._fifoWriter.write(cue);
+        return true;
+      }
+
+      // Default: write to child process stdin
+      if (proc && proc.stdin && !proc.stdin.destroyed) {
+        proc.stdin.write(cue);
+        return true;
+      }
+      return false;
     } catch (err) {
       if (err.code !== 'EPIPE') {
         console.error(`[rtmp] Failed to write CEA-708 cue for ${apiKey.slice(0, 8)}: ${err.message}`);

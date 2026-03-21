@@ -89,7 +89,7 @@ export class PreviewManager {
       const tag = `[preview:${key.slice(0, 8)}]`;
       console.log(`${tag} Starting preview: ${src} → ${out}`);
 
-      const runner = createFfmpegRunner({ runner: 'spawn', cmd: 'ffmpeg', args, name: tag });
+      const runner = createFfmpegRunner({ runner: 'spawn', cmd: 'ffmpeg', args, name: tag, stdin: 'ignore' });
       this._procs.set(key, runner);
 
       if (runner.stdout) runner.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));

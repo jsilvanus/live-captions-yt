@@ -1,0 +1,552 @@
+Note: The tool simplified the command to ` npm test -w packages/lcyt-backend`, and this is the output of running that command instead:
+
+    ✔ should be idempotent — calling again does not throw (2.4974ms)
+  ✔ initDb (4.2478ms)
+  ▶ createKey
+    ✔ should create a key with auto-generated UUID when no key provided (0.9029m
+s)                                                                                  ✔ should create a key with a custom key value (0.268ms)
+    ✔ should create a key with an expiration date (0.3652ms)
+    ✔ should set created_at automatically (0.351ms)
+    ✔ should reject duplicate key values (0.6454ms)
+  ✔ createKey (2.9668ms)
+  ▶ getKey
+    ✔ should return the key row for an existing key (0.3375ms)
+    ✔ should return null for a non-existent key (0.3046ms)
+  ✔ getKey (0.9509ms)
+  ▶ getAllKeys
+    ✔ should return an array of all keys (2.9916ms)
+    ✔ should return empty array when no keys exist (3.3063ms)
+  ✔ getAllKeys (6.4957ms)
+  ▶ validateApiKey
+    ✔ should return valid=true for a valid active key (0.6372ms)
+    ✔ should return valid=false with reason=unknown_key for non-existent key (0.
+2044ms)                                                                             ✔ should return valid=false with reason=revoked for revoked key (0.4246ms)  
+    ✔ should return valid=false with reason=expired for expired key (0.3114ms)  
+    ✔ should return valid=true for key with future expiration (0.32ms)
+    ✔ should return valid=true for key with null expires_at (never expires) (0.2
+871ms)                                                                            ✔ validateApiKey (2.4582ms)
+  ▶ revokeKey
+    ✔ should set active=0 for the key (0.3528ms)
+    ✔ should return false for non-existent key (0.1505ms)
+  ✔ revokeKey (0.6748ms)
+  ▶ deleteKey
+    ✔ should permanently remove the key from the database (0.4315ms)
+    ✔ should return false for non-existent key (0.1427ms)
+  ✔ deleteKey (0.7121ms)
+  ▶ renewKey
+    ✔ should update expires_at for the key (0.403ms)
+    ✔ should clear expiration when null is passed (0.3747ms)
+    ✔ should return false for non-existent key (0.1579ms)
+  ✔ renewKey (1.0884ms)
+  ▶ updateKey
+    ✔ should update owner field (0.5954ms)
+    ✔ should update expiresAt field (0.3925ms)
+    ✔ should update both owner and expiresAt together (0.4546ms)
+    ✔ should return false when no fields provided (0.3139ms)
+    ✔ should return false for non-existent key (0.1252ms)
+  ✔ updateKey (2.1015ms)
+  ▶ per-API-key sequence
+    ✔ getKeySequence returns 0 when no captions have been sent (0.4481ms)       
+    ✔ updateKeySequence persists the sequence and getKeySequence returns it (0.7
+576ms)                                                                              ✔ getKeySequence returns 0 when last_caption_at is older than 2 hours (0.345
+7ms)                                                                                ✔ getKeySequence returns stored sequence when last_caption_at is within 2 ho
+urs (0.2941ms)                                                                      ✔ resetKeySequence resets sequence to 0 and clears last_caption_at (0.3954ms
+)                                                                                   ✔ getKeySequence returns 0 for unknown key (0.1281ms)
+  ✔ per-API-key sequence (2.8018ms)
+✔ db.js (35.7067ms)
+▶ GET /events — auth rejections
+  ✔ returns 401 when no token is provided (46.3696ms)
+  ✔ returns 401 when Authorization header has wrong prefix (6.8506ms)
+  ✔ returns 401 for an invalid JWT (wrong secret) (8.2009ms)
+  ✔ returns 401 for an expired JWT (2.8212ms)
+  ✔ returns 401 for a malformed token string (1.8625ms)
+✔ GET /events — auth rejections (68.7268ms)
+▶ GET /events — ?token= query parameter
+  ✔ accepts token via ?token= and opens SSE stream (10.3226ms)
+✔ GET /events — ?token= query parameter (10.5692ms)
+▶ GET /events — session not found
+  ✔ returns 404 when the session does not exist in the store (9.0072ms)
+✔ GET /events — session not found (9.5422ms)
+▶ GET /events — SSE response headers
+  ✔ sets Content-Type: text/event-stream (10.0474ms)
+  ✔ sets Cache-Control: no-cache (6.7868ms)
+  ✔ sets X-Accel-Buffering: no (6.7554ms)
+✔ GET /events — SSE response headers (24.0852ms)
+▶ GET /events — connected event
+  ✔ sends a "connected" event immediately after subscribing (7.0932ms)
+  ✔ connected event includes micHolder: null when no mic is held (6.1914ms)     
+  ✔ connected event includes micHolder from session when a mic is held (9.1862ms
+)                                                                               ✔ GET /events — connected event (23.396ms)
+▶ GET /events — event forwarding
+  ✔ forwards "caption_result" emitted on session.emitter (82.9934ms)
+  ✔ forwards "caption_error" emitted on session.emitter (91.7464ms)
+  ✔ forwards "mic_state" emitted on session.emitter (95.5086ms)
+✔ GET /events — event forwarding (270.5555ms)
+▶ GET /events — session_closed ends the stream
+  ✔ emits "session_closed" event and closes the response (94.3132ms)
+✔ GET /events — session_closed ends the stream (94.4498ms)
+▶ GET /events — listener cleanup on disconnect
+  ✔ removes emitter listeners after the SSE client disconnects (266.0533ms)     
+✔ GET /events — listener cleanup on disconnect (266.1995ms)
+▶ Integration — POST /captions → caption_result on /events
+  ✔ delivers a caption_result SSE event after POST /captions in viewer-only sess
+ion (108.7624ms)                                                                ✔ Integration — POST /captions → caption_result on /events (108.875ms)
+▶ GET /file
+  ✔ should return 401 with no Authorization header (49.3751ms)
+  ✔ should return 401 for invalid token (8.6379ms)
+  ✔ should return 404 when session not found (9.7855ms)
+  ✔ should return an empty files array when no files exist (6.7606ms)
+  ✔ should return registered files for the session key (12.0417ms)
+✔ GET /file (96.0563ms)
+▶ GET /file/:id
+  ✔ should return 401 with no auth (6.3878ms)
+  ✔ should return 401 for invalid token (3.2607ms)
+  ✔ should return 404 when session not found (token with unknown sessionId) (4.2
+685ms)                                                                            ✔ should return 400 for a non-numeric file id (5.7162ms)
+  ✔ should return 404 for a file id that does not exist in the DB (4.5993ms)    
+  ✔ should stream file content with correct headers (7.5012ms)
+  ✔ should serve vtt files with text/vtt content type (8.8259ms)
+  ✔ should accept ?token= query param instead of Authorization header (13.8204ms
+)                                                                               ✔ GET /file/:id (55.4132ms)
+▶ DELETE /file/:id
+  ✔ should return 401 with no auth (4.9123ms)
+  ✔ should return 400 for a non-numeric id (4.8796ms)
+  ✔ should return 404 when session is not found (3.4263ms)
+  ✔ should return 404 for unknown file id (4.0928ms)
+  ✔ should delete the DB record and disk file, returning ok (14.1238ms)
+✔ DELETE /file/:id (32.0457ms)
+▶ GET /health
+  ✔ should return 200 with ok, uptime, and activeSessions (40.2408ms)
+  ✔ should not require authentication (6.331ms)
+  ✔ should reflect active session count (5.7069ms)
+✔ GET /health (55.0703ms)
+▶ formatVttTime
+  ✔ zero (1.2124ms)
+  ✔ sub-second (0.2108ms)
+  ✔ seconds (0.2141ms)
+  ✔ minutes (0.2725ms)
+  ✔ hours (0.1795ms)
+✔ formatVttTime (3.6956ms)
+▶ buildWebVTT
+  ✔ empty cues returns bare WEBVTT (0.3813ms)
+  ✔ single cue with default end (3.5 s, capped at seg end) (0.3097ms)
+  ✔ single cue end capped at segment boundary (0.2534ms)
+  ✔ two cues: first ends at second start minus gap (0.2556ms)
+  ✔ cue starting at or after segment end is skipped (0.2562ms)
+  ✔ negative offset cue clamped to 0 (1.4577ms)
+✔ buildWebVTT (3.4218ms)
+▶ buildPlaylist
+  ✔ single segment playlist (0.7822ms)
+  ✔ rolling window with sequence > 0 (0.1794ms)
+✔ buildPlaylist (1.1175ms)
+▶ HlsSubsManager
+  ✔ getLanguages returns [] for unknown key (1.0904ms)
+  ✔ getPlaylist returns null for unknown key (0.1723ms)
+  ✔ addCue starts tracking a key (0.4506ms)
+  ✔ after flush, playlist and segment file exist (19.4096ms)
+  ✔ multiple languages tracked independently (16.2223ms)
+  ✔ rolling window evicts oldest segment when full (14.9253ms)
+  ✔ empty segment written when no cues in window (5.7327ms)
+  ✔ stopSubs cleans up state and files (7.769ms)
+  ✔ invalid lang tags are ignored (0.2693ms)
+✔ HlsSubsManager (71.5563ms)
+▶ POST /icons — upload
+  ✔ returns 201 on valid PNG upload (71.764ms)
+  ✔ returns 201 on valid SVG upload (15.5749ms)
+  ✔ returns 400 when filename is missing (9.6777ms)
+  ✔ returns 400 when mimeType is unsupported (8.3317ms)
+  ✔ returns 400 when data is missing (7.5137ms)
+  ✔ returns 400 when PNG magic bytes are invalid (8.9749ms)
+  ✔ returns 400 when SVG content is not valid SVG (5.9657ms)
+  ✔ returns 401 without Authorization (4.5908ms)
+  ✔ writes icon file to ICONS_DIR on upload (7.5702ms)
+✔ POST /icons — upload (150.3312ms)
+▶ GET /icons — list
+  ✔ returns empty array when none uploaded (7.788ms)
+  ✔ includes uploaded icon in the list (8.4504ms)
+  ✔ returns 401 without Authorization (5.4533ms)
+✔ GET /icons — list (22.0674ms)
+▶ GET /icons/:id — public serve
+  ✔ returns 200 with correct Content-Type (10.7586ms)
+  ✔ sets Access-Control-Allow-Origin: * (6.8766ms)
+  ✔ sets Cache-Control: public (6.6188ms)
+  ✔ returns 404 for unknown id (7.9386ms)
+  ✔ returns 400 for non-numeric id (5.8243ms)
+  ✔ returns valid PNG binary content (6.3355ms)
+  ✔ does not require Authorization (public) (6.4259ms)
+✔ GET /icons/:id — public serve (51.2574ms)
+▶ DELETE /icons/:id
+  ✔ deletes icon and removes from list (6.6046ms)
+  ✔ returns 404 for icon owned by different key (4.8669ms)
+  ✔ returns 401 without Authorization (2.4728ms)
+  ✔ returns 404 for unknown id (2.2338ms)
+✔ DELETE /icons/:id (16.4013ms)
+▶ Admin middleware
+  ✔ should return 503 when ADMIN_KEY is not set (43.8953ms)
+  ✔ should return 401 when X-Admin-Key header is missing (7.2203ms)
+  ✔ should return 403 when X-Admin-Key does not match (11.1759ms)
+✔ Admin middleware (65.6241ms)
+▶ GET /keys
+  ✔ should return empty list when no keys exist (6.9312ms)
+  ✔ should return all keys in the database (4.6182ms)
+  ✔ should format keys with key, owner, active, expires, createdAt (5.5979ms)   
+✔ GET /keys (17.7255ms)
+▶ POST /keys
+  ✔ should return 400 when owner is missing (26.9987ms)
+  ✔ should create key with auto-generated UUID when no key provided (4.9311ms)  
+  ✔ should create key with custom key value (7.0641ms)
+  ✔ should create key with expiration date (6.2333ms)
+  ✔ should create key without expiration (never expires) (3.891ms)
+✔ POST /keys (49.9694ms)
+▶ GET /keys/:key
+  ✔ should return 404 for non-existent key (3.3864ms)
+  ✔ should return key details for existing key (2.7668ms)
+✔ GET /keys/:key (6.4302ms)
+▶ PATCH /keys/:key
+  ✔ should return 404 for non-existent key (4.2181ms)
+  ✔ should update owner (3.2666ms)
+  ✔ should update expires (4.2109ms)
+  ✔ should update both owner and expires (3.3384ms)
+  ✔ should clear expiration when expires is null (2.8563ms)
+✔ PATCH /keys/:key (18.3818ms)
+▶ DELETE /keys/:key
+  ✔ should return 404 for non-existent key (2.9885ms)
+  ✔ should soft-delete (revoke) by default (3.0032ms)
+  ✔ should permanently delete when permanent=true (5.7945ms)
+✔ DELETE /keys/:key (12.1268ms)
+▶ POST /live
+  ✔ should return 400 if apiKey is missing (69.7894ms)
+  ✔ should return 400 if domain is missing (8.8265ms)
+  ✔ should return 401 for unknown API key (6.5384ms)
+  ✔ should return 401 for revoked API key (6.3931ms)
+[LCYT] Caption sender started
+[LCYT] Caption sender stopped. Total captions sent: 0
+  ✔ should return 200 with token, sessionId, sequence, syncOffset, startedAt for
+ valid key (target-array mode, no streamKey) (12.9084ms)                        [LCYT] Caption sender started
+[LCYT] ⚠ Heartbeat #0 returned status 401
+[LCYT] ⚠ Could not parse server timestamp — syncOffset not updated
+  ✔ should return 200 with token for valid key with legacy streamKey (738.7962ms
+)                                                                                 ✔ should store the session in the store (target-array mode) (2.3887ms)        
+[LCYT] Caption sender started
+[LCYT] ⚠ Heartbeat #0 returned status 401
+[LCYT] ⚠ Could not parse server timestamp — syncOffset not updated
+  ✔ should store the session in the store (legacy streamKey mode) (697.1791ms)  
+  ✔ should be idempotent — re-registration returns same token (4.8952ms)        
+  ✔ should set Access-Control-Allow-Origin header to domain (2.0389ms)
+  ✔ JWT payload should contain sessionId and apiKey, and must not expose streamK
+ey or domain (2.9718ms)                                                         ✔ POST /live (1556.4104ms)
+▶ GET /live
+  ✔ should return 401 if no Authorization header (2.0825ms)
+  ✔ should return 401 for invalid token (1.6021ms)
+  ✔ should return 404 if session not found (1.5944ms)
+  ✔ should return 200 with sequence and syncOffset for valid session (3.01ms)   
+✔ GET /live (8.5489ms)
+▶ DELETE /live
+  ✔ should return 401 if no Authorization header (1.4544ms)
+  ✔ should return 401 for invalid token (1.2274ms)
+  ✔ should return 404 if session not found (1.4114ms)
+  ✔ should return 200 with removed=true and remove the session (2.9234ms)       
+✔ DELETE /live (7.239ms)
+▶ LocalFfmpegRunner
+  ✔ starts and stops a process (uses node as a harmless subprocess) (17.1506ms) 
+✔ LocalFfmpegRunner (18.6979ms)
+[hls:key1] Starting HLS: rtmp://127.0.0.1:1935/live/key1 → \tmp\hls\key1\index.m
+3u8                                                                             (node:40592) ExperimentalWarning: Module mocking is an experimental feature and 
+might change at any time                                                        (Use `node --trace-warnings ...` to show where the warning was created)
+▶ HlsManager — constructor
+  ✔ uses provided options (1.0939ms)
+  ✖ hlsDir() returns root/key path (6.3306ms)
+  ✔ isRunning() returns false initially (0.3038ms)
+✖ HlsManager — constructor (9.2218ms)
+[hls:key2] Starting HLS: rtmp://127.0.0.1:1935/live/key2 → \tmp\hls\key2\index.m
+3u8                                                                             ▶ HlsManager — start()
+  ✔ resolves and marks the key as running (9.8112ms)
+[hls:mykey] Starting HLS: rtmp://127.0.0.1:1935/live/mykey → \tmp\hls\mykey\inde
+x.m3u8                                                                            ✔ creates the HLS output directory (2.9687ms)
+[hls:dupkey] Starting HLS: rtmp://127.0.0.1:1935/live/dupkey → \tmp\hls\dupkey\i
+ndex.m3u8                                                                         ✔ passes correct ffmpeg args (stream copy mode) (1.3623ms)
+[hls:dupkey] Starting HLS: rtmp://127.0.0.1:1935/live/dupkey → \tmp\hls\dupkey\i
+ndex.m3u8                                                                       [hls:dupkey] HLS stream ended
+[hls:errkey] Starting HLS: rtmp://127.0.0.1:1935/live/errkey → \tmp\hls\errkey\i
+ndex.m3u8                                                                       [hls:errkey] ffmpeg error: ENOENT
+[hls:stopkey] Starting HLS: rtmp://127.0.0.1:1935/live/stopkey → \tmp\hls\stopke
+y\index.m3u8                                                                      ✔ stops any existing process before starting a new one (6.036ms)
+  ✔ rejects when the process emits an error (nextTick fires before setImmediate)
+ (2.7137ms)
+✔ HlsManager — start() (23.5909ms)
+▶ HlsManager — stop()
+  ✔ resolves immediately when the key is not running (0.6746ms)
+[hls:stopkey] HLS stream ended
+  ✔ kills the process and marks key as not running (3.1493ms)
+✔ HlsManager — stop() (4.176ms)
+[hls:key-a] Starting HLS: rtmp://127.0.0.1:1935/live/key-a → \tmp\hls\key-a\inde
+x.m3u8                                                                            ✔ kills the process and marks key as not running (3.1493ms)
+✔ HlsManager — stop() (4.176ms)
+[hls:key-b] Starting HLS: rtmp://127.0.0.1:1935/live/key-b → \tmp\hls\key-b\inde
+x.m3u8                                                                          [hls:key-a] HLS stream ended
+[hls:key-b] HLS stream ended
+[radio:rkey] Starting HLS: rtmp://127.0.0.1:1935/live/rkey → \tmp\radio\rkey\ind
+ex.m3u8                                                                         ▶ HlsManager — stopAll()
+  ✔ stops all running processes (8.1596ms)
+  ✔ is a no-op when no processes are running (0.3884ms)
+✔ HlsManager — stopAll() (8.8041ms)
+▶ RadioManager
+  ✖ hlsDir() returns root/key (1.6657ms)
+[radio:rkey] Starting HLS: rtmp://127.0.0.1:1935/live/rkey → \tmp\radio\rkey\ind
+ex.m3u8                                                                           ✔ start() marks key as running and spawns ffmpeg (4.7304ms)
+[radio:rkey] Starting HLS: rtmp://127.0.0.1:1935/live/rkey → \tmp\radio\rkey\ind
+ex.m3u8                                                                           ✔ uses audio-only flags (-vn, aac) (0.9745ms)
+[radio:rkey] HLS stream ended
+[radio:r1] Starting HLS: rtmp://127.0.0.1:1935/live/r1 → \tmp\radio\r1\index.m3u
+8                                                                                 ✔ stop() marks key as not running (1.1213ms)
+[radio:r2] Starting HLS: rtmp://127.0.0.1:1935/live/r2 → \tmp\radio\r2\index.m3u
+8                                                                               [radio:r1] HLS stream ended
+[radio:r2] HLS stream ended
+[preview:pkey] Starting preview: rtmp://127.0.0.1:1935/live/pkey → \tmp\prev\pke
+y\incoming.jpg                                                                    ✔ stopAll() clears all keys (1.2817ms)
+✖ RadioManager (10.1847ms)
+▶ PreviewManager — constructor
+  ✖ previewPath() returns root/key/incoming.jpg (0.7211ms)
+  ✔ isRunning() returns false initially (0.1555ms)
+✖ PreviewManager — constructor (1.0305ms)
+[preview:pkey] Starting preview: rtmp://127.0.0.1:1935/live/pkey → \tmp\prev\pke
+y\incoming.jpg                                                                  ▶ PreviewManager — start()
+  ✔ resolves and marks key as running (5.3286ms)
+[preview:pkey] Starting preview: rtmp://127.0.0.1:1935/live/pkey → \tmp\prev\pke
+y\incoming.jpg                                                                    ✔ uses image2 muxer with fps filter and -update 1 (0.9637ms)
+[preview:pk] Starting preview: rtmp://127.0.0.1:1935/live/pk → \tmp\prev\pk\inco
+ming.jpg                                                                          ✔ creates the preview output directory (0.6752ms)
+✔ PreviewManager — start() (7.2247ms)
+▶ PreviewManager — stop() / stopAll()
+  ✔ stop() resolves when key is not running (0.3077ms)
+[preview:pk] Preview stream ended
+[preview:p1] Starting preview: rtmp://127.0.0.1:1935/live/p1 → \tmp\prev\p1\inco
+ming.jpg                                                                          ✔ stop() marks key as not running (1.5806ms)
+[preview:p2] Starting preview: rtmp://127.0.0.1:1935/live/p2 → \tmp\prev\p2\inco
+ming.jpg                                                                        [preview:p1] Preview stream ended
+[preview:p2] Preview stream ended
+  ✔ stopAll() clears all keys (1.0888ms)
+✔ PreviewManager — stop() / stopAll() (3.2061ms)
+▶ POST /mic
+  ✔ should return 401 with no Authorization header (67.8491ms)
+  ✔ should return 401 for invalid token (9.1581ms)
+  ✔ should return 404 when session not found (16.836ms)
+  ✔ should return 400 when clientId is missing (6.7973ms)
+  ✔ should return 400 when action is invalid (6.4079ms)
+  ✔ claim: sets holder and returns ok with holder (6.4569ms)
+  ✔ claim: overwrites existing holder (soft lock is advisory) (9.0152ms)        
+  ✔ release: clears holder when requester is the current holder (10.8622ms)     
+  ✔ release: is a no-op when requester is not the current holder (6.9919ms)     
+  ✔ release: is a no-op when no one holds the mic (4.7138ms)
+  ✔ emits mic_state event after claim (4.3282ms)
+  ✔ emits mic_state event after release (4.9869ms)
+✔ POST /mic (158.8369ms)
+✔ test\pipe-utils.test.js (99.6331ms)
+▶ GET /preview/:key/incoming.jpg — key validation
+  ✔ returns 400 for a key that is too short (77.54ms)
+  ✔ returns 400 for a key with invalid characters (7.641ms)
+✔ GET /preview/:key/incoming.jpg — key validation (88.2848ms)
+▶ GET /preview/:key/incoming.jpg — file missing
+  ✔ returns 404 when preview file does not exist (10.9959ms)
+✔ GET /preview/:key/incoming.jpg — file missing (11.3342ms)
+▶ GET /preview/:key/incoming.jpg — file present
+  ✔ returns 200 with image/jpeg content type (10.3375ms)
+  ✔ sets CORS header to * (4.6603ms)
+  ✔ sets Cache-Control with public max-age=5 (4.554ms)
+  ✔ sets Last-Modified header (4.248ms)
+  ✔ returns 304 when If-Modified-Since is in the future (5.6449ms)
+  ✔ returns 200 when If-Modified-Since is in the past (6.136ms)
+✔ GET /preview/:key/incoming.jpg — file present (36.9002ms)
+▶ OPTIONS /preview/:key/* — CORS preflight
+  ✔ returns 204 with CORS headers (5.5942ms)
+✔ OPTIONS /preview/:key/* — CORS preflight (5.8906ms)
+▶ radio_enabled DB column
+  ✔ defaults to false on createKey (1.9517ms)
+  ✔ can be set to true on createKey (0.4747ms)
+  ✔ isRadioEnabled returns false for unknown key (0.2208ms)
+  ✔ isRadioEnabled returns true after updateKey (0.841ms)
+  ✔ isRadioEnabled returns false after disabling (0.4829ms)
+✔ radio_enabled DB column (20.2456ms)
+▶ RadioManager
+  ✔ hlsDir returns path inside hlsRoot (0.4987ms)
+  ✔ isRunning returns false for unstarted key (0.3201ms)
+  ✔ stop resolves immediately if not running (0.5916ms)
+  ✔ stopAll resolves immediately when no processes running (0.3294ms)
+✔ RadioManager (3.7336ms)
+▶ POST /radio (nginx-rtmp single-URL callbacks)
+  ✔ returns 400 if name is missing (64.5591ms)
+  ✔ returns 403 when radio is not enabled for the key (7.5413ms)
+  ✔ returns 200 and starts HLS when radio is enabled (call=publish) (6.6076ms)  
+  ✔ returns 200 and stops HLS on call=publish_done (4.3937ms)
+  ✔ returns 400 for unknown call type (4.2506ms)
+✔ POST /radio (nginx-rtmp single-URL callbacks) (108.0831ms)
+▶ POST /radio/on_publish and /radio/on_publish_done
+  ✔ POST /radio/on_publish starts enabled key (12.5177ms)
+  ✔ POST /radio/on_publish denies disabled key (6.1031ms)
+  ✔ POST /radio/on_publish_done stops the stream (5.739ms)
+✔ POST /radio/on_publish and /radio/on_publish_done (35.0137ms)
+▶ GET /radio/:key/index.m3u8
+  ✔ returns 404 when no stream is live (11.5308ms)
+  ✔ returns 400 for too-short key (5.0617ms)
+  ✔ returns 400 for key with path traversal characters (7.0527ms)
+  ✔ serves playlist with correct content-type when file exists (10.0065ms)      
+✔ GET /radio/:key/index.m3u8 (44.9335ms)
+▶ GET /radio/:key/:segment
+  ✔ returns 400 for non-ts segment names (5.2745ms)
+  ✔ returns 400 for segment with wrong numeric format (2.5627ms)
+  ✔ returns 404 for valid segment name that does not exist (1.7567ms)
+  ✔ serves segment with correct content-type when file exists (3.3753ms)        
+✔ GET /radio/:key/:segment (3028.9286ms)
+▶ GET /radio/:key/player.js
+  ✔ returns 400 for too-short key (2.375ms)
+  ✔ returns JavaScript content-type (1.8885ms)
+  ✔ snippet contains the radio key and HLS URL (1.1066ms)
+  ✔ snippet creates an audio element (1.0268ms)
+  ✔ has CORS header (0.9632ms)
+✔ GET /radio/:key/player.js (11.4572ms)
+✓ ffmpeg found — RTMP relay is available.
+✓ ffmpeg found — RTMP relay is available.
+✓ ffmpeg found — RTMP relay is available.
+✓ ffmpeg found — RTMP relay is available.
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/key1                                                    (node:44804) ExperimentalWarning: Module mocking is an experimental feature and 
+might change at any time                                                        (Use `node --trace-warnings ...` to show where the warning was created)
+▶ probeFfmpeg
+  ✔ returns available=true when ffmpeg exists (2.5075ms)
+  ✔ returns hasLibx264=true when encoder is in output (0.525ms)
+  ✔ returns hasEia608=true when encoder is in output (0.3369ms)
+  ✔ returns hasSubrip=true when demuxer is in output (0.2861ms)
+✔ probeFfmpeg (5.212ms)
+▶ RtmpRelayManager — constructor
+  ✔ isRunning() returns false initially (0.4321ms)
+  ✔ runningSlots() returns [] when nothing running (2.3587ms)
+  ✔ startedAt() returns null initially (0.4425ms)
+  ✔ hasCea708() returns false initially (0.2413ms)
+  ✔ isPublishing() returns false initially (0.2708ms)
+✔ RtmpRelayManager — constructor (5.6175ms)
+▶ RtmpRelayManager — publish tracking
+  ✔ markPublishing / isPublishing / markNotPublishing (1.1784ms)
+✔ RtmpRelayManager — publish tracking (1.3698ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/key1                                                    ▶ RtmpRelayManager — start()
+  ✔ resolves and marks key as running (33.7452ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/key1                                                      ✔ uses -c copy in simple stream copy mode (2.293ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/dup                                                       ✔ includes the target URL in tee args (3.0758ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/dup                                                     [rtmp] Relay ended for key dup
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/empty                                                     ✔ stops any existing process before starting new one (1.7548ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/k                                                         ✔ resolves immediately with no relays (stops existing proc) (1.1536ms)        
+  ✔ rejects when ffmpegCaps.available is false (1.6172ms)
+[rtmp] Relay ended for key empty
+[rtmp] Starting relay (2 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/k                                                         ✔ records startedAt after start() (1.1156ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/k                                                         ✔ runningSlots() returns correct slot numbers (0.9242ms)
+✔ RtmpRelayManager — start() (46.4848ms)
+▶ RtmpRelayManager — stop()
+  ✔ resolves immediately when key is not running (0.4545ms)
+[rtmp] Relay ended for key k
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/k                                                         ✔ marks key as not running after stop() (6.2569ms)
+[rtmp] Relay ended for key k
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/a                                                         ✔ stopKey() is an alias for stop() (1.3867ms)
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/b                                                       [rtmp] Relay ended for key a
+[rtmp] Relay ended for key b
+[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtm
+p://rtmp.lcyt.fi/stream/k                                                         ✔ stopAll() stops all running processes (1.0684ms)
+✔ RtmpRelayManager — stop() (9.6296ms)
+... (log truncated here for brevity) ...
+ℹ tests 610
+ℹ suites 148
+ℹ pass 607
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 8608.606
+
+✖ failing tests:
+
+test at test\managers.test.js:98:3
+✖ hlsDir() returns root/key path (6.3306ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:    
+
+    assert.ok(p.includes('/tmp/hls'))
+
+      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/p
+ackages/lcyt-backend/test/managers.test.js:102:12)                                    at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:788:18)   
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1518:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358
+:3) {                                                                               generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\managers.test.js:213:3
+✖ hlsDir() returns root/key (1.6657ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:    
+
+    assert.ok(p.includes('/tmp/radio'))
+
+      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/p
+ackages/lcyt-backend/test/managers.test.js:216:12)                                    at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at process.processTicksAndRejections (node:internal/process/task_queues:10
+3:5)                                                                                  at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1518:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7
+) {                                                                                 generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at test\managers.test.js:256:3
+✖ previewPath() returns root/key/incoming.jpg (0.7211ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:    
+
+    assert.ok(p.includes('/tmp/prev'))
+
+      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/p
+ackages/lcyt-backend/test/managers.test.js:259:12)                                    at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at node:internal/test_runner/test:1516:71
+      at node:internal/per_context/primordials:466:82
+      at new Promise (<anonymous>)
+      at new SafePromise (node:internal/per_context/primordials:435:3)
+      at node:internal/per_context/primordials:466:9
+      at Array.map (<anonymous>) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+npm error Lifecycle script `test` failed with error:
+npm error code 1
+npm error path C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend       
+npm error workspace lcyt-backend@1.0.0
+npm error location C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend   
+npm error command failed
+npm error command C:\WINDOWS\system32\cmd.exe /d /s /c cross-env ALLOWED_DOMAINS
+=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/*.test.js                                     
+
+Command exited with code 1

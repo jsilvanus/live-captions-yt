@@ -1,3 +1,53 @@
+version: '3.8'
+
+services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    ports:
+      - "2375:2375"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  lcyt-ffmpeg:
+    build:
+      context: ./images/lcyt-ffmpeg
+    image: lcyt-ffmpeg:local
+    container_name: lcyt-ffmpeg
+    restart: unless-stopped
+    volumes:
+      - cea-pipes:/var/cea-pipes
+
+  lcyt-backend:
+    image: lcyt-backend:latest
+    container_name: lcyt-backend
+    depends_on:
+      - docker-socket-proxy
+      - lcyt-ffmpeg
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Use the docker runner so the backend launches ffmpeg containers
+      - FFMPEG_RUNNER=docker
+      # Backend will use the socket-proxy to talk to the Docker daemon
+      - DOCKER_HOST=http://docker-socket-proxy:2375
+      # Directory inside backend container mapped to the named volume
+      - CEA_PIPES_DIR=/var/cea-pipes
+    volumes:
+      - cea-pipes:/var/cea-pipes
+
+volumes:
+  cea-pipes:
+    driver: local
+
+# Notes:
+# - This compose file is a minimal development setup. In production run the
+#   socket-proxy with appropriate network/security controls and do NOT expose
+#   the Docker API to untrusted networks.
+# - The lcyt-backend image shown above is a placeholder. Replace with your
+#   built backend image (local tag or registry path) as needed.
 services:
   # LCYT API (3000) and MCP server (3001)
   # (frontend is served as static files separately by nginx)
