@@ -9,6 +9,27 @@ app.use(express.json());
 const workers = new Map(); // workerId -> { id, privateIp, maxJobs, jobCount, lastSeen }
 const jobs = new Map(); // jobId -> { id, type, apiKey, workerId }
 
+// Pending burst provisioning queue: jobIds waiting for a burst VM to become available
+const pendingJobs = [];
+let concurrentBurstCreates = 0;
+const MAX_CONCURRENT_BURST_CREATES = parseInt(process.env.MAX_CONCURRENT_BURST_CREATES || '2', 10);
+const ORCHESTRATOR_MAX_PENDING_JOBS = parseInt(process.env.ORCHESTRATOR_MAX_PENDING_JOBS || '50', 10);
+
+let hetznerClient = null;
+if (process.env.HETZNER_API_TOKEN) {
+  try {
+    // Lazy import for compatibility with current project style
+    const { createHetznerClient } = require('./hetzner.js');
+    hetznerClient = createHetznerClient();
+    // eslint-disable-next-line no-console
+    console.log('hetzner client configured, base:', hetznerClient.base);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('hetzner client init failed:', err && err.message);
+    hetznerClient = null;
+  }
+}
+
 function now() {
   return Date.now();
 }
@@ -31,6 +52,24 @@ app.post("/compute/workers/register", (req, res) => {
   };
   workers.set(id, record);
   metrics.set && metrics.set('active_workers', workers.size);
+
+  // If there are pending jobs queued for burst servers, assign as much as this worker can handle
+  try {
+    while ((record.jobCount || 0) < (record.maxJobs || 0) && pendingJobs.length > 0) {
+      const jobId = pendingJobs.shift();
+      if (!jobId) break;
+      // assign job
+      record.jobCount = (record.jobCount || 0) + 1;
+      workers.set(record.id, record);
+      jobs.set(jobId, { id: jobId, type: 'burst', apiKey: null, workerId: record.id });
+      // eslint-disable-next-line no-console
+      console.log(`assigned pending job ${jobId} -> worker ${record.id}`);
+    }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('error assigning pending jobs on register', err && err.message);
+  }
+
   return res.status(200).json({ ok: true });
 });
 
@@ -64,7 +103,60 @@ app.post("/compute/jobs", (req, res) => {
   }
 
   if (!assigned) {
+    // No warm capacity. Try to queue for burst VM creation if configured.
     metrics.inc && metrics.inc('hetzner_rate_limit_backoff_total', 1);
+
+    // If hetzner is configured, try to provision a burst server in background and enqueue job
+    if (hetznerClient) {
+      if (pendingJobs.length >= ORCHESTRATOR_MAX_PENDING_JOBS) {
+        return res.status(503).json({ error: 'pending queue full' });
+      }
+
+      // Enqueue the job pending a burst VM
+      pendingJobs.push(id);
+      // Kick off a create if we have capacity
+      if (concurrentBurstCreates < MAX_CONCURRENT_BURST_CREATES) {
+        concurrentBurstCreates += 1;
+        (async () => {
+          try {
+            const snapshot = process.env.HETZNER_SNAPSHOT_ID || null;
+            const serverType = process.env.HETZNER_SERVER_TYPE_BURST || 'cx31';
+            const name = `lcyt-burst-${Date.now().toString(36)}`;
+            // eslint-disable-next-line no-console
+            console.log('creating burst server', { name, serverType, snapshot });
+            const server = await hetznerClient.createBurstServer(snapshot, serverType, null, name, null);
+            // start polling in background
+            (async () => {
+              try {
+                const poll = await hetznerClient.pollServerReady(server.id);
+                if (poll && poll.ready) {
+                  // server is ready - log and wait for worker to register
+                  // eslint-disable-next-line no-console
+                  console.log('burst server ready', server.id);
+                } else {
+                  // eslint-disable-next-line no-console
+                  console.error('burst server did not become ready', server.id);
+                }
+              } catch (pollErr) {
+                // eslint-disable-next-line no-console
+                console.error('error while polling server', pollErr && pollErr.message);
+              }
+            })();
+          } catch (err) {
+            // eslint-disable-next-line no-console
+            console.error('burst create failed', err && err.message);
+          } finally {
+            concurrentBurstCreates = Math.max(0, concurrentBurstCreates - 1);
+          }
+        })();
+      }
+
+      // Store the job in pending map (jobs not yet assigned)
+      jobs.set(id, { id, type, apiKey: apiKey || null, workerId: null, pending: true });
+      return res.status(202).json({ queued: true, pendingJobs: pendingJobs.length });
+    }
+
+    // No hetzner configured -> tell caller to retry
     return res.status(503).json({ retryAfterMs: 5000 });
   }
 
