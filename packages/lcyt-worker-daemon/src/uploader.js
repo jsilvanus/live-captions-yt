@@ -1,21 +1,13 @@
 import fs from 'fs';
 import path from 'path';
 
-// Minimal uploader skeleton: watches a directory for new files and calls the provided
-// `uploadFn(localPath, remotePath)` callback. If S3 env vars are not set, it's a no-op.
-
+// Minimal uploader skeleton: watches a directory for new files and calls the
+// provided `uploadFn(localPath, remotePath)` callback.
 export function createUploader({ watchDir, prefix = '', uploadFn }) {
   if (!watchDir) throw new Error('watchDir required');
   let watcher = null;
 
   function start() {
-    // noop if S3 not configured
-    const s3Endpoint = process.env.S3_ENDPOINT || process.env.S3_URL || '';
-    if (!s3Endpoint) {
-      console.warn('S3 endpoint not configured; uploader will be a no-op');
-      return { stop: () => {} };
-    }
-
     // ensure directory exists
     try { fs.mkdirSync(watchDir, { recursive: true }); } catch (e) {}
 
