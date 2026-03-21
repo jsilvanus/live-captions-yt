@@ -1,6 +1,10 @@
 import express from 'express';
 import { spawn } from 'child_process';
 
+import path from "path"
+import createUploader from "./uploader.js"
+import { createS3UploadFn } from "./s3-uploader.js"
+
 const DEFAULT_PORT = process.env.PORT || 5000;
 const WORKER_ID = process.env.WORKER_ID || 'worker-0';
 
@@ -31,6 +35,17 @@ export function createApp() {
       record.status = 'running';
       record.workerId = WORKER_ID;
       jobs.set(jobId, record);
+    // Start uploader if job requests HLS/preview output
+    try {
+      const out = plan.hlsOutputPath || plan.previewOutputPath || null;
+      if (out) {
+        const uploadFn = createS3UploadFn({ baseKey: plan.hlsOutputUrl ||  });
+        const up = createUploader({ watchDir: out, prefix: , uploadFn });
+        record._uploader = up.start();
+      }
+    } catch (e) { console.error("uploader wiring error", e); }
+
+
       return res.json({ jobId, workerId: WORKER_ID });
     }
 
@@ -67,6 +82,7 @@ export function createApp() {
       } catch (e) {}
     }
 
+    if (record._uploader && typeof record._uploader.stop === "function") { try { record._uploader.stop(); } catch (e) {} }
     record.status = 'stopped';
     jobs.delete(id);
     return res.json({ ok: true });
