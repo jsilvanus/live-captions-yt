@@ -1,9 +1,9 @@
 import express from 'express';
 import { spawn } from 'child_process';
 
-import path from "path"
-import createUploader from "./uploader.js"
-import { createS3UploadFn } from "./s3-uploader.js"
+import path from 'path';
+import createUploader from './uploader.js';
+import { createS3UploadFn } from './s3-uploader.js';
 
 const DEFAULT_PORT = process.env.PORT || 5000;
 const WORKER_ID = process.env.WORKER_ID || 'worker-0';
@@ -35,18 +35,7 @@ export function createApp() {
       record.status = 'running';
       record.workerId = WORKER_ID;
       jobs.set(jobId, record);
-    // Start uploader if job requests HLS/preview output
-    try {
-      const out = plan.hlsOutputPath || plan.previewOutputPath || null;
-      if (out) {
-        const uploadFn = createS3UploadFn({ baseKey: plan.hlsOutputUrl ||  });
-        const up = createUploader({ watchDir: out, prefix: , uploadFn });
-        record._uploader = up.start();
-      }
-    } catch (e) { console.error("uploader wiring error", e); }
-
-
-      return res.json({ jobId, workerId: WORKER_ID });
+    return res.json({ jobId, workerId: WORKER_ID });
     }
 
     // Spawn a placeholder long-running process. Prefer 'sleep' on unix-like, otherwise fallback to a node infinite loop.
@@ -64,6 +53,17 @@ export function createApp() {
     record.status = 'running';
     record.workerId = WORKER_ID;
     jobs.set(jobId, record);
+    // Start uploader if job requests HLS/preview output
+    try {
+      const out = plan.hlsOutputPath || plan.previewOutputPath || null;
+      if (out) {
+        const uploadFn = createS3UploadFn({ baseKey: plan.hlsOutputUrl || '' });
+        const up = createUploader({ watchDir: out, prefix: '', uploadFn });
+        record._uploader = up.start();
+      }
+    } catch (e) { console.error('uploader wiring error', e); }
+
+
 
     // Detach so it continues if parent exits unexpectedly; keep a handle so we can kill it later
     try { proc.unref(); } catch (_) {}
