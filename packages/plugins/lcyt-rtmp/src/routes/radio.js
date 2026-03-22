@@ -37,10 +37,13 @@ function setCorsHeaders(res, origin = '*') {
  *
  * @param {string} radioKey
  * @param {string} backendOrigin  e.g. "https://api.example.com"
+ * @param {import('../radio-manager.js').RadioManager} radioManager
  * @returns {string} JavaScript source
  */
-function buildPlayerSnippet(radioKey, backendOrigin) {
-  const streamUrl = `${backendOrigin}/radio/${radioKey}/index.m3u8`;
+function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
+  const streamUrl = radioManager
+    ? radioManager.getPublicHlsUrl(radioKey, backendOrigin)
+    : `${backendOrigin}/radio/${radioKey}/index.m3u8`;
 
   return `/* lcyt radio player — key: ${radioKey} */
 (function (streamUrl) {
@@ -100,19 +103,24 @@ function buildPlayerSnippet(radioKey, backendOrigin) {
 /**
  * Factory for the /radio router.
  *
- * Handles three concerns:
+ * Handles four concerns:
  *
- *  1. nginx-rtmp callbacks (no auth — nginx is the caller):
+ *  1. nginx-rtmp / MediaMTX callbacks (no auth — nginx/mediamtx is the caller):
  *       POST /radio               — call=publish → start HLS; call=publish_done → stop
  *       POST /radio/on_publish    — nginx on_publish callback (alternative URL style)
  *       POST /radio/on_publish_done — nginx on_publish_done callback
  *
- *  2. HLS file serving (public, CORS *):
+ *  2. HLS file serving (public, CORS *) — ffmpeg mode only:
  *       GET /radio/:key/index.m3u8 — HLS playlist
  *       GET /radio/:key/:segment   — HLS segment (*.ts)
  *
  *  3. Embeddable player snippet (public, CORS *):
  *       GET /radio/:key/player.js  — self-contained vanilla-JS audio player
+ *       GET /radio/:key/info       — JSON: { live, hlsUrl, slug? } (no secrets exposed)
+ *
+ *  In MediaMTX mode: HLS files are NOT served from the filesystem. The player.js
+ *  and info endpoints return the nginx slug URL (from NginxManager) or the backend
+ *  proxy URL (/radio/:key/…) as fallback.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../radio-manager.js').RadioManager} radioManager
@@ -206,7 +214,28 @@ export function createRadioRouter(db, radioManager) {
     setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(buildPlayerSnippet(key, backendOrigin));
+    res.send(buildPlayerSnippet(key, backendOrigin, radioManager));
+  });
+
+  // GET /radio/:key/info — JSON stream info (public)
+  // Returns the public HLS URL and live status without exposing the API key in the URL.
+  // When NginxManager is active, hlsUrl uses the slug-based nginx proxy URL.
+  router.get('/:key/info', hlsRateLimit, (req, res) => {
+    const { key } = req.params;
+    if (!RADIO_KEY_RE.test(key)) {
+      return res.status(400).json({ error: 'Invalid radio key format' });
+    }
+
+    const backendOrigin = process.env.BACKEND_URL
+      || `${req.protocol}://${req.get('host')}`;
+
+    const live    = radioManager.isRunning(key);
+    const hlsUrl  = radioManager.getPublicHlsUrl(key, backendOrigin);
+    const slug    = radioManager.getSlug(key);
+
+    setCorsHeaders(res, getEmbedCors(db, key));
+    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.json({ live, hlsUrl, ...(slug ? { slug } : {}) });
   });
 
   // GET /radio/:key/index.m3u8 — HLS playlist

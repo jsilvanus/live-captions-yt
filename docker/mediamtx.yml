@@ -1,0 +1,108 @@
+# ─── MediaMTX configuration for LCYT ────────────────────────────────────────
+#
+# MediaMTX acts as an RTMP/HLS media broker alongside nginx-rtmp.
+# Role in LCYT architecture:
+#   • Receives RTMP ingest (publishers push directly, or nginx-rtmp pushes here)
+#   • Serves audio-only HLS for the "radio" feature (replaces ffmpeg RadioManager)
+#   • Serves video+audio HLS for the "HLS viewer" feature (replaces ffmpeg HlsManager)
+#   • Provides a REST API at :9997 for dynamic path management and publisher control
+#
+# With RADIO_HLS_SOURCE=mediamtx in the backend:
+#   • RadioManager does NOT spawn ffmpeg for radio HLS
+#   • NginxManager writes nginx proxy locations (/r/<slug>/ → mediamtx/<apikey>/)
+#     so the API key is never exposed in public HLS URLs
+#
+# Exposed ports (see docker-compose.yml):
+#   :1935 — RTMP ingest (mapped to host :1936 to avoid conflict with nginx-rtmp)
+#   :8080 — HLS + metrics HTTP
+#   :9997 — REST API (internal only, not exposed to public)
+#
+# API auth: set MEDIAMTX_API_USER / MEDIAMTX_API_PASSWORD env vars in the backend
+# to use basic auth on the REST API.  For local dev, auth is disabled here.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Logging
+logLevel: info
+logDestinations: [stdout]
+
+# REST API (used by lcyt-rtmp MediaMtxClient for dynamic path management)
+api: yes
+apiAddress: :9997
+# Uncomment to require basic-auth on the API:
+# apiCredentials:
+#   - user: ${MEDIAMTX_API_USER}
+#     pass: ${MEDIAMTX_API_PASSWORD}
+
+# Prometheus metrics (scraped by your monitoring stack)
+metrics: yes
+metricsAddress: :9998
+
+# RTMP server (publishers push audio/video streams here)
+rtmp: yes
+rtmpAddress: :1935
+# Disable RTMPS for dev; enable with rtmpsAddress + cert in production
+rtmps: no
+
+# HLS server (served to browser/mobile HLS players)
+hls: yes
+hlsAddress: :8080
+hlsAlwaysRemux: no
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 4s
+hlsPartDuration: 200ms
+hlsSegmentMaxSize: 50MB
+hlsAllowOrigin: "*"
+# Serve HLS for a path only when there are active readers, to save resources
+hlsEncryption: no
+
+# RTSP (disabled — we use RTMP + HLS only)
+rtsp: no
+
+# WebRTC (disabled by default; can be enabled for ultra-low-latency preview)
+webrtc: no
+
+# ── Path configuration ────────────────────────────────────────────────────────
+#
+# The `~.*` wildcard catches all dynamically-created paths (all radio/HLS keys).
+# Individual paths can be added dynamically via the REST API:
+#   POST /v3/config/paths/add/<name>
+# and removed with:
+#   DELETE /v3/config/paths/delete/<name>
+#
+# The backend's RadioManager calls these APIs when streams start/stop.
+
+paths:
+  # Wildcard: accept any path name that the backend creates dynamically.
+  # Publishers arriving before the path is explicitly created are still accepted.
+  "~.*":
+    # Accept any publisher (RTMP push from nginx-rtmp or direct client push)
+    source: publisher
+
+    # HLS generation: enabled for all paths by default
+    # Audio-only paths (radio) still work — HLS.js handles audio-only streams.
+
+    # Optional: configure a runOnPublish hook to notify the backend when a
+    # publisher connects, as an alternative to nginx-rtmp on_publish callbacks.
+    # runOnPublish: curl -s -X POST http://lcyt-site:3000/radio/on_publish -d "name=$$MTX_PATH"
+    # runOnPublishRestart: no
+    # runOnUnpublish: curl -s -X POST http://lcyt-site:3000/radio/on_publish_done -d "name=$$MTX_PATH"
+
+# ── Notes for production ──────────────────────────────────────────────────────
+#
+# 1. API security: bind apiAddress to an internal/loopback address only.
+#    Never expose :9997 to the public internet.
+#
+# 2. HLS CORS: hlsAllowOrigin: "*" is required for browser players.
+#    Restrict to your domain in production if needed.
+#
+# 3. Segment storage: MediaMTX stores HLS segments in memory by default.
+#    For long-running events consider a dedicated tmpfs volume.
+#
+# 4. nginx proxy: NginxManager writes locations like:
+#      location /r/<slug>/ { proxy_pass http://mediamtx:8080/<apikey>/; }
+#    Include the generated file inside your nginx server { } block:
+#      include /etc/nginx/conf.d/lcyt-radio.conf;
+#
+# 5. For the DSK renderer (Playwright + ffmpeg): DSK still pushes RTMP to nginx-rtmp
+#    or MediaMTX. ffmpeg is only used by the DSK renderer, not for radio/HLS.

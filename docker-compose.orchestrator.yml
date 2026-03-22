@@ -1,43 +1,193 @@
 version: "3.8"
 
+# ─── Distributed compute orchestrator (Phases 4–7) ───────────────────────────
+#
+# Three-tier architecture:
+#   lcyt-backend       — LCYT API, captions, RTMP ingest. No Docker socket.
+#   lcyt-orchestrator  — Job scheduler, Hetzner VM lifecycle, worker registry.
+#   lcyt-worker-daemon — Docker socket owner, runs ffmpeg containers per job.
+#   mediamtx           — RTMP/HLS broker for radio + HLS viewer (no ffmpeg needed).
+#
+# Prerequisites:
+#   1. Copy .env.example to .env and fill in required variables (see below).
+#   2. Build or pull the required images:
+#        docker build -t lcyt-site:latest .
+#        docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
+#        docker build -t lcyt-ffmpeg:latest images/lcyt-ffmpeg/
+#   3. Create a Hetzner snapshot of a worker VM with docker + lcyt-ffmpeg pre-pulled.
+#      Set HETZNER_SNAPSHOT_ID to the snapshot ID.
+#
+# Required environment variables (.env):
+#   JWT_SECRET                — backend JWT signing key
+#   ADMIN_KEY                 — backend admin API key
+#   BACKEND_INTERNAL_TOKEN    — shared secret for backend ↔ orchestrator auth
+#   HETZNER_API_TOKEN         — Hetzner Cloud API token (for burst VM provisioning)
+#   HETZNER_NETWORK_ID        — Hetzner private network ID (for inter-VM communication)
+#   HETZNER_SNAPSHOT_ID       — ID of the pre-baked worker VM snapshot
+#
+# Optional environment variables (.env):
+#   HETZNER_SERVER_TYPE_BURST — Hetzner server type for burst workers (default: cx31)
+#   HETZNER_LOCATION          — Hetzner datacenter location (default: hel1)
+#   WARM_POOL_SIZE            — min number of warm workers to keep running (default: 1)
+#   BURST_COOLDOWN_MS         — idle ms before destroying a burst worker (default: 300000)
+#   MEDIAMTX_API_USER         — basic-auth username for MediaMTX API
+#   MEDIAMTX_API_PASSWORD     — basic-auth password for MediaMTX API
+#
+# Start:
+#   docker compose -f docker-compose.orchestrator.yml up
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
+  # ── LCYT backend (API + RTMP ingest) ───────────────────────────────────────
   lcyt-backend:
-    image: lcyt-backend:latest
-    environment:
-      - PORT=3000
-      - JWT_SECRET=devsecret
-    ports:
-      - "3000:3000"
+    image: lcyt-site:latest
+    container_name: lcyt-backend
     restart: unless-stopped
-    # mount for local dev (optional)
-    volumes:
-      - ./:/workspace:ro
-
-  lcyt-orchestrator:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    # For local development we run the package directly from the repo
-    command: sh -c "cd packages/lcyt-orchestrator && npm install --no-audit --no-fund && npm start"
-    environment:
-      - PORT=4000
-      - BACKEND_URL=http://lcyt-backend:3000
     ports:
-      - "4000:4000"
+      - "127.0.0.1:3000:3000"
+    environment:
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      DB_PATH: /data/lcyt.sqlite
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      STATIC_DIR: ${STATIC_DIR:-}
+      RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
+      FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
+      # ── MediaMTX integration ─────────────────────────────────────────────
+      RADIO_HLS_SOURCE: ${RADIO_HLS_SOURCE:-mediamtx}
+      MEDIAMTX_API_URL: http://mediamtx:9997
+      MEDIAMTX_HLS_BASE_URL: http://mediamtx:8080
+      MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-}
+      MEDIAMTX_API_PASSWORD: ${MEDIAMTX_API_PASSWORD:-}
+      # ── nginx radio config (NginxManager) ───────────────────────────────
+      # Set NGINX_RADIO_CONFIG_PATH on the host running nginx to enable
+      # slug-based public radio URLs that hide the API key.
+      NGINX_RADIO_CONFIG_PATH: ${NGINX_RADIO_CONFIG_PATH:-}
+      NGINX_RELOAD_CMD: ${NGINX_RELOAD_CMD:-nginx -s reload}
+      # ── Worker mode (Phase 4+): no ffmpeg in backend ─────────────────────
+      FFMPEG_RUNNER: worker
+      COMPUTE_ORCHESTRATOR_URL: http://lcyt-orchestrator:4000
+      BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN}
+      ORCHESTRATOR_FALLBACK: spawn
+      # ── Session / cleanup ────────────────────────────────────────────────
+      SESSION_TTL: ${SESSION_TTL:-7200000}
+      CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-300000}
+      REVOKED_KEY_TTL_DAYS: ${REVOKED_KEY_TTL_DAYS:-30}
     depends_on:
-      - lcyt-backend
+      - lcyt-orchestrator
+      - mediamtx
     restart: unless-stopped
     volumes:
-      - ./:/workspace
+      - lcyt-db:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const req=http.get('http://127.0.0.1:3000/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    networks:
+      - lcyt-net
 
+  # ── Compute orchestrator (job scheduler + Hetzner VM lifecycle) ────────────
+  lcyt-orchestrator:
+    image: lcyt-site:latest
+    container_name: lcyt-orchestrator
+    command: ["node", "packages/lcyt-orchestrator/src/index.js"]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4000:4000"
+    environment:
+      PORT: 4000
+      BACKEND_INTERNAL_TOKEN: ${BACKEND_INTERNAL_TOKEN}
+      # ── Hetzner Cloud (burst VM provisioning) ────────────────────────────
+      # Required for autoscaling. Without these, only warm-pool workers are used.
+      HETZNER_API_TOKEN: ${HETZNER_API_TOKEN:-}
+      HETZNER_NETWORK_ID: ${HETZNER_NETWORK_ID:-}
+      HETZNER_SNAPSHOT_ID: ${HETZNER_SNAPSHOT_ID:-}
+      HETZNER_SERVER_TYPE_BURST: ${HETZNER_SERVER_TYPE_BURST:-cx31}
+      HETZNER_SERVER_TYPE_WARM: ${HETZNER_SERVER_TYPE_WARM:-cx21}
+      HETZNER_LOCATION: ${HETZNER_LOCATION:-hel1}
+      # ── Scaling parameters ───────────────────────────────────────────────
+      WARM_POOL_SIZE: ${WARM_POOL_SIZE:-1}
+      BURST_COOLDOWN_MS: ${BURST_COOLDOWN_MS:-300000}
+      BURST_QUEUE_LIMIT: ${BURST_QUEUE_LIMIT:-20}
+      MAX_CONCURRENT_BURST_CREATES: ${MAX_CONCURRENT_BURST_CREATES:-3}
+      ORCHESTRATOR_BACKOFF_MS: ${ORCHESTRATOR_BACKOFF_MS:-60000}
+      ORCHESTRATOR_MAX_PENDING_JOBS: ${ORCHESTRATOR_MAX_PENDING_JOBS:-50}
+    networks:
+      - lcyt-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const req=http.get('http://127.0.0.1:4000/compute/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # ── Worker daemon (warm-pool worker #0 on this VM) ─────────────────────────
+  # Owns the Docker socket. Launches ephemeral ffmpeg compute containers.
+  # DSK rendering (Playwright + ffmpeg) also runs here.
+  # Additional worker VMs self-register with the orchestrator on boot.
   lcyt-worker-daemon:
     image: lcyt-worker-daemon:latest
-    environment:
-      - ORCHESTRATOR_URL=http://lcyt-orchestrator:4000
-      - WORKER_ID=worker-local-1
-      - WORKER_MAX_JOBS=2
+    container_name: lcyt-worker-daemon
     restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - hls-video:/tmp/hls-video
+      - hls-audio:/tmp/hls
+      - previews:/tmp/previews
+      - cea-pipes:/tmp/lcyt-cea
+    environment:
+      PORT: 5000
+      WORKER_ID: ${WORKER_ID:-worker-0}
+      WORKER_TYPE: warm
+      ORCHESTRATOR_URL: http://lcyt-orchestrator:4000
+      MAX_JOBS: ${WORKER_MAX_JOBS:-4}
+      FFMPEG_IMAGE: ${FFMPEG_IMAGE:-lcyt-ffmpeg:latest}
+      # DSK renderer (Playwright) image for dsk-type jobs
+      DSK_IMAGE: ${DSK_IMAGE:-lcyt-dsk-renderer:latest}
+    depends_on:
+      - lcyt-orchestrator
+    networks:
+      - lcyt-net
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const req=http.get('http://127.0.0.1:5000/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
 
-# Notes:
-# - lcyt-backend and lcyt-worker-daemon use placeholder images for local development.
-# - lcyt-orchestrator is run from the workspace so changes are visible immediately.
+  # ── MediaMTX — RTMP/HLS broker ─────────────────────────────────────────────
+  # Radio and HLS viewer streams are served by MediaMTX — no ffmpeg needed.
+  # DSK rendering still uses ffmpeg (inside worker containers).
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1936:1935"   # RTMP (use :1935 externally if not running nginx-rtmp)
+      - "127.0.0.1:8080:8080"   # HLS + metrics
+      - "127.0.0.1:9997:9997"   # REST API (internal only)
+    volumes:
+      - ./docker/mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      MTX_LOGLEVEL: ${MEDIAMTX_LOG_LEVEL:-info}
+      # Basic-auth for REST API (set in .env to enable)
+      MTX_API: "yes"
+    networks:
+      - lcyt-net
+
+volumes:
+  lcyt-db: {}
+  hls-video: {}
+  hls-audio: {}
+  previews: {}
+  cea-pipes: {}
+
+networks:
+  lcyt-net:
+    name: lcyt-net

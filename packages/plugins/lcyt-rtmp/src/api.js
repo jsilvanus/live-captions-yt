@@ -44,7 +44,10 @@ import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { createRadioRouter } from './routes/radio.js';
 import { createPreviewRouter } from './routes/preview.js';
+import { NginxManager } from './nginx-manager.js';
+import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
+export { NginxManager } from './nginx-manager.js';
 
 /**
  * Initialize the RTMP relay plugin.
@@ -110,10 +113,30 @@ export async function initRtmpControl(db) {
     },
   });
 
-  const radioManager    = new RadioManager();
+  // Build MediaMTX client when API URL is configured
+  const mediamtxClient = process.env.MEDIAMTX_API_URL
+    ? new MediaMtxClient()
+    : null;
+
+  // NginxManager handles writing nginx proxy locations for MediaMTX radio streams.
+  // When NGINX_RADIO_CONFIG_PATH is not set, NginxManager operates in no-op mode
+  // (slugs are computed but nginx config is not written).
+  const nginxManager = new NginxManager();
+
+  const radioManager = new RadioManager({ mediamtxClient, nginxManager });
   const hlsManager      = new HlsManager();
   const hlsSubsManager  = new HlsSubsManager();
   const previewManager  = new PreviewManager();
+
+  if (nginxManager.isEnabled) {
+    console.log(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
+  }
+  if (mediamtxClient) {
+    console.log(`[lcyt-rtmp] MediaMTX API: ${process.env.MEDIAMTX_API_URL}`);
+  }
+  if (process.env.RADIO_HLS_SOURCE === 'mediamtx') {
+    console.log('[lcyt-rtmp] Radio HLS source: mediamtx (ffmpeg NOT used for radio)');
+  }
 
   async function stop() {
     relayManager.stopAll();
