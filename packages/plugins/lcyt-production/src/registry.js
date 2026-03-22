@@ -7,11 +7,13 @@
 import * as amxAdapter from './adapters/camera/amx.js';
 import * as noneAdapter from './adapters/camera/none.js';
 import * as viscaIpAdapter from './adapters/camera/visca-ip.js';
+import * as browserAdapter from './adapters/camera/browser.js';
 import * as rolandAdapter from './adapters/mixer/roland.js';
 import * as amxMixerAdapter from './adapters/mixer/amx.js';
 import * as atemAdapter from './adapters/mixer/atem.js';
 import * as obsAdapter from './adapters/mixer/obs.js';
 import * as monarchHdxAdapter from './adapters/mixer/monarch_hdx.js';
+import * as lcytMixerAdapter from './adapters/mixer/lcyt.js';
 
 // ---------------------------------------------------------------------------
 // Adapter maps
@@ -21,6 +23,8 @@ const CAMERA_ADAPTERS = {
   amx:        amxAdapter,
   none:       noneAdapter,
   'visca-ip': viscaIpAdapter,
+  webcam:     browserAdapter,
+  mobile:     browserAdapter,
 };
 
 const MIXER_ADAPTERS = {
@@ -29,6 +33,7 @@ const MIXER_ADAPTERS = {
   atem:         atemAdapter,
   obs:          obsAdapter,
   monarch_hdx:  monarchHdxAdapter,
+  lcyt:         lcytMixerAdapter,
 };
 
 /**
@@ -261,6 +266,7 @@ export function parseCamera(row) {
     connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
     sortOrder:        row.sort_order,
+    cameraKey:        row.camera_key ?? null,
     createdAt:        row.created_at,
   };
 }
@@ -271,6 +277,7 @@ export function parseMixer(row) {
     connectionConfig: JSON.parse(row.connection_config || '{}'),
     connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
+    outputKey:        row.output_key ?? null,
     createdAt:        row.created_at,
   };
 }

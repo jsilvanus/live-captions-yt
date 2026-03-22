@@ -1,11 +1,12 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { createFfmpegRunner } from '../../../lcyt-backend/src/ffmpeg/index.js';
-import { makeFifo } from '../../../lcyt-backend/src/ffmpeg/pipe-utils.js';
+import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
+import { makeFifo } from 'lcyt-backend/ffmpeg/pipe-utils';
 import { createWriteStream } from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
 
-const DEFAULT_RTMP_HOST = process.env.RTMP_HOST || 'rtmp.lcyt.fi';
-const DEFAULT_RTMP_APP  = process.env.RTMP_APP  || 'stream';
+const DEFAULT_RTMP_HOST       = process.env.RTMP_HOST             || 'rtmp.lcyt.fi';
+const DEFAULT_RTMP_APP        = process.env.RTMP_APP              || 'stream';
+const DEFAULT_MEDIAMTX_RTSP   = (process.env.MEDIAMTX_RTSP_BASE_URL || 'rtsp://127.0.0.1:8554').replace(/\/$/, '');
 
 /**
  * Milliseconds to shift a caption earlier when speechStart is not provided.
@@ -108,10 +109,17 @@ export class RtmpRelayManager {
    */
   constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication, ffmpegCaps, mediamtxClient } = {}) {
     /**
-     * One process per API key.
+     * One ffmpeg process per API key (CEA-708, DSK overlay, or per-slot transcode).
      * @type {Map<string, import('node:child_process').ChildProcess>}
      */
     this._procs = new Map();
+
+    /**
+     * Plain relay keys managed by MediaMTX (no local ffmpeg process).
+     * MediaMTX runs the forwarding command via its runOnPublish hook.
+     * @type {Map<string, { slots: Array, startedAt: Date }>}
+     */
+    this._mediamtxRelays = new Map();
 
     /**
      * Per-key metadata: { slots, startedAt, hasCea708, srtSeq }
@@ -173,17 +181,16 @@ export class RtmpRelayManager {
    * @param {{ cea708DelayMs?: number }} [opts]
    * @returns {Promise<void>}
    */
-  start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
-    return new Promise(async (resolve, reject) => {
+  async start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
       if (!relays || relays.length === 0) {
         this._stopProc(apiKey);
-        return resolve();
+        return;
       }
 
       // Check if ffmpeg is available (capability check from probeFfmpeg at startup).
       // Only block if we have explicit capability info confirming ffmpeg is absent.
       if (this._ffmpegCaps?.available === false) {
-        return reject(new Error('ffmpeg is not installed or not available in PATH. RTMP relay requires ffmpeg.'));
+        throw new Error('ffmpeg is not installed or not available in PATH. RTMP relay requires ffmpeg.');
       }
 
       this._stopProc(apiKey);
@@ -332,8 +339,57 @@ export class RtmpRelayManager {
         }).join('|');
         args.push('-f', 'tee', teeTargets);
 
+      } else if (this._mediamtx) {
+        // ── Plain relay via MediaMTX runOnPublish (no local ffmpeg process) ─
+        // MediaMTX manages the forwarding command lifecycle.  When the publisher
+        // connects, MediaMTX runs `ffmpeg -i rtsp://…/<key> -c copy -f tee …`
+        // automatically, restarting it if it exits.
+
+        // Validate target URLs against shell-dangerous characters before embedding
+        // them in the runOnPublish command string that MediaMTX passes to a shell.
+        // Valid RTMP URLs only need [a-zA-Z0-9:/._\-@%?&=].
+        const SAFE_URL_RE = /^[a-zA-Z0-9:/._\-@%?&=#]+$/;
+        if (!SAFE_URL_RE.test(apiKey)) {
+          throw new Error(`API key contains unsafe characters for shell command`);
+        }
+        for (const r of relays) {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          if (!SAFE_URL_RE.test(url)) {
+            throw new Error(`Target URL contains unsafe characters for shell command: ${url.slice(0, 80)}`);
+          }
+        }
+
+        const teeTargets = relays.map(r => {
+          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+          return `[f=flv]${url}`;
+        }).join('|');
+        const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${apiKey} -c copy -f tee "${teeTargets}"`;
+
+        try {
+          await this._mediamtx.addPath(apiKey, { runOnPublish, runOnPublishRestart: true });
+          console.log(`[rtmp] Plain relay for ${apiKey.slice(0, 8)} configured via MediaMTX (${relays.length} slot(s))`);
+        } catch (err) {
+          console.warn(`[rtmp] MediaMTX addPath failed for ${apiKey.slice(0, 8)}: ${err.message} — stream may not forward`);
+        }
+
+        // Kick the current publisher so MediaMTX fires runOnPublish immediately.
+        this._mediamtx.kickPath(apiKey).catch(() => {});
+
+        const startedAt = new Date();
+        this._mediamtxRelays.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt });
+
+        for (const r of relays) {
+          this._onStreamStarted?.(apiKey, r.slot, {
+            targetUrl:   r.targetUrl,
+            targetName:  r.targetName ?? null,
+            captionMode: 'http',
+            startedAt,
+          });
+        }
+        return;
+
       } else {
-        // ── Simple stream copy mode (Phase 1) ─────────────────────────────
+        // ── Simple stream copy mode fallback (no MediaMTX client) ─────────
         const teeTargets = relays.map(r => {
           const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
           return `[f=flv]${url}`;
@@ -404,12 +460,13 @@ export class RtmpRelayManager {
       if (handle && handle.stdout) handle.stdout.on('data', (d) => process.stdout.write(`${tag} ${d}`));
       if (handle && handle.stderr) handle.stderr.on('data', (d) => process.stderr.write(`${tag} ${d}`));
 
-      // Runner emits 'error' and 'close' events like child process
+      // Runner emits 'error' and 'close' events like child process.
+      // By this point start() has already returned successfully; these callbacks only
+      // handle cleanup and stat recording after the relay process exits.
       runner.on('error', (err) => {
         this._procs.delete(apiKey);
         this._meta.delete(apiKey);
         console.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
-        reject(err);
       });
 
       runner.on('close', (info) => {
@@ -446,9 +503,6 @@ export class RtmpRelayManager {
           console.log(`[rtmp] Relay ended for key ${apiKey.slice(0, 8)}`);
         }
       });
-
-      setImmediate(resolve);
-    });
   }
 
   /**
@@ -463,12 +517,39 @@ export class RtmpRelayManager {
   }
 
   /**
-   * Stop the ffmpeg relay process for an API key.
+   * Stop the relay for an API key.
+   * Handles both MediaMTX-managed plain relays and local ffmpeg processes.
    * @param {string} apiKey
    * @returns {Promise<void>}
    */
   stop(apiKey) {
     return (async () => {
+      // MediaMTX-managed plain relay
+      if (this._mediamtxRelays.has(apiKey)) {
+        const meta = this._mediamtxRelays.get(apiKey);
+        this._mediamtxRelays.delete(apiKey);
+        if (this._mediamtx) {
+          try { await this._mediamtx.deletePath(apiKey); } catch {}
+        }
+        if (meta) {
+          const endedAt = new Date();
+          const durationMs = endedAt.getTime() - meta.startedAt.getTime();
+          for (const r of meta.slots) {
+            this._onStreamEnded?.(apiKey, r.slot, {
+              targetUrl:   r.targetUrl,
+              targetName:  r.targetName ?? null,
+              captionMode: 'http',
+              startedAt:   meta.startedAt,
+              endedAt,
+              durationMs,
+              captionsSent: 0,
+            });
+          }
+        }
+        return;
+      }
+
+      // Local ffmpeg process
       const handle = this._procs.get(apiKey);
       if (!handle) return;
       try {
@@ -496,12 +577,12 @@ export class RtmpRelayManager {
   }
 
   /**
-   * Stop all running relay processes. Call during graceful shutdown.
+   * Stop all running relays (both MediaMTX-managed and local ffmpeg). Call during graceful shutdown.
    * @returns {Promise<void>}
    */
   async stopAll() {
-    const keys = [...this._procs.keys()];
-    await Promise.all(keys.map(k => this.stop(k)));
+    const keys = new Set([...this._procs.keys(), ...this._mediamtxRelays.keys()]);
+    await Promise.all([...keys].map(k => this.stop(k)));
   }
 
   // ---------------------------------------------------------------------------
@@ -617,11 +698,12 @@ export class RtmpRelayManager {
 
   /**
    * Check whether any relay is currently running for an API key.
+   * Covers both MediaMTX-managed plain relays and local ffmpeg processes.
    * @param {string} apiKey
    * @returns {boolean}
    */
   isRunning(apiKey) {
-    return this._procs.has(apiKey);
+    return this._procs.has(apiKey) || this._mediamtxRelays.has(apiKey);
   }
 
   /**
@@ -631,7 +713,7 @@ export class RtmpRelayManager {
    * @returns {boolean}
    */
   isSlotRunning(apiKey, slot) {
-    const meta = this._meta.get(apiKey);
+    const meta = this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey);
     return !!meta && meta.slots.some(s => s.slot === slot);
   }
 
@@ -641,17 +723,19 @@ export class RtmpRelayManager {
    * @returns {number[]}
    */
   runningSlots(apiKey) {
-    const meta = this._meta.get(apiKey);
+    const meta = this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey);
     if (!meta) return [];
     return meta.slots.map(s => s.slot).sort((a, b) => a - b);
   }
 
   /**
-   * Return the start time of the running ffmpeg process for an API key, or null.
+   * Return the start time of the running relay for an API key, or null.
    * @param {string} apiKey
    * @returns {Date|null}
    */
-  startedAt(apiKey) { return this._meta.get(apiKey)?.startedAt ?? null; }
+  startedAt(apiKey) {
+    return (this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey))?.startedAt ?? null;
+  }
 
   /**
    * Return true if the running process has any cea708 slot (stdin pipe active).

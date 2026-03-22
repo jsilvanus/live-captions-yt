@@ -8,6 +8,7 @@ const MIXER_TYPES = [
   { value: 'amx',    label: 'AMX NetLinx' },
   { value: 'atem',   label: 'Blackmagic ATEM' },
   { value: 'obs',    label: 'OBS Studio' },
+  { value: 'lcyt',   label: 'LCYT Software Mixer' },
 ];
 
 const EMPTY_INPUT     = (n) => ({ number: n, command: '' });
@@ -99,6 +100,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
   );
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
   const [connectionSource, setConnectionSource] = useState(initial?.connectionSource ?? 'backend');
+  const [outputKey,        setOutputKey]        = useState(initial?.outputKey ?? '');
   const [testResult,       setTestResult]       = useState(null);
   const [testing,          setTesting]          = useState(false);
 
@@ -118,6 +120,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
     if (type === 'amx')    return { host, port: Number(port), inputs };
     if (type === 'atem')   return { host, ...(meIndex !== '' ? { meIndex: Number(meIndex) } : {}) };
     if (type === 'obs')    return { host, port: Number(port), password: obsPassword, inputs: obsInputs };
+    if (type === 'lcyt')   return {};
     return {};
   }
 
@@ -163,7 +166,25 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         </select>
       </div>
 
-      {/* Host — shown for all types */}
+      {/* LCYT Software Mixer — output key only */}
+      {type === 'lcyt' && (
+        <div className="settings-field">
+          <label className="settings-field__label">Output stream key</label>
+          <input
+            className="settings-field__input"
+            value={outputKey}
+            onChange={e => setOutputKey(e.target.value)}
+            placeholder="e.g. myevent-mix"
+            style={{ fontFamily: 'monospace' }}
+          />
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
+            MediaMTX path name for the mixed output. HLS will be available at <code>/stream-hls/{outputKey || '…'}/index.m3u8</code>.
+          </p>
+        </div>
+      )}
+
+      {/* Host — shown for hardware mixer types */}
+      {type !== 'lcyt' && (
       <div style={{ display: 'flex', gap: 12 }}>
         <div className="settings-field" style={{ flex: 2 }}>
           <label className="settings-field__label">Host (IP)</label>
@@ -180,9 +201,10 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
           </div>
         )}
       </div>
+      )}
 
-      {/* ATEM-specific: M/E index */}
-      {type === 'atem' && (
+      {/* ATEM-specific: M/E index — only for hardware types */}
+      {type === 'atem' && type !== 'lcyt' && (
         <div className="settings-field">
           <label className="settings-field__label">
             M/E Index
@@ -260,16 +282,18 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         </>
       )}
 
-      {/* Unified connection source dropdown */}
-      <ConnectionSourceSelect
-        connectionSource={connectionSource}
-        bridgeInstanceId={bridgeInstanceId}
-        bridges={bridges}
-        onChange={({ connectionSource: cs, bridgeInstanceId: bid }) => {
-          setConnectionSource(cs);
-          setBridgeInstanceId(bid ?? '');
-        }}
-      />
+      {/* Connection source — not applicable for LCYT software mixer */}
+      {type !== 'lcyt' && (
+        <ConnectionSourceSelect
+          connectionSource={connectionSource}
+          bridgeInstanceId={bridgeInstanceId}
+          bridges={bridges}
+          onChange={({ connectionSource: cs, bridgeInstanceId: bid }) => {
+            setConnectionSource(cs);
+            setBridgeInstanceId(bid ?? '');
+          }}
+        />
+      )}
 
       {testResult && (
         <div style={{
@@ -285,15 +309,24 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
         <button
           className="btn btn--ghost btn--sm"
           onClick={handleTest}
-          disabled={testing || type === 'atem' || type === 'obs'}
-          title={type === 'atem' ? 'UDP-based; connection test requires bridge' : type === 'obs' ? 'WebSocket; save first and check mixer status' : undefined}
+          disabled={testing || type === 'atem' || type === 'obs' || type === 'lcyt'}
+          title={
+            type === 'lcyt'  ? 'Not applicable for software mixer' :
+            type === 'atem'  ? 'UDP-based; connection test requires bridge' :
+            type === 'obs'   ? 'WebSocket; save first and check mixer status' : undefined
+          }
           style={{ marginRight: 'auto' }}
         >
           {testing ? 'Testing…' : 'Test connection'}
         </button>
         <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
         <button className="btn btn--primary"
-          onClick={() => onSave({ name: name.trim(), type, connectionConfig: buildConnectionConfig(), connectionSource, bridgeInstanceId: bridgeInstanceId || null })}
+          onClick={() => onSave({
+            name: name.trim(), type,
+            connectionConfig: buildConnectionConfig(),
+            connectionSource, bridgeInstanceId: bridgeInstanceId || null,
+            outputKey: outputKey.trim() || null,
+          })}
           disabled={!name.trim()}>
           Save
         </button>
@@ -303,10 +336,11 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
 }
 
 function MixerRow({ mixer, bridges, onEdit, onDelete }) {
-  const typeLabel = MIXER_TYPES.find(t => t.value === mixer.type)?.label ?? mixer.type;
-  const cfg       = mixer.connectionConfig || {};
+  const typeLabel  = MIXER_TYPES.find(t => t.value === mixer.type)?.label ?? mixer.type;
+  const cfg        = mixer.connectionConfig || {};
+  const isLcyt     = mixer.type === 'lcyt';
   // Progressive disclosure: bridge name only when 2+ bridges exist
-  const bridge    = bridges.length >= 2 ? bridges.find(b => b.id === mixer.bridgeInstanceId) : null;
+  const bridge     = bridges.length >= 2 ? bridges.find(b => b.id === mixer.bridgeInstanceId) : null;
 
   return (
     <div style={{
@@ -316,11 +350,16 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
       <ConnectionDot connected={mixer.connected} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <span style={{ fontWeight: 600 }}>{mixer.name}</span>
-        {cfg.host && (
+        {!isLcyt && cfg.host && (
           <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
             {mixer.type === 'atem'
               ? cfg.host
               : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : mixer.type === 'obs' ? 4455 : 8023)}`}
+          </span>
+        )}
+        {isLcyt && mixer.outputKey && (
+          <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+            {mixer.outputKey}
           </span>
         )}
         {bridge && (
@@ -342,6 +381,17 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
           PGM: {mixer.activeSource}
         </span>
+      )}
+      {isLcyt && (
+        <a
+          href={`/production/lcyt-mixer/${mixer.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn--sm btn--ghost"
+          style={{ textDecoration: 'none' }}
+        >
+          Open mixer
+        </a>
       )}
       <button className="btn btn--sm btn--ghost" onClick={() => onEdit(mixer)}>Edit</button>
       <button className="btn btn--sm btn--ghost btn--danger" onClick={() => onDelete(mixer)}>Delete</button>

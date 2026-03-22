@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "express": "^4.21",
-    "express-rate-limit": "^8.2.1"
+    "express-rate-limit": "^8.2.1",
+    "lcyt-backend": "*"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",

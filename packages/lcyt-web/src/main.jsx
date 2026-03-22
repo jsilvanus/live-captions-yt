@@ -37,6 +37,8 @@ const DskControlPage         = lazy(() => import('./components/DskControlPage').
 const ViewerPage             = lazy(() => import('./components/ViewerPage').then(m => ({ default: m.ViewerPage })));
 const LoginPage              = lazy(() => import('./components/LoginPage').then(m => ({ default: m.LoginPage })));
 const RegisterPage           = lazy(() => import('./components/RegisterPage').then(m => ({ default: m.RegisterPage })));
+const CameraStreamPage       = lazy(() => import('./components/CameraStreamPage').then(m => ({ default: m.CameraStreamPage })));
+const LcytMixerPage          = lazy(() => import('./components/LcytMixerPage').then(m => ({ default: m.LcytMixerPage })));
 const EmbedAudioPage         = lazy(() => import('./components/EmbedAudioPage').then(m => ({ default: m.EmbedAudioPage })));
 const EmbedInputPage         = lazy(() => import('./components/EmbedInputPage').then(m => ({ default: m.EmbedInputPage })));
 const EmbedSentLogPage       = lazy(() => import('./components/EmbedSentLogPage').then(m => ({ default: m.EmbedSentLogPage })));
@@ -59,7 +61,9 @@ function isStandalonePath(p) {
     p.startsWith('/view/') ||
     p.startsWith('/login') ||
     p.startsWith('/register') ||
-    p.startsWith('/legacy')
+    p.startsWith('/legacy') ||
+    p.startsWith('/production/camera/') ||
+    p.startsWith('/production/lcyt-mixer/')
   );
 }
 
@@ -78,10 +82,12 @@ function getStandalonePage() {
   else if (path.startsWith('/embed/viewer'))       page = <EmbedViewerPage />;
   else if (path.startsWith('/dsk-control/'))       page = <DskControlPage />;
   else if (path.startsWith('/dsk/'))               page = <DskPage />;
-  else if (path.startsWith('/view/'))              page = <ViewerPage />;
-  else if (path.startsWith('/login'))              page = <LoginPage />;
-  else if (path.startsWith('/register'))           page = <RegisterPage />;
-  else if (path.startsWith('/legacy'))             page = <App />;
+  else if (path.startsWith('/view/'))                    page = <ViewerPage />;
+  else if (path.startsWith('/login'))                    page = <LoginPage />;
+  else if (path.startsWith('/register'))                 page = <RegisterPage />;
+  else if (path.startsWith('/production/camera/'))       page = <CameraStreamPage />;
+  else if (path.startsWith('/production/lcyt-mixer/'))   page = <LcytMixerPage />;
+  else if (path.startsWith('/legacy'))                   page = <App />;
   else page = <SidebarApp />;
   return <Suspense fallback={null}>{page}</Suspense>;
 }

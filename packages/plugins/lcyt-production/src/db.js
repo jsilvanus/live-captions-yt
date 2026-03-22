@@ -66,6 +66,18 @@ export function runMigrations(db) {
   if (!mixerCols.includes('connection_source')) {
     db.exec("ALTER TABLE prod_mixers ADD COLUMN connection_source TEXT NOT NULL DEFAULT 'backend'");
   }
+
+  // camera_key: MediaMTX path name for webcam/mobile cameras (e.g. 'myevent-cam1')
+  const cameraCols2 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols2.includes('camera_key')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN camera_key TEXT');
+  }
+
+  // output_key: MediaMTX output path for LCYT software mixer output
+  const mixerCols2 = db.prepare("PRAGMA table_info(prod_mixers)").all().map(c => c.name);
+  if (!mixerCols2.includes('output_key')) {
+    db.exec('ALTER TABLE prod_mixers ADD COLUMN output_key TEXT');
+  }
 }
 
 /**

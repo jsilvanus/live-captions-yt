@@ -132,6 +132,45 @@ export class MediaMtxClient {
   }
 
   /**
+   * Fetch a JPEG thumbnail snapshot for the named path.
+   *
+   * Returns the raw fetch Response so the caller can pipe the body directly
+   * to an HTTP response. Returns null if the path is not found or has no
+   * active publisher (HTTP 404).
+   *
+   * @param {string} name
+   * @returns {Promise<Response | null>}
+   * @throws {MediaMtxApiError} on non-404 errors
+   */
+  async getThumbnail(name) {
+    const url = `${this._baseUrl}/v3/paths/${encodeURIComponent(name)}/thumbnail`;
+    const headers = { Accept: 'image/jpeg, */*' };
+    if (this._authHeader) headers.Authorization = this._authHeader;
+
+    let res;
+    try {
+      res = await fetch(url, { method: 'GET', headers });
+    } catch (networkErr) {
+      throw new MediaMtxApiError(
+        `MediaMTX thumbnail request failed (${name}): ${networkErr.message}`,
+        0,
+      );
+    }
+
+    if (res.status === 404) return null;
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new MediaMtxApiError(
+        `MediaMTX GET thumbnail/${name} → HTTP ${res.status}: ${text.slice(0, 200)}`,
+        res.status,
+      );
+    }
+
+    return res;
+  }
+
+  /**
    * Remove a dynamically-added path from the running configuration.
    * No-op if the path does not exist.
    *

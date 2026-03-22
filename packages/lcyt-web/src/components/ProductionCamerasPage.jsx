@@ -7,7 +7,11 @@ const CONTROL_TYPES = [
   { value: 'none',     label: 'None (mixer only)' },
   { value: 'amx',     label: 'AMX NetLinx' },
   { value: 'visca-ip', label: 'VISCA over IP' },
+  { value: 'webcam',  label: 'Webcam (browser)' },
+  { value: 'mobile',  label: 'Mobile camera (browser)' },
 ];
+
+const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
 
 const EMPTY_PRESET       = () => ({ id: crypto.randomUUID(), name: '', command: '' });
 const EMPTY_VISCA_PRESET = () => ({ id: crypto.randomUUID(), name: '', presetNumber: 0 });
@@ -88,6 +92,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
   const [sortOrder,        setSortOrder]        = useState(initial?.sortOrder ?? 0);
   const [connectionSource, setConnectionSource] = useState(initial?.connectionSource ?? 'backend');
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
+  const [cameraKey,        setCameraKey]        = useState(initial?.cameraKey ?? '');
 
   function handleControlTypeChange(newType) {
     if (newType === 'visca-ip' && Number(port) === 1319) setPort(52381);
@@ -108,6 +113,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
         presets: viscaPresets.map(({ id, name, presetNumber }) => ({ id, name, presetNumber: Number(presetNumber) })),
       };
     }
+    // webcam and mobile need no controlConfig (streaming is browser-side)
     return {};
   }
 
@@ -121,6 +127,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
       sortOrder: Number(sortOrder),
       connectionSource,
       bridgeInstanceId: bridgeInstanceId || null,
+      cameraKey: cameraKey.trim() || null,
     });
   }
 
@@ -247,16 +254,35 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
         </>
       )}
 
-      {/* Unified connection source dropdown */}
-      <ConnectionSourceSelect
-        connectionSource={connectionSource}
-        bridgeInstanceId={bridgeInstanceId}
-        bridges={bridges}
-        onChange={({ connectionSource: cs, bridgeInstanceId: bid }) => {
-          setConnectionSource(cs);
-          setBridgeInstanceId(bid ?? '');
-        }}
-      />
+      {/* Browser camera: stream path key */}
+      {BROWSER_CAMERA_TYPES.has(controlType) && (
+        <div className="settings-field">
+          <label className="settings-field__label">Stream path key</label>
+          <input
+            className="settings-field__input"
+            value={cameraKey}
+            onChange={e => setCameraKey(e.target.value)}
+            placeholder="e.g. myevent-cam1"
+            style={{ fontFamily: 'monospace' }}
+          />
+          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
+            MediaMTX path name for this camera stream. Convention: <code>yourkey-cam1</code>.
+          </p>
+        </div>
+      )}
+
+      {/* Hardware connection options — hidden for browser cameras */}
+      {!BROWSER_CAMERA_TYPES.has(controlType) && (
+        <ConnectionSourceSelect
+          connectionSource={connectionSource}
+          bridgeInstanceId={bridgeInstanceId}
+          bridges={bridges}
+          onChange={({ connectionSource: cs, bridgeInstanceId: bid }) => {
+            setConnectionSource(cs);
+            setBridgeInstanceId(bid ?? '');
+          }}
+        />
+      )}
 
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
         <button className="btn btn--ghost" onClick={onCancel}>Cancel</button>
@@ -267,10 +293,11 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
 }
 
 function CameraRow({ camera, bridges, onEdit, onDelete }) {
-  const presetCount = camera.controlConfig?.presets?.length ?? 0;
-  const typeBadge   = CONTROL_TYPES.find(ct => ct.value === camera.controlType)?.label ?? camera.controlType;
+  const presetCount  = camera.controlConfig?.presets?.length ?? 0;
+  const typeBadge    = CONTROL_TYPES.find(ct => ct.value === camera.controlType)?.label ?? camera.controlType;
+  const isBrowser    = BROWSER_CAMERA_TYPES.has(camera.controlType);
   // Progressive disclosure: show bridge name only when 2+ bridges exist
-  const bridge      = bridges.length >= 2 ? bridges.find(b => b.id === camera.bridgeInstanceId) : null;
+  const bridge       = bridges.length >= 2 ? bridges.find(b => b.id === camera.bridgeInstanceId) : null;
 
   return (
     <div style={{
@@ -284,6 +311,11 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
             Input {camera.mixerInput}
           </span>
         )}
+        {isBrowser && camera.cameraKey && (
+          <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+            {camera.cameraKey}
+          </span>
+        )}
         {bridge && (
           <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--color-text-muted)' }}>
             via {bridge.name}
@@ -294,10 +326,21 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
         fontSize: 11, padding: '2px 6px', borderRadius: 3,
         background: 'var(--color-surface-alt)', color: 'var(--color-text-muted)', whiteSpace: 'nowrap',
       }}>{typeBadge}</span>
-      {camera.controlType !== 'none' && (
+      {!isBrowser && camera.controlType !== 'none' && (
         <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
           {presetCount} preset{presetCount !== 1 ? 's' : ''}
         </span>
+      )}
+      {isBrowser && (
+        <a
+          href={`/production/camera/${camera.id}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="btn btn--sm btn--ghost"
+          style={{ textDecoration: 'none' }}
+        >
+          Open camera
+        </a>
       )}
       <button className="btn btn--sm btn--ghost" onClick={() => onEdit(camera)}>Edit</button>
       <button className="btn btn--sm btn--ghost btn--danger" onClick={() => onDelete(camera)}>Delete</button>

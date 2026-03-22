@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { createReadStream, existsSync } from 'node:fs';
-import { join, resolve as resolvePath, basename, sep } from 'node:path';
+import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
 import { isHlsEnabled, getEmbedCors } from '../db.js';
 
@@ -103,14 +102,14 @@ function buildPlayerSnippet(hlsKey, backendOrigin) {
  *
  * Handles three concerns:
  *
- *  1. nginx-rtmp callbacks (no auth — nginx is the caller):
+ *  1. nginx-rtmp / MediaMTX callbacks (no auth — nginx/mediamtx is the caller):
  *       POST /stream-hls               — call=publish → start HLS; call=publish_done → stop
  *       POST /stream-hls/on_publish    — nginx on_publish callback (alternative URL style)
  *       POST /stream-hls/on_publish_done — nginx on_publish_done callback
  *
- *  2. HLS file serving (public, CORS *):
- *       GET /stream-hls/:key/index.m3u8 — HLS playlist
- *       GET /stream-hls/:key/:segment   — HLS segment (*.ts)
+ *  2. HLS proxy (public, CORS *) — proxies to MediaMTX:
+ *       GET /stream-hls/:key/index.m3u8 — proxy to MediaMTX HLS playlist
+ *       GET /stream-hls/:key/*.ts       — proxy to MediaMTX HLS segment
  *
  *  3. Embeddable player snippet (public, CORS *):
  *       GET /stream-hls/:key/player.js  — self-contained vanilla-JS video player
@@ -125,7 +124,7 @@ export function createStreamHlsRouter(db, hlsManager) {
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
   router.use(express.urlencoded({ extended: false, limit: '4kb' }));
 
-  // ── nginx-rtmp callbacks ──────────────────────────────────────────────────
+  // ── nginx-rtmp / MediaMTX callbacks ──────────────────────────────────────
 
   /**
    * Shared handler for nginx-rtmp publish/publish_done events.
@@ -183,7 +182,7 @@ export function createStreamHlsRouter(db, hlsManager) {
     return handleNginxCallback('publish_done', name, res);
   });
 
-  // ── HLS file serving and player snippet ──────────────────────────────────
+  // ── HLS proxy and player snippet ─────────────────────────────────────────
 
   // CORS preflight for HLS/player routes
   router.options('/:key/*', (req, res) => {
@@ -193,7 +192,7 @@ export function createStreamHlsRouter(db, hlsManager) {
   });
 
   // GET /stream-hls/:key/player.js — vanilla-JS video player snippet
-  // Registered BEFORE /:key/:segment so it takes precedence for "player.js".
+  // Registered BEFORE /:key/:file so it takes precedence for "player.js".
   router.get('/:key/player.js', hlsRateLimit, (req, res) => {
     const { key } = req.params;
     if (!HLS_KEY_RE.test(key)) {
@@ -209,60 +208,46 @@ export function createStreamHlsRouter(db, hlsManager) {
     res.send(buildPlayerSnippet(key, backendOrigin));
   });
 
-  // GET /stream-hls/:key/index.m3u8 — HLS playlist
-  router.get('/:key/index.m3u8', hlsRateLimit, (req, res) => {
-    const { key } = req.params;
-    if (!HLS_KEY_RE.test(key)) {
-      return res.status(400).json({ error: 'Invalid HLS key format' });
-    }
-
-    const hlsRoot = hlsManager._hlsRoot;
-    const file    = join(hlsManager.hlsDir(key), 'index.m3u8');
-
-    // Path-traversal guard: ensure resolved path is inside the HLS root.
-    if (!resolvePath(file).startsWith(resolvePath(hlsRoot) + sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
-
-    if (!existsSync(file)) {
-      return res.status(404).json({ error: 'Stream not found or not currently live' });
-    }
-
-    setCorsHeaders(res, getEmbedCors(db, key));
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store');
-    createReadStream(file).pipe(res);
-  });
-
-  // GET /stream-hls/:key/:segment — HLS segment (*.ts files only)
-  router.get('/:key/:segment', hlsRateLimit, (req, res) => {
-    const { key, segment } = req.params;
+  // GET /stream-hls/:key/:file — proxy HLS playlist and segments to MediaMTX.
+  // Supports:
+  //   index.m3u8  — HLS playlist
+  //   *.ts        — MPEG-TS segment
+  router.get('/:key/:file', hlsRateLimit, async (req, res) => {
+    const { key, file } = req.params;
 
     if (!HLS_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid HLS key format' });
     }
 
-    // Only allow safe segment filenames: seg<digits>.ts
-    if (!/^seg\d{5}\.ts$/.test(segment)) {
-      return res.status(400).json({ error: 'Invalid segment name' });
+    // Accept playlist and TS segment filenames only
+    if (file !== 'index.m3u8' && !/^[a-zA-Z0-9_-]+\.ts$/.test(file)) {
+      return res.status(400).json({ error: 'Invalid file name' });
     }
 
-    const hlsRoot = hlsManager._hlsRoot;
-    const file    = join(hlsManager.hlsDir(key), basename(segment));
+    const upstreamUrl = `${hlsManager.getInternalHlsUrl(key)}/${file}`;
 
-    // Path-traversal guard: defence-in-depth
-    if (!resolvePath(file).startsWith(resolvePath(hlsRoot) + sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
+    let upstream;
+    try {
+      upstream = await fetch(upstreamUrl);
+    } catch (err) {
+      console.error(`[stream-hls] MediaMTX proxy error for ${key.slice(0, 8)}: ${err.message}`);
+      return res.status(502).json({ error: 'Stream backend unavailable' });
     }
 
-    if (!existsSync(file)) {
-      return res.status(404).json({ error: 'Segment not found' });
+    if (!upstream.ok) {
+      return res.status(upstream.status === 404 ? 404 : 502).json({
+        error: upstream.status === 404 ? 'Stream not found or not currently live' : 'Stream backend error',
+      });
     }
 
-    setCorsHeaders(res, getEmbedCors(db, key));
-    res.setHeader('Content-Type', 'video/mp2t');
-    res.setHeader('Cache-Control', 'public, max-age=60');
-    createReadStream(file).pipe(res);
+    const cors = getEmbedCors(db, key);
+    setCorsHeaders(res, cors);
+    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=60');
+    res.setHeader('Content-Type', file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
+
+    Readable.fromWeb(upstream.body)
+      .on('error', () => { if (!res.writableEnded) res.end(); })
+      .pipe(res);
   });
 
   return router;

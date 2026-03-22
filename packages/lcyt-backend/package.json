@@ -4,6 +4,11 @@
   "description": "CORS relay backend for YouTube Live caption ingestion",
   "type": "module",
   "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./ffmpeg": "./src/ffmpeg/index.js",
+    "./ffmpeg/pipe-utils": "./src/ffmpeg/pipe-utils.js"
+  },
   "bin": {
     "lcyt-backend-admin": "bin/lcyt-backend-admin"
   },

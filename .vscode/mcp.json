@@ -4,8 +4,9 @@
 			"url": "https://mcp.lcyt.fi/sse",
 			"type": "sse",
 			"headers": {
-        		"X-Api-Key": "09102f3a-9a8e-4f11-aacf-ed3e3fa7a7c8"
-		}
+				"X-Api-Key": "09102f3a-9a8e-4f11-aacf-ed3e3fa7a7c8"
+			}
+		},
 	},
 	"inputs": []
 }

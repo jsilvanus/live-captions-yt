@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { createReadStream, existsSync } from 'node:fs';
-import { join, resolve as resolvePath, basename, sep } from 'node:path';
+import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
 import { isRadioEnabled, getEmbedCors } from '../db.js';
 
@@ -103,24 +102,23 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
 /**
  * Factory for the /radio router.
  *
- * Handles four concerns:
+ * Handles three concerns:
  *
  *  1. nginx-rtmp / MediaMTX callbacks (no auth — nginx/mediamtx is the caller):
  *       POST /radio               — call=publish → start HLS; call=publish_done → stop
  *       POST /radio/on_publish    — nginx on_publish callback (alternative URL style)
  *       POST /radio/on_publish_done — nginx on_publish_done callback
  *
- *  2. HLS file serving (public, CORS *) — ffmpeg mode only:
- *       GET /radio/:key/index.m3u8 — HLS playlist
- *       GET /radio/:key/:segment   — HLS segment (*.ts)
+ *  2. HLS proxy (public, CORS *) — proxies to MediaMTX when nginx is not active:
+ *       GET /radio/:key/index.m3u8 — proxy to MediaMTX HLS playlist
+ *       GET /radio/:key/*.ts       — proxy to MediaMTX HLS segment
  *
  *  3. Embeddable player snippet (public, CORS *):
  *       GET /radio/:key/player.js  — self-contained vanilla-JS audio player
  *       GET /radio/:key/info       — JSON: { live, hlsUrl, slug? } (no secrets exposed)
  *
- *  In MediaMTX mode: HLS files are NOT served from the filesystem. The player.js
- *  and info endpoints return the nginx slug URL (from NginxManager) or the backend
- *  proxy URL (/radio/:key/…) as fallback.
+ *  When NginxManager is active, clients use the slug URL directly and the
+ *  proxy routes serve as a fallback for clients that hit the backend.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../radio-manager.js').RadioManager} radioManager
@@ -132,7 +130,7 @@ export function createRadioRouter(db, radioManager) {
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
   router.use(express.urlencoded({ extended: false, limit: '4kb' }));
 
-  // ── nginx-rtmp callbacks ──────────────────────────────────────────────────
+  // ── nginx-rtmp / MediaMTX callbacks ──────────────────────────────────────
 
   /**
    * Shared handler for nginx-rtmp publish/publish_done events.
@@ -190,7 +188,7 @@ export function createRadioRouter(db, radioManager) {
     return handleNginxCallback('publish_done', name, res);
   });
 
-  // ── HLS file serving and player snippet ──────────────────────────────────
+  // ── HLS proxy, player snippet, info ──────────────────────────────────────
 
   // CORS preflight for HLS/player routes
   router.options('/:key/*', (req, res) => {
@@ -200,7 +198,7 @@ export function createRadioRouter(db, radioManager) {
   });
 
   // GET /radio/:key/player.js — vanilla-JS player snippet
-  // Registered BEFORE /:key/:segment so it takes precedence for "player.js".
+  // Registered BEFORE /:key/:file so it takes precedence for "player.js".
   router.get('/:key/player.js', hlsRateLimit, (req, res) => {
     const { key } = req.params;
     if (!RADIO_KEY_RE.test(key)) {
@@ -231,68 +229,55 @@ export function createRadioRouter(db, radioManager) {
 
     const live    = radioManager.isRunning(key);
     const hlsUrl  = radioManager.getPublicHlsUrl(key, backendOrigin);
-    const slug    = radioManager.getSlug(key);
+    // Only expose the slug when nginx is actually proxying it; otherwise the slug
+    // would be meaningless (no nginx location exists for it).
+    const slug    = radioManager.isNginxEnabled ? radioManager.getSlug(key) : null;
 
     setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Cache-Control', 'no-cache, no-store');
     res.json({ live, hlsUrl, ...(slug ? { slug } : {}) });
   });
 
-  // GET /radio/:key/index.m3u8 — HLS playlist
-  router.get('/:key/index.m3u8', hlsRateLimit, (req, res) => {
-    const { key } = req.params;
-    if (!RADIO_KEY_RE.test(key)) {
-      return res.status(400).json({ error: 'Invalid radio key format' });
-    }
-
-    const hlsRoot = radioManager._hlsRoot;
-    const file    = join(radioManager.hlsDir(key), 'index.m3u8');
-
-    // Path-traversal guard: ensure resolved path is inside the HLS root.
-    // The key regex already blocks '..' and '/', but this is defence-in-depth.
-    if (!resolvePath(file).startsWith(resolvePath(hlsRoot) + sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
-
-    if (!existsSync(file)) {
-      return res.status(404).json({ error: 'Stream not found or not currently live' });
-    }
-
-    setCorsHeaders(res, getEmbedCors(db, key));
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    res.setHeader('Cache-Control', 'no-cache, no-store');
-    createReadStream(file).pipe(res);
-  });
-
-  // GET /radio/:key/:segment — HLS segment (*.ts files only)
-  router.get('/:key/:segment', hlsRateLimit, (req, res) => {
-    const { key, segment } = req.params;
+  // GET /radio/:key/:file — proxy HLS playlist and segments to MediaMTX.
+  // Used as fallback when nginx is not active. Supports:
+  //   index.m3u8  — HLS playlist
+  //   *.ts        — MPEG-TS segment
+  router.get('/:key/:file', hlsRateLimit, async (req, res) => {
+    const { key, file } = req.params;
 
     if (!RADIO_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid radio key format' });
     }
 
-    // Only allow safe segment filenames: seg<digits>.ts
-    if (!/^seg\d{5}\.ts$/.test(segment)) {
-      return res.status(400).json({ error: 'Invalid segment name' });
+    // Accept playlist and TS segment filenames only
+    if (file !== 'index.m3u8' && !/^[a-zA-Z0-9_-]+\.ts$/.test(file)) {
+      return res.status(400).json({ error: 'Invalid file name' });
     }
 
-    const hlsRoot = radioManager._hlsRoot;
-    const file    = join(radioManager.hlsDir(key), basename(segment));
+    const upstreamUrl = `${radioManager.getInternalHlsUrl(key)}/${file}`;
 
-    // Path-traversal guard: defence-in-depth (key + segment regexes already block traversal)
-    if (!resolvePath(file).startsWith(resolvePath(hlsRoot) + sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
+    let upstream;
+    try {
+      upstream = await fetch(upstreamUrl);
+    } catch (err) {
+      console.error(`[radio] MediaMTX proxy error for ${key.slice(0, 8)}: ${err.message}`);
+      return res.status(502).json({ error: 'Stream backend unavailable' });
     }
 
-    if (!existsSync(file)) {
-      return res.status(404).json({ error: 'Segment not found' });
+    if (!upstream.ok) {
+      return res.status(upstream.status === 404 ? 404 : 502).json({
+        error: upstream.status === 404 ? 'Stream not found or not currently live' : 'Stream backend error',
+      });
     }
 
-    setCorsHeaders(res, getEmbedCors(db, key));
-    res.setHeader('Content-Type', 'video/mp2t');
-    res.setHeader('Cache-Control', 'public, max-age=60');
-    createReadStream(file).pipe(res);
+    const cors = getEmbedCors(db, key);
+    setCorsHeaders(res, cors);
+    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=60');
+    res.setHeader('Content-Type', file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
+
+    Readable.fromWeb(upstream.body)
+      .on('error', () => { if (!res.writableEnded) res.end(); })
+      .pipe(res);
   });
 
   return router;

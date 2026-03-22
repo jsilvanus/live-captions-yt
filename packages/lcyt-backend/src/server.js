@@ -130,6 +130,7 @@ const store = new SessionStore({ db });
 const {
   registry: productionRegistry,
   bridgeManager: productionBridgeManager,
+  mediamtxClient: productionMediamtxClient,
 } = await initProductionControl(db);
 
 // RTMP plugin — run DB migrations, create all manager instances.
@@ -319,6 +320,7 @@ app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
 app.use('/youtube', createYouTubeRouter(auth));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
+  mediamtxClient: productionMediamtxClient,
 }));
 
 // RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1

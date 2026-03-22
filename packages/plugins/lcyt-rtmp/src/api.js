@@ -2,7 +2,10 @@
  * lcyt-rtmp plugin entry point.
  *
  * Provides RTMP relay, HLS streaming, audio-only radio, stream preview,
- * and CEA-708 caption injection via ffmpeg.
+ * and CEA-708 caption injection. HLS and radio are served by MediaMTX;
+ * the backend proxies HLS requests and proxies thumbnail previews from the
+ * MediaMTX API. ffmpeg is only used for CEA-708 caption injection and DSK
+ * overlay composition in the relay manager.
  *
  * Usage in lcyt-backend:
  *
@@ -52,8 +55,8 @@ export { NginxManager } from './nginx-manager.js';
 /**
  * Initialize the RTMP relay plugin.
  *
- * Runs DB migrations, probes ffmpeg capabilities, and creates all manager
- * instances. Safe to call regardless of RTMP_RELAY_ACTIVE — migrations are
+ * Runs DB migrations and creates all manager instances.
+ * Safe to call regardless of RTMP_RELAY_ACTIVE — migrations are
  * always idempotent and managers are lightweight.
  *
  * @param {import('better-sqlite3').Database} db
@@ -76,8 +79,15 @@ export async function initRtmpControl(db) {
   // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
   const _rtmpStatIds = new Map();
 
+  // Build MediaMTX client when API URL is configured.
+  // Created before relayManager so the same instance can be shared across all managers.
+  const mediamtxClient = process.env.MEDIAMTX_API_URL
+    ? new MediaMtxClient()
+    : null;
+
   const relayManager = new RtmpRelayManager({
     ffmpegCaps,
+    mediamtxClient,
     onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
       try {
         const id = writeRtmpStreamStart(db, {
@@ -113,29 +123,21 @@ export async function initRtmpControl(db) {
     },
   });
 
-  // Build MediaMTX client when API URL is configured
-  const mediamtxClient = process.env.MEDIAMTX_API_URL
-    ? new MediaMtxClient()
-    : null;
-
   // NginxManager handles writing nginx proxy locations for MediaMTX radio streams.
   // When NGINX_RADIO_CONFIG_PATH is not set, NginxManager operates in no-op mode
   // (slugs are computed but nginx config is not written).
   const nginxManager = new NginxManager();
 
-  const radioManager = new RadioManager({ mediamtxClient, nginxManager });
-  const hlsManager      = new HlsManager();
-  const hlsSubsManager  = new HlsSubsManager();
-  const previewManager  = new PreviewManager();
+  const radioManager   = new RadioManager({ mediamtxClient, nginxManager });
+  const hlsManager     = new HlsManager({ mediamtxClient });
+  const hlsSubsManager = new HlsSubsManager();
+  const previewManager = new PreviewManager({ mediamtxClient });
 
   if (nginxManager.isEnabled) {
     console.log(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
   }
   if (mediamtxClient) {
     console.log(`[lcyt-rtmp] MediaMTX API: ${process.env.MEDIAMTX_API_URL}`);
-  }
-  if (process.env.RADIO_HLS_SOURCE === 'mediamtx') {
-    console.log('[lcyt-rtmp] Radio HLS source: mediamtx (ffmpeg NOT used for radio)');
   }
 
   async function stop() {

@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { createReadStream, existsSync, statSync } from 'node:fs';
-import { join, resolve as resolvePath, sep } from 'node:path';
+import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
 
 // Preview key validation: same rules as radio / viewer keys
@@ -29,15 +28,12 @@ function setCorsHeaders(res) {
 /**
  * Factory for the /preview router.
  *
- * Serves JPEG thumbnail previews of live RTMP streams.  Thumbnails are generated
- * by the PreviewManager (one ffmpeg process per key writing a continuously-updated
- * JPEG) and served here with appropriate caching headers.
+ * Serves stream previews sourced from MediaMTX. Three preview types are
+ * available for any active RTMP stream:
  *
- * Endpoints:
- *   GET /preview/:key/incoming.jpg — latest thumbnail of the incoming RTMP stream.
- *       Returns 404 if no preview is currently running for the key.
- *       Cache-Control: public, max-age=5 (safe to cache for one polling interval)
- *       Last-Modified: file mtime
+ *   GET /preview/:key/incoming.jpg  — JPEG thumbnail snapshot (MediaMTX thumbnail API)
+ *   GET /preview/:key/webrtc        — WebRTC preview info JSON { url, live }
+ *   (HLS preview is available via /stream-hls/:key/index.m3u8)
  *
  * CORS: all endpoints are public with CORS * (thumbnails contain no private data).
  *
@@ -48,54 +44,51 @@ export function createPreviewRouter(previewManager) {
   const router = Router();
 
   // CORS preflight
-  router.options('/:key/*', (req, res) => {
+  router.options('/:key/*', (_req, res) => {
     setCorsHeaders(res);
     res.status(204).end();
   });
 
-  // GET /preview/:key/incoming.jpg — latest incoming stream thumbnail
-  router.get('/:key/incoming.jpg', previewRateLimit, (req, res) => {
+  // GET /preview/:key/incoming.jpg — JPEG thumbnail from MediaMTX thumbnail API
+  router.get('/:key/incoming.jpg', previewRateLimit, async (req, res) => {
     const { key } = req.params;
 
     if (!PREVIEW_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid preview key format' });
     }
 
-    const previewRoot = previewManager._root;
-    const file = previewManager.previewPath(key);
+    const response = await previewManager.fetchThumbnail(key);
 
-    // Path-traversal guard: ensure the resolved path is inside the preview root.
-    // The key regex already blocks '..' and '/', but this is defence-in-depth.
-    if (!resolvePath(file).startsWith(resolvePath(previewRoot) + sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
-    }
-
-    if (!existsSync(file)) {
+    if (!response) {
       return res.status(404).json({ error: 'Preview not available — stream may not be live' });
     }
 
-    let mtime;
-    try {
-      mtime = statSync(file).mtime;
-    } catch {
-      return res.status(404).json({ error: 'Preview not available' });
+    setCorsHeaders(res);
+    res.setHeader('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=5, must-revalidate');
+
+    Readable.fromWeb(response.body)
+      .on('error', () => { if (!res.writableEnded) res.end(); })
+      .pipe(res);
+  });
+
+  // GET /preview/:key/webrtc — WebRTC preview info
+  // Returns { url, live } where `url` is the MediaMTX WebRTC endpoint.
+  // Clients open this URL directly in a WebRTC-capable browser or embed it
+  // in a <video> element or custom WebRTC player.
+  router.get('/:key/webrtc', previewRateLimit, (req, res) => {
+    const { key } = req.params;
+
+    if (!PREVIEW_KEY_RE.test(key)) {
+      return res.status(400).json({ error: 'Invalid preview key format' });
     }
 
     setCorsHeaders(res);
-    res.setHeader('Content-Type', 'image/jpeg');
-    // Allow clients (browsers, <img> tags) to cache for one polling interval.
-    // must-revalidate ensures they check mtime before using a cached copy.
-    res.setHeader('Cache-Control', 'public, max-age=5, must-revalidate');
-    res.setHeader('Last-Modified', mtime.toUTCString());
-
-    // Support If-Modified-Since conditional requests so browser <img> polling
-    // gets a 304 when the thumbnail hasn't changed (saves bandwidth).
-    const ifModSince = req.headers['if-modified-since'];
-    if (ifModSince && new Date(ifModSince) >= mtime) {
-      return res.status(304).end();
-    }
-
-    createReadStream(file).pipe(res);
+    res.setHeader('Cache-Control', 'no-cache, no-store');
+    res.json({
+      url:  previewManager.getWebRtcUrl(key),
+      live: previewManager.isRunning(key),
+    });
   });
 
   return router;

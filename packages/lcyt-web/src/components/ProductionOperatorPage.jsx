@@ -118,7 +118,25 @@ function CameraCard({ camera, isLive, quickCutEnabled, backendUrl, headers, onCu
         )}
       </div>
 
-      {hasPresets ? (
+      {/* Browser camera: show "Open camera" link instead of presets */}
+      {(camera.controlType === 'webcam' || camera.controlType === 'mobile') ? (
+        <div onClick={e => e.stopPropagation()}>
+          <a
+            href={`/production/camera/${camera.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn--sm btn--ghost"
+            style={{ textDecoration: 'none', display: 'inline-block' }}
+          >
+            Open camera
+          </a>
+          {camera.cameraKey && (
+            <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+              {camera.cameraKey}
+            </span>
+          )}
+        </div>
+      ) : hasPresets ? (
         <div
           onClick={e => e.stopPropagation()}  // prevent card click when clicking preset buttons
           style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}
@@ -185,6 +203,17 @@ function MixerStatusBar({ mixers, onManualSwitch }) {
               : <span style={{ color: 'var(--color-text-muted)' }}>Disconnected</span>
             }
           </span>
+          {m.type === 'lcyt' && (
+            <a
+              href={`/production/lcyt-mixer/${m.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn--sm btn--ghost"
+              style={{ textDecoration: 'none', marginLeft: 4 }}
+            >
+              Open mixer
+            </a>
+          )}
         </div>
       ))}
     </div>

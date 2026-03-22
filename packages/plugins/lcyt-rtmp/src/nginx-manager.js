@@ -84,10 +84,11 @@ export class NginxManager {
     this._prefix         = (opts.prefix ?? process.env.NGINX_RADIO_PREFIX ?? DEFAULT_PREFIX)
                              .replace(/\/$/, '');
 
-    // explicit disable takes precedence; otherwise enabled when configPath is set
+    // explicit disable takes precedence; otherwise enabled only when configPath was
+    // *explicitly provided* (via opts or env var) — not when falling back to the default.
     this._enabled = 'enabled' in opts
       ? Boolean(opts.enabled)
-      : Boolean(this._configPath);
+      : Boolean(opts.configPath ?? process.env.NGINX_RADIO_CONFIG_PATH);
 
     /** @type {Map<string, string>} apiKey → slug */
     this._streams = new Map();
@@ -198,10 +199,8 @@ export class NginxManager {
 
   /**
    * Build the full content of the managed nginx include file.
-   * The file contains a single `server { }` block (for location-only includes)
-   * OR just bare location blocks (for include inside an existing server block).
    *
-   * We output bare location blocks — the operator includes this file inside their
+   * Outputs bare `location` blocks — the operator includes this file inside their
    * existing `server { }` block via `include /etc/nginx/conf.d/lcyt-radio.conf;`
    *
    * @returns {string}
@@ -290,11 +289,12 @@ export class NginxManager {
   /**
    * Execute a shell command string.
    *
-   * @param {string} cmdStr    e.g. "nginx -s reload"
-   * @param {string} label     used in error messages
+   * @param {string} cmdStr      e.g. "nginx -s reload"
+   * @param {string} label       used in error messages
+   * @param {number} timeoutMs   kill the process and reject after this many ms (default 10 s)
    * @returns {Promise<void>}
    */
-  _execCmd(cmdStr, label) {
+  _execCmd(cmdStr, label, timeoutMs = 10_000) {
     return new Promise((resolve, reject) => {
       const parts = cmdStr.trim().split(/\s+/);
       const proc  = spawn(parts[0], parts.slice(1), { stdio: 'pipe' });
@@ -302,8 +302,14 @@ export class NginxManager {
       let stderr = '';
       if (proc.stderr) proc.stderr.on('data', d => { stderr += d; });
 
-      proc.on('error', err => reject(new Error(`${label} failed to start: ${err.message}`)));
+      const timer = setTimeout(() => {
+        proc.kill();
+        reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      proc.on('error', err => { clearTimeout(timer); reject(new Error(`${label} failed to start: ${err.message}`)); });
       proc.on('close', code => {
+        clearTimeout(timer);
         if (code !== 0) {
           reject(new Error(`${label} exited with code ${code}: ${stderr.trim().slice(0, 300)}`));
         } else {

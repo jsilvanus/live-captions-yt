@@ -7,10 +7,30 @@ import { getSwitchCommand as amxGetSwitchCommand } from '../adapters/mixer/amx.j
 import { getSwitchCommand as atemGetSwitchCommand } from '../adapters/mixer/atem.js';
 import { getSwitchCommand as monarchHdxGetSwitchCommand } from '../adapters/mixer/monarch_hdx.js';
 
-const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx'];
+const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
-export function createMixersRouter(db, registry, bridgeManager = null) {
+export function createMixersRouter(db, registry, bridgeManager = null, opts = {}) {
+  const mediamtxClient = opts.mediamtxClient ?? null;
   const router = Router();
+
+  // -------------------------------------------------------------------------
+  // Text body parser for WHIP SDP routes
+  // -------------------------------------------------------------------------
+  router.use(
+    '/:id/whip',
+    (req, res, next) => {
+      const ct = req.headers['content-type'] ?? '';
+      if (ct.includes('application/sdp') || ct.includes('trickle-ice-sdpfrag')) {
+        let body = '';
+        req.setEncoding('utf8');
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => { req.rawBody = body; next(); });
+        req.on('error', next);
+      } else {
+        next();
+      }
+    },
+  );
 
   // GET /production/mixers — list all mixers with connection status
   router.get('/', (_req, res) => {
@@ -42,7 +62,7 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
 
   // POST /production/mixers — create mixer
   router.post('/', (req, res) => {
-    const { name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend' } = req.body;
+    const { name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend', outputKey = null } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
@@ -51,9 +71,9 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     }
     const id = randomUUID();
     db.prepare(`
-      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource);
+      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>
@@ -74,6 +94,7 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
       connectionConfig = JSON.parse(existing.connection_config),
       bridgeInstanceId = existing.bridge_instance_id,
       connectionSource = existing.connection_source ?? 'backend',
+      outputKey        = existing.output_key,
     } = req.body;
 
     if (type && !MIXER_TYPES.includes(type)) {
@@ -81,9 +102,9 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     }
 
     db.prepare(`
-      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?, connection_source = ?
+      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?, connection_source = ?, output_key = ?
       WHERE id = ?
-    `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId ?? null, connectionSource, id);
+    `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId ?? null, connectionSource, outputKey ?? null, id);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>
@@ -122,12 +143,15 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
           return res.status(503).json({ error: 'Bridge is not connected' });
         }
         const command = buildSwitchCommand(mixer, input);
-        await bridgeManager.sendCommand(mixer.bridgeInstanceId, command);
-      } else {
-        // Direct TCP via registry
-        await registry.switchSource(id, input);
+        // lcyt mixer returns null — skip bridge dispatch, fall through to registry
+        if (command !== null) {
+          await bridgeManager.sendCommand(mixer.bridgeInstanceId, command);
+          return res.json({ ok: true, mixerId: id, activeSource: input });
+        }
       }
 
+      // Direct via registry (handles lcyt in-memory tracking and all non-bridge cases)
+      await registry.switchSource(id, input);
       res.json({ ok: true, mixerId: id, activeSource: input });
     } catch (err) {
       const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
@@ -148,17 +172,19 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     });
   });
 
-  // POST /production/mixers/:id/test — test reachability (no persistent connection)
+  // POST /production/mixers/:id/test — test reachability
   router.post('/:id/test', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Mixer not found' });
 
+    if (row.type === 'lcyt') {
+      return res.status(400).json({ ok: false, error: 'Connection test is not applicable for the LCYT software mixer' });
+    }
     if (row.type === 'atem') {
       return res.status(400).json({ ok: false, error: 'Connection test not supported for UDP-based ATEM devices' });
     }
 
     if (row.type === 'monarch_hdx') {
-      // HTTP reachability test — fetch status page from the Monarch
       const { host, protocol = 'http', username = 'admin', password = 'admin' } =
         JSON.parse(row.connection_config || '{}');
       if (!host) return res.status(400).json({ ok: false, error: 'connectionConfig.host is not set' });
@@ -196,6 +222,129 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
     res.status(result.ok ? 200 : 502).json({ ...result, host, port });
   });
 
+  // -------------------------------------------------------------------------
+  // LCYT Software Mixer — sources and WHIP proxy
+  // -------------------------------------------------------------------------
+
+  // GET /production/mixers/:id/sources — camera sources for this mixer
+  router.get('/:id/sources', async (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    if (row.type !== 'lcyt') {
+      return res.status(400).json({ error: 'Sources endpoint is only available for LCYT software mixers' });
+    }
+
+    const cameras = db
+      .prepare('SELECT * FROM prod_cameras WHERE mixer_input IS NOT NULL ORDER BY sort_order, created_at')
+      .all();
+
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const sources = await Promise.all(cameras.map(async cam => {
+      let isLive = null;
+      if (mediamtxClient && cam.camera_key) {
+        try { isLive = await mediamtxClient.isPathPublishing(cam.camera_key); } catch { /* ignore */ }
+      }
+      return {
+        cameraId:   cam.id,
+        name:       cam.name,
+        mixerInput: cam.mixer_input,
+        cameraKey:  cam.camera_key ?? null,
+        controlType: cam.control_type,
+        hlsUrl:     cam.camera_key ? `${origin}/stream-hls/${cam.camera_key}/index.m3u8` : null,
+        thumbUrl:   cam.camera_key ? `${origin}/preview/${cam.camera_key}/incoming.jpg` : null,
+        isLive,
+      };
+    }));
+
+    res.json(sources);
+  });
+
+  // GET /production/mixers/:id/whip-url — WHIP proxy info for LCYT mixer output
+  router.get('/:id/whip-url', async (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    if (row.type !== 'lcyt') {
+      return res.status(400).json({ error: 'WHIP output is only available for LCYT software mixers' });
+    }
+    if (!row.output_key) {
+      return res.status(400).json({ error: 'Mixer has no output_key configured' });
+    }
+
+    const origin = `${req.protocol}://${req.get('host')}`;
+    res.json({
+      outputKey: row.output_key,
+      whipUrl:   `/production/mixers/${row.id}/whip`,
+      hlsUrl:    `${origin}/stream-hls/${row.output_key}/index.m3u8`,
+    });
+  });
+
+  // POST /production/mixers/:id/whip — proxy SDP offer to MediaMTX WHIP endpoint
+  router.post('/:id/whip', async (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    if (row.type !== 'lcyt') return res.status(400).json({ error: 'Mixer is not an LCYT software mixer' });
+    if (!row.output_key) return res.status(400).json({ error: 'Mixer has no output_key configured' });
+    if (!mediamtxClient) {
+      return res.status(503).json({ error: 'MediaMTX is not configured (MEDIAMTX_API_URL not set)' });
+    }
+
+    const sdpOffer = req.rawBody;
+    if (!sdpOffer) return res.status(400).json({ error: 'SDP offer body is required' });
+
+    // Kick any existing publisher so the new mixer page replaces it
+    try { await mediamtxClient.kickPath(row.output_key); } catch { /* no-op if no publisher */ }
+
+    const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(row.output_key)}/whip`;
+    try {
+      const upstream = await fetch(whipUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/sdp' },
+        body: sdpOffer,
+      });
+
+      if (!upstream.ok && upstream.status !== 201) {
+        const errText = await upstream.text().catch(() => '');
+        return res.status(502).json({ error: `MediaMTX WHIP error ${upstream.status}: ${errText.slice(0, 200)}` });
+      }
+
+      const answerSdp = await upstream.text();
+      res.status(201)
+        .set('Content-Type', 'application/sdp')
+        .set('Location', `/production/mixers/${row.id}/whip`)
+        .send(answerSdp);
+    } catch (err) {
+      res.status(502).json({ error: `WHIP proxy failed: ${err.message}` });
+    }
+  });
+
+  // PATCH /production/mixers/:id/whip — proxy trickle ICE candidates
+  router.patch('/:id/whip', async (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    if (!row || !row.output_key || !mediamtxClient) return res.status(204).end();
+
+    const body = req.rawBody ?? '';
+    const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(row.output_key)}/whip`;
+    try {
+      const upstream = await fetch(whipUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': req.headers['content-type'] ?? 'application/trickle-ice-sdpfrag' },
+        body,
+      });
+      res.status(upstream.status).end();
+    } catch {
+      res.status(204).end();
+    }
+  });
+
+  // DELETE /production/mixers/:id/whip — terminate WHIP session (kick publisher)
+  router.delete('/:id/whip', async (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    if (!row || !row.output_key || !mediamtxClient) return res.status(204).end();
+
+    try { await mediamtxClient.kickPath(row.output_key); } catch { /* ignore */ }
+    res.status(204).end();
+  });
+
   return router;
 }
 
@@ -205,17 +354,10 @@ export function createMixersRouter(db, registry, bridgeManager = null) {
 
 /**
  * Build the bridge command object for a mixer source switch.
- *
- * Roland/AMX return `{ host, port, payload }` (no `type`), which BridgeManager
- * treats as a legacy `tcp_send` command. ATEM returns a typed object
- * `{ type: 'atem_switch', host, meIndex, inputNumber }`. Monarch HDx returns
- * `{ type: 'http_request', method, url, headers, body }`.
- *
- * @param {object} mixer
- * @param {number} inputNumber
- * @returns {object} command passed to BridgeManager.sendCommand()
+ * Returns null for mixer types that do not use bridge dispatch (e.g. lcyt).
  */
 function buildSwitchCommand(mixer, inputNumber) {
+  if (mixer.type === 'lcyt') return null;
   if (mixer.type === 'roland') {
     return {
       host:    mixer.connectionConfig.host,
