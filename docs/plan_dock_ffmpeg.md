@@ -5,6 +5,8 @@
 **Status:** Plan accepted. Ready to implement.
 **Progress:** Implementation not started.
 
+**Note:** Consolidated PR materials and platform artifacts prepared in branch `director/phase6-7-hetzner`. See [PR description](PR_phase6-7_hetzner.md) for validation and rollback instructions.
+
 ---
 
 ## Overview
@@ -518,7 +520,9 @@ never auto-reassign: relay and HLS jobs (RTMP stream continuity requires stable 
 2. Install Docker Engine; set `"live-restore": true` in `/etc/docker/daemon.json`.
 3. Pre-pull images: `docker pull lcyt-ffmpeg:latest && docker pull lcyt-dsk-renderer:latest`.
 4. Deploy `lcyt-worker-daemon` as a systemd service set to `WantedBy=multi-user.target`.
-5. Snapshot the VM in the Hetzner console → copy snapshot ID to `HETZNER_SNAPSHOT_ID`.
+5. Create cloud-init userdata for the snapshot boot. We provide a tested template at
+  `packages/lcyt-worker-daemon/dist/cloud-init-worker.yaml` — copy or reference this file when creating burst VMs via the Hetzner console or API.
+6. Snapshot the VM in the Hetzner console → copy snapshot ID to `HETZNER_SNAPSHOT_ID`.
 
 ### Burst VM creation flow (automated by orchestrator)
 
@@ -752,25 +756,55 @@ Each phase below is **independently deployable** and leaves the system fully ope
 
 ---
 
-### Phase 7 — DSK Renderer Containerisation
+### Phase 7 — Autoscaling, Production Hardening, and Runbooks
 
-**Goal:** Move Playwright + Chromium + ffmpeg (currently `lcyt-dsk/src/renderer.js`) into a dedicated `lcyt-dsk-renderer` Docker image. Backend spawns renderer containers per API key.
+**Goal:** Finalise autoscaling behaviour and operational hardening for Hetzner burst workers, publish an operator runbook, and document rollback steps and env variables required for safe production operations.
 
-**Changes:**
-- Build `images/lcyt-dsk-renderer/Dockerfile` (Node.js 20 + Playwright + Chromium + ffmpeg).
-- Renderer communicates with backend via a shared Unix socket volume (PNG frame delivery) or HTTP chunked upload.
-- Worker Daemon can host renderer containers in Phase 6+ just like any other job type.
-- Retire `PLAYWRIGHT_DSK_CHROMIUM` env var (renderer image manages Chromium path internally).
+This phase assumes Phase 5 (S3-compatible storage) and Phase 6 (Hetzner snapshot + worker registration) are in place. The orchestrator now manages creation, readiness checks, registration, and destruction of burst VMs and exposes Prometheus metrics and health endpoints for monitoring and alerting.
 
-**Deployable:** Yes — independent of Phases 4–6; can be deployed as a single-VM enhancement.
+**Key behaviour (implemented):**
+- Orchestrator only creates a burst VM when warm workers are saturated and queued jobs exceed `BURST_QUEUE_LIMIT` policy.
+- Burst VM creation uses the snapshot ID configured in `HETZNER_SNAPSHOT_ID` and boots with cloud-init from `packages/lcyt-worker-daemon/dist/cloud-init-worker.yaml` (the orchestrator passes this as `user_data`).
+- Orchestrator enforces a rate limit on Hetzner API calls: on HTTP 429 the orchestrator backs off for `ORCHESTRATOR_BACKOFF_MS` and requeues VM creation attempts.
+- Worker readiness is gated: the orchestrator waits for a successful `POST /compute/workers/register` from the worker VM and liveness `GET /health` before dispatching any jobs.
+- Idle burst VMs are destroyed after `BURST_COOLDOWN_MS`; destruction increments `lcyt_burst_vm_destroyed_total`.
+
+**Environment variables (production-critical additions):**
+- `HETZNER_API_TOKEN` (required to enable burst VM creation)
+- `HETZNER_SNAPSHOT_ID` (ID of the pre-baked worker snapshot)
+- `HETZNER_NETWORK_ID` (private network for worker VMs)
+- `ORCHESTRATOR_BACKOFF_MS` (429 back-off window)
+- `MAX_CONCURRENT_BURST_CREATES` (throttle parallel creates)
+
+Set these on the orchestrator process or container. The orchestrator will refuse to create burst VMs unless `HETZNER_API_TOKEN` and `HETZNER_SNAPSHOT_ID` are non-empty.
+
+**Runbooks & operator playbook (summary):**
+- Pre-snapshot checklist and cloud-init usage: see `docs/hetzner_runbook.md` (new file). The runbook references `packages/lcyt-worker-daemon/dist/cloud-init-worker.yaml` and exact CLI snippets for snapshot and VM lifecycle operations.
+- Boot & test a VM locally (operator steps): boot from snapshot, verify `docker images` contains `lcyt-ffmpeg:latest`, confirm `systemctl status lcyt-worker-daemon`, and `curl http://<worker-private-ip>:5000/health`.
+- How to take a snapshot: stop worker daemon, ensure docker image pulls complete, capture snapshot via Hetzner console or `hcloud` CLI (example in runbook).
+
+**Rollback steps (operator actions):**
+- Revert orchestrator to safe mode: set `ORCHESTRATOR_FALLBACK=spawn` and restart the orchestrator service. This causes the backend to route to the local `spawn` runner if the orchestrator is unreachable.
+- Mark workers degraded manually: `DELETE /compute/workers/:id` with `?mark=degraded` (or via the orchestrator UI / API). Degraded workers are excluded from scheduling and are shown in Prometheus/Grafana dashboards.
+- De-register a worker (manual decommission): `DELETE /compute/workers/:id?destroy=false` to remove registration but keep the VM; use `?destroy=true` to also issue a Hetzner server DELETE. Exact API calls are in `docs/hetzner_runbook.md`.
+
+**Monitoring & alerts:**
+- Critical alerts: `worker_heartbeat_missing` → page on 3 consecutive misses; `burst_vm_create_failures_total` → alert when > 3 in 1 min; `s3_upload_error_rate` → warn when > 1%.
+- Dashboard links and Prometheus queries are provided in `docs/hetzner_runbook.md`.
+
+**Troubleshooting (short):**
+- Hetzner 429 on VM create: check `ORCHESTRATOR_BACKOFF_MS` and `MAX_CONCURRENT_BURST_CREATES`; wait and retry; consult `orchestrator` logs for the API response body.
+- Image missing on worker: `docker images` will show `IMAGE_MISSING`; run `docker pull lcyt-ffmpeg:latest` and restart `lcyt-worker-daemon`.
+- Registration timeout: tail worker logs (`journalctl -u lcyt-worker-daemon`) and orchestrator logs (`journalctl -u lcyt-orchestrator`); ensure `HETZNER_NETWORK_ID` allows the worker private IP to reach orchestrator.
 
 **Acceptance criteria:**
-- DSK renderer container starts per API key; RTMP output from renderer active.
-- PNG frames transferred reliably; no dropped frames under normal load.
-- `lcyt-dsk-renderer` image size < 2 GB.
+- Orchestrator provisions a burst VM within configured SLA (observed median < 60 s) and dispatches queued jobs after worker registration.
+- Operator runbook reproduces snapshot → VM boot → worker registration steps successfully in staging.
+- Rollback scenario exercised: setting `ORCHESTRATOR_FALLBACK=spawn` returns system to single-VM operation without data loss for existing streams.
 
-**Rollback:** Keep `DskRenderer` using local `spawn()` (gated by `FFMPEG_RUNNER` flag or a `DSK_RUNNER=spawn` override).
-
+**Next steps (post-Phase 7):**
+- Complete the DSK renderer containerisation (moved to a follow-on Phase 8) with the same worker-runner model.
+- Expand runbooks to include runbook playbooks for on-call rotation and incident postmortems.
 ---
 
 ### Phase 8 — Hardening, Monitoring, and Runbooks
