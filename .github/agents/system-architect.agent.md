@@ -7,14 +7,13 @@ description: |
   review, trade-off analysis, or an actionable recommendation for feature
   placement across the `live-captions-yt` monorepo.
 author: GitHub Copilot
-model: GPT-5 mini (copilot)
+model: [Claude Sonnet 4.6 (copilot)]
 applyTo:
   - "packages/**"
   - "packages/lcyt-backend/**"
   - "packages/plugins/**"
   - "packages/lcyt-web/**"
   - "docs/**"
-  - "api/**"
 useSkills:
   - ".github/skills/platform-infra-ops/SKILL.md"
   - ".github/skills/plugin-architecture/SKILL.md"

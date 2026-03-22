@@ -44,6 +44,7 @@ import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { createRadioRouter } from './routes/radio.js';
 import { createPreviewRouter } from './routes/preview.js';
+export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 
 /**
  * Initialize the RTMP relay plugin.

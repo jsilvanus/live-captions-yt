@@ -2,6 +2,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createFfmpegRunner } from '../../../lcyt-backend/src/ffmpeg/index.js';
 import { makeFifo } from '../../../lcyt-backend/src/ffmpeg/pipe-utils.js';
 import { createWriteStream } from 'node:fs';
+import { MediaMtxClient } from './mediamtx-client.js';
 
 const DEFAULT_RTMP_HOST = process.env.RTMP_HOST || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP  = process.env.RTMP_APP  || 'stream';
@@ -102,9 +103,10 @@ export class RtmpRelayManager {
    *   onStreamEnded?: Function,
    *   rtmpControlUrl?: string|null,
    *   rtmpApplication?: string,
+   *   mediamtxClient?: import('./mediamtx-client.js').MediaMtxClient|null,
    * }} [opts]
    */
-  constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication, ffmpegCaps } = {}) {
+  constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication, ffmpegCaps, mediamtxClient } = {}) {
     /**
      * One process per API key.
      * @type {Map<string, import('node:child_process').ChildProcess>}
@@ -133,6 +135,10 @@ export class RtmpRelayManager {
     this._controlUrl = rtmpControlUrl ?? process.env.RTMP_CONTROL_URL ?? null;
     this._rtmpApp    = rtmpApplication ?? process.env.RTMP_APPLICATION ?? DEFAULT_RTMP_APP;
     this._ffmpegCaps = ffmpegCaps ?? null;
+    // MediaMTX REST API client. When provided (or MEDIAMTX_API_URL is set), `dropPublisher`
+    // uses the MediaMTX `/v3/paths/kick` endpoint instead of the nginx-rtmp control URL.
+    this._mediamtx = mediamtxClient
+      ?? (process.env.MEDIAMTX_API_URL ? new MediaMtxClient() : null);
   }
 
   // ---------------------------------------------------------------------------
@@ -749,18 +755,39 @@ export class RtmpRelayManager {
   isPublishing(apiKey) { return this._publishing.has(apiKey); }
 
   // ---------------------------------------------------------------------------
-  // Public: nginx-rtmp control API
+  // Public: media-server control API (MediaMTX or nginx-rtmp)
   // ---------------------------------------------------------------------------
 
   /**
-   * Drop the publisher from nginx using the RTMP control API.
-   * Requires RTMP_CONTROL_URL to be configured.
+   * Drop the active publisher for a stream key.
+   *
+   * **MediaMTX** (preferred): when a `MediaMtxClient` is configured (via the `mediamtxClient`
+   * constructor option or the `MEDIAMTX_API_URL` environment variable), this calls
+   * `POST /v3/paths/kick/<name>` on the MediaMTX REST API.
+   *
+   * **nginx-rtmp fallback**: when no MediaMTX client is available but `RTMP_CONTROL_URL`
+   * is set, falls back to the legacy nginx-rtmp control API (`drop/publisher` endpoint).
+   *
+   * If neither is configured the call is a no-op (logs at debug level).
+   *
    * @param {string} apiKey
    * @returns {Promise<void>}
    */
   async dropPublisher(apiKey) {
+    // --- MediaMTX path (preferred) -------------------------------------------
+    if (this._mediamtx) {
+      try {
+        await this._mediamtx.kickPath(apiKey);
+        console.log(`[rtmp] mediamtx kick successful for key ${apiKey.slice(0, 8)}`);
+      } catch (err) {
+        console.warn(`[rtmp] mediamtx kick failed for key ${apiKey.slice(0, 8)}: ${err.message}`);
+      }
+      return;
+    }
+
+    // --- nginx-rtmp fallback --------------------------------------------------
     if (!this._controlUrl) {
-      console.debug('[rtmp] RTMP_CONTROL_URL not set -- skipping drop/publisher');
+      console.debug('[rtmp] neither MEDIAMTX_API_URL nor RTMP_CONTROL_URL set -- skipping drop/publisher');
       return;
     }
     const url = `${this._controlUrl}/drop/publisher?app=${encodeURIComponent(this._rtmpApp)}&name=${encodeURIComponent(apiKey)}`;
