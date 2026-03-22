@@ -399,6 +399,16 @@ networks:
 | `ORCHESTRATOR_BACKOFF_MS` | `60000` | Hetzner rate-limit back-off duration |
 | `BACKEND_INTERNAL_TOKEN` | _(required)_ | Auth token for backend→orchestrator |
 
+### Phase 8 — MediaMTX integration
+
+Introduce MediaMTX as an alternative ingest/distribution broker to complement our ffmpeg runners. Next steps:
+
+- Add a developer `mediamtx` service to `docker-compose.yml` and a sample `docker/mediamtx.yml` configuration to validate RTMP -> HLS flows.
+- Add env knobs (`RTMP_RELAY_TYPE=ffmpeg|mediamtx`, `MEDIAMTX_URL`, `MEDIAMTX_APP`) and update `packages/lcyt-backend/src/rtmp-manager.js` and `packages/plugins/lcyt-dsk/src/renderer.js` to support optional pushes into MediaMTX.
+- Create a staging smoke test that pushes a short stream to MediaMTX and validates the HLS playlist; add Prometheus scraping and add runbook entries for HLS segment management.
+- Roll out opt-in in staged phases; preserve the ffmpeg path as the safe rollback. Owners: infra + backend + dsk teams.
+
+
 **Worker Daemon:**
 
 | Variable | Default | Purpose |

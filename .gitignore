@@ -27,6 +27,8 @@ docs/screenshots/*.png
 *.db-shm
 *.db-wal
 
-
 # Astro
 .astro/
+
+# Tmp files
+tmp/
