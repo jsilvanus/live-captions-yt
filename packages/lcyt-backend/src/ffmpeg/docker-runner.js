@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export class DockerFfmpegRunner extends EventEmitter {
-  constructor({ image = 'lcyt-ffmpeg:latest', name = null, args = [], env = {}, volumes = [], network, cpus, memory, entrypoint = null } = {}) {
+  constructor({ image = 'lcyt-ffmpeg:latest', name = null, args = [], env = {}, volumes = [], network, cpus, memory, entrypoint = null, pipeStdin = false } = {}) {
     super();
     this.image = image;
     this.name = name ?? `lcyt-ffmpeg-${Date.now().toString(36)}`;
@@ -20,6 +20,7 @@ export class DockerFfmpegRunner extends EventEmitter {
     this.proc = null;
     this.stdout = null;
     this.stderr = null;
+    this._pipeStdin = !!pipeStdin;
   }
 
   _imageExists() {
@@ -38,17 +39,22 @@ export class DockerFfmpegRunner extends EventEmitter {
 ENTRYPOINT ["ffmpeg"]\n`;
     writeFileSync(join(tmp, 'Dockerfile'), dockerfile, 'utf8');
     try {
-      const r = spawnSync('docker', ['build', '-t', this.image, tmp], { stdio: 'inherit', timeout: 0 });
+      const buildTimeout = Number(process.env.DOCKER_BUILD_TIMEOUT_MS) || 120000;
+      const r = spawnSync('docker', ['build', '-t', this.image, tmp], { encoding: 'utf8', timeout: buildTimeout });
+      if (r.status !== 0) {
+        console.error('[docker-runner] docker build failed:', r.stderr || r.stdout || r.status);
+      }
       return r.status === 0;
     } catch (e) {
+      console.error('[docker-runner] docker build error:', e.message);
       return false;
     } finally {
       try { rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
     }
   }
 
-  start() {
-    if (this.proc) return this.proc;
+  async start() {
+    if (this.proc) return this;
 
     // If image is missing, optionally build it when TEST_DOCKER=1
     if (!this._imageExists() && process.env.TEST_DOCKER === '1') {
@@ -77,48 +83,66 @@ ENTRYPOINT ["ffmpeg"]\n`;
     runArgs.push(...this.args);
 
     // spawn docker with stdio pipes so we can pass through stdin/stdout/stderr
-    const proc = spawn('docker', runArgs, { stdio: ['pipe', 'pipe', 'pipe'] });
+    const stdio = this._pipeStdin ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'];
+    const proc = spawn('docker', runArgs, { stdio });
     this.proc = proc;
     this.stdout = proc.stdout;
     this.stderr = proc.stderr;
 
-    // Forward host stdin to container stdin when available
-    try {
-      if (process.stdin && !process.stdin.destroyed) {
-        process.stdin.pipe(proc.stdin);
-      } else {
-        proc.stdin.end();
+    // Forward host stdin only if explicitly requested
+    if (this._pipeStdin) {
+      try {
+        if (process.stdin && !process.stdin.destroyed) {
+          process.stdin.pipe(proc.stdin);
+        } else {
+          proc.stdin.end();
+        }
+      } catch (e) {
+        // ignore pipe errors
       }
-    } catch (e) {
-      // ignore pipe errors
+    } else {
+      // ensure container stdin is closed to avoid accidental readers
+      try { if (proc.stdin) proc.stdin.end(); } catch (e) {}
     }
 
     proc.on('error', err => this.emit('error', err));
-    proc.on('close', code => {
+    proc.on('close', (code, signal) => {
       this.proc = null;
       this.stdout = null;
       this.stderr = null;
-      this.emit('close', code);
+      this.emit('close', { code: code ?? null, signal: signal ?? null });
     });
 
-    return proc;
+    return this;
   }
 
-  stop(timeoutMs = 3000) {
-    if (!this.proc) return Promise.resolve();
-
-    return new Promise(resolve => {
-      const name = this.name;
-      const onClose = (code) => resolve(code);
+  async stop(timeoutMs = 3000) {
+    if (!this.proc) return { timedOut: false, code: null, signal: null };
+    const proc = this.proc;
+    return await new Promise(resolve => {
+      let settled = false;
+      const onClose = (info) => {
+        if (settled) return;
+        settled = true;
+        resolve({ timedOut: false, code: info && info.code !== undefined ? info.code : null, signal: info && info.signal ? info.signal : null });
+      };
       this.once('close', onClose);
 
       try {
-        const stop = spawn('docker', ['stop', '--time', String(Math.ceil(timeoutMs / 1000)), name]);
+        const stop = spawn('docker', ['stop', '--time', String(Math.ceil(timeoutMs / 1000)), this.name]);
         stop.on('error', () => {});
         stop.on('close', () => {});
       } catch (e) {
         // best-effort
       }
+
+      const t = setTimeout(() => {
+        if (settled) return;
+        try { proc.kill('SIGKILL'); } catch (e) {}
+        settled = true;
+        resolve({ timedOut: true, code: null, signal: 'SIGKILL' });
+      }, timeoutMs + 500);
+      if (t.unref) t.unref();
     });
   }
 

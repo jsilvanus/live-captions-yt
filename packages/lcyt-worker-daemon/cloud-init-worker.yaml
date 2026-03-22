@@ -1,0 +1,119 @@
+#cloud-config
+write_files:
+  - path: /etc/lcyt-worker.env
+    permissions: "0600"
+    content: |
+      # Replace placeholders with real values or let orchestrator template them
+      WORKER_ID=<uuid>
+      WORKER_TYPE=burst
+      ORCHESTRATOR_URL=http://<orchestrator-private-ip>:4000
+      MAX_JOBS=8
+      PORT=5000
+      FFMPEG_IMAGE=lcyt-ffmpeg:latest
+runcmd:
+  - systemctl start lcyt-worker-daemon
+#cloud-config
+hostname: lcyt-worker
+manage_etc_hosts: true
+
+write_files:
+  - path: /etc/lcyt-worker.env
+    permissions: '0640'
+    owner: root:root
+    content: |
+      # Environment for lcyt worker daemon
+      # Replace placeholder values before creating snapshot or at first boot
+      WORKER_ID=REPLACE_ME_WORKER_ID
+      ORCHESTRATOR_URL=https://orchestrator.example.local
+      FFMPEG_IMAGE=lcyt-ffmpeg:latest
+      DSK_RENDERER_IMAGE=lcyt-dsk-renderer:latest
+      STORAGE_DIR=/var/lib/lcyt-worker
+      LOG_LEVEL=info
+
+  - path: /etc/docker/daemon.json
+    permissions: '0644'
+    owner: root:root
+    content: |
+      {
+        "live-restore": true,
+        "log-driver": "journald"
+      }
+
+  - path: /etc/systemd/system/lcyt-worker-daemon.service
+    permissions: '0644'
+    owner: root:root
+    content: |
+      [Unit]
+      Description=LCYT Worker Daemon
+      After=network.target docker.service
+
+      [Service]
+      Type=simple
+      User=lcyt
+      Group=lcyt
+      EnvironmentFile=/etc/lcyt-worker.env
+      ExecStart=/usr/bin/node /usr/local/lib/lcyt-worker-daemon/index.js
+      Restart=always
+      RestartSec=5
+      StandardOutput=journal
+      StandardError=journal
+      SyslogIdentifier=lcyt-worker-daemon
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /usr/local/lib/lcyt-worker-daemon/index.js
+    permissions: '0755'
+    owner: root:root
+    content: |
+      // Placeholder worker daemon: replace with packaged lcyt-worker-daemon
+      const fs = require('fs');
+      const env = fs.existsSync('/etc/lcyt-worker.env') ? fs.readFileSync('/etc/lcyt-worker.env','utf8') : '';
+      console.log('LCYT worker placeholder starting');
+      console.log(env);
+      setInterval(() => {
+        console.log('LCYT worker placeholder heartbeat', new Date().toISOString());
+      }, 60_000);
+
+users:
+  - name: lcyt
+    gecos: LCYT Worker
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    shell: /bin/bash
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - ca-certificates
+  - curl
+  - gnupg
+  - lsb-release
+  - apt-transport-https
+  - software-properties-common
+
+runcmd:
+  - [ bash, -lc, "set -euo pipefail" ]
+  - [ bash, -lc, "# Install Docker Engine (Debian 12 compatible)" ]
+  - [ bash, -lc, "mkdir -p /etc/apt/keyrings && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg" ]
+  - [ bash, -lc, "echo \"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable\" > /etc/apt/sources.list.d/docker.list" ]
+  - [ bash, -lc, "apt-get update -y" ]
+  - [ bash, -lc, "apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin" ]
+  - [ bash, -lc, "systemctl enable docker --now" ]
+
+  - [ bash, -lc, "# Install Node.js 18 (for the worker daemon)" ]
+  - [ bash, -lc, "curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && apt-get install -y nodejs" ]
+
+  - [ bash, -lc, "mkdir -p /var/lib/lcyt-worker" ]
+  - [ bash, -lc, "chown -R lcyt:lcyt /var/lib/lcyt-worker /usr/local/lib/lcyt-worker-daemon || true" ]
+
+  - [ bash, -lc, "# Pull required images so snapshot has them cached" ]
+  - [ bash, -lc, "docker pull ${FFMPEG_IMAGE:-lcyt-ffmpeg:latest} || true" ]
+  - [ bash, -lc, "docker pull ${DSK_RENDERER_IMAGE:-lcyt-dsk-renderer:latest} || true" ]
+
+  - [ bash, -lc, "# Reload systemd and enable the worker service (will run placeholder until replaced)" ]
+  - [ bash, -lc, "systemctl daemon-reload" ]
+  - [ bash, -lc, "systemctl enable lcyt-worker-daemon.service" ]
+  - [ bash, -lc, "systemctl start lcyt-worker-daemon.service || true" ]
+
+final_message: "LCYT worker cloud-init finished"

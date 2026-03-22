@@ -15,52 +15,89 @@ export class WorkerFfmpegRunner {
     this.timeout = timeout;
     this.jobId = null;
     this.workerId = null;
+    this._fetchImpl = null;
   }
 
   async _fetch(path, opts = {}) {
-    const fetchImpl = (typeof fetch !== 'undefined') ? fetch : (await import('node-fetch')).default;
+    if (!this._fetchImpl) {
+      this._fetchImpl = (typeof fetch !== 'undefined') ? fetch : (await import('node-fetch')).default;
+    }
     const url = new URL(path, this.baseUrl).toString();
-    const res = await fetchImpl(url, opts);
-    return res;
+    return this._fetchImpl(url, opts);
   }
 
+  /**
+   * Start a remote worker job. Returns the RunnerHandle (this) — stdout/stderr are null.
+   */
   async start(plan = {}) {
     const body = JSON.stringify(plan || {});
-    const res = await this._fetch('/jobs', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body
-    });
-    if (!res.ok) throw new Error(`start failed: ${res.status}`);
-    const json = await res.json();
-    this.jobId = json.jobId;
-    this.workerId = json.workerId;
-    return { jobId: this.jobId, workerId: this.workerId };
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), this.timeout);
+    try {
+      const res = await this._fetch('/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: ac.signal,
+      });
+      if (!res.ok) throw new Error(`start failed: ${res.status}`);
+      const json = await res.json();
+      this.jobId = json.jobId;
+      this.workerId = json.workerId;
+      return this;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  async stop() {
-    if (!this.jobId) return { ok: false, reason: 'no-job' };
-    const res = await this._fetch(`/jobs/${encodeURIComponent(this.jobId)}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error(`stop failed: ${res.status}`);
-    this.jobId = null;
-    return { ok: true };
+  async stop(timeoutMs = 3000) {
+    if (!this.jobId) return { ok: false, reason: 'no-job', timedOut: false };
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const res = await this._fetch(`/jobs/${encodeURIComponent(this.jobId)}`, { method: 'DELETE', signal: ac.signal });
+      if (!res.ok) throw new Error(`stop failed: ${res.status}`);
+      this.jobId = null;
+      return { ok: true, timedOut: false };
+    } catch (err) {
+      if (err.name === 'AbortError') return { ok: false, reason: 'timeout', timedOut: true };
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async writeCaption(captionObj) {
     if (!this.jobId) throw new Error('no active job');
     const body = JSON.stringify(captionObj || {});
-    const res = await this._fetch(`/jobs/${encodeURIComponent(this.jobId)}/caption`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body
-    });
-    if (!res.ok) throw new Error(`writeCaption failed: ${res.status}`);
-    return await res.json();
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), this.timeout);
+    try {
+      const res = await this._fetch(`/jobs/${encodeURIComponent(this.jobId)}/caption`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: ac.signal,
+      });
+      if (!res.ok) return { ok: false, status: res.status };
+      return await res.json();
+    } catch (err) {
+      if (err.name === 'AbortError') return { ok: false, reason: 'timeout' };
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async stats() {
-    const res = await this._fetch('/stats');
-    if (!res.ok) throw new Error(`stats failed: ${res.status}`);
-    return await res.json();
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), this.timeout);
+    try {
+      const res = await this._fetch('/stats', { signal: ac.signal });
+      if (!res.ok) throw new Error(`stats failed: ${res.status}`);
+      return await res.json();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

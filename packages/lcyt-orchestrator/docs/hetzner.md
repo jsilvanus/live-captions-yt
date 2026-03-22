@@ -1,4 +1,4 @@
-Hetzner burst integration
+# Hetzner burst integration
 
 Environment variables used by the orchestrator for Hetzner integration:
 
@@ -11,7 +11,7 @@ Environment variables used by the orchestrator for Hetzner integration:
 - `ORCHESTRATOR_BACKOFF_MS` (optional) - base backoff ms for 429 handling, default `1000`
 - `ORCHESTRATOR_HETZNER_TIMEOUT_MS` (optional) - poll timeout ms for server ready, default `120000`
 
-Running tests (no real Hetzner credentials):
+# Running tests (no real Hetzner credentials):
 
 From repository root:
 

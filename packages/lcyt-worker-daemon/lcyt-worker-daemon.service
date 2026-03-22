@@ -1,0 +1,33 @@
+[Unit]
+Description=LCYT Worker Daemon
+After=network.target docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/lcyt-worker.env
+WorkingDirectory=/usr/local/lib/lcyt-worker-daemon
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+[Unit]
+Description=LCYT Worker Daemon
+After=network.target docker.service
+
+[Service]
+Type=simple
+User=lcyt
+Group=lcyt
+EnvironmentFile=/etc/lcyt-worker.env
+ExecStart=/usr/bin/node /usr/local/lib/lcyt-worker-daemon/index.js
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=lcyt-worker-daemon
+
+[Install]
+WantedBy=multi-user.target

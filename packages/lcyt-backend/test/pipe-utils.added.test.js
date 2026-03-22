@@ -21,7 +21,7 @@ test('createFifoWriter: write times out when open fails (EAGAIN)', async () => {
     assert.strictEqual(ok, false, 'write should time out and return false');
   } finally {
     await writer.close();
-    pipeUtils.openFifoNonBlocking = origOpen;
+    pipeUtils.__test_setOpenFifo(origOpen);
   }
 });
 
@@ -48,7 +48,7 @@ test('createFifoWriter: write succeeds when reader present and drains', async ()
     const buf = Buffer.alloc(64);
     const bytes = fs.readSync(readerFd, buf, 0, buf.length, 0);
     assert(bytes > 0, 'reader should see written bytes');
-  } finally {
+    } finally {
     await writer.close();
     try { fs.closeSync(readerFd); } catch (e) {}
     try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) {}

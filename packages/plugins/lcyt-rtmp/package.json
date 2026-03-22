@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/api.js",
   "scripts": {
-    "test": "echo 'RTMP plugin tests run from lcyt-backend: npm test -w packages/lcyt-backend'"
+    "test": "node --test test/rtmp-manager.test.js"
   },
   "dependencies": {
     "express": "^4.21",

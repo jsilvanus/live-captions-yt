@@ -15,8 +15,8 @@ export class LocalFfmpegRunner extends EventEmitter {
     this._stdinMode = stdin;
   }
 
-  start() {
-    if (this.proc) return this.proc;
+  async start() {
+    if (this.proc) return this;
     const stdio = [this._stdinMode, 'pipe', 'pipe'];
     const proc = spawn(this.cmd, this.args, { stdio, env: this.env });
     this.proc = proc;
@@ -24,39 +24,42 @@ export class LocalFfmpegRunner extends EventEmitter {
     this.stderr = proc.stderr;
 
     proc.on('error', err => this.emit('error', err));
-    proc.on('close', code => {
+    proc.on('close', (code, signal) => {
       // clear references to avoid leaking streams
       this._stopping = false;
       this.proc = null;
       this.stdout = null;
       this.stderr = null;
-      this.emit('close', code);
+      this.emit('close', { code: code ?? null, signal: signal ?? null });
     });
 
-    return proc;
+    return this;
   }
 
-  stop(timeoutMs = 3000) {
-    if (!this.proc) return Promise.resolve();
-    if (this._stopping) return Promise.resolve();
+  async stop(timeoutMs = 3000) {
+    if (!this.proc) return { timedOut: false, code: null, signal: null };
+    if (this._stopping) return { timedOut: false, code: null, signal: null };
     this._stopping = true;
 
-    return new Promise(resolve => {
-      const proc = this.proc;
-      const onClose = (code) => {
+    const proc = this.proc;
+    return await new Promise(resolve => {
+      let settled = false;
+      const onClose = (info) => {
+        if (settled) return;
+        settled = true;
         cleanup();
-        resolve(code);
+        const ret = { code: info && info.code !== undefined ? info.code : null, signal: info && info.signal ? info.signal : null, timedOut: false };
+        resolve(ret);
       };
 
       const cleanup = () => {
-        try { proc.removeListener('close', onClose); } catch (e) {}
+        try { proc.removeAllListeners('close'); } catch (e) {}
         try { proc.removeAllListeners('error'); } catch (e) {}
       };
 
       proc.once('close', onClose);
 
       try {
-        // attempt graceful shutdown
         if (proc.stdin && !proc.stdin.destroyed) {
           try { proc.stdin.end(); } catch (e) {}
         }
@@ -64,7 +67,11 @@ export class LocalFfmpegRunner extends EventEmitter {
       } catch (e) {}
 
       const t = setTimeout(() => {
+        if (settled) return;
         try { proc.kill('SIGKILL'); } catch (e) {}
+        settled = true;
+        cleanup();
+        resolve({ timedOut: true, code: null, signal: 'SIGKILL' });
       }, timeoutMs);
       if (t.unref) t.unref();
     });

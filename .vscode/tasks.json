@@ -5,6 +5,12 @@
 			"label": "noop",
 			"type": "shell",
 			"command": "echo noop"
+		},
+		{
+			"label": "run-tests-capture",
+			"type": "shell",
+			"command": "mkdir -p tmp && npm test 2>&1 | tee tmp/test-output.txt",
+			"isBackground": false
 		}
 	]
 }

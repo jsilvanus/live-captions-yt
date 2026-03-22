@@ -168,7 +168,7 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
       if (!relays || relays.length === 0) {
         this._stopProc(apiKey);
         return resolve();
@@ -204,7 +204,7 @@ export class RtmpRelayManager {
       const hasDsk = !!(dskState && (dskState.imagePaths?.length > 0 || dskState.rtmpUrl));
 
       const src = sourceUrl(apiKey);
-      const tag = `[ffmpeg:${apiKey.slice(0, 8)}]`;
+      
       console.log(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}, dsk=${hasDsk}): ${src}`);
 
       let args;
@@ -362,25 +362,28 @@ export class RtmpRelayManager {
 
       const runner = createFfmpegRunner(runnerOpts);
 
-      const proc = runner.start();
+      const handle = await runner.start();
 
       const startedAt = new Date();
-      this._procs.set(apiKey, proc);
+      this._procs.set(apiKey, handle);
       this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs, fifoPath });
 
       // If FIFO requested, create it and a writer stream for caption injection
       if (fifoPath) {
-        makeFifo(fifoPath).then(() => {
+        try {
+          await makeFifo(fifoPath);
           try {
-            const ws = createWriteStream(fifoPath, { flags: 'a' });
+            // createFifoWriter may be async in the new runner API; await it.
+            const { createFifoWriter } = await import('../../../lcyt-backend/src/ffmpeg/pipe-utils.js');
+            const writer = await createFifoWriter(fifoPath, { timeoutMs: 50 });
             const meta = this._meta.get(apiKey);
-            if (meta) meta._fifoWriter = ws;
+            if (meta) meta._fifoWriter = writer;
           } catch (e) {
             console.warn(`[rtmp] Failed to open FIFO writer for ${apiKey.slice(0,8)}: ${e.message}`);
           }
-        }).catch(err => {
+        } catch (err) {
           console.warn(`[rtmp] makeFifo failed for ${fifoPath}: ${err.message}`);
-        });
+        }
       }
 
       for (const r of relays) {
@@ -392,8 +395,8 @@ export class RtmpRelayManager {
         });
       }
 
-      if (proc && proc.stdout) proc.stdout.on('data', (d) => process.stdout.write(`${tag} ${d}`));
-      if (proc && proc.stderr) proc.stderr.on('data', (d) => process.stderr.write(`${tag} ${d}`));
+      if (handle && handle.stdout) handle.stdout.on('data', (d) => process.stdout.write(`${tag} ${d}`));
+      if (handle && handle.stderr) handle.stderr.on('data', (d) => process.stderr.write(`${tag} ${d}`));
 
       // Runner emits 'error' and 'close' events like child process
       runner.on('error', (err) => {
@@ -403,14 +406,14 @@ export class RtmpRelayManager {
         reject(err);
       });
 
-      runner.on('close', (code) => {
+      runner.on('close', (info) => {
         this._procs.delete(apiKey);
         const meta = this._meta.get(apiKey);
         this._meta.delete(apiKey);
 
         // Close any FIFO writer
-        if (meta && meta._fifoWriter) {
-          try { meta._fifoWriter.end(); } catch (e) {}
+        if (meta && meta._fifoWriter && typeof meta._fifoWriter.close === 'function') {
+          try { meta._fifoWriter.close(); } catch (e) {}
         }
 
         const endedAt = new Date();
@@ -431,8 +434,8 @@ export class RtmpRelayManager {
           console.warn(`[rtmp] Metadata missing on close for key ${apiKey.slice(0, 8)}`);
         }
 
-        if (code !== 0 && code !== null) {
-          console.warn(`[rtmp] ffmpeg exited with code ${code} for key ${apiKey.slice(0, 8)}`);
+        if (info && info.code !== undefined && info.code !== null) {
+          console.warn(`[rtmp] ffmpeg exited with code ${info.code} for key ${apiKey.slice(0, 8)}`);
         } else {
           console.log(`[rtmp] Relay ended for key ${apiKey.slice(0, 8)}`);
         }
@@ -459,12 +462,22 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   stop(apiKey) {
-    return new Promise((resolve) => {
-      const proc = this._procs.get(apiKey);
-      if (!proc) return resolve();
-      proc.once('close', () => resolve());
-      this._stopProc(apiKey);
-    });
+    return (async () => {
+      const handle = this._procs.get(apiKey);
+      if (!handle) return;
+      try {
+        if (typeof handle.stop === 'function') {
+          await handle.stop(3000);
+        } else {
+          await new Promise(resolve => {
+            handle.once && handle.once('close', resolve);
+            this._stopProc(apiKey);
+          });
+        }
+      } finally {
+        this._stopProc(apiKey);
+      }
+    })();
   }
 
   /**
@@ -506,7 +519,7 @@ export class RtmpRelayManager {
    * @param {{ speechStart?: Date|string|number, timestamp?: Date|string|number }} [opts]
    * @returns {boolean}  true if cue was written, false if not in CEA-708 mode or pipe unavailable
    */
-  writeCaption(apiKey, text, { speechStart, timestamp } = {}) {
+  async writeCaption(apiKey, text, { speechStart, timestamp } = {}) {
     if (!this.hasCea708(apiKey)) return false;
 
     const proc = this._procs.get(apiKey);
@@ -562,10 +575,20 @@ export class RtmpRelayManager {
 
     try {
       const meta = this._meta.get(apiKey);
-      // FIFO mode: write to FIFO writer if present
+      // FIFO mode: write to FIFO writer if present (non-blocking, returns boolean)
       if (meta && meta._fifoWriter) {
-        meta._fifoWriter.write(cue);
-        return true;
+        try {
+          const ok = await meta._fifoWriter.write(cue);
+          if (!ok) {
+            // record metric and return false
+            console.warn(`[rtmp] FIFO write timed out/dropped for ${apiKey.slice(0,8)}`);
+            return false;
+          }
+          return true;
+        } catch (err) {
+          console.error(`[rtmp] FIFO writer error for ${apiKey.slice(0,8)}: ${err.message}`);
+          return false;
+        }
       }
 
       // Default: write to child process stdin
@@ -767,14 +790,19 @@ export class RtmpRelayManager {
     if (!proc) return;
     this._procs.delete(apiKey);
     try {
+      // Runner handle (new interface) exposes .stop(). Prefer that.
+      if (typeof proc.stop === 'function') {
+        try { proc.stop().catch(() => {}); } catch (e) {}
+        return;
+      }
       if (proc.stdin && !proc.stdin.destroyed) proc.stdin.end();
     } catch (err) {
       if (err.code !== 'EPIPE') console.warn(`[rtmp] stdin.end() failed for ${apiKey.slice(0, 8)}: ${err.message}`);
     }
     try {
-      proc.kill('SIGTERM');
+      if (typeof proc.kill === 'function') proc.kill('SIGTERM');
       const timer = setTimeout(() => {
-        try { proc.kill('SIGKILL'); } catch (err) {
+        try { if (typeof proc.kill === 'function') proc.kill('SIGKILL'); } catch (err) {
           if (err.code !== 'ESRCH') console.warn(`[rtmp] SIGKILL failed for ${apiKey.slice(0, 8)}: ${err.message}`);
         }
       }, 3000);

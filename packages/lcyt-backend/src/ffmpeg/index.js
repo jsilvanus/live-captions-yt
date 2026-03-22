@@ -2,6 +2,18 @@ import { LocalFfmpegRunner } from './local-runner.js';
 import { DockerFfmpegRunner } from './docker-runner.js';
 import { WorkerFfmpegRunner } from './worker-runner.js';
 
+/**
+ * Runner interface (async):
+ * - start(): Promise<RunnerHandle>
+ * - RunnerHandle is an EventEmitter-like object with optional `stdout` and `stderr` streams
+ * - RunnerHandle.stop(timeoutMs): Promise<{ code?: number|null, signal?: string|null, timedOut: boolean }>
+ * - RunnerHandle emits 'error' and 'close' events (close receives code or { code, signal })
+ *
+ * Notes: start() should be awaited by callers (managers) to receive the RunnerHandle before
+ * attaching listeners. stop(timeoutMs) must enforce a timeout and return an object that
+ * explicitly indicates whether the stop timed out.
+ */
+
 // Environment-driven defaults
 const ENV_RUNNER = process.env.FFMPEG_RUNNER || 'spawn';
 const ENV_IMAGE = process.env.FFMPEG_IMAGE || 'lcyt-ffmpeg:latest';

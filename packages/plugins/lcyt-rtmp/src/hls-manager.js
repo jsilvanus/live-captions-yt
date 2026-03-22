@@ -18,8 +18,8 @@ export class HlsManager {
 
   hlsDir(hlsKey) { return join(this._hlsRoot, hlsKey); }
 
-  start(hlsKey) {
-    return new Promise((resolve, reject) => {
+  async start(hlsKey) {
+    return new Promise(async (resolve, reject) => {
       this._stopProc(hlsKey);
 
       const dir    = this.hlsDir(hlsKey);
@@ -44,36 +44,42 @@ export class HlsManager {
       console.log(`${tag} Starting HLS: ${src} → ${playlist}`);
 
       const runner = createFfmpegRunner({ runner: this._runner, cmd: 'ffmpeg', args, name: tag, stdin: 'ignore' });
-      runner.start();
-      this._procs.set(hlsKey, runner);
+      try {
+        const handle = await runner.start();
+        this._procs.set(hlsKey, handle);
 
-      if (runner.stdout) runner.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
-      if (runner.stderr) runner.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
+        if (handle.stdout) handle.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
+        if (handle.stderr) handle.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
 
-      runner.on('error', err => {
-        this._procs.delete(hlsKey);
-        console.error(`${tag} ffmpeg error: ${err.message}`);
+        runner.on('error', err => {
+          this._procs.delete(hlsKey);
+          console.error(`${tag} ffmpeg error: ${err.message}`);
+          reject(err);
+        });
+
+        runner.on('close', info => {
+          this._procs.delete(hlsKey);
+          if (info && info.code !== undefined && info.code !== null) console.warn(`${tag} ffmpeg exited with code ${info.code}`);
+          else console.log(`${tag} HLS stream ended`);
+          this._cleanup(hlsKey);
+        });
+
+        setImmediate(resolve);
+      } catch (err) {
         reject(err);
-      });
-
-      runner.on('close', code => {
-        this._procs.delete(hlsKey);
-        if (code !== 0 && code !== null) console.warn(`${tag} ffmpeg exited with code ${code}`);
-        else console.log(`${tag} HLS stream ended`);
-        this._cleanup(hlsKey);
-      });
-
-      setImmediate(resolve);
+      }
     });
   }
 
-  stop(hlsKey) {
-    return new Promise(resolve => {
-      const runner = this._procs.get(hlsKey);
-      if (!runner) return resolve();
-      runner.once('close', resolve);
+  async stop(hlsKey) {
+    const runner = this._procs.get(hlsKey);
+    if (!runner) return;
+    try {
+      const res = await (typeof runner.stop === 'function' ? runner.stop(3000) : Promise.resolve({ timedOut: false }));
+      return res;
+    } finally {
       this._stopProc(hlsKey);
-    });
+    }
   }
 
   async stopAll() { await Promise.all([...this._procs.keys()].map(k => this.stop(k))); }
@@ -86,10 +92,14 @@ export class HlsManager {
     if (!runner) return;
     this._procs.delete(hlsKey);
     try {
-      if (typeof runner.stop === 'function') runner.stop();
-      else if (runner.proc && typeof runner.proc.kill === 'function') runner.proc.kill('SIGTERM');
-      const t = setTimeout(() => { try { if (runner.proc && typeof runner.proc.kill === 'function') runner.proc.kill('SIGKILL'); } catch {} }, 3000);
-      if (t.unref) t.unref();
+      if (typeof runner.stop === 'function') {
+        // best-effort stop
+        try { runner.stop(3000); } catch (e) {}
+      } else if (runner.proc && typeof runner.proc.kill === 'function') {
+        runner.proc.kill('SIGTERM');
+        const t = setTimeout(() => { try { if (runner.proc && typeof runner.proc.kill === 'function') runner.proc.kill('SIGKILL'); } catch {} }, 3000);
+        if (t.unref) t.unref();
+      }
     } catch {}
   }
 }

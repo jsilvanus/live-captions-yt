@@ -9,10 +9,10 @@ test('LocalFfmpegRunner start/stop lifecycle (uses node as fake ffmpeg)', async 
   // Use node as a harmless long-running process so we don't require ffmpeg.
   const runner = new LocalFfmpegRunner({ cmd: process.execPath, args: ['-e', 'setTimeout(()=>{}, 10000)'], name: 'test-ffmpeg' });
 
-  // Start should return a ChildProcess and set stdout/stderr props.
-  const proc = runner.start();
-  assert(proc, 'start() should return a ChildProcess');
-  assert(runner.stdout === proc.stdout || runner.stdout === null);
+  // Start should be awaited and return a RunnerHandle (this) and expose stdout/stderr.
+  const handle = await runner.start();
+  assert(handle, 'start() should return a RunnerHandle');
+  assert(runner.stdout === handle.stdout || runner.stdout === null);
 
   // isRunning should be truthy while process is alive
   assert.equal(runner.isRunning(), true);
