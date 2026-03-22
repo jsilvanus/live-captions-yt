@@ -63,9 +63,8 @@ export class PreviewManager {
    * @param {string} key
    * @returns {Promise<void>} Resolves once ffmpeg has been spawned (before it exits).
    */
-  start(key) {
-    return new Promise((resolve, reject) => {
-      this._stopProc(key);
+  async start(key) {
+    this._stopProc(key);
 
       const dir  = join(this._root, key);
       mkdirSync(dir, { recursive: true });
@@ -90,30 +89,34 @@ export class PreviewManager {
       console.log(`${tag} Starting preview: ${src} → ${out}`);
 
       const runner = createFfmpegRunner({ runner: 'spawn', cmd: 'ffmpeg', args, name: tag, stdin: 'ignore' });
-      this._procs.set(key, runner);
+      try {
+        const handle = await runner.start();
+        this._procs.set(key, handle);
 
-      if (runner.stdout) runner.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
-      if (runner.stderr) runner.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
+        if (handle.stdout) handle.stdout.on('data', d => process.stdout.write(`${tag} ${d}`));
+        if (handle.stderr) handle.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
 
-      runner.on('error', err => {
-        this._procs.delete(key);
-        console.error(`${tag} ffmpeg error: ${err.message}`);
-        reject(err);
-      });
+        runner.on('error', err => {
+          this._procs.delete(key);
+          console.error(`${tag} ffmpeg error: ${err.message}`);
+          throw err;
+        });
 
-      runner.on('close', code => {
-        this._procs.delete(key);
-        if (code !== 0 && code !== null) {
-          console.warn(`${tag} ffmpeg exited with code ${code}`);
-        } else {
-          console.log(`${tag} Preview stream ended`);
-        }
-        this._cleanup(key);
-      });
+        runner.on('close', info => {
+          this._procs.delete(key);
+          if (info && info.code !== undefined && info.code !== null) {
+            console.warn(`${tag} ffmpeg exited with code ${info.code}`);
+          } else {
+            console.log(`${tag} Preview stream ended`);
+          }
+          this._cleanup(key);
+        });
 
-      runner.start();
-      setImmediate(resolve);
-    });
+        // resolve immediately after spawn
+        return;
+      } catch (err) {
+        throw err;
+      }
   }
 
   /**
@@ -122,12 +125,22 @@ export class PreviewManager {
    * @returns {Promise<void>}
    */
   stop(key) {
-    return new Promise(resolve => {
-      const proc = this._procs.get(key);
-      if (!proc) return resolve();
-      proc.once('close', resolve);
-      this._stopProc(key);
-    });
+    return (async () => {
+      const handle = this._procs.get(key);
+      if (!handle) return;
+      try {
+        if (typeof handle.stop === 'function') {
+          await handle.stop(3000);
+        } else {
+          await new Promise(resolve => {
+            handle.once && handle.once('close', resolve);
+            this._stopProc(key);
+          });
+        }
+      } finally {
+        this._stopProc(key);
+      }
+    })();
   }
 
   /**
