@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "test": "LCYT_WEB_URL=https://lcyt-test.example SPEECH_PUBLIC_URL=https://mcp-test.example node --test test/*.test.js"
+    "test": "cross-env LCYT_WEB_URL=https://lcyt-test.example SPEECH_PUBLIC_URL=https://mcp-test.example node --test test/*.test.js"
   },
   "keywords": [
     "youtube",
@@ -30,6 +30,9 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
   },
   "repository": {
     "type": "git",
