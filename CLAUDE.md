@@ -164,7 +164,10 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `RTMP_HOST` | RTMP host for RTMP relay | none |
 | `RTMP_APP` / `RTMP_APPLICATION` | RTMP application name for relay | none |
 | `RTMP_RELAY_ACTIVE` | If set to `1`, enables RTMP relay functionality | unset |
-| `RTMP_CONTROL_URL` | nginx-rtmp control URL | none |
+| `RTMP_CONTROL_URL` | nginx-rtmp control URL (legacy fallback for `dropPublisher`) | none |
+| `MEDIAMTX_API_URL` | MediaMTX v3 REST API base URL; activates MediaMTX `dropPublisher` path when set | none |
+| `MEDIAMTX_API_USER` | Basic-auth username for the MediaMTX API | none |
+| `MEDIAMTX_API_PASSWORD` | Basic-auth password for the MediaMTX API | none |
 | `PREVIEW_ROOT` | Directory for JPEG thumbnail files | `/tmp/previews` |
 | `PREVIEW_INTERVAL_S` | Seconds between thumbnail updates | `5` |
 | `GRAPHICS_DIR` | Image storage directory for DSK overlays | `/data/images` |

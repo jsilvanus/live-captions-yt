@@ -71,16 +71,73 @@ log:
 ```
 
 Integration details and code notes
-- `packages/lcyt-backend/src/rtmp-manager.js`
-  - Add an environment-driven option to choose the relay target type: `RTMP_RELAY_TYPE=ffmpeg|mediamtx` and new env `MEDIAMTX_URL`/`MEDIAMTX_APP` (defaults: `rtmp://127.0.0.1:1935` and `live`).
-  - When `mediamtx` is selected, the manager should compose the push URL `rtmp://$MEDIAMTX_HOST:$MEDIAMTX_PORT/$MEDIAMTX_APP/$slotId` and launch the worker/process that pushes to that URL (instead of starting a local ffmpeg transcode job). This can be done by keeping current worker invocation but varying the target URL.
+
+### MediaMTX REST API client (implemented ✅)
+
+A typed REST client is now available at `packages/plugins/lcyt-rtmp/src/mediamtx-client.js` and
+exported from the `lcyt-rtmp` plugin entry point (`api.js`).
+
+```
+import { MediaMtxClient, MediaMtxApiError } from 'lcyt-rtmp';
+```
+
+**Class: `MediaMtxClient`**
+
+All operations call the MediaMTX v3 REST API (default port `:9997`).
+
+| Method | REST call | Purpose |
+|---|---|---|
+| `kickPath(name)` | `POST /v3/paths/kick/{name}` | Drop publisher (replaces nginx-rtmp `drop/publisher`) |
+| `getPath(name)` | `GET /v3/paths/get/{name}` | Get path state (publisher, readers, tracks) |
+| `isPathPublishing(name)` | `GET /v3/paths/get/{name}` | Returns `true` if a publisher is active |
+| `listPaths()` | `GET /v3/paths/list` | List all active paths |
+| `addPath(name, config?)` | `POST /v3/config/paths/add/{name}` | Dynamically add a path |
+| `deletePath(name)` | `DELETE /v3/config/paths/delete/{name}` | Remove a dynamically-added path |
+
+**Environment variables:**
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `MEDIAMTX_API_URL` | MediaMTX API base URL | `http://localhost:9997` |
+| `MEDIAMTX_API_USER` | Basic-auth username | (none) |
+| `MEDIAMTX_API_PASSWORD` | Basic-auth password | (none) |
+
+Setting `MEDIAMTX_API_URL` is sufficient to activate the MediaMTX code path — the `RtmpRelayManager`
+auto-creates a `MediaMtxClient` from that env var if no explicit instance is injected.
+
+**Integration in `RtmpRelayManager` (`packages/plugins/lcyt-rtmp/src/rtmp-manager.js`):**
+
+- Constructor now accepts an optional `mediamtxClient` option (instance of `MediaMtxClient`).
+- `dropPublisher(apiKey)` checks for a MediaMTX client first, then falls back to the nginx-rtmp
+  control URL, and finally logs a no-op if neither is configured.
+- When `MEDIAMTX_API_URL` is set but no explicit instance is passed, the manager creates one
+  automatically from environment variables.
+
+**Testing the client:**
+
+Inject a mock `mediamtxClient` into `RtmpRelayManager` for unit tests:
+
+```js
+const mockClient = { kickPath: stub().resolves() };
+const manager = new RtmpRelayManager({ mediamtxClient: mockClient });
+await manager.dropPublisher('mykey');
+assert.calledWith(mockClient.kickPath, 'mykey');
+```
+
+### Remaining work
+
+- `packages/plugins/lcyt-rtmp/src/rtmp-manager.js`
+  - Add `MEDIAMTX_RTMP_URL` / `MEDIAMTX_RTMP_APP` env var support so `start()` composes the push
+    URL targeting MediaMTX instead of nginx-rtmp (guarded by `RTMP_RELAY_TYPE=mediamtx`).
   - Ensure existing slot lifecycle semantics (start/stop, health checks, TTL, auth) are preserved.
 
 - `packages/plugins/lcyt-dsk/src/renderer.js`
-  - Make RTMP output target configurable via env (e.g. `DSK_RTMP_OUTPUT`) so tests and local dev can switch between direct ffmpeg->nginx and ffmpeg->MediaMTX.
+  - Make RTMP output target configurable via env (e.g. `DSK_RTMP_OUTPUT`) so tests and local dev
+    can switch between direct ffmpeg→nginx and ffmpeg→MediaMTX.
 
 - `packages/lcyt-bridge/src/bridge.js` and production bridge code
-  - Review any hard-coded RTMP target assumptions and allow `MEDIAMTX_HOST` based configuration for remote on-site ingest/forwarding.
+  - Review any hard-coded RTMP target assumptions and allow `MEDIAMTX_HOST` based configuration
+    for remote on-site ingest/forwarding.
 
 Operational concerns
 - Authentication & ACLs: MediaMTX has minimal built-in auth. Gate ingest behind network ACLs and/or a JWT/API fronting layer when exposing public ingest endpoints.
