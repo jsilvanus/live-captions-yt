@@ -299,11 +299,11 @@ describe('RtmpRelayManager — writeCaption()', () => {
   it('returns false when key is not running in CEA-708 mode', async () => {
     const m = new RtmpRelayManager({});
     // Not running
-    assert.equal(m.writeCaption('k', 'Hello'), false);
+    assert.equal(await m.writeCaption('k', 'Hello'), false);
 
     // Running but not CEA-708
     await m.start('k', TEST_RELAYS);
-    assert.equal(m.writeCaption('k', 'Hello'), false);
+    assert.equal(await m.writeCaption('k', 'Hello'), false);
   });
 });
 

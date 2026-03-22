@@ -297,9 +297,9 @@ describe('RtmpRelayManager', () => {
     assert.strictEqual(m.hasCea708('no-key'), false);
   });
 
-  it('writeCaption returns false when no process is running', () => {
+  it('writeCaption returns false when no process is running', async () => {
     const m = new RtmpRelayManager();
-    assert.strictEqual(m.writeCaption('no-key', 'hello'), false);
+    assert.strictEqual(await m.writeCaption('no-key', 'hello'), false);
   });
 
   it('start() with empty relays is a no-op', async () => {
@@ -705,22 +705,22 @@ describe('RtmpRelayManager CEA-708 (meta injection, no real ffmpeg)', () => {
     assert.strictEqual(m.hasCea708('k'), true);
   });
 
-  it('writeCaption returns false when hasCea708 is false', () => {
+  it('writeCaption returns false when hasCea708 is false', async () => {
     const m = new RtmpRelayManager();
     // No proc running — hasCea708 returns false → writeCaption returns false
-    assert.strictEqual(m.writeCaption('k', 'hello'), false);
+    assert.strictEqual(await m.writeCaption('k', 'hello'), false);
   });
 
-  it('writeCaption returns false when proc has no stdin (e.g. stream copy mode)', () => {
+  it('writeCaption returns false when proc has no stdin (e.g. stream copy mode)', async () => {
     const m = new RtmpRelayManager();
     m._meta.set('k', { slots: [], startedAt: new Date(), hasCea708: true, srtSeq: 0 });
     // Create a fake proc with no writable stdin (simulate 'ignore' stdio)
     const fakeProc = { stdin: null };
     m._procs.set('k', fakeProc);
-    assert.strictEqual(m.writeCaption('k', 'hello'), false);
+    assert.strictEqual(await m.writeCaption('k', 'hello'), false);
   });
 
-  it('writeCaption writes SRT cue to stdin and returns true', () => {
+  it('writeCaption writes SRT cue to stdin and returns true', async () => {
     const m = new RtmpRelayManager();
     const startedAt = new Date(Date.now() - 5000); // 5s ago
     m._meta.set('k', { slots: [], startedAt, hasCea708: true, srtSeq: 0, captionsSent: 0 });
@@ -729,7 +729,7 @@ describe('RtmpRelayManager CEA-708 (meta injection, no real ffmpeg)', () => {
     const fakeProc = { stdin: { destroyed: false, write: (d) => written.push(d) } };
     m._procs.set('k', fakeProc);
 
-    const result = m.writeCaption('k', 'Hello world');
+    const result = await m.writeCaption('k', 'Hello world');
     assert.strictEqual(result, true);
     assert.strictEqual(written.length, 1);
     // SRT cue should contain the text
@@ -741,7 +741,7 @@ describe('RtmpRelayManager CEA-708 (meta injection, no real ffmpeg)', () => {
     assert.strictEqual(m._meta.get('k').captionsSent, 1);
   });
 
-  it('writeCaption uses speechStart for cue timing when provided', () => {
+  it('writeCaption uses speechStart for cue timing when provided', async () => {
     const m = new RtmpRelayManager();
     const startedAt = new Date(Date.now() - 10000); // 10s ago
     m._meta.set('k', { slots: [], startedAt, hasCea708: true, srtSeq: 0, captionsSent: 0 });
@@ -752,20 +752,20 @@ describe('RtmpRelayManager CEA-708 (meta injection, no real ffmpeg)', () => {
 
     // speechStart is 8s after stream start (wall-clock)
     const speechStart = new Date(startedAt.getTime() + 8000);
-    m.writeCaption('k', 'Timed caption', { speechStart });
+    await m.writeCaption('k', 'Timed caption', { speechStart });
     assert.ok(written[0].includes('00:00:08,000')); // cue start at 8s
   });
 
-  it('writeCaption increments srtSeq on each call', () => {
+  it('writeCaption increments srtSeq on each call', async () => {
     const m = new RtmpRelayManager();
     m._meta.set('k', { slots: [], startedAt: new Date(Date.now() - 20000), hasCea708: true, srtSeq: 0, captionsSent: 0 });
 
     const fakeProc = { stdin: { destroyed: false, write: () => {} } };
     m._procs.set('k', fakeProc);
 
-    m.writeCaption('k', 'One');
-    m.writeCaption('k', 'Two');
-    m.writeCaption('k', 'Three');
+    await m.writeCaption('k', 'One');
+    await m.writeCaption('k', 'Two');
+    await m.writeCaption('k', 'Three');
     assert.strictEqual(m._meta.get('k').srtSeq, 3);
   });
 
