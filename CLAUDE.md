@@ -158,9 +158,15 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `HLS_ROOT` | HLS output directory for video+audio streams | `/tmp/hls-video` |
 | `HLS_LOCAL_RTMP` | Local nginx-rtmp base URL for HLS/preview | `rtmp://127.0.0.1:1935` |
 | `HLS_RTMP_APP` | RTMP application name for HLS/preview | `live` |
-| `RADIO_HLS_ROOT` | HLS output directory for audio-only streams | `/tmp/hls` |
-| `RADIO_LOCAL_RTMP` | Local nginx-rtmp URL for radio streams | `rtmp://127.0.0.1:1935` |
-| `RADIO_RTMP_APP` | RTMP application name for radio | `live` |
+| `RADIO_HLS_ROOT` | HLS output directory for audio-only streams (ffmpeg mode) | `/tmp/hls` |
+| `RADIO_LOCAL_RTMP` | Local nginx-rtmp URL for radio streams (ffmpeg mode) | `rtmp://127.0.0.1:1935` |
+| `RADIO_RTMP_APP` | RTMP application name for radio (ffmpeg mode) | `live` |
+| `RADIO_HLS_SOURCE` | Radio HLS backend: `ffmpeg` (default) or `mediamtx` (no ffmpeg, uses MediaMTX) | `ffmpeg` |
+| `MEDIAMTX_HLS_BASE_URL` | MediaMTX HLS base URL used by NginxManager for internal proxy_pass directives | `http://127.0.0.1:8080` |
+| `NGINX_RADIO_CONFIG_PATH` | Path to nginx include file managed by NginxManager; empty = no-op mode | (unset) |
+| `NGINX_TEST_CMD` | Command to test nginx config before reloading | `nginx -t` |
+| `NGINX_RELOAD_CMD` | Command to reload nginx after NginxManager writes config | `nginx -s reload` |
+| `NGINX_RADIO_PREFIX` | Public URL prefix for slug-based radio proxy locations | `/r` |
 | `RTMP_HOST` | RTMP host for RTMP relay | none |
 | `RTMP_APP` / `RTMP_APPLICATION` | RTMP application name for relay | none |
 | `RTMP_RELAY_ACTIVE` | If set to `1`, enables RTMP relay functionality | unset |
@@ -259,7 +265,8 @@ GET  /icons/*             — icon assets (authenticated)
 - `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK), `caption_usage`, `session_stats`, `caption_errors`, `sessions`. Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/hls-manager.js` — `HlsManager`: manages ffmpeg subprocesses for RTMP → video+audio HLS.
-- `src/radio-manager.js` — `RadioManager`: manages ffmpeg subprocesses for RTMP → audio-only HLS.
+- `src/radio-manager.js` — `RadioManager`: dual-mode audio-only HLS. **ffmpeg mode** (default): spawns ffmpeg RTMP → AAC HLS. **mediamtx mode** (`RADIO_HLS_SOURCE=mediamtx`): no ffmpeg; MediaMTX serves HLS, `NginxManager` writes slug-based nginx proxy locations.
+- `src/nginx-manager.js` — `NginxManager`: writes nginx `location` blocks that proxy public slug URLs (`/r/<slug>/`) to internal MediaMTX HLS paths, keeping the API key out of all public URLs. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
 - `src/preview-manager.js` — `PreviewManager`: manages ffmpeg for RTMP → JPEG thumbnail generation.
 - `src/rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup.
 - `src/hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.

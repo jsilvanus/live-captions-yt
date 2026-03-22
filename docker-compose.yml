@@ -1,53 +1,20 @@
 version: '3.8'
 
-services:
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
-    container_name: docker-socket-proxy
-    restart: unless-stopped
-    ports:
-      - "2375:2375"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+# ─── Development / single-VM compose ─────────────────────────────────────────
+#
+# Includes:
+#   lcyt-site       — LCYT backend API + MCP SSE server
+#   mediamtx        — MediaMTX RTMP/HLS broker (replaces ffmpeg HLS/radio)
+#   docker-socket-proxy — secure Docker socket proxy (Phases 2–3 ffmpeg containers)
+#
+# Quick start:
+#   cp .env.example .env   # fill in JWT_SECRET, ADMIN_KEY, etc.
+#   docker compose up
+#
+# To enable RTMP relay + MediaMTX radio:
+#   RTMP_RELAY_ACTIVE=1  RADIO_HLS_SOURCE=mediamtx  docker compose up
+# ─────────────────────────────────────────────────────────────────────────────
 
-  lcyt-ffmpeg:
-    build:
-      context: ./images/lcyt-ffmpeg
-    image: lcyt-ffmpeg:local
-    container_name: lcyt-ffmpeg
-    restart: unless-stopped
-    volumes:
-      - cea-pipes:/var/cea-pipes
-
-  lcyt-backend:
-    image: lcyt-backend:latest
-    container_name: lcyt-backend
-    depends_on:
-      - docker-socket-proxy
-      - lcyt-ffmpeg
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      # Use the docker runner so the backend launches ffmpeg containers
-      - FFMPEG_RUNNER=docker
-      # Backend will use the socket-proxy to talk to the Docker daemon
-      - DOCKER_HOST=http://docker-socket-proxy:2375
-      # Directory inside backend container mapped to the named volume
-      - CEA_PIPES_DIR=/var/cea-pipes
-    volumes:
-      - cea-pipes:/var/cea-pipes
-
-volumes:
-  cea-pipes:
-    driver: local
-
-# Notes:
-# - This compose file is a minimal development setup. In production run the
-#   socket-proxy with appropriate network/security controls and do NOT expose
-#   the Docker API to untrusted networks.
-# - The lcyt-backend image shown above is a placeholder. Replace with your
-#   built backend image (local tag or registry path) as needed.
 services:
   # LCYT API (3000) and MCP server (3001)
   # (frontend is served as static files separately by nginx)
@@ -96,6 +63,27 @@ services:
       YOUTUBE_CLIENT_ID: ${YOUTUBE_CLIENT_ID:-}
       # Server public URL (used in generated .env file downloads)
       PUBLIC_URL: ${PUBLIC_URL:-}
+      # ── Radio HLS source ───────────────────────────────────────────────────
+      # Set to 'mediamtx' to let MediaMTX serve HLS directly (no ffmpeg for radio).
+      # Requires the mediamtx service below to be running.
+      RADIO_HLS_SOURCE: ${RADIO_HLS_SOURCE:-ffmpeg}
+      # MediaMTX API URL (for dynamic path management via NginxManager)
+      MEDIAMTX_API_URL: ${MEDIAMTX_API_URL:-http://mediamtx:9997}
+      MEDIAMTX_HLS_BASE_URL: ${MEDIAMTX_HLS_BASE_URL:-http://mediamtx:8080}
+      MEDIAMTX_API_USER: ${MEDIAMTX_API_USER:-}
+      MEDIAMTX_API_PASSWORD: ${MEDIAMTX_API_PASSWORD:-}
+      # ── nginx config path for radio proxy locations ────────────────────────
+      # When set, the backend writes slug-based proxy locations and reloads nginx.
+      # Leave empty to serve radio HLS directly from the Node.js backend instead.
+      NGINX_RADIO_CONFIG_PATH: ${NGINX_RADIO_CONFIG_PATH:-}
+      NGINX_RELOAD_CMD: ${NGINX_RELOAD_CMD:-nginx -s reload}
+      # ── ffmpeg runner (Phases 2–3: docker, Phase 4+: worker) ─────────────
+      # DSK rendering still uses ffmpeg. For other jobs RADIO_HLS_SOURCE controls it.
+      FFMPEG_RUNNER: ${FFMPEG_RUNNER:-spawn}
+      FFMPEG_IMAGE: ${FFMPEG_IMAGE:-lcyt-ffmpeg:latest}
+      DOCKER_HOST: ${DOCKER_HOST:-}
+    depends_on:
+      - mediamtx
     restart: unless-stopped
     volumes:
       - lcyt-db:/data
@@ -106,5 +94,47 @@ services:
       start_period: 15s
       retries: 3
 
+  # ── MediaMTX — RTMP/HLS broker ─────────────────────────────────────────────
+  # Receives RTMP streams (optionally forwarded from nginx-rtmp) and serves:
+  #   HLS at      http://mediamtx:8080/<path>/index.m3u8
+  #   RTMP at     rtmp://mediamtx:1935/<path>
+  #   REST API at http://mediamtx:9997/v3/
+  #
+  # The backend RadioManager (RADIO_HLS_SOURCE=mediamtx) registers MediaMTX paths
+  # via the REST API and writes nginx proxy locations via NginxManager.
+  # ffmpeg is NOT used for radio HLS in this mode.
+  mediamtx:
+    image: bluenviron/mediamtx:latest
+    container_name: mediamtx
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1936:1935"   # RTMP ingest (avoid conflict with local nginx-rtmp :1935)
+      - "127.0.0.1:8080:8080"   # HLS / metrics HTTP
+      - "127.0.0.1:9997:9997"   # REST API
+    volumes:
+      - ./docker/mediamtx.yml:/mediamtx.yml:ro
+    environment:
+      MTX_LOGLEVEL: ${MEDIAMTX_LOG_LEVEL:-info}
+
+  # ── Docker socket proxy (Phases 2–3 only) ──────────────────────────────────
+  # Allows the backend to launch ephemeral ffmpeg compute containers without
+  # direct root-socket access. Only needed when FFMPEG_RUNNER=docker.
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: docker-socket-proxy
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      DELETE: 1
+    profiles:
+      - docker-runner   # opt-in: `docker compose --profile docker-runner up`
+
 volumes:
   lcyt-db: {}
+
+networks:
+  default:
+    name: lcyt-net
