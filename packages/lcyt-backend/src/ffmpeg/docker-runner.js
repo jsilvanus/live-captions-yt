@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process';
+import * as child from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 const { mkdtempSync, writeFileSync, rmSync } = fs;
@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 export class DockerFfmpegRunner extends EventEmitter {
-  constructor({ image = 'lcyt-ffmpeg:latest', name = null, args = [], env = {}, volumes = [], network, cpus, memory, entrypoint = null, pipeStdin = false } = {}) {
+  constructor({ image = 'lcyt-ffmpeg:latest', name = null, args = [], env = {}, volumes = [], network, cpus, memory, entrypoint = null, pipeStdin = false, childProc = child } = {}) {
     super();
     this.image = image;
     this.name = name ?? `lcyt-ffmpeg-${Date.now().toString(36)}`;
@@ -21,11 +21,12 @@ export class DockerFfmpegRunner extends EventEmitter {
     this.stdout = null;
     this.stderr = null;
     this._pipeStdin = !!pipeStdin;
+    this._child = childProc;
   }
 
   _imageExists() {
     try {
-      const r = spawnSync('docker', ['image', 'inspect', this.image], { encoding: 'utf8', timeout: 5000 });
+      const r = this._child.spawnSync('docker', ['image', 'inspect', this.image], { encoding: 'utf8', timeout: 5000 });
       return r.status === 0;
     } catch (e) {
       return false;
@@ -40,7 +41,7 @@ ENTRYPOINT ["ffmpeg"]\n`;
     writeFileSync(join(tmp, 'Dockerfile'), dockerfile, 'utf8');
     try {
       const buildTimeout = Number(process.env.DOCKER_BUILD_TIMEOUT_MS) || 120000;
-      const r = spawnSync('docker', ['build', '-t', this.image, tmp], { encoding: 'utf8', timeout: buildTimeout });
+      const r = this._child.spawnSync('docker', ['build', '-t', this.image, tmp], { encoding: 'utf8', timeout: buildTimeout });
       if (r.status !== 0) {
         console.error('[docker-runner] docker build failed:', r.stderr || r.stdout || r.status);
       }
@@ -78,13 +79,12 @@ ENTRYPOINT ["ffmpeg"]\n`;
     }
 
     runArgs.push(this.image);
-    // Use '--' to separate docker args from ffmpeg args and preserve args with leading dashes
-    runArgs.push('--');
+    // append ffmpeg args directly (do not insert a literal '--' which becomes an argv passed to ffmpeg)
     runArgs.push(...this.args);
 
     // spawn docker with stdio pipes so we can pass through stdin/stdout/stderr
     const stdio = this._pipeStdin ? ['pipe', 'pipe', 'pipe'] : ['ignore', 'pipe', 'pipe'];
-    const proc = spawn('docker', runArgs, { stdio });
+    const proc = this._child.spawn('docker', runArgs, { stdio });
     this.proc = proc;
     this.stdout = proc.stdout;
     this.stderr = proc.stderr;
@@ -129,7 +129,7 @@ ENTRYPOINT ["ffmpeg"]\n`;
       this.once('close', onClose);
 
       try {
-        const stop = spawn('docker', ['stop', '--time', String(Math.ceil(timeoutMs / 1000)), this.name]);
+          const stop = this._child.spawn('docker', ['stop', '--time', String(Math.ceil(timeoutMs / 1000)), this.name]);
         stop.on('error', () => {});
         stop.on('close', () => {});
       } catch (e) {

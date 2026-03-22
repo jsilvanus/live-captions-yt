@@ -12,6 +12,17 @@ export function createApp() {
   const app = express();
   app.use(express.json());
 
+  const WORKER_AUTH_TOKEN = process.env.WORKER_AUTH_TOKEN || process.env.BACKEND_INTERNAL_TOKEN || null;
+
+  function requireWorkerAuth(req, res, next) {
+    if (!WORKER_AUTH_TOKEN) return next();
+    const provided = req.headers['x-worker-auth'];
+    if (!provided || provided !== WORKER_AUTH_TOKEN) {
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+    return next();
+  }
+
   // In-memory jobs map: jobId -> { id, plan, status, createdAt, proc?, captions: [] }
   const jobs = new Map();
 
@@ -19,7 +30,7 @@ export function createApp() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
   }
 
-  app.post('/jobs', (req, res) => {
+  app.post('/jobs', requireWorkerAuth, (req, res) => {
     const plan = req.body || {};
     const jobId = makeJobId();
     const record = {
@@ -71,7 +82,7 @@ export function createApp() {
     res.json({ jobId, workerId: WORKER_ID });
   });
 
-  app.delete('/jobs/:id', (req, res) => {
+  app.delete('/jobs/:id', requireWorkerAuth, (req, res) => {
     const id = req.params.id;
     const record = jobs.get(id);
     if (!record) return res.status(404).json({ error: 'not found' });
@@ -88,7 +99,7 @@ export function createApp() {
     return res.json({ ok: true });
   });
 
-  app.post('/jobs/:id/caption', (req, res) => {
+  app.post('/jobs/:id/caption', requireWorkerAuth, (req, res) => {
     const id = req.params.id;
     const record = jobs.get(id);
     if (!record) return res.status(404).json({ error: 'not found' });

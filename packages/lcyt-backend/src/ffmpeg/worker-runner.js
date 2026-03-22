@@ -1,4 +1,5 @@
 import { URL } from 'url';
+import { EventEmitter } from 'events';
 
 function _fetcher() {
   if (typeof fetch !== 'undefined') return fetch;
@@ -9,8 +10,9 @@ function _fetcher() {
   };
 }
 
-export class WorkerFfmpegRunner {
+export class WorkerFfmpegRunner extends EventEmitter {
   constructor({ baseUrl = process.env.WORKER_DAEMON_URL || 'http://127.0.0.1:5000', timeout = 5000 } = {}) {
+    super();
     this.baseUrl = baseUrl.replace(/\/$/, '');
     this.timeout = timeout;
     this.jobId = null;
@@ -40,7 +42,11 @@ export class WorkerFfmpegRunner {
         body,
         signal: ac.signal,
       });
-      if (!res.ok) throw new Error(`start failed: ${res.status}`);
+      if (!res.ok) {
+        const err = new Error(`start failed: ${res.status}`);
+        try { this.emit('error', err); } catch (e) {}
+        throw err;
+      }
       const json = await res.json();
       this.jobId = json.jobId;
       this.workerId = json.workerId;
@@ -58,9 +64,13 @@ export class WorkerFfmpegRunner {
       const res = await this._fetch(`/jobs/${encodeURIComponent(this.jobId)}`, { method: 'DELETE', signal: ac.signal });
       if (!res.ok) throw new Error(`stop failed: ${res.status}`);
       this.jobId = null;
+      // emit close to follow EventEmitter runner contract
+      try { this.emit('close', { code: 0, signal: null }); } catch (e) {}
       return { ok: true, timedOut: false };
     } catch (err) {
       if (err.name === 'AbortError') return { ok: false, reason: 'timeout', timedOut: true };
+      // emit error event for consumers
+      try { this.emit('error', err); } catch (e) {}
       throw err;
     } finally {
       clearTimeout(timer);
