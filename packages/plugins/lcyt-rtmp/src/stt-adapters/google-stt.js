@@ -16,6 +16,7 @@
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { createSign } from 'node:crypto';
+import { PcmSilenceBuffer, buildWav } from './pcm-buffer.js';
 
 const GOOGLE_STT_REST_URL = 'https://speech.googleapis.com/v1/speech:recognize';
 
@@ -177,8 +178,98 @@ export class GoogleSttAdapter extends EventEmitter {
     }
   }
 
-  /** No-op: REST mode has no persistent connection to tear down. */
-  async stop() {}
+  /**
+   * ffmpeg fallback path (RTMP / WHEP audioSource).
+   * Called with raw s16le 16 kHz mono PCM chunks from ffmpeg stdout.
+   * Accumulates audio in a PcmSilenceBuffer; flushes automatically on
+   * silence gaps or when the max duration cap is reached.
+   *
+   * @param {Buffer} pcmChunk
+   */
+  write(pcmChunk) {
+    if (!this._pcmBuf) {
+      this._pcmBuf = new PcmSilenceBuffer();
+      this._pcmBuf.on('flush', ({ pcm, timestamp, durationMs }) => {
+        // Encode PCM as WAV then send to Google STT using LINEAR16 encoding
+        const wav = buildWav(pcm);
+        this._sendWav(wav, timestamp, durationMs).catch(err => {
+          this.emit('error', { error: err });
+        });
+      });
+    }
+    this._pcmBuf.write(pcmChunk);
+  }
+
+  async _sendWav(wav, timestamp) {
+    const audioContent = wav.toString('base64');
+    const body = {
+      config: {
+        languageCode: this._language,
+        encoding: 'LINEAR16',
+        sampleRateHertz: 16000,
+        audioChannelCount: 1,
+        enableAutomaticPunctuation: true,
+        model: 'latest_long',
+      },
+      audio: { content: audioContent },
+    };
+
+    let authHeader;
+    if (this._serviceAccount) {
+      const token = await this._getToken();
+      authHeader = `Bearer ${token}`;
+    } else {
+      authHeader = null;
+    }
+
+    const url = authHeader
+      ? GOOGLE_STT_REST_URL
+      : `${GOOGLE_STT_REST_URL}?key=${encodeURIComponent(this._apiKey)}`;
+
+    let resp;
+    try {
+      resp = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authHeader ? { Authorization: authHeader } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (err) {
+      throw new Error(`GoogleSttAdapter (PCM): request failed: ${err.message}`);
+    }
+
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`GoogleSttAdapter (PCM): API error ${resp.status}: ${errBody}`);
+    }
+
+    let data;
+    try { data = await resp.json(); } catch (err) {
+      throw new Error(`GoogleSttAdapter (PCM): invalid JSON: ${err.message}`);
+    }
+
+    for (const result of (data.results || [])) {
+      const alt = result.alternatives?.[0];
+      if (!alt?.transcript?.trim()) continue;
+      this.emit('transcript', {
+        text:       alt.transcript.trim(),
+        confidence: alt.confidence ?? null,
+        timestamp,
+      });
+    }
+  }
+
+  /** Flush any buffered PCM and release resources. */
+  async stop() {
+    if (this._pcmBuf) {
+      this._pcmBuf.flush();
+      this._pcmBuf.reset();
+      this._pcmBuf = null;
+    }
+  }
 
   // ── Internal ─────────────────────────────────────────────────────────────
 

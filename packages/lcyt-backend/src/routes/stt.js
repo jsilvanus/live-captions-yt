@@ -28,7 +28,7 @@ import { Router } from 'express';
 import { getSttConfig, setSttConfig } from 'lcyt-rtmp';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
-const VALID_AUDIO_SOURCE = ['hls'];
+const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
 
 /** Send an SSE event line to an Express response. */
 function sendEvent(res, eventName, data) {

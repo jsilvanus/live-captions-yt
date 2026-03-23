@@ -16,6 +16,7 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { PcmSilenceBuffer, buildWav } from './pcm-buffer.js';
 
 const DEFAULT_BASE_URL = 'https://api.openai.com';
 const DEFAULT_MODEL    = 'whisper-1';
@@ -110,6 +111,68 @@ export class OpenAiAdapter extends EventEmitter {
     });
   }
 
-  /** No-op: REST mode has no persistent connection. */
-  async stop() {}
+  /**
+   * ffmpeg fallback path (RTMP / WHEP audioSource).
+   * Accepts raw s16le 16 kHz mono PCM chunks, buffers them with silence
+   * detection, then posts the flushed window as a WAV file.
+   *
+   * @param {Buffer} pcmChunk
+   */
+  write(pcmChunk) {
+    if (!this._pcmBuf) {
+      this._pcmBuf = new PcmSilenceBuffer();
+      this._pcmBuf.on('flush', ({ pcm, timestamp }) => {
+        const wav = buildWav(pcm);
+        this._sendWav(wav, timestamp).catch(err => {
+          this.emit('error', { error: err });
+        });
+      });
+    }
+    this._pcmBuf.write(pcmChunk);
+  }
+
+  async _sendWav(wav, timestamp) {
+    const formData = new FormData();
+    const blob = new Blob([wav], { type: 'audio/wav' });
+    formData.append('file', blob, 'segment.wav');
+    formData.append('model', this._model);
+
+    const lang = this._language.split('-')[0];
+    formData.append('language', lang);
+    formData.append('response_format', 'json');
+
+    let resp;
+    try {
+      resp = await fetch(`${this._baseUrl}/v1/audio/transcriptions`, {
+        method:  'POST',
+        headers: { Authorization: `Bearer ${this._apiKey}` },
+        body:    formData,
+        signal:  AbortSignal.timeout(60_000),
+      });
+    } catch (err) {
+      throw new Error(`OpenAiAdapter (PCM): request failed: ${err.message}`);
+    }
+
+    if (!resp.ok) {
+      const errBody = await resp.text().catch(() => '');
+      throw new Error(`OpenAiAdapter (PCM): server error ${resp.status}: ${errBody}`);
+    }
+
+    let data;
+    try { data = await resp.json(); } catch (err) {
+      throw new Error(`OpenAiAdapter (PCM): invalid JSON: ${err.message}`);
+    }
+
+    const text = (data.text ?? '').trim();
+    if (text) this.emit('transcript', { text, confidence: null, timestamp });
+  }
+
+  /** Flush buffered PCM and release resources. */
+  async stop() {
+    if (this._pcmBuf) {
+      this._pcmBuf.flush();
+      this._pcmBuf.reset();
+      this._pcmBuf = null;
+    }
+  }
 }

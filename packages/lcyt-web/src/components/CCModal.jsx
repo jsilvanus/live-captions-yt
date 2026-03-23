@@ -420,10 +420,13 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
   // ── Server STT tab (service tab, bottom section) ──────────
   const [serverSttProvider, setServerSttProvider] = useState('google');
   const [serverSttLang, setServerSttLang] = useState('en-US');
+  const [serverSttAudioSource, setServerSttAudioSource] = useState('hls');
   const [serverSttAutoStart, setServerSttAutoStart] = useState(false);
   const [serverSttRunning, setServerSttRunning] = useState(false);
   const [serverSttBusy, setServerSttBusy] = useState(false);
   const [serverSttError, setServerSttError] = useState('');
+  // null = unknown (backend not yet queried), true/false = backend responded
+  const [serverSttWhepAvailable, setServerSttWhepAvailable] = useState(null);
 
   // ── Receivers tab ─────────────────────────────────────────
   const [targets, setTargetsState] = useState([]);
@@ -499,12 +502,14 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
       session.listIcons().then(data => setIcons(data.icons || [])).catch(() => setIcons([]));
       // Load server STT config + status
       session.getSttConfig().then(data => {
-        if (data.provider) setServerSttProvider(data.provider);
-        if (data.language) setServerSttLang(data.language);
+        if (data.provider)    setServerSttProvider(data.provider);
+        if (data.language)    setServerSttLang(data.language);
+        if (data.audioSource) setServerSttAudioSource(data.audioSource);
         setServerSttAutoStart(!!data.autoStart);
       }).catch(() => {});
       session.getSttStatus().then(data => {
         setServerSttRunning(!!data.running);
+        if (data.whepAvailable !== undefined) setServerSttWhepAvailable(!!data.whepAvailable);
       }).catch(() => {});
     } else {
       setIcons([]);
@@ -977,6 +982,29 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                     }}
                     placeholder={t('settings.stt.languagePlaceholder')}
                   />
+                </div>
+
+                <div className="settings-field">
+                  <label className="settings-field__label">{t('settings.serverStt.audioSource')}</label>
+                  <select
+                    className="settings-field__input"
+                    value={serverSttAudioSource}
+                    onChange={e => {
+                      const v = e.target.value;
+                      setServerSttAudioSource(v);
+                      if (session.connected) {
+                        session.updateSttConfig({ audioSource: v }).catch(() => {});
+                      }
+                    }}
+                  >
+                    <option value="hls">{t('settings.serverStt.audioSourceHls')}</option>
+                    <option value="rtmp">{t('settings.serverStt.audioSourceRtmp')}</option>
+                    <option value="whep">{t('settings.serverStt.audioSourceWhep')}</option>
+                  </select>
+                  {serverSttAudioSource === 'whep' && serverSttWhepAvailable === false && (
+                    <span className="stt-whep-warning">{t('settings.serverStt.whepUnavailable')}</span>
+                  )}
+                  <span className="settings-field__hint">{t('settings.serverStt.audioSourceHint')}</span>
                 </div>
 
                 <div className="settings-field">

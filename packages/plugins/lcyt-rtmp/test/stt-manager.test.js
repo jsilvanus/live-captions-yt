@@ -62,7 +62,10 @@ describe('SttManager', () => {
 
   test('getStatus() returns { running: false } for unknown key', () => {
     const mgr = new SttManager(makeStore());
-    assert.deepEqual(mgr.getStatus('unknown'), { running: false });
+    const status = mgr.getStatus('unknown');
+    assert.strictEqual(status.running, false);
+    assert.ok('ffmpegVersion' in status, 'ffmpegVersion field expected');
+    assert.ok('whepAvailable' in status, 'whepAvailable field expected');
   });
 
   test('start() then isRunning() returns true', async () => {
@@ -133,7 +136,7 @@ describe('SttManager', () => {
   test('throws on unsupported provider', async () => {
     const mgr = new SttManager(makeStore());
     await assert.rejects(
-      () => mgr.start('mykey', { provider: 'whisper_http' }),
+      () => mgr.start('mykey', { provider: 'unknown_provider' }),
       /unsupported provider/i
     );
   });
@@ -141,8 +144,8 @@ describe('SttManager', () => {
   test('throws on unsupported audioSource', async () => {
     const mgr = new SttManager(makeStore());
     await assert.rejects(
-      () => mgr.start('mykey', { provider: 'google', audioSource: 'rtmp' }),
-      /not supported in Phase 1/i
+      () => mgr.start('mykey', { provider: 'google', audioSource: 'ftp' }),
+      /unsupported audioSource/i
     );
   });
 

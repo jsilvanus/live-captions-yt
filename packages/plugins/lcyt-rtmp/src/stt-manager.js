@@ -14,12 +14,39 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { spawn } from 'node:child_process';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
 import { OpenAiAdapter } from './stt-adapters/openai.js';
 
 const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8888';
+
+// ── ffmpeg version probe ────────────────────────────────────────────────────
+
+/**
+ * Probe the installed ffmpeg version.
+ * @returns {Promise<{ major: number, minor: number }|null>}
+ */
+export async function probeFfmpegVersion() {
+  return new Promise(resolve => {
+    let output = '';
+    let proc;
+    try {
+      proc = spawn('ffmpeg', ['-version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch {
+      resolve(null);
+      return;
+    }
+    proc.stdout?.on('data', d => { output += d.toString(); });
+    proc.stderr?.on('data', d => { output += d.toString(); });
+    proc.on('error', () => resolve(null));
+    proc.on('close', () => {
+      const m = output.match(/ffmpeg version (\d+)\.(\d+)/);
+      resolve(m ? { major: parseInt(m[1], 10), minor: parseInt(m[2], 10) } : null);
+    });
+  });
+}
 
 /**
  * @typedef {object} SttSession
@@ -44,6 +71,20 @@ export class SttManager extends EventEmitter {
     this._store = store;
     /** @type {Map<string, SttSession>} */
     this._sessions = new Map();
+    /** @type {{ major: number, minor: number }|null} */
+    this.ffmpegVersion = null;
+
+    // Probe ffmpeg asynchronously; errors are non-fatal
+    probeFfmpegVersion().then(v => {
+      this.ffmpegVersion = v;
+      if (!v) {
+        console.warn('[stt] ffmpeg not found — RTMP/WHEP audioSource will be unavailable');
+      } else if (v.major < 6 || (v.major === 6 && v.minor < 1)) {
+        console.warn(`[stt] ffmpeg ${v.major}.${v.minor} detected — WHEP audioSource requires ffmpeg ≥ 6.1`);
+      } else {
+        console.log(`[stt] ffmpeg ${v.major}.${v.minor} detected — RTMP and WHEP audioSources available`);
+      }
+    }).catch(() => {});
   }
 
   /**
@@ -82,14 +123,6 @@ export class SttManager extends EventEmitter {
 
     await adapter.start({ language });
 
-    // Create fetcher
-    if (audioSource !== 'hls') {
-      throw new Error(`SttManager: audioSource "${audioSource}" not supported. Supported: hls`);
-    }
-
-    const hlsBase = process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE;
-    const fetcher = new HlsSegmentFetcher({ hlsBase, streamKey: effectiveStreamKey });
-
     /** @type {SttSession} */
     const session = {
       provider,
@@ -99,37 +132,18 @@ export class SttManager extends EventEmitter {
       startedAt:      new Date(),
       segmentsSent:   0,
       lastTranscript: null,
-      fetcher,
+      fetcher:        null,
+      ffmpegProc:     null,
       adapter,
     };
 
     this._sessions.set(apiKey, session);
 
-    // Wire events
-    fetcher.on('segment', async ({ buffer, timestamp, duration }) => {
-      const sess = this._sessions.get(apiKey);
-      if (!sess) return;
-      sess.segmentsSent++;
-      try {
-        await adapter.sendSegment(buffer, { timestamp, duration });
-      } catch (err) {
-        this.emit('error', { apiKey, error: err });
-      }
-    });
-
-    fetcher.on('error', ({ error }) => {
-      this.emit('error', { apiKey, error });
-    });
-
-    fetcher.on('stopped', () => {
-      // fetcher stopped — handled by the session cleanup in stop()
-    });
-
+    // ── Wire common adapter events ────────────────────────────────────────
     adapter.on('transcript', ({ text, confidence, timestamp }) => {
       const sess = this._sessions.get(apiKey);
       if (!sess) return;
       sess.lastTranscript = text;
-
       this.emit('transcript', { apiKey, text, confidence, timestamp, provider });
       this._deliverTranscript(apiKey, text, timestamp);
     });
@@ -138,8 +152,76 @@ export class SttManager extends EventEmitter {
       this.emit('error', { apiKey, error });
     });
 
-    fetcher.start();
-    console.log(`[stt] Started for key ${apiKey.slice(0, 8)}… provider=${provider} lang=${language} stream=${effectiveStreamKey}`);
+    // ── Audio source ──────────────────────────────────────────────────────
+    if (audioSource === 'hls') {
+      const hlsBase = process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE;
+      const fetcher = new HlsSegmentFetcher({ hlsBase, streamKey: effectiveStreamKey });
+      session.fetcher = fetcher;
+
+      fetcher.on('segment', async ({ buffer, timestamp, duration }) => {
+        const sess = this._sessions.get(apiKey);
+        if (!sess) return;
+        sess.segmentsSent++;
+        try {
+          await adapter.sendSegment(buffer, { timestamp, duration });
+        } catch (err) {
+          this.emit('error', { apiKey, error: err });
+        }
+      });
+
+      fetcher.on('error', ({ error }) => { this.emit('error', { apiKey, error }); });
+
+      fetcher.start();
+
+    } else if (audioSource === 'rtmp' || audioSource === 'whep') {
+      const inputUrl = this._buildFfmpegInputUrl(audioSource, effectiveStreamKey);
+      const ffmpegArgs = [
+        '-i', inputUrl,
+        '-vn',               // drop video
+        '-ac', '1',          // mono
+        '-ar', '16000',      // 16 kHz
+        '-f', 's16le',       // raw PCM s16le
+        'pipe:1',
+      ];
+
+      let proc;
+      try {
+        proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+      } catch (err) {
+        this._sessions.delete(apiKey);
+        throw new Error(`SttManager: failed to spawn ffmpeg for ${audioSource}: ${err.message}`);
+      }
+
+      session.ffmpegProc = proc;
+
+      proc.stdout.on('data', chunk => {
+        if (!this._sessions.has(apiKey)) return;
+        session.segmentsSent++;
+        adapter.write(chunk);
+      });
+
+      proc.stderr.on('data', () => {}); // suppress ffmpeg's verbose output
+
+      proc.on('error', err => {
+        this.emit('error', { apiKey, error: new Error(`ffmpeg error: ${err.message}`) });
+      });
+
+      proc.on('close', code => {
+        if (this._sessions.has(apiKey)) {
+          // Unexpected exit — clean up and report
+          if (code !== 0) {
+            this.emit('error', { apiKey, error: new Error(`ffmpeg exited with code ${code}`) });
+          }
+          this.stop(apiKey);
+        }
+      });
+
+    } else {
+      this._sessions.delete(apiKey);
+      throw new Error(`SttManager: unsupported audioSource "${audioSource}". Supported: hls, rtmp, whep`);
+    }
+
+    console.log(`[stt] Started for key ${apiKey.slice(0, 8)}… provider=${provider} lang=${language} source=${audioSource} stream=${effectiveStreamKey}`);
   }
 
   /**
@@ -152,7 +234,8 @@ export class SttManager extends EventEmitter {
 
     this._sessions.delete(apiKey);
 
-    try { session.fetcher.stop(); } catch {}
+    if (session.fetcher)    try { session.fetcher.stop(); }       catch {}
+    if (session.ffmpegProc) try { session.ffmpegProc.kill('SIGTERM'); } catch {}
     try { await session.adapter.stop(); } catch {}
 
     this.emit('stopped', { apiKey });
@@ -177,11 +260,16 @@ export class SttManager extends EventEmitter {
 
   /**
    * @param {string} apiKey
-   * @returns {{ running: boolean, provider?: string, language?: string, startedAt?: Date, segmentsSent?: number, lastTranscript?: string|null }}
+   * @returns {{ running: boolean, provider?: string, language?: string, audioSource?: string, startedAt?: Date, segmentsSent?: number, lastTranscript?: string|null, ffmpegVersion?: object|null, whepAvailable?: boolean }}
    */
   getStatus(apiKey) {
     const session = this._sessions.get(apiKey);
-    if (!session) return { running: false };
+    const ffv = this.ffmpegVersion;
+    const whepAvailable = !!(ffv && (ffv.major > 6 || (ffv.major === 6 && ffv.minor >= 1)));
+
+    if (!session) {
+      return { running: false, ffmpegVersion: ffv ?? null, whepAvailable };
+    }
     return {
       running:        true,
       provider:       session.provider,
@@ -191,7 +279,27 @@ export class SttManager extends EventEmitter {
       startedAt:      session.startedAt,
       segmentsSent:   session.segmentsSent,
       lastTranscript: session.lastTranscript,
+      ffmpegVersion:  ffv ?? null,
+      whepAvailable,
     };
+  }
+
+  // ── Private helpers ───────────────────────────────────────────────────────
+
+  /**
+   * Build the ffmpeg input URL for RTMP or WHEP audio sources.
+   * @param {'rtmp'|'whep'} audioSource
+   * @param {string} streamKey
+   */
+  _buildFfmpegInputUrl(audioSource, streamKey) {
+    if (audioSource === 'rtmp') {
+      const rtmpBase = (process.env.HLS_LOCAL_RTMP || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
+      const rtmpApp  = process.env.HLS_RTMP_APP || 'live';
+      return `${rtmpBase}/${rtmpApp}/${streamKey}`;
+    }
+    // whep
+    const mediamtxBase = (process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE).replace(/\/$/, '');
+    return `${mediamtxBase}/${streamKey}/whep`;
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────
