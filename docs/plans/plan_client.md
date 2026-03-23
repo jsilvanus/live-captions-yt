@@ -1,3 +1,10 @@
+---
+id: plan/client
+title: "Web GUI Client (lcyt-web)"
+status: implemented
+summary: "Browser-based React SPA connecting to lcyt-backend: file management, session lifecycle, STT integration, embed widgets."
+---
+
 # Web GUI Client Plan — `lcyt-web`
 
 ## Overview

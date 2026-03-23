@@ -1,3 +1,10 @@
+---
+id: plan/hls-sidecar
+title: "HLS Multilingual Caption Sidecar"
+status: implemented
+summary: "Rolling WebVTT subtitle segments sidecar for HLS stream; HLS.js player at /video/:key with CC language selection."
+---
+
 # PLAN.md — HLS Multilingual Caption Sidecar
 
 ## Goal
