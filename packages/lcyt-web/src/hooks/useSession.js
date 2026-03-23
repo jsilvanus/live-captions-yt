@@ -638,6 +638,10 @@ export function useSession({
 
   const setRelayActive = useCallback(async function setRelayActive(active) {
     return api.put('/stream/active', { active });
+  }, []);
+
+  const getSttStatus = useCallback(function getSttStatus() {
+    return api.get('/stt/status');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
@@ -654,6 +658,7 @@ export function useSession({
     listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getYouTubeConfig,
+    getSttStatus,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
     getQueuedCount,
   };

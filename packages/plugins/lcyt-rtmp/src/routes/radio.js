@@ -2,7 +2,7 @@ import { Router } from 'express';
 import express from 'express';
 import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
-import { isRadioEnabled, getEmbedCors } from '../db.js';
+import { isRadioEnabled, getEmbedCors, getSttConfig } from '../db.js';
 
 // Radio key validation: same rules as viewer keys
 const RADIO_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
@@ -122,9 +122,10 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../radio-manager.js').RadioManager} radioManager
+ * @param {import('../stt-manager.js').SttManager} [sttManager]
  * @returns {Router}
  */
-export function createRadioRouter(db, radioManager) {
+export function createRadioRouter(db, radioManager, sttManager = null) {
   const router = Router();
 
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
@@ -155,6 +156,26 @@ export function createRadioRouter(db, radioManager) {
         console.error(`[radio] Failed to start HLS for ${radioKey.slice(0, 8)}…: ${err.message}`);
         // Still return 200 so nginx allows the publish (HLS is best-effort)
       }
+
+      // Auto-start STT if configured
+      if (sttManager) {
+        try {
+          const cfg = getSttConfig(db, radioKey);
+          if (cfg?.autoStart) {
+            sttManager.start(radioKey, {
+              provider:    cfg.provider,
+              language:    cfg.language,
+              audioSource: cfg.audioSource,
+              streamKey:   cfg.streamKey,
+            }).catch(err => {
+              console.error(`[radio] STT auto-start failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
+            });
+          }
+        } catch (err) {
+          console.error(`[radio] STT auto-start lookup failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
+        }
+      }
+
       return res.status(200).send('ok');
     }
 
@@ -164,6 +185,14 @@ export function createRadioRouter(db, radioManager) {
       } catch (err) {
         console.error(`[radio] Failed to stop HLS for ${radioKey.slice(0, 8)}…: ${err.message}`);
       }
+
+      // Stop STT when stream ends
+      if (sttManager && sttManager.isRunning(radioKey)) {
+        sttManager.stop(radioKey).catch(err => {
+          console.error(`[radio] STT stop failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
+        });
+      }
+
       return res.status(200).send('ok');
     }
 

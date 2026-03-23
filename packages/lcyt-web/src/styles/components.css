@@ -91,6 +91,21 @@
   flex: 1;
 }
 
+.status-bar__stt-chip {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.status-bar__stt-chip--active {
+  color: var(--color-success, #22c55e);
+  border-color: var(--color-success, #22c55e);
+}
+
 .status-bar__btn {
   padding: 4px 8px;
   border-radius: 4px;

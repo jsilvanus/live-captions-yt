@@ -119,6 +119,81 @@ export function runMigrations(db) {
       PRIMARY KEY (date, endpoint_type, caption_mode)
     )
   `);
+
+  // ── stt_config: per-key STT configuration ─────────────────────────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stt_config (
+      api_key      TEXT PRIMARY KEY,
+      provider     TEXT NOT NULL DEFAULT 'google',
+      language     TEXT NOT NULL DEFAULT 'en-US',
+      audio_source TEXT NOT NULL DEFAULT 'hls',
+      stream_key   TEXT,
+      auto_start   INTEGER NOT NULL DEFAULT 0,
+      created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )
+  `);
+}
+
+// ── STT config DB helpers ──────────────────────────────────────────────────
+
+/**
+ * Get STT config for an API key, or null if none exists.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {{ provider: string, language: string, audio_source: string, stream_key: string|null, auto_start: boolean }|null}
+ */
+export function getSttConfig(db, apiKey) {
+  const row = db.prepare('SELECT * FROM stt_config WHERE api_key = ?').get(apiKey);
+  if (!row) return null;
+  return {
+    provider:    row.provider,
+    language:    row.language,
+    audioSource: row.audio_source,
+    streamKey:   row.stream_key ?? null,
+    autoStart:   Boolean(row.auto_start),
+  };
+}
+
+/**
+ * Upsert STT config for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {{ provider?: string, language?: string, audioSource?: string, streamKey?: string|null, autoStart?: boolean }} opts
+ */
+export function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart } = {}) {
+  const existing = db.prepare('SELECT * FROM stt_config WHERE api_key = ?').get(apiKey);
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO stt_config (api_key, provider, language, audio_source, stream_key, auto_start)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      apiKey,
+      provider    ?? 'google',
+      language    ?? 'en-US',
+      audioSource ?? 'hls',
+      streamKey   ?? null,
+      autoStart   ? 1 : 0,
+    );
+  } else {
+    db.prepare(`
+      UPDATE stt_config
+      SET provider     = COALESCE(?, provider),
+          language     = COALESCE(?, language),
+          audio_source = COALESCE(?, audio_source),
+          stream_key   = ?,
+          auto_start   = COALESCE(?, auto_start),
+          updated_at   = strftime('%s','now')
+      WHERE api_key = ?
+    `).run(
+      provider    ?? null,
+      language    ?? null,
+      audioSource ?? null,
+      streamKey   !== undefined ? (streamKey ?? null) : existing.stream_key,
+      autoStart   !== undefined ? (autoStart ? 1 : 0) : null,
+      apiKey,
+    );
+  }
 }
 
 export * from './db/relay.js';

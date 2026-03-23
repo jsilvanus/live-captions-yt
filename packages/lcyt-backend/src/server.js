@@ -20,6 +20,7 @@ import { createViewerRouter, setHlsSubsManager } from './routes/viewer.js';
 import { createVideoRouter } from './routes/video.js';
 import { createIconRouter } from './routes/icons.js';
 import { createYouTubeRouter } from './routes/youtube.js';
+import { createSttRouter } from './routes/stt.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
@@ -135,8 +136,9 @@ const {
 
 // RTMP plugin — run DB migrations, create all manager instances.
 // Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
-const rtmp = await initRtmpControl(db);
-const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager } = rtmp;
+// Pass the session store so SttManager can inject transcripts into session._sendQueue.
+const rtmp = await initRtmpControl(db, store);
+const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
@@ -318,6 +320,7 @@ app.use('/dsk-rtmp', dskRtmpRouter);
 app.use('/viewer', createViewerRouter(db));
 app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
 app.use('/youtube', createYouTubeRouter(auth));
+app.use('/stt', createSttRouter(auth, sttManager, db));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,
@@ -338,4 +341,4 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, productionRegistry, productionBridgeManager, stopDsk };
+export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk };
