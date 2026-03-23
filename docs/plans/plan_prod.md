@@ -1,3 +1,10 @@
+---
+id: plan/prod
+title: "Production Control (cameras, mixers, bridge)"
+status: implemented
+summary: "Pluggable production control layer: PTZ camera presets, video mixer source switching, lcyt-bridge TCP relay agent, MCP tools."
+---
+
 # Production Control — LCYT Feature Plan
 
 ## Overview

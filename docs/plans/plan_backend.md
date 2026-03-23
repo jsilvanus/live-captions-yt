@@ -1,3 +1,10 @@
+---
+id: plan/backend
+title: "lcyt-backend Express Relay Backend"
+status: implemented
+summary: "CORS relay backend for YouTube Live caption ingestion: JWT auth, SQLite key management, multi-user sessions, admin CLI."
+---
+
 # lcyt-backend — Plan
 
 ## Purpose

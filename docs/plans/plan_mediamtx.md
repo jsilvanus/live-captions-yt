@@ -1,3 +1,10 @@
+---
+id: plan/mediamtx
+title: "MediaMTX Integration"
+status: implemented
+summary: "Opt-in MediaMTX media broker as alternative to ffmpeg-based RTMP/HLS flows; NginxManager for slug-based public URLs."
+---
+
 # MediaMTX Integration Plan
 
 This document describes a proposed migration and integration of MediaMTX (bluenviron/mediamtx) into the LCYT infrastructure as an alternative/companion to our current ffmpeg-based RTMP/HLS flows. It is written as an engineer-facing plan with concrete next steps, sample configuration, and a list of repository places to review and update.

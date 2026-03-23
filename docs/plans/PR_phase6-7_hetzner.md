@@ -1,3 +1,10 @@
+---
+id: plan/pr-phase6-7-hetzner
+title: "PR: Phase 6–7 Hetzner provisioning and autoscaling scaffolding"
+status: reference
+summary: "PR artifact for plan/dock-ffmpeg phases 6–7: Hetzner provisioning, snapshot boot, autoscaling scaffolding, operator runbook."
+---
+
 # PR: Phase 6–7: Hetzner provisioning, snapshot, and autoscaling scaffolding
 
 Branch: `director/phase6-7-hetzner`

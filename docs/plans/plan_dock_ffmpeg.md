@@ -1,3 +1,10 @@
+---
+id: plan/dock-ffmpeg
+title: "FFmpeg Compute Containers → Distributed Hetzner Architecture"
+status: pending
+summary: "Migrate ffmpeg jobs from bare spawn() into Docker containers (phases 1–3), then distribute across Hetzner Cloud worker VMs via a Compute Orchestrator (phases 4–7)."
+---
+
 # Plan: FFmpeg Compute Containers → Distributed Hetzner Architecture
 
 **Date:** 2026-03-19 (revised 2026-03-20)  

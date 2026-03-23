@@ -1,3 +1,10 @@
+---
+id: plan/front
+title: "Frontend Flow Improvement"
+status: draft
+summary: "Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform."
+---
+
 # Frontend Flow Improvement Plan
 
 **Date:** 2026-03-17

@@ -1,8 +1,11 @@
-# UI Reorganisation Plan — lcyt-web
-
 ---
 id: plan/ui
+title: "UI Reorganisation (lcyt-web)"
+status: pending
+summary: "Redesign lcyt-web desktop (two-column) and mobile (fixed bottom bar + FAB) layouts to improve clarity for the expanded feature set."
 ---
+
+# UI Reorganisation Plan — lcyt-web
 
 > Target branch: `claude/reorganize-ui-layout-jE7Rv`
 > Base: merge `origin/copilot/sub-pr-36` (mic lock + multi-mic) onto the

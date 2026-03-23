@@ -1,8 +1,11 @@
-# Plan: Implement TODO.md items
+---
+id: plan/todo
+title: "Implement TODO.md items"
+status: in-progress
+summary: "Resolve open TODO.md items: Python stderr logging, MCP auto-sync and time field, docs reorganisation, CLAUDE.md lcyt-mcp reference."
+---
 
----
-id: todo_plan
----
+# Plan: Implement TODO.md items
 
 ## Context
 

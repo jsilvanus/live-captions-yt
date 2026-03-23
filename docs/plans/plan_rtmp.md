@@ -1,3 +1,10 @@
+---
+id: plan/rtmp
+title: "RTMP Processing Pipeline"
+status: implemented
+summary: "Orchestrate ffmpeg subprocesses from a single RTMP ingest: audio-only HLS, video+audio HLS, RTMP relay/fan-out, DSK overlays, thumbnails."
+---
+
 # RTMP Processing Pipeline — Plan
 
 ## Overview
