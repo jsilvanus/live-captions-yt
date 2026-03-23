@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+
+const STT_POLL_INTERVAL_MS = 10_000;
 
 export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCOpen }) {
   const [, navigate] = useLocation();
@@ -10,6 +12,27 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
   const { showToast } = useToastContext();
   const { t } = useLang();
   const [connecting, setConnecting] = useState(false);
+  const [sttStatus, setSttStatus] = useState(null);
+
+  // Poll /stt/status while connected
+  useEffect(() => {
+    if (!session.connected) {
+      setSttStatus(null);
+      return;
+    }
+    let cancelled = false;
+    async function poll() {
+      try {
+        const s = await session.getSttStatus();
+        if (!cancelled) setSttStatus(s);
+      } catch {
+        if (!cancelled) setSttStatus(null);
+      }
+    }
+    poll();
+    const id = setInterval(poll, STT_POLL_INTERVAL_MS);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [session.connected, session.getSttStatus]);
 
   async function handleConnectClick() {
     if (session.connected) {
@@ -38,9 +61,22 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
     connecting ? 'status-bar__btn--connecting' : '',
   ].filter(Boolean).join(' ');
 
+  const sttChipLabel = sttStatus?.running
+    ? `STT: ${sttStatus.provider} / ${sttStatus.language}`
+    : null;
+
   return (
     <header id="header" className="status-bar">
       <span className="status-bar__brand">lcyt-web</span>
+      {sttChipLabel && (
+        <button
+          className="status-bar__stt-chip status-bar__stt-chip--active"
+          title="Server STT active — click to configure"
+          onClick={onCCOpen ?? (() => navigate('/settings?tab=cc'))}
+        >
+          {sttChipLabel}
+        </button>
+      )}
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">
         <button className="status-bar__btn status-bar__btn--icon" onClick={() => navigate('/broadcast')} title="Broadcast">

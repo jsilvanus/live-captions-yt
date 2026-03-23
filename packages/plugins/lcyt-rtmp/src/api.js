@@ -42,6 +42,7 @@ import { HlsManager } from './hls-manager.js';
 import { RadioManager } from './radio-manager.js';
 import { PreviewManager } from './preview-manager.js';
 import { HlsSubsManager } from './hls-subs-manager.js';
+import { SttManager } from './stt-manager.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
@@ -51,6 +52,7 @@ import { NginxManager } from './nginx-manager.js';
 import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { NginxManager } from './nginx-manager.js';
+export { getSttConfig, setSttConfig } from './db.js';
 
 /**
  * Initialize the RTMP relay plugin.
@@ -60,16 +62,20 @@ export { NginxManager } from './nginx-manager.js';
  * always idempotent and managers are lightweight.
  *
  * @param {import('better-sqlite3').Database} db
+ * @param {import('../../lcyt-backend/src/store.js').SessionStore} [store]
+ *   Optional session store — injected into SttManager for transcript delivery.
+ *   Pass after the store is created in server.js.
  * @returns {Promise<{
  *   relayManager: RtmpRelayManager,
  *   hlsManager: HlsManager,
  *   radioManager: RadioManager,
  *   previewManager: PreviewManager,
  *   hlsSubsManager: HlsSubsManager,
+ *   sttManager: SttManager,
  *   stop: () => Promise<void>
  * }>}
  */
-export async function initRtmpControl(db) {
+export async function initRtmpControl(db, store = null) {
   runMigrations(db);
 
   const ffmpegCaps = process.env.RTMP_RELAY_ACTIVE === '1'
@@ -132,6 +138,7 @@ export async function initRtmpControl(db) {
   const hlsManager     = new HlsManager({ mediamtxClient });
   const hlsSubsManager = new HlsSubsManager();
   const previewManager = new PreviewManager({ mediamtxClient });
+  const sttManager     = new SttManager(store);
 
   if (nginxManager.isEnabled) {
     console.log(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
@@ -145,9 +152,10 @@ export async function initRtmpControl(db) {
     hlsManager.stopAll();
     radioManager.stopAll();
     previewManager.stopAll();
+    await sttManager.stopAll();
   }
 
-  return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, stop };
+  return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, stop };
 }
 
 /**
@@ -167,12 +175,12 @@ export async function initRtmpControl(db) {
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager }, { allowedRtmpDomains } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager }, { allowedRtmpDomains } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager),
-    radioRouter:     createRadioRouter(db, radioManager),
+    radioRouter:     createRadioRouter(db, radioManager, sttManager),
     previewRouter:   createPreviewRouter(previewManager),
   };
 }
