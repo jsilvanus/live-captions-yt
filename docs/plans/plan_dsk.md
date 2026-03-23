@@ -1,8 +1,11 @@
-# Plan: DSK Graphics Editor — Phase 2 (Editable Shapes)
-
 ---
 id: plan/dsk
+title: "DSK Graphics Editor — Phase 2 (Editable Shapes)"
+status: in-progress
+summary: "Phase 1 complete (template editor, renderer, broadcast control). Phase 2 adds direct canvas drag/resize/keyboard nudge for shape layers."
 ---
+
+# Plan: DSK Graphics Editor — Phase 2 (Editable Shapes)
 
 > Target branch: `claude/add-editable-shapes-yxAXO`
 

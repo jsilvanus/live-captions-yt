@@ -1,3 +1,10 @@
+---
+id: plan/sync
+title: "YouTube Heartbeat Sync (syncOffset)"
+status: implemented
+summary: "NTP-style clock synchronization for YoutubeLiveCaptionSender using YouTube's heartbeat server timestamp."
+---
+
 # Plan: YouTube Heartbeat Sync (syncOffset)
 
 ## Summary

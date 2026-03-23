@@ -1,3 +1,11 @@
+---
+id: plan/front
+title: "Frontend Flow Improvement"
+status: draft
+summary: "Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform."
+relates_to: "plan/ui (sidebar shell that plan/ui's Captions page layout lives inside)"
+---
+
 # Frontend Flow Improvement Plan
 
 **Date:** 2026-03-17

@@ -2,6 +2,9 @@
 
 ---
 id: plan/mcp
+title: "MCP Tools for lcyt"
+status: implemented
+summary: "Model Context Protocol server (stdio and HTTP SSE transports) exposing caption, production, and DSK graphics tools to AI assistants."
 ---
 
 ## What is MCP?
