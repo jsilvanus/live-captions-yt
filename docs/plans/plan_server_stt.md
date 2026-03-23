@@ -2,79 +2,88 @@
 id: plan/server-stt
 title: "Server-side Speech-to-Text (STT)"
 status: draft
-summary: "Server-side STT by fetching HLS audio segments directly from MediaMTX and posting them to pluggable STT provider adapters (whisper.cpp, Google Cloud STT, OpenAI-compatible Whisper); segment timestamps from the HLS playlist drive caption timing with no ffmpeg required for the default path."
+summary: "Server-side STT by fetching fMP4 HLS audio segments directly from MediaMTX and posting them to pluggable STT provider adapters (Google Cloud STT, whisper.cpp, OpenAI-compatible Whisper); segment timestamps from the HLS playlist drive caption timing with no ffmpeg required for the default path."
 ---
 
 # Server-side Speech-to-Text (STT)
 
-**Scope:** New `SttManager` and `HlsSegmentFetcher` classes in `packages/plugins/lcyt-rtmp`; new `/stt` routes in `packages/lcyt-backend`; optional UI controls in `packages/lcyt-web`.
+**Scope:** New `HlsSegmentFetcher` and `SttManager` in `packages/plugins/lcyt-rtmp`; new `/stt` routes in `packages/lcyt-backend`; UI additions in `packages/lcyt-web`.
 
 ---
 
 ## Motivation
 
-The existing STT integration is entirely browser-based — the browser captures the microphone, runs recognition, and POSTs final transcripts to the backend. Server-side STT removes the browser dependency entirely:
+The existing STT is entirely browser-based. Server-side STT removes the browser dependency:
 
-- The audio source is a live stream already flowing through MediaMTX.
-- HLS segments are fetched directly and posted to the STT provider — no ffmpeg decode pipeline required.
-- Timestamps come from the HLS playlist itself, not from a PCM buffer.
-- Transcripts are delivered into the existing caption-send pipeline just like browser-originated text.
-- Useful for: automated captioning of hardware streams (cameras, mixers, broadcast hardware), headless/unattended deployments, and scenarios where no operator browser is available.
+- Audio source is a live fMP4 HLS stream already flowing through MediaMTX.
+- Segments are fetched directly as HTTP requests and posted to the STT provider — no ffmpeg decode pipeline.
+- Timestamps come from the HLS playlist itself (`#EXT-X-PROGRAM-DATE-TIME`).
+- HLS segment duration is the natural utterance boundary — no VAD, no manual chunk sizing.
+- Transcripts are delivered into the existing caption-send pipeline like any other caption source.
+- Useful for: automated captioning of hardware streams, headless deployments, unattended operation.
 
 ---
 
 ## Architecture Overview
 
 ```
-MediaMTX HLS
-  /{streamKey}/index.m3u8   ←── HlsSegmentFetcher (polls playlist)
-  /{streamKey}/seg001.ts         │
-  /{streamKey}/seg002.ts         │  segment buffer + timestamp from #EXT-X-PROGRAM-DATE-TIME
-                                 ▼
-                            SttAdapter (pluggable)
-                            ├─ WhisperHttpAdapter  (whisper.cpp HTTP server)
-                            ├─ GoogleSttAdapter    (Google Cloud STT REST/gRPC)
-                            └─ OpenAiAdapter       (OpenAI-compatible chunked REST)
-                                 │
-                            transcript events { text, timestamp }
-                                 │
-                                 ▼
-                            session._sendQueue    (existing caption delivery)
-                            ├─ YouTube targets
-                            ├─ viewer targets
-                            └─ generic targets
+MediaMTX (fMP4 HLS output)
+  /{streamKey}/index.m3u8        ←── HlsSegmentFetcher (polls playlist)
+  /{streamKey}/init.mp4               │
+  /{streamKey}/seg001.mp4             │  Buffer + timestamp (from EXT-X-PROGRAM-DATE-TIME)
+  /{streamKey}/seg002.mp4             │
+                                      ▼
+                                 SttAdapter
+                                 ├─ GoogleSttAdapter  [Phase 1]
+                                 ├─ WhisperHttpAdapter [Phase 2]
+                                 └─ OpenAiAdapter      [Phase 2]
+                                      │
+                                 { text, timestamp }
+                                      │
+                                      ▼
+                                 session._sendQueue
+                                 ├─ YouTube targets
+                                 ├─ viewer targets
+                                 └─ generic targets
 ```
 
-For non-HLS sources (RTMP, WHEP), `SttManager` falls back to an ffmpeg PCM pipe — see [Fallback: ffmpeg pipe](#fallback-ffmpeg-pipe).
+RTMP and WHEP sources use an ffmpeg PCM pipe fallback — see [Phase 3](#phase-3--rtmpwhep-fallback).
 
 ---
 
-## HLS Segment Fetcher
+## MediaMTX Configuration
+
+MediaMTX must be configured to output **fMP4 HLS segments** (`.mp4` instead of `.ts`). fMP4 is accepted directly by Google Cloud STT, OpenAI, and whisper.cpp.
+
+In `mediamtx.yml`:
+
+```yaml
+hlsVariant: fmp4          # produce .mp4 segments instead of .ts
+hlsSegmentDuration: 6s    # adjust to taste; longer = more context per STT call
+```
+
+The segment duration is the only tuning knob for utterance granularity.
+
+---
+
+## HlsSegmentFetcher
 
 **File:** `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js`
 
-The core of the HLS path. Polls the MediaMTX playlist, detects new segments, fetches their raw bytes, and extracts the wall-clock timestamp for each.
+Polls the MediaMTX HLS playlist, detects new segments, and emits them with accurate wall-clock timestamps.
 
-### Playlist polling
+### Behaviour
 
-- GET `{hlsBase}/{streamKey}/index.m3u8` every ~2 s (or half the segment duration).
+- GET `{hlsBase}/{streamKey}/index.m3u8` at a configurable interval (default: half the segment duration, minimum 1 s).
 - Track `#EXT-X-MEDIA-SEQUENCE` to identify new segments since the last poll.
-- On each new segment:
-  - Determine its wall-clock start time:
-    - If `#EXT-X-PROGRAM-DATE-TIME` is present, use it for the first segment in the window; subsequent segments' timestamps = programDateTime + accumulated `#EXTINF` durations.
-    - If absent, fall back to `Date.now()` at fetch time.
-  - GET the segment URL and collect the response body as a `Buffer`.
-  - Emit `segment` event: `{ buffer, timestamp, duration, url, index }`.
+- Timestamp derivation:
+  - `#EXT-X-PROGRAM-DATE-TIME` gives the wall-clock time of the first segment in the window.
+  - Each subsequent segment's timestamp = programDateTime + sum of preceding `#EXTINF` durations.
+  - If `#EXT-X-PROGRAM-DATE-TIME` is absent, fall back to `Date.now()` at fetch time.
+- For each new segment: GET the URL, collect body as a `Buffer`, emit `segment`.
+- Handles playlist gaps (stream offline) by retrying with exponential backoff.
 
-### Why this is better than ffmpeg piping
-
-- No ffmpeg process, no PCM decode, no WAV encoding in memory, no stdout pipe.
-- Timestamps come from the HLS playlist — the most accurate source available.
-- HLS segment duration is the natural utterance boundary. No VAD, no `vadSilenceMs`, no `chunkDurationMs` config.
-- Segment duration is set in MediaMTX's config (`hlsSegmentDuration`), not in LCYT code.
-- The fetcher is a plain Node.js HTTP client loop — simple, testable, no native deps.
-
-### Events (EventEmitter)
+### Events
 
 ```js
 fetcher.on('segment', ({ buffer, timestamp, duration, url, index }))
@@ -88,48 +97,30 @@ fetcher.on('stopped', ())
 
 **File:** `packages/plugins/lcyt-rtmp/src/stt-manager.js`
 
-One `SttManager` instance is shared across all API keys (singleton, created by `initRtmpControl`). It manages per-key STT sessions internally.
+Singleton created by `initRtmpControl`. Manages one STT session per API key.
 
 ### Public API
 
 ```js
 await sttManager.start(apiKey, {
-  provider,     // 'whisper_http' | 'google' | 'openai'
+  provider,     // 'google' | 'whisper_http' | 'openai'
   language,     // BCP-47 (default: 'en-US')
   audioSource,  // 'hls' | 'rtmp' | 'whep'  (default: 'hls')
   streamKey,    // MediaMTX path (default: apiKey)
 })
 
 await sttManager.stop(apiKey)
-sttManager.isRunning(apiKey)   // → boolean
-sttManager.getStatus(apiKey)   // → { running, provider, language, startedAt, segmentsSent, lastTranscript }
+sttManager.isRunning(apiKey)
+sttManager.getStatus(apiKey)  // → { running, provider, language, startedAt, segmentsSent, lastTranscript }
 await sttManager.stopAll()
 ```
 
-### Events (EventEmitter)
+### Events
 
 ```js
 sttManager.on('transcript', ({ apiKey, text, confidence, timestamp, provider }))
 sttManager.on('error',      ({ apiKey, error }))
 sttManager.on('stopped',    ({ apiKey }))
-```
-
-### Per-key session state (internal)
-
-```js
-{
-  apiKey,
-  provider,
-  language,
-  audioSource,
-  streamKey,
-  fetcher,        // HlsSegmentFetcher instance (HLS path)
-  ffmpegHandle,   // FfmpegRunner handle (RTMP/WHEP path only)
-  adapter,        // SttAdapter instance
-  startedAt,      // ISO timestamp
-  segmentsSent,   // counter
-  lastTranscript, // { text, timestamp }
-}
 ```
 
 ---
@@ -138,16 +129,16 @@ sttManager.on('stopped',    ({ apiKey }))
 
 **Directory:** `packages/plugins/lcyt-rtmp/src/stt-adapters/`
 
-All adapters implement the same interface. For the HLS path, `sendSegment` is called once per HLS segment. For the ffmpeg fallback path, `write` is called with PCM chunks and the adapter handles its own buffering.
+Common interface:
 
 ```js
 class SttAdapter extends EventEmitter {
   async start({ language, ...opts }) {}
 
-  // HLS path: called once per segment with raw audio buffer and its playlist timestamp.
+  // HLS path: called once per fMP4 segment.
   async sendSegment(buffer, { timestamp, duration }) {}
 
-  // ffmpeg fallback path: called with raw PCM chunks (s16le 16kHz mono).
+  // ffmpeg fallback path (RTMP/WHEP): called with raw PCM chunks (s16le 16kHz mono).
   write(pcmChunk) {}
 
   async stop() {}
@@ -158,96 +149,55 @@ class SttAdapter extends EventEmitter {
 }
 ```
 
-### WhisperHttpAdapter (`stt-adapters/whisper-http.js`)
+### GoogleSttAdapter
 
-Connects to a running [whisper.cpp HTTP server](https://github.com/ggerganov/whisper.cpp/tree/master/examples/server).
+[Phase 1] Google Cloud Speech-to-Text v1. Supports Finnish (`fi-FI`) and 125+ languages.
 
-**HLS path:**
-- `POST {WHISPER_HTTP_URL}/inference` with the raw `.ts` segment buffer as `multipart/form-data`.
-- whisper.cpp uses ffmpeg internally and accepts MPEG-TS directly.
-- Uses the segment's playlist timestamp as the caption timestamp.
+**HLS path:** POST the fMP4 segment buffer to `https://speech.googleapis.com/v1/speech:recognize` as base64-encoded audio with `encoding: MP4` (or `encoding: LINEAR16` after a ffmpeg-free remux is confirmed unnecessary — to be verified against the API). The `#EXT-X-PROGRAM-DATE-TIME`-derived timestamp is used directly.
 
-**ffmpeg fallback path:**
-- Accumulates PCM into a rolling buffer.
-- Encodes each filled buffer as a WAV in memory and POSTs it.
-
-Supports Finnish (`fi`) and all other Whisper-supported languages.
+**gRPC streaming mode** (Phase 4): bidirectional stream via `@google-cloud/speech`; auto-restarts at the 5-minute API limit.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WHISPER_HTTP_URL` | — | whisper.cpp server base URL (e.g. `http://localhost:8080`) |
-| `WHISPER_HTTP_MODEL` | (server default) | Model name sent in request (optional) |
-
-### GoogleSttAdapter (`stt-adapters/google-stt.js`)
-
-Uses Google Cloud Speech-to-Text v1. Supports Finnish (`fi-FI`) and 125+ languages.
-
-**HLS path:**
-
-Google STT does not accept MPEG-TS directly. Options:
-
-1. **ffmpeg per-segment remux** (simplest): spawn a short-lived ffmpeg to extract AAC from the `.ts` buffer to an in-memory `.m4a` or raw `flac`/`wav`, then POST. Single-segment ffmpeg invocations are fast (~100 ms) and stateless.
-2. **fMP4 output from MediaMTX**: configure MediaMTX to produce fMP4 segments (`.m4s`). fMP4 audio (`mp4a`) is accepted by Google as `mp4`/`m4a`. Eliminates per-segment ffmpeg.
-
-The adapter supports both; option 2 is preferred when MediaMTX is configured for fMP4.
-
-**REST mode:** `POST https://speech.googleapis.com/v1/speech:recognize` with base64 audio.
-
-**gRPC streaming mode:** bidirectional stream via `@google-cloud/speech`; restarts automatically at the 5-minute API limit.
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `GOOGLE_APPLICATION_CREDENTIALS` | — | Path to service account JSON |
+| `GOOGLE_APPLICATION_CREDENTIALS` | — | Service account JSON path |
 | `GOOGLE_STT_KEY` | — | API key for REST fallback |
 | `GOOGLE_STT_MODE` | `rest` | `rest` or `grpc` |
 
-`@google-cloud/speech` is an **optional peer dependency** — the adapter catches the import failure and throws a descriptive error rather than crashing the server.
+`@google-cloud/speech` is an optional peer dependency; the adapter fails with a clear message if not installed.
 
-### OpenAiAdapter (`stt-adapters/openai.js`)
+### WhisperHttpAdapter
 
-Uses OpenAI's [Whisper API](https://platform.openai.com/docs/guides/speech-to-text) (`/v1/audio/transcriptions`), or any OpenAI-compatible endpoint (local whisper-openai-server, Ollama, Azure OpenAI).
+[Phase 2] Connects to a running [whisper.cpp HTTP server](https://github.com/ggerganov/whisper.cpp/tree/master/examples/server).
 
-**HLS path:**
-- POST the raw `.ts` segment buffer as `multipart/form-data` with filename `segment.ts`.
-- OpenAI accepts `mp3`, `mp4`, `mpeg`, `mpga`, `m4a`, `wav`, `webm` — but `.ts` (MPEG-TS) is usually accepted in practice. If rejected, configure MediaMTX for fMP4 output (`segment.mp4`).
-- Uses the segment's playlist timestamp as the caption timestamp.
+**HLS path:** POST the fMP4 segment buffer to `{WHISPER_HTTP_URL}/inference` as `multipart/form-data` with filename `segment.mp4`. whisper.cpp accepts MP4 directly. Uses playlist timestamp.
 
-Supports Finnish (`fi`) via Whisper's multilingual models.
+**ffmpeg fallback path:** accumulate PCM → encode as WAV in memory → POST.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENAI_API_KEY` | — | OpenAI API key (or local server key) |
+| `WHISPER_HTTP_URL` | — | whisper.cpp server URL |
+| `WHISPER_HTTP_MODEL` | (server default) | Model name (optional) |
+
+### OpenAiAdapter
+
+[Phase 2] OpenAI Whisper API or any compatible endpoint (local whisper-openai-server, Ollama, Azure).
+
+**HLS path:** POST the fMP4 segment buffer to `/v1/audio/transcriptions` as `multipart/form-data` with filename `segment.mp4`. Uses playlist timestamp.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OPENAI_API_KEY` | — | API key |
 | `OPENAI_STT_MODEL` | `whisper-1` | Model name |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for local or Azure endpoints |
-
----
-
-## Fallback: ffmpeg pipe
-
-For `audioSource: 'rtmp'` or `audioSource: 'whep'`, there are no natural segments or playlist timestamps. `SttManager` falls back to the original ffmpeg PCM pipe approach:
-
-```sh
-# RTMP
-ffmpeg -i rtmp://127.0.0.1:1935/{app}/{streamKey} \
-  -vn -af "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono" \
-  -f s16le pipe:1
-
-# WHEP (ffmpeg ≥ 6.1)
-ffmpeg -i http://127.0.0.1:8889/{streamKey}/whep \
-  -vn -af "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono" \
-  -f s16le pipe:1
-```
-
-In this path, adapters use `write(pcmChunk)` instead of `sendSegment()`, and handle their own silence/chunk buffering. The HLS path is preferred for all deployments that have MediaMTX.
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for local/Azure endpoints |
 
 ---
 
 ## Transcript → Caption Delivery
 
 ```js
-// Inside SttManager._onTranscript()
+// SttManager._onTranscript()
 const session = store.getByApiKey(apiKey)
-if (!session) return  // no active session — discard
+if (!session) return
 
 const text = transcript.text.trim()
 if (!text) return
@@ -258,18 +208,18 @@ session._sendQueue.add(async () => {
 })
 ```
 
-Reuses the same `_sendQueue` serialisation as browser-originated captions, keeping sequence numbers monotonic.
+Reuses `_sendQueue` to keep sequence numbers monotonic alongside any concurrent browser-originated captions.
 
 ---
 
 ## Database
 
-New table `stt_config` (added to `packages/plugins/lcyt-rtmp/src/db.js` migrations):
+New table `stt_config` added to `packages/plugins/lcyt-rtmp/src/db.js` migrations:
 
 ```sql
 CREATE TABLE IF NOT EXISTS stt_config (
   api_key      TEXT PRIMARY KEY,
-  provider     TEXT NOT NULL DEFAULT 'whisper_http',
+  provider     TEXT NOT NULL DEFAULT 'google',
   language     TEXT NOT NULL DEFAULT 'en-US',
   audio_source TEXT NOT NULL DEFAULT 'hls',
   stream_key   TEXT,         -- NULL → use api_key as the MediaMTX path
@@ -279,8 +229,6 @@ CREATE TABLE IF NOT EXISTS stt_config (
 );
 ```
 
-`vad_silence_ms` and `chunk_duration_ms` are removed — segment boundaries replace them for the HLS path.
-
 ---
 
 ## API Routes
@@ -288,7 +236,7 @@ CREATE TABLE IF NOT EXISTS stt_config (
 Mounted at `/stt` in `packages/lcyt-backend/src/routes/stt.js`. All endpoints require the standard session Bearer token.
 
 ```
-GET  /stt/status    — current STT session state for the authenticated API key
+GET  /stt/status    — current STT state for the authenticated API key
 POST /stt/start     — start STT (body: { provider?, language?, audioSource?, streamKey? })
 POST /stt/stop      — stop STT
 GET  /stt/events    — SSE stream of transcript events (Bearer or ?token=)
@@ -296,7 +244,7 @@ GET  /stt/config    — get per-key STT config from DB
 PUT  /stt/config    — update per-key STT config
 ```
 
-### SSE events (on `GET /stt/events`)
+### SSE events (`GET /stt/events`)
 
 | Event | Payload |
 |---|---|
@@ -310,7 +258,7 @@ PUT  /stt/config    — update per-key STT config
 
 ## Auto-start on Publish
 
-The existing `on_publish` RTMP callback is extended:
+The `on_publish` RTMP callback is extended:
 
 ```js
 const cfg = db.getSttConfig(apiKey)
@@ -327,80 +275,180 @@ if (cfg?.auto_start) {
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `STT_PROVIDER` | `whisper_http` | Default provider: `whisper_http` \| `google` \| `openai` |
+| `STT_PROVIDER` | `google` | Default provider: `google` \| `whisper_http` \| `openai` |
 | `STT_DEFAULT_LANGUAGE` | `en-US` | Default recognition language (BCP-47) |
 | `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls` \| `rtmp` \| `whep` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | — | Google service account JSON path |
+| `GOOGLE_STT_KEY` | — | Google API key (REST) |
+| `GOOGLE_STT_MODE` | `rest` | `rest` or `grpc` |
 | `WHISPER_HTTP_URL` | — | whisper.cpp HTTP server URL |
 | `WHISPER_HTTP_MODEL` | — | Whisper model name (optional) |
-| `GOOGLE_APPLICATION_CREDENTIALS` | — | Google service account JSON path |
-| `GOOGLE_STT_KEY` | — | Google API key (REST fallback) |
-| `GOOGLE_STT_MODE` | `rest` | `rest` or `grpc` |
 | `OPENAI_API_KEY` | — | OpenAI API key |
-| `OPENAI_STT_MODEL` | `whisper-1` | OpenAI Whisper model name |
+| `OPENAI_STT_MODEL` | `whisper-1` | Model name |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL |
 
 ---
 
-## Implementation Phases
-
-### Phase 1 — HLS segment fetch + Whisper (MVP)
-
-- `HlsSegmentFetcher`: playlist poll, new-segment detection, timestamp extraction, segment buffer fetch.
-- `SttManager` wiring fetcher → adapter → transcript → `_sendQueue`.
-- `WhisperHttpAdapter`: direct MPEG-TS segment POST to whisper.cpp server.
-- DB migration for `stt_config`.
-- `/stt` routes: `start`, `stop`, `status`, `config`.
-- `on_publish` auto-start hook.
-
-**Deliverable:** Fully headless Finnish/multilingual captioning from any MediaMTX stream with no ffmpeg in the hot path.
-
-### Phase 2 — Cloud providers + ffmpeg fallback
-
-- `GoogleSttAdapter` (REST + optional fMP4 path; gRPC streaming as follow-up).
-- `OpenAiAdapter` (chunked REST, OpenAI-compatible endpoints).
-- ffmpeg PCM pipe fallback for RTMP and WHEP sources.
-- WHEP: probe ffmpeg version on startup; warn if < 6.1.
-
-### Phase 3 — SSE transcript stream + UI
-
-- `GET /stt/events` SSE endpoint.
-- lcyt-web: Server STT status indicator in `StatusBar`.
-- lcyt-web: Server STT config section in `EmbedSettingsPage` CC tab (provider, language, audio source, auto-start toggle).
-
-### Phase 4 — Quality controls
-
-- Confidence threshold filtering (discard low-confidence segments).
-- Punctuation normalisation for providers that omit it.
-- Skip silent/empty segments before sending to the STT API (energy check on the buffer).
+## Phases
 
 ---
 
-## Key Files to Create / Modify
+### Phase 1 — HLS + Google STT
 
-| Action | File | Notes |
-|---|---|---|
-| Create | `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` | HLS playlist poll + segment fetch |
-| Create | `packages/plugins/lcyt-rtmp/src/stt-manager.js` | SttManager class |
-| Create | `packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js` | WhisperHttpAdapter |
-| Create | `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` | GoogleSttAdapter |
-| Create | `packages/plugins/lcyt-rtmp/src/stt-adapters/openai.js` | OpenAiAdapter |
-| Create | `packages/lcyt-backend/src/routes/stt.js` | /stt Express router |
-| Modify | `packages/plugins/lcyt-rtmp/src/db.js` | Add stt_config migration |
-| Modify | `packages/plugins/lcyt-rtmp/src/api.js` | Export sttManager from initRtmpControl |
-| Modify | `packages/lcyt-backend/src/server.js` | Mount /stt router, pass sttManager |
-| Modify | `packages/lcyt-backend/src/routes/radio.js` | on_publish auto-start hook |
-| Modify | `packages/lcyt-web/src/components/StatusBar.jsx` | Server STT status indicator |
+**Goal:** Headless captioning from any MediaMTX stream using Google Cloud STT. No ffmpeg in the hot path.
+
+**Backend:**
+- `HlsSegmentFetcher`: playlist poll, EXT-X-MEDIA-SEQUENCE tracking, EXT-X-PROGRAM-DATE-TIME timestamp derivation, segment buffer fetch.
+- `SttManager`: wires fetcher → adapter → transcript → `_sendQueue`.
+- `GoogleSttAdapter`: REST mode, fMP4 segment POST, Finnish and multilingual support.
+- DB migration for `stt_config`.
+- `/stt` routes: `start`, `stop`, `status`, `config`.
+- `on_publish` / `on_publish_done` auto-start hook.
+
+**UI (lcyt-web):**
+- `StatusBar`: small server-STT chip — shows provider and language when active (e.g. "STT: google / fi-FI"), greyed out when inactive. No new page or modal.
+
+---
+
+### Phase 2 — Additional STT providers
+
+**Goal:** Support local/self-hosted STT without a Google dependency.
+
+**Backend:**
+- `WhisperHttpAdapter`: fMP4 segment POST to whisper.cpp HTTP server.
+- `OpenAiAdapter`: fMP4 segment POST to any OpenAI-compatible `/v1/audio/transcriptions` endpoint.
+
+**UI (lcyt-web):**
+- Server STT section in **Settings modal** (or `EmbedSettingsPage` CC tab):
+  - Provider dropdown: Google / Whisper / OpenAI-compatible.
+  - Language selector (reuse existing BCP-47 list from `sttConfig.js`).
+  - Auto-start toggle.
+  - Start / Stop button (if session is active).
+- StatusBar chip links/opens to this settings section.
+
+---
+
+### Phase 3 — RTMP / WHEP fallback
+
+**Goal:** Support audio sources where HLS is not available.
+
+**Backend:**
+- `SttManager` ffmpeg PCM pipe path for `audioSource: 'rtmp'` and `audioSource: 'whep'`.
+- WHEP requires ffmpeg ≥ 6.1; probe version on startup, log warning if unavailable.
+- All three adapters implement `write(pcmChunk)` for the fallback path, with internal silence-based buffering (energy threshold) and a max chunk duration cap.
+- DB: add `audio_source` selector and expose via `PUT /stt/config`.
+
+**UI (lcyt-web):**
+- Audio source selector in the Server STT settings section: HLS / RTMP / WHEP.
+- Show a warning badge next to WHEP if the backend reports ffmpeg < 6.1.
+
+---
+
+### Phase 4 — gRPC streaming + quality controls
+
+**Goal:** Lower recognition latency and filter low-quality output.
+
+**Backend:**
+- `GoogleSttAdapter` gRPC streaming mode (`GOOGLE_STT_MODE=grpc`): bidirectional stream, interim results discarded, finals emitted. Auto-restart at 5-minute API limit.
+- Confidence threshold filtering: configurable minimum confidence; segments below threshold are discarded and logged.
+- Empty-segment skip: lightweight energy check (RMS of decoded PCM, or segment file-size floor) before sending to the API, to avoid billing for silence.
+- Punctuation normalisation for providers that omit it.
+- `GET /stt/events` SSE endpoint for live transcript monitoring.
+
+**UI (lcyt-web):**
+- Live transcript panel (collapsible, in `SentPanel` area or a new tab) fed by `GET /stt/events` — shows rolling server-STT transcripts with timestamps.
+- Confidence threshold slider in settings.
+- Mode indicator in StatusBar chip: "STT: google/gRPC / fi-FI".
 
 ---
 
 ## Open Questions
 
-1. **MPEG-TS vs fMP4 segments**: MediaMTX can output either. fMP4 (`.m4s`) is more widely accepted by STT APIs. Should the plan recommend a specific MediaMTX `hlsVariant` setting, or handle both transparently by sniffing the segment URL extension?
+1. **Google STT fMP4 encoding label**: The REST API `encoding` field does not list `MP4` as a named value. In practice, fMP4 audio (AAC in MP4 container) is submitted with `encoding: MP4A` or by omitting the encoding field and letting the API auto-detect. Needs a quick test against the live API to confirm the correct value before Phase 1 ships.
 
-2. **Simultaneous browser + server STT**: Both write into the same `_sendQueue` — safe for ordering but could produce interleaved output. A mutex flag (`serverSttActive`) on the session could block browser sends while server STT is running.
+2. **Simultaneous browser + server STT**: Both write into the same `_sendQueue` — safe for ordering but could interleave output. A session flag `serverSttActive` could block browser sends while server STT is running. Defer decision to Phase 1 implementation.
 
-3. **streamKey vs apiKey for MediaMTX path**: `stt_config.stream_key` is nullable; when null, use `apiKey` as the MediaMTX HLS path. This matches the existing convention in `RadioManager`.
+3. **streamKey vs apiKey**: `stt_config.stream_key` is nullable; when null, `apiKey` is used as the MediaMTX HLS path. This matches the existing `RadioManager` convention.
 
-4. **Google gRPC dependency**: `@google-cloud/speech` pulls in native gRPC bindings. Optional peer dep — fail with a clear error message if not installed.
+4. **Google gRPC optional dep**: `@google-cloud/speech` pulls in native gRPC bindings. Dynamic import with a clear "install @google-cloud/speech to use grpc mode" error. Only required for Phase 4.
 
-5. **Empty segment handling**: Short silence periods still produce audio segments. A lightweight energy check (sum of absolute sample values) on the decoded PCM — or simply checking the segment file size against a threshold — can skip blank segments before sending to the STT API, saving cost and avoiding spurious transcripts.
+---
+
+## Todo
+
+### Phase 1 — HLS + Google STT
+
+**Backend**
+- [ ] Add `hlsVariant: fmp4` note to `docker/mediamtx.yml` and deployment docs
+- [ ] `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` — HlsSegmentFetcher class
+- [ ] `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` — GoogleSttAdapter (REST, fMP4)
+- [ ] `packages/plugins/lcyt-rtmp/src/stt-manager.js` — SttManager (HLS path only)
+- [ ] `packages/plugins/lcyt-rtmp/src/db.js` — add `stt_config` migration
+- [ ] `packages/plugins/lcyt-rtmp/src/api.js` — export `sttManager` from `initRtmpControl`
+- [ ] `packages/lcyt-backend/src/routes/stt.js` — `/stt` Express router (start, stop, status, config)
+- [ ] `packages/lcyt-backend/src/server.js` — mount `/stt` router, inject `sttManager`
+- [ ] `packages/lcyt-backend/src/routes/radio.js` — `on_publish` / `on_publish_done` auto-start hooks
+- [ ] Verify Google STT fMP4 encoding label against live API (see open question 1)
+
+**Tests**
+- [ ] `HlsSegmentFetcher` unit tests: mock HTTP, playlist parsing, timestamp derivation, new-segment detection, retry on gap
+- [ ] `GoogleSttAdapter` unit tests: mock Google STT API, segment POST, transcript event
+- [ ] `SttManager` integration tests: start/stop, `_sendQueue` delivery, auto-start hook
+- [ ] `/stt` route tests: start/stop/status/config CRUD, auth
+
+**UI**
+- [ ] `packages/lcyt-web/src/components/StatusBar.jsx` — server-STT chip (provider / language / active state)
+
+---
+
+### Phase 2 — Additional STT providers
+
+**Backend**
+- [ ] `packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js` — WhisperHttpAdapter (fMP4 HLS path)
+- [ ] `packages/plugins/lcyt-rtmp/src/stt-adapters/openai.js` — OpenAiAdapter (fMP4 HLS path)
+- [ ] `SttManager` — add `whisper_http` and `openai` to provider dispatch
+
+**Tests**
+- [ ] `WhisperHttpAdapter` unit tests: mock whisper.cpp server, multipart POST, transcript
+- [ ] `OpenAiAdapter` unit tests: mock OpenAI endpoint, multipart POST, transcript
+
+**UI**
+- [ ] Server STT settings section in Settings modal: provider dropdown, language selector, auto-start toggle, Start/Stop button
+- [ ] `StatusBar` chip links to settings section
+
+---
+
+### Phase 3 — RTMP / WHEP fallback
+
+**Backend**
+- [ ] `SttManager` — ffmpeg PCM pipe path for `audioSource: 'rtmp'` and `'whep'`
+- [ ] All three adapters — implement `write(pcmChunk)` + internal silence-buffer logic
+- [ ] Probe ffmpeg version on `SttManager` init; warn if < 6.1 (WHEP unavailable)
+- [ ] DB: expose `audio_source` field via `PUT /stt/config`
+
+**Tests**
+- [ ] `SttManager` RTMP/WHEP path: mock ffmpeg runner, PCM chunk flow, stop/cleanup
+
+**UI**
+- [ ] Audio source selector in Server STT settings: HLS / RTMP / WHEP
+- [ ] Warning badge next to WHEP if backend reports ffmpeg < 6.1
+
+---
+
+### Phase 4 — gRPC streaming + quality controls
+
+**Backend**
+- [ ] `GoogleSttAdapter` — gRPC streaming mode (`GOOGLE_STT_MODE=grpc`), auto-restart at 5 min limit
+- [ ] Confidence threshold filtering (configurable minimum; discard + log below-threshold segments)
+- [ ] Empty-segment skip (energy / file-size floor check before API call)
+- [ ] Punctuation normalisation helper for providers that omit it
+- [ ] `GET /stt/events` SSE endpoint
+
+**Tests**
+- [ ] `GoogleSttAdapter` gRPC tests: mock `@google-cloud/speech` client, streaming flow, auto-restart
+- [ ] SSE `/stt/events` route tests
+
+**UI**
+- [ ] Live transcript panel in lcyt-web (fed by `GET /stt/events`): rolling server-STT transcripts with timestamps, collapsible
+- [ ] Confidence threshold slider in Server STT settings
+- [ ] StatusBar chip: show mode (rest/gRPC) alongside provider and language
