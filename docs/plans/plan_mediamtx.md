@@ -3,6 +3,7 @@ id: plan/mediamtx
 title: "MediaMTX Integration"
 status: implemented
 summary: "Opt-in MediaMTX media broker as alternative to ffmpeg-based RTMP/HLS flows; NginxManager for slug-based public URLs."
+supersedes: "plan/rtmp (partially: RTMP ingest and HLS distribution path replaced by MediaMTX for radio/HLS mode)"
 ---
 
 # MediaMTX Integration Plan

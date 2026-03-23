@@ -3,6 +3,7 @@ id: plan/front
 title: "Frontend Flow Improvement"
 status: draft
 summary: "Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform."
+supersedes: "plan/ui (partially: desktop layout approach — proposes sidebar nav instead of two-column layout)"
 ---
 
 # Frontend Flow Improvement Plan

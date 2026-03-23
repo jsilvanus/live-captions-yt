@@ -3,6 +3,9 @@ id: plan/rtmp
 title: "RTMP Processing Pipeline"
 status: implemented
 summary: "Orchestrate ffmpeg subprocesses from a single RTMP ingest: audio-only HLS, video+audio HLS, RTMP relay/fan-out, DSK overlays, thumbnails."
+superseded_by:
+  - "plan/dock-ffmpeg (partially: execution model — bare spawn replaced by Docker containers)"
+  - "plan/mediamtx (partially: RTMP ingest and HLS distribution path replaced by MediaMTX)"
 ---
 
 # RTMP Processing Pipeline — Plan
