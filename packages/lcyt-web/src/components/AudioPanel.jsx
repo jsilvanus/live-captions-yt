@@ -75,6 +75,15 @@ export const AudioPanel = forwardRef(function AudioPanel(
   // Caption sequence index per lang for VTT cue numbering
   const localFileSeqRef = useRef({});
 
+  // ── Server STT state ────────────────────────────────────────────────────
+  const [serverSttRunning, setServerSttRunning] = useState(false);
+  const [serverSttBusy, setServerSttBusy] = useState(false);
+
+  // Live transcript log for server STT
+  const [serverTranscripts, setServerTranscripts] = useState([]);
+  const [transcriptPanelOpen, setTranscriptPanelOpen] = useState(false);
+  const serverSseRef = useRef(null);
+
   // Mic soft lock — hold-to-steal state
   const [isHolding, setIsHolding] = useState(false);
   const holdTimerRef = useRef(null);
@@ -132,6 +141,63 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const { micHolder, clientId, claimMic, releaseMic, connected } = session;
   const iHaveMic    = micHolder === clientId;
   const otherHasMic = micHolder !== null && !iHaveMic;
+
+  // ── Poll server STT status when engine=server and connected ──────────────
+  useEffect(() => {
+    if (engine !== 'server' || !connected) return;
+    let cancelled = false;
+    session.getSttStatus().then(s => {
+      if (!cancelled) setServerSttRunning(!!s.running);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [engine, connected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Server STT SSE connection (live transcripts) ──────────────────────────
+  useEffect(() => {
+    if (engine !== 'server' || !connected || !serverSttRunning) {
+      if (serverSseRef.current) {
+        serverSseRef.current.close();
+        serverSseRef.current = null;
+      }
+      return;
+    }
+    const backendUrl = session.backendUrl;
+    if (!backendUrl) return;
+
+    const token = session.getSessionToken?.();
+    let sseUrl = `${backendUrl}/stt/events`;
+    if (token) sseUrl += `?token=${encodeURIComponent(token)}`;
+
+    const es = new EventSource(sseUrl);
+    serverSseRef.current = es;
+
+    es.addEventListener('transcript', (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        setServerTranscripts(prev => {
+          const next = [{ text: data.text, timestamp: data.timestamp || new Date().toISOString(), confidence: data.confidence }, ...prev];
+          return next.slice(0, 50); // keep last 50
+        });
+      } catch {}
+    });
+
+    es.addEventListener('stt_stopped', () => {
+      setServerSttRunning(false);
+    });
+
+    es.addEventListener('stt_started', () => {
+      setServerSttRunning(true);
+    });
+
+    es.onerror = () => {
+      // EventSource auto-reconnects — nothing to do
+    };
+
+    return () => {
+      es.close();
+      serverSseRef.current = null;
+    };
+  }, [engine, connected, serverSttRunning]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function pushFinalTranscript(text, utteranceTimestamp) {
     const cleaned = String(text || '').trim();
@@ -777,7 +843,28 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
   // ─── Toggle ───────────────────────────────────────────────────────────────
 
+  async function toggleServerStt() {
+    if (!connected || serverSttBusy) return;
+    setServerSttBusy(true);
+    try {
+      if (serverSttRunning) {
+        await session.stopStt();
+        setServerSttRunning(false);
+      } else {
+        await session.startStt({});
+        setServerSttRunning(true);
+      }
+    } catch (err) {
+      // ignore — error visible in status bar or log
+    } finally {
+      setServerSttBusy(false);
+    }
+  }
+
   async function toggle() {
+    if (engine === 'server') {
+      return toggleServerStt();
+    }
     if (listening) {
       if (engine === 'webkit') stopWebkit();
       else stopCloud();
@@ -792,6 +879,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   // ─── Hold-to-steal handlers ──────────────────────────────────────────────
 
   function onHoldStart(e) {
+    if (engine === 'server') return; // server mode has no hold-to-steal
     e.preventDefault();
     setIsHolding(true);
     holdTimerRef.current = setTimeout(async () => {
@@ -813,6 +901,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   // ─── Hold-to-speak handlers ──────────────────────────────────────────────
 
   function onHoldSpeakStart(e) {
+    if (engine === 'server') return; // server mode has no hold-to-speak
     e.preventDefault();
     if (!listening) {
       if (connected) claimMic().catch(() => {});
@@ -822,6 +911,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
   }
 
   function onHoldSpeakEnd() {
+    if (engine === 'server') return;
     if (listening) {
       if (engine === 'webkit') stopWebkit();
       else stopCloud();
@@ -832,9 +922,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
   // ─── Derived state ────────────────────────────────────────────────────────
 
   const isWebkit = engine === 'webkit';
-  const canStart = isWebkit ? webkitSupported : credLoaded;
+  const isServerMode = engine === 'server';
+  const canStart = isServerMode ? connected : (isWebkit ? webkitSupported : credLoaded);
 
-  const hint = listening ? null
+  const hint = (listening || isServerMode) ? null
     : isWebkit && !webkitSupported ? 'Web Speech API not supported — try Chrome or Edge.'
     : !isWebkit && !credLoaded     ? 'Load a Google service account key in Settings → STT / Audio.'
     : null;
@@ -853,7 +944,15 @@ export const AudioPanel = forwardRef(function AudioPanel(
     <div className={`audio-panel${visible ? ' audio-panel--open' : ' audio-panel--hidden'}`}>
       <div className="audio-panel__row">
         {/* Toggle / locked button */}
-        {otherHasMic ? (
+        {isServerMode ? (
+          <button
+            className={`btn audio-caption-btn${serverSttRunning ? ' audio-caption-btn--active' : ' btn--primary'}`}
+            disabled={!canStart || serverSttBusy}
+            onClick={toggle}
+          >
+            {serverSttBusy ? '…' : serverSttRunning ? '⏹ Stop Server STT' : '▶ Start Server STT'}
+          </button>
+        ) : otherHasMic ? (
           <button
             className={`btn audio-caption-btn audio-caption-btn--locked${isHolding ? ' audio-caption-btn--holding' : ''}`}
             disabled={!canStart}
@@ -930,6 +1029,40 @@ export const AudioPanel = forwardRef(function AudioPanel(
                 {isWebkit ? 'Listening…' : 'Sending to Google Cloud STT…'}
               </span>
           }
+        </div>
+      )}
+
+      {/* ── Server STT live transcript panel ── */}
+      {isServerMode && (
+        <div className="server-transcript-panel">
+          <button
+            className="server-transcript-panel__toggle"
+            onClick={() => setTranscriptPanelOpen(v => !v)}
+          >
+            {transcriptPanelOpen ? '▾' : '▸'} Live transcripts
+            {serverTranscripts.length > 0 && (
+              <span className="server-transcript-panel__count"> ({serverTranscripts.length})</span>
+            )}
+          </button>
+          {transcriptPanelOpen && (
+            <div className="server-transcript-panel__log">
+              {serverTranscripts.length === 0 ? (
+                <span className="server-transcript-panel__empty">No transcripts yet. Start Server STT to see results here.</span>
+              ) : (
+                serverTranscripts.map((t, i) => (
+                  <div key={i} className="server-transcript-panel__entry">
+                    <span className="server-transcript-panel__time">
+                      {t.timestamp ? new Date(t.timestamp).toLocaleTimeString() : ''}
+                    </span>
+                    <span className="server-transcript-panel__text">{t.text}</span>
+                    {t.confidence != null && (
+                      <span className="server-transcript-panel__conf">{Number(t.confidence).toFixed(2)}</span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

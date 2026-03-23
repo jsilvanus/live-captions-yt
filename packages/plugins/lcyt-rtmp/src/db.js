@@ -123,16 +123,23 @@ export function runMigrations(db) {
   // ── stt_config: per-key STT configuration ─────────────────────────────────
   db.exec(`
     CREATE TABLE IF NOT EXISTS stt_config (
-      api_key      TEXT PRIMARY KEY,
-      provider     TEXT NOT NULL DEFAULT 'google',
-      language     TEXT NOT NULL DEFAULT 'en-US',
-      audio_source TEXT NOT NULL DEFAULT 'hls',
-      stream_key   TEXT,
-      auto_start   INTEGER NOT NULL DEFAULT 0,
-      created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      api_key              TEXT PRIMARY KEY,
+      provider             TEXT NOT NULL DEFAULT 'google',
+      language             TEXT NOT NULL DEFAULT 'en-US',
+      audio_source         TEXT NOT NULL DEFAULT 'hls',
+      stream_key           TEXT,
+      auto_start           INTEGER NOT NULL DEFAULT 0,
+      confidence_threshold REAL,
+      created_at           INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at           INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )
   `);
+  // Additive migration: add confidence_threshold if missing (pre-Phase-4 databases)
+  try {
+    db.exec(`ALTER TABLE stt_config ADD COLUMN confidence_threshold REAL`);
+  } catch {
+    // Column already exists — ignore
+  }
 }
 
 // ── STT config DB helpers ──────────────────────────────────────────────────
@@ -147,11 +154,12 @@ export function getSttConfig(db, apiKey) {
   const row = db.prepare('SELECT * FROM stt_config WHERE api_key = ?').get(apiKey);
   if (!row) return null;
   return {
-    provider:    row.provider,
-    language:    row.language,
-    audioSource: row.audio_source,
-    streamKey:   row.stream_key ?? null,
-    autoStart:   Boolean(row.auto_start),
+    provider:            row.provider,
+    language:            row.language,
+    audioSource:         row.audio_source,
+    streamKey:           row.stream_key ?? null,
+    autoStart:           Boolean(row.auto_start),
+    confidenceThreshold: row.confidence_threshold ?? null,
   };
 }
 
@@ -161,12 +169,12 @@ export function getSttConfig(db, apiKey) {
  * @param {string} apiKey
  * @param {{ provider?: string, language?: string, audioSource?: string, streamKey?: string|null, autoStart?: boolean }} opts
  */
-export function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart } = {}) {
+export function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = {}) {
   const existing = db.prepare('SELECT * FROM stt_config WHERE api_key = ?').get(apiKey);
   if (!existing) {
     db.prepare(`
-      INSERT INTO stt_config (api_key, provider, language, audio_source, stream_key, auto_start)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO stt_config (api_key, provider, language, audio_source, stream_key, auto_start, confidence_threshold)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(
       apiKey,
       provider    ?? 'google',
@@ -174,16 +182,18 @@ export function setSttConfig(db, apiKey, { provider, language, audioSource, stre
       audioSource ?? 'hls',
       streamKey   ?? null,
       autoStart   ? 1 : 0,
+      confidenceThreshold !== undefined ? (confidenceThreshold ?? null) : null,
     );
   } else {
     db.prepare(`
       UPDATE stt_config
-      SET provider     = COALESCE(?, provider),
-          language     = COALESCE(?, language),
-          audio_source = COALESCE(?, audio_source),
-          stream_key   = ?,
-          auto_start   = COALESCE(?, auto_start),
-          updated_at   = strftime('%s','now')
+      SET provider              = COALESCE(?, provider),
+          language              = COALESCE(?, language),
+          audio_source          = COALESCE(?, audio_source),
+          stream_key            = ?,
+          auto_start            = COALESCE(?, auto_start),
+          confidence_threshold  = ?,
+          updated_at            = strftime('%s','now')
       WHERE api_key = ?
     `).run(
       provider    ?? null,
@@ -191,6 +201,7 @@ export function setSttConfig(db, apiKey, { provider, language, audioSource, stre
       audioSource ?? null,
       streamKey   !== undefined ? (streamKey ?? null) : existing.stream_key,
       autoStart   !== undefined ? (autoStart ? 1 : 0) : null,
+      confidenceThreshold !== undefined ? (confidenceThreshold ?? null) : existing.confidence_threshold ?? null,
       apiKey,
     );
   }

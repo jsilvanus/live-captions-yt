@@ -62,7 +62,7 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
   ].filter(Boolean).join(' ');
 
   const sttChipLabel = sttStatus?.running
-    ? `STT: ${sttStatus.provider} / ${sttStatus.language}`
+    ? `STT: ${sttStatus.provider}${sttStatus.mode ? `/${sttStatus.mode}` : ''} / ${sttStatus.language}`
     : null;
 
   return (

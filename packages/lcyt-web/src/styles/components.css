@@ -3413,3 +3413,79 @@
   .devices-page__col { border-right: none; border-bottom: 1px solid var(--color-border); }
   .devices-page__col:last-child { border-bottom: none; }
 }
+
+/* ── Server STT live transcript panel ───────────────────────────────────── */
+
+.server-transcript-panel {
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.server-transcript-panel__toggle {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--color-surface-elevated);
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--color-text);
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.server-transcript-panel__toggle:hover {
+  background: var(--color-surface-hover, color-mix(in srgb, var(--color-surface-elevated) 80%, var(--color-accent) 20%));
+}
+
+.server-transcript-panel__count {
+  opacity: 0.6;
+}
+
+.server-transcript-panel__log {
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--color-surface, #111);
+}
+
+.server-transcript-panel__empty {
+  color: var(--color-text-dim);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.server-transcript-panel__entry {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--color-border);
+  line-height: 1.4;
+}
+
+.server-transcript-panel__time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  min-width: 52px;
+}
+
+.server-transcript-panel__text {
+  flex: 1;
+  word-break: break-word;
+}
+
+.server-transcript-panel__conf {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--color-text-dim);
+  opacity: 0.7;
+}

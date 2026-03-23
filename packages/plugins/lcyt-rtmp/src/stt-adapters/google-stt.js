@@ -1,12 +1,17 @@
 /**
- * GoogleSttAdapter — Phase 1 (REST mode)
+ * GoogleSttAdapter — Phase 1 (REST) + Phase 4 (gRPC streaming)
  *
  * Posts fMP4 HLS segments to the Google Cloud Speech-to-Text v1 REST API and
  * emits 'transcript' events for each non-empty result.
  *
+ * Set GOOGLE_STT_MODE=grpc to use gRPC streaming (lower latency, requires
+ * @google-cloud/speech to be installed).  Falls back to REST automatically
+ * when the package is absent.
+ *
  * Environment variables:
  *   GOOGLE_APPLICATION_CREDENTIALS  Path to service account JSON (for OAuth2)
  *   GOOGLE_STT_KEY                  API key (REST fallback, simpler setup)
+ *   GOOGLE_STT_MODE                 'rest' (default) | 'grpc'
  *
  * Events:
  *   transcript  ({ text, confidence, timestamp })
@@ -19,6 +24,29 @@ import { createSign } from 'node:crypto';
 import { PcmSilenceBuffer, buildWav } from './pcm-buffer.js';
 
 const GOOGLE_STT_REST_URL = 'https://speech.googleapis.com/v1/speech:recognize';
+
+// gRPC streaming restarts after this many seconds (API hard limit is ~5 min)
+const GRPC_RESTART_INTERVAL_MS = 4.5 * 60 * 1000;
+
+// Minimum segment size in bytes — skip smaller buffers (silence / empty init)
+const MIN_SEGMENT_BYTES = 512;
+
+// ── Punctuation normalisation ─────────────────────────────────────────────────
+
+/**
+ * Ensure the text ends with sentence-ending punctuation.
+ * Some providers (e.g. Whisper) omit trailing punctuation on finals.
+ *
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalisePunctuation(text) {
+  const s = text.trim();
+  if (!s) return s;
+  // Already ends with sentence-ending or ellipsis punctuation — leave it
+  if (/[.!?,;:\u2026]$/.test(s)) return s;
+  return `${s}.`;
+}
 
 /**
  * Minimal Google OAuth2 service-account token fetcher.
@@ -63,6 +91,16 @@ async function fetchServiceAccountToken(serviceAccount) {
   return data.access_token;
 }
 
+// ── Try to load @google-cloud/speech for gRPC mode ────────────────────────────
+
+let SpeechClient = null;
+try {
+  const mod = await import('@google-cloud/speech');
+  SpeechClient = mod.SpeechClient ?? mod.default?.SpeechClient ?? null;
+} catch {
+  // Package not installed — gRPC mode unavailable, REST mode used always
+}
+
 export class GoogleSttAdapter extends EventEmitter {
   /**
    * @param {object} [opts]
@@ -75,7 +113,17 @@ export class GoogleSttAdapter extends EventEmitter {
     this._serviceAccount = null;
     this._token          = null;
     this._tokenExpiry    = 0; // unix seconds
+    this._mode           = (process.env.GOOGLE_STT_MODE === 'grpc' && SpeechClient) ? 'grpc' : 'rest';
+
+    // gRPC state
+    this._grpcClient     = null;
+    this._grpcStream     = null;
+    this._grpcStartedAt  = 0;
+    this._grpcRestartTimer = null;
   }
+
+  /** The active recognition mode: 'rest' | 'grpc' */
+  get mode() { return this._mode; }
 
   async start({ language } = {}) {
     if (language) this._language = language;
@@ -96,17 +144,119 @@ export class GoogleSttAdapter extends EventEmitter {
         'Set GOOGLE_APPLICATION_CREDENTIALS (service account JSON path) or GOOGLE_STT_KEY (API key).'
       );
     }
+
+    if (this._mode === 'grpc') {
+      this._startGrpcStream();
+    }
   }
 
   /**
    * Send one fMP4 HLS segment to Google STT.
+   * Skips very small buffers (silence / empty fMP4 init segments).
    *
    * @param {Buffer} buffer        Raw fMP4 segment bytes
    * @param {{ timestamp: Date, duration: number }} meta
    */
   async sendSegment(buffer, { timestamp, duration }) {
-    if (!buffer || buffer.length === 0) return;
+    if (!buffer || buffer.length < MIN_SEGMENT_BYTES) return;
 
+    if (this._mode === 'grpc') {
+      this._sendSegmentGrpc(buffer, timestamp);
+    } else {
+      await this._sendSegmentRest(buffer, timestamp);
+    }
+  }
+
+  // ── gRPC streaming ──────────────────────────────────────────────────────────
+
+  _startGrpcStream() {
+    if (!SpeechClient) return;
+    try {
+      if (!this._grpcClient) {
+        this._grpcClient = new SpeechClient(
+          this._serviceAccount ? { credentials: this._serviceAccount } : {}
+        );
+      }
+      const request = {
+        config: {
+          languageCode: this._language,
+          enableAutomaticPunctuation: true,
+          model: 'latest_long',
+        },
+        interimResults: false,
+      };
+      this._grpcStream = this._grpcClient.streamingRecognize(request);
+      this._grpcStartedAt = Date.now();
+
+      this._grpcStream.on('data', (response) => {
+        for (const result of (response.results || [])) {
+          if (!result.isFinal) continue;
+          const alt = result.alternatives?.[0];
+          if (!alt?.transcript?.trim()) continue;
+          this.emit('transcript', {
+            text:       alt.transcript.trim(),
+            confidence: alt.confidence ?? null,
+            timestamp:  new Date(),
+          });
+        }
+      });
+
+      this._grpcStream.on('error', (err) => {
+        if (err.code === 11) {
+          // OUT_OF_RANGE — stream too long, restart
+          this._restartGrpcStream();
+        } else {
+          this.emit('error', { error: new Error(`GoogleSttAdapter gRPC: ${err.message}`) });
+          this._restartGrpcStream();
+        }
+      });
+
+      this._grpcStream.on('end', () => {
+        // Unexpected end — restart if still running
+        if (this._grpcStream) this._restartGrpcStream();
+      });
+
+      // Schedule proactive restart before the 5-minute API limit
+      if (this._grpcRestartTimer) clearTimeout(this._grpcRestartTimer);
+      this._grpcRestartTimer = setTimeout(() => {
+        this._restartGrpcStream();
+      }, GRPC_RESTART_INTERVAL_MS);
+
+    } catch (err) {
+      this.emit('error', { error: new Error(`GoogleSttAdapter gRPC init: ${err.message}`) });
+    }
+  }
+
+  _restartGrpcStream() {
+    if (this._grpcRestartTimer) {
+      clearTimeout(this._grpcRestartTimer);
+      this._grpcRestartTimer = null;
+    }
+    const old = this._grpcStream;
+    this._grpcStream = null;
+    if (old) {
+      old.removeAllListeners();
+      try { old.end(); } catch {}
+    }
+    // Brief delay before reconnecting
+    setTimeout(() => { this._startGrpcStream(); }, 500);
+  }
+
+  _sendSegmentGrpc(buffer, timestamp) {
+    if (!this._grpcStream || this._grpcStream.writableEnded) {
+      this._restartGrpcStream();
+      return;
+    }
+    try {
+      this._grpcStream.write({ audioContent: buffer });
+    } catch (err) {
+      this.emit('error', { error: new Error(`GoogleSttAdapter gRPC write: ${err.message}`) });
+    }
+  }
+
+  // ── REST mode ───────────────────────────────────────────────────────────────
+
+  async _sendSegmentRest(buffer, timestamp) {
     let authHeader;
     if (this._serviceAccount) {
       const token = await this._getToken();
@@ -264,6 +414,20 @@ export class GoogleSttAdapter extends EventEmitter {
 
   /** Flush any buffered PCM and release resources. */
   async stop() {
+    if (this._grpcRestartTimer) {
+      clearTimeout(this._grpcRestartTimer);
+      this._grpcRestartTimer = null;
+    }
+    if (this._grpcStream) {
+      const s = this._grpcStream;
+      this._grpcStream = null;
+      s.removeAllListeners();
+      try { s.end(); } catch {}
+    }
+    if (this._grpcClient) {
+      try { await this._grpcClient.close(); } catch {}
+      this._grpcClient = null;
+    }
     if (this._pcmBuf) {
       this._pcmBuf.flush();
       this._pcmBuf.reset();

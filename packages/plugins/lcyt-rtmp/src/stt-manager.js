@@ -98,10 +98,11 @@ export class SttManager extends EventEmitter {
    * @param {string} [opts.streamKey]  MediaMTX path; defaults to apiKey
    */
   async start(apiKey, {
-    provider    = 'google',
-    language    = process.env.STT_DEFAULT_LANGUAGE || 'en-US',
-    audioSource = process.env.STT_AUDIO_SOURCE    || 'hls',
-    streamKey   = null,
+    provider             = 'google',
+    language             = process.env.STT_DEFAULT_LANGUAGE || 'en-US',
+    audioSource          = process.env.STT_AUDIO_SOURCE    || 'hls',
+    streamKey            = null,
+    confidenceThreshold  = null,
   } = {}) {
     if (this._sessions.has(apiKey)) {
       await this.stop(apiKey);
@@ -128,12 +129,13 @@ export class SttManager extends EventEmitter {
       provider,
       language,
       audioSource,
-      streamKey: effectiveStreamKey,
-      startedAt:      new Date(),
-      segmentsSent:   0,
-      lastTranscript: null,
-      fetcher:        null,
-      ffmpegProc:     null,
+      streamKey:           effectiveStreamKey,
+      startedAt:           new Date(),
+      segmentsSent:        0,
+      lastTranscript:      null,
+      confidenceThreshold: confidenceThreshold,
+      fetcher:             null,
+      ffmpegProc:          null,
       adapter,
     };
 
@@ -143,8 +145,15 @@ export class SttManager extends EventEmitter {
     adapter.on('transcript', ({ text, confidence, timestamp }) => {
       const sess = this._sessions.get(apiKey);
       if (!sess) return;
+      // Confidence threshold filtering — discard transcripts below the minimum
+      const threshold = sess.confidenceThreshold;
+      if (threshold !== null && threshold > 0 && confidence !== null && confidence < threshold) {
+        console.log(`[stt] Discarded low-confidence transcript (${confidence?.toFixed(2)} < ${threshold}) for key ${apiKey.slice(0, 8)}…`);
+        return;
+      }
       sess.lastTranscript = text;
-      this.emit('transcript', { apiKey, text, confidence, timestamp, provider });
+      const mode = adapter.mode ?? null;
+      this.emit('transcript', { apiKey, text, confidence, timestamp, provider, mode });
       this._deliverTranscript(apiKey, text, timestamp);
     });
 
@@ -271,15 +280,17 @@ export class SttManager extends EventEmitter {
       return { running: false, ffmpegVersion: ffv ?? null, whepAvailable };
     }
     return {
-      running:        true,
-      provider:       session.provider,
-      language:       session.language,
-      audioSource:    session.audioSource,
-      streamKey:      session.streamKey,
-      startedAt:      session.startedAt,
-      segmentsSent:   session.segmentsSent,
-      lastTranscript: session.lastTranscript,
-      ffmpegVersion:  ffv ?? null,
+      running:             true,
+      provider:            session.provider,
+      language:            session.language,
+      audioSource:         session.audioSource,
+      streamKey:           session.streamKey,
+      startedAt:           session.startedAt,
+      segmentsSent:        session.segmentsSent,
+      lastTranscript:      session.lastTranscript,
+      confidenceThreshold: session.confidenceThreshold ?? null,
+      mode:                session.adapter?.mode ?? null,
+      ffmpegVersion:       ffv ?? null,
       whepAvailable,
     };
   }

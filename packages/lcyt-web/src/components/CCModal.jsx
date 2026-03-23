@@ -422,6 +422,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
   const [serverSttLang, setServerSttLang] = useState('en-US');
   const [serverSttAudioSource, setServerSttAudioSource] = useState('hls');
   const [serverSttAutoStart, setServerSttAutoStart] = useState(false);
+  const [serverSttConfidenceThreshold, setServerSttConfidenceThreshold] = useState(0);
   const [serverSttRunning, setServerSttRunning] = useState(false);
   const [serverSttBusy, setServerSttBusy] = useState(false);
   const [serverSttError, setServerSttError] = useState('');
@@ -506,6 +507,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
         if (data.language)    setServerSttLang(data.language);
         if (data.audioSource) setServerSttAudioSource(data.audioSource);
         setServerSttAutoStart(!!data.autoStart);
+        setServerSttConfidenceThreshold(data.confidenceThreshold ?? 0);
       }).catch(() => {});
       session.getSttStatus().then(data => {
         setServerSttRunning(!!data.running);
@@ -713,6 +715,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                   {[
                     { value: 'webkit', name: t('settings.stt.engineWebkitName'), desc: t('settings.stt.engineWebkitDesc') },
                     { value: 'cloud',  name: t('settings.stt.engineCloudName'),  desc: t('settings.stt.engineCloudDesc') },
+                    { value: 'server', name: t('settings.stt.engineServerName'), desc: t('settings.stt.engineServerDesc') },
                   ].map(opt => (
                     <label
                       key={opt.value}
@@ -735,29 +738,31 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                 </div>
               </div>
 
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.stt.microphone')}</label>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <select
-                    className="settings-field__input"
-                    style={{ appearance: 'auto', flex: 1 }}
-                    value={selectedMicId}
-                    onChange={e => {
-                      setSelectedMicId(e.target.value);
-                      try { localStorage.setItem(KEYS.audio.deviceId, e.target.value); } catch {}
-                      window.dispatchEvent(new Event('lcyt:stt-config-changed'));
-                    }}
-                  >
-                    <option value="">{t('settings.stt.microphoneDefault')}</option>
-                    {micDevices.map(d => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label || d.deviceId}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" className="btn" onClick={refreshMics}>{t('settings.stt.microphoneRefresh')}</button>
+              {sttEngine !== 'server' && (
+                <div className="settings-field">
+                  <label className="settings-field__label">{t('settings.stt.microphone')}</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <select
+                      className="settings-field__input"
+                      style={{ appearance: 'auto', flex: 1 }}
+                      value={selectedMicId}
+                      onChange={e => {
+                        setSelectedMicId(e.target.value);
+                        try { localStorage.setItem(KEYS.audio.deviceId, e.target.value); } catch {}
+                        window.dispatchEvent(new Event('lcyt:stt-config-changed'));
+                      }}
+                    >
+                      <option value="">{t('settings.stt.microphoneDefault')}</option>
+                      {micDevices.map(d => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label || d.deviceId}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" className="btn" onClick={refreshMics}>{t('settings.stt.microphoneRefresh')}</button>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className="settings-field">
                 <label className="settings-field__label">{t('settings.stt.language')}</label>
@@ -1008,6 +1013,27 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                 </div>
 
                 <div className="settings-field">
+                  <label className="settings-field__label">
+                    {t('settings.serverStt.confidenceThreshold')}: <strong>{serverSttConfidenceThreshold === 0 ? 'off' : Number(serverSttConfidenceThreshold).toFixed(2)}</strong>
+                  </label>
+                  <input
+                    type="range"
+                    className="settings-field__input"
+                    style={{ padding: 0, cursor: 'pointer' }}
+                    min="0" max="1" step="0.05"
+                    value={serverSttConfidenceThreshold}
+                    onChange={e => {
+                      const v = Number(e.target.value);
+                      setServerSttConfidenceThreshold(v);
+                      if (session.connected) {
+                        session.updateSttConfig({ confidenceThreshold: v || null }).catch(() => {});
+                      }
+                    }}
+                  />
+                  <span className="settings-field__hint">{t('settings.serverStt.confidenceThresholdHint')}</span>
+                </div>
+
+                <div className="settings-field">
                   <label className="settings-checkbox">
                     <input
                       type="checkbox"
@@ -1025,55 +1051,64 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
                   <span className="settings-field__hint">{t('settings.serverStt.autoStartHint')}</span>
                 </div>
 
-                {session.connected && (
-                  <div className="settings-field">
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span className={`stt-status-dot${serverSttRunning ? ' stt-status-dot--active' : ''}`} />
-                      <span>{serverSttRunning ? t('settings.serverStt.statusRunning') : t('settings.serverStt.statusStopped')}</span>
-                      {serverSttRunning ? (
-                        <button
-                          className="btn btn--secondary btn--sm"
-                          disabled={serverSttBusy}
-                          onClick={async () => {
-                            setServerSttBusy(true);
-                            setServerSttError('');
-                            try {
-                              await session.stopStt();
-                              setServerSttRunning(false);
-                            } catch (err) {
-                              setServerSttError(err.message || t('settings.serverStt.errorStop'));
-                            } finally {
-                              setServerSttBusy(false);
-                            }
-                          }}
-                        >
-                          {t('settings.serverStt.stop')}
-                        </button>
-                      ) : (
-                        <button
-                          className="btn btn--primary btn--sm"
-                          disabled={serverSttBusy}
-                          onClick={async () => {
-                            setServerSttBusy(true);
-                            setServerSttError('');
-                            try {
-                              await session.startStt({ provider: serverSttProvider, language: serverSttLang });
-                              setServerSttRunning(true);
-                            } catch (err) {
-                              setServerSttError(err.message || t('settings.serverStt.errorStart'));
-                            } finally {
-                              setServerSttBusy(false);
-                            }
-                          }}
-                        >
-                          {t('settings.serverStt.start')}
-                        </button>
-                      )}
-                    </div>
-                    {serverSttError && <div className="settings-error" style={{ marginTop: 4 }}>{serverSttError}</div>}
-                    <span className="settings-field__hint">{t('settings.serverStt.hint')}</span>
-                  </div>
-                )}
+                <div className="settings-field">
+                  {!session.connected ? (
+                    <span className="settings-field__hint">{t('settings.serverStt.notConnected')}</span>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span className={`stt-status-dot${serverSttRunning ? ' stt-status-dot--active' : ''}`} />
+                        <span>{serverSttRunning ? t('settings.serverStt.statusRunning') : t('settings.serverStt.statusStopped')}</span>
+                        {serverSttRunning ? (
+                          <button
+                            className="btn btn--secondary btn--sm"
+                            disabled={serverSttBusy}
+                            onClick={async () => {
+                              setServerSttBusy(true);
+                              setServerSttError('');
+                              try {
+                                await session.stopStt();
+                                setServerSttRunning(false);
+                              } catch (err) {
+                                setServerSttError(err.message || t('settings.serverStt.errorStop'));
+                              } finally {
+                                setServerSttBusy(false);
+                              }
+                            }}
+                          >
+                            {t('settings.serverStt.stop')}
+                          </button>
+                        ) : (
+                          <button
+                            className="btn btn--primary btn--sm"
+                            disabled={serverSttBusy}
+                            onClick={async () => {
+                              setServerSttBusy(true);
+                              setServerSttError('');
+                              try {
+                                await session.startStt({
+                                  provider: serverSttProvider,
+                                  language: serverSttLang,
+                                  audioSource: serverSttAudioSource,
+                                  confidenceThreshold: serverSttConfidenceThreshold || null,
+                                });
+                                setServerSttRunning(true);
+                              } catch (err) {
+                                setServerSttError(err.message || t('settings.serverStt.errorStart'));
+                              } finally {
+                                setServerSttBusy(false);
+                              }
+                            }}
+                          >
+                            {t('settings.serverStt.start')}
+                          </button>
+                        )}
+                      </div>
+                      {serverSttError && <div className="settings-error" style={{ marginTop: 4 }}>{serverSttError}</div>}
+                      <span className="settings-field__hint">{t('settings.serverStt.hint')}</span>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}

@@ -56,10 +56,11 @@ export function createSttRouter(auth, sttManager, db) {
   router.post('/start', auth, async (req, res) => {
     const { apiKey } = req.session;
     const {
-      provider    = process.env.STT_PROVIDER          || 'google',
-      language    = process.env.STT_DEFAULT_LANGUAGE  || 'en-US',
-      audioSource = process.env.STT_AUDIO_SOURCE      || 'hls',
-      streamKey   = null,
+      provider             = process.env.STT_PROVIDER          || 'google',
+      language             = process.env.STT_DEFAULT_LANGUAGE  || 'en-US',
+      audioSource          = process.env.STT_AUDIO_SOURCE      || 'hls',
+      streamKey            = null,
+      confidenceThreshold  = null,
     } = req.body || {};
 
     if (!VALID_PROVIDERS.includes(provider)) {
@@ -70,7 +71,7 @@ export function createSttRouter(auth, sttManager, db) {
     }
 
     try {
-      await sttManager.start(apiKey, { provider, language, audioSource, streamKey });
+      await sttManager.start(apiKey, { provider, language, audioSource, streamKey, confidenceThreshold });
       res.status(200).json({ ok: true, provider, language, audioSource });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -171,11 +172,12 @@ export function createSttRouter(auth, sttManager, db) {
     const cfg = getSttConfig(db, apiKey);
     if (!cfg) {
       return res.json({
-        provider:    process.env.STT_PROVIDER         || 'google',
-        language:    process.env.STT_DEFAULT_LANGUAGE || 'en-US',
-        audioSource: process.env.STT_AUDIO_SOURCE     || 'hls',
-        streamKey:   null,
-        autoStart:   false,
+        provider:            process.env.STT_PROVIDER         || 'google',
+        language:            process.env.STT_DEFAULT_LANGUAGE || 'en-US',
+        audioSource:         process.env.STT_AUDIO_SOURCE     || 'hls',
+        streamKey:           null,
+        autoStart:           false,
+        confidenceThreshold: null,
       });
     }
     res.json(cfg);
@@ -185,7 +187,7 @@ export function createSttRouter(auth, sttManager, db) {
 
   router.put('/config', auth, (req, res) => {
     const { apiKey } = req.session;
-    const { provider, language, audioSource, streamKey, autoStart } = req.body || {};
+    const { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = req.body || {};
 
     if (provider !== undefined && !VALID_PROVIDERS.includes(provider)) {
       return res.status(400).json({ error: `Invalid provider. Supported: ${VALID_PROVIDERS.join(', ')}` });
@@ -193,9 +195,15 @@ export function createSttRouter(auth, sttManager, db) {
     if (audioSource !== undefined && !VALID_AUDIO_SOURCE.includes(audioSource)) {
       return res.status(400).json({ error: `Invalid audioSource. Supported: ${VALID_AUDIO_SOURCE.join(', ')}` });
     }
+    if (confidenceThreshold !== undefined && confidenceThreshold !== null) {
+      const ct = Number(confidenceThreshold);
+      if (isNaN(ct) || ct < 0 || ct > 1) {
+        return res.status(400).json({ error: 'confidenceThreshold must be a number between 0 and 1' });
+      }
+    }
 
     try {
-      setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart });
+      setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
