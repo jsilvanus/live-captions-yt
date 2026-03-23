@@ -40,7 +40,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
-| [plan_UI.md](plans/plan_UI.md) | UI Reorganisation (lcyt-web) | Redesign lcyt-web desktop (two-column) and mobile (fixed bottom bar + FAB) layouts to improve clarity for the expanded feature set. | superseded by `plan/front` partially |
+| [plan_UI.md](plans/plan_UI.md) | UI Reorganisation (lcyt-web) | Redesign lcyt-web desktop (two-column) and mobile (fixed bottom bar + FAB) layouts to improve clarity for the expanded feature set. | relates to `plan/front` |
 | [plan_dock_ffmpeg.md](plans/plan_dock_ffmpeg.md) | FFmpeg Compute Containers → Distributed Hetzner Architecture | Migrate ffmpeg jobs from bare `spawn()` into Docker containers (phases 1–3), then distribute across Hetzner Cloud worker VMs via a Compute Orchestrator (phases 4–7). | `plan/rtmp` (execution model) |
 | [plan_help.md](plans/plan_help.md) | Help Page Screenshot Capture | Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page. | |
 
@@ -49,7 +49,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
 | [plan_cea.md](plans/plan_cea.md) | CEA-708 SEI NAL Caption Embedding in RTMP Relay | Embed closed captions as H.264 SEI NAL units in the RTMP relay stream using ffmpeg tee muxer with PTS-anchored payloads. | |
-| [plan_front.md](plans/plan_front.md) | Frontend Flow Improvement | Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform. | `plan/ui` (desktop layout approach) |
+| [plan_front.md](plans/plan_front.md) | Frontend Flow Improvement | Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform. | relates to `plan/ui` |
 
 ### Reference
 
