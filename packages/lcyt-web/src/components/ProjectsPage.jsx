@@ -277,7 +277,7 @@ export function ProjectsPage() {
         <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text)' }}>Projects</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{user.email}</span>
-          <button className="btn btn--ghost btn--sm" onClick={logout}>Sign out</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => { logout(); window.location.href = '/login'; }}>Sign out</button>
         </div>
       </div>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 24 }}>

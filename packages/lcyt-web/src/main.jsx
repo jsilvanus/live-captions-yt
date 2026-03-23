@@ -50,6 +50,26 @@ const EmbedViewerPage        = lazy(() => import('./components/EmbedViewerPage')
 
 const path = window.location.pathname;
 
+// --- Auth gate (synchronous localStorage check) --------------------------------
+
+function AuthGate({ children }) {
+  const hasAuth = (() => {
+    try {
+      const raw = localStorage.getItem('lcyt-user');
+      if (!raw) return false;
+      const parsed = JSON.parse(raw);
+      return !!(parsed?.token && parsed?.backendUrl);
+    } catch {
+      return false;
+    }
+  })();
+  if (!hasAuth) {
+    window.location.replace('/login');
+    return null;
+  }
+  return children;
+}
+
 // --- Standalone pages (no sidebar, no shared session context) -----------------
 
 function isStandalonePath(p) {
@@ -151,7 +171,7 @@ migrateStorageKeys();
 
 const root = isStandalonePath(path)
   ? getStandalonePage()
-  : <SidebarApp />;
+  : <AuthGate><SidebarApp /></AuthGate>;
 
 createRoot(document.getElementById('app')).render(
   <StrictMode>
