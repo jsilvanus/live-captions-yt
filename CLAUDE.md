@@ -31,6 +31,8 @@ live-captions-yt/
 ├── python/                     # LEGACY — do not use; canonical source is python-packages/
 ├── scripts/                    # Shell deployment scripts + screenshot capture
 ├── docs/                       # Planning docs, API guides, todo lists
+│   ├── PLANS.md                # Index of all plans with status (implemented/pending/draft/…)
+│   └── plans/                  # Individual plan files (plan_*.md)
 ├── package.json                # Root workspace manifest
 └── CLAUDE.md                   # This file
 ```
