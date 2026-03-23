@@ -2,12 +2,12 @@
 id: plan/server-stt
 title: "Server-side Speech-to-Text (STT)"
 status: draft
-summary: "Server-side audio capture from MediaMTX (RTMP, HLS, or WebRTC/WHEP) piped through ffmpeg into pluggable STT provider adapters (whisper.cpp, Google Cloud STT, OpenAI-compatible Whisper); transcripts delivered into the existing caption pipeline without any browser involvement."
+summary: "Server-side STT by fetching HLS audio segments directly from MediaMTX and posting them to pluggable STT provider adapters (whisper.cpp, Google Cloud STT, OpenAI-compatible Whisper); segment timestamps from the HLS playlist drive caption timing with no ffmpeg required for the default path."
 ---
 
 # Server-side Speech-to-Text (STT)
 
-**Scope:** New `SttManager` class in `packages/plugins/lcyt-rtmp`; new `/stt` routes in `packages/lcyt-backend`; optional UI controls in `packages/lcyt-web`.
+**Scope:** New `SttManager` and `HlsSegmentFetcher` classes in `packages/plugins/lcyt-rtmp`; new `/stt` routes in `packages/lcyt-backend`; optional UI controls in `packages/lcyt-web`.
 
 ---
 
@@ -16,7 +16,8 @@ summary: "Server-side audio capture from MediaMTX (RTMP, HLS, or WebRTC/WHEP) pi
 The existing STT integration is entirely browser-based — the browser captures the microphone, runs recognition, and POSTs final transcripts to the backend. Server-side STT removes the browser dependency entirely:
 
 - The audio source is a live stream already flowing through MediaMTX.
-- The server captures, decodes, and recognises the audio using a pluggable provider.
+- HLS segments are fetched directly and posted to the STT provider — no ffmpeg decode pipeline required.
+- Timestamps come from the HLS playlist itself, not from a PCM buffer.
 - Transcripts are delivered into the existing caption-send pipeline just like browser-originated text.
 - Useful for: automated captioning of hardware streams (cameras, mixers, broadcast hardware), headless/unattended deployments, and scenarios where no operator browser is available.
 
@@ -25,72 +26,61 @@ The existing STT integration is entirely browser-based — the browser captures 
 ## Architecture Overview
 
 ```
-MediaMTX                  SttManager (per API key)
-  RTMP  ─┐
-  HLS   ─┼──► ffmpeg ──► PCM 16 kHz mono (stdout pipe)
-  WHEP  ─┘                    │
-                              ▼
-                         SttAdapter (pluggable)
-                         ├─ WhisperHttpAdapter  (whisper.cpp HTTP server)
-                         ├─ GoogleSttAdapter    (REST chunked or gRPC streaming)
-                         └─ OpenAiAdapter       (chunked REST, OpenAI-compatible)
-                              │
-                         transcript events
-                              │
-                              ▼
-                         session._sendQueue    (existing caption delivery)
-                         ├─ YouTube targets
-                         ├─ viewer targets
-                         └─ generic targets
+MediaMTX HLS
+  /{streamKey}/index.m3u8   ←── HlsSegmentFetcher (polls playlist)
+  /{streamKey}/seg001.ts         │
+  /{streamKey}/seg002.ts         │  segment buffer + timestamp from #EXT-X-PROGRAM-DATE-TIME
+                                 ▼
+                            SttAdapter (pluggable)
+                            ├─ WhisperHttpAdapter  (whisper.cpp HTTP server)
+                            ├─ GoogleSttAdapter    (Google Cloud STT REST/gRPC)
+                            └─ OpenAiAdapter       (OpenAI-compatible chunked REST)
+                                 │
+                            transcript events { text, timestamp }
+                                 │
+                                 ▼
+                            session._sendQueue    (existing caption delivery)
+                            ├─ YouTube targets
+                            ├─ viewer targets
+                            └─ generic targets
 ```
+
+For non-HLS sources (RTMP, WHEP), `SttManager` falls back to an ffmpeg PCM pipe — see [Fallback: ffmpeg pipe](#fallback-ffmpeg-pipe).
 
 ---
 
-## Audio Source
+## HLS Segment Fetcher
 
-MediaMTX exposes three egress protocols, all accessible to ffmpeg. Latency differences between them are **not a meaningful criterion** here: YouTube's live caption API already imposes a 30-second hold between the video stream and caption display, so any audio source that delivers audio within that window is equivalent. The real criterion is availability and simplicity.
+**File:** `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js`
 
-### HLS (recommended default)
+The core of the HLS path. Polls the MediaMTX playlist, detects new segments, fetches their raw bytes, and extracts the wall-clock timestamp for each.
 
+### Playlist polling
+
+- GET `{hlsBase}/{streamKey}/index.m3u8` every ~2 s (or half the segment duration).
+- Track `#EXT-X-MEDIA-SEQUENCE` to identify new segments since the last poll.
+- On each new segment:
+  - Determine its wall-clock start time:
+    - If `#EXT-X-PROGRAM-DATE-TIME` is present, use it for the first segment in the window; subsequent segments' timestamps = programDateTime + accumulated `#EXTINF` durations.
+    - If absent, fall back to `Date.now()` at fetch time.
+  - GET the segment URL and collect the response body as a `Buffer`.
+  - Emit `segment` event: `{ buffer, timestamp, duration, url, index }`.
+
+### Why this is better than ffmpeg piping
+
+- No ffmpeg process, no PCM decode, no WAV encoding in memory, no stdout pipe.
+- Timestamps come from the HLS playlist — the most accurate source available.
+- HLS segment duration is the natural utterance boundary. No VAD, no `vadSilenceMs`, no `chunkDurationMs` config.
+- Segment duration is set in MediaMTX's config (`hlsSegmentDuration`), not in LCYT code.
+- The fetcher is a plain Node.js HTTP client loop — simple, testable, no native deps.
+
+### Events (EventEmitter)
+
+```js
+fetcher.on('segment', ({ buffer, timestamp, duration, url, index }))
+fetcher.on('error',   ({ error }))
+fetcher.on('stopped', ())
 ```
-http://127.0.0.1:8080/{streamKey}/index.m3u8
-```
-
-MediaMTX generates HLS natively for every active path, regardless of how the stream was ingested (RTMP, WHIP, SRT, etc.). This makes it the most universally available egress and the simplest default. ffmpeg pulls it with a standard `-i` flag, no special protocol support required.
-
-### RTMP
-
-```
-rtmp://127.0.0.1:1935/{RTMP_APP}/{streamKey}
-```
-
-Connects directly to the RTMP mux inside MediaMTX. Use when HLS is disabled in the MediaMTX config or when the stream is sourced directly from RTMP and HLS is not generated.
-
-### WebRTC / WHEP
-
-```
-http://127.0.0.1:8889/{streamKey}/whep
-```
-
-MediaMTX exposes a WHEP (WebRTC HTTP Egress Protocol) endpoint. ffmpeg 6.1+ includes a built-in WHEP input demuxer — no native Node.js WebRTC dependency is required:
-
-```sh
-ffmpeg -i 'http://127.0.0.1:8889/{streamKey}/whep' ...
-```
-
-Requires ffmpeg ≥ 6.1 and MediaMTX's WebRTC port accessible from the backend host. No practical latency advantage for this use case; include for completeness and deployments where HLS/RTMP are disabled.
-
-### ffmpeg decode command (all sources)
-
-```sh
-ffmpeg -i <source_url> \
-  -vn \
-  -af "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono" \
-  -f s16le \
-  pipe:1
-```
-
-Raw PCM output on stdout: 16-bit signed little-endian, 16 000 Hz, 1 channel. This is the universal format accepted by all major STT APIs.
 
 ---
 
@@ -103,33 +93,23 @@ One `SttManager` instance is shared across all API keys (singleton, created by `
 ### Public API
 
 ```js
-// Start STT for an API key. Config is per-key; falls back to global defaults.
 await sttManager.start(apiKey, {
-  provider,       // 'whisper_http' | 'google' | 'openai'
-  language,       // BCP-47 (default: 'en-US')
-  audioSource,    // 'hls' | 'rtmp' | 'whep'  (default: 'hls')
-  streamKey,      // MediaMTX path (default: apiKey)
-  vadSilenceMs,   // silence gap that ends an utterance (default: 1000)
-  chunkDurationMs // max audio chunk length for batch providers (default: 5000)
+  provider,     // 'whisper_http' | 'google' | 'openai'
+  language,     // BCP-47 (default: 'en-US')
+  audioSource,  // 'hls' | 'rtmp' | 'whep'  (default: 'hls')
+  streamKey,    // MediaMTX path (default: apiKey)
 })
 
-// Stop STT for an API key.
 await sttManager.stop(apiKey)
-
-// Check if STT is running for an API key.
-sttManager.isRunning(apiKey)    // → boolean
-
-// Status info for an API key.
-sttManager.getStatus(apiKey)    // → { running, provider, language, startedAt, segmentsSent, lastTranscript }
-
-// Stop all active STT sessions.
+sttManager.isRunning(apiKey)   // → boolean
+sttManager.getStatus(apiKey)   // → { running, provider, language, startedAt, segmentsSent, lastTranscript }
 await sttManager.stopAll()
 ```
 
 ### Events (EventEmitter)
 
 ```js
-sttManager.on('transcript', ({ apiKey, text, isFinal, confidence, timestamp, provider }))
+sttManager.on('transcript', ({ apiKey, text, confidence, timestamp, provider }))
 sttManager.on('error',      ({ apiKey, error }))
 sttManager.on('stopped',    ({ apiKey }))
 ```
@@ -143,12 +123,12 @@ sttManager.on('stopped',    ({ apiKey }))
   language,
   audioSource,
   streamKey,
-  ffmpegHandle,   // FfmpegRunner handle
+  fetcher,        // HlsSegmentFetcher instance (HLS path)
+  ffmpegHandle,   // FfmpegRunner handle (RTMP/WHEP path only)
   adapter,        // SttAdapter instance
   startedAt,      // ISO timestamp
   segmentsSent,   // counter
   lastTranscript, // { text, timestamp }
-  stopped,        // boolean
 }
 ```
 
@@ -158,21 +138,22 @@ sttManager.on('stopped',    ({ apiKey }))
 
 **Directory:** `packages/plugins/lcyt-rtmp/src/stt-adapters/`
 
-All adapters implement the same interface:
+All adapters implement the same interface. For the HLS path, `sendSegment` is called once per HLS segment. For the ffmpeg fallback path, `write` is called with PCM chunks and the adapter handles its own buffering.
 
 ```js
 class SttAdapter extends EventEmitter {
-  // Called once: adapter sets up connection, buffers, etc.
   async start({ language, ...opts }) {}
 
-  // Called with each raw PCM chunk (Buffer, s16le 16kHz mono).
+  // HLS path: called once per segment with raw audio buffer and its playlist timestamp.
+  async sendSegment(buffer, { timestamp, duration }) {}
+
+  // ffmpeg fallback path: called with raw PCM chunks (s16le 16kHz mono).
   write(pcmChunk) {}
 
-  // Flush any buffered audio, wait for final transcripts, then clean up.
   async stop() {}
 
-  // Events emitted:
-  // 'transcript' { text, isFinal, confidence, timestamp }
+  // Events:
+  // 'transcript' { text, confidence, timestamp }
   // 'error'      { error }
 }
 ```
@@ -181,14 +162,16 @@ class SttAdapter extends EventEmitter {
 
 Connects to a running [whisper.cpp HTTP server](https://github.com/ggerganov/whisper.cpp/tree/master/examples/server).
 
-- Accumulates PCM into a rolling buffer.
-- On silence detection (energy below threshold for `vadSilenceMs` ms) OR when buffer reaches `chunkDurationMs`, encodes the chunk as WAV in memory.
-- `POST {WHISPER_HTTP_URL}/inference` with `multipart/form-data` audio file + language param.
-- Parses response `{ text }` and emits `transcript`.
-- The server loads the model once and handles concurrent requests; the adapter retries connection on startup with exponential backoff.
-- Supports Finnish (`fi`) and all other Whisper-supported languages.
+**HLS path:**
+- `POST {WHISPER_HTTP_URL}/inference` with the raw `.ts` segment buffer as `multipart/form-data`.
+- whisper.cpp uses ffmpeg internally and accepts MPEG-TS directly.
+- Uses the segment's playlist timestamp as the caption timestamp.
 
-**Environment variables:**
+**ffmpeg fallback path:**
+- Accumulates PCM into a rolling buffer.
+- Encodes each filled buffer as a WAV in memory and POSTs it.
+
+Supports Finnish (`fi`) and all other Whisper-supported languages.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -199,19 +182,18 @@ Connects to a running [whisper.cpp HTTP server](https://github.com/ggerganov/whi
 
 Uses Google Cloud Speech-to-Text v1. Supports Finnish (`fi-FI`) and 125+ languages.
 
-**REST mode (simpler, higher latency):**
+**HLS path:**
 
-- Same buffer/silence strategy as WhisperHttpAdapter.
-- `POST https://speech.googleapis.com/v1/speech:recognize` with inline base64 PCM audio.
+Google STT does not accept MPEG-TS directly. Options:
 
-**Streaming gRPC mode (low latency):**
+1. **ffmpeg per-segment remux** (simplest): spawn a short-lived ffmpeg to extract AAC from the `.ts` buffer to an in-memory `.m4a` or raw `flac`/`wav`, then POST. Single-segment ffmpeg invocations are fast (~100 ms) and stateless.
+2. **fMP4 output from MediaMTX**: configure MediaMTX to produce fMP4 segments (`.m4s`). fMP4 audio (`mp4a`) is accepted by Google as `mp4`/`m4a`. Eliminates per-segment ffmpeg.
 
-- Opens a bidirectional gRPC stream via the `@google-cloud/speech` Node.js client.
-- Sends `StreamingRecognizeRequest` with PCM audio as it arrives.
-- Emits `transcript` on `is_final: true` results.
-- Automatically restarts the stream on the 5-minute Google API limit.
+The adapter supports both; option 2 is preferred when MediaMTX is configured for fMP4.
 
-**Environment variables:**
+**REST mode:** `POST https://speech.googleapis.com/v1/speech:recognize` with base64 audio.
+
+**gRPC streaming mode:** bidirectional stream via `@google-cloud/speech`; restarts automatically at the 5-minute API limit.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -219,17 +201,18 @@ Uses Google Cloud Speech-to-Text v1. Supports Finnish (`fi-FI`) and 125+ languag
 | `GOOGLE_STT_KEY` | — | API key for REST fallback |
 | `GOOGLE_STT_MODE` | `rest` | `rest` or `grpc` |
 
+`@google-cloud/speech` is an **optional peer dependency** — the adapter catches the import failure and throws a descriptive error rather than crashing the server.
+
 ### OpenAiAdapter (`stt-adapters/openai.js`)
 
 Uses OpenAI's [Whisper API](https://platform.openai.com/docs/guides/speech-to-text) (`/v1/audio/transcriptions`), or any OpenAI-compatible endpoint (local whisper-openai-server, Ollama, Azure OpenAI).
 
-- Batch-only (no true streaming).
-- Accumulates PCM to WAV; POSTs on silence or max chunk size.
-- `multipart/form-data` with `model`, `language`, audio file.
-- Emits `transcript` with `isFinal: true` for each response.
-- Supports Finnish (`fi`) via Whisper's multilingual models.
+**HLS path:**
+- POST the raw `.ts` segment buffer as `multipart/form-data` with filename `segment.ts`.
+- OpenAI accepts `mp3`, `mp4`, `mpeg`, `mpga`, `m4a`, `wav`, `webm` — but `.ts` (MPEG-TS) is usually accepted in practice. If rejected, configure MediaMTX for fMP4 output (`segment.mp4`).
+- Uses the segment's playlist timestamp as the caption timestamp.
 
-**Environment variables:**
+Supports Finnish (`fi`) via Whisper's multilingual models.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -239,12 +222,30 @@ Uses OpenAI's [Whisper API](https://platform.openai.com/docs/guides/speech-to-te
 
 ---
 
+## Fallback: ffmpeg pipe
+
+For `audioSource: 'rtmp'` or `audioSource: 'whep'`, there are no natural segments or playlist timestamps. `SttManager` falls back to the original ffmpeg PCM pipe approach:
+
+```sh
+# RTMP
+ffmpeg -i rtmp://127.0.0.1:1935/{app}/{streamKey} \
+  -vn -af "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono" \
+  -f s16le pipe:1
+
+# WHEP (ffmpeg ≥ 6.1)
+ffmpeg -i http://127.0.0.1:8889/{streamKey}/whep \
+  -vn -af "aresample=16000,aformat=sample_fmts=s16:channel_layouts=mono" \
+  -f s16le pipe:1
+```
+
+In this path, adapters use `write(pcmChunk)` instead of `sendSegment()`, and handle their own silence/chunk buffering. The HLS path is preferred for all deployments that have MediaMTX.
+
+---
+
 ## Transcript → Caption Delivery
 
-When a `transcript` event fires, `SttManager` looks up the active backend session for the API key from the `SessionStore`:
-
 ```js
-// Pseudo-code inside SttManager._onTranscript()
+// Inside SttManager._onTranscript()
 const session = store.getByApiKey(apiKey)
 if (!session) return  // no active session — discard
 
@@ -257,44 +258,42 @@ session._sendQueue.add(async () => {
 })
 ```
 
-This reuses the same `_sendQueue` serialisation that browser-originated captions use, ensuring sequence numbers stay monotonic even when server STT and browser input are used simultaneously.
+Reuses the same `_sendQueue` serialisation as browser-originated captions, keeping sequence numbers monotonic.
 
 ---
 
 ## Database
 
-New table `stt_config` (in `packages/plugins/lcyt-rtmp/src/db.js` migrations):
+New table `stt_config` (added to `packages/plugins/lcyt-rtmp/src/db.js` migrations):
 
 ```sql
 CREATE TABLE IF NOT EXISTS stt_config (
-  api_key           TEXT PRIMARY KEY,
-  provider          TEXT NOT NULL DEFAULT 'whisper_http',
-  language          TEXT NOT NULL DEFAULT 'en-US',
-  audio_source      TEXT NOT NULL DEFAULT 'hls',
-  stream_key        TEXT,           -- NULL means use api_key as the MediaMTX path
-  auto_start        INTEGER NOT NULL DEFAULT 0,
-  vad_silence_ms    INTEGER NOT NULL DEFAULT 1000,
-  chunk_duration_ms INTEGER NOT NULL DEFAULT 5000,
-  created_at        INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-  updated_at        INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+  api_key      TEXT PRIMARY KEY,
+  provider     TEXT NOT NULL DEFAULT 'whisper_http',
+  language     TEXT NOT NULL DEFAULT 'en-US',
+  audio_source TEXT NOT NULL DEFAULT 'hls',
+  stream_key   TEXT,         -- NULL → use api_key as the MediaMTX path
+  auto_start   INTEGER NOT NULL DEFAULT 0,
+  created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+  updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 ```
 
-`auto_start = 1`: when MediaMTX fires the `on_publish` callback for this key, the backend automatically calls `sttManager.start()`.
+`vad_silence_ms` and `chunk_duration_ms` are removed — segment boundaries replace them for the HLS path.
 
 ---
 
 ## API Routes
 
-Mounted at `/stt` in `packages/lcyt-backend/src/routes/stt.js`. All endpoints require the standard session Bearer token (`Authorization: Bearer <session-token>`).
+Mounted at `/stt` in `packages/lcyt-backend/src/routes/stt.js`. All endpoints require the standard session Bearer token.
 
 ```
-GET  /stt/status           — current STT session state for the authenticated API key
-POST /stt/start            — start STT (body: { provider?, language?, audioSource?, streamKey? })
-POST /stt/stop             — stop STT
-GET  /stt/events           — SSE stream of transcript events (Bearer or ?token=)
-GET  /stt/config           — get per-key STT config from DB
-PUT  /stt/config           — update per-key STT config (body: any stt_config fields)
+GET  /stt/status    — current STT session state for the authenticated API key
+POST /stt/start     — start STT (body: { provider?, language?, audioSource?, streamKey? })
+POST /stt/stop      — stop STT
+GET  /stt/events    — SSE stream of transcript events (Bearer or ?token=)
+GET  /stt/config    — get per-key STT config from DB
+PUT  /stt/config    — update per-key STT config
 ```
 
 ### SSE events (on `GET /stt/events`)
@@ -302,7 +301,7 @@ PUT  /stt/config           — update per-key STT config (body: any stt_config f
 | Event | Payload |
 |---|---|
 | `connected` | `{ apiKey, provider, language }` |
-| `transcript` | `{ text, isFinal, confidence, timestamp, provider }` |
+| `transcript` | `{ text, confidence, timestamp, provider }` |
 | `stt_started` | `{ provider, language, audioSource }` |
 | `stt_stopped` | `{ apiKey }` |
 | `stt_error` | `{ error }` |
@@ -314,28 +313,23 @@ PUT  /stt/config           — update per-key STT config (body: any stt_config f
 The existing `on_publish` RTMP callback is extended:
 
 ```js
-// After registering the publisher in the DB / managers:
 const cfg = db.getSttConfig(apiKey)
 if (cfg?.auto_start) {
   await sttManager.start(apiKey, cfg)
 }
 ```
 
-Similarly, `on_publish_done` calls `sttManager.stop(apiKey)`.
+`on_publish_done` calls `sttManager.stop(apiKey)`.
 
 ---
 
 ## Environment Variables
-
-Global defaults (overridden per key via `PUT /stt/config`):
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `STT_PROVIDER` | `whisper_http` | Default provider: `whisper_http` \| `google` \| `openai` |
 | `STT_DEFAULT_LANGUAGE` | `en-US` | Default recognition language (BCP-47) |
 | `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls` \| `rtmp` \| `whep` |
-| `STT_CHUNK_DURATION_MS` | `5000` | Max audio chunk length for batch providers |
-| `STT_VAD_SILENCE_MS` | `1000` | Silence gap (ms) that ends an utterance |
 | `WHISPER_HTTP_URL` | — | whisper.cpp HTTP server URL |
 | `WHISPER_HTTP_MODEL` | — | Whisper model name (optional) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | — | Google service account JSON path |
@@ -349,35 +343,35 @@ Global defaults (overridden per key via `PUT /stt/config`):
 
 ## Implementation Phases
 
-### Phase 1 — Core pipeline (MVP)
+### Phase 1 — HLS segment fetch + Whisper (MVP)
 
-- `SttManager` with RTMP pull via ffmpeg.
-- `WhisperHttpAdapter` (silence-based chunking, WAV encoding in memory, HTTP POST).
+- `HlsSegmentFetcher`: playlist poll, new-segment detection, timestamp extraction, segment buffer fetch.
+- `SttManager` wiring fetcher → adapter → transcript → `_sendQueue`.
+- `WhisperHttpAdapter`: direct MPEG-TS segment POST to whisper.cpp server.
 - DB migration for `stt_config`.
-- `/stt` routes: `status`, `start`, `stop`, `config`.
-- Integration with `_sendQueue` for transcript delivery.
+- `/stt` routes: `start`, `stop`, `status`, `config`.
 - `on_publish` auto-start hook.
 
-**Deliverable:** Fully headless Finnish/multilingual captioning from an RTMP stream using a local whisper.cpp server.
+**Deliverable:** Fully headless Finnish/multilingual captioning from any MediaMTX stream with no ffmpeg in the hot path.
 
-### Phase 2 — All three audio sources + cloud providers
+### Phase 2 — Cloud providers + ffmpeg fallback
 
-- HLS and WHEP audio sources in `SttManager` (ffmpeg WHEP input requires ffmpeg ≥ 6.1; probe version on startup and warn if unavailable).
-- `GoogleSttAdapter` (REST mode first; gRPC streaming as a follow-up).
-- `OpenAiAdapter` (chunked REST, OpenAI-compatible endpoint support).
+- `GoogleSttAdapter` (REST + optional fMP4 path; gRPC streaming as follow-up).
+- `OpenAiAdapter` (chunked REST, OpenAI-compatible endpoints).
+- ffmpeg PCM pipe fallback for RTMP and WHEP sources.
+- WHEP: probe ffmpeg version on startup; warn if < 6.1.
 
 ### Phase 3 — SSE transcript stream + UI
 
 - `GET /stt/events` SSE endpoint.
-- lcyt-web: STT status indicator in `StatusBar` (shows "Server STT: whisper / fi-FI").
-- lcyt-web: `EmbedSettingsPage` CC tab — new "Server STT" section for provider, language, audio source, and auto-start toggle.
-- lcyt-web: `GET /stt/status` polled or SSE-driven for real-time state.
+- lcyt-web: Server STT status indicator in `StatusBar`.
+- lcyt-web: Server STT config section in `EmbedSettingsPage` CC tab (provider, language, audio source, auto-start toggle).
 
 ### Phase 4 — Quality controls
 
 - Confidence threshold filtering (discard low-confidence segments).
-- Punctuation normalisation for providers that don't punctuate.
-- Per-key silence sensitivity and chunk duration configurable at runtime via `PUT /stt/config`.
+- Punctuation normalisation for providers that omit it.
+- Skip silent/empty segments before sending to the STT API (energy check on the buffer).
 
 ---
 
@@ -385,6 +379,7 @@ Global defaults (overridden per key via `PUT /stt/config`):
 
 | Action | File | Notes |
 |---|---|---|
+| Create | `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` | HLS playlist poll + segment fetch |
 | Create | `packages/plugins/lcyt-rtmp/src/stt-manager.js` | SttManager class |
 | Create | `packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js` | WhisperHttpAdapter |
 | Create | `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` | GoogleSttAdapter |
@@ -400,12 +395,12 @@ Global defaults (overridden per key via `PUT /stt/config`):
 
 ## Open Questions
 
-1. **Simultaneous browser + server STT**: Should they be allowed to co-exist on the same session? Currently both would write into the same `_sendQueue`, which is safe but could produce interleaved output. A mutex flag (`serverSttActive`) on the session could prevent browser sends while server STT is running.
+1. **MPEG-TS vs fMP4 segments**: MediaMTX can output either. fMP4 (`.m4s`) is more widely accepted by STT APIs. Should the plan recommend a specific MediaMTX `hlsVariant` setting, or handle both transparently by sniffing the segment URL extension?
 
-2. **streamKey vs apiKey for MediaMTX path**: In the current radio/HLS flow the MediaMTX path is derived from `apiKey`. For RTMP relay scenarios the user configures an explicit `streamKey`. The `stt_config.stream_key` column is nullable; when null, use `apiKey` as the MediaMTX path.
+2. **Simultaneous browser + server STT**: Both write into the same `_sendQueue` — safe for ordering but could produce interleaved output. A mutex flag (`serverSttActive`) on the session could block browser sends while server STT is running.
 
-3. **VAD strategy**: Simple energy-based silence detection inside the adapter is sufficient for phase 1. A more sophisticated approach (e.g. Silero VAD via onnxruntime) could be added later for noisy environments.
+3. **streamKey vs apiKey for MediaMTX path**: `stt_config.stream_key` is nullable; when null, use `apiKey` as the MediaMTX HLS path. This matches the existing convention in `RadioManager`.
 
-4. **ffmpeg WHEP availability**: The WHEP input demuxer (`-f rtc` / `whep://`) was added in ffmpeg 6.1 as an experimental feature. `SttManager` should probe the ffmpeg version and enabled protocols at startup and log a warning (not an error) if WHEP is unavailable, falling back to RTMP or HLS for that session.
+4. **Google gRPC dependency**: `@google-cloud/speech` pulls in native gRPC bindings. Optional peer dep — fail with a clear error message if not installed.
 
-5. **Google gRPC dependency**: `@google-cloud/speech` pulls in gRPC native bindings. Make this an optional peer dependency — the adapter catches the `require()` failure and throws a clear error ("install @google-cloud/speech to use the google provider") rather than crashing the server.
+5. **Empty segment handling**: Short silence periods still produce audio segments. A lightweight energy check (sum of absolute sample values) on the decoded PCM — or simply checking the segment file size against a threshold — can skip blank segments before sending to the STT API, saving cost and avoiding spurious transcripts.
