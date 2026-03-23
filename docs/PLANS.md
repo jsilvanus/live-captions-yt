@@ -51,6 +51,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
+| [plan_server_stt.md](plans/plan_server_stt.md) | Server-side Speech-to-Text (STT) | Server-side STT by fetching HLS audio segments directly from MediaMTX and posting them to pluggable STT providers (whisper.cpp, Google Cloud STT, OpenAI-compatible Whisper); segment timestamps from the HLS playlist drive caption timing with no ffmpeg required for the default path. | |
 | [plan_cea.md](plans/plan_cea.md) | CEA-708 SEI NAL Caption Embedding in RTMP Relay | Embed closed captions as H.264 SEI NAL units in the RTMP relay stream using ffmpeg tee muxer with PTS-anchored payloads. | |
 | [plan_front.md](plans/plan_front.md) | Frontend Flow Improvement | Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform. | relates to `plan/ui` |
 
