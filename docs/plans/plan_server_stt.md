@@ -48,7 +48,15 @@ MediaMTX                  SttManager (per API key)
 
 ## Audio Source
 
-MediaMTX exposes three egress protocols, all accessible to ffmpeg. The choice is a deployment configuration decision — there is no preferred or fallback hierarchy; all three are first-class options.
+MediaMTX exposes three egress protocols, all accessible to ffmpeg. Latency differences between them are **not a meaningful criterion** here: YouTube's live caption API already imposes a 30-second hold between the video stream and caption display, so any audio source that delivers audio within that window is equivalent. The real criterion is availability and simplicity.
+
+### HLS (recommended default)
+
+```
+http://127.0.0.1:8080/{streamKey}/index.m3u8
+```
+
+MediaMTX generates HLS natively for every active path, regardless of how the stream was ingested (RTMP, WHIP, SRT, etc.). This makes it the most universally available egress and the simplest default. ffmpeg pulls it with a standard `-i` flag, no special protocol support required.
 
 ### RTMP
 
@@ -56,15 +64,7 @@ MediaMTX exposes three egress protocols, all accessible to ffmpeg. The choice is
 rtmp://127.0.0.1:1935/{RTMP_APP}/{streamKey}
 ```
 
-Connects directly to the RTMP mux inside MediaMTX. Latency matches the ingest latency (~1–3 s end-to-end). Works as long as the stream is publishing to MediaMTX over RTMP.
-
-### HLS
-
-```
-http://127.0.0.1:8080/{streamKey}/index.m3u8
-```
-
-MediaMTX generates HLS segments natively. Standard HLS adds one segment duration of latency (typically 2–6 s). MediaMTX also supports **Low-Latency HLS (LL-HLS)**, which reduces this to ~1–2 s. Use when RTMP is not available or when HLS is the only egress configured.
+Connects directly to the RTMP mux inside MediaMTX. Use when HLS is disabled in the MediaMTX config or when the stream is sourced directly from RTMP and HLS is not generated.
 
 ### WebRTC / WHEP
 
@@ -78,7 +78,7 @@ MediaMTX exposes a WHEP (WebRTC HTTP Egress Protocol) endpoint. ffmpeg 6.1+ incl
 ffmpeg -i 'http://127.0.0.1:8889/{streamKey}/whep' ...
 ```
 
-WHEP gives the lowest end-to-end latency (~200–500 ms). Requires ffmpeg ≥ 6.1 and MediaMTX's WebRTC port to be accessible from the backend host.
+Requires ffmpeg ≥ 6.1 and MediaMTX's WebRTC port accessible from the backend host. No practical latency advantage for this use case; include for completeness and deployments where HLS/RTMP are disabled.
 
 ### ffmpeg decode command (all sources)
 
@@ -107,7 +107,7 @@ One `SttManager` instance is shared across all API keys (singleton, created by `
 await sttManager.start(apiKey, {
   provider,       // 'whisper_http' | 'google' | 'openai'
   language,       // BCP-47 (default: 'en-US')
-  audioSource,    // 'rtmp' | 'hls' | 'whep'  (default: 'rtmp')
+  audioSource,    // 'hls' | 'rtmp' | 'whep'  (default: 'hls')
   streamKey,      // MediaMTX path (default: apiKey)
   vadSilenceMs,   // silence gap that ends an utterance (default: 1000)
   chunkDurationMs // max audio chunk length for batch providers (default: 5000)
@@ -270,7 +270,7 @@ CREATE TABLE IF NOT EXISTS stt_config (
   api_key           TEXT PRIMARY KEY,
   provider          TEXT NOT NULL DEFAULT 'whisper_http',
   language          TEXT NOT NULL DEFAULT 'en-US',
-  audio_source      TEXT NOT NULL DEFAULT 'rtmp',
+  audio_source      TEXT NOT NULL DEFAULT 'hls',
   stream_key        TEXT,           -- NULL means use api_key as the MediaMTX path
   auto_start        INTEGER NOT NULL DEFAULT 0,
   vad_silence_ms    INTEGER NOT NULL DEFAULT 1000,
@@ -333,7 +333,7 @@ Global defaults (overridden per key via `PUT /stt/config`):
 |---|---|---|
 | `STT_PROVIDER` | `whisper_http` | Default provider: `whisper_http` \| `google` \| `openai` |
 | `STT_DEFAULT_LANGUAGE` | `en-US` | Default recognition language (BCP-47) |
-| `STT_AUDIO_SOURCE` | `rtmp` | Default audio source: `rtmp` \| `hls` \| `whep` |
+| `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls` \| `rtmp` \| `whep` |
 | `STT_CHUNK_DURATION_MS` | `5000` | Max audio chunk length for batch providers |
 | `STT_VAD_SILENCE_MS` | `1000` | Silence gap (ms) that ends an utterance |
 | `WHISPER_HTTP_URL` | — | whisper.cpp HTTP server URL |
