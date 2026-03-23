@@ -677,5 +677,7 @@ export function useSession({
     getSttStatus, getSttConfig, updateSttConfig, startStt, stopStt,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
     getQueuedCount,
+    /** Returns the active session JWT (for EventSource ?token= param) */
+    getSessionToken: () => senderRef.current?._token ?? null,
   };
 }
