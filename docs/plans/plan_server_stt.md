@@ -379,25 +379,27 @@ if (cfg?.auto_start) {
 ### Phase 1 — HLS + Google STT
 
 **Backend**
-- [ ] Add `hlsVariant: fmp4` note to `docker/mediamtx.yml` and deployment docs
-- [ ] `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` — HlsSegmentFetcher class
-- [ ] `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` — GoogleSttAdapter (REST, fMP4)
-- [ ] `packages/plugins/lcyt-rtmp/src/stt-manager.js` — SttManager (HLS path only)
-- [ ] `packages/plugins/lcyt-rtmp/src/db.js` — add `stt_config` migration
-- [ ] `packages/plugins/lcyt-rtmp/src/api.js` — export `sttManager` from `initRtmpControl`
-- [ ] `packages/lcyt-backend/src/routes/stt.js` — `/stt` Express router (start, stop, status, config)
-- [ ] `packages/lcyt-backend/src/server.js` — mount `/stt` router, inject `sttManager`
-- [ ] `packages/lcyt-backend/src/routes/radio.js` — `on_publish` / `on_publish_done` auto-start hooks
+- [x] `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` — HlsSegmentFetcher class
+- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` — GoogleSttAdapter (REST, fMP4)
+- [x] `packages/plugins/lcyt-rtmp/src/stt-manager.js` — SttManager (HLS path only)
+- [x] `packages/plugins/lcyt-rtmp/src/db.js` — add `stt_config` migration + `getSttConfig`/`setSttConfig` helpers
+- [x] `packages/plugins/lcyt-rtmp/src/api.js` — export `sttManager` + `getSttConfig`/`setSttConfig` from `initRtmpControl`
+- [x] `packages/lcyt-backend/src/routes/stt.js` — `/stt` Express router (start, stop, status, config, events)
+- [x] `packages/lcyt-backend/src/server.js` — mount `/stt` router, inject `sttManager`
+- [x] `packages/plugins/lcyt-rtmp/src/routes/radio.js` — `on_publish` / `on_publish_done` auto-start hooks
+- [x] Add `hlsVariant: fmp4` note to `docker/mediamtx.yml` and deployment docs
 - [ ] Verify Google STT fMP4 encoding label against live API (see open question 1)
 
 **Tests**
-- [ ] `HlsSegmentFetcher` unit tests: mock HTTP, playlist parsing, timestamp derivation, new-segment detection, retry on gap
-- [ ] `GoogleSttAdapter` unit tests: mock Google STT API, segment POST, transcript event
-- [ ] `SttManager` integration tests: start/stop, `_sendQueue` delivery, auto-start hook
-- [ ] `/stt` route tests: start/stop/status/config CRUD, auth
+- [x] `packages/plugins/lcyt-rtmp/test/hls-segment-fetcher.test.js` — 8 tests
+- [x] `packages/plugins/lcyt-rtmp/test/google-stt.test.js` — 8 tests
+- [x] `packages/plugins/lcyt-rtmp/test/stt-manager.test.js` — 12 tests
+- [x] `packages/lcyt-backend/test/stt.test.js` — 15 tests (start/stop/status/config CRUD, SSE events, auth)
 
 **UI**
-- [ ] `packages/lcyt-web/src/components/StatusBar.jsx` — server-STT chip (provider / language / active state)
+- [x] `packages/lcyt-web/src/components/StatusBar.jsx` — server-STT chip (provider / language / active state, polls every 10 s)
+- [x] `packages/lcyt-web/src/hooks/useSession.js` — `getSttStatus()` method added
+- [x] `packages/lcyt-web/src/styles/components.css` — `.status-bar__stt-chip` styles
 
 ---
 
