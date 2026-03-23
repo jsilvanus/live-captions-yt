@@ -387,7 +387,7 @@ if (cfg?.auto_start) {
 - [x] `packages/lcyt-backend/src/routes/stt.js` — `/stt` Express router (start, stop, status, config, events)
 - [x] `packages/lcyt-backend/src/server.js` — mount `/stt` router, inject `sttManager`
 - [x] `packages/plugins/lcyt-rtmp/src/routes/radio.js` — `on_publish` / `on_publish_done` auto-start hooks
-- [ ] Add `hlsVariant: fmp4` note to `docker/mediamtx.yml` and deployment docs
+- [x] Add `hlsVariant: fmp4` note to `docker/mediamtx.yml` and deployment docs
 - [ ] Verify Google STT fMP4 encoding label against live API (see open question 1)
 
 **Tests**

@@ -47,9 +47,22 @@ rtmps: no
 hls: yes
 hlsAddress: :8080
 hlsAlwaysRemux: no
+# hlsVariant controls the HLS segment container format:
+#   lowLatency  — MPEG-TS segments (.ts); default for low-latency playback
+#   fmp4        — fragmented MP4 segments (.mp4); required for server-side STT
+#                 (Google Cloud STT, OpenAI Whisper, and whisper.cpp all accept
+#                  fMP4 directly, so no ffmpeg transcode step is needed)
+#
+# Switch to fmp4 to enable server-side STT (POST /stt/start):
+#   hlsVariant: fmp4
+#
+# Note: fmp4 and lowLatency are mutually exclusive — fmp4 does not support
+# Low-Latency HLS (LL-HLS) part segments (hlsPartDuration is ignored).
 hlsVariant: lowLatency
 hlsSegmentCount: 7
-hlsSegmentDuration: 4s
+hlsSegmentDuration: 6s
+# hlsPartDuration applies only when hlsVariant: lowLatency (LL-HLS).
+# Remove or comment out when using hlsVariant: fmp4.
 hlsPartDuration: 200ms
 hlsSegmentMaxSize: 50MB
 hlsAllowOrigin: "*"
@@ -106,3 +119,10 @@ paths:
 #
 # 5. For the DSK renderer (Playwright + ffmpeg): DSK still pushes RTMP to nginx-rtmp
 #    or MediaMTX. ffmpeg is only used by the DSK renderer, not for radio/HLS.
+#
+# 6. Server-side STT (POST /stt/start):
+#    Requires hlsVariant: fmp4 and MEDIAMTX_HLS_BASE_URL pointing to this server.
+#    The STT HlsSegmentFetcher polls /{streamKey}/index.m3u8 and fetches .mp4
+#    segments directly. hlsSegmentDuration controls utterance granularity (6 s
+#    is a good default; longer = more context per API call, higher latency).
+#    Set MEDIAMTX_HLS_BASE_URL=http://mediamtx:8080 in the backend environment.
