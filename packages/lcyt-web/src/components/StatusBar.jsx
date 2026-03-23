@@ -69,9 +69,13 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
     <header id="header" className="status-bar">
       <span className="status-bar__brand">lcyt-web</span>
       {sttChipLabel && (
-        <span className="status-bar__stt-chip status-bar__stt-chip--active" title="Server STT active">
+        <button
+          className="status-bar__stt-chip status-bar__stt-chip--active"
+          title="Server STT active — click to configure"
+          onClick={onCCOpen ?? (() => navigate('/settings?tab=cc'))}
+        >
           {sttChipLabel}
-        </span>
+        </button>
       )}
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">

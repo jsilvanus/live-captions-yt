@@ -644,6 +644,22 @@ export function useSession({
     return api.get('/stt/status');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getSttConfig = useCallback(function getSttConfig() {
+    return api.get('/stt/config');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateSttConfig = useCallback(function updateSttConfig(patch) {
+    return api.put('/stt/config', patch);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startStt = useCallback(function startStt(opts = {}) {
+    return api.post('/stt/start', opts);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const stopStt = useCallback(function stopStt() {
+    return api.post('/stt/stop', {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
@@ -658,7 +674,7 @@ export function useSession({
     listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getYouTubeConfig,
-    getSttStatus,
+    getSttStatus, getSttConfig, updateSttConfig, startStt, stopStt,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
     getQueuedCount,
   };

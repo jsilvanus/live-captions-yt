@@ -16,6 +16,8 @@
 import { EventEmitter } from 'node:events';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
+import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
+import { OpenAiAdapter } from './stt-adapters/openai.js';
 
 const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8888';
 
@@ -70,15 +72,19 @@ export class SttManager extends EventEmitter {
     let adapter;
     if (provider === 'google') {
       adapter = new GoogleSttAdapter({ language });
+    } else if (provider === 'whisper_http') {
+      adapter = new WhisperHttpAdapter({ language });
+    } else if (provider === 'openai') {
+      adapter = new OpenAiAdapter({ language });
     } else {
-      throw new Error(`SttManager: unsupported provider "${provider}" in Phase 1. Supported: google`);
+      throw new Error(`SttManager: unsupported provider "${provider}". Supported: google, whisper_http, openai`);
     }
 
     await adapter.start({ language });
 
-    // Create fetcher (HLS source only in Phase 1)
+    // Create fetcher
     if (audioSource !== 'hls') {
-      throw new Error(`SttManager: audioSource "${audioSource}" not supported in Phase 1. Supported: hls`);
+      throw new Error(`SttManager: audioSource "${audioSource}" not supported. Supported: hls`);
     }
 
     const hlsBase = process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE;

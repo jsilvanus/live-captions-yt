@@ -99,6 +99,21 @@
   color: var(--color-text-dim);
   white-space: nowrap;
   flex-shrink: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.stt-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.stt-status-dot--active {
+  background: var(--color-success, #22c55e);
 }
 
 .status-bar__stt-chip--active {
@@ -824,6 +839,14 @@
 
 .settings-panel--active {
   display: flex;
+}
+
+.settings-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-dim);
 }
 
 .settings-field {
