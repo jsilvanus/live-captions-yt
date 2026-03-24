@@ -38,6 +38,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 |---|---|---|---|
 | [plan_dsk.md](plans/plan_dsk.md) | DSK Graphics Editor — Phase 2 (Editable Shapes) | Phase 1 complete (template editor, renderer, broadcast control). Phase 2 adds direct canvas drag/resize/keyboard nudge for shape layers. | |
 | [TODO_plan.md](plans/TODO_plan.md) | Implement TODO.md items | Resolve open TODO.md items: Python stderr logging, MCP auto-sync and time field, docs reorganisation, CLAUDE.md lcyt-mcp reference. | |
+| [plan_userprojects.md](plans/plan_userprojects.md) | Richer Projects System: Feature Flags, Membership, and Device Roles | Normalize per-project feature flags into a dedicated table, add user entitlement tiers, project membership with access levels, per-member permission overrides, and pin-code device roles (camera/mic/mixer/custom) for production devices. Phase 1 (data model + UI) implemented; Phase 2 (enforcement middleware) pending. | |
 
 ### Pending
 
