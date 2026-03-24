@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { join, resolve, basename } from 'node:path';
 import { existsSync, unlinkSync } from 'node:fs';
 import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, getKeysByUserId } from '../db.js';
+import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
+import { addMember, getMemberAccessLevel, getMemberCount } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
@@ -207,13 +209,20 @@ function _userListKeys(db, jwtSecret, req, res) {
   const user = _verifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   const keys = getKeysByUserId(db, user.userId);
-  return res.status(200).json({ keys: keys.map(formatKey) });
+  return res.status(200).json({
+    keys: keys.map(row => {
+      const base = formatKey(row);
+      const features = [...getEnabledFeatureSet(db, row.key)].sort();
+      const memberCount = getMemberCount(db, row.key);
+      return { ...base, features, memberCount, myAccessLevel: 'owner' };
+    }),
+  });
 }
 
 function _userCreateKey(db, jwtSecret, req, res) {
   const user = _verifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  const { name } = req.body || {};
+  const { name, features: requestedFeatures } = req.body || {};
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'name is required' });
   }
@@ -221,7 +230,13 @@ function _userCreateKey(db, jwtSecret, req, res) {
     owner: name.trim(),
     user_id: user.userId,
   });
-  return res.status(201).json(formatKey(newKey));
+  // Provision default features + any requested extras (validated against user entitlements)
+  const extra = Array.isArray(requestedFeatures) ? requestedFeatures.filter(f => typeof f === 'string') : [];
+  provisionDefaultProjectFeatures(db, newKey.key, extra);
+  // Add creating user as owner
+  addMember(db, newKey.key, user.userId, 'owner');
+  const features = [...getEnabledFeatureSet(db, newKey.key)].sort();
+  return res.status(201).json({ ...formatKey(newKey), features, memberCount: 1, myAccessLevel: 'owner' });
 }
 
 function _userUpdateKey(db, jwtSecret, req, res) {

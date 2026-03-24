@@ -2,7 +2,9 @@ import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail, getUserById, updateUserPassword } from '../db/users.js';
+import { provisionDefaultUserFeatures } from '../db/project-features.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
+import { deviceLoginHandler } from './device-roles.js';
 
 const BCRYPT_ROUNDS = 12;
 const USER_TOKEN_TTL_DAYS = 30;
@@ -27,7 +29,17 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   const router = Router();
   const userAuth = createUserAuthMiddleware(jwtSecret);
 
-  // All routes return 503 if logins are disabled
+  // POST /auth/device-login — always available regardless of loginEnabled
+  router.post('/device-login', async (req, res) => {
+    try {
+      await deviceLoginHandler(db, jwtSecret, req, res);
+    } catch (err) {
+      console.error('[auth] device-login error:', err.message);
+      res.status(500).json({ error: 'Device login failed' });
+    }
+  });
+
+  // All remaining routes return 503 if logins are disabled
   router.use((req, res, next) => {
     if (!loginEnabled) {
       return res.status(503).json({ error: 'User logins are disabled on this server' });
@@ -52,6 +64,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     try {
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = createUser(db, { email, passwordHash, name: name || null });
+      provisionDefaultUserFeatures(db, user.id);
       const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email });
       res.status(201).json({ token, userId: user.id, email: user.email, name: user.name });
     } catch (err) {

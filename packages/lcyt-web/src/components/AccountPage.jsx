@@ -156,7 +156,7 @@ function ProfilePanel({ user, backendUrl, logout, changePassword }) {
       <div className="account-page__section">
         <button
           className="btn btn--danger"
-          onClick={logout}
+          onClick={() => { logout(); window.location.href = '/login'; }}
           type="button"
         >
           Sign out

@@ -113,9 +113,6 @@ export function LoginPage() {
             Register
           </a>
         </p>
-        <p style={{ marginTop: 8, fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          <a href="/" style={{ color: 'var(--color-text-muted)' }}>Back to app</a>
-        </p>
       </div>
     </div>
   );

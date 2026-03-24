@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
+import { ProjectDetailModal } from './ProjectDetailModal';
+import { FeaturePicker } from './FeaturePicker';
 
 function copyToClipboard(text) {
   navigator.clipboard?.writeText(text).catch(() => {});
@@ -11,27 +13,24 @@ function maskKey(key) {
   return key.slice(0, 8) + '••••••••••••••••••••••••••••';
 }
 
-function ProjectCard({ project, onUse, onRename, onDelete }) {
-  const [showKey, setShowKey] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState(project.owner);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
+const FEATURE_BADGE_LABELS = {
+  captions:          'Captions',
+  'viewer-target':   'Viewer',
+  'file-saving':     'Files',
+  translations:      'Translations',
+  'graphics-server': 'Graphics',
+  ingest:            'RTMP',
+  radio:             'Radio',
+  'hls-stream':      'HLS',
+  'stt-server':      'STT',
+  'device-control':  'Production',
+  embed:             'Embed',
+};
 
-  async function handleRename(e) {
-    e.preventDefault();
-    if (!newName.trim()) return;
-    setSaving(true);
-    setError(null);
-    try {
-      await onRename(project.key, newName.trim());
-      setRenaming(false);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
+function ProjectCard({ project, onUse, onManage }) {
+  const [showKey, setShowKey] = useState(false);
+
+  const badgeCodes = (project.features || []).filter(c => FEATURE_BADGE_LABELS[c]);
 
   return (
     <div style={{
@@ -43,33 +42,19 @@ function ProjectCard({ project, onUse, onRename, onDelete }) {
       flexDirection: 'column',
       gap: 10,
     }}>
-      {renaming ? (
-        <form onSubmit={handleRename} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input
-            className="settings-field__input"
-            value={newName}
-            onChange={e => setNewName(e.target.value)}
-            autoFocus
-            style={{ flex: 1 }}
-          />
-          <button className="btn btn--primary btn--sm" type="submit" disabled={saving}>
-            {saving ? '…' : 'Save'}
-          </button>
-          <button className="btn btn--ghost btn--sm" type="button" onClick={() => { setRenaming(false); setNewName(project.owner); }}>
-            Cancel
-          </button>
-        </form>
-      ) : (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontWeight: 600, fontSize: 15, flex: 1, color: 'var(--color-text)' }}>
-            {project.owner}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontWeight: 600, fontSize: 15, flex: 1, color: 'var(--color-text)' }}>
+          {project.owner}
+        </span>
+        {project.myAccessLevel && (
+          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 8, background: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
+            {project.myAccessLevel}
           </span>
-          <button className="btn btn--ghost btn--sm" onClick={() => setRenaming(true)} title="Rename">
-            Rename
-          </button>
-        </div>
-      )}
-      {error && <div style={{ color: 'var(--color-error)', fontSize: 12 }}>{error}</div>}
+        )}
+        <button className="btn btn--ghost btn--sm" onClick={() => onManage(project)} title="Manage project">
+          Manage
+        </button>
+      </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <code style={{
@@ -83,25 +68,35 @@ function ProjectCard({ project, onUse, onRename, onDelete }) {
         }}>
           {showKey ? project.key : maskKey(project.key)}
         </code>
-        <button
-          className="btn btn--ghost btn--sm"
-          onClick={() => setShowKey(v => !v)}
-          title={showKey ? 'Hide key' : 'Show key'}
-        >
+        <button className="btn btn--ghost btn--sm" onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide key' : 'Show key'}>
           {showKey ? 'Hide' : 'Show'}
         </button>
-        <button
-          className="btn btn--ghost btn--sm"
-          onClick={() => copyToClipboard(project.key)}
-          title="Copy API key"
-        >
+        <button className="btn btn--ghost btn--sm" onClick={() => copyToClipboard(project.key)} title="Copy API key">
           Copy
         </button>
       </div>
 
+      {badgeCodes.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+          {badgeCodes.map(code => (
+            <span key={code} style={{
+              fontSize: 10,
+              padding: '1px 6px',
+              borderRadius: 8,
+              background: 'var(--color-bg)',
+              border: '1px solid var(--color-border)',
+              color: 'var(--color-text-muted)',
+            }}>
+              {FEATURE_BADGE_LABELS[code]}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
         Created {new Date(project.createdAt).toLocaleDateString()}
         {project.expires && ` · Expires ${new Date(project.expires).toLocaleDateString()}`}
+        {project.memberCount > 1 && ` · ${project.memberCount} members`}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
@@ -112,20 +107,17 @@ function ProjectCard({ project, onUse, onRename, onDelete }) {
         >
           Use this project
         </button>
-        <button
-          className="btn btn--ghost btn--sm"
-          onClick={() => onDelete(project.key)}
-          style={{ color: 'var(--color-error)' }}
-        >
-          Delete
-        </button>
       </div>
     </div>
   );
 }
 
+const DEFAULT_NEW_PROJECT_FEATURES = new Set(['captions', 'viewer-target', 'file-saving', 'translations', 'stats', 'mic-lock']);
+
 function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
   const [name, setName] = useState('');
+  const [features, setFeatures] = useState(DEFAULT_NEW_PROJECT_FEATURES);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -141,7 +133,7 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name: name.trim() }),
+        body: JSON.stringify({ name: name.trim(), features: [...features] }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -166,6 +158,19 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
           autoFocus
         />
       </div>
+      <button
+        type="button"
+        className="btn btn--ghost btn--sm"
+        style={{ alignSelf: 'flex-start', fontSize: 12 }}
+        onClick={() => setShowAdvanced(v => !v)}
+      >
+        {showAdvanced ? '▾' : '▸'} Feature access
+      </button>
+      {showAdvanced && (
+        <div style={{ background: 'var(--color-bg)', borderRadius: 6, padding: '12px', border: '1px solid var(--color-border)' }}>
+          <FeaturePicker value={features} onChange={setFeatures} />
+        </div>
+      )}
       {error && <div style={{ color: 'var(--color-error)', fontSize: 13 }}>{error}</div>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <button className="btn btn--ghost" type="button" onClick={onCancel}>Cancel</button>
@@ -183,6 +188,7 @@ export function ProjectsPage() {
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [managingProject, setManagingProject] = useState(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -213,6 +219,10 @@ export function ProjectsPage() {
     fetchProjects();
   }, [fetchProjects]);
 
+  function handleManageProject(project) {
+    setManagingProject(project);
+  }
+
   function handleUseProject(project) {
     try {
       const existing = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
@@ -227,31 +237,7 @@ export function ProjectsPage() {
     window.location.href = '/';
   }
 
-  async function handleRename(key, newName) {
-    const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(key)}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ name: newName }),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-    setProjects(prev => prev.map(p => p.key === key ? { ...p, owner: data.owner } : p));
-  }
-
-  async function handleDelete(key) {
-    if (!confirm('Delete this project? The API key will be revoked.')) return;
-    const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(key)}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (!r.ok) {
-      const data = await r.json().catch(() => ({}));
-      alert(data.error || `HTTP ${r.status}`);
-      return;
-    }
+  function handleProjectDeleted(key) {
     setProjects(prev => prev.filter(p => p.key !== key));
   }
 
@@ -277,7 +263,7 @@ export function ProjectsPage() {
         <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text)' }}>Projects</h1>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{user.email}</span>
-          <button className="btn btn--ghost btn--sm" onClick={logout}>Sign out</button>
+          <button className="btn btn--ghost btn--sm" onClick={() => { logout(); window.location.href = '/login'; }}>Sign out</button>
         </div>
       </div>
       <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 24 }}>
@@ -323,11 +309,20 @@ export function ProjectsPage() {
               key={p.key}
               project={p}
               onUse={handleUseProject}
-              onRename={handleRename}
-              onDelete={handleDelete}
+              onManage={handleManageProject}
             />
           ))}
         </div>
+      )}
+
+      {managingProject && (
+        <ProjectDetailModal
+          project={managingProject}
+          backendUrl={backendUrl}
+          token={token}
+          onClose={() => setManagingProject(null)}
+          onDeleted={handleProjectDeleted}
+        />
       )}
 
       <p style={{ marginTop: 32, fontSize: 13, color: 'var(--color-text-muted)' }}>
