@@ -67,6 +67,7 @@ export function initDb(dbPath) {
   if (!existingCols.has('hls_enabled'))       db.exec('ALTER TABLE api_keys ADD COLUMN hls_enabled INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
+  if (!existingCols.has('device_code'))       db.exec('ALTER TABLE api_keys ADD COLUMN device_code TEXT');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -191,6 +192,139 @@ export function initDb(dbPath) {
     )
   `);
 
+  // ── Richer projects: feature flags, membership, device roles ─────────────
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_features (
+      api_key      TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      feature_code TEXT    NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      config       TEXT,
+      granted_by   INTEGER REFERENCES users(id),
+      granted_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (api_key, feature_code)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_project_features_key ON project_features(api_key)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_features (
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      feature_code TEXT    NOT NULL,
+      enabled      INTEGER NOT NULL DEFAULT 1,
+      config       TEXT,
+      granted_by   INTEGER REFERENCES users(id),
+      granted_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (user_id, feature_code)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_user_features_user ON user_features(user_id)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_members (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key      TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      access_level TEXT    NOT NULL DEFAULT 'member',
+      invited_by   INTEGER REFERENCES users(id),
+      joined_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (api_key, user_id)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_project_members_key  ON project_members(api_key)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_member_permissions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      member_id   INTEGER NOT NULL REFERENCES project_members(id) ON DELETE CASCADE,
+      permission  TEXT    NOT NULL,
+      granted     INTEGER NOT NULL DEFAULT 1,
+      UNIQUE (member_id, permission)
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_device_roles (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key     TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      role_type   TEXT    NOT NULL,
+      name        TEXT    NOT NULL,
+      pin_hash    TEXT    NOT NULL,
+      permissions TEXT    NOT NULL DEFAULT '[]',
+      config      TEXT,
+      active      INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_device_roles_key ON project_device_roles(api_key)');
+
+  // Back-fill project_features from legacy api_keys columns (idempotent)
+  const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];
+  const LEGACY_FEATURE_MAP = [
+    { col: 'relay_allowed',        code: 'ingest',          check: v => v === 1 },
+    { col: 'radio_enabled',        code: 'radio',           check: v => v === 1 },
+    { col: 'hls_enabled',          code: 'hls-stream',      check: v => v === 1 },
+    { col: 'backend_file_enabled', code: 'file-saving',     check: v => v === 1 },
+    { col: 'graphics_enabled',     code: 'graphics-server', check: v => v === 1 },
+    { col: 'cea708_delay_ms',      code: 'cea-captions',    check: v => v > 0 },
+  ];
+
+  const upsertFeature = db.prepare(`
+    INSERT INTO project_features (api_key, feature_code, enabled, config)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT (api_key, feature_code) DO NOTHING
+  `);
+  const upsertUserFeature = db.prepare(`
+    INSERT INTO user_features (user_id, feature_code, enabled)
+    VALUES (?, ?, 1)
+    ON CONFLICT (user_id, feature_code) DO NOTHING
+  `);
+  const upsertMember = db.prepare(`
+    INSERT INTO project_members (api_key, user_id, access_level)
+    VALUES (?, ?, 'owner')
+    ON CONFLICT (api_key, user_id) DO NOTHING
+  `);
+
+  const allKeys = db.prepare('SELECT * FROM api_keys').all();
+  const backfillTx = db.transaction(() => {
+    for (const row of allKeys) {
+      const hasAny = db.prepare('SELECT 1 FROM project_features WHERE api_key = ? LIMIT 1').get(row.key);
+      if (!hasAny) {
+        for (const code of DEFAULT_FEATURES) {
+          upsertFeature.run(row.key, code, 1, null);
+        }
+        for (const { col, code, check } of LEGACY_FEATURE_MAP) {
+          const val = row[col];
+          if (check(val ?? 0)) {
+            const config = code === 'cea-captions' ? JSON.stringify({ delay_ms: val }) : null;
+            upsertFeature.run(row.key, code, 1, config);
+          }
+        }
+        // embed: always present, config holds cors value
+        upsertFeature.run(row.key, 'embed', 1, JSON.stringify({ cors: row.embed_cors ?? '*' }));
+      }
+      // Ensure owning user is a project member
+      if (row.user_id) {
+        upsertMember.run(row.key, row.user_id);
+      }
+    }
+
+    // Back-fill user_features for all users (default entitlements)
+    const allUsers = db.prepare('SELECT id FROM users').all();
+    for (const u of allUsers) {
+      const hasAny = db.prepare('SELECT 1 FROM user_features WHERE user_id = ? LIMIT 1').get(u.id);
+      if (!hasAny) {
+        for (const code of DEFAULT_FEATURES) {
+          upsertUserFeature.run(u.id, code);
+        }
+        // embed is a default user entitlement
+        upsertUserFeature.run(u.id, 'embed');
+      }
+    }
+  });
+  backfillTx();
+
   return db;
 }
 
@@ -205,6 +339,10 @@ export * from './usage.js';
 export * from './files.js';
 export * from './icons.js';
 export * from './viewer.js';
+
+export * from './project-features.js';
+export * from './project-members.js';
+export * from './device-roles.js';
 
 // Re-export DSK image helpers needed by lcyt-backend routes (keys.js delete cascade)
 export { deleteAllImages } from 'lcyt-dsk';
