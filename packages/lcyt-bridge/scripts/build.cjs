@@ -12,8 +12,9 @@
  *   node scripts/build.cjs mac      # bundle + package for macOS
  *   node scripts/build.cjs linux    # bundle + package for Linux
  */
-const { execSync } = require('child_process');
-const { version }  = require('../package.json');
+const { execSync }  = require('child_process');
+const { build }     = require('esbuild');
+const { version }   = require('../package.json');
 
 const targets = {
   win:          { target: 'node18-win-x64',       output: `dist/lcyt-bridge-${version}.exe` },
@@ -24,16 +25,36 @@ const targets = {
 
 const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit' }); };
 
-// Step 1: esbuild bundle
-const define = `--define:__BRIDGE_VERSION__='"${version}"'`;
-console.log(`[build] lcyt-bridge v${version}`);
-run(`esbuild src/index.js --bundle --platform=node --target=node18 --format=cjs ${define} --outfile=dist/bundle.cjs`);
+async function main() {
+  // Step 1: esbuild bundle via JS API so we can set banner + define without
+  // shell-quoting headaches.  The banner provides a CJS-compatible polyfill
+  // for import.meta.url so esbuild does not warn about "empty-import-meta".
+  console.log(`[build] lcyt-bridge v${version}`);
+  console.log(`[build] esbuild src/index.js → dist/bundle.cjs`);
+  await build({
+    entryPoints: ['src/index.js'],
+    bundle:      true,
+    platform:    'node',
+    target:      'node18',
+    format:      'cjs',
+    outfile:     'dist/bundle.cjs',
+    define: {
+      '__BRIDGE_VERSION__':  JSON.stringify(version),
+      'import.meta.url':     '__importMetaUrl',
+    },
+    banner: {
+      js: "const __importMetaUrl = require('url').pathToFileURL(__filename).href;",
+    },
+  });
 
-// Step 2: pkg (optional, controlled by CLI arg)
-const platform = process.argv[2];
-if (platform) {
-  const t = targets[platform];
-  if (!t) { console.error(`[build] Unknown platform: ${platform}. Use win, mac, or linux.`); process.exit(1); }
-  run(`npx @yao-pkg/pkg dist/bundle.cjs --target ${t.target} --output ${t.output}`);
-  console.log(`[build] → ${t.output}`);
+  // Step 2: pkg (optional, controlled by CLI arg)
+  const platform = process.argv[2];
+  if (platform) {
+    const t = targets[platform];
+    if (!t) { console.error(`[build] Unknown platform: ${platform}. Use win, mac, or linux.`); process.exit(1); }
+    run(`npx @yao-pkg/pkg dist/bundle.cjs --target ${t.target} --output ${t.output}`);
+    console.log(`[build] → ${t.output}`);
+  }
 }
+
+main().catch(err => { console.error('[build] Fatal:', err); process.exit(1); });
