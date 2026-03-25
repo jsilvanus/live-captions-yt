@@ -26,6 +26,7 @@ export function LoginPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!backendUrl.trim() || !email.trim() || !password) return;
+    try { new URL(backendUrl.trim()); } catch { setError('Please enter a valid server URL (e.g. https://api.lcyt.fi)'); return; }
     setError(null);
     setLoading(true);
     try {
@@ -57,7 +58,8 @@ export function LoginPage() {
             <input
               id="login-backend-url"
               className="settings-field__input"
-              type="url"
+              type="text"
+              inputMode="url"
               value={backendUrl}
               onChange={e => setBackendUrl(e.target.value)}
               placeholder="https://api.lcyt.fi"
