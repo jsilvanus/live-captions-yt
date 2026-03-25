@@ -27,17 +27,13 @@ const targets = {
   'linux-arm64':{ target: 'node18-linux-arm64',   output: `dist/lcyt-bridge-${version}-linux-arm64` },
 };
 
-// In an npm workspace, devDependency binaries are hoisted to the root
-// node_modules/.bin. Replicate what npm does for scripts by prepending both
-// the local and workspace-root bin dirs to PATH before calling execSync.
-const localBin = resolve(__dirname, '../node_modules/.bin');
-const rootBin  = resolve(__dirname, '../../../node_modules/.bin');
-const env = {
-  ...process.env,
-  PATH: [localBin, rootBin, process.env.PATH].join(':'),
-};
+// Resolve the @yao-pkg/pkg entry point via Node's module resolution so we can
+// invoke it as `node <path>` rather than running the binary directly. This
+// avoids both the npm-workspace PATH hoisting issue and any execute-bit
+// permission problems on the installed binary.
+const pkgEntry = require.resolve('@yao-pkg/pkg');
 
-const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit', env }); };
+const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit' }); };
 
 async function bundle() {
   // esbuild bundle via JS API so we can set banner + define without
@@ -68,7 +64,7 @@ function pkg(platform) {
     console.error(`[build] Unknown platform: ${platform}. Valid: ${Object.keys(targets).join(', ')}, all`);
     process.exit(1);
   }
-  run(`pkg dist/bundle.cjs --target ${t.target} --output ${t.output}`);
+  run(`node "${pkgEntry}" dist/bundle.cjs --target ${t.target} --output ${t.output}`);
   console.log(`[build] → ${t.output}`);
 }
 
