@@ -27,11 +27,16 @@ const targets = {
   'linux-arm64':{ target: 'node18-linux-arm64',   output: `dist/lcyt-bridge-${version}-linux-arm64` },
 };
 
-// Resolve the @yao-pkg/pkg entry point via Node's module resolution so we can
-// invoke it as `node <path>` rather than running the binary directly. This
-// avoids both the npm-workspace PATH hoisting issue and any execute-bit
-// permission problems on the installed binary.
-const pkgEntry = require.resolve('@yao-pkg/pkg');
+// Resolve the @yao-pkg/pkg CLI binary via its package.json bin field so we
+// can invoke it as `node <path>` rather than running the binary directly.
+// This avoids both npm-workspace PATH hoisting issues and execute-bit
+// permission problems. We read the bin field explicitly because
+// require.resolve('@yao-pkg/pkg') returns the library entry (index.js),
+// not the CLI (bin.js).
+const _pkgMeta = require('@yao-pkg/pkg/package.json');
+const _pkgRoot = resolve(require.resolve('@yao-pkg/pkg/package.json'), '..');
+const _pkgBinRel = typeof _pkgMeta.bin === 'string' ? _pkgMeta.bin : _pkgMeta.bin.pkg;
+const pkgEntry = resolve(_pkgRoot, _pkgBinRel);
 
 const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit' }); };
 
