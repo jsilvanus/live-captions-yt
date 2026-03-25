@@ -24,6 +24,7 @@ import { createVideoRouter } from './routes/video.js';
 import { createIconRouter } from './routes/icons.js';
 import { createYouTubeRouter } from './routes/youtube.js';
 import { createSttRouter } from './routes/stt.js';
+import { createBridgeDownloadRouter } from './routes/bridge-download.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
@@ -327,6 +328,7 @@ app.use('/viewer', createViewerRouter(db));
 app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
 app.use('/youtube', createYouTubeRouter(auth));
 app.use('/stt', createSttRouter(auth, sttManager, db));
+app.use('/bridge-download', createBridgeDownloadRouter());
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,
