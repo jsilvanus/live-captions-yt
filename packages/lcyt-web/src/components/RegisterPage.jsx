@@ -27,6 +27,7 @@ export function RegisterPage() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!backendUrl.trim() || !email.trim() || !password) return;
+    try { new URL(backendUrl.trim()); } catch { setError('Please enter a valid server URL (e.g. https://api.lcyt.fi)'); return; }
     if (password !== confirm) {
       setError('Passwords do not match');
       return;
@@ -66,7 +67,8 @@ export function RegisterPage() {
             <input
               id="reg-backend-url"
               className="settings-field__input"
-              type="url"
+              type="text"
+              inputMode="url"
               value={backendUrl}
               onChange={e => setBackendUrl(e.target.value)}
               placeholder="https://api.lcyt.fi"
