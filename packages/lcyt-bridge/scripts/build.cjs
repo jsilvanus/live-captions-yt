@@ -27,11 +27,17 @@ const targets = {
   'linux-arm64':{ target: 'node18-linux-arm64',   output: `dist/lcyt-bridge-${version}-linux-arm64` },
 };
 
-// Resolve the pkg binary from the local node_modules so the script works
-// without relying on npx or a global install (avoids "pkg: Permission denied").
-const pkgBin = resolve(__dirname, '../node_modules/.bin/pkg');
+// In an npm workspace, devDependency binaries are hoisted to the root
+// node_modules/.bin. Replicate what npm does for scripts by prepending both
+// the local and workspace-root bin dirs to PATH before calling execSync.
+const localBin = resolve(__dirname, '../node_modules/.bin');
+const rootBin  = resolve(__dirname, '../../../node_modules/.bin');
+const env = {
+  ...process.env,
+  PATH: [localBin, rootBin, process.env.PATH].join(':'),
+};
 
-const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit' }); };
+const run = (cmd) => { console.log(`[build] ${cmd}`); execSync(cmd, { stdio: 'inherit', env }); };
 
 async function bundle() {
   // esbuild bundle via JS API so we can set banner + define without
@@ -62,7 +68,7 @@ function pkg(platform) {
     console.error(`[build] Unknown platform: ${platform}. Valid: ${Object.keys(targets).join(', ')}, all`);
     process.exit(1);
   }
-  run(`"${pkgBin}" dist/bundle.cjs --target ${t.target} --output ${t.output}`);
+  run(`pkg dist/bundle.cjs --target ${t.target} --output ${t.output}`);
   console.log(`[build] → ${t.output}`);
 }
 
