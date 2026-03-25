@@ -2,7 +2,7 @@
 
 ## Overview
 
-Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a DSK graphics overlay system, a production control layer for cameras/mixers, and a bridge agent for AV hardware.
+Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a DSK graphics overlay system, a production control layer for cameras/mixers, a bridge agent for AV hardware, server-side speech-to-text transcription, and a compute orchestration layer for horizontal scaling.
 
 ---
 
@@ -19,9 +19,14 @@ live-captions-yt/
 │   ├── lcyt-mcp-sse/           # MCP server (HTTP SSE transport)
 │   ├── lcyt-site/              # Marketing/docs website (Astro)
 │   ├── lcyt-web/               # Browser-based web UI (Vite + React)
+│   ├── lcyt-orchestrator/      # Compute orchestrator — worker registration, job dispatch, Hetzner autoscaling
+│   ├── lcyt-worker-daemon/     # Minimal worker daemon — ffmpeg job orchestration, S3 upload
+│   ├── tools/                  # Standalone utilities
+│   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
 │   └── plugins/                # Plugin packages (npm workspaces glob: packages/plugins/*)
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
-│       └── lcyt-production/    # Production control library (cameras, mixers, bridge)
+│       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
+│       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
 ├── python-packages/            # Python packages
 │   ├── lcyt/                   # Core Python library (published to PyPI as `lcyt`)
 │   ├── lcyt-backend/           # Flask backend (cPanel/Passenger compatible)
@@ -37,7 +42,7 @@ live-captions-yt/
 └── CLAUDE.md                   # This file
 ```
 
-> **Plugin packages** are under `packages/plugins/` and matched by the workspace glob `packages/plugins/*`. They are imported by `lcyt-backend` as named packages (`lcyt-dsk`, `lcyt-production`).
+> **Plugin packages** are under `packages/plugins/` and matched by the workspace glob `packages/plugins/*`. They are imported by `lcyt-backend` as named packages (`lcyt-dsk`, `lcyt-production`, `lcyt-rtmp`).
 
 ---
 
@@ -192,6 +197,17 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `DSK_LOCAL_SERVER` | Local server URL used by DSK renderer | `http://localhost:$PORT` |
 | `DSK_LOCAL_RTMP` | Local nginx-rtmp base URL for DSK RTMP output | `rtmp://127.0.0.1:1935` |
 | `DSK_RTMP_APP` | RTMP application name for DSK renderer output | `live` |
+| `STT_PROVIDER` | Default STT provider: `google`, `whisper_http`, `openai` | `google` |
+| `STT_DEFAULT_LANGUAGE` | Default BCP-47 language tag for STT | `en-US` |
+| `STT_AUDIO_SOURCE` | Default audio source for STT: `hls`, `rtmp`, `whep` | `hls` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google service account JSON (for OAuth2 STT) | none |
+| `GOOGLE_STT_KEY` | Google Cloud STT REST API key (simpler alternative to service account) | none |
+| `GOOGLE_STT_MODE` | Google STT mode: `rest` (default) or `grpc` (lower latency; requires `@google-cloud/speech`) | `rest` |
+| `WHISPER_HTTP_URL` | Base URL of a Whisper-compatible HTTP STT server | none |
+| `WHISPER_HTTP_MODEL` | Model name to request from the Whisper HTTP server | none |
+| `OPENAI_STT_URL` | Base URL for OpenAI-compatible STT endpoint | OpenAI default |
+| `OPENAI_STT_API_KEY` | API key for OpenAI STT endpoint | none |
+| `OPENAI_STT_MODEL` | Model name for OpenAI STT requests | `whisper-1` |
 
 **API routes:**
 ```
@@ -261,18 +277,21 @@ POST /production/bridge/status — bridge heartbeat + command result callback
 GET/POST/DELETE /production/bridge/instances — bridge instance CRUD
 
 GET  /icons/*             — icon assets (authenticated)
+
+GET  /stt/status          — current STT session state for the authenticated API key (Bearer token)
+POST /stt/start           — start server-side STT { provider?, language?, audioSource?, streamKey?, confidenceThreshold? } (Bearer token)
+POST /stt/stop            — stop STT session (Bearer token)
+GET  /stt/events          — SSE stream of transcript events (Bearer token or ?token=)
+GET  /stt/config          — get per-key STT config from DB (Bearer token)
+PUT  /stt/config          — update per-key STT config (Bearer token)
 ```
 
 **Key internals:**
 - `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK), `caption_usage`, `session_stats`, `caption_errors`, `sessions`. Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
-- `src/hls-manager.js` — `HlsManager`: manages ffmpeg subprocesses for RTMP → video+audio HLS.
-- `src/radio-manager.js` — `RadioManager`: dual-mode audio-only HLS. **ffmpeg mode** (default): spawns ffmpeg RTMP → AAC HLS. **mediamtx mode** (`RADIO_HLS_SOURCE=mediamtx`): no ffmpeg; MediaMTX serves HLS, `NginxManager` writes slug-based nginx proxy locations.
-- `src/nginx-manager.js` — `NginxManager`: writes nginx `location` blocks that proxy public slug URLs (`/r/<slug>/`) to internal MediaMTX HLS paths, keeping the API key out of all public URLs. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
-- `src/preview-manager.js` — `PreviewManager`: manages ffmpeg for RTMP → JPEG thumbnail generation.
-- `src/rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup.
-- `src/hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.
+- `src/routes/stt.js` — `createSttRouter()`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`.
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
+- The RTMP/HLS/radio/preview/STT managers previously lived in `lcyt-backend`; they were extracted to `packages/plugins/lcyt-rtmp`. The backend imports them via `import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp'`.
 - `src/middleware/user-auth.js` — JWT Bearer verification for user tokens (`{ type: 'user', userId, email }`).
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
@@ -321,6 +340,60 @@ app.use('/production', createProductionRouter(db, registry, bridgeManager, { pub
 **Mixer types:** `roland`, `amx`
 
 **Tests:** `packages/plugins/lcyt-production/test/*.test.js` — uses `node:test`.
+
+---
+
+### `packages/plugins/lcyt-rtmp` — RTMP Relay Plugin (v0.1.0)
+
+RTMP relay, HLS streaming, audio-only radio, stream preview, caption injection, and server-side speech-to-text transcription. Extracted from `lcyt-backend` into its own plugin for modularity. Imported by `lcyt-backend` as `lcyt-rtmp`.
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
+
+const rtmp = await initRtmpControl(db, store);
+const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
+
+// Wire hlsSubsManager into the video route for subtitle sidecar support:
+setHlsSubsManager(rtmp.hlsSubsManager);
+
+if (process.env.RTMP_RELAY_ACTIVE === '1') {
+  const routers = createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains });
+  app.use('/rtmp',       routers.rtmpRouter);
+  app.use('/stream',     routers.streamRouter);
+  app.use('/stream-hls', routers.streamHlsRouter);
+  app.use('/radio',      routers.radioRouter);
+  app.use('/preview',    routers.previewRouter);
+}
+
+// In graceful shutdown:
+await rtmp.stop();
+```
+
+**Source files (`src/`):**
+- `api.js` — `initRtmpControl(db, store?)` + `createRtmpRouters(db, auth, managers, opts)`. Returns all manager instances and a `stop()` function.
+- `rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup. Fires `onStreamStarted`/`onStreamEnded` callbacks for DB stat tracking.
+- `hls-manager.js` — `HlsManager`: manages MediaMTX-based RTMP → video+audio HLS (no ffmpeg in hot path).
+- `radio-manager.js` — `RadioManager`: dual-mode audio-only HLS. **ffmpeg mode** (default): spawns ffmpeg RTMP → AAC HLS. **mediamtx mode**: no ffmpeg; MediaMTX serves HLS, `NginxManager` writes slug-based nginx proxy locations.
+- `nginx-manager.js` — `NginxManager`: writes nginx `location` blocks for MediaMTX radio streams. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
+- `preview-manager.js` — `PreviewManager`: manages MediaMTX API or ffmpeg for RTMP → JPEG thumbnail generation.
+- `hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.
+- `mediamtx-client.js` — `MediaMtxClient`: REST API client for MediaMTX v3 (drop publisher, list streams, etc.).
+- `hls-segment-fetcher.js` — `HlsSegmentFetcher`: polls a MediaMTX fMP4 HLS playlist, detects new segments, emits `segment` events with `{ buffer, timestamp, duration, url, index }`. Used by `SttManager`.
+- `stt-manager.js` — `SttManager` (`EventEmitter`): manages one STT session per API key. Wires `HlsSegmentFetcher` → STT adapter → transcript → `session._sendQueue` for delivery. Supports `hls`, `rtmp`, `whep` audio sources. **Events:** `transcript`, `error`, `stopped`.
+- `stt-adapters/google-stt.js` — `GoogleSttAdapter`: posts fMP4 segments to Google Cloud Speech-to-Text REST API or streams via gRPC (`GOOGLE_STT_MODE=grpc`). Emits `normalisePunctuation`-cleaned transcripts.
+- `stt-adapters/whisper-http.js` — `WhisperHttpAdapter`: sends audio to a Whisper-compatible HTTP STT server.
+- `stt-adapters/openai.js` — `OpenAiAdapter`: sends audio to OpenAI-compatible STT endpoint.
+- `stt-adapters/pcm-buffer.js` — `PcmSilenceBuffer`: accumulates PCM frames and detects silence; `buildWav()` helper constructs WAV from raw PCM bytes.
+- `db/relay.js` — RTMP relay DB helpers: `isRelayAllowed()`, `isRadioEnabled()`, per-key relay config CRUD.
+- `routes/rtmp.js` — `GET/POST/PUT/DELETE /rtmp` — RTMP relay slot management.
+- `routes/stream.js` — `GET/POST /stream` — RTMP relay stream control (domain allowlist enforced).
+- `routes/stream-hls.js` — `GET /stream-hls/:key/*` — HLS video+audio proxy (public, rate-limited).
+- `routes/radio.js` — `GET /radio/:key/*` — audio-only HLS proxy (public, rate-limited).
+- `routes/preview.js` — `GET /preview/:key/incoming.jpg` — RTMP → JPEG thumbnail serving (public).
+
+**Tests:** `packages/plugins/lcyt-rtmp/test/*.test.js` — uses `node:test` with `--experimental-test-module-mocks`.
 
 ---
 
@@ -417,6 +490,87 @@ npm run build:win    # → dist/lcyt-bridge.exe  (Windows x64)
 npm run build:mac    # → dist/lcyt-bridge-mac  (macOS x64)
 npm run build:linux  # → dist/lcyt-bridge-linux (Linux x64)
 ```
+
+---
+
+### `packages/lcyt-orchestrator` — Compute Orchestrator (v0.0.1, private)
+
+Stateless Express HTTP service that manages a pool of worker VMs and dispatches compute jobs (e.g. ffmpeg transcoding). Supports on-demand burst provisioning via the Hetzner Cloud API and optional Prometheus metrics exposition.
+
+**Entry:** `src/index.js` (CommonJS, `node src/index.js`)
+**Port:** `process.env.PORT` (default 4000)
+
+**Source files (`src/`):**
+- `index.js` — Express app. In-memory `workers` and `jobs` maps. Pending burst queue. Kicks off Hetzner burst VM creation when no warm capacity is available.
+- `hetzner.js` — `createHetznerClient()`: REST client for Hetzner Cloud API with exponential-backoff retry and 429 rate-limit handling. `createBurstServer()`, `pollServerReady()`.
+- `autoscaler.js` — `startAutoscaler()`: periodic tick that provisions burst VMs when queued jobs exceed `burstQueueLimit`. Runs only when `HETZNER_API_TOKEN` is set.
+- `metrics.js` — Lightweight in-memory counter/gauge store used by `GET /metrics` (Prometheus text format).
+
+**API routes:**
+```
+POST   /compute/workers/register  — worker self-registration { id, privateIp, maxJobs }
+GET    /compute/workers           — list registered workers
+POST   /compute/jobs              — dispatch job; returns workerId + workerUrl (or 202 queued / 503 retry)
+DELETE /compute/jobs/:jobId       — release job from worker
+POST   /compute/jobs/:jobId/caption — forward caption payload to assigned worker (stub)
+GET    /compute/health            — worker/job counts
+GET    /metrics                   — Prometheus counter text
+```
+
+**Env vars:**
+| Variable | Purpose | Default |
+|---|---|---|
+| `HETZNER_API_TOKEN` | Enables burst VM provisioning | none (disables Hetzner) |
+| `HETZNER_API_BASE_URL` | Override Hetzner API base (for mocks) | Hetzner default |
+| `HETZNER_SNAPSHOT_ID` | Image/snapshot ID for burst VMs | none |
+| `HETZNER_SERVER_TYPE_BURST` | Server type for burst VMs | `cx31` |
+| `MAX_CONCURRENT_BURST_CREATES` | Max parallel burst VM provisions | `2` |
+| `ORCHESTRATOR_MAX_PENDING_JOBS` | Max queued jobs before 503 | `50` |
+| `ORCHESTRATOR_BACKOFF_MS` | Base backoff ms for Hetzner retries | `1000` |
+
+**Tests:** `test/hetzner.mock.test.js` — Hetzner client with mock HTTP server.
+
+---
+
+### `packages/lcyt-worker-daemon` — Worker Daemon (v0.0.0, private)
+
+Minimal ESM Express service that runs on worker VMs. Receives job lifecycle commands from the orchestrator (or directly from `lcyt-backend`), spawns placeholder/ffmpeg subprocesses, and optionally uploads HLS output to S3.
+
+**Entry:** `src/index.js` (`startServer(port)`)
+**Port:** `process.env.PORT` (default 5000)
+
+**Source files (`src/`):**
+- `index.js` — `createApp()` (returns Express app) + `startServer(port)`. In-memory `jobs` map. `NODE_ENV=test` skips real subprocess spawning. Optional `X-Worker-Auth` header authentication via `WORKER_AUTH_TOKEN`.
+- `uploader.js` — `createUploader({ watchDir, prefix, uploadFn })`: watches a directory for new files and uploads them via `uploadFn`.
+- `s3-uploader.js` — `createS3UploadFn({ baseKey })`: creates an upload function using `@aws-sdk/client-s3`.
+
+**API routes:**
+```
+POST   /jobs           — create job; spawns subprocess (or no-op in test mode)
+DELETE /jobs/:id       — stop job, kill subprocess
+POST   /jobs/:id/caption — append caption payload to job record
+GET    /stats          — running/total job counts
+GET    /health         — status + workerId
+GET    /_jobs          — debug: list all jobs
+```
+
+**Env vars:**
+| Variable | Purpose |
+|---|---|
+| `WORKER_ID` | This worker's identifier (default `worker-0`) |
+| `WORKER_AUTH_TOKEN` / `BACKEND_INTERNAL_TOKEN` | Optional auth token for all `/jobs` endpoints |
+
+**Tests:** `test/daemon.basic.test.js`.
+
+---
+
+### `packages/tools/tcp-echo-server` — TCP Echo Server
+
+Standalone development utility. Listens for TCP connections and echoes every received message back to the sender. Used for testing `lcyt-bridge` TCP connections without real AV hardware.
+
+**Entry:** `server.js`
+**Usage:** `node server.js [port]` or `PORT=8080 node server.js`
+**Default port:** 9999
 
 ---
 
@@ -714,8 +868,31 @@ User accounts (`USE_USER_LOGINS` is enabled by default; set to `0` to disable):
 Backend plugins live in `packages/plugins/` and follow this pattern:
 - Export `init*()` — runs DB migrations and starts background services; called once at startup.
 - Export `create*Router()` / `create*Routers()` — returns Express router(s) to mount.
-- Injected dependencies: `db` (SQLite instance), `store` (SessionStore), `auth` (JWT middleware), `relayManager` (RtmpRelayManager).
+- Injected dependencies: `db` (SQLite instance), `store` (SessionStore), `auth` (JWT middleware), `relayManager` (from `lcyt-rtmp`, not inline in `lcyt-backend`).
 - Plugin packages are workspace members via the glob `packages/plugins/*` in `package.json`.
+- `lcyt-rtmp` is the canonical source for `RtmpRelayManager`, `HlsManager`, `RadioManager`, `PreviewManager`, `HlsSubsManager`, `SttManager`, `NginxManager`, and `MediaMtxClient`. The `lcyt-backend` no longer contains these classes directly.
+
+### Server-side STT Architecture
+
+Server-side speech-to-text transcription converts an incoming RTMP/HLS/WHEP audio stream into captions without requiring a browser microphone. Transcripts are injected directly into the session's `_sendQueue` and delivered to YouTube just like manually typed captions.
+
+**Audio sources:**
+| Source | How it works |
+|---|---|
+| `hls` | `HlsSegmentFetcher` polls MediaMTX fMP4 HLS playlist; segments sent to STT adapter |
+| `rtmp` | ffmpeg reads RTMP stream and writes PCM/WAV frames to the adapter's stdin |
+| `whep` | ffmpeg reads WHEP (WebRTC-HTTP Egress Protocol) stream and writes PCM frames |
+
+**Providers:**
+| Provider | Class | Notes |
+|---|---|---|
+| `google` | `GoogleSttAdapter` | REST (default) or gRPC (`GOOGLE_STT_MODE=grpc`); service account or API key auth |
+| `whisper_http` | `WhisperHttpAdapter` | Any Whisper-compatible HTTP endpoint |
+| `openai` | `OpenAiAdapter` | OpenAI `/audio/transcriptions`-compatible endpoint |
+
+**Confidence filtering:** Each `POST /stt/start` request accepts an optional `confidenceThreshold` (0–1). Transcripts below the threshold are silently dropped.
+
+**Per-key config persistence:** `GET/PUT /stt/config` stores preferred provider, language, audioSource, and confidenceThreshold in the DB (`lcyt-rtmp`'s `getSttConfig`/`setSttConfig`).
 
 ### DSK Graphics System
 
@@ -778,12 +955,26 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/routes/stats.js` | Per-key usage stats + GDPR erasure |
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
 | `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |
-| `packages/lcyt-backend/src/hls-subs-manager.js` | HLS subtitle sidecar: rolling WebVTT segment writer + in-memory playlist manager |
-| `packages/lcyt-backend/src/hls-manager.js` | ffmpeg manager for RTMP → video+audio HLS |
-| `packages/lcyt-backend/src/radio-manager.js` | ffmpeg manager for RTMP → audio-only HLS |
-| `packages/lcyt-backend/src/preview-manager.js` | ffmpeg manager for RTMP → JPEG thumbnails |
-| `packages/lcyt-backend/src/rtmp-manager.js` | RTMP relay session manager |
+| `packages/lcyt-backend/src/routes/stt.js` | Server-side STT routes (`/stt/*`) — delegates to `SttManager` from `lcyt-rtmp` |
 | `packages/lcyt-backend/src/db.js` | SQLite store re-export (modular, from src/db/) |
+| `packages/plugins/lcyt-rtmp/src/api.js` | RTMP plugin entry: `initRtmpControl()` + `createRtmpRouters()` |
+| `packages/plugins/lcyt-rtmp/src/rtmp-manager.js` | RTMP relay session manager |
+| `packages/plugins/lcyt-rtmp/src/hls-manager.js` | MediaMTX-based RTMP → video+audio HLS manager |
+| `packages/plugins/lcyt-rtmp/src/radio-manager.js` | Audio-only HLS manager (ffmpeg or MediaMTX mode) |
+| `packages/plugins/lcyt-rtmp/src/preview-manager.js` | RTMP → JPEG thumbnail manager (MediaMTX API or ffmpeg) |
+| `packages/plugins/lcyt-rtmp/src/hls-subs-manager.js` | Rolling WebVTT segment writer for subtitle sidecars |
+| `packages/plugins/lcyt-rtmp/src/nginx-manager.js` | Nginx location writer for MediaMTX radio streams |
+| `packages/plugins/lcyt-rtmp/src/mediamtx-client.js` | MediaMTX v3 REST API client |
+| `packages/plugins/lcyt-rtmp/src/stt-manager.js` | STT session manager — wires HLS fetcher → adapter → session send queue |
+| `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` | Polls MediaMTX fMP4 HLS playlist and emits segment buffers |
+| `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` | Google Cloud STT adapter (REST + gRPC modes) |
+| `packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js` | Whisper HTTP STT adapter |
+| `packages/plugins/lcyt-rtmp/src/stt-adapters/openai.js` | OpenAI-compatible STT adapter |
+| `packages/plugins/lcyt-rtmp/src/stt-adapters/pcm-buffer.js` | PCM silence buffer + WAV builder |
+| `packages/lcyt-orchestrator/src/index.js` | Compute orchestrator — worker registry + job dispatch + burst provisioning |
+| `packages/lcyt-orchestrator/src/hetzner.js` | Hetzner Cloud API client (burst VM lifecycle) |
+| `packages/lcyt-orchestrator/src/autoscaler.js` | Periodic autoscaler — provisions burst VMs on queue pressure |
+| `packages/lcyt-worker-daemon/src/index.js` | Worker daemon — job lifecycle + optional subprocess + S3 upload wiring |
 | `packages/lcyt-backend/src/db/index.js` | DB init + all table migrations (users, api_keys, sessions, etc.) |
 | `packages/lcyt-backend/src/db/users.js` | User CRUD operations |
 | `packages/lcyt-backend/src/middleware/auth.js` | Session JWT Bearer verification |
@@ -836,7 +1027,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ## Test Coverage
 
-*Last updated: 2026-03-17 (medium gaps addressed)*
+*Last updated: 2026-03-23 (lcyt-rtmp plugin + STT + orchestrator + worker daemon added)*
 
 ### Coverage Summary
 
@@ -844,7 +1035,10 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 |---------|-----------|----------|----------|----------|-----------|
 | `packages/lcyt` | 1,016 | 1,267 | Excellent | Low | `logger.js`, `config.js` (no direct tests) |
 | `packages/lcyt-cli` | 1,836 | ~900 | Moderate | Low | Blessed rendering (requires full blessed mock) |
-| `packages/lcyt-backend` | 4,875 | ~2,750 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
+| `packages/lcyt-backend` | ~3,500 | ~2,750 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
+| `packages/plugins/lcyt-rtmp` | ~2,500 | ~600 | Moderate | Medium | `SttManager` audio-source switching (rtmp/whep), grpc streaming path, `NginxManager` reload |
+| `packages/lcyt-orchestrator` | ~400 | ~200 | Moderate | Low | `autoscaler.js`, full burst-provisioning E2E |
+| `packages/lcyt-worker-daemon` | ~200 | ~150 | Moderate | Low | `uploader.js`, S3 upload errors |
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
 | `packages/lcyt-mcp-sse` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via SSE (requires MCP client harness) |
@@ -875,10 +1069,8 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-backend` — Express Relay Backend
-**Test files:** 26 test files (608 tests total as of 2026-03-17) covering all primary routes plus newly added tests.
+**Test files:** 26 test files (608 tests total as of 2026-03-17) covering all primary routes plus newly added tests. RTMP/HLS/preview manager tests moved to `packages/plugins/lcyt-rtmp/test/`.
 **Added 2026-03-16:**
-- `test/managers.test.js` (25 tests) — `HlsManager`, `RadioManager`, `PreviewManager` using `--experimental-test-module-mocks` to mock `child_process`/`fs`. Tests: constructor, `start()`, `stop()`, `stopAll()`, ffmpeg arg verification, directory creation.
-- `test/rtmp-manager.test.js` (27 tests) — `RtmpRelayManager` and `probeFfmpeg`. Tests: all state queries, `start()`/`stop()`/`stopAll()`, `isSlotRunning()`, `runningSlots()`, `writeCaption()`, `dropPublisher()`.
 - `test/auth.test.js` (20 tests) — Full auth lifecycle with in-memory SQLite: register, login, `GET /me`, `POST /change-password`, disabled logins (503).
 - `test/video.test.js` (17 tests) — HLS player HTML (themes, CORS, Cache-Control), master manifest, subtitle playlist, segment serving, CORS preflight. Uses lightweight mock managers.
 - `test/preview-route.test.js` (10 tests) — JPEG thumbnail serving with real temp-dir JPEG; key validation, 404, 200, CORS, Cache-Control, If-Modified-Since, OPTIONS.
@@ -889,8 +1081,29 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 - `test/caption-files.test.js` (21 tests) — Pure-function exports: `composeCaptionText` (all translation/showOriginal branches), `formatVttTime` (edge cases: 0ms, sub-second, multi-hour), `buildVttCue` (format, end newline).
 
 **Gaps (Low):**
-- **Core:** `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT).
+- **Core:** `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT), `routes/stt.js` (server-side STT routes).
 - **DB:** `db/sequences.js`, `db/helpers.js`.
+
+---
+
+#### `packages/plugins/lcyt-rtmp` — RTMP Relay Plugin
+**Test files (node:test with `--experimental-test-module-mocks`):**
+- `test/rtmp-manager.test.js` — `RtmpRelayManager`, `probeFfmpeg`: state queries, `start()`/`stop()`/`stopAll()`, `dropPublisher()`.
+- `test/rtmp-manager.unit.test.js` — additional unit tests for relay manager edge cases.
+- `test/nginx-manager.test.js` — `NginxManager`: config write, slug computation, reload, no-op mode.
+- `test/hls-segment-fetcher.test.js` — `HlsSegmentFetcher`: playlist parsing, segment emission, poll interval.
+- `test/pcm-buffer.test.js` — `PcmSilenceBuffer`: silence detection, `buildWav()`.
+- `test/google-stt.test.js` — `GoogleSttAdapter`: REST flow, punctuation normalisation, segment skip on small buffers.
+- `test/whisper-http.test.js` — `WhisperHttpAdapter`: HTTP POST, transcript emission.
+- `test/openai-stt.test.js` — `OpenAiAdapter`: OpenAI-compatible endpoint, model param.
+- `test/stt-manager.test.js` — `SttManager`: session lifecycle (start/stop), transcript routing to session send queue.
+- `test/stt-manager-rtmp.test.js` — `SttManager` RTMP/WHEP audio source paths (ffmpeg-based).
+- `test/hetzner.integration.test.js` — Hetzner client integration test (uses mock HTTP server).
+
+**Gaps (Medium):**
+- gRPC streaming path in `GoogleSttAdapter` (requires `@google-cloud/speech` to be installed).
+- `NginxManager` nginx reload failure handling.
+- Full STT session E2E (HLS playlist → segment fetch → transcript → SSE delivery).
 
 ---
 
@@ -972,7 +1185,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 Items marked ✅ were completed 2026-03-16 or 2026-03-17.
 
-1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — `managers.test.js` + `rtmp-manager.test.js` added (52 tests).
+1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — manager tests moved to `lcyt-rtmp` plugin (52+ tests).
 2. ✅ **`packages/lcyt-backend` 5 untested routes** *(High → Done)* — `auth.test.js`, `video.test.js`, `preview-route.test.js`, `stream.test.js`, `youtube.test.js` added (69 tests).
 3. ✅ **`packages/lcyt-cli/src/interactive-ui.js`** *(High → Done)* — `interactive-ui.test.js` added (49 tests).
 4. ✅ **`packages/lcyt-web` pure utilities** *(High → Done)* — `fileUtils.test.js` + `i18n.test.js` added (38 tests).
@@ -982,3 +1195,6 @@ Items marked ✅ were completed 2026-03-16 or 2026-03-17.
 8. ✅ **`packages/lcyt-web` useSentLog + ToastContainer** *(Medium → Done)* — `useSentLog.test.jsx` (30 tests) + `useToast.test.jsx` (18 tests) added.
 9. ✅ **`packages/lcyt-mcp-sse/src/server.js` HTTP routes** *(Medium → Done)* — `server.test.js` added (6 tests).
 10. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
+11. **`packages/plugins/lcyt-rtmp` STT gRPC path** *(Medium)* — `GoogleSttAdapter` gRPC streaming (requires `@google-cloud/speech` installed) not covered by CI.
+12. **`packages/lcyt-backend/src/routes/stt.js`** *(Medium)* — server-side STT HTTP routes untested.
+13. **`packages/lcyt-orchestrator` autoscaler** *(Low)* — `autoscaler.js` not covered; burst provisioning E2E requires Hetzner mock server.
