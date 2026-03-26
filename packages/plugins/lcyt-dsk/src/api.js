@@ -43,14 +43,14 @@ export { deleteAllImages } from './db/images.js';
  * - Returns a stop() function for graceful shutdown
  *
  * @param {import('better-sqlite3').Database} db
- * @param {object} store  — SessionStore instance (needs addDskSubscriber / emitDskEvent)
+ * @param {object} dskBus  — DskBus instance (addDskSubscriber / emitDskEvent / graphics state)
  * @param {object|null} relayManager  — RtmpRelayManager instance (or null if relay inactive)
  * @returns {Promise<{ captionProcessor: Function, stop: Function }>}
  */
-export async function initDskControl(db, store, relayManager) {
+export async function initDskControl(db, dskBus, relayManager) {
   runMigrations(db);
   await startRenderer();
-  const captionProcessor = createDskCaptionProcessor({ db, store, relayManager });
+  const captionProcessor = createDskCaptionProcessor({ db, dskBus, relayManager });
   return { captionProcessor, stop: stopRenderer };
 }
 
@@ -58,18 +58,18 @@ export async function initDskControl(db, store, relayManager) {
  * Create all DSK Express routers.
  *
  * @param {import('better-sqlite3').Database} db
- * @param {object} store
+ * @param {object} dskBus  — DskBus instance
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager
  * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
-export function createDskRouters(db, store, auth, relayManager) {
+export function createDskRouters(db, dskBus, auth, relayManager) {
   const editorAuth = createEditorAuth(db);
   return {
     /** Mount at /dsk  — public SSE + image list + public viewports */
-    dskRouter: createDskRouter(db, store),
+    dskRouter: createDskRouter(db, dskBus),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, store),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus),
     /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
     dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth)),
     /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */

@@ -33,7 +33,7 @@ test('caption-processor includes imageMeta from settings_json and skips disabled
     emitDskEvent(apiKey, type, payload) { emitted.push({ apiKey, type, payload }); },
   };
 
-  const proc = createDskCaptionProcessor({ db, store, relayManager: null });
+  const proc = createDskCaptionProcessor({ db, dskBus: store, relayManager: null });
 
   const out = await proc(apiKey, '<!-- graphics:logo -->Hello world');
 

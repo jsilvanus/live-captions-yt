@@ -1,30 +1,17 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
+import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
-import { createLiveRouter } from './routes/live.js';
-import { createCaptionsRouter } from './routes/captions.js';
-import { createEventsRouter } from './routes/events.js';
-import { createSyncRouter } from './routes/sync.js';
-import { createKeysRouter } from './routes/keys.js';
-import { createAuthRouter } from './routes/auth.js';
-import { createProjectFeaturesRouter } from './routes/project-features.js';
-import { createProjectMembersRouter } from './routes/project-members.js';
-import { createDeviceRolesRouter } from './routes/device-roles.js';
-import { createStatsRouter } from './routes/stats.js';
-import { createMicRouter } from './routes/mic.js';
-import { createUsageRouter } from './routes/usage.js';
-import { createFileRouter } from './routes/files.js';
-import { createViewerRouter, setHlsSubsManager } from './routes/viewer.js';
-import { createVideoRouter } from './routes/video.js';
+import { createSessionRouters } from './routes/session.js';
+import { createAccountRouters } from './routes/account.js';
+import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
-import { createYouTubeRouter } from './routes/youtube.js';
-import { createSttRouter } from './routes/stt.js';
-import { createBridgeDownloadRouter } from './routes/bridge-download.js';
+import { setHlsSubsManager } from './routes/viewer.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
@@ -130,6 +117,7 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 
 const db = initDb();
 const store = new SessionStore({ db });
+const dskBus = new DskBus();
 
 // Production control — run DB migrations, start device registry and bridge manager
 const {
@@ -153,7 +141,7 @@ hlsSubsManager.sweepStaleDir().catch(() => {});
 let _dskCaptionProcessor = null;
 let stopDsk = async () => {};
 if (process.env.GRAPHICS_ENABLED === '1') {
-  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, store, relayManager));
+  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager));
 }
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
@@ -212,7 +200,7 @@ const app = express();
 const auth = createAuthMiddleware(jwtSecret);
 
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, store, auth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, auth, relayManager);
 
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
@@ -306,29 +294,14 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use('/live', createLiveRouter(db, store, jwtSecret));
-app.use('/captions', createCaptionsRouter(store, auth, db, relayManager, _dskCaptionProcessor));
-app.use('/events', createEventsRouter(store, jwtSecret));
-app.use('/sync', createSyncRouter(store, auth));
-app.use('/auth', createAuthRouter(db, jwtSecret, { loginEnabled }));
-app.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret }));
-app.use('/keys/:key', createProjectFeaturesRouter(db, { loginEnabled, jwtSecret }));
-app.use('/keys/:key', createProjectMembersRouter(db, { loginEnabled, jwtSecret }));
-app.use('/keys/:key', createDeviceRolesRouter(db, { loginEnabled, jwtSecret }));
-app.use('/stats', createStatsRouter(db, auth, store));
-app.use('/mic', createMicRouter(store, auth));
-app.use('/usage', createUsageRouter(db));
-app.use('/file', createFileRouter(db, auth, store, jwtSecret));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor }));
+app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use('/viewer', createViewerRouter(db));
-app.use('/video',  createVideoRouter(db, hlsManager, hlsSubsManager));
-app.use('/youtube', createYouTubeRouter(auth));
-app.use('/stt', createSttRouter(auth, sttManager, db));
-app.use('/bridge-download', createBridgeDownloadRouter());
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager }));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

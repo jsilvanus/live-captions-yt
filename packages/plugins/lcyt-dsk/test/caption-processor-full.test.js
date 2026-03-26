@@ -57,7 +57,7 @@ function makeStore(initialState = {}) {
 }
 
 function makeProcessor(db, store, relayManager = null) {
-  return createDskCaptionProcessor({ db, store, relayManager });
+  return createDskCaptionProcessor({ db, dskBus: store, relayManager });
 }
 
 const KEY = 'testkey';

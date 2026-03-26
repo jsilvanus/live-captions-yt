@@ -46,7 +46,7 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 
-export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, store) {
+export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus) {
   const router = Router();
   const combinedAuth = editorAuthOrBearer(auth, editorAuth);
 
@@ -206,14 +206,14 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
     }
 
     // Push to client-side overlay subscribers via SSE
-    if (store) {
+    if (dskBus) {
       if (idList.length > 0) {
         const templateJsons = idList
           .map(id => getTemplate(db, id, req.params.apikey))
           .filter(Boolean)
           .map(row => row.templateJson);
         if (templateJsons.length > 0) {
-          store.emitDskEvent(req.params.apikey, 'templates', { templates: templateJsons, ts: Date.now() });
+          dskBus.emitDskEvent(req.params.apikey, 'templates', { templates: templateJsons, ts: Date.now() });
         }
       }
       if (items.length > 0) {
@@ -221,7 +221,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
           id: selector.startsWith('#') ? selector.slice(1) : selector,
           text,
         }));
-        store.emitDskEvent(req.params.apikey, 'layer_update', { updates: layerUpdates, ts: Date.now() });
+        dskBus.emitDskEvent(req.params.apikey, 'layer_update', { updates: layerUpdates, ts: Date.now() });
       }
     }
 
@@ -281,9 +281,9 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, sto
       viewports: (viewports && typeof viewports === 'object' && !Array.isArray(viewports)) ? viewports : {},
     };
 
-    if (store) {
-      store.setDskGraphicsState(req.params.apikey, newState);
-      store.emitDskEvent(req.params.apikey, 'graphics', { ...newState, ts: Date.now() });
+    if (dskBus) {
+      dskBus.setDskGraphicsState(req.params.apikey, newState);
+      dskBus.emitDskEvent(req.params.apikey, 'graphics', { ...newState, ts: Date.now() });
     }
 
     res.json({ ok: true, ...newState });
