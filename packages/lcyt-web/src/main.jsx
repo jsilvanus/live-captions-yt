@@ -18,6 +18,7 @@ import { AudioPage } from './components/AudioPage';
 const DashboardPage          = lazy(() => import('./components/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const SettingsPage           = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ProjectsPage           = lazy(() => import('./components/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const SetupWizardPage        = lazy(() => import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage })));
 const AccountPage            = lazy(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
 const BroadcastPage          = lazy(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
 const DskEditorPage          = lazy(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
@@ -152,6 +153,7 @@ function SidebarApp() {
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />
             <Route path="/projects" component={ProjectsPage} />
+            <Route path="/setup" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
             {/* Legacy URL aliases */}
