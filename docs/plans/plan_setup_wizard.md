@@ -3,10 +3,13 @@
 ## Context
 
 The LCYT web app has a project feature system and session settings (targets, translation, relay)
-scattered across CCModal and SettingsModal. There is no guided setup flow. This wizard adds a
-`/setup` route that walks users through feature selection followed by the relevant config pages
-for each chosen feature — both feature-level config (stored in backend `project_features.config`)
-and session-level config (stored in localStorage).
+scattered across CCModal and SettingsModal. There is no guided setup flow. This plan adds a
+`/setup` route that walks users through feature selection followed by relevant config pages.
+
+**Key principle:** The config panels (targets, translation, relay, etc.) are **shared** — they
+render identically whether inside the wizard or inside an existing modal/settings page. The wizard
+provides the navigation shell; the panels provide the content. This avoids duplicating UI and
+means migrating existing modals to use the same panels is straightforward.
 
 ---
 
@@ -15,9 +18,7 @@ and session-level config (stored in localStorage).
 | Setting type | Store | Written by |
 |---|---|---|
 | Feature flags + feature config | Backend `project_features` table | `updateFeature(code, enabled, config)` |
-| Session settings (targets, translation, relay, credentials) | `localStorage` via `KEYS.*` | Direct `localStorage.setItem` calls |
-
-The wizard save flow must handle both on Finish.
+| Session settings (targets, translation, relay) | `localStorage` via `KEYS.*` | Direct `localStorage.setItem` calls |
 
 ---
 
@@ -44,19 +45,19 @@ All 19 feature codes — those with `*` get a wizard step:
 
 ```
 graphics-server  → graphics-client, ingest
-  (server renderer loads the graphics-client page in headless Chromium, then pushes to RTMP)
 stt-server       → ingest
 radio            → ingest
 hls-stream       → ingest
 preview          → ingest
-graphics-client  → (none — browser-side SSE subscriber, standalone)
+graphics-client  → (none)
 ```
 
 ---
 
 ## Wizard Steps (computed order)
 
-Backend URL is captured at login. API key is managed on the Projects page. Neither appears in the wizard or settings modals.
+Backend URL is captured at login. API key is managed on the Projects page. Neither appears in
+the wizard or settings modals.
 
 ```
 [0] Feature Selection      (always)
@@ -69,138 +70,411 @@ Backend URL is captured at login. API key is managed on the Projects page. Neith
 [N] Review                 (always)
 ```
 
-Step array derived:
-```js
-const CONFIG_STEP_TEMPLATES = [
-  { id: 'targets',      title: 'Caption Targets',    featureCode: 'captions'     },
-  { id: 'translation',  title: 'Translation',        featureCode: 'translations' },
-  { id: 'relay',        title: 'RTMP Relay Slots',   featureCode: 'ingest'       },
-  { id: 'cea-captions', title: 'CEA Captions',       featureCode: 'cea-captions' },
-  { id: 'embed',        title: 'Embed Widgets',      featureCode: 'embed'        },
-  { id: 'stt-server',   title: 'Server STT',         featureCode: 'stt-server'   },
-];
-
-function computeSteps(selectedFeatures) {
-  return [
-    { id: 'features', title: 'Select Features' },
-    ...CONFIG_STEP_TEMPLATES.filter(t => t.always || selectedFeatures.has(t.featureCode)),
-    { id: 'review', title: 'Review' },
-  ];
-}
-```
-
 ---
 
-## Files to Create / Modify
+## File Structure
 
-| File | Action |
+### Already complete (✅)
+
+| File | Status |
 |---|---|
-| `packages/lcyt-backend/src/db/project-features.js` | **Modify** — add `FEATURE_DEPS` + `applyFeatureDeps()` |
-| `packages/lcyt-backend/src/routes/project-features.js` | **Modify** — call `applyFeatureDeps` before writing; include `autoEnabled` in response |
-| `packages/lcyt-web/src/components/SetupWizardPage.jsx` | **Create** — all wizard sub-components in one file |
-| `packages/lcyt-web/src/main.jsx` | **Modify** — lazy import + `<Route path="/setup">` inside SidebarApp |
-| `packages/lcyt-web/src/styles/components.css` | **Modify** — add `.btn--ghost`, `.wizard-progress`, `.wizard-dep-notice` |
+| `packages/lcyt-backend/src/db/project-features.js` | ✅ `FEATURE_DEPS` + `applyFeatureDeps()` added |
+| `packages/lcyt-backend/src/routes/project-features.js` | ✅ calls `applyFeatureDeps`; returns `autoEnabled` |
+| `packages/lcyt-web/src/styles/components.css` | ✅ `.btn--ghost`, `.wizard-progress`, `.wizard-dep-notice` added |
+| `packages/lcyt-web/src/components/SettingsModal.jsx` | ✅ `backendUrl`/`apiKey` fields removed |
 
----
+### New files to create
 
-## Component Breakdown
+```
+packages/lcyt-web/src/
+  components/
+    panels/                          ← shared config panels (wizard + modals)
+      TargetsPanel.jsx
+      TargetRow.jsx
+      TranslationPanel.jsx
+      RelayPanel.jsx
+      RelaySlotRow.jsx
+      CeaCaptionsPanel.jsx
+      EmbedPanel.jsx
+      SttPanel.jsx
+      ReviewSummary.jsx
 
-### `SetupWizardPage` (default export)
-
-State:
-```js
-selectedFeatures: Set<string>     // feature toggles
-configs: Record<string, object>   // backend feature configs, keyed by feature code
-localSettings: {                  // localStorage-bound settings
-  targets: object[],              // caption targets array
-  translationVendor: string,
-  translationVendorKey: string,
-  translationLibreUrl: string,
-  translationLibreKey: string,
-  translationShowOriginal: boolean,
-  translationList: object[],
-  relaySlots: object[],           // up to 8 relay slot configs
-}
-stepIndex: number
-depNotices: string[]
-saving: boolean
-saveError: string | null
-initialized: boolean
+    setup-wizard/                    ← wizard shell + orchestration
+      index.js
+      SetupWizardPage.jsx
+      WizardShell.jsx
+      WizardProgress.jsx
+      DepNotice.jsx
+      StepFeatureSelection.jsx
+      StepReview.jsx
+      hooks/
+        useWizardState.js
+      lib/
+        constants.js
+        computeSteps.js
+        applyDeps.js
+        readLocalSettings.js
+        saveWizard.js
 ```
 
-- `useUserAuth()` → `backendUrl`, `token`
-- Active `apiKey` from localStorage `KEYS.session.config`
-- `useProjectFeatures(backendUrl, token, apiKey)` → initial feature state
-- `steps` via `useMemo` from `selectedFeatures`
-- Draft to `localStorage` key `lcyt.wizard.draft` on every change
+### Files to modify
+
+| File | Change |
+|---|---|
+| `packages/lcyt-web/src/main.jsx` | Add lazy import + `<Route path="/setup">` inside SidebarApp |
+
+### Follow-on migration (separate task, not in this implementation)
+
+Once panels exist, swap out duplicated UI in existing modals:
+
+| Existing file | Tab/section | Replace with |
+|---|---|---|
+| `CCModal.jsx` | Targets tab | `<TargetsPanel>` |
+| `CCModal.jsx` | Translation tab | `<TranslationPanel>` |
+| `SettingsModal.jsx` | Relay tab | `<RelayPanel>` |
 
 ---
 
-### Step Components (all module-private)
+## Component and Module Specifications
 
-#### `WizardShell`
-Card container + progress bar + nav. Props: `title`, `stepIndex`, `totalSteps`, `isConfigStep`, `onBack`, `onNext`, `onSkip`, `onFinish`, `saving`, `saveError`, `children`. Nav: Back (`btn--secondary`), Skip (`btn--ghost`, config steps only), Next/Finish (`btn--primary`).
+### `panels/` — shared config panels
 
-#### `WizardProgress`
-Segmented bar: `steps.length` thin divs, filled up to `currentIndex`. Label: `Step N of T — title`.
-
-#### `DepNotice`
-Banner when deps auto-enabled: "Also enabled: X, Y. Required by your selections." with ✕ dismiss.
-
-#### `StepFeatureSelection`
-`<FeaturePicker>` + `<DepNotice>`. Dep logic runs inside `handleFeaturesChange`.
-
-#### `StepTargets` *(new)*
-Manage the `targets[]` array. Mirrors the Targets tab of CCModal but simplified for wizard:
-- List of existing targets with type badge + key/URL summary + Remove button
-- "Add target" row with type selector (`youtube` / `viewer` / `generic`) then relevant fields:
-  - `youtube` → stream key input
-  - `viewer` → viewer key input
-  - `generic` → URL input + optional headers (JSON textarea, collapsible)
-- At least one enabled target required to enable Next (show inline warning otherwise)
-
-State: `targets: object[]` (matches `KEYS.targets.list` JSON shape).
-
-#### `StepTranslation` *(new)*
-Four `settings-field` items:
-1. Vendor — `<select>`: `google`, `azure`, `libre`
-2. API key — `<input type="password">`
-3. LibreTranslate URL — `<input type="url">` (only visible when vendor = `libre`)
-4. Show original — checkbox
-
-Below: language pair list (add/remove, source lang → target lang). Mirrors CCModal Translation tab.
-
-#### `StepRelaySlots` *(new)*
-Up to 8 relay slots. Each slot (collapsed by default, expand on click):
-- Active toggle
-- Target type (`youtube` / `generic`)
-- YouTube key or generic URL + name
-- Caption mode (`http` / `cea708`)
-- Advanced (scale, fps, video bitrate, audio bitrate) — collapsed by default
-
-Only slot 1 expanded on initial render.
-
-#### `StepCeaCaptions`
-Single `settings-field`: number input for `delay_ms`. Hint: downstream encoder latency compensation.
-
-#### `StepEmbed`
-Single `settings-field`: textarea for `cors` origins (one per line). Hint: use `*` to allow all.
-
-#### `StepStt`
-Four `settings-field` items: provider select, language input, audio source select, confidence threshold range + readout.
-
-#### `StepReview`
-Summary in two sections:
-1. **Enabled features** — badge list
-2. **Configuration** — one card per config step: shows key values, "Edit" button jumps to that step
-
-Save error inline.
+Each panel: pure data component. Props are just values + onChange. No wizard state, no modal
+state. Can be dropped into any container.
 
 ---
 
-## Dependency Auto-Enable Logic
+#### `TargetRow.jsx`
+
+Single caption target editor.
+
+```
+Props:
+  target: { id, type, streamKey?, viewerKey?, url?, headers?, enabled }
+  onChange: (target) => void
+  onRemove: () => void
+```
+
+Renders: type badge, then type-specific fields:
+- `youtube` → stream key `<input type="password">`
+- `viewer`  → viewer key `<input type="text">`
+- `generic` → URL input + collapsible headers JSON textarea
+
+---
+
+#### `TargetsPanel.jsx`
+
+```
+Props:
+  targets: object[]
+  onChange: (targets) => void
+```
+
+Renders list of `<TargetRow>` + add-target row (type selector + button). Shows warning when no
+target has a key/URL filled in.
+
+Export: `TargetsPanel`. Also export `targetsHasValid(targets): boolean` for external validation.
+
+---
+
+#### `TranslationPanel.jsx`
+
+```
+Props:
+  vendor: string
+  vendorKey: string
+  libreUrl: string
+  libreKey: string
+  showOriginal: boolean
+  translationList: { id, sourceLang, targetLang }[]
+  onChange: (patch) => void    // patch is a partial object
+```
+
+Renders: vendor select, API key field (hidden for libre), libre URL + key (visible for libre),
+show-original checkbox, language pair list with add/remove rows.
+
+---
+
+#### `RelaySlotRow.jsx`
+
+```
+Props:
+  slot: { slot, active, type, ytKey, genericUrl, genericName, captionMode,
+          scale, fps, videoBitrate, audioBitrate }
+  onChange: (slot) => void
+  defaultExpanded?: boolean
+```
+
+Accordion row: header shows slot number + active toggle; body has target type, key/URL, caption
+mode, and collapsible advanced fields (scale, fps, bitrates).
+
+---
+
+#### `RelayPanel.jsx`
+
+```
+Props:
+  relaySlots: object[]
+  onChange: (relaySlots) => void
+```
+
+Renders list of `<RelaySlotRow>` + "Add slot" button (up to 8). First slot expanded by default.
+
+---
+
+#### `CeaCaptionsPanel.jsx`
+
+```
+Props:
+  config: { delay_ms: number }
+  onChange: (config) => void
+```
+
+Single number input for `delay_ms`. Hint: downstream encoder latency compensation.
+
+---
+
+#### `EmbedPanel.jsx`
+
+```
+Props:
+  config: { cors: string }
+  onChange: (config) => void
+```
+
+Textarea for CORS origins (one per line; stored comma-separated internally). Hint: use `*` to
+allow all.
+
+---
+
+#### `SttPanel.jsx`
+
+```
+Props:
+  config: { provider, language, audioSource, confidenceThreshold }
+  onChange: (config) => void
+```
+
+Four fields: provider select (google/whisper_http/openai), language text input, audio source
+select (hls/rtmp/whep), confidence threshold range slider + numeric readout.
+
+---
+
+#### `ReviewSummary.jsx`
+
+```
+Props:
+  step: StepDescriptor
+  localSettings: object
+  configs: Record<string, object>
+```
+
+Renders a compact summary for a single config step. Used by `StepReview`.
+
+---
+
+### `setup-wizard/` — wizard shell and orchestration
+
+---
+
+#### `lib/constants.js`
+
+Exports:
+- `DRAFT_KEY = 'lcyt.wizard.draft'`
+- `MAX_RELAY_SLOTS = 8`
+- `ALL_FEATURE_CODES: string[]` — all 19 codes
+- `FEATURE_LABELS: Record<string, string>` — code → human label
+- `DEPS: Record<string, string[]>` — dependency map
+- `CONFIG_STEP_TEMPLATES: StepDescriptor[]` — ordered list of config steps
+
+---
+
+#### `lib/applyDeps.js`
 
 ```js
+// Mutates set. Returns array of auto-enabled codes.
+export function applyDeps(set: Set<string>): string[]
+```
+
+---
+
+#### `lib/computeSteps.js`
+
+```js
+export function computeSteps(selectedFeatures: Set<string>): StepDescriptor[]
+// Returns: [{ id:'features', title:'Select Features' }, ...matching config steps, { id:'review', title:'Review' }]
+```
+
+---
+
+#### `lib/readLocalSettings.js`
+
+```js
+export function readLocalSettings(): LocalSettings
+// Reads KEYS.targets.list, KEYS.translation.*, relaySlotKey(n, field) for slots 1-8.
+// Returns safe defaults when keys are absent.
+```
+
+---
+
+#### `lib/saveWizard.js`
+
+```js
+export async function saveWizard({
+  selectedFeatures,
+  configs,
+  localSettings,
+  updateFeature,       // from useProjectFeatures
+  initialFeatureSet,   // Set<string> — state at load time
+  initialConfigs,      // Record<string,object> — configs at load time
+  hasBackend,          // boolean — skip backend calls if no apiKey/token
+}): Promise<void>
+```
+
+Writes localStorage keys first, then diffs against initial state and fires `updateFeature` only
+for changed features.
+
+---
+
+#### `hooks/useWizardState.js`
+
+```js
+export function useWizardState(backendUrl, token, apiKey): {
+  // State
+  selectedFeatures: Set<string>,
+  configs: Record<string, object>,
+  localSettings: LocalSettings,
+  stepIndex: number,
+  depNotices: string[],
+  saving: boolean,
+  saveError: string | null,
+  initialized: boolean,
+  steps: StepDescriptor[],          // computed
+
+  // Actions
+  setSelectedFeatures,
+  setConfigs,
+  setLocalSettings,
+  setStepIndex,
+  setDepNotices,
+  handleFeaturesChange,             // applies deps, updates depNotices
+  handleFinish,                     // saves + navigates to /projects
+  handleNext, handleBack, handleSkip,
+  handleEditStep(idx),
+  nextDisabled: boolean,
+}
+```
+
+Uses `useProjectFeatures(backendUrl, token, apiKey)` internally.
+Persists draft to `localStorage` key `lcyt.wizard.draft` on every state change.
+Loads draft on first render (before backend features arrive) if present.
+Stores initial feature set + configs in refs for diff comparison on save.
+
+---
+
+#### `WizardProgress.jsx`
+
+```
+Props: steps: StepDescriptor[], currentIndex: number
+```
+
+Flex row of thin segments, filled up to `currentIndex`. Label: `Step N of T — title`.
+
+---
+
+#### `DepNotice.jsx`
+
+```
+Props: codes: string[], onDismiss: () => void
+```
+
+Accent-tinted banner: "Also enabled: X, Y. Required by your selections." + ✕ button.
+
+---
+
+#### `WizardShell.jsx`
+
+```
+Props:
+  title: string
+  steps: StepDescriptor[]
+  stepIndex: number
+  isConfigStep: boolean     // true = show Skip link
+  onBack, onNext, onSkip, onFinish: () => void
+  saving: boolean
+  saveError: string | null
+  nextDisabled: boolean
+  children: ReactNode
+```
+
+Card container (max-width 620, `var(--color-surface)` bg, border + border-radius 12).
+Contains: `<WizardProgress>`, `<h2>` title, `children`, optional error box, nav row.
+Nav row: Back (`btn--secondary`), Skip (`btn--ghost`, config steps only), Next/Finish
+(`btn--primary`).
+
+---
+
+#### `StepFeatureSelection.jsx`
+
+```
+Props:
+  value: Set<string>
+  onChange: (Set<string>) => void
+  depNotices: string[]
+  onDismissNotices: () => void
+```
+
+Renders `<DepNotice>` then `<FeaturePicker>`. This is the only wizard-specific step that
+doesn't delegate to a panel (FeaturePicker is already the right shared component).
+
+---
+
+#### `StepReview.jsx`
+
+```
+Props:
+  steps: StepDescriptor[]
+  selectedFeatures: Set<string>
+  localSettings: LocalSettings
+  configs: Record<string, object>
+  onEditStep: (idx: number) => void
+```
+
+Two sections: feature badge list, then one summary card per config step (title + `<ReviewSummary>`
++ "Edit" button).
+
+---
+
+#### `SetupWizardPage.jsx`
+
+Thin orchestrator. Calls `useWizardState`, renders `<WizardShell>` with the current step's panel
+as children. Step → component mapping:
+
+| Step id | Component |
+|---|---|
+| `features` | `StepFeatureSelection` |
+| `targets` | `TargetsPanel` |
+| `translation` | `TranslationPanel` |
+| `relay` | `RelayPanel` |
+| `cea-captions` | `CeaCaptionsPanel` |
+| `embed` | `EmbedPanel` |
+| `stt-server` | `SttPanel` |
+| `review` | `StepReview` |
+
+---
+
+#### `index.js`
+
+```js
+export { SetupWizardPage } from './SetupWizardPage.jsx';
+```
+
+---
+
+## Dependency Auto-Enable Logic (frontend)
+
+```js
+// lib/applyDeps.js
 const DEPS = {
   'graphics-server': ['graphics-client', 'ingest'],
   'stt-server':      ['ingest'],
@@ -209,12 +483,12 @@ const DEPS = {
   'preview':         ['ingest'],
 };
 
-function applyDeps(newSet) {
+export function applyDeps(set) {
   const autoEnabled = [];
   for (const [code, deps] of Object.entries(DEPS)) {
-    if (newSet.has(code)) {
+    if (set.has(code)) {
       for (const dep of deps) {
-        if (!newSet.has(dep)) { newSet.add(dep); autoEnabled.push(dep); }
+        if (!set.has(dep)) { set.add(dep); autoEnabled.push(dep); }
       }
     }
   }
@@ -224,135 +498,93 @@ function applyDeps(newSet) {
 
 ---
 
-## Save Flow (Finish on Review)
+## Save Flow (in `lib/saveWizard.js`)
 
 ```js
-async function handleFinish() {
-  setSaving(true);
+// 1. Write localStorage
+localStorage.setItem(KEYS.targets.list, JSON.stringify(localSettings.targets));
+localStorage.setItem(KEYS.translation.vendor,      localSettings.translationVendor);
+localStorage.setItem(KEYS.translation.vendorKey,   localSettings.translationVendorKey);
+localStorage.setItem(KEYS.translation.libreUrl,    localSettings.translationLibreUrl);
+localStorage.setItem(KEYS.translation.libreKey,    localSettings.translationLibreKey);
+localStorage.setItem(KEYS.translation.showOriginal, String(localSettings.translationShowOriginal));
+localStorage.setItem(KEYS.translation.list,        JSON.stringify(localSettings.translationList));
+localSettings.relaySlots.forEach(slot => {
+  localStorage.setItem(relaySlotKey(slot.slot, 'type'),         slot.type || 'youtube');
+  localStorage.setItem(relaySlotKey(slot.slot, 'ytKey'),        slot.ytKey || '');
+  // ... remaining fields
+});
 
-  // 1. Write localStorage settings
-  localStorage.setItem(KEYS.targets.list,
-    JSON.stringify(localSettings.targets));
-  localStorage.setItem(KEYS.translation.vendor,    localSettings.translationVendor);
-  localStorage.setItem(KEYS.translation.vendorKey, localSettings.translationVendorKey);
-  localStorage.setItem(KEYS.translation.libreUrl,  localSettings.translationLibreUrl);
-  localStorage.setItem(KEYS.translation.libreKey,  localSettings.translationLibreKey);
-  localStorage.setItem(KEYS.translation.showOriginal,
-    String(localSettings.translationShowOriginal));
-  localStorage.setItem(KEYS.translation.list,
-    JSON.stringify(localSettings.translationList));
-  localSettings.relaySlots.forEach((slot, i) => {
-    const n = i + 1;
-    localStorage.setItem(relaySlotKey(n, 'type'),         slot.type || '');
-    localStorage.setItem(relaySlotKey(n, 'ytKey'),        slot.ytKey || '');
-    localStorage.setItem(relaySlotKey(n, 'genericUrl'),   slot.genericUrl || '');
-    localStorage.setItem(relaySlotKey(n, 'genericName'),  slot.genericName || '');
-    localStorage.setItem(relaySlotKey(n, 'captionMode'),  slot.captionMode || 'http');
-  });
-
-  // 2. Write feature flags + feature configs to backend
+// 2. Diff + write backend features
+if (hasBackend) {
   for (const code of ALL_FEATURE_CODES) {
     const wasEnabled = initialFeatureSet.has(code);
     const isEnabled  = selectedFeatures.has(code);
     const cfg        = configs[code] ?? null;
-    if (isEnabled !== wasEnabled || (isEnabled && cfg !== initialConfigs[code])) {
+    if (isEnabled !== wasEnabled || (isEnabled && JSON.stringify(cfg) !== JSON.stringify(initialConfigs[code] ?? null))) {
       await updateFeature(code, isEnabled, cfg);
     }
   }
-
-  // 3. Clear draft, navigate
-  localStorage.removeItem('lcyt.wizard.draft');
-  navigate('/projects');
 }
+
+// 3. Clear draft
+localStorage.removeItem(DRAFT_KEY);
 ```
 
 ---
 
-## Backend Dependency Enforcement
+## Backend Dependency Enforcement (already implemented ✅)
 
-**Current state:** No dep logic in `project-features.js`. Enabling `graphics-server` without `graphics-client` is silently accepted.
+`FEATURE_DEPS` and `applyFeatureDeps()` in `packages/lcyt-backend/src/db/project-features.js`.
+Both `_batchUpdateFeatures` and `_patchFeature` in the routes file call it and return `autoEnabled`.
 
-**Add to `packages/lcyt-backend/src/db/project-features.js`:**
+---
 
+## main.jsx Changes
+
+Add to lazy imports (sidebar routes section):
 ```js
-export const FEATURE_DEPS = {
-  'graphics-server': ['graphics-client', 'ingest'],
-  'stt-server':      ['ingest'],
-  'radio':           ['ingest'],
-  'hls-stream':      ['ingest'],
-  'preview':         ['ingest'],
-};
-
-export function applyFeatureDeps(featureMap) {
-  const autoEnabled = [];
-  for (const [code, deps] of Object.entries(FEATURE_DEPS)) {
-    const val = featureMap[code];
-    const enabling = typeof val === 'boolean' ? val : val?.enabled;
-    if (enabling) {
-      for (const dep of deps) {
-        if (!featureMap[dep]) {
-          featureMap[dep] = true;
-          autoEnabled.push(dep);
-        }
-      }
-    }
-  }
-  return autoEnabled;
-}
+const SetupWizardPage = lazy(() =>
+  import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage }))
+);
 ```
 
-**Changes to `_batchUpdateFeatures`:** call `applyFeatureDeps(features)` after entitlement check, before `setProjectFeatures`. Add `autoEnabled` to response.
-
-**Changes to `_patchFeature`:** build synthetic `featureMap = { [code]: body.enabled }`, call `applyFeatureDeps`, upsert all affected codes. Add `autoEnabled` to response.
-
----
-
-## CSS Additions (`components.css`)
-
-```css
-.btn--ghost {
-  background: transparent; border: none;
-  color: var(--color-text-muted);
-  padding: 5px 8px; font-size: 13px; cursor: pointer;
-}
-.btn--ghost:hover { color: var(--color-text); }
-
-.wizard-progress { display: flex; gap: 4px; margin-bottom: 4px; }
-.wizard-progress__seg { flex: 1; height: 4px; border-radius: 2px; background: var(--color-border); }
-.wizard-progress__seg--done { background: var(--color-accent); }
-
-.wizard-dep-notice {
-  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
-  border: 1px solid var(--color-accent);
-  border-radius: 6px; padding: 10px 12px; font-size: 13px;
-  display: flex; justify-content: space-between; align-items: center; gap: 8px;
-}
+Add route inside `<Switch>` in `SidebarApp`, after `/projects`:
+```jsx
+<Route path="/setup" component={SetupWizardPage} />
 ```
-
----
-
-## Key Utilities to Reuse
-
-| Utility | Path |
-|---|---|
-| `FeaturePicker` | `packages/lcyt-web/src/components/FeaturePicker.jsx` |
-| `useProjectFeatures` | `packages/lcyt-web/src/hooks/useProjectFeatures.js` |
-| `useUserAuth` | `packages/lcyt-web/src/hooks/useUserAuth.js` |
-| `KEYS`, `relaySlotKey` | `packages/lcyt-web/src/lib/storageKeys.js` |
-| `.btn`, `.settings-field`, `.settings-field__input`, `.settings-field__eye` | `packages/lcyt-web/src/styles/components.css` |
-| Lazy route pattern | `packages/lcyt-web/src/main.jsx` |
 
 ---
 
 ## Verification
 
-1. Navigate to `/setup` → Feature Selection shown
-2. Toggle `stt-server` → `ingest` auto-enables + dep notice; toggle `graphics-server` → `graphics-client` + `ingest` auto-enable
-3. Click Next → Caption Targets (captions is default-on)
-6. Add a YouTube target with a stream key → Next
-7. Skip Translation (not selected), skip RTMP Relay (not selected if ingest not chosen)
-8. If `stt-server` selected: Server STT page appears with provider/language/audioSource fields
-9. Review: badge list of features + summary cards; "Edit" jumps to correct step
-10. Finish → localStorage written, feature PATCH calls sent, redirected to `/projects`
-11. Backend: PATCH `/keys/:key/features/graphics-server` enabled → response `autoEnabled: ["graphics-client","ingest"]`
-12. Refresh mid-wizard → draft restored from localStorage
+1. Navigate to `/setup` → Feature Selection shown, segmented progress bar shows 1 step
+2. Toggle `stt-server` → `ingest` auto-enables, dep notice appears with ✕ dismiss
+3. Toggle `graphics-server` → `graphics-client` + `ingest` auto-enable in same notice
+4. Click Next → Caption Targets panel (captions is default-on)
+5. Add YouTube target with stream key → Next enabled; leave key empty → Next disabled with warning
+6. Translation not selected → step skipped entirely
+7. Relay not selected → step skipped; Relay selected → RelayPanel shown, slot 1 expanded
+8. `stt-server` selected → SttPanel shown with provider/language/audioSource/threshold
+9. Review: feature badges list all selected codes; config cards show summaries; Edit jumps back
+10. Finish → localStorage written; backend PATCHes sent only for changed features; redirect `/projects`
+11. Refresh mid-wizard → draft restored from `lcyt.wizard.draft`
+12. Backend: `PATCH /keys/:key/features/graphics-server` with `enabled:true` → response includes `autoEnabled: ["graphics-client","ingest"]`
+13. Open CCModal Targets tab (after follow-on migration) → visually identical to wizard Targets step
+
+---
+
+## Implementation Status
+
+| Item | Status |
+|---|---|
+| `db/project-features.js` — FEATURE_DEPS + applyFeatureDeps | ✅ done |
+| `routes/project-features.js` — dep enforcement + autoEnabled | ✅ done |
+| `styles/components.css` — wizard CSS classes | ✅ done |
+| `SettingsModal.jsx` — backendUrl/apiKey removed | ✅ done |
+| `panels/` — all shared panel components | ⬜ pending |
+| `setup-wizard/lib/` — constants, computeSteps, applyDeps, readLocalSettings, saveWizard | ⬜ pending |
+| `setup-wizard/hooks/useWizardState.js` | ⬜ pending |
+| `setup-wizard/` — WizardShell, WizardProgress, DepNotice, StepFeatureSelection, StepReview, SetupWizardPage, index | ⬜ pending |
+| `main.jsx` — /setup route | ⬜ pending |
+| CCModal/SettingsModal migration to use panels | ⬜ follow-on |

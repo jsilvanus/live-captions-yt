@@ -7,6 +7,40 @@
  */
 
 /**
+ * Required dependencies between feature codes.
+ * Enabling a key automatically enables all values.
+ */
+export const FEATURE_DEPS = {
+  'graphics-server': ['graphics-client', 'ingest'],
+  'stt-server':      ['ingest'],
+  'radio':           ['ingest'],
+  'hls-stream':      ['ingest'],
+  'preview':         ['ingest'],
+};
+
+/**
+ * Mutates featureMap to add any missing dependency codes.
+ * @param {Record<string, boolean | { enabled: boolean, config?: object }>} featureMap
+ * @returns {string[]} list of codes that were auto-enabled
+ */
+export function applyFeatureDeps(featureMap) {
+  const autoEnabled = [];
+  for (const [code, deps] of Object.entries(FEATURE_DEPS)) {
+    const val = featureMap[code];
+    const enabling = typeof val === 'boolean' ? val : val?.enabled;
+    if (enabling) {
+      for (const dep of deps) {
+        if (!featureMap[dep]) {
+          featureMap[dep] = true;
+          autoEnabled.push(dep);
+        }
+      }
+    }
+  }
+  return autoEnabled;
+}
+
+/**
  * Get all feature rows for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey

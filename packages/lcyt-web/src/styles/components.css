@@ -3489,3 +3489,40 @@
   color: var(--color-text-dim);
   opacity: 0.7;
 }
+
+/* ── Setup Wizard ────────────────────────────────────────────────────────────── */
+
+.btn--ghost {
+  background: transparent;
+  border: none;
+  color: var(--color-text-muted);
+  padding: 5px 8px;
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+.btn--ghost:hover { color: var(--color-text); }
+.btn--ghost:disabled { opacity: 0.4; cursor: default; }
+
+.wizard-progress { display: flex; gap: 4px; margin-bottom: 4px; }
+.wizard-progress__seg {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  transition: background 0.2s;
+}
+.wizard-progress__seg--done { background: var(--color-accent); }
+
+.wizard-dep-notice {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
