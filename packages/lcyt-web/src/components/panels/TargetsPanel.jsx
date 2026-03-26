@@ -1,76 +1,52 @@
 import { TargetRow } from './TargetRow.jsx';
+import { useLang } from '../../contexts/LangContext.jsx';
 
 /**
- * TargetsPanel — list of caption targets with add/remove controls.
+ * TargetsPanel — list of caption targets.
+ * Data shape: { id, enabled, type, streamKey?, viewerKey?, url?, headers?, format?, iconId?, noBatch? }[]
  *
  * Props:
  *   targets: object[]
- *   onChange: (targets) => void
+ *   onChange: (targets) => void   // called on every change (live save)
+ *   backendUrl?: string
+ *   icons?: { id, filename }[]
+ *   connected?: boolean
  */
-export function TargetsPanel({ targets = [], onChange }) {
-  function updateTarget(index, updated) {
-    const next = targets.map((t, i) => i === index ? updated : t);
-    onChange(next);
+export function TargetsPanel({ targets = [], onChange, backendUrl = '', icons = [], connected = false }) {
+  const { t } = useLang();
+
+  function updateTarget(id, updated) {
+    onChange(targets.map(r => r.id === id ? updated : r));
   }
 
-  function removeTarget(index) {
-    onChange(targets.filter((_, i) => i !== index));
+  function removeTarget(id) {
+    onChange(targets.filter(r => r.id !== id));
   }
 
-  function addTarget(type) {
-    const next = [...targets, {
-      id: crypto.randomUUID(),
-      type,
-      enabled: true,
-      ...(type === 'youtube' ? { streamKey: '' } :
-          type === 'viewer'  ? { viewerKey: '' } :
-                               { url: '', headers: '' }),
-    }];
-    onChange(next);
+  function addTarget() {
+    onChange([...targets, { id: crypto.randomUUID(), enabled: true, type: 'youtube', streamKey: '' }]);
   }
-
-  const noValidTarget = !targets.some(t => {
-    if (!t.enabled) return false;
-    if (t.type === 'youtube') return !!(t.streamKey || '').trim();
-    if (t.type === 'viewer')  return !!(t.viewerKey || '').trim();
-    if (t.type === 'generic') return !!(t.url || '').trim();
-    return false;
-  });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div className="settings-field">
       {targets.length === 0 && (
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>
-          No targets yet. Add one below.
-        </p>
+        <span className="settings-field__hint">{t('settings.targets.noTargets')}</span>
       )}
-
-      {targets.map((target, i) => (
-        <TargetRow
-          key={target.id}
-          target={target}
-          onChange={updated => updateTarget(i, updated)}
-          onRemove={() => removeTarget(i)}
-        />
-      ))}
-
-      {targets.length > 0 && noValidTarget && (
-        <p style={{ fontSize: 12, color: 'var(--color-error, #e53)', margin: 0 }}>
-          At least one enabled target needs a key or URL filled in.
-        </p>
-      )}
-
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-        <button type="button" className="btn btn--secondary btn--sm" onClick={() => addTarget('youtube')}>
-          + YouTube
-        </button>
-        <button type="button" className="btn btn--secondary btn--sm" onClick={() => addTarget('viewer')}>
-          + Viewer
-        </button>
-        <button type="button" className="btn btn--secondary btn--sm" onClick={() => addTarget('generic')}>
-          + Generic
-        </button>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {targets.map(entry => (
+          <TargetRow
+            key={entry.id}
+            entry={entry}
+            onChange={updated => updateTarget(entry.id, updated)}
+            onRemove={() => removeTarget(entry.id)}
+            backendUrl={backendUrl}
+            icons={icons}
+          />
+        ))}
       </div>
+      <button type="button" className="btn btn--secondary btn--sm" onClick={addTarget} style={{ marginTop: 8 }}>
+        + {t('settings.targets.addTarget')}
+      </button>
     </div>
   );
 }

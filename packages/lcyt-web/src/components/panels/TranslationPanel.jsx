@@ -1,170 +1,219 @@
+import { useLang } from '../../contexts/LangContext.jsx';
+import { LanguagePicker } from '../LanguagePicker.jsx';
+import {
+  TRANSLATION_VENDORS, TRANSLATION_TARGETS, CAPTION_FORMATS,
+} from '../../lib/translationConfig.js';
+
 /**
- * TranslationPanel — vendor selection and translation pair management.
- *
- * Props:
- *   vendor: string
- *   vendorKey: string
- *   libreUrl: string
- *   libreKey: string
- *   showOriginal: boolean
- *   translationList: { id, sourceLang, targetLang }[]
- *   onChange: (patch) => void   // partial object
+ * TranslationRow — single translation entry editor.
+ * Data shape: { id, enabled, lang, target: 'captions'|'file'|'backend-file', format? }
  */
-
-const VENDORS = [
-  { value: 'mymemory',       label: 'MyMemory (free)' },
-  { value: 'google',         label: 'Google Translate' },
-  { value: 'deepl',          label: 'DeepL' },
-  { value: 'libretranslate', label: 'LibreTranslate' },
-];
-
-const LANGS = [
-  'en-US','en-GB','es-ES','es-MX','fr-FR','de-DE','it-IT','pt-BR','pt-PT',
-  'ja-JP','ko-KR','zh-CN','zh-TW','ar-SA','hi-IN','ru-RU','nl-NL','pl-PL',
-  'sv-SE','da-DK','fi-FI','nb-NO','tr-TR','id-ID','th-TH','vi-VN','uk-UA',
-  'cs-CZ','ro-RO','hu-HU',
-];
-
-function PairRow({ entry, onChange, onRemove }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-      <select
-        className="settings-field__input"
-        value={entry.sourceLang || 'auto'}
-        onChange={e => onChange({ ...entry, sourceLang: e.target.value })}
-        style={{ flex: 1 }}
-      >
-        <option value="auto">Auto-detect</option>
-        {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
-      </select>
-      <span style={{ color: 'var(--color-text-muted)' }}>→</span>
-      <select
-        className="settings-field__input"
-        value={entry.targetLang || ''}
-        onChange={e => onChange({ ...entry, targetLang: e.target.value })}
-        style={{ flex: 1 }}
-      >
-        <option value="">— select —</option>
-        {LANGS.map(l => <option key={l} value={l}>{l}</option>)}
-      </select>
-      <button
-        type="button"
-        className="btn btn--secondary btn--sm"
-        onClick={onRemove}
-        style={{ flexShrink: 0 }}
-      >✕</button>
-    </div>
-  );
-}
-
-export function TranslationPanel({
-  vendor = 'mymemory',
-  vendorKey = '',
-  libreUrl = '',
-  libreKey = '',
-  showOriginal = false,
-  translationList = [],
-  onChange,
-}) {
-  const isLibre = vendor === 'libretranslate';
-  const needsKey = vendor !== 'mymemory' && vendor !== 'libretranslate';
+function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t }) {
+  const disableCaptions = entry.target !== 'captions' && hasExistingCaptionTarget;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div className="translation-row">
+      <label className="settings-checkbox" style={{ marginBottom: 0 }}>
+        <input
+          type="checkbox"
+          checked={entry.enabled}
+          onChange={e => onChange({ ...entry, enabled: e.target.checked })}
+        />
+      </label>
+
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <LanguagePicker
+          value={entry.lang}
+          onChange={code => onChange({ ...entry, lang: code })}
+          placeholder={t('settings.translation.targetLangPlaceholder')}
+        />
+      </div>
+
       <div>
-        <label className="settings-field__label">Translation provider</label>
         <select
           className="settings-field__input"
-          value={vendor}
-          onChange={e => onChange({ vendor: e.target.value })}
-          style={{ width: '100%' }}
+          value={entry.target}
+          onChange={e => {
+            const next = { ...entry, target: e.target.value };
+            if (e.target.value === 'captions') delete next.format;
+            if (!next.format && (e.target.value === 'file' || e.target.value === 'backend-file')) next.format = 'youtube';
+            onChange(next);
+          }}
+          style={{ width: 'auto' }}
         >
-          {VENDORS.map(v => (
-            <option key={v.value} value={v.value}>{v.label}</option>
+          {TRANSLATION_TARGETS.map(tgt => (
+            <option key={tgt.value} value={tgt.value} disabled={tgt.value === 'captions' && disableCaptions}>
+              {t(tgt.labelKey)}
+            </option>
           ))}
         </select>
       </div>
 
-      {needsKey && (
+      {(entry.target === 'file' || entry.target === 'backend-file') && (
         <div>
-          <label className="settings-field__label">API key</label>
+          <select
+            className="settings-field__input"
+            value={entry.format || 'youtube'}
+            onChange={e => onChange({ ...entry, format: e.target.value })}
+            style={{ width: 'auto' }}
+          >
+            {CAPTION_FORMATS.map(fmt => <option key={fmt.value} value={fmt.value}>{t(fmt.labelKey)}</option>)}
+          </select>
+        </div>
+      )}
+
+      <button type="button" className="btn btn--secondary btn--sm" onClick={onRemove} title={t('settings.translation.removeTranslation')} style={{ flexShrink: 0 }}>✕</button>
+    </div>
+  );
+}
+
+/**
+ * TranslationPanel — translation entry list + vendor settings.
+ *
+ * Props:
+ *   translations: { id, enabled, lang, target, format? }[]
+ *   onTranslationsChange: (translations) => void
+ *   vendor: string
+ *   onVendorChange: (vendor) => void
+ *   vendorKey: string
+ *   onVendorKeyChange: (key) => void
+ *   libreUrl: string
+ *   onLibreUrlChange: (url) => void
+ *   libreKey: string
+ *   onLibreKeyChange: (key) => void
+ *   showOriginal: boolean
+ *   onShowOriginalChange: (val) => void
+ */
+export function TranslationPanel({
+  translations = [],
+  onTranslationsChange,
+  vendor = 'mymemory',
+  onVendorChange,
+  vendorKey = '',
+  onVendorKeyChange,
+  libreUrl = '',
+  onLibreUrlChange,
+  libreKey = '',
+  onLibreKeyChange,
+  showOriginal = false,
+  onShowOriginalChange,
+}) {
+  const { t } = useLang();
+  const hasCaptionTarget = translations.some(r => r.target === 'captions');
+
+  function updateRow(id, updated) {
+    onTranslationsChange(translations.map(r => r.id === id ? updated : r));
+  }
+
+  function removeRow(id) {
+    onTranslationsChange(translations.filter(r => r.id !== id));
+  }
+
+  function addRow() {
+    const newRow = {
+      id: crypto.randomUUID(),
+      enabled: true,
+      lang: 'en-US',
+      target: hasCaptionTarget ? 'file' : 'captions',
+      ...(hasCaptionTarget ? { format: 'youtube' } : {}),
+    };
+    onTranslationsChange([...translations, newRow]);
+  }
+
+  return (
+    <>
+      <div className="settings-field">
+        <label className="settings-field__label">{t('settings.translation.translationList')}</label>
+        <span className="settings-field__hint" style={{ display: 'block', marginBottom: 8 }}>
+          {t('settings.translation.enableHint')}
+        </span>
+        {translations.length === 0 && (
+          <span className="settings-field__hint">{t('settings.translation.noTranslations')}</span>
+        )}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {translations.map(entry => (
+            <TranslationRow
+              key={entry.id}
+              entry={entry}
+              onChange={updated => updateRow(entry.id, updated)}
+              onRemove={() => removeRow(entry.id)}
+              hasExistingCaptionTarget={hasCaptionTarget}
+              t={t}
+            />
+          ))}
+        </div>
+        <button type="button" className="btn btn--secondary btn--sm" onClick={addRow} style={{ marginTop: 8 }}>
+          + {t('settings.translation.addTranslation')}
+        </button>
+      </div>
+
+      {hasCaptionTarget && (
+        <div className="settings-field">
+          <label className="settings-checkbox">
+            <input type="checkbox" checked={showOriginal} onChange={e => onShowOriginalChange(e.target.checked)} />
+            {t('settings.translation.showOriginal')}
+          </label>
+          <span className="settings-field__hint">{t('settings.translation.showOriginalHint')}</span>
+        </div>
+      )}
+
+      <div className="settings-field">
+        <label className="settings-field__label">{t('settings.translation.vendor')}</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {TRANSLATION_VENDORS.map(v => (
+            <button
+              key={v.value}
+              type="button"
+              className={`lang-btn${vendor === v.value ? ' lang-btn--active' : ''}`}
+              onClick={() => onVendorChange(v.value)}
+            >
+              {t(v.labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {(vendor === 'google' || vendor === 'deepl') && (
+        <div className="settings-field">
+          <label className="settings-field__label">{t('settings.translation.vendorKey')}</label>
           <input
             className="settings-field__input"
             type="password"
+            autoComplete="off"
             value={vendorKey}
-            onChange={e => onChange({ vendorKey: e.target.value })}
-            style={{ width: '100%' }}
+            onChange={e => onVendorKeyChange(e.target.value)}
           />
+          <span className="settings-field__hint">{t('settings.translation.vendorKeyHint')}</span>
         </div>
       )}
 
-      {isLibre && (
+      {vendor === 'libretranslate' && (
         <>
-          <div>
-            <label className="settings-field__label">LibreTranslate URL</label>
+          <div className="settings-field">
+            <label className="settings-field__label">{t('settings.translation.libreUrl')}</label>
             <input
               className="settings-field__input"
-              type="text"
-              placeholder="https://libretranslate.example.com"
+              type="url"
+              placeholder={t('settings.translation.libreUrlPlaceholder')}
+              autoComplete="off"
               value={libreUrl}
-              onChange={e => onChange({ libreUrl: e.target.value })}
-              style={{ width: '100%' }}
+              onChange={e => onLibreUrlChange(e.target.value)}
             />
+            <span className="settings-field__hint">{t('settings.translation.libreUrlHint')}</span>
           </div>
-          <div>
-            <label className="settings-field__label">LibreTranslate API key (optional)</label>
+          <div className="settings-field">
+            <label className="settings-field__label">{t('settings.translation.libreKey')}</label>
             <input
               className="settings-field__input"
               type="password"
+              autoComplete="off"
               value={libreKey}
-              onChange={e => onChange({ libreKey: e.target.value })}
-              style={{ width: '100%' }}
+              onChange={e => onLibreKeyChange(e.target.value)}
             />
+            <span className="settings-field__hint">{t('settings.translation.libreKeyHint')}</span>
           </div>
         </>
       )}
-
-      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-        <input
-          type="checkbox"
-          checked={!!showOriginal}
-          onChange={e => onChange({ showOriginal: e.target.checked })}
-        />
-        Show original text alongside translation
-      </label>
-
-      <div>
-        <label className="settings-field__label">Language pairs</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {translationList.length === 0 && (
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>
-              No pairs yet. Add one below.
-            </p>
-          )}
-          {translationList.map((entry, i) => (
-            <PairRow
-              key={entry.id}
-              entry={entry}
-              onChange={updated => {
-                const next = translationList.map((e, idx) => idx === i ? updated : e);
-                onChange({ translationList: next });
-              }}
-              onRemove={() => onChange({ translationList: translationList.filter((_, idx) => idx !== i) })}
-            />
-          ))}
-          <button
-            type="button"
-            className="btn btn--secondary btn--sm"
-            style={{ alignSelf: 'flex-start' }}
-            onClick={() => onChange({ translationList: [
-              ...translationList,
-              { id: crypto.randomUUID(), sourceLang: 'auto', targetLang: '' },
-            ] })}
-          >
-            + Add language pair
-          </button>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

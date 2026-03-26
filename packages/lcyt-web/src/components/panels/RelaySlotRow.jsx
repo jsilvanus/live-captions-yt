@@ -1,165 +1,183 @@
 import { useState } from 'react';
+import { useLang } from '../../contexts/LangContext.jsx';
 
 /**
- * RelaySlotRow — accordion row for a single RTMP relay slot.
+ * RelaySlotRow — single RTMP relay slot editor.
+ * Data shape: { slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate }
  *
  * Props:
- *   slot: { slot, active, type, ytKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate }
- *   onChange: (slot) => void
- *   defaultExpanded?: boolean
+ *   entry: object
+ *   onChange: (updated) => void
+ *   onRemove: () => void
+ *   runningSlots?: number[]
  */
-export function RelaySlotRow({ slot, onChange, defaultExpanded = false }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
+  const { t } = useLang();
+  const [showAdvanced, setShowAdvanced] = useState(
+    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
+  );
+  const isRunning = runningSlots.includes(entry.slot);
 
   return (
-    <div style={{
-      border: '1px solid var(--color-border)',
-      borderRadius: 6,
-      overflow: 'hidden',
-    }}>
-      {/* Header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 12px',
-        background: 'var(--color-surface)',
-      }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+    <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Main row */}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <label className="settings-checkbox" style={{ marginBottom: 0 }}>
           <input
             type="checkbox"
-            checked={!!slot.active}
-            onChange={e => onChange({ ...slot, active: e.target.checked })}
+            checked={!!entry.active}
+            onChange={e => onChange({ ...entry, active: e.target.checked })}
           />
         </label>
-
-        <span style={{ fontWeight: 500, fontSize: 13, color: 'var(--color-text)' }}>
-          Slot {slot.slot}
-        </span>
-
         <select
           className="settings-field__input"
-          value={slot.type || 'youtube'}
-          onChange={e => onChange({ ...slot, type: e.target.value })}
-          style={{ width: 'auto', fontSize: 12 }}
+          value={entry.targetType}
+          onChange={e => onChange({ ...entry, targetType: e.target.value })}
+          style={{ width: 'auto' }}
         >
           <option value="youtube">YouTube</option>
-          <option value="generic">Generic RTMP</option>
+          <option value="generic">{t('settings.relay.generic')}</option>
         </select>
-
-        {(slot.type || 'youtube') === 'youtube' ? (
+        {entry.targetType === 'youtube' ? (
           <input
             className="settings-field__input"
             type="password"
             placeholder="xxxx-xxxx-xxxx-xxxx-xxxx"
             autoComplete="off"
-            value={slot.ytKey || ''}
-            onChange={e => onChange({ ...slot, ytKey: e.target.value })}
-            style={{ flex: 1, fontSize: 12 }}
+            value={entry.youtubeKey || ''}
+            onChange={e => onChange({ ...entry, youtubeKey: e.target.value })}
+            style={{ flex: 1 }}
           />
         ) : (
           <input
             className="settings-field__input"
             type="text"
-            placeholder="rtmp://…/live/key"
-            value={slot.genericUrl || ''}
-            onChange={e => onChange({ ...slot, genericUrl: e.target.value })}
-            style={{ flex: 1, fontSize: 12 }}
+            placeholder={t('settings.relay.rtmpFullPathPlaceholder')}
+            autoComplete="off"
+            value={entry.genericUrl || ''}
+            onChange={e => onChange({ ...entry, genericUrl: e.target.value })}
+            style={{ flex: 1 }}
           />
         )}
-
         <button
           type="button"
-          className="btn btn--ghost btn--sm"
-          onClick={() => setExpanded(v => !v)}
-          title="Advanced options"
+          className="btn btn--secondary btn--sm"
+          onClick={() => setShowAdvanced(v => !v)}
+          title={t('settings.relay.slotAdvanced')}
           style={{ flexShrink: 0, fontSize: '0.75em' }}
         >⚙</button>
+        <button
+          type="button"
+          className="btn btn--secondary btn--sm"
+          onClick={onRemove}
+          title={t('settings.relay.removeRelay')}
+          style={{ flexShrink: 0 }}
+        >✕</button>
       </div>
 
-      {/* Advanced options */}
-      {expanded && (
-        <div style={{
-          padding: '10px 12px',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: '8px 12px',
-          borderTop: '1px solid var(--color-border)',
-          background: 'color-mix(in srgb, var(--color-surface) 60%, transparent)',
-        }}>
-          {(slot.type || 'youtube') === 'generic' && (
-            <div style={{ gridColumn: '1 / -1' }}>
-              <label className="settings-field__label" style={{ fontSize: '0.8em' }}>Stream name / key (optional)</label>
-              <input
-                className="settings-field__input"
-                type="text"
-                value={slot.genericName || ''}
-                onChange={e => onChange({ ...slot, genericName: e.target.value })}
-                style={{ width: '100%' }}
-              />
-            </div>
-          )}
+      {/* URL hint */}
+      {entry.targetType === 'youtube' && (entry.youtubeKey || '').trim() && (
+        <span className="settings-field__hint">
+          → rtmp://a.rtmp.youtube.com/live2/{(entry.youtubeKey || '').trim()}
+        </span>
+      )}
 
+      {/* Running badge */}
+      {isRunning && (
+        <span style={{ fontSize: 11, color: '#e44', fontWeight: 600 }}>🔴 {t('settings.relay.live')}</span>
+      )}
+
+      {/* Advanced options */}
+      {showAdvanced && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
+          {/* Caption mode */}
           <div style={{ gridColumn: '1 / -1' }}>
-            <label className="settings-field__label" style={{ fontSize: '0.8em' }}>Caption mode</label>
+            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotCaptionMode')}</label>
             <select
               className="settings-field__input"
-              value={slot.captionMode || 'http'}
-              onChange={e => onChange({ ...slot, captionMode: e.target.value })}
+              value={entry.captionMode || 'http'}
+              onChange={e => onChange({ ...entry, captionMode: e.target.value })}
               style={{ width: '100%' }}
             >
-              <option value="http">HTTP (default)</option>
-              <option value="cea708">CEA-608/708</option>
+              <option value="http">{t('settings.relay.slotCaptionModeHttp')}</option>
+              <option value="cea708">{t('settings.relay.slotCaptionModeCea708')}</option>
             </select>
           </div>
-
+          {/* Scale */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em' }}>Scale (e.g. 1280x720)</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={!entry.scale}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, scale: '' }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotScale')}
+            </label>
             <input
               className="settings-field__input"
               type="text"
-              placeholder="original"
-              value={slot.scale || ''}
-              onChange={e => onChange({ ...slot, scale: e.target.value })}
-              style={{ width: '100%' }}
+              placeholder={t('settings.relay.slotScalePlaceholder')}
+              value={entry.scale || ''}
+              onChange={e => onChange({ ...entry, scale: e.target.value })}
+              style={!entry.scale ? { opacity: 0.55 } : {}}
             />
           </div>
-
+          {/* FPS */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em' }}>FPS</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={entry.fps == null}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, fps: null }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotFps')}
+            </label>
             <input
               className="settings-field__input"
               type="number"
-              placeholder="original"
-              min={1}
-              max={120}
-              value={slot.fps ?? ''}
-              onChange={e => onChange({ ...slot, fps: e.target.value ? parseInt(e.target.value, 10) : null })}
-              style={{ width: '100%' }}
+              min="1" max="120"
+              placeholder={t('settings.relay.slotFpsPlaceholder')}
+              value={entry.fps ?? ''}
+              onChange={e => { const v = parseInt(e.target.value, 10); onChange({ ...entry, fps: Number.isFinite(v) ? v : null }); }}
+              style={entry.fps == null ? { opacity: 0.55 } : {}}
             />
           </div>
-
+          {/* Video bitrate */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em' }}>Video bitrate (kbps)</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={!entry.videoBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, videoBitrate: '' }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotVideoBitrate')}
+            </label>
             <input
               className="settings-field__input"
               type="text"
-              placeholder="original"
-              value={slot.videoBitrate || ''}
-              onChange={e => onChange({ ...slot, videoBitrate: e.target.value })}
-              style={{ width: '100%' }}
+              placeholder={t('settings.relay.slotVideoBitratePlaceholder')}
+              value={entry.videoBitrate || ''}
+              onChange={e => onChange({ ...entry, videoBitrate: e.target.value })}
+              style={!entry.videoBitrate ? { opacity: 0.55 } : {}}
             />
           </div>
-
+          {/* Audio bitrate */}
           <div>
-            <label className="settings-field__label" style={{ fontSize: '0.8em' }}>Audio bitrate (kbps)</label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
+              <input
+                type="checkbox"
+                checked={!entry.audioBitrate}
+                onChange={e => { if (e.target.checked) onChange({ ...entry, audioBitrate: '' }); }}
+              />
+              {t('settings.relay.useOriginal')} — {t('settings.relay.slotAudioBitrate')}
+            </label>
             <input
               className="settings-field__input"
               type="text"
-              placeholder="original"
-              value={slot.audioBitrate || ''}
-              onChange={e => onChange({ ...slot, audioBitrate: e.target.value })}
-              style={{ width: '100%' }}
+              placeholder={t('settings.relay.slotAudioBitratePlaceholder')}
+              value={entry.audioBitrate || ''}
+              onChange={e => onChange({ ...entry, audioBitrate: e.target.value })}
+              style={!entry.audioBitrate ? { opacity: 0.55 } : {}}
             />
           </div>
         </div>

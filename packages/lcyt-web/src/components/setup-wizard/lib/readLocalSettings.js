@@ -29,11 +29,12 @@ export function readLocalSettings() {
   const translationShowOriginal = get(KEYS.translation.showOriginal, 'false') === 'true';
   const translationList        = getJson(KEYS.translation.list,     []);
 
-  // Relay slots
-  const relaySlots = [];
+  // Relay slots — using canonical in-memory field names (targetType, youtubeKey);
+  // storage keys use legacy names ('type', 'ytKey') for backward compatibility.
+  const relayList = [];
   for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
-    const type         = get(relaySlotKey(s, 'type'),         'youtube');
-    const ytKey        = get(relaySlotKey(s, 'ytKey'),        '');
+    const targetType   = get(relaySlotKey(s, 'type'),         'youtube');
+    const youtubeKey   = get(relaySlotKey(s, 'ytKey'),        '');
     const genericUrl   = get(relaySlotKey(s, 'genericUrl'),   '');
     const genericName  = get(relaySlotKey(s, 'genericName'),  '');
     const captionMode  = get(relaySlotKey(s, 'captionMode'),  'http');
@@ -43,9 +44,9 @@ export function readLocalSettings() {
     const videoBitrate = get(relaySlotKey(s, 'videoBitrate'), '');
     const audioBitrate = get(relaySlotKey(s, 'audioBitrate'), '');
 
-    const hasConfig = type === 'youtube' ? !!ytKey.trim() : !!genericUrl.trim();
+    const hasConfig = targetType === 'youtube' ? !!youtubeKey.trim() : !!genericUrl.trim();
     if (hasConfig) {
-      relaySlots.push({ slot: s, active: false, type, ytKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate });
+      relayList.push({ slot: s, active: false, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate });
     }
   }
 
@@ -57,6 +58,6 @@ export function readLocalSettings() {
     translationLibreKey,
     translationShowOriginal,
     translationList,
-    relaySlots,
+    relayList,
   };
 }

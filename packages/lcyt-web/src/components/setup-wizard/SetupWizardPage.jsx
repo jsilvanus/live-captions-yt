@@ -68,21 +68,26 @@ export function SetupWizardPage() {
       case 'translation':
         return (
           <TranslationPanel
+            translations={localSettings.translationList || []}
+            onTranslationsChange={updated => setLocalSettings(s => ({ ...s, translationList: updated }))}
             vendor={localSettings.translationVendor || 'mymemory'}
+            onVendorChange={updated => setLocalSettings(s => ({ ...s, translationVendor: updated }))}
             vendorKey={localSettings.translationVendorKey || ''}
+            onVendorKeyChange={updated => setLocalSettings(s => ({ ...s, translationVendorKey: updated }))}
             libreUrl={localSettings.translationLibreUrl || ''}
+            onLibreUrlChange={updated => setLocalSettings(s => ({ ...s, translationLibreUrl: updated }))}
             libreKey={localSettings.translationLibreKey || ''}
+            onLibreKeyChange={updated => setLocalSettings(s => ({ ...s, translationLibreKey: updated }))}
             showOriginal={localSettings.translationShowOriginal || false}
-            translationList={localSettings.translationList || []}
-            onChange={patch => setLocalSettings(s => ({ ...s, ...patch }))}
+            onShowOriginalChange={translationShowOriginal => setLocalSettings(s => ({ ...s, translationShowOriginal }))}
           />
         );
 
       case 'relay':
         return (
           <RelayPanel
-            relaySlots={localSettings.relaySlots || []}
-            onChange={relaySlots => setLocalSettings(s => ({ ...s, relaySlots }))}
+            relayList={localSettings.relayList || []}
+            onRelayListChange={relayList => setLocalSettings(s => ({ ...s, relayList }))}
           />
         );
 

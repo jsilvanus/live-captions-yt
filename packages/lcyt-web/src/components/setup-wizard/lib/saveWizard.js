@@ -42,9 +42,11 @@ export async function saveWizard({
   setJson(KEYS.translation.list,      localSettings.translationList || []);
 
   // 3. Write localStorage — relay slots
-  (localSettings.relaySlots || []).forEach(slot => {
-    set(relaySlotKey(slot.slot, 'type'),         slot.type || 'youtube');
-    set(relaySlotKey(slot.slot, 'ytKey'),        slot.ytKey || '');
+  // Note: storage keys use legacy names ('type', 'ytKey') for backward compatibility
+  // with existing persisted data; in-memory objects use canonical names (targetType, youtubeKey).
+  (localSettings.relayList || []).forEach(slot => {
+    set(relaySlotKey(slot.slot, 'type'),         slot.targetType || 'youtube');
+    set(relaySlotKey(slot.slot, 'ytKey'),        slot.youtubeKey || '');
     set(relaySlotKey(slot.slot, 'genericUrl'),   slot.genericUrl || '');
     set(relaySlotKey(slot.slot, 'genericName'),  slot.genericName || '');
     set(relaySlotKey(slot.slot, 'captionMode'),  slot.captionMode || 'http');

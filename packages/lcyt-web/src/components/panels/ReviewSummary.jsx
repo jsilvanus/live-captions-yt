@@ -35,7 +35,7 @@ export function ReviewSummary({ step, localSettings, configs }) {
         {list.length > 0 && (
           <ul style={{ margin: 0, paddingLeft: 16 }}>
             {list.map(e => (
-              <li key={e.id}>{e.sourceLang || 'auto'} → {e.targetLang || '?'}</li>
+              <li key={e.id}>{e.lang || '?'} → {e.target || '?'}{e.format ? ` (${e.format})` : ''}</li>
             ))}
           </ul>
         )}
@@ -44,13 +44,13 @@ export function ReviewSummary({ step, localSettings, configs }) {
   }
 
   if (step.id === 'relay') {
-    const slots = localSettings?.relaySlots || [];
+    const slots = localSettings?.relayList || [];
     if (slots.length === 0) return <p style={{ fontSize: 13, color: 'var(--color-text-muted)', margin: 0 }}>No relay slots configured.</p>;
     return (
       <ul style={{ margin: 0, paddingLeft: 16, fontSize: 13 }}>
         {slots.map(s => (
           <li key={s.slot}>
-            Slot {s.slot}: {s.type || 'youtube'}{s.active ? '' : ' (inactive)'}
+            Slot {s.slot}: {s.targetType || 'youtube'}{s.active ? '' : ' (inactive)'}
           </li>
         ))}
       </ul>

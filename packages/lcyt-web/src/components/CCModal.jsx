@@ -17,7 +17,6 @@ import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential';
 import {
-  TRANSLATION_VENDORS, TRANSLATION_TARGETS, CAPTION_FORMATS,
   getTranslations, setTranslations,
   getTranslationVendor, setTranslationVendor,
   getTranslationApiKey, setTranslationApiKey,
@@ -27,346 +26,8 @@ import {
 } from '../lib/translationConfig';
 import { getAdvancedMode } from '../lib/settings';
 import { LanguagePicker } from './LanguagePicker';
-
-// ── Translation row ───────────────────────────────────────────
-
-function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t }) {
-  const lang = COMMON_LANGUAGES.find(l => l.code === entry.lang);
-  const disableCaptions = entry.target !== 'captions' && hasExistingCaptionTarget;
-
-  return (
-    <div className="translation-row">
-      <label className="settings-checkbox" style={{ marginBottom: 0 }}>
-        <input
-          type="checkbox"
-          checked={entry.enabled}
-          onChange={e => onChange({ ...entry, enabled: e.target.checked })}
-        />
-      </label>
-
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <LanguagePicker
-          value={entry.lang}
-          onChange={code => onChange({ ...entry, lang: code })}
-          placeholder={t('settings.translation.targetLangPlaceholder')}
-        />
-        {lang && <span className="settings-field__hint" style={{ marginTop: 2 }}>{entry.lang}</span>}
-      </div>
-
-      <div>
-        <select
-          className="settings-field__input"
-          value={entry.target}
-          onChange={e => {
-            const next = { ...entry, target: e.target.value };
-            if (e.target.value === 'captions') delete next.format;
-            if (!next.format && (e.target.value === 'file' || e.target.value === 'backend-file'))
-              next.format = 'youtube';
-            onChange(next);
-          }}
-          style={{ width: 'auto' }}
-        >
-          {TRANSLATION_TARGETS.map(tgt => (
-            <option
-              key={tgt.value}
-              value={tgt.value}
-              disabled={tgt.value === 'captions' && disableCaptions}
-            >
-              {t(tgt.labelKey)}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {(entry.target === 'file' || entry.target === 'backend-file') && (
-        <div>
-          <select
-            className="settings-field__input"
-            value={entry.format || 'youtube'}
-            onChange={e => onChange({ ...entry, format: e.target.value })}
-            style={{ width: 'auto' }}
-          >
-            {CAPTION_FORMATS.map(fmt => (
-              <option key={fmt.value} value={fmt.value}>{t(fmt.labelKey)}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <button
-        type="button"
-        className="btn btn--secondary btn--sm"
-        onClick={onRemove}
-        title={t('settings.translation.removeTranslation')}
-        style={{ flexShrink: 0 }}
-      >✕</button>
-    </div>
-  );
-}
-
-// ── Target row ────────────────────────────────────────────────
-
-function TargetRow({ entry, onChange, onRemove, backendUrl, icons, t }) {
-  const [urlError, setUrlError] = useState('');
-  const [headersError, setHeadersError] = useState('');
-  const [viewerKeyError, setViewerKeyError] = useState('');
-  const [qrOpen, setQrOpen] = useState(false);
-
-  function validateUrl(val) {
-    if (!val) return t('settings.targets.errorUrlRequired');
-    try {
-      const u = new URL(val);
-      if (u.protocol !== 'https:' && u.protocol !== 'http:') return t('settings.targets.errorUrlProtocol');
-      return '';
-    } catch {
-      return t('settings.targets.errorUrlInvalid');
-    }
-  }
-
-  function validateHeaders(val) {
-    if (!val) return '';
-    try {
-      const parsed = JSON.parse(val);
-      if (typeof parsed !== 'object' || Array.isArray(parsed) || parsed === null) {
-        return t('settings.targets.errorHeadersObject');
-      }
-      return '';
-    } catch {
-      return t('settings.targets.errorHeadersInvalid');
-    }
-  }
-
-  function validateViewerKey(val) {
-    if (!val) return t('settings.targets.viewerKeyError');
-    if (!/^[a-zA-Z0-9_-]{3,}$/.test(val)) return t('settings.targets.viewerKeyError');
-    return '';
-  }
-
-  const isValidViewerKey = entry.type === 'viewer' && entry.viewerKey && /^[a-zA-Z0-9_-]{3,}$/.test(entry.viewerKey);
-
-  // Build the viewer URL — includes icon param when an icon is selected
-  const viewerPageUrl = (isValidViewerKey && backendUrl)
-    ? `${window.location.origin}/view/${encodeURIComponent(entry.viewerKey)}?server=${encodeURIComponent(backendUrl)}${entry.iconId ? `&icon=${entry.iconId}` : ''}`
-    : null;
-
-  return (
-    <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label className="settings-checkbox" style={{ marginBottom: 0 }}>
-          <input
-            type="checkbox"
-            checked={entry.enabled}
-            onChange={e => onChange({ ...entry, enabled: e.target.checked })}
-          />
-        </label>
-        <select
-          className="settings-field__input"
-          value={entry.type}
-          onChange={e => {
-            const next = { ...entry, type: e.target.value };
-            // Clear all type-specific fields when switching types to prevent stale data
-            delete next.url;
-            delete next.headers;
-            delete next.streamKey;
-            delete next.viewerKey;
-            onChange(next);
-            setUrlError('');
-            setHeadersError('');
-            setViewerKeyError('');
-          }}
-          style={{ width: 'auto' }}
-        >
-          <option value="youtube">{t('settings.targets.typeYouTube')}</option>
-          <option value="generic">{t('settings.targets.typeGeneric')}</option>
-          <option value="viewer">{t('settings.targets.typeViewer')}</option>
-        </select>
-        {entry.type !== 'viewer' && (
-          <select
-            className="settings-field__input"
-            value={entry.format || 'youtube'}
-            onChange={e => onChange({ ...entry, format: e.target.value })}
-            style={{ width: 'auto' }}
-          >
-            <option value="youtube">{t('settings.targets.formatYouTube')}</option>
-            <option value="json">{t('settings.targets.formatJson')}</option>
-          </select>
-        )}
-        <button
-          type="button"
-          className="btn btn--secondary btn--sm"
-          onClick={onRemove}
-          title={t('settings.targets.removeTarget')}
-          style={{ flexShrink: 0, marginLeft: 'auto' }}
-        >✕</button>
-      </div>
-
-      {entry.type === 'youtube' && (
-        <div>
-          <label className="settings-field__label">{t('settings.targets.streamKey')}</label>
-          <input
-            className="settings-field__input"
-            type="password"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={t('settings.targets.streamKeyPlaceholder')}
-            value={entry.streamKey || ''}
-            onChange={e => onChange({ ...entry, streamKey: e.target.value })}
-          />
-          <span className="settings-field__hint">{t('settings.targets.streamKeyHint')}</span>
-        </div>
-      )}
-
-      {entry.type === 'generic' && (
-        <>
-          <div>
-            <label className="settings-field__label">{t('settings.targets.endpointUrl')}</label>
-            <input
-              className="settings-field__input"
-              type="url"
-              autoComplete="off"
-              placeholder="https://example.com/captions"
-              value={entry.url || ''}
-              onChange={e => {
-                onChange({ ...entry, url: e.target.value });
-                setUrlError(validateUrl(e.target.value));
-              }}
-              onBlur={e => setUrlError(validateUrl(e.target.value))}
-            />
-            {urlError && (
-              <span className="settings-field__hint" style={{ color: 'var(--color-error, #c00)' }}>{urlError}</span>
-            )}
-            <span className="settings-field__hint">{t('settings.targets.endpointUrlHint')}</span>
-          </div>
-          <div>
-            <label className="settings-field__label">{t('settings.targets.headers')}</label>
-            <textarea
-              className="settings-field__input"
-              rows={3}
-              placeholder={'{"Authorization": "Bearer token"}'}
-              value={entry.headers || ''}
-              onChange={e => {
-                onChange({ ...entry, headers: e.target.value });
-                setHeadersError(validateHeaders(e.target.value));
-              }}
-              onBlur={e => setHeadersError(validateHeaders(e.target.value))}
-              style={{ fontFamily: 'monospace', fontSize: '0.85em', resize: 'vertical' }}
-            />
-            {headersError && (
-              <span className="settings-field__hint" style={{ color: 'var(--color-error, #c00)' }}>{headersError}</span>
-            )}
-            <span className="settings-field__hint">{t('settings.targets.headersHint')}</span>
-          </div>
-        </>
-      )}
-
-      {entry.type === 'viewer' && (
-        <div>
-          <label className="settings-field__label">{t('settings.targets.viewerKey')}</label>
-          <input
-            className="settings-field__input"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder={t('settings.targets.viewerKeyPlaceholder')}
-            value={entry.viewerKey || ''}
-            onChange={e => {
-              onChange({ ...entry, viewerKey: e.target.value });
-              setViewerKeyError(validateViewerKey(e.target.value));
-            }}
-            onBlur={e => setViewerKeyError(validateViewerKey(e.target.value))}
-          />
-          {viewerKeyError && (
-            <span className="settings-field__hint" style={{ color: 'var(--color-error, #c00)' }}>{viewerKeyError}</span>
-          )}
-          <span className="settings-field__hint">{t('settings.targets.viewerKeyHint')}</span>
-
-          {/* Icon selector */}
-          <label className="settings-field__label" style={{ marginTop: 8 }}>{t('settings.targets.viewerIcon')}</label>
-          <select
-            className="settings-field__input"
-            style={{ width: 'auto' }}
-            value={entry.iconId || ''}
-            onChange={e => onChange({ ...entry, iconId: e.target.value ? Number(e.target.value) : null })}
-          >
-            <option value="">{t('settings.targets.viewerIconNone')}</option>
-            {(icons || []).map(icon => (
-              <option key={icon.id} value={icon.id}>{icon.filename}</option>
-            ))}
-          </select>
-          <span className="settings-field__hint">{t('settings.targets.viewerIconHint')}</span>
-
-          {viewerPageUrl && (
-            <div style={{ marginTop: 6 }}>
-              <span className="settings-field__label">{t('settings.targets.viewerUrl')}</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 2, flexWrap: 'wrap' }}>
-                <a
-                  href={viewerPageUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ wordBreak: 'break-all', fontSize: '0.85em', flex: 1, minWidth: 0 }}
-                >{viewerPageUrl}</a>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  style={{ flexShrink: 0 }}
-                  onClick={() => setQrOpen(v => !v)}
-                  title={t('settings.targets.viewerQrTitle')}
-                >
-                  {t('settings.targets.viewerQr')}
-                </button>
-              </div>
-
-              {/* QR code popover */}
-              {qrOpen && (
-                <div style={{
-                  marginTop: 8,
-                  padding: '12px 14px',
-                  background: 'var(--color-bg, #1a1a1a)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 6,
-                  display: 'inline-flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 8,
-                }}>
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(viewerPageUrl)}`}
-                    alt="QR code"
-                    width={180}
-                    height={180}
-                    style={{ display: 'block', borderRadius: 4 }}
-                  />
-                  <span style={{ fontSize: '0.72em', opacity: 0.6, textAlign: 'center' }}>
-                    {t('settings.targets.viewerQrHint')}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn--secondary btn--sm"
-                    onClick={() => setQrOpen(false)}
-                  >✕</button>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
-        <label className="settings-checkbox" style={{ marginBottom: 0 }}>
-          <input
-            type="checkbox"
-            checked={!!entry.noBatch}
-            onChange={e => onChange({ ...entry, noBatch: e.target.checked })}
-          />
-          {t('settings.targets.noBatch')}
-        </label>
-        <span className="settings-field__hint" style={{ display: 'block', marginTop: 4 }}>
-          {t('settings.targets.noBatchHint')}
-        </span>
-      </div>
-    </div>
-  );
-}
+import { TargetsPanel } from './panels/TargetsPanel.jsx';
+import { TranslationPanel } from './panels/TranslationPanel.jsx';
 
 // ── Main CCModal component ────────────────────────────────────
 
@@ -608,30 +269,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
     : [];
 
   // ── Receivers tab handlers ────────────────────────────────
-
-  function updateTargetRow(id, updatedEntry) {
-    const next = targets.map(r => r.id === id ? updatedEntry : r);
-    setTargetsState(next);
-    setTargets(next);
-  }
-
-  function removeTargetRow(id) {
-    const next = targets.filter(r => r.id !== id);
-    setTargetsState(next);
-    setTargets(next);
-  }
-
-  function addTargetRow() {
-    const newRow = {
-      id: crypto.randomUUID(),
-      enabled: true,
-      type: 'youtube',
-      streamKey: '',
-    };
-    const next = [...targets, newRow];
-    setTargetsState(next);
-    setTargets(next);
-  }
+  // (Managed by TargetsPanel)
 
   // ── Details tab handlers ──────────────────────────────────
 
@@ -653,33 +291,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
 
   // ── Translation tab handlers ──────────────────────────────
 
-  function updateTranslationRow(id, updatedEntry) {
-    const next = translations.map(r => r.id === id ? updatedEntry : r);
-    setTranslationsState(next);
-    setTranslations(next);
-  }
-
-  function removeTranslationRow(id) {
-    const next = translations.filter(r => r.id !== id);
-    setTranslationsState(next);
-    setTranslations(next);
-  }
-
-  function addTranslationRow() {
-    const hasCaptionTarget = translations.some(r => r.target === 'captions');
-    const newRow = {
-      id: crypto.randomUUID(),
-      enabled: true,
-      lang: 'en-US',
-      target: hasCaptionTarget ? 'file' : 'captions',
-      format: hasCaptionTarget ? 'youtube' : undefined,
-    };
-    const next = [...translations, newRow];
-    setTranslationsState(next);
-    setTranslations(next);
-  }
-
-  const hasCaptionTarget = translations.some(r => r.target === 'captions');
+  // (Managed by TranslationPanel)
 
   const TABS = advancedMode
     ? ['targets', 'translation', 'service', 'details']
@@ -1116,33 +728,13 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
           {/* ── Targets ── */}
           {activeTab === 'targets' && (
             <div className="settings-panel settings-panel--active">
-              <div className="settings-field">
-                {targets.length === 0 && (
-                  <span className="settings-field__hint">{t('settings.targets.noTargets')}</span>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {targets.map(entry => (
-                    <TargetRow
-                      key={entry.id}
-                      entry={entry}
-                      onChange={updated => updateTargetRow(entry.id, updated)}
-                      onRemove={() => removeTargetRow(entry.id)}
-                      backendUrl={backendUrl}
-                      icons={icons}
-                      t={t}
-                    />
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={addTargetRow}
-                  style={{ marginTop: 8 }}
-                >
-                  + {t('settings.targets.addTarget')}
-                </button>
-              </div>
-
+              <TargetsPanel
+                targets={targets}
+                onChange={next => { setTargetsState(next); setTargets(next); }}
+                backendUrl={backendUrl}
+                icons={icons}
+                connected={connected}
+              />
               <div className="settings-field">
                 <span className="settings-field__hint">
                   {connected
@@ -1257,122 +849,20 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
           {/* ── Translation ── */}
           {activeTab === 'translation' && (
             <div className="settings-panel settings-panel--active">
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.translation.translationList')}</label>
-                <span className="settings-field__hint" style={{ display: 'block', marginBottom: 8 }}>
-                  {t('settings.translation.enableHint')}
-                </span>
-                {translations.length === 0 && (
-                  <span className="settings-field__hint">{t('settings.translation.noTranslations')}</span>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {translations.map(entry => (
-                    <TranslationRow
-                      key={entry.id}
-                      entry={entry}
-                      onChange={updated => updateTranslationRow(entry.id, updated)}
-                      onRemove={() => removeTranslationRow(entry.id)}
-                      hasExistingCaptionTarget={hasCaptionTarget}
-                      t={t}
-                    />
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  className="btn btn--secondary btn--sm"
-                  onClick={addTranslationRow}
-                  style={{ marginTop: 8 }}
-                >
-                  + {t('settings.translation.addTranslation')}
-                </button>
-              </div>
-
-              {hasCaptionTarget && (
-                <div className="settings-field">
-                  <label className="settings-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={translationShowOriginal}
-                      onChange={e => {
-                        setTranslationShowOriginalState(e.target.checked);
-                        setTranslationShowOriginal(e.target.checked);
-                      }}
-                    />
-                    {t('settings.translation.showOriginal')}
-                  </label>
-                  <span className="settings-field__hint">{t('settings.translation.showOriginalHint')}</span>
-                </div>
-              )}
-
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.translation.vendor')}</label>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {TRANSLATION_VENDORS.map(v => (
-                    <button
-                      key={v.value}
-                      type="button"
-                      className={`lang-btn${translationVendor === v.value ? ' lang-btn--active' : ''}`}
-                      onClick={() => {
-                        setTranslationVendorState(v.value);
-                        setTranslationVendor(v.value);
-                      }}
-                    >
-                      {t(v.labelKey)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {(translationVendor === 'google' || translationVendor === 'deepl') && (
-                <div className="settings-field">
-                  <label className="settings-field__label">{t('settings.translation.vendorKey')}</label>
-                  <input
-                    className="settings-field__input"
-                    type="password"
-                    autoComplete="off"
-                    value={translationApiKey}
-                    onChange={e => {
-                      setTranslationApiKeyState(e.target.value);
-                      setTranslationApiKey(e.target.value);
-                    }}
-                  />
-                  <span className="settings-field__hint">{t('settings.translation.vendorKeyHint')}</span>
-                </div>
-              )}
-
-              {translationVendor === 'libretranslate' && (
-                <>
-                  <div className="settings-field">
-                    <label className="settings-field__label">{t('settings.translation.libreUrl')}</label>
-                    <input
-                      className="settings-field__input"
-                      type="url"
-                      placeholder={t('settings.translation.libreUrlPlaceholder')}
-                      autoComplete="off"
-                      value={translationLibreUrl}
-                      onChange={e => {
-                        setTranslationLibreUrlState(e.target.value);
-                        setTranslationLibreUrl(e.target.value);
-                      }}
-                    />
-                    <span className="settings-field__hint">{t('settings.translation.libreUrlHint')}</span>
-                  </div>
-                  <div className="settings-field">
-                    <label className="settings-field__label">{t('settings.translation.libreKey')}</label>
-                    <input
-                      className="settings-field__input"
-                      type="password"
-                      autoComplete="off"
-                      value={translationLibreKey}
-                      onChange={e => {
-                        setTranslationLibreKeyState(e.target.value);
-                        setTranslationLibreKey(e.target.value);
-                      }}
-                    />
-                    <span className="settings-field__hint">{t('settings.translation.libreKeyHint')}</span>
-                  </div>
-                </>
-              )}
+              <TranslationPanel
+                translations={translations}
+                onTranslationsChange={next => { setTranslationsState(next); setTranslations(next); }}
+                vendor={translationVendor}
+                onVendorChange={v => { setTranslationVendorState(v); setTranslationVendor(v); }}
+                vendorKey={translationApiKey}
+                onVendorKeyChange={k => { setTranslationApiKeyState(k); setTranslationApiKey(k); }}
+                libreUrl={translationLibreUrl}
+                onLibreUrlChange={u => { setTranslationLibreUrlState(u); setTranslationLibreUrl(u); }}
+                libreKey={translationLibreKey}
+                onLibreKeyChange={k => { setTranslationLibreKeyState(k); setTranslationLibreKey(k); }}
+                showOriginal={translationShowOriginal}
+                onShowOriginalChange={v => { setTranslationShowOriginalState(v); setTranslationShowOriginal(v); }}
+              />
             </div>
           )}
         </div>
