@@ -17,13 +17,13 @@ import { createMicRouter } from './mic.js';
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
  * @param {import('express').RequestHandler} auth
- * @param {{ relayManager?: object, dskCaptionProcessor?: Function }} [opts]
+ * @param {{ relayManager?: object, dskCaptionProcessor?: Function, storage?: object }} [opts]
  * @returns {Router}
  */
-export function createSessionRouters(db, store, jwtSecret, auth, { relayManager = null, dskCaptionProcessor = null } = {}) {
+export function createSessionRouters(db, store, jwtSecret, auth, { relayManager = null, dskCaptionProcessor = null, storage = null } = {}) {
   const router = Router();
   router.use('/live',     createLiveRouter(db, store, jwtSecret));
-  router.use('/captions', createCaptionsRouter(store, auth, db, relayManager, dskCaptionProcessor));
+  router.use('/captions', createCaptionsRouter(store, auth, db, relayManager, dskCaptionProcessor, storage));
   router.use('/events',   createEventsRouter(store, jwtSecret));
   router.use('/sync',     createSyncRouter(store, auth));
   router.use('/mic',      createMicRouter(store, auth));

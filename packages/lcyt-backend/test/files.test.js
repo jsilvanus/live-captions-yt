@@ -7,13 +7,14 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey, registerCaptionFile } from '../src/db.js';
 import { SessionStore } from '../src/store.js';
-import { createFileRouter } from '../src/routes/files.js';
+import { createFilesRouter } from 'lcyt-files';
+import { createLocalAdapter } from 'lcyt-files/src/adapters/local.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 
 const JWT_SECRET = 'test-files-secret';
 
 // ---------------------------------------------------------------------------
-// Resolve the FILES_BASE_DIR the same way the route module does.
+// Resolve the base directory for test files.
 // The test script sets FILES_DIR=/tmp/lcyt-files-test so this resolves correctly.
 // ---------------------------------------------------------------------------
 const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
@@ -22,7 +23,7 @@ const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
 // Test app setup
 // ---------------------------------------------------------------------------
 
-let server, baseUrl, store, db;
+let server, baseUrl, store, db, storage;
 
 before(async () => {
   db = initDb(':memory:');
@@ -31,12 +32,13 @@ before(async () => {
   // Ensure the base directory exists for the test suite
   await mkdir(FILES_BASE_DIR, { recursive: true });
 
+  storage = createLocalAdapter(FILES_BASE_DIR);
   store = new SessionStore({ cleanupInterval: 0 });
   const auth = createAuthMiddleware(JWT_SECRET);
 
   const app = express();
   app.use(express.json({ limit: '64kb' }));
-  app.use('/file', createFileRouter(db, auth, store, JWT_SECRET));
+  app.use('/file', createFilesRouter(db, auth, store, JWT_SECRET, storage));
 
   await new Promise((resolve) => {
     server = createServer(app);
@@ -87,7 +89,7 @@ function createMockSession() {
 
 /**
  * Register a caption file in the DB and write a corresponding file to disk.
- * Uses the same FILES_BASE_DIR as the route module.
+ * The `filename` stored in DB is the full path (as the new adapter stores it).
  * Returns the DB row id.
  */
 async function registerTestFile(session, { content = 'Hello caption', lang = 'original', format = 'youtube', type = 'caption' } = {}) {
@@ -99,10 +101,11 @@ async function registerTestFile(session, { content = 'Hello caption', lang = 'or
   const filepath = join(dir, filename);
   await writeFile(filepath, content, 'utf8');
 
+  // Store the full filepath as `filename` — matches what writeToBackendFile stores via openAppend()
   const fileId = registerCaptionFile(db, {
     apiKey: session.apiKey,
     sessionId: session.sessionId,
-    filename,
+    filename: filepath,
     lang,
     format,
     type,
@@ -175,6 +178,20 @@ describe('GET /file', () => {
     assert.ok('lang' in file);
     assert.ok('format' in file);
     assert.ok('createdAt' in file);
+  });
+
+  it('should strip the directory prefix from filenames in list response', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    await registerTestFile(session, { content: 'test', lang: 'original' });
+
+    const res = await fetch(`${baseUrl}/file`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    // filename should be the bare name, not an absolute path
+    assert.ok(!data.files[0].filename.startsWith('/'));
   });
 });
 
@@ -260,12 +277,13 @@ describe('GET /file/:id', () => {
     const dir = join(FILES_BASE_DIR, safe);
     await mkdir(dir, { recursive: true });
     const filename = `2026-01-01-${Date.now()}-original.vtt`;
-    await writeFile(join(dir, filename), 'WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello\n', 'utf8');
+    const filepath = join(dir, filename);
+    await writeFile(filepath, 'WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello\n', 'utf8');
 
     const fileId = registerCaptionFile(db, {
       apiKey: session.apiKey,
       sessionId: session.sessionId,
-      filename,
+      filename: filepath,
       lang: 'original',
       format: 'vtt',
       type: 'caption',
@@ -289,6 +307,26 @@ describe('GET /file/:id', () => {
     assert.strictEqual(res.status, 200);
     const body = await res.text();
     assert.strictEqual(body, 'Query token test');
+  });
+
+  it('should return 404 when file exists in DB but not in storage', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+
+    // Register a file in DB that doesn't actually exist on disk
+    const fileId = registerCaptionFile(db, {
+      apiKey: session.apiKey,
+      sessionId: session.sessionId,
+      filename: '/nonexistent/path/ghost.txt',
+      lang: 'original',
+      format: 'youtube',
+      type: 'captions',
+    });
+
+    const res = await fetch(`${baseUrl}/file/${fileId}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    assert.strictEqual(res.status, 404);
   });
 });
 

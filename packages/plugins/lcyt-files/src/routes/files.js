@@ -1,12 +1,15 @@
+/**
+ * /file router — list, download, and delete caption files.
+ *
+ * Uses the injected storage adapter for download and deletion so the same
+ * routes work for both local-FS and S3-backed deployments.
+ */
+
 import { Router } from 'express';
-import { createReadStream, existsSync, unlinkSync, statSync } from 'node:fs';
-import { join, resolve, basename } from 'node:path';
+import { basename } from 'node:path';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import { listCaptionFiles, getCaptionFile, deleteCaptionFile } from '../db.js';
-
-// Must match the base directory used in captions.js
-const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
+import { listCaptionFiles, getCaptionFile, deleteCaptionFile } from 'lcyt-backend/db';
 
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({
@@ -22,15 +25,16 @@ const fileRateLimit = rateLimit({
  *
  * GET    /file          — List all caption files for the authenticated key
  * GET    /file/:id      — Download a specific file (supports ?token= for direct links)
- * DELETE /file/:id      — Delete a specific file (database row + disk file)
+ * DELETE /file/:id      — Delete a specific file (database row + storage object)
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
- * @param {import('../store.js').SessionStore} store
+ * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store
  * @param {string} jwtSecret
+ * @param {import('../adapters/types.js').StorageAdapter} storage
  * @returns {Router}
  */
-export function createFileRouter(db, auth, store, jwtSecret) {
+export function createFilesRouter(db, auth, store, jwtSecret, storage) {
   const router = Router();
 
   // GET /file — List files
@@ -41,7 +45,7 @@ export function createFileRouter(db, auth, store, jwtSecret) {
 
     const files = listCaptionFiles(db, session.apiKey).map(row => ({
       id: row.id,
-      filename: row.filename,
+      filename: basename(row.filename),   // strip path/prefix for display
       lang: row.lang,
       format: row.format,
       type: row.type,
@@ -53,7 +57,7 @@ export function createFileRouter(db, auth, store, jwtSecret) {
   });
 
   // GET /file/:id — Download a file (supports Bearer or ?token=)
-  router.get('/:id', fileRateLimit, (req, res) => {
+  router.get('/:id', fileRateLimit, async (req, res) => {
     // Accept token via Authorization header or ?token= query param (for direct download links)
     let apiKey = null;
     const authHeader = req.headers['authorization'];
@@ -74,25 +78,21 @@ export function createFileRouter(db, auth, store, jwtSecret) {
     const row = getCaptionFile(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'File not found' });
 
-    const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    // Use basename() to prevent path traversal from DB-stored filename
-    const safeFilename = basename(row.filename);
-    const filepath = join(FILES_BASE_DIR, safe, safeFilename);
-    if (!existsSync(filepath)) return res.status(404).json({ error: 'File not found on disk' });
-
-    const contentType = row.format === 'vtt' ? 'text/vtt' : 'text/plain';
-    res.setHeader('Content-Type', contentType + '; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${basename(row.filename)}"`);
     try {
-      const { size } = statSync(filepath);
-      res.setHeader('Content-Length', size);
-    } catch {}
-
-    createReadStream(filepath).pipe(res);
+      const { stream, contentType, size } = await storage.openRead(apiKey, row.filename, row.format);
+      res.set('Content-Type', contentType + '; charset=utf-8');
+      res.set('Content-Disposition', `attachment; filename="${basename(row.filename)}"`);
+      if (size != null) res.set('Content-Length', String(size));
+      stream.pipe(res);
+    } catch (err) {
+      if (!res.headersSent) {
+        res.status(404).json({ error: 'File not found in storage' });
+      }
+    }
   });
 
   // DELETE /file/:id — Delete a file
-  router.delete('/:id', fileRateLimit, auth, (req, res) => {
+  router.delete('/:id', fileRateLimit, auth, async (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -103,20 +103,14 @@ export function createFileRouter(db, auth, store, jwtSecret) {
     const row = getCaptionFile(db, id, session.apiKey);
     if (!row) return res.status(404).json({ error: 'File not found' });
 
-    // Delete database row
+    // Delete database row first (authoritative; best-effort storage deletion follows)
     const deleted = deleteCaptionFile(db, id, session.apiKey);
     if (!deleted) return res.status(404).json({ error: 'File not found' });
 
-    // Best-effort disk deletion
-    try {
-      const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-      // Use basename() to prevent path traversal from DB-stored filename
-      const safeFilename = basename(row.filename);
-      const filepath = join(FILES_BASE_DIR, safe, safeFilename);
-      if (existsSync(filepath)) unlinkSync(filepath);
-    } catch (e) {
-      console.warn('[file] Could not delete disk file:', e.message);
-    }
+    // Best-effort deletion from storage backend
+    await storage.deleteFile(session.apiKey, row.filename).catch(err => {
+      console.warn('[file] Could not delete from storage:', err.message);
+    });
 
     return res.json({ ok: true });
   });

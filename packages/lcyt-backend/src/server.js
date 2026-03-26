@@ -15,6 +15,7 @@ import { setHlsSubsManager } from './routes/viewer.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
+import { initFilesControl, closeFileHandles } from 'lcyt-files';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -144,10 +145,20 @@ if (process.env.GRAPHICS_ENABLED === '1') {
   ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager));
 }
 
+// Files plugin — storage adapter for caption file I/O (local FS or S3).
+// Always initialised so FILE_STORAGE configuration is logged at startup.
+const { storage } = await initFilesControl(db);
+
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
 
-store.onSessionEnd = (session) => {
+store.onSessionEnd = async (session) => {
+  // Close open caption file handles before cleanup.
+  // For local FS this is a graceful flush; for S3 this completes the multipart upload.
+  if (session._fileHandles?.size > 0) {
+    await closeFileHandles(session._fileHandles).catch(() => {});
+  }
+
   const durationMs = Date.now() - (session.startedAt || Date.now());
   // Some persisted sessions may lack an apiKey (nullable in older DBs);
   // avoid writing a session_stats row when apiKey is missing to prevent NOT NULL errors.
@@ -294,14 +305,14 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, storage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager }));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, storage }));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,
