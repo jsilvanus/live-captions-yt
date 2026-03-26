@@ -9,6 +9,10 @@ import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } f
 import { blobToBase64 } from '../lib/fileUtils';
 import { isMobileDevice } from '../lib/device';
 
+// Extracted components/hooks
+import AudioLevelMeter from './audio/AudioLevelMeter';
+import { useWebSpeech } from '../hooks/useWebSpeech';
+
 // Duration of the utterance-end button click flash animation (ms) — must match CSS @keyframes
 const UTTERANCE_CLICK_FLASH_MS = 400;
 
@@ -33,13 +37,58 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const [cloudError, setCloudError] = useState('');
 
   // WebKit refs
-  const recognitionRef = useRef(null);
   const meterStreamRef = useRef(null); // MediaStream used for analyser when WebKit is active
   const audioCtxRef     = useRef(null);
   const analyserRef     = useRef(null);
-  const meterAnimRef    = useRef(null);
-  const meterCanvasRef  = useRef(null);
   const lastFinalRef    = useRef('');   // last final transcript sent (for mobile deduplication)
+
+  const isMobile = isMobileDevice();
+
+  // WebKit speech hook (extracted)
+  const webkitSpeech = useWebSpeech({
+    lang: getSttLang(),
+    continuous: true,
+    interim: !isMobile,
+    onInterim: (interim) => {
+      // Capture utterance start on first text (interim) if not already set
+      if (interim && !utteranceStartRef.current) {
+        utteranceStartRef.current = getUtteranceTimestamp();
+        setUtteranceActive(true);
+        maybeStartUtteranceTimer();
+      }
+      if (!isMobile) setInterimText(interim);
+    },
+    onFinal: (final) => {
+      if (!final) return;
+      if (isMobile) {
+        const trimmed = final.trim();
+        if (trimmed === lastFinalRef.current) return;
+        lastFinalRef.current = trimmed;
+      }
+      const ts = utteranceStartRef.current;
+      utteranceStartRef.current = null;
+      setUtteranceActive(false);
+      if (utteranceTimerRef.current) {
+        clearTimeout(utteranceTimerRef.current);
+        utteranceTimerRef.current = null;
+      }
+      setUtteranceTimerRunning(false);
+      pushFinalTranscript(final, ts);
+    },
+    onStart: () => {
+      // When recognizer starts (including after auto-restart), ensure VAD loop is running if enabled
+      if (localStorage.getItem(KEYS.audio.clientVad) === '1' && !vadTimerRef.current) {
+        startVAD();
+      }
+    },
+    onError: (e) => {
+      if (e && e.error === 'no-speech') return;
+      console.error('WebKit recognition error', e);
+      setCloudError(`WebKit STT error: ${e?.error || e?.message || 'unknown'}`);
+      setListening(false);
+      setInterimText('');
+    },
+  });
 
   // Utterance start timestamp — set on first text, cleared after final is dispatched
   const utteranceStartRef   = useRef(null);
@@ -280,10 +329,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
       utteranceTimerRef.current = null;
     }
     setUtteranceTimerRunning(false);
-    const rec = recognitionRef.current;
-    if (!rec) return;
-    try { rec.stop(); } catch {}
-    // recognition.onend will auto-restart
+    try { webkitSpeech.stop(); } catch {}
+    // recognizer.onend will auto-restart
   }
 
   // Handles a click on the utterance end button — flashes a visual cue then ends the utterance.
@@ -424,88 +471,42 @@ export const AudioPanel = forwardRef(function AudioPanel(
       }
     }
 
-    const recognition = new SR();
-    recognition.continuous     = true;
     const isMobile = isMobileDevice();
-    recognition.interimResults = !isMobile;
-    recognition.lang           = getSttLang();
 
-    recognition.onresult = (event) => {
-      let interim = '';
-      let final   = '';
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const t = event.results[i][0].transcript;
-        if (event.results[i].isFinal) final += t;
-        else interim += t;
-      }
-      // Capture utterance start on first text (interim or final) if not already set
-      if ((interim || final) && !utteranceStartRef.current) {
-        utteranceStartRef.current = getUtteranceTimestamp();
-        setUtteranceActive(true);
-        maybeStartUtteranceTimer();
-      }
-      if (!isMobile) setInterimText(interim);
-      if (final) {
-        if (isMobile) {
-          const trimmed = final.trim();
-          if (trimmed === lastFinalRef.current) return;
-          lastFinalRef.current = trimmed;
-        }
-        const ts = utteranceStartRef.current;
-        utteranceStartRef.current = null;
-        setUtteranceActive(false);
-        if (utteranceTimerRef.current) {
-          clearTimeout(utteranceTimerRef.current);
-          utteranceTimerRef.current = null;
-        }
-        setUtteranceTimerRunning(false);
-        pushFinalTranscript(final, ts);
-      }
-    };
+    // Start the speech recognizer via hook
+    webkitSpeech.start();
 
-    recognition.onstart = () => { }; 
-
-    recognition.onend = () => {
-      // Auto-restart so continuous mode survives silence pauses.
-      // A small delay prevents rapid start/stop cycles on browsers that need settling time.
-      if (recognitionRef.current) {
-        setTimeout(() => {
-          if (!recognitionRef.current) return;
-          try { recognition.start(); } catch {}
-          // Restart VAD check loop if enabled — it exits early after forcing finalization
-          if (localStorage.getItem(KEYS.audio.clientVad) === '1' && !vadTimerRef.current) {
-            startVAD(recognition);
-          }
-        }, 100);
-      }
-    };
-
-    recognition.onerror = (e) => {
-      if (e.error === 'no-speech') return;
-      console.error('WebKit recognition error', e);
-      setCloudError(`WebKit STT error: ${e.error || 'unknown'}`);
-      recognitionRef.current = null;
-      setListening(false);
-      setInterimText('');
-    };
-
-    recognitionRef.current = recognition;
-    recognition.start();
-    setListening(true);
+    // Local UI state initialization
     setInterimText('');
     lastFinalRef.current = '';
     utteranceStartRef.current = null;
+    setListening(true);
 
     // Optional client-side VAD — enabled via localStorage flag lcyt:client-vad = '1'
     if (localStorage.getItem(KEYS.audio.clientVad) === '1') {
-      startVAD(recognition);
+      // startVAD will no-op if recognizer is not active
+      startVAD();
     }
   }
 
   function stopWebkit() {
-    const rec = recognitionRef.current;
-    recognitionRef.current = null;
-    if (rec) try { rec.stop(); } catch {}
+    try { webkitSpeech.stop(); } catch {}
+    stopVAD();
+    utteranceStartRef.current = null;
+    setUtteranceActive(false);
+    setUtteranceTimerRunning(false);
+    if (utteranceTimerRef.current) {
+      clearTimeout(utteranceTimerRef.current);
+      utteranceTimerRef.current = null;
+    }
+    // Stop meter stream if we opened one for WebKit
+    if (meterStreamRef.current) {
+      try { meterStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+      meterStreamRef.current = null;
+    }
+    detachMeter();
+    setListening(false);
+    setInterimText('');
     stopVAD();
     utteranceStartRef.current = null;
     setUtteranceActive(false);
@@ -548,7 +549,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     vadSilenceStartRef.current = null;
   }
 
-  async function startVAD(recognition) {
+  async function startVAD() {
     // Guard against concurrent initializations — e.g. rapid onend→startVAD cycles
     if (vadStartingRef.current) return;
     vadStartingRef.current = true;
@@ -584,7 +585,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
       function check() {
         // Stop the loop if recognition was torn down
-        if (!recognitionRef.current) return;
+        if (!listening) return;
         try {
           analyser.getFloatTimeDomainData(data);
           let sum = 0;
@@ -613,8 +614,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
                 vadSpeakingRef.current = false;
                 vadSilenceStartRef.current = null;
                 vadLastForceStopRef.current = Date.now();
-                try { recognition.stop(); } catch {}
-                // recognition.onend will auto-restart; utteranceStartRef cleared by onresult
+                try { webkitSpeech.stop(); } catch {}
+                // recognizer.onend will auto-restart; utteranceStartRef cleared by onresult
                 return; // stop polling until onend restarts recognition
               }
             }
@@ -795,38 +796,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
       analyser.fftSize = 256;
       src.connect(analyser);
       analyserRef.current = analyser;
-
-      const data = new Float32Array(analyser.fftSize);
-
-      function draw() {
-        analyser.getFloatTimeDomainData(data);
-        let sum = 0;
-        for (let i = 0; i < data.length; i++) sum += data[i] * data[i];
-        const rms = Math.sqrt(sum / data.length);
-        const level = Math.min(1, rms * 3); // scale for visibility
-
-        for (const cvs of [meterCanvasRef.current, extraMeterCanvasRef?.current]) {
-          if (!cvs || !cvs.clientWidth) continue;
-          const w = cvs.width = cvs.clientWidth * (window.devicePixelRatio || 1);
-          const h = cvs.height = cvs.clientHeight * (window.devicePixelRatio || 1);
-          const ctx2 = cvs.getContext('2d');
-          ctx2.clearRect(0, 0, w, h);
-          ctx2.fillStyle = '#0b8';
-          ctx2.fillRect(0, 0, Math.round(w * level), h);
-        }
-
-        meterAnimRef.current = requestAnimationFrame(draw);
-      }
-
-      draw();
     } catch {}
   }
 
   function detachMeter() {
-    if (meterAnimRef.current) {
-      cancelAnimationFrame(meterAnimRef.current);
-      meterAnimRef.current = null;
-    }
     if (analyserRef.current) {
       try { analyserRef.current.disconnect(); } catch {}
       analyserRef.current = null;
@@ -835,9 +808,9 @@ export const AudioPanel = forwardRef(function AudioPanel(
       try { audioCtxRef.current.close(); } catch {}
       audioCtxRef.current = null;
     }
-    for (const cvs of [meterCanvasRef.current, extraMeterCanvasRef?.current]) {
-      if (!cvs) continue;
-      cvs.getContext('2d').clearRect(0, 0, cvs.width, cvs.height);
+    // clear any external canvas
+    if (extraMeterCanvasRef?.current) {
+      try { extraMeterCanvasRef.current.getContext('2d').clearRect(0, 0, extraMeterCanvasRef.current.width, extraMeterCanvasRef.current.height); } catch {}
     }
   }
 
@@ -986,11 +959,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
         {/* Level meter — always visible when panel is open */}
         <div className="audio-meter-wrap">
-          <canvas
-            ref={meterCanvasRef}
-            className="audio-meter"
-            aria-hidden="true"
-          />
+          <AudioLevelMeter analyserRef={analyserRef} extraCanvasRef={extraMeterCanvasRef} className="audio-meter" />
           {listening && isUtteranceEndButtonEnabled() && (
             <button
               className={[

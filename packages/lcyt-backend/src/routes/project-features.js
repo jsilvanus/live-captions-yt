@@ -17,6 +17,7 @@ import {
   setProjectFeature,
   setProjectFeatures,
   getUserFeatureSet,
+  applyFeatureDeps,
 } from '../db/project-features.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
@@ -135,9 +136,10 @@ function _batchUpdateFeatures(db, user, req, res) {
     }
   }
 
+  const autoEnabled = applyFeatureDeps(features);
   setProjectFeatures(db, req.params.key, features, user?.userId ?? null);
   const rows = getProjectFeatures(db, req.params.key);
-  return res.json({ features: formatFeatures(rows) });
+  return res.json({ features: formatFeatures(rows), autoEnabled });
 }
 
 function _patchFeature(db, user, req, res) {
@@ -155,8 +157,15 @@ function _patchFeature(db, user, req, res) {
     }
   }
 
-  setProjectFeature(db, req.params.key, code, !!body.enabled, body.config ?? null, user?.userId ?? null);
+  // Apply deps: if enabling a feature that requires others, auto-enable them too
+  const featureMap = { [code]: { enabled: !!body.enabled, config: body.config ?? null } };
+  const autoEnabled = applyFeatureDeps(featureMap);
+  for (const [fc, val] of Object.entries(featureMap)) {
+    const en = typeof val === 'boolean' ? val : val.enabled;
+    const cfg = typeof val === 'object' && val !== null ? (val.config ?? null) : null;
+    setProjectFeature(db, req.params.key, fc, en, cfg, user?.userId ?? null);
+  }
   const rows = getProjectFeatures(db, req.params.key);
   const updated = formatFeatures(rows).find(f => f.code === code);
-  return res.json(updated || { code, enabled: !!body.enabled, config: body.config ?? null });
+  return res.json({ ...(updated || { code, enabled: !!body.enabled, config: body.config ?? null }), autoEnabled });
 }

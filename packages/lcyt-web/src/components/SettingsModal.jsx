@@ -19,6 +19,7 @@ import { useToastContext } from '../contexts/ToastContext';
 import { getAdvancedMode, setAdvancedMode, applyTheme, applyTextSize } from '../lib/settings';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { KEYS } from '../lib/storageKeys.js';
+import { RelayPanel } from './panels/RelayPanel.jsx';
 
 const CONFIG_KEY = KEYS.session.config;
 
@@ -27,202 +28,6 @@ function persist(patch) {
     const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
     localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...saved, ...patch }));
   } catch {}
-}
-
-// ── Relay row component ────────────────────────────────────────
-function RelayRow({ entry, onChange, onRemove, t }) {
-  const [showAdvanced, setShowAdvanced] = useState(
-    // Start expanded if any advanced option is already set
-    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
-  );
-
-  return (
-    <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      {/* Main row: type selector + key/URL + remove */}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <label className="settings-checkbox" style={{ marginBottom: 0 }}>
-          <input
-            type="checkbox"
-            checked={!!entry.active}
-            onChange={e => onChange({ ...entry, active: e.target.checked })}
-          />
-        </label>
-        <select
-          className="settings-field__input"
-          value={entry.targetType}
-          onChange={e => onChange({ ...entry, targetType: e.target.value })}
-          style={{ width: 'auto' }}
-        >
-          <option value="youtube">YouTube</option>
-          <option value="generic">{t('settings.relay.generic')}</option>
-        </select>
-        {entry.targetType === 'youtube' ? (
-          <input
-            className="settings-field__input"
-            type="password"
-            placeholder="xxxx-xxxx-xxxx-xxxx-xxxx"
-            autoComplete="off"
-            value={entry.youtubeKey || ''}
-            onChange={e => onChange({ ...entry, youtubeKey: e.target.value })}
-            style={{ flex: 1 }}
-          />
-        ) : (
-          <input
-            className="settings-field__input"
-            type="text"
-            placeholder={t('settings.relay.rtmpFullPathPlaceholder')}
-            autoComplete="off"
-            value={entry.genericUrl || ''}
-            onChange={e => onChange({ ...entry, genericUrl: e.target.value })}
-            style={{ flex: 1 }}
-          />
-        )}
-        <button
-          type="button"
-          className="btn btn--secondary btn--sm"
-          onClick={() => setShowAdvanced(v => !v)}
-          title={t('settings.relay.slotAdvanced')}
-          style={{ flexShrink: 0, fontSize: '0.75em' }}
-        >⚙</button>
-        <button
-          type="button"
-          className="btn btn--secondary btn--sm"
-          onClick={onRemove}
-          title={t('settings.relay.removeRelay')}
-          style={{ flexShrink: 0 }}
-        >✕</button>
-      </div>
-
-      {/* URL hint */}
-      {entry.targetType === 'youtube' && (entry.youtubeKey || '').trim() && (
-        <span className="settings-field__hint">
-          → rtmp://a.rtmp.youtube.com/live2/{(entry.youtubeKey || '').trim()}
-        </span>
-      )}
-
-      {/* Advanced per-slot options */}
-      {showAdvanced && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
-          {/* Caption mode */}
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotCaptionMode')}</label>
-            <select
-              className="settings-field__input"
-              value={entry.captionMode || 'http'}
-              onChange={e => onChange({ ...entry, captionMode: e.target.value })}
-              style={{ width: '100%' }}
-            >
-              <option value="http">{t('settings.relay.slotCaptionModeHttp')}</option>
-              <option value="cea708">{t('settings.relay.slotCaptionModeCea708')}</option>
-            </select>
-          </div>
-          {/* Resolution */}
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
-              <input
-                type="checkbox"
-                checked={!entry.scale}
-                onChange={e => { if (e.target.checked) onChange({ ...entry, scale: '' }); }}
-              />
-              {t('settings.relay.useOriginal')} — {t('settings.relay.slotScale')}
-            </label>
-            <input
-              className="settings-field__input"
-              type="text"
-              placeholder={t('settings.relay.slotScalePlaceholder')}
-              value={entry.scale || ''}
-              onChange={e => onChange({ ...entry, scale: e.target.value })}
-              style={!entry.scale ? { opacity: 0.55 } : {}}
-            />
-          </div>
-          {/* Frame rate */}
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
-              <input
-                type="checkbox"
-                checked={entry.fps == null}
-                onChange={e => { if (e.target.checked) onChange({ ...entry, fps: null }); }}
-              />
-              {t('settings.relay.useOriginal')} — {t('settings.relay.slotFps')}
-            </label>
-            <input
-              className="settings-field__input"
-              type="number"
-              min="1" max="120"
-              placeholder={t('settings.relay.slotFpsPlaceholder')}
-              value={entry.fps ?? ''}
-              onChange={e => { const v = parseInt(e.target.value, 10); onChange({ ...entry, fps: Number.isFinite(v) ? v : null }); }}
-              style={entry.fps == null ? { opacity: 0.55 } : {}}
-            />
-          </div>
-          {/* Video bitrate */}
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
-              <input
-                type="checkbox"
-                checked={!entry.videoBitrate}
-                onChange={e => { if (e.target.checked) onChange({ ...entry, videoBitrate: '' }); }}
-              />
-              {t('settings.relay.useOriginal')} — {t('settings.relay.slotVideoBitrate')}
-            </label>
-            <input
-              className="settings-field__input"
-              type="text"
-              placeholder={t('settings.relay.slotVideoBitratePlaceholder')}
-              value={entry.videoBitrate || ''}
-              onChange={e => onChange({ ...entry, videoBitrate: e.target.value })}
-              style={!entry.videoBitrate ? { opacity: 0.55 } : {}}
-            />
-          </div>
-          {/* Audio bitrate */}
-          <div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>
-              <input
-                type="checkbox"
-                checked={!entry.audioBitrate}
-                onChange={e => { if (e.target.checked) onChange({ ...entry, audioBitrate: '' }); }}
-              />
-              {t('settings.relay.useOriginal')} — {t('settings.relay.slotAudioBitrate')}
-            </label>
-            <input
-              className="settings-field__input"
-              type="text"
-              placeholder={t('settings.relay.slotAudioBitratePlaceholder')}
-              value={entry.audioBitrate || ''}
-              onChange={e => onChange({ ...entry, audioBitrate: e.target.value })}
-              style={!entry.audioBitrate ? { opacity: 0.55 } : {}}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── DSK RTMP ingest URL display ─────────────────────────────────────────────
-function DskRtmpUrlField({ backendUrl, apiKey }) {
-  const [copied, setCopied] = useState(false);
-  const rtmpUrl = (() => {
-    try {
-      const host = new URL(backendUrl).hostname;
-      return `rtmp://${host}/dsk/${encodeURIComponent(apiKey)}`;
-    } catch { return null; }
-  })();
-  if (!rtmpUrl) return null;
-  const copy = () => {
-    navigator.clipboard?.writeText(rtmpUrl).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }).catch(() => { setCopied(false); });
-  };
-  return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input className="settings-field__input" readOnly value={rtmpUrl} style={{ flex: 1, fontSize: '0.82em', fontFamily: 'monospace' }} />
-      <button className="btn btn--secondary btn--sm" onClick={copy} title="Copy URL">
-        {copied ? '✓' : '⎘'}
-      </button>
-    </div>
-  );
 }
 
 export function SettingsModal({ isOpen, onClose, inline }) {
@@ -235,14 +40,11 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   const [advancedMode, setAdvancedModeState] = useState(getAdvancedMode);
 
   // ── Basic tab fields ──────────────────────────────────────
-  const [backendUrl, setBackendUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [autoConnect, setAutoConnect] = useState(false);
   const [theme, setTheme] = useState('auto');
   const [textSize, setTextSize] = useState(
     () => { try { return parseInt(localStorage.getItem(KEYS.ui.textSize) || '13', 10); } catch { return 13; } }
   );
-  const [showApiKey, setShowApiKey] = useState(false);
 
   // ── RTMP Relay tab ────────────────────────────────────────
   const [relayList, setRelayList] = useState(() => buildInitialRelayList());
@@ -265,9 +67,6 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   // Load persisted values when modal opens
   useEffect(() => {
     if (!isOpen) return;
-    const cfg = session.getPersistedConfig();
-    setBackendUrl(cfg.backendUrl || '');
-    setApiKey(cfg.apiKey || '');
     setAutoConnect(session.getAutoConnect());
     try { setTheme(localStorage.getItem(KEYS.ui.theme) || 'auto'); } catch {}
     const savedSize = parseInt(localStorage.getItem(KEYS.ui.textSize) || '13', 10);
@@ -309,16 +108,6 @@ export function SettingsModal({ isOpen, onClose, inline }) {
 
   // ── Field change handlers (auto-save) ─────────────────────
 
-  function handleBackendUrlChange(val) {
-    setBackendUrl(val);
-    persist({ backendUrl: val });
-  }
-
-  function handleApiKeyChange(val) {
-    setApiKey(val);
-    persist({ apiKey: val });
-  }
-
   function handleAutoConnectChange(val) {
     setAutoConnect(val);
     session.setAutoConnect(val);
@@ -341,39 +130,10 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   }
 
   // ── Relay helpers ──────────────────────────────────────────
-
-  function addRelay() {
-    const usedSlots = relayList.map(r => r.slot);
-    for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
-      if (!usedSlots.includes(s)) {
-        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' }]);
-        return;
-      }
-    }
-  }
-
-  function updateRelayItem(slot, updated) {
-    if ('targetType'   in updated) setSlotTargetType(slot, updated.targetType);
-    if ('youtubeKey'   in updated) setSlotYoutubeKey(slot, updated.youtubeKey);
-    if ('genericUrl'   in updated) setSlotGenericUrl(slot, updated.genericUrl);
-    if ('genericName'  in updated) setSlotGenericName(slot, updated.genericName);
-    if ('captionMode'  in updated) setSlotCaptionMode(slot, updated.captionMode);
-    if ('scale'        in updated) setSlotScale(slot, updated.scale ?? '');
-    if ('fps'          in updated) setSlotFps(slot, updated.fps ?? null);
-    if ('videoBitrate' in updated) setSlotVideoBitrate(slot, updated.videoBitrate ?? '');
-    if ('audioBitrate' in updated) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
-    setRelayList(prev => prev.map(r => r.slot === slot ? { ...r, ...updated } : r));
-  }
-
-  function removeRelay(slot) {
-    clearSlot(slot);
-    setRelayList(prev => prev.filter(r => r.slot !== slot));
-  }
-
-  const runningSlots = relayStatus?.runningSlots ?? [];
+  // (Managed by RelayPanel via onRelayListChange)
 
   const hasGraphics = session.graphicsEnabled;
-  const TABS = ['basic', ...(hasGraphics ? ['graphics'] : []), 'credentials', 'icons'];
+  const TABS = ['basic', ...(hasGraphics ? ['graphics'] : []), 'stream', 'credentials', 'icons'];
 
   // ── Credential handlers ────────────────────────────────────
 
@@ -495,36 +255,9 @@ export function SettingsModal({ isOpen, onClose, inline }) {
               {!loggedInUser && (
                 <div className="settings-field" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
                   <a href="/login" style={{ color: 'var(--color-accent)' }}>Sign in</a>
-                  {' '}to manage your projects, or enter credentials manually below.
+                  {' '}to manage your projects.
                 </div>
               )}
-
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.connection.backendUrl')}</label>
-                <input
-                  className="settings-field__input"
-                  type="url"
-                  placeholder="https://api.lcyt.fi"
-                  autoComplete="off"
-                  value={backendUrl}
-                  onChange={e => handleBackendUrlChange(e.target.value)}
-                />
-              </div>
-
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.connection.apiKey')}</label>
-                <div className="settings-field__input-wrap">
-                  <input
-                    className="settings-field__input settings-field__input--has-eye"
-                    type={showApiKey ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    autoComplete="off"
-                    value={apiKey}
-                    onChange={e => handleApiKeyChange(e.target.value)}
-                  />
-                  <button className="settings-field__eye" onClick={() => setShowApiKey(v => !v)} title="Toggle visibility">👁</button>
-                </div>
-              </div>
 
               <div className="settings-field">
                 <label className="settings-checkbox">
@@ -590,71 +323,37 @@ export function SettingsModal({ isOpen, onClose, inline }) {
             </div>
           )}
 
-          {/* ── Stream (RTMP Relay, advanced mode only) ── */}
+          {/* ── Stream (RTMP Relay) ── */}
           {activeTab === 'stream' && (
             <div className="settings-panel settings-panel--active">
-              {!session.connected && (
-                <div className="settings-field">
-                  <span className="settings-field__hint" style={{ color: 'var(--color-text-dim)' }}>
-                    {t('settings.relay.notConnected')}
-                  </span>
-                </div>
-              )}
-
-              <div className="settings-field">
-                <span className="settings-field__hint">{t('settings.relay.fanOutHint')}</span>
-              </div>
-
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.relay.relayTargets')}</label>
-                {relayList.length === 0 && (
-                  <span className="settings-field__hint">{t('settings.relay.noRelays')}</span>
-                )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {relayList.map(entry => (
-                    <RelayRow
-                      key={entry.slot}
-                      entry={entry}
-                      onChange={updated => updateRelayItem(entry.slot, updated)}
-                      onRemove={() => removeRelay(entry.slot)}
-                      t={t}
-                    />
-                  ))}
-                </div>
-                {relayList.length < MAX_RELAY_SLOTS && (
-                  <button
-                    type="button"
-                    className="btn btn--secondary btn--sm"
-                    onClick={addRelay}
-                    style={{ marginTop: 8 }}
-                  >
-                    + {t('settings.relay.addRelay')}
-                  </button>
-                )}
-              </div>
-
-              {relayStatus && relayStatus.relays?.length > 0 && (
-                <div className="settings-field">
-                  <label className="settings-field__label">{t('settings.relay.status')}</label>
-                  {relayStatus.relays.map(r => (
-                    <div key={r.slot} style={{ fontSize: '0.85em', marginBottom: '0.25rem' }}>
-                      {runningSlots.includes(r.slot) ? '🔴 ' + t('settings.relay.live') : '⚫ ' + t('settings.relay.inactive')}
-                      {' — '}{r.targetUrl}{r.targetName ? `/${r.targetName}` : ''}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {relayError && <div className="settings-error">{relayError}</div>}
-
-              {/* DSK RTMP ingest URL */}
-              {backendUrl && apiKey && (
-                <div className="settings-field">
-                  <label className="settings-field__label">{t('settings.relay.dskRtmpIngestUrl')}</label>
-                  <span className="settings-field__hint">{t('settings.relay.dskRtmpHint')}</span>
-                  <DskRtmpUrlField backendUrl={backendUrl} apiKey={apiKey} />
-                </div>
-              )}
+              <RelayPanel
+                relayList={relayList}
+                onRelayListChange={next => {
+                  // Persist only changed slots (each setter writes to localStorage)
+                  const prevBySlot = Object.fromEntries(relayList.map(r => [r.slot, r]));
+                  next.forEach(r => {
+                    const prev = prevBySlot[r.slot];
+                    if (!prev || r.targetType   !== prev.targetType)   setSlotTargetType(r.slot, r.targetType);
+                    if (!prev || r.youtubeKey   !== prev.youtubeKey)   setSlotYoutubeKey(r.slot, r.youtubeKey);
+                    if (!prev || r.genericUrl   !== prev.genericUrl)   setSlotGenericUrl(r.slot, r.genericUrl);
+                    if (!prev || r.genericName  !== prev.genericName)  setSlotGenericName(r.slot, r.genericName);
+                    if (!prev || r.captionMode  !== prev.captionMode)  setSlotCaptionMode(r.slot, r.captionMode);
+                    if (!prev || r.scale        !== prev.scale)        setSlotScale(r.slot, r.scale ?? '');
+                    if (!prev || r.fps          !== prev.fps)          setSlotFps(r.slot, r.fps ?? null);
+                    if (!prev || r.videoBitrate !== prev.videoBitrate) setSlotVideoBitrate(r.slot, r.videoBitrate ?? '');
+                    if (!prev || r.audioBitrate !== prev.audioBitrate) setSlotAudioBitrate(r.slot, r.audioBitrate ?? '');
+                  });
+                  // Clear removed slots
+                  const newSlots = new Set(next.map(r => r.slot));
+                  relayList.filter(r => !newSlots.has(r.slot)).forEach(r => clearSlot(r.slot));
+                  setRelayList(next);
+                }}
+                relayStatus={relayStatus}
+                relayError={relayError}
+                connected={session.connected}
+                backendUrl={session.backendUrl}
+                apiKey={session.apiKey}
+              />
             </div>
           )}
 
@@ -798,7 +497,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
                         borderRadius: 4,
                       }}>
                         <img
-                          src={`${backendUrl}/icons/${icon.id}`}
+                          src={`${session.backendUrl}/icons/${icon.id}`}
                           alt={icon.filename}
                           style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, borderRadius: 4 }}
                         />

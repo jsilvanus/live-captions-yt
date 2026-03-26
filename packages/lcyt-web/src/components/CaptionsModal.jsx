@@ -16,6 +16,7 @@ import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
 } from '../lib/googleCredential';
 import { applyTextSize } from '../lib/settings';
+import { VadPanel } from './panels/VadPanel.jsx';
 
 export function CaptionsModal({ isOpen, onClose }) {
   const session = useSessionContext();
@@ -509,61 +510,23 @@ export function CaptionsModal({ isOpen, onClose }) {
           {/* ── VAD ── */}
           {activeTab === 'vad' && (
             <div className="settings-panel settings-panel--active">
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.vad.clientVad')}</label>
-                <label className="settings-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={vadEnabled}
-                    onChange={e => {
-                      setVadEnabled(e.target.checked);
-                      try { localStorage.setItem(KEYS.audio.clientVad, e.target.checked ? '1' : '0'); } catch {}
-                    }}
-                  />
-                  {t('settings.vad.enableCheckbox')}
-                </label>
-                <span className="settings-field__hint">{t('settings.vad.enableHint')}</span>
-              </div>
-
-              <div className="settings-field">
-                <label className="settings-field__label">
-                  {t('settings.vad.silenceDuration')}: <strong>{vadSilenceMs} ms</strong>
-                </label>
-                <input
-                  type="range"
-                  className="settings-field__input"
-                  style={{ padding: 0, cursor: 'pointer' }}
-                  min="100" max="2000" step="100"
-                  value={vadSilenceMs}
-                  disabled={!vadEnabled}
-                  onChange={e => {
-                    const v = parseInt(e.target.value, 10);
-                    setVadSilenceMs(v);
-                    try { localStorage.setItem(KEYS.audio.clientVadSilenceMs, String(v)); } catch {}
-                  }}
-                />
-                <span className="settings-field__hint">{t('settings.vad.silenceDurationHint')}</span>
-              </div>
-
-              <div className="settings-field">
-                <label className="settings-field__label">
-                  {t('settings.vad.energyThreshold')}: <strong>{Number(vadThreshold).toFixed(3)}</strong>
-                </label>
-                <input
-                  type="range"
-                  className="settings-field__input"
-                  style={{ padding: 0, cursor: 'pointer' }}
-                  min="0.001" max="0.1" step="0.001"
-                  value={vadThreshold}
-                  disabled={!vadEnabled}
-                  onChange={e => {
-                    const v = parseFloat(e.target.value);
-                    setVadThreshold(v);
-                    try { localStorage.setItem(KEYS.audio.clientVadThreshold, String(v)); } catch {}
-                  }}
-                />
-                <span className="settings-field__hint">{t('settings.vad.energyThresholdHint')}</span>
-              </div>
+              <VadPanel
+                vadEnabled={vadEnabled}
+                onVadEnabledChange={v => {
+                  setVadEnabled(v);
+                  try { localStorage.setItem(KEYS.audio.clientVad, v ? '1' : '0'); } catch {}
+                }}
+                vadSilenceMs={vadSilenceMs}
+                onVadSilenceMsChange={v => {
+                  setVadSilenceMs(v);
+                  try { localStorage.setItem(KEYS.audio.clientVadSilenceMs, String(v)); } catch {}
+                }}
+                vadThreshold={vadThreshold}
+                onVadThresholdChange={v => {
+                  setVadThreshold(v);
+                  try { localStorage.setItem(KEYS.audio.clientVadThreshold, String(v)); } catch {}
+                }}
+              />
             </div>
           )}
 
