@@ -56,22 +56,22 @@ graphics-client  → (none — browser-side SSE subscriber, standalone)
 
 ## Wizard Steps (computed order)
 
+Backend URL is captured at login. API key is managed on the Projects page. Neither appears in the wizard or settings modals.
+
 ```
 [0] Feature Selection      (always)
-[1] Backend Connection     (always)              → localStorage KEYS.session.config
-[2] Caption Targets        (if captions)         → localStorage KEYS.targets.list
-[3] Translation            (if translations)     → localStorage KEYS.translation.*
-[4] RTMP Relay Slots       (if ingest)           → localStorage KEYS.relay.*
-[5] CEA Captions           (if cea-captions)     → backend feature config
-[6] Embed Widgets          (if embed)            → backend feature config
-[7] Server STT             (if stt-server)       → backend feature config
+[1] Caption Targets        (if captions)         → localStorage KEYS.targets.list
+[2] Translation            (if translations)     → localStorage KEYS.translation.*
+[3] RTMP Relay Slots       (if ingest)           → localStorage KEYS.relay.*
+[4] CEA Captions           (if cea-captions)     → backend feature config
+[5] Embed Widgets          (if embed)            → backend feature config
+[6] Server STT             (if stt-server)       → backend feature config
 [N] Review                 (always)
 ```
 
 Step array derived:
 ```js
 const CONFIG_STEP_TEMPLATES = [
-  { id: 'backend',      title: 'Backend Connection', always: true },
   { id: 'targets',      title: 'Caption Targets',    featureCode: 'captions'     },
   { id: 'translation',  title: 'Translation',        featureCode: 'translations' },
   { id: 'relay',        title: 'RTMP Relay Slots',   featureCode: 'ingest'       },
@@ -112,9 +112,6 @@ State:
 selectedFeatures: Set<string>     // feature toggles
 configs: Record<string, object>   // backend feature configs, keyed by feature code
 localSettings: {                  // localStorage-bound settings
-  backendUrl: string,
-  apiKey: string,
-  autoConnect: boolean,
   targets: object[],              // caption targets array
   translationVendor: string,
   translationVendorKey: string,
@@ -152,14 +149,6 @@ Banner when deps auto-enabled: "Also enabled: X, Y. Required by your selections.
 
 #### `StepFeatureSelection`
 `<FeaturePicker>` + `<DepNotice>`. Dep logic runs inside `handleFeaturesChange`.
-
-#### `StepBackendConnection` *(new)*
-Three `settings-field` items:
-1. Backend URL — `<input type="url">` placeholder `https://api.lcyt.fi`
-2. API key — `<input type="password">` with show/hide toggle (reuse `settings-field__eye` pattern)
-3. Auto-connect — checkbox
-
-Inline "Test connection" button → calls `GET {backendUrl}/health`, shows latency or error inline. Does not block Next.
 
 #### `StepTargets` *(new)*
 Manage the `targets[]` array. Mirrors the Targets tab of CCModal but simplified for wizard:
@@ -242,9 +231,6 @@ async function handleFinish() {
   setSaving(true);
 
   // 1. Write localStorage settings
-  localStorage.setItem(KEYS.session.config,
-    JSON.stringify({ backendUrl, apiKey }));
-  session.setAutoConnect(localSettings.autoConnect);
   localStorage.setItem(KEYS.targets.list,
     JSON.stringify(localSettings.targets));
   localStorage.setItem(KEYS.translation.vendor,    localSettings.translationVendor);
@@ -362,9 +348,7 @@ export function applyFeatureDeps(featureMap) {
 
 1. Navigate to `/setup` → Feature Selection shown
 2. Toggle `stt-server` → `ingest` auto-enables + dep notice; toggle `graphics-server` → `graphics-client` + `ingest` auto-enable
-3. Click Next → Backend Connection (always shown)
-4. Enter valid backendUrl + apiKey → "Test connection" shows latency
-5. Click Next → Caption Targets (captions is default-on)
+3. Click Next → Caption Targets (captions is default-on)
 6. Add a YouTube target with a stream key → Next
 7. Skip Translation (not selected), skip RTMP Relay (not selected if ingest not chosen)
 8. If `stt-server` selected: Server STT page appears with provider/language/audioSource fields

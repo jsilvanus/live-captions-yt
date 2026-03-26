@@ -235,14 +235,11 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   const [advancedMode, setAdvancedModeState] = useState(getAdvancedMode);
 
   // ── Basic tab fields ──────────────────────────────────────
-  const [backendUrl, setBackendUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
   const [autoConnect, setAutoConnect] = useState(false);
   const [theme, setTheme] = useState('auto');
   const [textSize, setTextSize] = useState(
     () => { try { return parseInt(localStorage.getItem(KEYS.ui.textSize) || '13', 10); } catch { return 13; } }
   );
-  const [showApiKey, setShowApiKey] = useState(false);
 
   // ── RTMP Relay tab ────────────────────────────────────────
   const [relayList, setRelayList] = useState(() => buildInitialRelayList());
@@ -265,9 +262,6 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   // Load persisted values when modal opens
   useEffect(() => {
     if (!isOpen) return;
-    const cfg = session.getPersistedConfig();
-    setBackendUrl(cfg.backendUrl || '');
-    setApiKey(cfg.apiKey || '');
     setAutoConnect(session.getAutoConnect());
     try { setTheme(localStorage.getItem(KEYS.ui.theme) || 'auto'); } catch {}
     const savedSize = parseInt(localStorage.getItem(KEYS.ui.textSize) || '13', 10);
@@ -308,16 +302,6 @@ export function SettingsModal({ isOpen, onClose, inline }) {
   if (!isOpen && !inline) return null;
 
   // ── Field change handlers (auto-save) ─────────────────────
-
-  function handleBackendUrlChange(val) {
-    setBackendUrl(val);
-    persist({ backendUrl: val });
-  }
-
-  function handleApiKeyChange(val) {
-    setApiKey(val);
-    persist({ apiKey: val });
-  }
 
   function handleAutoConnectChange(val) {
     setAutoConnect(val);
@@ -495,36 +479,9 @@ export function SettingsModal({ isOpen, onClose, inline }) {
               {!loggedInUser && (
                 <div className="settings-field" style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
                   <a href="/login" style={{ color: 'var(--color-accent)' }}>Sign in</a>
-                  {' '}to manage your projects, or enter credentials manually below.
+                  {' '}to manage your projects.
                 </div>
               )}
-
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.connection.backendUrl')}</label>
-                <input
-                  className="settings-field__input"
-                  type="url"
-                  placeholder="https://api.lcyt.fi"
-                  autoComplete="off"
-                  value={backendUrl}
-                  onChange={e => handleBackendUrlChange(e.target.value)}
-                />
-              </div>
-
-              <div className="settings-field">
-                <label className="settings-field__label">{t('settings.connection.apiKey')}</label>
-                <div className="settings-field__input-wrap">
-                  <input
-                    className="settings-field__input settings-field__input--has-eye"
-                    type={showApiKey ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    autoComplete="off"
-                    value={apiKey}
-                    onChange={e => handleApiKeyChange(e.target.value)}
-                  />
-                  <button className="settings-field__eye" onClick={() => setShowApiKey(v => !v)} title="Toggle visibility">👁</button>
-                </div>
-              </div>
 
               <div className="settings-field">
                 <label className="settings-checkbox">
@@ -648,11 +605,11 @@ export function SettingsModal({ isOpen, onClose, inline }) {
               {relayError && <div className="settings-error">{relayError}</div>}
 
               {/* DSK RTMP ingest URL */}
-              {backendUrl && apiKey && (
+              {session.backendUrl && session.apiKey && (
                 <div className="settings-field">
                   <label className="settings-field__label">{t('settings.relay.dskRtmpIngestUrl')}</label>
                   <span className="settings-field__hint">{t('settings.relay.dskRtmpHint')}</span>
-                  <DskRtmpUrlField backendUrl={backendUrl} apiKey={apiKey} />
+                  <DskRtmpUrlField backendUrl={session.backendUrl} apiKey={session.apiKey} />
                 </div>
               )}
             </div>
@@ -798,7 +755,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
                         borderRadius: 4,
                       }}>
                         <img
-                          src={`${backendUrl}/icons/${icon.id}`}
+                          src={`${session.backendUrl}/icons/${icon.id}`}
                           alt={icon.filename}
                           style={{ width: 40, height: 40, objectFit: 'contain', flexShrink: 0, borderRadius: 4 }}
                         />
