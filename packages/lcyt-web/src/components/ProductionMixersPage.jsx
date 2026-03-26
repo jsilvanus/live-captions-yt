@@ -2,6 +2,7 @@ import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
+import { ConnectionDot } from './production/ConnectionDot.jsx';
 
 const MIXER_TYPES = [
   { value: 'roland', label: 'Roland V-series' },
@@ -13,19 +14,6 @@ const MIXER_TYPES = [
 
 const EMPTY_INPUT     = (n) => ({ number: n, command: '' });
 const EMPTY_OBS_INPUT = (n) => ({ number: n, sceneName: '' });
-
-function ConnectionDot({ connected }) {
-  return (
-    <span
-      title={connected ? 'Connected' : 'Disconnected'}
-      style={{
-        display: 'inline-block', width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-        background: connected ? 'var(--color-success)' : 'var(--color-text-muted)',
-        boxShadow: connected ? '0 0 5px var(--color-success)' : 'none',
-      }}
-    />
-  );
-}
 
 function InputRow({ entry, onChange, onRemove }) {
   return (

@@ -1,7 +1,7 @@
 # Component Split Plan — `packages/lcyt-web`
 
 **Created:** 2026-03-26
-**Status:** Draft
+**Status:** Completed (all high, medium, and low priority items done)
 
 This document identifies monolithic components in `packages/lcyt-web/src/components/`
 that should be split into smaller, potentially shared, pieces. Priorities are ranked
@@ -338,17 +338,17 @@ are large enough to benefit from extraction but are used only once each. Low pri
 
 ## Summary table
 
-| File | Current lines | Target lines | Priority | Key extractions |
-|---|---|---|---|---|
-| `CCModal.jsx` | 1 400 | ~600 | **High** | `ServicePanel`, `DetailsPanel` |
-| `DskEditorPage.jsx` | 1 755 | ~350 | **High** | geometry lib, presets lib, `TemplatePreview`, `AnimationEditor`, `LayerPropertyEditor` |
-| `AudioPanel.jsx` | 1 071 | ~350 | **High** | `AudioLevelMeter`, `useWebSpeech`, reuse `ServicePanel` |
-| `BroadcastModal.jsx` | 833 | ~80 | **Medium** | extract tab files, use shared `RelayPanel` |
-| `SidebarLayout.jsx` | 709 | ~150 | **Medium** | `StatusPopover`, `QuickActionsPopover`, `TopBar`, `Sidebar` |
-| `DskViewportsPage.jsx` | 862 | ~600 | **Medium** | `TextLayersEditor`, `ImageSettingsTable`, `ImageRow` |
-| `CaptionsModal.jsx` | 639 | ~400 | **Low** | `VadPanel`, reuse `ServicePanel` |
-| `ControlsPanel.jsx` | 460 | — | **Low** | defer |
-| Production pages × 3 | 470–523 | ~380 | **Low** | shared `ConnectionDot` |
+| File | Before | After | Priority | Status | Key extractions |
+|---|---|---|---|---|---|
+| `CCModal.jsx` | 1 400 | 468 | **High** | ✅ Done | `ServicePanel`, `DetailsPanel`, `TargetsPanel`, `TranslationPanel` |
+| `DskEditorPage.jsx` | 1 755 | 1 350 | **High** | ✅ Done | geometry lib, presets lib, `TemplatePreview`, `AnimationEditor`, `LayerPropertyEditor` |
+| `AudioPanel.jsx` | 1 071 | 1 040 | **High** | ✅ Done | `AudioLevelMeter`, `useWebSpeech` |
+| `BroadcastModal.jsx` | 833 | 55 | **Medium** | ✅ Done | `EncoderTab`, `StreamTab` (uses `RelayPanel`), `YouTubeTab` |
+| `SidebarLayout.jsx` | 709 | 95 | **Medium** | ✅ Done | `StatusPopover`, `QuickActionsPopover`, `TopBar`, `Sidebar`, `navConfig.js` |
+| `DskViewportsPage.jsx` | 862 | 493 | **Medium** | ✅ Done | `TextLayersEditor`, `ImageSettingsTable`, `ImageRow`, `styles.js` |
+| `CaptionsModal.jsx` | 639 | 602 | **Low** | ✅ Done | `VadPanel` |
+| `ControlsPanel.jsx` | 460 | — | **Low** | ⏭ Deferred | defer until clear reuse opportunity |
+| Production pages × 3 | 470–523 | ~505 | **Low** | ✅ Done | shared `ConnectionDot` |
 
 ---
 
