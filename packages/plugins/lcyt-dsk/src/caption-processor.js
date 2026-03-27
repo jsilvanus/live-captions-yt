@@ -212,14 +212,19 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       dskBus.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
     }
 
-    // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
-    // SVG is not supported by ffmpeg's overlay filter; only PNG/WebP are included.
+   
+
+    return cleanText;
+  };
+}
+ // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
+    // Relay accepts image assets and is responsible for any conversion (SVGs are allowed).
     if (relayManager && newDefault !== null) {
       // Respect per-image viewport visibility for the landscape/default slot.
       const imagePaths = [];
       for (const name of newDefault) {
         const row = getImageByShorthand(db, apiKey, name);
-        if (!row || row.mime_type === 'image/svg+xml') continue;
+        if (!row) continue;
         const meta = safeParseJson(row.settings_json);
         const vpMeta = meta?.viewports?.landscape ?? meta?.viewports?.default ?? {};
         if (vpMeta?.visible === false) continue; // skip if explicitly disabled for landscape
@@ -227,7 +232,3 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       }
       relayManager.setDskOverlay(apiKey, newDefault, imagePaths).catch(() => {});
     }
-
-    return cleanText;
-  };
-}
