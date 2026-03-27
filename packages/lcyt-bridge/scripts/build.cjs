@@ -85,7 +85,7 @@ function pkg(platform) {
   // stable filename (e.g. lcyt-bridge.exe → lcyt-bridge-0.3.0.exe).
   const alias = unversionedAliases[platform];
   if (alias) {
-    try { fs.unlinkSync(alias); } catch { /* ignore if missing */ }
+    try { fs.unlinkSync(alias); } catch (err) { if (err.code !== 'ENOENT') throw err; }
     fs.symlinkSync(basename(t.output), alias);
     console.log(`[build] symlink ${alias} → ${basename(t.output)}`);
   }
