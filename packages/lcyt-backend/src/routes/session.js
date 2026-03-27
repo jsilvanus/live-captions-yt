@@ -1,7 +1,7 @@
 /**
  * Session router group — caption delivery core.
  *
- * Mounts: /live, /captions, /events, /sync, /mic
+ * Mounts: /live, /captions, /events, /sync, /mic, /features
  *
  * All routes depend on the in-memory SessionStore.
  */
@@ -11,6 +11,7 @@ import { createCaptionsRouter } from './captions.js';
 import { createEventsRouter } from './events.js';
 import { createSyncRouter } from './sync.js';
 import { createMicRouter } from './mic.js';
+import { getProjectFeatures } from '../db/project-features.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -27,5 +28,15 @@ export function createSessionRouters(db, store, jwtSecret, auth, { relayManager 
   router.use('/events',   createEventsRouter(store, jwtSecret));
   router.use('/sync',     createSyncRouter(store, auth));
   router.use('/mic',      createMicRouter(store, auth));
+
+  // GET /features — return enabled feature codes for the authenticated session key
+  router.get('/features', auth, (req, res) => {
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const rows = getProjectFeatures(db, apiKey);
+    const features = rows.filter(r => r.enabled).map(r => r.feature_code);
+    return res.json({ features });
+  });
+
   return router;
 }
