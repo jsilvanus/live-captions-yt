@@ -157,7 +157,9 @@ if _should_run app; then
   LOG="$REPO_DIR/lcyt-web-npm-install.log"
   rm -f "$LOG"
   # Use --include=dev so devDependencies (Vite) are installed even if NODE_ENV=production
-  (cd "$REPO_DIR" && npm ci --workspace packages/lcyt-web --include=dev) 2>&1 | tee "$LOG" || \
+  # Use npm install (not npm ci) to avoid EACCES failures when node_modules files were
+  # previously created by a different user (e.g. root).
+  (cd "$REPO_DIR" && npm install --workspace packages/lcyt-web --include=dev) 2>&1 | tee "$LOG" || \
     echo "Warning: lcyt-web npm install failed (non-fatal) — web UI may not be updated."
   echo "    Install log: $LOG"
   tail -n 20 "$LOG" || true
@@ -264,7 +266,9 @@ if _should_run site; then
   SITE_LOG="$REPO_DIR/lcyt-site-npm-install.log"
   rm -f "$SITE_LOG"
   # Use --include=dev so devDependencies (Astro) are installed even if NODE_ENV=production
-  (cd "$REPO_DIR" && npm ci --workspace packages/lcyt-site --include=dev) 2>&1 | tee "$SITE_LOG" || \
+  # Use npm install (not npm ci) to avoid EACCES failures when node_modules files were
+  # previously created by a different user (e.g. root).
+  (cd "$REPO_DIR" && npm install --workspace packages/lcyt-site --include=dev) 2>&1 | tee "$SITE_LOG" || \
     echo "Warning: lcyt-site npm install failed (non-fatal) — site may not be updated."
   echo "    Install log: $SITE_LOG"
   tail -n 20 "$SITE_LOG" || true
