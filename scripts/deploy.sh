@@ -215,6 +215,15 @@ if _should_run backend; then
     --project-directory "$COMPOSE_DIR" \
     -f "$COMPOSE_DIR/docker-compose.yml" \
     up -d --build --pull=always --remove-orphans
+
+  # mediamtx.yml is volume-mounted (not baked into the image), so docker compose
+  # up -d won't restart mediamtx when only the config file changes.  Always
+  # restart it explicitly so the latest mediamtx.yml is always active.
+  echo "==> Restarting mediamtx (picks up volume-mounted mediamtx.yml)"
+  docker compose \
+    --project-directory "$COMPOSE_DIR" \
+    -f "$COMPOSE_DIR/docker-compose.yml" \
+    restart mediamtx
 fi
 
 # ---------------------------------------------------------------------------
