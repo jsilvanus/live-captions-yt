@@ -18,14 +18,14 @@ live-captions-yt/
 │   ├── lcyt-mcp-stdio/         # MCP server (stdio transport)
 │   ├── lcyt-mcp-sse/           # MCP server (HTTP SSE transport)
 │   ├── lcyt-site/              # Marketing/docs website (Astro)
-│   ├── lcyt-web/               # Browser-based web UI (Vite + React)
+│   ├── lcyt-web/               # Browser-based web UI (Vite + React + wouter)
 │   ├── lcyt-orchestrator/      # Compute orchestrator — worker registration, job dispatch, Hetzner autoscaling
 │   ├── lcyt-worker-daemon/     # Minimal worker daemon — ffmpeg job orchestration, S3 upload
 │   ├── tools/                  # Standalone utilities
 │   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
 │   └── plugins/                # Plugin packages (npm workspaces glob: packages/plugins/*)
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
-│       ├── lcyt-files/         # Caption file storage plugin (local FS + S3-compatible adapters)
+│       ├── lcyt-files/         # Caption file storage plugin (local FS + S3 + WebDAV adapters)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
 │       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
 ├── python-packages/            # Python packages
@@ -34,11 +34,24 @@ live-captions-yt/
 │   └── lcyt-mcp/               # Python MCP server
 ├── android/                    # Native Android apps
 │   └── lcyt-tv/                # Android TV caption viewer (Kotlin + Compose for TV)
+├── docker/                     # Docker build contexts for containerised services
+│   ├── lcyt-ffmpeg/            # ffmpeg Docker image (used by DockerFfmpegRunner)
+│   ├── lcyt-dsk-renderer/      # Chromium DSK renderer Docker image
+│   └── mediamtx.yml            # MediaMTX configuration template
+├── ops/                        # Operational runbooks
+│   └── runbooks/               # Deployment and maintenance runbooks
+├── ci/                         # CI helper scripts
+│   └── test-docker.sh          # Docker integration test runner
 ├── python/                     # LEGACY — do not use; canonical source is python-packages/
 ├── scripts/                    # Shell deployment scripts + screenshot capture
 ├── docs/                       # Planning docs, API guides, todo lists
 │   ├── PLANS.md                # Index of all plans with status (implemented/pending/draft/…)
 │   └── plans/                  # Individual plan files (plan_*.md)
+├── .env.example                # Example environment variables
+├── docker-compose.yml          # Compose stack for local development
+├── docker-compose.orchestrator.yml # Compose stack with orchestrator + worker daemon
+├── PORTS.md                    # Port assignment reference
+├── TODO.md                     # Outstanding work items
 ├── package.json                # Root workspace manifest
 └── CLAUDE.md                   # This file
 ```
@@ -144,6 +157,16 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 **Environment variables:**
 | Variable | Purpose | Default |
 |---|---|---|
+| `FFMPEG_RUNNER` | ffmpeg execution backend: `local` (default), `docker`, `worker` | `local` |
+| `FFMPEG_IMAGE` | Docker image for ffmpeg when `FFMPEG_RUNNER=docker` | none |
+| `DOCKER_BUILD_TIMEOUT_MS` | Timeout for Docker image builds (ms) | none |
+| `WORKER_DAEMON_URL` | Worker daemon URL when `FFMPEG_RUNNER=worker` | none |
+| `BRIDGE_DOWNLOAD_BASE_URL` | Base URL for bridge agent downloads | none |
+| `BACKUP_DAYS` | Number of daily DB backups to retain | none |
+| `BACKUP_DIR` | Directory for DB backup files | none |
+| `ICONS_DIR` | Directory for icon assets served at `/icons/*` | none |
+| `BACKEND_URL` | Server's own URL (used internally for DSK renderer etc.) | none |
+| `FFMPEG_WRAPPER` | Custom ffmpeg wrapper script path | none |
 | `JWT_SECRET` | HS256 signing key | auto-generated (warns) |
 | `ADMIN_KEY` | Admin endpoint auth | none (disables admin) |
 | `DB_PATH` | SQLite file path | `./lcyt-backend.db` |
@@ -287,6 +310,19 @@ GET/POST/DELETE /production/bridge/instances — bridge instance CRUD
 
 GET  /icons/*             — icon assets (authenticated)
 
+GET/POST/PUT/DELETE /production/device-roles — device role CRUD (admin or user Bearer)
+GET  /production/device-roles/:code/auth     — device role pin-code authentication
+
+GET  /keys/:key/features — list project feature flags (user Bearer)
+PUT  /keys/:key/features — update project feature flags (user Bearer)
+
+GET  /keys/:key/members  — list project members (user Bearer)
+POST /keys/:key/members  — invite member (user Bearer)
+PUT  /keys/:key/members/:userId — update member role (user Bearer)
+DELETE /keys/:key/members/:userId — remove member (user Bearer)
+
+GET  /bridge/download/:platform — download pre-built bridge agent binary
+
 GET  /stt/status          — current STT session state for the authenticated API key (Bearer token)
 POST /stt/start           — start server-side STT { provider?, language?, audioSource?, streamKey?, confidenceThreshold? } (Bearer token)
 POST /stt/stop            — stop STT session (Bearer token)
@@ -306,6 +342,23 @@ PUT  /stt/config          — update per-key STT config (Bearer token)
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
 - `src/caption-files.js` — Pure caption-text utilities: `composeCaptionText`, `formatVttTime`, `buildVttCue`. File I/O was extracted to `lcyt-files`.
 - `src/backup.js` — DB backup utilities.
+- `src/dsk-bus.js` — `DskBus`: DSK graphics SSE subscriber registry and per-key graphics state, extracted from SessionStore so `lcyt-dsk` does not depend on session lifecycle.
+- `src/ffmpeg/index.js` — ffmpeg runner factory: selects `local-runner`, `docker-runner`, or `worker-runner` based on `FFMPEG_RUNNER` env var. Exports `createFfmpegRunner()`.
+- `src/ffmpeg/local-runner.js` — Spawns ffmpeg directly via `child_process.spawn`.
+- `src/ffmpeg/docker-runner.js` — Runs ffmpeg inside a Docker container (`FFMPEG_IMAGE`).
+- `src/ffmpeg/worker-runner.js` — Delegates ffmpeg jobs to the worker daemon (`WORKER_DAEMON_URL`).
+- `src/ffmpeg/pipe-utils.js` — Shared pipe/stream utilities for ffmpeg runners.
+- `src/storage/s3.js` — S3 upload utilities (used by backend-level S3 operations).
+- `src/routes/device-roles.js` — Device role CRUD + pin-code auth for production devices.
+- `src/routes/project-features.js` — Per-project feature flag CRUD.
+- `src/routes/project-members.js` — Project membership CRUD (invite, role update, remove).
+- `src/routes/bridge-download.js` — Bridge agent binary download endpoint.
+- `src/routes/account.js` — User account routes (profile, settings).
+- `src/routes/session.js` — Session management routes.
+- `src/routes/content.js` — Content router factory (aggregates file, video, viewer routes).
+- `src/db/device-roles.js` — Device role DB helpers (`prod_device_roles` table).
+- `src/db/project-features.js` — Project feature flag DB helpers (`project_features` table).
+- `src/db/project-members.js` — Project membership DB helpers (`project_members` table).
 - `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`).
 
 **SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`.
@@ -322,7 +375,7 @@ PUT  /stt/config          — update per-key STT config (Bearer token)
 
 ### `packages/plugins/lcyt-files` — Caption File Storage Plugin (v0.1.0)
 
-Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default) and S3-compatible object storage backends behind a common interface. Imported by `lcyt-backend` as `lcyt-files`.
+Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default), S3-compatible object storage, and WebDAV backends behind a common interface. Imported by `lcyt-backend` as `lcyt-files`.
 
 **Main entry:** `src/api.js`
 **Usage in lcyt-backend:**
@@ -344,6 +397,7 @@ store.onSessionEnd = async (session) => {
 - `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, storage)` → `GET /file`, `GET /file/:id`, `DELETE /file/:id`.
 - `adapters/local.js` — `createLocalAdapter(baseDir)`: wraps `fs.WriteStream` (append) and `fs.ReadStream`. `storedKey` is the full filesystem path.
 - `adapters/s3.js` — `createS3Adapter({ bucket, prefix, region, endpoint, credentials })`: multipart upload via `@aws-sdk/lib-storage`. `storedKey` is the S3 object key.
+- `adapters/webdav.js` — `createWebdavAdapter({ url, username, password })`: WebDAV client adapter for remote file storage.
 
 **Storage adapter interface:**
 ```
@@ -357,7 +411,7 @@ describe()                                      → string (startup log message)
 **Environment variables** (see also backend env vars above):
 | Variable | Purpose | Default |
 |---|---|---|
-| `FILE_STORAGE` | Storage backend: `local` or `s3` | `local` |
+| `FILE_STORAGE` | Storage backend: `local`, `s3`, or `webdav` | `local` |
 | `FILES_DIR` | Base directory for local adapter | `/data/files` |
 | `S3_BUCKET` | S3 bucket name (required when `FILE_STORAGE=s3`) | — |
 | `S3_REGION` | AWS region (or `auto` for R2) | `auto` |
@@ -396,12 +450,18 @@ app.use('/production', createProductionRouter(db, registry, bridgeManager, { pub
 - `routes/mixers.js` — CRUD + source switching.
 - `routes/bridge.js` — Bridge instance CRUD + SSE command stream + status callback.
 - `adapters/camera/amx.js` — AMX camera adapter (TCP/IP PTZ control).
+- `adapters/camera/visca-ip.js` — VISCA-over-IP camera adapter (PTZ control via VISCA protocol).
+- `adapters/camera/browser.js` — Browser-based camera adapter (WebRTC / media device).
 - `adapters/camera/none.js` — No-op camera adapter (software-only targets).
 - `adapters/mixer/roland.js` — Roland video mixer adapter (TCP).
 - `adapters/mixer/amx.js` — AMX mixer adapter (TCP).
+- `adapters/mixer/atem.js` — Blackmagic ATEM mixer adapter.
+- `adapters/mixer/obs.js` — OBS Studio mixer adapter (obs-websocket).
+- `adapters/mixer/lcyt.js` — LCYT software mixer adapter.
+- `adapters/mixer/monarch_hdx.js` — Matrox Monarch HDX encoder/mixer adapter.
 
-**Camera control types:** `amx`, `none`
-**Mixer types:** `roland`, `amx`
+**Camera control types:** `amx`, `visca-ip`, `browser`, `none`
+**Mixer types:** `roland`, `amx`, `atem`, `obs`, `lcyt`, `monarch_hdx`
 
 **Tests:** `packages/plugins/lcyt-production/test/*.test.js` — uses `node:test`.
 
@@ -487,6 +547,7 @@ await stopDsk();
 **Source files (`src/`):**
 - `api.js` — `initDskControl(db, store, relayManager)` + `createDskRouters(db, store, auth, relayManager)`.
 - `renderer.js` — `startRenderer()` / `stopRenderer()`. Manages a single persistent headless Chromium instance. Per-key: `updateTemplate()`, `broadcastData()`, `startRtmpStream()`, `stopRtmpStream()`, `getStatus()`. Uses ffmpeg to push frames to nginx-rtmp.
+- `renderer-container.js` — Docker-based renderer: runs the Chromium DSK renderer inside a container (uses `docker/lcyt-dsk-renderer` image).
 - `caption-processor.js` — `createDskCaptionProcessor()`. Extracts `<!-- graphics:... -->` and `<!-- graphics[viewport,...]:... -->` metacodes from caption text; emits DSK SSE events; updates RTMP relay overlay. Supports delta mode (`+name`, `-name`) and landscape aliases (`landscape`, `default`, `main`).
 - `db.js` — Re-exports from `src/db/`. Migrations for `dsk_templates` table + image columns.
 - `db/images.js` — Image CRUD; `deleteAllImages()` exported from main entry.
@@ -529,7 +590,7 @@ await stopDsk();
 
 ---
 
-### `packages/lcyt-bridge` — Production Control Bridge Agent (v0.1.0)
+### `packages/lcyt-bridge` — Production Control Bridge Agent (v0.3.0)
 
 Standalone agent that connects to the LCYT backend via SSE and relays commands to physical AV hardware (AMX controllers, Roland mixers) over TCP. Designed to run on-site where the hardware is located.
 
@@ -681,46 +742,68 @@ Static documentation and marketing site built with Astro.
 
 ### `packages/lcyt-web` — Web UI (v1.0.0, private)
 
-Browser-based React app using Vite. Sends captions via the `lcyt-backend` relay.
+Browser-based React app using Vite and **wouter** for routing. Uses sidebar navigation as the primary layout. Sends captions via the `lcyt-backend` relay.
 
 **Build:** `npm run build:web` → `packages/lcyt-web/dist/`
 **Dev:** `npm run web`
 
 **Source (`src/`):**
-- `main.jsx` — React entry point; path-based routing for the main app and all sub-pages (see below)
-- `App.jsx` — root component (full two-panel layout)
-- `components/` — React JSX components (see routing table below; others include AudioPanel, CaptionView, DropZone, FileTabs, InputBar, PrivacyModal, SentPanel, SettingsModal, StatsModal, StatusBar, ToastContainer, CCModal, ControlsPanel, StatusPanel, FilesModal, BroadcastModal, CaptionsModal, ActionsPanel, FloatingPanel, LanguagePicker, MobileAudioBar, NormalizeLinesModal, TranslationModal, EmbedApiKeyGate)
-- `contexts/` — React context providers: AppProviders, FileContext, SentLogContext, SessionContext, ToastContext
-- `hooks/` — Custom React hooks: useSession, useFileStore, useSentLog, useToast
-- `lib/` — Utilities: googleCredential.js, sttConfig.js
-- `styles/` — reset.css, layout.css, components.css
+- `main.jsx` — React entry point; wouter-based routing for sidebar pages and standalone pages
+- `App.jsx` — legacy two-panel caption layout (mounted at `/legacy` and `/captions`)
+- `components/` — React JSX components (see routing table below). Key subdirectories: `sidebar/` (Sidebar, TopBar, StatusPopover, QuickActionsPopover), `dashboard/` (DashboardCard, StatusWidget, SentLogWidget, etc.), `broadcast/` (EncoderTab, StreamTab, YouTubeTab), `dsk-editor/` (TemplatePreview, AnimationEditor, LayerPropertyEditor), `dsk-viewports/` (TextLayersEditor, ImageSettingsTable), `panels/` (TargetsPanel, TranslationPanel, RelayPanel, ServicePanel, DetailsPanel, CeaCaptionsPanel, EmbedPanel, SttPanel, VadPanel, ReviewSummary), `production/` (ConnectionDot), `audio/` (AudioLevelMeter)
+- `contexts/` — React context providers: AppProviders, AudioContext, CaptionContext, ConnectionContext, FileContext, LangContext, SentLogContext, SessionApiContext, SessionContext, ToastContext
+- `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useWebSpeech, useWindowEvent
+- `lib/` — Utilities: activeCodes.js, api.js, device.js, dskEditorAnimation.js, dskEditorGeometry.js, dskEditorPresets.js, fileUtils.js, formatting.js, googleCredential.js, i18n.js, inputLang.js, normalizeLines.js, plannerUtils.js, relayConfig.js, settings.js, settingsIO.js, storageKeys.js, sttConfig.js, targetConfig.js, translate.js, translationConfig.js, viewerUtils.js, youtubeApi.js, youtubeAuth.js
+- `locales/` — i18n translation files: en.js, fi.js, sv.js
+- `styles/` — reset.css, layout.css, components.css, dashboard.css
 
-**URL routing** (path-based, no router library):
+**URL routing** (wouter-based):
 
-| Path prefix | Rendered component | Notes |
+#### Sidebar routes (inside `SidebarLayout`)
+
+| Path | Component | Notes |
 |---|---|---|
-| `/` | `App` | Full main UI |
-| `/mcp/:sessionId` | `SpeechCapturePage` | MCP speech session (self-contained) |
+| `/` | `DashboardPage` | Dockable mini-panel grid (react-grid-layout) |
+| `/captions` | `AppLayout` | Classic two-panel caption layout (files + input + sent log) |
+| `/audio` | `AudioPage` | Full-page audio/STT controls |
+| `/broadcast` | `BroadcastPage` | Encoder, YouTube OAuth, RTMP relay tabs |
+| `/graphics/editor` | `DskEditorPage` | Visual DSK template editor |
+| `/graphics/control` | `DskControlPage` | DSK broadcast control panel |
+| `/graphics/viewports` | `DskViewportsPage` | DSK viewport management |
+| `/production` | `ProductionOperatorPage` | Production operator control surface |
+| `/production/cameras` | `ProductionCamerasPage` | Camera management |
+| `/production/mixers` | `ProductionMixersPage` | Mixer management |
+| `/production/bridges` | `ProductionBridgesPage` | Bridge instance management |
+| `/production/devices` | `ProductionDevicesPage` | Device role management |
+| `/planner` | `PlannerPage` | Event/service planner |
+| `/translations` | `TranslationsPage` | Translation management |
+| `/projects` | `ProjectsPage` | User project (API key) management |
+| `/setup` | `SetupWizardPage` | Guided setup wizard |
+| `/account` | `AccountPage` | Login/register or user profile |
+| `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
+
+#### Standalone routes (no sidebar)
+
+| Path | Component | Notes |
+|---|---|---|
+| `/view/:key` | `ViewerPage` | Full-screen caption viewer (public) |
+| `/dsk/:key` | `DskPage` | DSK green-screen overlay (public, transparent bg) |
+| `/dsk-control/:key` | `DskControlPage` | DSK control (standalone mode) |
+| `/mcp/:sessionId` | `SpeechCapturePage` | MCP speech session |
 | `/embed/audio` | `EmbedAudioPage` | Mic / STT capture widget |
 | `/embed/input` | `EmbedInputPage` | Text input + sent log widget |
-| `/embed/sentlog` | `EmbedSentLogPage` | Read-only delivery log (BroadcastChannel subscriber) |
+| `/embed/sentlog` | `EmbedSentLogPage` | Read-only delivery log (BroadcastChannel) |
 | `/embed/file-drop` | `EmbedFileDropPage` | Drop-one-file player widget |
 | `/embed/files` | `EmbedFilesPage` | Full file management widget |
-| `/embed/settings` | `EmbedSettingsPage` | Settings widget — General tab (credentials, theme) + CC tab (targets, STT, translations) |
-| `/embed/rtmp` | `EmbedRtmpPage` | RTMP relay-only widget — ingest address + relay slot management |
+| `/embed/settings` | `EmbedSettingsPage` | Settings widget |
+| `/embed/rtmp` | `EmbedRtmpPage` | RTMP relay-only widget |
 | `/embed/viewer` | `EmbedViewerPage` | Embeddable viewer widget |
-| `/dsk/:key` | `DskPage` | DSK green-screen overlay page (no auth; driven by `/dsk/:apikey/events` SSE) |
-| `/dsk-editor` | `DskEditorPage` | DSK graphics editor (visual template builder) |
-| `/dsk-control/:key` | `DskControlPage` | DSK broadcast control panel (activate templates, manage renderer) |
-| `/dsk-viewports` | `DskViewportsPage` | DSK viewport management UI |
-| `/view/:key` | `ViewerPage` | Full-screen caption viewer page |
-| `/production/cameras` | `ProductionCamerasPage` | Camera management UI (admin) |
-| `/production/mixers` | `ProductionMixersPage` | Mixer management UI (admin) |
-| `/production/bridges` | `ProductionBridgesPage` | Bridge instance management UI (admin) |
-| `/production` | `ProductionOperatorPage` | Production operator control surface |
-| `/login` | `LoginPage` | User login page |
-| `/register` | `RegisterPage` | User registration page |
-| `/projects` | `ProjectsPage` | User project (API key) management |
+| `/login` | `LoginPage` | User login (standalone access) |
+| `/register` | `RegisterPage` | User registration (standalone access) |
+| `/device-login` | `DeviceLoginPage` | Device pin-code login |
+| `/production/camera/:key` | `CameraStreamPage` | Camera stream view |
+| `/production/lcyt-mixer/:key` | `LcytMixerPage` | LCYT software mixer view |
+| `/legacy` | `App` | Legacy two-panel layout |
 
 **Embed pages** (`/embed/*`) accept `?server=`, `?apikey=`, and `?theme=` URL params and auto-connect when credentials are present. All session-owning embed pages (`/embed/audio`, `/embed/input`, `/embed/file-drop`, `/embed/files`) operate in `embed` mode: they broadcast the JWT token (`lcyt:session`) and each sent caption (`lcyt:caption`) on `BroadcastChannel('lcyt-embed')` so a sibling `/embed/sentlog` can subscribe without owning a session. See `docs/guide/embed.md` for full documentation.
 
@@ -1007,6 +1090,8 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-cli/src/interactive-ui.js` | Full-screen blessed terminal UI |
 | `packages/lcyt-backend/src/server.js` | Express app factory (imports + mounts all plugins and routers) |
 | `packages/lcyt-backend/src/store.js` | In-memory session store (emitter + send queue + extraTargets per session) |
+| `packages/lcyt-backend/src/dsk-bus.js` | DskBus: DSK graphics SSE subscriber registry + per-key graphics state |
+| `packages/lcyt-backend/src/ffmpeg/index.js` | ffmpeg runner factory (local / docker / worker) |
 | `packages/lcyt-backend/src/routes/auth.js` | User registration/login/me/change-password routes |
 | `packages/lcyt-backend/src/routes/keys.js` | API key CRUD (admin + user project management) |
 | `packages/lcyt-backend/src/routes/events.js` | SSE delivery-result stream (authenticated, session owner) |
@@ -1020,6 +1105,10 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/routes/usage.js` | Per-domain caption statistics |
 | `packages/lcyt-backend/src/routes/mic.js` | Soft mic lock for collaborative sessions |
 | `packages/lcyt-backend/src/routes/stt.js` | Server-side STT routes (`/stt/*`) — delegates to `SttManager` from `lcyt-rtmp` |
+| `packages/lcyt-backend/src/routes/device-roles.js` | Device role CRUD + pin-code auth for production devices |
+| `packages/lcyt-backend/src/routes/project-features.js` | Per-project feature flag CRUD |
+| `packages/lcyt-backend/src/routes/project-members.js` | Project membership CRUD |
+| `packages/lcyt-backend/src/routes/bridge-download.js` | Bridge agent binary download endpoint |
 | `packages/lcyt-backend/src/db.js` | SQLite store re-export (modular, from src/db/) |
 | `packages/plugins/lcyt-rtmp/src/api.js` | RTMP plugin entry: `initRtmpControl()` + `createRtmpRouters()` |
 | `packages/plugins/lcyt-rtmp/src/rtmp-manager.js` | RTMP relay session manager |
@@ -1051,31 +1140,52 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/plugins/lcyt-production/src/bridge-manager.js` | BridgeManager: SSE command dispatch to bridge agents |
 | `packages/plugins/lcyt-dsk/src/api.js` | DSK plugin entry: `initDskControl()` + `createDskRouters()` |
 | `packages/plugins/lcyt-dsk/src/renderer.js` | Playwright Chromium renderer: per-key template rendering + ffmpeg RTMP output |
+| `packages/plugins/lcyt-dsk/src/renderer-container.js` | Docker-based DSK renderer alternative |
 | `packages/plugins/lcyt-dsk/src/caption-processor.js` | DSK caption metacode processor (graphics:... comments → SSE events) |
 | `packages/plugins/lcyt-dsk/src/middleware/editor-auth.js` | X-API-Key auth + `editorAuthOrBearer` middleware |
 | `packages/lcyt-bridge/src/index.js` | Bridge agent entrypoint |
 | `packages/lcyt-bridge/src/bridge.js` | Bridge SSE client + TCP command dispatcher |
 | `packages/lcyt-bridge/src/tcp-pool.js` | Managed TCP connection pool |
-| `packages/lcyt-web/src/main.jsx` | React entry point + path-based routing for all pages |
-| `packages/lcyt-web/src/App.jsx` | Full two-panel main UI layout |
+| `packages/lcyt-web/src/main.jsx` | React entry point + wouter-based routing for sidebar and standalone pages |
+| `packages/lcyt-web/src/App.jsx` | Legacy two-panel caption layout (mounted at `/captions` and `/legacy`) |
+| `packages/lcyt-web/src/components/SidebarLayout.jsx` | Sidebar navigation shell: TopBar, Sidebar, drawer, reconnect banner |
+| `packages/lcyt-web/src/components/DashboardPage.jsx` | `/` — dockable mini-panel grid (react-grid-layout) |
+| `packages/lcyt-web/src/components/AudioPage.jsx` | `/audio` — full-page audio/STT controls |
+| `packages/lcyt-web/src/components/BroadcastPage.jsx` | `/broadcast` — encoder, YouTube, RTMP relay tabs |
+| `packages/lcyt-web/src/components/SettingsPage.jsx` | `/settings` — unified settings (General / CC / I/O) |
+| `packages/lcyt-web/src/components/SetupWizardPage.jsx` | `/setup` — guided setup wizard |
+| `packages/lcyt-web/src/components/AccountPage.jsx` | `/account` — login/register or user profile |
+| `packages/lcyt-web/src/components/PlannerPage.jsx` | `/planner` — event/service planner |
+| `packages/lcyt-web/src/components/TranslationsPage.jsx` | `/translations` — translation management |
+| `packages/lcyt-web/src/components/DeviceLoginPage.jsx` | `/device-login` — device pin-code login |
+| `packages/lcyt-web/src/components/CameraStreamPage.jsx` | `/production/camera/:key` — camera stream view |
+| `packages/lcyt-web/src/components/LcytMixerPage.jsx` | `/production/lcyt-mixer/:key` — LCYT software mixer |
+| `packages/lcyt-web/src/components/ProductionDevicesPage.jsx` | `/production/devices` — device role management |
 | `packages/lcyt-web/src/contexts/AppProviders.jsx` | All context providers; accepts `initConfig`, `autoConnect`, `embed` for embed pages |
+| `packages/lcyt-web/src/contexts/ConnectionContext.jsx` | Connection state, health, connect/disconnect |
+| `packages/lcyt-web/src/contexts/CaptionContext.jsx` | Send, sendBatch, sequence, syncOffset |
+| `packages/lcyt-web/src/contexts/AudioContext.jsx` | Audio/STT state and controls |
+| `packages/lcyt-web/src/contexts/LangContext.jsx` | i18n language provider |
 | `packages/lcyt-web/src/hooks/useSession.js` | BackendCaptionSender session lifecycle hook; `onConnected` payload includes `token` |
+| `packages/lcyt-web/src/hooks/useDashboardConfig.js` | Dashboard panel/layout CRUD (localStorage persistence) |
+| `packages/lcyt-web/src/hooks/useWebSpeech.js` | WebSpeech recognition state machine (start, stop, error recovery) |
+| `packages/lcyt-web/src/hooks/useProjectFeatures.js` | Project feature flag hook |
+| `packages/lcyt-web/src/hooks/useUserAuth.js` | User authentication hook |
+| `packages/lcyt-web/src/lib/storageKeys.js` | Normalized localStorage key registry (`lcyt.{category}.{key}` convention) |
+| `packages/lcyt-web/src/lib/settingsIO.js` | Settings export/import (downloadSettings, importSettings) |
+| `packages/lcyt-web/src/lib/i18n.js` | i18n framework (locale loading, `useLang` hook) |
 | `packages/lcyt-web/src/components/EmbedAudioPage.jsx` | `/embed/audio` — mic/STT capture widget |
-| `packages/lcyt-web/src/components/EmbedInputPage.jsx` | `/embed/input` — text input + sent log widget |
-| `packages/lcyt-web/src/components/EmbedSentLogPage.jsx` | `/embed/sentlog` — read-only delivery log (BroadcastChannel + independent EventSource) |
-| `packages/lcyt-web/src/components/EmbedFileDropPage.jsx` | `/embed/file-drop` — drop-one-file player widget |
-| `packages/lcyt-web/src/components/EmbedFilesPage.jsx` | `/embed/files` — full file management widget |
 | `packages/lcyt-web/src/components/DskPage.jsx` | `/dsk/:key` — DSK green-screen overlay page |
-| `packages/lcyt-web/src/components/DskEditorPage.jsx` | `/dsk-editor` — visual DSK template editor |
-| `packages/lcyt-web/src/components/DskControlPage.jsx` | `/dsk-control/:key` — DSK broadcast control panel |
-| `packages/lcyt-web/src/components/DskViewportsPage.jsx` | `/dsk-viewports` — DSK viewport management |
+| `packages/lcyt-web/src/components/DskEditorPage.jsx` | `/graphics/editor` — visual DSK template editor |
+| `packages/lcyt-web/src/components/DskControlPage.jsx` | `/graphics/control` — DSK broadcast control panel |
+| `packages/lcyt-web/src/components/DskViewportsPage.jsx` | `/graphics/viewports` — DSK viewport management |
 | `packages/lcyt-web/src/components/ViewerPage.jsx` | `/view/:key` — full-screen caption viewer |
 | `packages/lcyt-web/src/components/ProductionOperatorPage.jsx` | `/production` — operator control surface |
 | `packages/lcyt-web/src/components/ProductionCamerasPage.jsx` | `/production/cameras` — camera management |
 | `packages/lcyt-web/src/components/ProductionMixersPage.jsx` | `/production/mixers` — mixer management |
-| `packages/lcyt-web/src/components/ProductionBridgesPage.jsx` | `/production/bridges` — bridge instance management |
-| `packages/lcyt-web/src/components/LoginPage.jsx` | `/login` — user login page |
-| `packages/lcyt-web/src/components/RegisterPage.jsx` | `/register` — user registration page |
+| `packages/lcyt-web/src/components/ProductionBridgesPage.jsx` | `/production/bridges` — bridge management |
+| `packages/lcyt-web/src/components/LoginPage.jsx` | `/login` — user login (standalone) |
+| `packages/lcyt-web/src/components/RegisterPage.jsx` | `/register` — user registration (standalone) |
 | `packages/lcyt-web/src/components/ProjectsPage.jsx` | `/projects` — user project (API key) management |
 | `python-packages/lcyt/lcyt/sender.py` | Core caption sender (Python) |
 | `python-packages/lcyt-backend/lcyt_backend/app.py` | Flask app factory |
@@ -1091,7 +1201,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ## Test Coverage
 
-*Last updated: 2026-03-23 (lcyt-rtmp plugin + STT + orchestrator + worker daemon added)*
+*Last updated: 2026-03-27 (lcyt-web sidebar navigation, component split, new plugins added)*
 
 ### Coverage Summary
 
@@ -1106,7 +1216,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
 | `packages/lcyt-mcp-sse` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via SSE (requires MCP client harness) |
-| `packages/lcyt-web` | 2,000+ | ~1,000 | Good | Low | React components (App, panels, modals), embed pages, production pages |
+| `packages/lcyt-web` | 5,000+ | ~1,000 | Good | Low | React components (sidebar, dashboard, pages, panels), embed pages, production pages |
 | `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
 | `python-packages/lcyt-backend` | 1,135 | 800 | Good | Low | `middleware/cors.py`, incomplete feature parity with Node.js backend |
 | `python-packages/lcyt-mcp` | 252 | 300 | Good | Low | None identified |
