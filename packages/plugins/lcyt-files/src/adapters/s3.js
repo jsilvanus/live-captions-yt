@@ -26,7 +26,7 @@ import { PassThrough } from 'node:stream';
  * @returns {Promise<import('./types.js').StorageAdapter>}
  */
 export async function createS3Adapter({ bucket, prefix = 'captions', region = 'auto', endpoint, credentials }) {
-  const { S3Client, GetObjectCommand, DeleteObjectCommand } = await import('@aws-sdk/client-s3');
+  const { S3Client, GetObjectCommand, DeleteObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3');
   const { Upload } = await import('@aws-sdk/lib-storage');
 
   const clientConfig = { region };
@@ -121,11 +121,76 @@ export async function createS3Adapter({ bucket, prefix = 'captions', region = 'a
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: storedKey })).catch(() => {});
   }
 
+  // ── Future HLS / live-stream use ────────────────────────────────────────────
+  // putObject() and publicUrl() share the same credentials and bucket as caption
+  // files and are intended for HLS segment/playlist publishing.  Each call is a
+  // single PutObject request (overwrite semantics), which is what HLS needs:
+  // playlists are rewritten every few seconds under the same key, and segments
+  // are written once and then deleted when they fall outside the rolling window.
+  //
+  // CDN note: publicUrl() returns the direct S3/endpoint URL.  In production you
+  // will typically put a CDN (CloudFront, Cloudflare, BunnyCDN) in front and
+  // rewrite the host portion to the CDN domain.  The HLS manager is responsible
+  // for that substitution — this method just returns what the adapter knows.
+  // For R2 + Cloudflare CDN, the public custom domain is configured separately
+  // and is not the same as the R2 API endpoint stored here.
+
+  /**
+   * Write or overwrite a discrete S3 object (HLS segment, playlist, thumbnail, …).
+   *
+   * Uses PutObject (single request, not multipart) because segments are small
+   * enough and overwrite semantics are required.  For large objects use
+   * openAppend() + close() which uses multipart upload.
+   *
+   * objectKey may contain path separators (e.g. 'hls/segment-001.ts').
+   *
+   * @param {string} apiKey
+   * @param {string} objectKey  Relative key within the per-key prefix
+   * @param {Buffer|string} buffer
+   * @param {string} [contentType]  e.g. 'application/x-mpegURL', 'video/MP2T'
+   * @returns {Promise<{ storedKey: string }>}
+   */
+  async function putObject(apiKey, objectKey, buffer, contentType = 'application/octet-stream') {
+    const fullKey = `${keyDir(apiKey)}/${objectKey}`;
+    await client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: fullKey,
+      Body: buffer,
+      ContentType: contentType,
+    }));
+    return { storedKey: fullKey };
+  }
+
+  /**
+   * Return the public HTTP URL for an S3 object.
+   *
+   * For standard AWS S3 this is the virtual-hosted bucket URL.
+   * For custom endpoints (R2, MinIO, Backblaze B2) it is path-style using the
+   * configured endpoint as the base.
+   *
+   * If you have a CDN in front of S3, swap the origin for the CDN domain at the
+   * HLS manager level — this method returns the origin (S3) URL only.
+   *
+   * @param {string} apiKey
+   * @param {string} objectKey
+   * @returns {string}
+   */
+  function publicUrl(apiKey, objectKey) {
+    const fullKey = `${keyDir(apiKey)}/${objectKey}`;
+    if (endpoint) {
+      // Custom endpoint (R2, MinIO, Backblaze B2) — always path style
+      return `${endpoint.replace(/\/$/, '')}/${bucket}/${fullKey}`;
+    }
+    // Standard AWS: virtual-hosted style
+    const r = region === 'auto' ? 'us-east-1' : region;
+    return `https://${bucket}.s3.${r}.amazonaws.com/${fullKey}`;
+  }
+
   /** Human-readable description for startup log. */
   function describe() {
     const ep = endpoint ? `, endpoint: ${endpoint}` : '';
     return `✓ File storage: S3 (bucket: ${bucket}, prefix: ${prefix}${ep})`;
   }
 
-  return { keyDir, openAppend, openRead, deleteFile, describe };
+  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, describe };
 }
