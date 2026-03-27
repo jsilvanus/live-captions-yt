@@ -47,7 +47,7 @@ def create_app(testing: bool = False) -> Flask:
     # JWT secret — use env var in production, auto-generate for dev/testing.
     # When auto-generated, tokens are invalidated on restart.
     # -------------------------------------------------------------------------
-    env_secret = os.environ.get("JWT_SECRET")
+    env_secret = os.environ.get("JWT_SECRET", "").strip()
     if env_secret:
         app.config["JWT_SECRET"] = env_secret
     else:

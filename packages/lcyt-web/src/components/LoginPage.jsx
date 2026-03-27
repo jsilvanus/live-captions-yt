@@ -88,9 +88,9 @@ export function LoginPage() {
     try { url = new URL(backendUrl); } catch { setProbeError('Please enter a valid URL (e.g. https://api.lcyt.fi)'); return; }
     setProbing(true);
     setProbeError(null);
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 8000);
     try {
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), 8000);
       const res = await fetch(`${url.origin}${url.pathname.replace(/\/$/, '')}/health`, {
         signal: ac.signal,
         cache: 'no-store',
@@ -103,6 +103,7 @@ export function LoginPage() {
       saveBackendFeatures(data.features);
       try { localStorage.setItem(KEYS.backend.preset, preset); } catch { /* ignore */ }
     } catch (err) {
+      clearTimeout(timer);
       setProbeError(err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Could not reach server'));
       setFeatures(null);
     } finally {

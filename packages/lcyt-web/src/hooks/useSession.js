@@ -238,9 +238,9 @@ export function useSession({
           const data = await res.clone().json();
           if (Array.isArray(data.features)) {
             setBackendFeatures(data.features);
-            try { localStorage.setItem(KEYS.backend.features, JSON.stringify(data.features)); } catch { /* ignore */ }
+            localStorage.setItem(KEYS.backend.features, JSON.stringify(data.features));
           }
-        } catch { /* ignore JSON parse errors */ }
+        } catch { /* ignore JSON parse or localStorage errors */ }
       } else {
         setHealthStatus('unreachable');
         setLatencyMs(null);

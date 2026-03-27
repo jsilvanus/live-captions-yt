@@ -798,7 +798,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/embed/settings` | `EmbedSettingsPage` | Settings widget |
 | `/embed/rtmp` | `EmbedRtmpPage` | RTMP relay-only widget |
 | `/embed/viewer` | `EmbedViewerPage` | Embeddable viewer widget |
-| `/login` | `LoginPage` | User login (standalone access) |
+| `/login` | `LoginPage` | Two-phase login: backend selection → feature discovery → auth/API key |
 | `/register` | `RegisterPage` | User registration (standalone access) |
 | `/device-login` | `DeviceLoginPage` | Device pin-code login |
 | `/production/camera/:key` | `CameraStreamPage` | Camera stream view |
@@ -1001,6 +1001,34 @@ Captions are delivered to one or more **targets** configured in the lcyt-web CC 
 4. **DSK Editor API key** (`X-API-Key` header) — API key auth for DSK template management and image routes (no live session required). Falls through to JWT Bearer if header absent (`editorAuthOrBearer` middleware).
 5. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain` where `streamKey` defaults to `''` in target-array mode.
 
+### Two-Phase Login & Feature-Based UI
+
+lcyt-web uses a **two-phase login** flow that adapts to backend capabilities:
+
+**Phase 1 — Backend Selection:** The login page (`/login`) presents a dropdown with backend presets:
+- **Normal** (`https://api.lcyt.fi`) — full-featured Node.js backend
+- **Minimal** (`https://minimal.lcyt.fi`) — Python minimal backend (captions only)
+- **Custom** — user enters a self-hosted URL
+
+After selection, the frontend probes `GET /health` to discover the backend's feature list.
+
+**Phase 2 — Authentication:** Based on the features returned:
+- If `login` is in the features list → show email/password login form (user account mode)
+- If `login` is NOT in the features list → show API key entry only (minimal mode, no user account needed)
+
+**Feature-based UI gating:** Backend features from `GET /health` are stored in `localStorage` (`lcyt.backend.features`) and exposed via `ConnectionContext.backendFeatures`. Sidebar navigation items and groups have an optional `feature` property in `navConfig.js` that controls visibility:
+
+| Feature | Controls | Hidden when missing |
+|---------|----------|-------------------|
+| `rtmp` | Broadcast page | Sidebar "Broadcast" item |
+| `graphics` | Graphics group | Sidebar "Graphics" group (Editor, Control, Viewports) |
+| `production` | Production group | Sidebar "Production" group (Operator, Devices) |
+| `login` | User account pages | Sidebar "Projects" and "Account" items |
+
+**AuthGate** (`main.jsx`) supports two modes:
+1. **User login mode** — checks `lcyt-user` localStorage for `{ token, backendUrl }`
+2. **Minimal mode** — checks `lcyt.backend.features` (no `login` feature) + `lcyt.session.config` (has `backendUrl` + `apiKey`)
+
 ### User Management
 
 User accounts (`USE_USER_LOGINS` is enabled by default; set to `0` to disable):
@@ -1184,7 +1212,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-web/src/components/ProductionCamerasPage.jsx` | `/production/cameras` — camera management |
 | `packages/lcyt-web/src/components/ProductionMixersPage.jsx` | `/production/mixers` — mixer management |
 | `packages/lcyt-web/src/components/ProductionBridgesPage.jsx` | `/production/bridges` — bridge management |
-| `packages/lcyt-web/src/components/LoginPage.jsx` | `/login` — user login (standalone) |
+| `packages/lcyt-web/src/components/LoginPage.jsx` | `/login` — two-phase login (backend preset → probe → auth/API key) |
 | `packages/lcyt-web/src/components/RegisterPage.jsx` | `/register` — user registration (standalone) |
 | `packages/lcyt-web/src/components/ProjectsPage.jsx` | `/projects` — user project (API key) management |
 | `python-packages/lcyt/lcyt/sender.py` | Core caption sender (Python) |
