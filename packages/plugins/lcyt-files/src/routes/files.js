@@ -92,9 +92,9 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const session = store.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    // Require "custom-storage" project feature
-    if (!hasFeature(db, session.apiKey, 'custom-storage')) {
-      return res.status(403).json({ error: 'Custom storage is not enabled for this key' });
+    // Require "files-custom-bucket" project feature
+    if (!hasFeature(db, session.apiKey, 'files-custom-bucket')) {
+      return res.status(403).json({ error: 'Custom storage bucket is not enabled for this key' });
     }
 
     const { bucket, region, endpoint, prefix, access_key_id, secret_access_key } = req.body || {};

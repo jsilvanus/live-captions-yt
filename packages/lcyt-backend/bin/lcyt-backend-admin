@@ -4,6 +4,7 @@ import {
   initDb,
   getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey, cleanRevokedKeys,
   createUser, getUserByEmail, getUserById, updateUserPassword, getKeysByUserId,
+  getProjectFeatures, setProjectFeature,
 } from '../src/db.js';
 
 // ---------------------------------------------------------------------------
@@ -407,6 +408,50 @@ function cmdUsersDeleteForce(db, positional) {
 }
 
 // ---------------------------------------------------------------------------
+// Feature commands
+// ---------------------------------------------------------------------------
+
+function cmdFeaturesList(db, positional) {
+  const key = positional[1];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  if (!getKey(db, key)) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+  const rows = getProjectFeatures(db, key);
+  if (rows.length === 0) {
+    console.log('No features set for this key.');
+    return;
+  }
+  const header = [padEnd('FEATURE', 28), padEnd('ENABLED', 8), 'GRANTED AT'].join(' ');
+  console.log('  ' + header);
+  for (const r of rows) {
+    const row = [padEnd(r.feature_code, 28), padEnd(r.enabled ? 'yes' : 'no', 8), r.granted_at || '—'].join(' ');
+    console.log('  ' + row);
+  }
+}
+
+function cmdFeaturesSet(db, positional, flags) {
+  const key = positional[1];
+  const code = positional[2];
+  const val = positional[3];
+  if (!key || !code) {
+    console.error('Error: key and feature-code arguments required');
+    process.exit(1);
+  }
+  if (!getKey(db, key)) {
+    console.error('Key not found.');
+    process.exit(1);
+  }
+  const enabled = val === undefined || val === 'true' || val === '1';
+  setProjectFeature(db, key, code, enabled);
+  console.log(`Feature '${code}' ${enabled ? 'enabled' : 'disabled'} for key ${key}`);
+}
+
+// ---------------------------------------------------------------------------
 // Usage
 // ---------------------------------------------------------------------------
 
@@ -444,6 +489,11 @@ User commands:
   users delete <email|id>           Delete a user (fails if they have active keys)
   users delete <email|id> --force   Delete a user and unlink their keys
 
+Feature commands:
+  features list <key>               List all feature flags for an API key
+  features set <key> <code> [true|false]
+                                    Enable or disable a feature flag (default: enable)
+
 Options:
   --db <path>    Path to the SQLite database (default: ./lcyt-backend.db or DB_PATH env var)
   --help         Show this help message
@@ -467,7 +517,21 @@ const db = initDb(dbPath);
 
 const command = positional[0];
 
-if (command === 'users') {
+if (command === 'features') {
+  const sub = positional[1];
+  switch (sub) {
+    case 'list':
+      cmdFeaturesList(db, positional.slice(1));
+      break;
+    case 'set':
+      cmdFeaturesSet(db, positional.slice(1), flags);
+      break;
+    default:
+      console.error(`Unknown features subcommand: ${sub || '(none)'}`);
+      usage();
+      process.exit(1);
+  }
+} else if (command === 'users') {
   const sub = positional[1];
   switch (sub) {
     case 'list':

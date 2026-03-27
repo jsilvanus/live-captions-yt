@@ -11,11 +11,19 @@
  * Enabling a key automatically enables all values.
  */
 export const FEATURE_DEPS = {
-  'graphics-server': ['graphics-client', 'ingest'],
-  'stt-server':      ['ingest'],
-  'radio':           ['ingest'],
-  'hls-stream':      ['ingest'],
-  'preview':         ['ingest'],
+  'graphics-server':       ['graphics-client', 'ingest'],
+  'stt-server':            ['ingest'],
+  'radio':                 ['ingest'],
+  'hls-stream':            ['ingest'],
+  'preview':               ['ingest'],
+  // File storage modes — each requires the base file-saving capability.
+  // At most one storage mode should be enabled at a time per project.
+  //   files-local          → save to the server's local filesystem (default)
+  //   files-managed-bucket → save to the operator-configured S3 bucket
+  //   files-custom-bucket  → save to the user's own S3 bucket (configured via /file/storage-config)
+  'files-local':           ['file-saving'],
+  'files-managed-bucket':  ['file-saving'],
+  'files-custom-bucket':   ['file-saving'],
 };
 
 /**
@@ -199,7 +207,9 @@ export function provisionDefaultUserFeatures(db, userId) {
  * @param {string[]} [extra] - Additional feature codes beyond defaults
  */
 export function provisionDefaultProjectFeatures(db, apiKey, extra = []) {
-  const defaults = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed'];
+  // file-saving + files-local are included so new projects can save caption files
+  // to the server's local filesystem out of the box.
+  const defaults = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed', 'file-saving', 'files-local'];
   const codes = [...new Set([...defaults, ...extra])];
   const stmt = db.prepare(`
     INSERT INTO project_features (api_key, feature_code, enabled)
