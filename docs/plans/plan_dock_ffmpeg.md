@@ -1,8 +1,8 @@
 ---
 id: plan/dock-ffmpeg
 title: "FFmpeg Compute Containers → Distributed Hetzner Architecture"
-status: pending
-summary: "Migrate ffmpeg jobs from bare spawn() into Docker containers (phases 1–3), then distribute across Hetzner Cloud worker VMs via a Compute Orchestrator (phases 4–7)."
+status: in-progress
+summary: "Phases 1–3 implemented: DockerFfmpegRunner abstraction behind FFMPEG_RUNNER env flag, local-runner/docker-runner/worker-runner selection, pipe-utils. Orchestrator and worker-daemon packages scaffolded. Phases 4–7 (full Hetzner distributed architecture) remain."
 supersedes: "plan/rtmp (partially: execution model — replaces bare spawn() with Docker containers)"
 ---
 
@@ -10,8 +10,8 @@ supersedes: "plan/rtmp (partially: execution model — replaces bare spawn() wit
 
 **Date:** 2026-03-19 (revised 2026-03-20)  
 **Version:** v3 — self-sufficient phases, distributed architecture
-**Status:** Plan accepted. Ready to implement.
-**Progress:** Implementation not started.
+**Status:** In progress.
+**Progress:** Phases 1–3 implemented (DockerFfmpegRunner, local-runner, worker-runner). Orchestrator and worker-daemon packages scaffolded. Phases 4–7 not yet deployed.
 
 **Note:** Consolidated PR materials and platform artifacts prepared in branch `director/phase6-7-hetzner`. See [PR description](PR_phase6-7_hetzner.md) for validation and rollback instructions.
 

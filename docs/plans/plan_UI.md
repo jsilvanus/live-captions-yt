@@ -1,8 +1,8 @@
 ---
 id: plan/ui
 title: "UI Reorganisation (lcyt-web)"
-status: pending
-summary: "Redesign lcyt-web desktop (two-column) and mobile (fixed bottom bar + FAB) layouts to improve clarity for the expanded feature set."
+status: draft
+summary: "Redesign lcyt-web desktop (two-column) and mobile (fixed bottom bar + FAB) layouts to improve clarity for the expanded feature set. Largely superseded by plan/front's sidebar navigation, which is now implemented."
 relates_to: "plan/front (the two-column layout here is the Captions page rendered inside plan/front's sidebar shell)"
 ---
 

@@ -1,9 +1,9 @@
 ---
 id: plan/front
 title: "Frontend Flow Improvement"
-status: draft
-summary: "Targeted UI improvements for lcyt-web: sidebar navigation, hybrid settings page, improved information architecture for the multi-feature platform."
-relates_to: "plan/ui (sidebar shell that plan/ui's Captions page layout lives inside)"
+status: in-progress
+summary: "Core sidebar navigation, dashboard, settings page, and route restructuring implemented. Remaining P0/P1 items (auto-reconnect, unsaved work protection, guided setup) tracked separately."
+relates_to: "plan/ui (the two-column Captions page layout lives inside plan/front's sidebar shell)"
 ---
 
 # Frontend Flow Improvement Plan

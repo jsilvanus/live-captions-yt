@@ -1,8 +1,8 @@
 ---
 id: plan/backend-split
 title: "lcyt-backend Modularization & Plugin Extraction Assessment"
-status: draft
-summary: "Structural analysis of lcyt-backend with recommendations: 3 internal refactors (done), lcyt-files plugin (S3 storage abstraction), lcyt-translate plugin (server-side translation for STT gap)."
+status: reference
+summary: "Structural analysis of lcyt-backend: plugin extraction complete (lcyt-rtmp, lcyt-dsk, lcyt-production, lcyt-files). Internal refactoring done (route group factories, DB module split). lcyt-translate plugin proposal remains exploratory."
 ---
 
 # lcyt-backend — Modularization Assessment
