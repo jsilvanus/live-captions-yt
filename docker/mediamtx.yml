@@ -63,7 +63,7 @@ hlsSegmentDuration: 6s
 # Remove or comment out when using hlsVariant: fmp4.
 hlsPartDuration: 200ms
 hlsSegmentMaxSize: 50MB
-hlsAllowOrigin: "*"
+hlsAllowOrigins: ["*"]
 # Serve HLS for a path only when there are active readers, to save resources
 hlsEncryption: no
 
@@ -104,7 +104,7 @@ paths:
 # 1. API security: bind apiAddress to an internal/loopback address only.
 #    Never expose :9997 to the public internet.
 #
-# 2. HLS CORS: hlsAllowOrigin: "*" is required for browser players.
+# 2. HLS CORS: hlsAllowOrigins: ["*"] is required for browser players.
 #    Restrict to your domain in production if needed.
 #
 # 3. Segment storage: MediaMTX stores HLS segments in memory by default.
