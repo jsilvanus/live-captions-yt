@@ -57,10 +57,22 @@ const path = window.location.pathname;
 function AuthGate({ children }) {
   const hasAuth = (() => {
     try {
+      // Mode 1: User login (backend with login feature)
       const raw = localStorage.getItem('lcyt-user');
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      return !!(parsed?.token && parsed?.backendUrl);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.token && parsed?.backendUrl) return true;
+      }
+      // Mode 2: Minimal backend (no login feature — session config + features)
+      const featuresRaw = localStorage.getItem('lcyt.backend.features');
+      if (featuresRaw) {
+        const features = JSON.parse(featuresRaw);
+        if (Array.isArray(features) && !features.includes('login')) {
+          const cfg = JSON.parse(localStorage.getItem('lcyt.session.config') || '{}');
+          if (cfg.backendUrl && cfg.apiKey) return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }

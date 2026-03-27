@@ -46,6 +46,13 @@ export function useSession({
   const [latencyMs, setLatencyMs] = useState(null);
   // Auto-reconnect state
   const [reconnecting, setReconnecting] = useState(false);
+  // Backend features list from /health (populated on connect)
+  const [backendFeatures, setBackendFeatures] = useState(() => {
+    try {
+      const raw = localStorage.getItem(KEYS.backend.features);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
@@ -226,6 +233,14 @@ export function useSession({
       if (res.ok) {
         setHealthStatus('ok');
         setLatencyMs(rtt);
+        // Update backend features from /health response
+        try {
+          const data = await res.clone().json();
+          if (Array.isArray(data.features)) {
+            setBackendFeatures(data.features);
+            try { localStorage.setItem(KEYS.backend.features, JSON.stringify(data.features)); } catch { /* ignore */ }
+          }
+        } catch { /* ignore JSON parse errors */ }
       } else {
         setHealthStatus('unreachable');
         setLatencyMs(null);
@@ -681,6 +696,7 @@ export function useSession({
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
     healthStatus, latencyMs, checkHealth,
     reconnecting, reconnectNow,
+    backendFeatures,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,

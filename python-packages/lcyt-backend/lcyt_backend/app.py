@@ -8,6 +8,7 @@ via POST /live and send captions via POST /captions.
 
 import logging
 import math
+import os
 import secrets
 import time
 
@@ -43,11 +44,19 @@ def create_app(testing: bool = False) -> Flask:
     app.config["TESTING"] = testing
 
     # -------------------------------------------------------------------------
-    # JWT secret (auto-generated; only used for session tokens).
-    # Tokens are invalidated on restart — this relay is designed for
-    # single-instance, ephemeral deployments.
+    # JWT secret — use env var in production, auto-generate for dev/testing.
+    # When auto-generated, tokens are invalidated on restart.
     # -------------------------------------------------------------------------
-    app.config["JWT_SECRET"] = secrets.token_hex(32)
+    env_secret = os.environ.get("JWT_SECRET")
+    if env_secret:
+        app.config["JWT_SECRET"] = env_secret
+    else:
+        app.config["JWT_SECRET"] = secrets.token_hex(32)
+        if not testing:
+            logger.warning(
+                "JWT_SECRET not set — using auto-generated secret. "
+                "Sessions will be lost on restart. Set JWT_SECRET env var for production."
+            )
 
     # -------------------------------------------------------------------------
     # Sender cache — keyed by session ID
@@ -89,6 +98,11 @@ def create_app(testing: bool = False) -> Flask:
         return response
 
     # -------------------------------------------------------------------------
+    # Startup time — for uptime calculation in /health
+    # -------------------------------------------------------------------------
+    app.config["START_TIME"] = time.monotonic()
+
+    # -------------------------------------------------------------------------
     # Health check — includes features list for client capability detection
     # -------------------------------------------------------------------------
     @app.get("/health")
@@ -96,7 +110,7 @@ def create_app(testing: bool = False) -> Flask:
         senders = app.config["SENDERS"]
         return jsonify({
             "ok": True,
-            "uptime": math.floor(time.process_time()),
+            "uptime": math.floor(time.monotonic() - app.config["START_TIME"]),
             "activeSessions": len(senders),
             "features": FEATURES,
         })

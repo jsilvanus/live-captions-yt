@@ -7,7 +7,7 @@ import { createContext, useContext } from 'react';
  * from triggering UI components that only care about connection status.
  *
  * Slice: connected, backendUrl, apiKey, streamKey, startedAt, micHolder, clientId,
- *        graphicsEnabled, healthStatus, latencyMs, reconnecting,
+ *        graphicsEnabled, healthStatus, latencyMs, reconnecting, backendFeatures,
  *        connect, disconnect, reconnectNow, checkHealth, claimMic, releaseMic,
  *        getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig
  */
