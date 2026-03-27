@@ -1,321 +1,129 @@
-# Plan: S3-Compatible Caption File Storage (`lcyt-files` plugin)
+# Plan: `lcyt-files` Plugin — Storage-Adapter Caption & Stream File I/O
 
-**Status:** Draft
-**Date:** 2026-03-26
+**Status:** Implemented (core + three-mode storage + HLS adapter groundwork)
+**Date:** 2026-03-27
 **Context:** Extracted from `plan_backend_split.md` — plugin splitting section.
 
 ---
 
 ## Motivation
 
-Caption files are currently written to a local filesystem path (`FILES_DIR`, defaulting to `/data/files`). This works on single-node Docker deployments but blocks:
+Caption files were originally written directly to a local filesystem path inside `lcyt-backend`. This blocked:
 
-- **Horizontal scaling** — two backend instances cannot share a local volume without NFS, making scale-out difficult with the compute orchestrator.
-- **Cloud-native deployments** — S3 (or any S3-compatible store: R2, MinIO, Backblaze B2, Wasabi) is the natural target for user-generated files in cloud infrastructure.
-- **Long-term retention** — local volumes are tied to the server lifecycle; object storage survives server replacement.
-
-The goal is a thin plugin (`lcyt-files`) that wraps caption file I/O behind a storage-adapter interface, keeping the local-FS adapter as the default and adding an S3 adapter behind a `FILE_STORAGE=s3` env var. No breaking changes to the existing DB schema or API surface.
-
----
-
-## Current Architecture
-
-### Write path (`captions.js` → `caption-files.js`)
-
-```
-POST /captions
-  └─ session._sendQueue (serialised per session)
-       ├─ writeToBackendFile(ctx, text, ts, db)   ← original text
-       └─ writeToBackendFile(ctx, lang, ts, db)   ← each translation
-```
-
-`writeToBackendFile` in `src/caption-files.js`:
-1. Opens a `fs.WriteStream` (append mode) on first use; caches the handle in `session._fileHandles` Map.
-2. Calls `registerCaptionFile(db, ...)` to create the DB row on first use.
-3. Writes the caption as plain text or VTT cue.
-4. Calls `updateCaptionFileSize(db, id, size)` after each write (via `statSync`).
-
-The handle map key is `${langKey}:${format}`.
-
-### Read/download path (`routes/files.js`)
-
-```
-GET /file        → listCaptionFiles(db, apiKey)
-GET /file/:id    → getCaptionFile(db, id, apiKey)  → res.download(filepath)
-DELETE /file/:id → deleteCaptionFile(db, id, apiKey) + fs.unlink(filepath)
-```
-
-`FILES_BASE_DIR` is `resolve(process.env.FILES_DIR || '/data/files')`.
-
-### DB schema (`db/files.js`)
-
-```sql
-CREATE TABLE caption_files (
-  id          INTEGER PRIMARY KEY AUTOINCREMENT,
-  api_key     TEXT NOT NULL,
-  session_id  TEXT,
-  filename    TEXT NOT NULL,
-  lang        TEXT,
-  format      TEXT DEFAULT 'youtube',
-  type        TEXT DEFAULT 'captions',
-  size_bytes  INTEGER DEFAULT 0,
-  created_at  TEXT DEFAULT (datetime('now')),
-  updated_at  TEXT DEFAULT (datetime('now'))
-);
-```
-
-The `filename` column currently stores a bare filename; the full path is reconstructed from `FILES_BASE_DIR + safe(apiKey) + filename`. For S3 the same column stores the **object key** (full S3 path).
+- **Horizontal scaling** — two backend instances cannot share a local volume without NFS.
+- **Cloud-native deployments** — S3-compatible object storage (R2, MinIO, Backblaze B2, Wasabi) is the natural target for user-generated files.
+- **Long-term retention** — local volumes are tied to server lifecycle; object storage survives server replacement.
+- **Per-user isolation** — a single operator-level S3 config is too coarse; power users may want to store their own files in their own bucket with their own credentials.
 
 ---
 
-## Proposed Design
+## Implemented Architecture
 
-### 1. Storage adapter interface
-
-Create `packages/plugins/lcyt-files/src/adapters/storage-adapter.js` as a JSDoc interface (no class, just documentation):
-
-```js
-/**
- * @typedef {object} StorageAdapter
- *
- * @property {(apiKey: string, filename: string) => Promise<string>} getWritePath
- *   Returns a local tmp path (local adapter) or pre-signed PUT URL (S3 adapter).
- *   Called once when a new file handle is opened.
- *
- * @property {(apiKey: string, filename: string) => AppendHandle} openAppend
- *   Returns an object with .write(chunk) and .close() methods.
- *   For local: wraps fs.WriteStream.
- *   For S3: buffers in a tmp file; on close() uploads to S3 via multipart or PutObject.
- *
- * @property {(apiKey: string, filename: string) => Promise<{ stream, contentType, size }>} openRead
- *   Returns a Readable stream for download.
- *
- * @property {(apiKey: string, filename: string) => Promise<void>} delete
- *   Deletes the object/file.
- *
- * @property {(apiKey: string) => string} keyDir
- *   Returns a safe per-key prefix/directory string.
- */
-```
-
-### 2. Local filesystem adapter (default)
-
-`packages/plugins/lcyt-files/src/adapters/local.js`
-
-Thin wrapper around existing `caption-files.js` logic:
-
-```js
-import { createWriteStream, createReadStream, mkdirSync, statSync, unlink } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { promisify } from 'node:util';
-
-const unlinkAsync = promisify(unlink);
-
-export function createLocalAdapter(baseDir) {
-  function keyDir(apiKey) {
-    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    const dir = join(baseDir, safe);
-    mkdirSync(dir, { recursive: true });
-    return dir;
-  }
-
-  function openAppend(apiKey, filename) {
-    const dir = keyDir(apiKey);
-    const filepath = join(dir, filename);
-    const stream = createWriteStream(filepath, { flags: 'a' });
-    return {
-      filepath,
-      write(chunk) {
-        return new Promise((resolve, reject) => stream.write(chunk, err => err ? reject(err) : resolve()));
-      },
-      close() {
-        return new Promise((resolve, reject) => stream.end(err => err ? reject(err) : resolve()));
-      },
-      sizeBytes() {
-        try { return statSync(filepath).size; } catch { return 0; }
-      },
-    };
-  }
-
-  function openRead(apiKey, filename) {
-    const filepath = join(keyDir(apiKey), filename);
-    const { size } = statSync(filepath);
-    return { stream: createReadStream(filepath), contentType: 'text/plain', size };
-  }
-
-  async function deleteFile(apiKey, filename) {
-    const filepath = join(keyDir(apiKey), filename);
-    await unlinkAsync(filepath).catch(() => {});
-  }
-
-  return { keyDir, openAppend, openRead, deleteFile };
-}
-```
-
-### 3. S3 adapter
-
-`packages/plugins/lcyt-files/src/adapters/s3.js`
-
-Uses `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` (multipart upload for streaming):
-
-```js
-import { S3Client, GetObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
-import { PassThrough } from 'node:stream';
-
-export function createS3Adapter({ bucket, prefix = 'captions', region, endpoint, credentials }) {
-  const client = new S3Client({ region, endpoint, credentials, forcePathStyle: !!endpoint });
-
-  function keyDir(apiKey) {
-    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    return `${prefix}/${safe}`;
-  }
-
-  function openAppend(apiKey, filename) {
-    const objectKey = `${keyDir(apiKey)}/${filename}`;
-    // Buffer via PassThrough → multipart upload
-    const pass = new PassThrough();
-    let totalBytes = 0;
-    const upload = new Upload({ client, params: { Bucket: bucket, Key: objectKey, Body: pass } });
-    const done = upload.done();
-
-    return {
-      filepath: objectKey,           // used as "filename" for DB storage
-      write(chunk) {
-        totalBytes += Buffer.byteLength(chunk);
-        return new Promise((resolve, reject) => pass.write(chunk, err => err ? reject(err) : resolve()));
-      },
-      async close() {
-        pass.end();
-        await done;
-      },
-      sizeBytes() { return totalBytes; },
-    };
-  }
-
-  async function openRead(apiKey, filename) {
-    const objectKey = `${keyDir(apiKey)}/${filename}`;
-    const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: objectKey }));
-    return {
-      stream: res.Body,
-      contentType: res.ContentType || 'text/plain',
-      size: res.ContentLength,
-    };
-  }
-
-  async function deleteFile(apiKey, filename) {
-    const objectKey = `${keyDir(apiKey)}/${filename}`;
-    await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: objectKey })).catch(() => {});
-  }
-
-  return { keyDir, openAppend, openRead, deleteFile };
-}
-```
-
-**Note on append semantics:** S3 has no native append. Two approaches:
-- **Session-level buffering (recommended):** Keep the multipart upload open for the entire session; `write()` sends parts as the session proceeds; `close()` completes the upload when the session ends. The `session._fileHandles` map already tracks open handles per session, so close can be called in `store.onSessionEnd`.
-- **Re-upload on each write (not recommended):** Download existing object, append, re-upload. Expensive and not atomic.
-
-The multipart approach requires handles to be properly closed at session end. See § Migration: session teardown below.
-
-### 4. Plugin package structure
+### Package structure
 
 ```
 packages/plugins/lcyt-files/
-├── package.json
+├── package.json                    ← workspace member, optional AWS SDK deps
 ├── src/
-│   ├── api.js               ← initFilesControl(db, opts?) + createFilesRouters(db, auth, storage)
-│   ├── storage.js           ← createStorageAdapter() — reads FILE_STORAGE env var
-│   ├── adapters/
-│   │   ├── local.js
-│   │   └── s3.js
-│   ├── caption-files.js     ← writeToBackendFile() rewritten to use adapter
-│   └── db.js                ← re-exports from lcyt-backend db/files.js (or duplicates)
+│   ├── api.js                      ← initFilesControl(db) + re-exports
+│   ├── storage.js                  ← createStorageAdapter() + createStorageResolver()
+│   ├── db.js                       ← key_storage_config table migration + CRUD
+│   ├── caption-files.js            ← writeToBackendFile() + closeFileHandles()
+│   ├── routes/
+│   │   └── files.js                ← GET/DELETE /file, GET/PUT/DELETE /file/storage-config
+│   └── adapters/
+│       ├── local.js                ← local FS adapter
+│       └── s3.js                   ← S3-compatible adapter (AWS, R2, MinIO, B2)
 └── test/
-    ├── local-adapter.test.js
-    └── s3-adapter.test.js   ← uses mock S3 (e.g. @smithy/util-test or localstack)
+    └── local-adapter.test.js       ← 17 tests (real tmp dir, no mocking)
 ```
 
-**`src/storage.js`** — factory that reads env vars and returns the right adapter:
+### Storage adapter interface
+
+Both adapters implement the same interface:
 
 ```js
-import { createLocalAdapter } from './adapters/local.js';
-import { createS3Adapter }    from './adapters/s3.js';
-import { resolve } from 'node:path';
+{
+  // Caption file I/O (session-lifetime handles)
+  keyDir(apiKey)                                       → string
+  openAppend(apiKey, filename)                         → AppendHandle
+  openRead(apiKey, storedKey, format)                  → { stream, contentType, size }
+  deleteFile(apiKey, storedKey)                        → Promise<void>
 
-export function createStorageAdapter() {
-  const mode = process.env.FILE_STORAGE || 'local';
+  // Discrete object writes — for future HLS segment/playlist publishing (see below)
+  putObject(apiKey, objectKey, buffer, contentType?)   → Promise<{ storedKey }>
+  publicUrl(apiKey, objectKey)                         → string | null
 
-  if (mode === 's3') {
-    const bucket   = process.env.S3_BUCKET;
-    const region   = process.env.S3_REGION   || 'auto';
-    const endpoint = process.env.S3_ENDPOINT;          // for R2, MinIO, etc.
-    const prefix   = process.env.S3_PREFIX    || 'captions';
-    const credentials = process.env.S3_ACCESS_KEY_ID ? {
-      accessKeyId:     process.env.S3_ACCESS_KEY_ID,
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY,
-    } : undefined;                                     // falls through to standard AWS credential chain
-    if (!bucket) throw new Error('S3_BUCKET must be set when FILE_STORAGE=s3');
-    return createS3Adapter({ bucket, region, endpoint, prefix, credentials });
-  }
-
-  const baseDir = resolve(process.env.FILES_DIR || '/data/files');
-  return createLocalAdapter(baseDir);
+  describe()                                           → string
 }
 ```
 
-### 5. Rewriting `caption-files.js` to use the adapter
+`AppendHandle`: `{ storedKey, write(chunk), close(), sizeBytes() }`
 
-`writeToBackendFile` becomes adapter-aware. The signature stays compatible:
+- **Local:** `storedKey` = full filesystem path. `openRead` calls `statSync` synchronously before creating the ReadStream so ENOENT throws before headers are sent.
+- **S3:** `storedKey` = S3 object key. `openAppend` keeps a multipart upload open for the session lifetime; `close()` completes it. AWS SDK is imported dynamically so it is never loaded in local-only deployments.
 
-```js
-export function writeToBackendFile(context, text, timestamp, db, storage) {
-  // ... (same key computation, VTT vs plain logic) ...
-  // Replace:  createWriteStream(filepath, { flags: 'a' })
-  // With:     storage.openAppend(apiKey, filename)
-  // Replace:  statSync(handle.filepath).size
-  // With:     handle.sizeBytes()
-}
+### Three storage modes
+
+`initFilesControl(db)` returns `{ storage, resolveStorage, invalidateStorageCache }`.
+
+| Mode | Selected when | Config |
+|---|---|---|
+| **1 — Local** (default) | `FILE_STORAGE` absent or `local` | `FILES_DIR` env var |
+| **2 — Build-time S3** | `FILE_STORAGE=s3` | `S3_*` env vars (operator-level) |
+| **3 — User-defined S3** | Per-key row in `key_storage_config` | Set via `PUT /file/storage-config`; requires `custom-storage` project feature |
+
+`resolveStorage(apiKey)` checks the DB for a per-key config; creates and caches a per-key S3 adapter if found; falls back to the global adapter otherwise. `invalidateStorageCache(apiKey)` clears the cache entry after a config change.
+
+### Per-key S3 config DB table
+
+```sql
+CREATE TABLE IF NOT EXISTS key_storage_config (
+  api_key           TEXT PRIMARY KEY NOT NULL,
+  bucket            TEXT NOT NULL,
+  region            TEXT NOT NULL DEFAULT 'auto',
+  endpoint          TEXT,
+  prefix            TEXT NOT NULL DEFAULT 'captions',
+  access_key_id     TEXT,
+  secret_access_key TEXT,
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+)
 ```
 
-The `storage` argument is injected by `createCaptionsRouter(store, auth, db, relayManager, dskProcessor, storage)`.
+Migration runs idempotently inside `createFilesRouter` on every startup.
 
-### 6. Rewriting `routes/files.js` to use the adapter
+### API routes
 
-```js
-// GET /file/:id — download
-const row = getCaptionFile(db, id, apiKey);
-const { stream, contentType, size } = await storage.openRead(apiKey, row.filename);
-res.set('Content-Type', contentType);
-if (size) res.set('Content-Length', String(size));
-res.set('Content-Disposition', `attachment; filename="${row.filename}"`);
-stream.pipe(res);
+```
+GET    /file                  — list caption files for the authenticated key (Bearer token)
+GET    /file/:id              — download a file (Bearer token or ?token= for direct links)
+DELETE /file/:id              — delete a file (DB row + storage object)
 
-// DELETE /file/:id
-await storage.deleteFile(apiKey, row.filename);
-deleteCaptionFile(db, id, apiKey);
+GET    /file/storage-config   — get current per-key S3 config (credentials masked)
+PUT    /file/storage-config   — set per-key S3 config (requires "custom-storage" project feature)
+DELETE /file/storage-config   — remove per-key config (reverts to global default)
 ```
 
-### 7. Session teardown: closing file handles
+`PUT /file/storage-config` enforces the `custom-storage` project feature flag via `hasFeature(db, apiKey, 'custom-storage')`. The admin grants this flag.
 
-S3 multipart uploads must be completed or aborted. Add a close step to `store.onSessionEnd`:
+### Write path
+
+```
+POST /captions
+  └─ resolveStorage(session.apiKey)        ← per-key or global adapter
+       └─ writeToBackendFile(ctx, text, ts, db, fileStorage, buildVttCue)
+            └─ fileStorage.openAppend(apiKey, filename)   ← first call per session
+               fileStorage (handle cached in session._fileHandles)
+```
+
+### Session teardown
 
 ```js
-// In server.js, after store.onSessionEnd is defined:
-const _origOnSessionEnd = store.onSessionEnd;
 store.onSessionEnd = async (session) => {
-  // Close all open file handles (no-op for local WriteStreams that auto-close)
-  if (session._fileHandles) {
-    for (const handle of session._fileHandles.values()) {
-      await handle.close().catch(() => {});
-    }
-    session._fileHandles.clear();
-  }
-  _origOnSessionEnd?.(session);
+  await closeFileHandles(session._fileHandles);  // completes S3 multipart uploads
+  // ... stats write ...
 };
 ```
-
-Currently `_fileHandles` are `fs.WriteStream`s which close automatically when the process exits. Making close explicit is good hygiene regardless of the adapter.
 
 ---
 
@@ -332,77 +140,76 @@ Currently `_fileHandles` are `fs.WriteStream`s which close automatically when th
 | `S3_ACCESS_KEY_ID` | Static credentials access key | — (uses AWS credential chain) |
 | `S3_SECRET_ACCESS_KEY` | Static credentials secret | — |
 
-For **Cloudflare R2**:
-```
-FILE_STORAGE=s3
-S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-S3_BUCKET=lcyt-captions
-S3_REGION=auto
-S3_ACCESS_KEY_ID=<r2-key>
-S3_SECRET_ACCESS_KEY=<r2-secret>
-```
-
-For **AWS S3** (IAM role on EC2/ECS — no static keys needed):
-```
-FILE_STORAGE=s3
-S3_BUCKET=my-lcyt-captions
-S3_REGION=eu-west-1
-```
+Per-key S3 config (mode 3) is stored in `key_storage_config` and managed via the API. The same fields apply: `bucket`, `region`, `endpoint`, `prefix`, `access_key_id`, `secret_access_key`.
 
 ---
 
-## DB Schema Changes
+## HLS / Live Stream Storage — Groundwork
 
-None required. The `caption_files.filename` column already stores arbitrary strings. For local FS it stores `2026-01-01-abc12345-fi-FI.vtt`; for S3 it stores the full object key `captions/apikey_safe/2026-01-01-abc12345-fi-FI.vtt`.
+The adapter interface now includes two methods designed for future HLS segment and playlist publishing. They are implemented on both adapters but not yet wired to any route or manager.
 
-The `size_bytes` column update is already async (`updateCaptionFileSize`). For S3 it is updated at `close()` time (end of session) rather than after every write, which is acceptable.
+### `putObject(apiKey, objectKey, buffer, contentType?)`
+
+Overwrite semantics (contrast with `openAppend` which keeps one upload open). Suitable for:
+
+- HLS playlists (same object key, new content every few seconds)
+- HLS segments (written once, then deleted when outside the rolling window)
+- JPEG thumbnails
+
+`objectKey` may include path components: `'hls/playlist.m3u8'`, `'hls/segment-001.ts'`.
+
+- **Local:** writes to `baseDir/keyDir(apiKey)/objectKey`; creates subdirectories automatically.
+- **S3:** single `PutObjectCommand` (no multipart — segments are small enough).
+
+### `publicUrl(apiKey, objectKey)`
+
+Returns the HTTP URL where the object can be fetched by an HLS player.
+
+- **Local:** `null` — local files need a static-file server layer (Express `express.static`, nginx alias) on top. The HLS manager is responsible for constructing the URL from its own base URL config.
+- **S3 standard AWS:** `https://{bucket}.s3.{region}.amazonaws.com/{fullKey}`
+- **S3 custom endpoint (R2, MinIO, B2):** `{endpoint}/{bucket}/{fullKey}` (path style)
+
+**CDN substitution:** `publicUrl()` always returns the storage origin URL. In production, HLS players should be pointed at a CDN URL, not directly at S3. The HLS manager layer (future `lcyt-rtmp` component) is responsible for swapping the origin for the CDN domain using a configured `CDN_URL` prefix. For R2 + Cloudflare CDN, the public custom domain differs from the R2 API endpoint stored in `key_storage_config`.
+
+### `listObjects(apiKey, prefix)` — **Pending**
+
+Not yet implemented. Required for:
+
+- **Rolling HLS window cleanup** — delete segments that have fallen outside the playlist window. Currently `HlsSubsManager` manages a rolling window in local memory and deletes local files directly; an S3-backed equivalent would need to list and delete S3 objects.
+- **GDPR erasure** — `DELETE /stats` currently removes DB rows but does not delete physical files or S3 objects under the key prefix. A complete erasure implementation needs `listObjects` to enumerate everything under `keyDir(apiKey)`.
+- **Session recovery** — on restart, list existing segments to reconstruct state without re-encoding.
+
+**Design notes for `listObjects`:**
+```js
+listObjects(apiKey, prefix?)   → AsyncIterable<{ objectKey, size, lastModified }>
+```
+
+- S3: `ListObjectsV2Command` with pagination (`ContinuationToken`). The async iterable hides pagination from callers.
+- Local: `fs.readdir` (recursive for nested HLS subdirectories). Node 18.17+ supports `fs.readdir` with `recursive: true`.
+- Return value should be an async iterable so callers can process without loading all keys into memory (S3 buckets can have millions of objects).
 
 ---
 
-## Migration Path
+## Pending / Future Work
 
-### Existing deployments (local FS → S3)
-
-There is no automatic migration of existing files. Operators who switch `FILE_STORAGE=s3` mid-deployment will:
-1. Have old DB rows pointing to local filenames that no longer exist on the read path.
-2. Need to upload existing `FILES_DIR` contents to S3 manually (`aws s3 sync /data/files s3://bucket/captions/`).
-3. Update existing DB rows if they want existing downloads to resolve (low priority — most operators will just start fresh with S3 or keep local).
-
-A one-off migration script (`scripts/migrate-files-to-s3.mjs`) would be a nice-to-have but is not in scope here.
-
-### In-code migration guard
-
-Log a clear startup message:
-```
-✓ File storage: S3 (bucket: my-lcyt-captions, prefix: captions)
-```
-or
-```
-✓ File storage: local (dir: /data/files)
-```
+| Item | Priority | Notes |
+|---|---|---|
+| `listObjects(apiKey, prefix?)` | Medium | Needed for HLS rolling cleanup, GDPR erasure, recovery. Design above. |
+| Wire `putObject`/`publicUrl` into HLS manager | Medium | New `lcyt-rtmp` component; uses `resolveStorage` the same way captions do. |
+| CDN URL config field | Low | Add optional `cdn_url` to `key_storage_config` so `publicUrl()` can return the CDN URL directly. |
+| S3 adapter tests | Low | Requires mock S3 (e.g. `@smithy/util-test`, localstack, or custom http mock). |
+| GDPR erasure for S3 objects | Low | `DELETE /stats` should call `listObjects` + `deleteFile` for all objects under `keyDir(apiKey)`. |
+| Local FS → S3 migration script | Low | `scripts/migrate-files-to-s3.mjs` — walk `FILES_DIR`, upload each file, update DB `filename` column. |
 
 ---
 
-## Implementation Steps
+## Migration Path (operator)
 
-1. **Create `packages/plugins/lcyt-files/`** — package.json, src/ skeleton.
-2. **Move `src/caption-files.js`** from lcyt-backend into lcyt-files, adding the `storage` parameter.
-3. **Move `src/db/files.js`** re-exports into lcyt-files (or keep in lcyt-backend and import from there — less churn).
-4. **Implement `createLocalAdapter`** — wraps existing WriteStream logic; add `.sizeBytes()` / explicit `.close()`.
-5. **Implement `createS3Adapter`** — multipart upload via `@aws-sdk/lib-storage`.
-6. **Implement `createStorageAdapter`** factory.
-7. **Wire into `createCaptionsRouter`** — add `storage` parameter, pass to `writeToBackendFile`.
-8. **Wire into `routes/files.js`** — replace `res.download(filepath)` and `fs.unlink` with adapter calls.
-9. **Wire into `server.js`** — `initFilesControl(db)` returns `{ storage }`, close handles in `onSessionEnd`.
-10. **Tests** — local adapter (temp dir), S3 adapter (mock or localstack).
-11. **Update `CLAUDE.md`** — new env vars, plugin entry.
+Switching an existing deployment from local to S3 mid-operation:
 
----
+1. Old DB rows point to local file paths that won't resolve against the S3 adapter.
+2. Upload existing `FILES_DIR` contents: `aws s3 sync /data/files s3://bucket/captions/`
+3. Bulk-update `filename` column: strip base dir prefix, leaving only the object key.
+4. Set `FILE_STORAGE=s3` and restart.
 
-## Considerations
-
-- **Streaming download:** `res.download()` works only for local files. For S3 the object body is a `Readable` stream; pipe it directly to `res` with `Content-Disposition` set manually. This is cleaner than downloading to a temp file first.
-- **Large files:** Multipart upload minimum part size is 5 MB. For small caption files (< 5 MB) a single `PutObject` is cheaper. The `@aws-sdk/lib-storage` `Upload` class handles this transparently.
-- **Concurrent sessions:** Each session has its own `_fileHandles` Map, so adapter instances are not shared between requests — no locking needed.
-- **GDPR erasure (`DELETE /stats`):** Currently calls `deleteAllCaptionFiles(db, apiKey)` which deletes DB rows. It does **not** delete the physical files (only rows). The same gap exists today. For S3 it would require listing and deleting all objects under the key prefix — worth adding in the same PR.
-- **Cost:** S3 egress costs can add up if files are downloaded frequently. CDN fronting (CloudFront, R2 public buckets) is out of scope here.
+A migration script (`scripts/migrate-files-to-s3.mjs`) is listed as low-priority future work above.
