@@ -28,9 +28,10 @@ const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 
 /**
  * Matches any single <!-- key: value --> block (used with matchAll for multi-code lines).
+ * The key may optionally include a bracket modifier, e.g. file[server].
  * Not anchored — finds all occurrences in a line.
  */
-const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*)\s*:\s*([\s\S]*?)\s*-->/gi;
+const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
 
 /** @type {RegExp} Matches the opening line of a stanza block: <!-- stanza */
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
@@ -39,13 +40,26 @@ const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
 const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 
 /**
- * Returns true if a line consists entirely of <!-- key: value --> comment(s) and whitespace.
+ * Returns true if a line consists entirely of <!-- ... --> comment blocks and whitespace.
  * Supports multiple metacodes on one line, e.g.:
  *   <!-- section: Intro --><!-- speaker: Alice -->
+ * Uses a character-level scan so that no potentially unterminated comment fragments
+ * remain in any intermediate string (avoids incomplete sanitization).
  * @param {string} raw
  */
 function isMetadataOnlyLine(raw) {
-  return raw.replace(MULTI_META_RE, '').trim() === '';
+  let pos = 0;
+  while (pos < raw.length) {
+    if (raw[pos] === ' ' || raw[pos] === '\t' || raw[pos] === '\r') { pos++; continue; }
+    if (raw.startsWith('<!--', pos)) {
+      const end = raw.indexOf('-->', pos + 4);
+      if (end === -1) return false; // unclosed comment — treat as content
+      pos = end + 3;
+    } else {
+      return false; // non-comment, non-whitespace content
+    }
+  }
+  return true;
 }
 
 /**
@@ -68,6 +82,24 @@ function isMetadataOnlyLine(raw) {
  *   <!-- audio: stop -->    ← fires lcyt:audio-capture stop, does not persist
  * These produce lineCodes[i].audioCapture = 'start'|'stop' on an empty caption line.
  *
+ * Timer (one-shot action line): after the pointer rests on this line for N seconds,
+ * the file automatically advances to the next line (triggering any further metacodes):
+ *   <!-- timer: 5 -->     ← auto-advance after 5 seconds
+ *   <!-- timer: 0.5 -->   ← auto-advance after 0.5 seconds
+ * Produces lineCodes[i].timer = N (seconds, positive float).
+ *
+ * File switch (one-shot action line): switches to an already-open caption file by name.
+ * If the named file is not open, nothing happens.
+ * The server variant fetches the file from a URL before switching:
+ *   <!-- file: My Script.txt -->          ← switch to open file named "My Script.txt"
+ *   <!-- file[server]: /path/to/file -->  ← fetch and open from URL, then switch
+ * Produces lineCodes[i].fileSwitch = 'name' or lineCodes[i].fileSwitchServer = 'path'.
+ *
+ * Goto (one-shot action line): jumps the pointer to a specific file line number.
+ * Line numbers refer to the actual raw file line (matching the displayed lineNumbers):
+ *   <!-- goto: 42 -->   ← jump pointer to raw line 42
+ * Produces lineCodes[i].goto = N (1-indexed raw file line number).
+ *
  * Multi-line stanza blocks set a `stanza` metadata code on all subsequent lines.
  * The stanza text is newline-joined and carried as codes.stanza to the viewer.
  * Stanza blocks do NOT produce a caption line themselves:
@@ -84,7 +116,8 @@ function isMetadataOnlyLine(raw) {
  * Any valid HTML comment key is accepted (not limited to a predefined list).
  * Each code tags all subsequent lines until the same key appears again.
  * Comment lines are not included in the returned `lines` array.
- * Line numbers count only text lines (metadata comments are excluded from the count).
+ * Line numbers reflect the actual 1-based position in the raw file, so the
+ * displayed number matches what you would see in a text editor.
  *
  * @param {string} rawText
  * @returns {{ lines: string[], lineCodes: object[], lineNumbers: number[] }}
@@ -95,7 +128,6 @@ export function parseFileContent(rawText) {
   const lineCodes = [];
   const lineNumbers = [];
   const currentCodes = {};
-  let textLineCount = 0;
 
   for (let i = 0; i < rawLines.length; i++) {
     const raw = rawLines[i].trim();
@@ -125,18 +157,39 @@ export function parseFileContent(rawText) {
         const label = emptySendMatch[1]?.trim() || null;
         lines.push('');
         lineCodes.push({ ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) });
-        lineNumbers.push(++textLineCount);
+        lineNumbers.push(i + 1);
       } else if (isMetadataOnlyLine(raw)) {
         // Metadata-only line: may contain multiple <!-- key: value --> codes.
-        // Process each in order. `<!-- audio: start/stop -->` is a one-shot action
-        // that produces an entry in lines[] (like emptySend) and does NOT persist.
-        // All other codes update currentCodes normally.
+        // Process each in order.
+        //
+        // One-shot action metacodes that do NOT persist into currentCodes:
+        //   audio: start/stop  — fires lcyt:audio-capture event
+        //   timer: N           — auto-advances pointer after N seconds
+        //   goto: N            — jumps pointer to raw file line N
+        //   file: name         — switches to open file by name
+        //   file[server]: path — fetches file from URL and switches to it
+        //
+        // All other codes update currentCodes normally (they persist).
         let audioAction = null;
+        let timerAction = null;
+        let gotoAction = null;
+        let fileSwitchAction = null;
+        let fileSwitchServerAction = null;
         for (const m of raw.matchAll(MULTI_META_RE)) {
           const key = m[1].toLowerCase();
           const value = m[2].trim();
           if (key === 'audio' && (value === 'start' || value === 'stop')) {
             audioAction = value; // captured; will emit as action line after loop
+          } else if (key === 'timer') {
+            const secs = parseFloat(value);
+            if (!isNaN(secs) && secs > 0) timerAction = secs;
+          } else if (key === 'goto') {
+            const lineN = parseInt(value, 10);
+            if (!isNaN(lineN) && lineN > 0) gotoAction = lineN;
+          } else if (key === 'file') {
+            if (value !== '') fileSwitchAction = value;
+          } else if (key === 'file[server]') {
+            if (value !== '') fileSwitchServerAction = value;
           } else if (value === '') {
             delete currentCodes[key];
           } else {
@@ -147,17 +200,26 @@ export function parseFileContent(rawText) {
             currentCodes[key] = parsed;
           }
         }
-        if (audioAction) {
-          // Audio action line: fires once at this position (does not update currentCodes).
+        // Emit one action line if any one-shot action was found.
+        // Multiple action codes on the same line are all included in the single entry.
+        const hasAction = audioAction || timerAction !== null || gotoAction !== null ||
+                          fileSwitchAction !== null || fileSwitchServerAction !== null;
+        if (hasAction) {
+          const actionCodes = { ...currentCodes };
+          if (audioAction) actionCodes.audioCapture = audioAction;
+          if (timerAction !== null) actionCodes.timer = timerAction;
+          if (gotoAction !== null) actionCodes.goto = gotoAction;
+          if (fileSwitchAction !== null) actionCodes.fileSwitch = fileSwitchAction;
+          if (fileSwitchServerAction !== null) actionCodes.fileSwitchServer = fileSwitchServerAction;
           lines.push('');
-          lineCodes.push({ ...currentCodes, audioCapture: audioAction });
-          lineNumbers.push(++textLineCount);
+          lineCodes.push(actionCodes);
+          lineNumbers.push(i + 1);
         }
-        // Non-audio metadata lines are consumed — not added to output
+        // Non-action metadata lines are consumed — not added to output
       } else {
         lines.push(raw);
         lineCodes.push({ ...currentCodes });
-        lineNumbers.push(++textLineCount); // running count of text-only lines
+        lineNumbers.push(i + 1); // actual 1-based line number in the raw file
       }
     }
   }
