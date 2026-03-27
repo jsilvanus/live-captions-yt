@@ -147,7 +147,7 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
-const { storage } = await initFilesControl(db);
+const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -305,14 +305,14 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, storage }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, storage }));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

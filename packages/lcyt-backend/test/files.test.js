@@ -23,7 +23,7 @@ const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
 // Test app setup
 // ---------------------------------------------------------------------------
 
-let server, baseUrl, store, db, storage;
+let server, baseUrl, store, db, resolveStorage;
 
 before(async () => {
   db = initDb(':memory:');
@@ -32,13 +32,15 @@ before(async () => {
   // Ensure the base directory exists for the test suite
   await mkdir(FILES_BASE_DIR, { recursive: true });
 
-  storage = createLocalAdapter(FILES_BASE_DIR);
+  const storage = createLocalAdapter(FILES_BASE_DIR);
+  // Wrap the adapter as an async resolver (no per-key config in tests — always use global)
+  resolveStorage = async (_apiKey) => storage;
   store = new SessionStore({ cleanupInterval: 0 });
   const auth = createAuthMiddleware(JWT_SECRET);
 
   const app = express();
   app.use(express.json({ limit: '64kb' }));
-  app.use('/file', createFilesRouter(db, auth, store, JWT_SECRET, storage));
+  app.use('/file', createFilesRouter(db, auth, store, JWT_SECRET, resolveStorage));
 
   await new Promise((resolve) => {
     server = createServer(app);

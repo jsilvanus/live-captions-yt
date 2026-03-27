@@ -1,15 +1,26 @@
 /**
- * /file router — list, download, and delete caption files.
+ * /file router — list, download, delete caption files + per-key S3 config.
  *
- * Uses the injected storage adapter for download and deletion so the same
- * routes work for both local-FS and S3-backed deployments.
+ * Uses the injected resolveStorage function so the correct storage adapter
+ * (global or per-key) is chosen for every download and deletion.
+ *
+ * Storage config endpoints:
+ *   GET    /file/storage-config        — get current per-key S3 config (credentials masked)
+ *   PUT    /file/storage-config        — set per-key S3 config (requires "custom-storage" feature)
+ *   DELETE /file/storage-config        — remove per-key S3 config (revert to global default)
  */
 
 import { Router } from 'express';
 import { basename } from 'node:path';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
-import { listCaptionFiles, getCaptionFile, deleteCaptionFile } from 'lcyt-backend/db';
+import {
+  listCaptionFiles,
+  getCaptionFile,
+  deleteCaptionFile,
+  hasFeature,
+} from 'lcyt-backend/db';
+import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
 
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({
@@ -23,19 +34,102 @@ const fileRateLimit = rateLimit({
 /**
  * Factory for the /file router.
  *
- * GET    /file          — List all caption files for the authenticated key
- * GET    /file/:id      — Download a specific file (supports ?token= for direct links)
- * DELETE /file/:id      — Delete a specific file (database row + storage object)
+ * GET    /file                   — List all caption files for the authenticated key
+ * GET    /file/:id               — Download a specific file (supports ?token= for direct links)
+ * DELETE /file/:id               — Delete a specific file (database row + storage object)
+ * GET    /file/storage-config    — Get per-key S3 config (credentials masked)
+ * PUT    /file/storage-config    — Set per-key S3 config (requires "custom-storage" feature)
+ * DELETE /file/storage-config    — Remove per-key S3 config (revert to global default)
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store
  * @param {string} jwtSecret
- * @param {import('../adapters/types.js').StorageAdapter} storage
+ * @param {(apiKey: string) => Promise<import('../adapters/types.js').StorageAdapter>} resolveStorage
+ * @param {(apiKey: string) => void} [invalidateStorageCache]
  * @returns {Router}
  */
-export function createFilesRouter(db, auth, store, jwtSecret, storage) {
+export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache = () => {}) {
+  // Ensure the key_storage_config table exists (idempotent — safe to call on every startup)
+  if (db) runFilesDbMigrations(db);
+
+  // Defensive fallback: if no resolver provided, use an adapter-less stub that returns 503
+  const _resolve = resolveStorage ?? (() => Promise.reject(new Error('Storage not configured')));
+
   const router = Router();
+
+  // ── Storage config endpoints (must be registered before /:id to avoid route conflicts) ──
+
+  // GET /file/storage-config — return current config (credentials masked)
+  router.get('/storage-config', auth, (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const config = getKeyStorageConfig(db, session.apiKey);
+    if (!config) {
+      return res.json({ storageMode: 'default', config: null });
+    }
+
+    // Return config with secret key masked
+    return res.json({
+      storageMode: 'custom-s3',
+      config: {
+        bucket:            config.bucket,
+        region:            config.region,
+        endpoint:          config.endpoint || null,
+        prefix:            config.prefix,
+        access_key_id:     config.access_key_id || null,
+        secret_access_key: config.secret_access_key ? '••••••••' : null,
+        updated_at:        config.updated_at,
+      },
+    });
+  });
+
+  // PUT /file/storage-config — set per-key S3 config
+  router.put('/storage-config', auth, (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    // Require "custom-storage" project feature
+    if (!hasFeature(db, session.apiKey, 'custom-storage')) {
+      return res.status(403).json({ error: 'Custom storage is not enabled for this key' });
+    }
+
+    const { bucket, region, endpoint, prefix, access_key_id, secret_access_key } = req.body || {};
+    if (!bucket || typeof bucket !== 'string' || !bucket.trim()) {
+      return res.status(400).json({ error: 'bucket is required' });
+    }
+
+    setKeyStorageConfig(db, session.apiKey, {
+      bucket: bucket.trim(),
+      region:            region            || 'auto',
+      endpoint:          endpoint          || null,
+      prefix:            prefix            || 'captions',
+      access_key_id:     access_key_id     || null,
+      secret_access_key: secret_access_key || null,
+    });
+
+    // Invalidate cached adapter so the next request uses the new config
+    invalidateStorageCache(session.apiKey);
+
+    return res.json({ ok: true });
+  });
+
+  // DELETE /file/storage-config — remove per-key config (revert to global default)
+  router.delete('/storage-config', auth, (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    deleteKeyStorageConfig(db, session.apiKey);
+    invalidateStorageCache(session.apiKey);
+
+    return res.json({ ok: true });
+  });
+
+  // ── Caption file endpoints ──────────────────────────────────────────────────
 
   // GET /file — List files
   router.get('/', fileRateLimit, auth, (req, res) => {
@@ -79,6 +173,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, storage) {
     if (!row) return res.status(404).json({ error: 'File not found' });
 
     try {
+      const storage = await _resolve(apiKey);
       const { stream, contentType, size } = await storage.openRead(apiKey, row.filename, row.format);
       res.set('Content-Type', contentType + '; charset=utf-8');
       res.set('Content-Disposition', `attachment; filename="${basename(row.filename)}"`);
@@ -107,8 +202,9 @@ export function createFilesRouter(db, auth, store, jwtSecret, storage) {
     const deleted = deleteCaptionFile(db, id, session.apiKey);
     if (!deleted) return res.status(404).json({ error: 'File not found' });
 
-    // Best-effort deletion from storage backend
-    await storage.deleteFile(session.apiKey, row.filename).catch(err => {
+    // Best-effort deletion from storage backend (uses per-key adapter if configured)
+    const storage = await _resolve(session.apiKey).catch(() => null);
+    await storage?.deleteFile(session.apiKey, row.filename).catch(err => {
       console.warn('[file] Could not delete from storage:', err.message);
     });
 

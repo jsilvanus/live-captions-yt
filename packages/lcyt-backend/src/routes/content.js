@@ -18,14 +18,14 @@ import { createFilesRouter } from 'lcyt-files';
  * @param {import('express').RequestHandler} auth
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
- * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, storage?: object }} [managers]
+ * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function }} [managers]
  * @returns {Router}
  */
-export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, storage = null } = {}) {
+export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null } = {}) {
   const router = Router();
   router.use('/stats',           createStatsRouter(db, auth, store));
   router.use('/usage',           createUsageRouter(db));
-  router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, storage));
+  router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache));
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/youtube',         createYouTubeRouter(auth));

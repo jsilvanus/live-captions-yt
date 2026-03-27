@@ -1,15 +1,28 @@
 /**
  * Storage adapter factory.
  *
- * Reads FILE_STORAGE env var and returns the appropriate adapter:
- *   local (default) — writes to FILES_DIR on the local filesystem
- *   s3              — writes to an S3-compatible bucket
+ * Three storage modes:
+ *
+ *   1. local (default) — writes to FILES_DIR on the local filesystem.
+ *      Selected when FILE_STORAGE env var is absent or set to "local".
+ *
+ *   2. Build-time S3 — operator-configured S3 via env vars.
+ *      Selected when FILE_STORAGE=s3.
+ *
+ *   3. User-defined S3 — per-API-key S3 credentials stored in the DB.
+ *      Requires the "custom-storage" project feature to be enabled for the key.
+ *      Configured via GET/PUT/DELETE /file/storage-config endpoints.
+ *      Falls back to the global adapter (modes 1 or 2) when not configured.
+ *
+ * The global adapter (mode 1 or 2) is created once at startup.  Per-key
+ * adapters (mode 3) are created lazily and cached until invalidated.
  */
 
 import { resolve } from 'node:path';
 
 /**
  * Create and return a storage adapter based on environment configuration.
+ * This creates the global (operator-configured) adapter — mode 1 or 2.
  *
  * @returns {Promise<import('./adapters/types.js').StorageAdapter>}
  */
@@ -36,4 +49,56 @@ export async function createStorageAdapter() {
   const baseDir = resolve(process.env.FILES_DIR || '/data/files');
   const { createLocalAdapter } = await import('./adapters/local.js');
   return createLocalAdapter(baseDir);
+}
+
+/**
+ * Create a per-key storage resolver (mode 3 support).
+ *
+ * The returned `resolveStorage(apiKey)` function checks the DB for a
+ * user-defined S3 config and, if found, returns a per-key S3 adapter.
+ * If no per-key config exists, it falls back to the global adapter.
+ *
+ * Per-key adapters are created lazily and cached in memory.
+ * Call `invalidateCache(apiKey)` after the user updates or removes their
+ * config so the next call picks up the new settings.
+ *
+ * Access control (custom-storage feature flag) is enforced in the route
+ * handler before writing to key_storage_config, not here.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {import('./adapters/types.js').StorageAdapter} fallback  Global adapter (mode 1 or 2)
+ * @returns {{ resolveStorage: (apiKey: string) => Promise<import('./adapters/types.js').StorageAdapter>, invalidateCache: (apiKey: string) => void }}
+ */
+export function createStorageResolver(db, fallback) {
+  // Per-key S3 adapter cache: apiKey → StorageAdapter
+  const cache = new Map();
+
+  async function resolveStorage(apiKey) {
+    if (cache.has(apiKey)) return cache.get(apiKey);
+
+    const { getKeyStorageConfig } = await import('./db.js');
+    const config = getKeyStorageConfig(db, apiKey);
+    if (!config) return fallback;
+
+    const { createS3Adapter } = await import('./adapters/s3.js');
+    const adapter = await createS3Adapter({
+      bucket:      config.bucket,
+      region:      config.region || 'auto',
+      endpoint:    config.endpoint || undefined,
+      prefix:      config.prefix  || 'captions',
+      credentials: config.access_key_id ? {
+        accessKeyId:     config.access_key_id,
+        secretAccessKey: config.secret_access_key || '',
+      } : undefined,
+    });
+
+    cache.set(apiKey, adapter);
+    return adapter;
+  }
+
+  function invalidateCache(apiKey) {
+    cache.delete(apiKey);
+  }
+
+  return { resolveStorage, invalidateCache };
 }

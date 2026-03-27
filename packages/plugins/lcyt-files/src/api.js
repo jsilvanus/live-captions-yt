@@ -2,19 +2,23 @@
  * lcyt-files plugin entry point.
  *
  * Provides storage-adapter–backed caption file I/O for lcyt-backend.
- * Supports local filesystem (default) and S3-compatible object storage.
+ * Supports three storage modes:
+ *   1. local (default)          — local filesystem via FILES_DIR
+ *   2. build-time S3            — operator-configured via S3_* env vars
+ *   3. user-defined (runtime) S3 — per-key credentials stored in DB;
+ *                                  requires "custom-storage" project feature
  *
  * Usage in lcyt-backend/src/server.js:
  *
  *   import { initFilesControl, createFilesRouter, writeToBackendFile, closeFileHandles } from 'lcyt-files';
  *
- *   const { storage } = await initFilesControl(db);
+ *   const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
  *
- *   // Wire into captions.js:
- *   app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor, storage }));
+ *   // Wire into captions.js (resolveStorage selects the right adapter per key):
+ *   app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor, resolveStorage }));
  *
  *   // Wire into content.js:
- *   app.use(createContentRouters(db, auth, store, jwtSecret, { ..., storage }));
+ *   app.use(createContentRouters(db, auth, store, jwtSecret, { ..., resolveStorage, invalidateStorageCache }));
  *
  *   // Close handles when a session ends:
  *   store.onSessionEnd = async (session) => {
@@ -26,19 +30,30 @@
 export { writeToBackendFile, closeFileHandles } from './caption-files.js';
 export { createFilesRouter } from './routes/files.js';
 
-import { createStorageAdapter } from './storage.js';
+import { createStorageAdapter, createStorageResolver } from './storage.js';
+import { runFilesDbMigrations } from './db.js';
 
 /**
- * Initialise the files plugin: create the storage adapter and log its config.
+ * Initialise the files plugin: run DB migrations, create the global storage
+ * adapter, and create the per-key storage resolver.
  *
- * Does not run any DB migrations — the `caption_files` table is owned by
- * lcyt-backend's schema.js and already exists.
- *
- * @param {import('better-sqlite3').Database} _db  (reserved for future per-key DB config)
- * @returns {Promise<{ storage: import('./adapters/types.js').StorageAdapter }>}
+ * @param {import('better-sqlite3').Database} db
+ * @returns {Promise<{
+ *   storage: import('./adapters/types.js').StorageAdapter,
+ *   resolveStorage: (apiKey: string) => Promise<import('./adapters/types.js').StorageAdapter>,
+ *   invalidateStorageCache: (apiKey: string) => void,
+ * }>}
  */
-export async function initFilesControl(_db) {
+export async function initFilesControl(db) {
+  // Create the key_storage_config table if it doesn't exist
+  runFilesDbMigrations(db);
+
+  // Create the global (operator-configured) adapter
   const storage = await createStorageAdapter();
   console.info(storage.describe?.() ?? '✓ File storage initialised');
-  return { storage };
+
+  // Create the per-key resolver (falls back to global adapter when no per-key config)
+  const { resolveStorage, invalidateCache } = createStorageResolver(db, storage);
+
+  return { storage, resolveStorage, invalidateStorageCache: invalidateCache };
 }
