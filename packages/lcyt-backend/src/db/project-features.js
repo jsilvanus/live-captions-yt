@@ -24,6 +24,7 @@ export const FEATURE_DEPS = {
   'files-local':           ['file-saving'],
   'files-managed-bucket':  ['file-saving'],
   'files-custom-bucket':   ['file-saving'],
+  'files-webdav':          ['file-saving'],
 };
 
 /**

@@ -19,7 +19,8 @@
   },
   "optionalDependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
-    "@aws-sdk/lib-storage": "^3.0.0"
+    "@aws-sdk/lib-storage": "^3.0.0",
+    "webdav": "^5.0.0"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",

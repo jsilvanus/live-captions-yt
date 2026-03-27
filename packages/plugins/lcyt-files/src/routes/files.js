@@ -71,13 +71,15 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
       return res.json({ storageMode: 'default', config: null });
     }
 
+    const isWebDav = config.storage_type === 'webdav';
     // Return config with secret key masked
     return res.json({
-      storageMode: 'custom-s3',
+      storageMode: isWebDav ? 'custom-webdav' : 'custom-s3',
       config: {
-        bucket:            config.bucket,
+        storage_type:      config.storage_type || 's3',
+        bucket:            config.bucket       || null,
         region:            config.region,
-        endpoint:          config.endpoint || null,
+        endpoint:          config.endpoint     || null,
         prefix:            config.prefix,
         access_key_id:     config.access_key_id || null,
         secret_access_key: config.secret_access_key ? '••••••••' : null,
@@ -92,18 +94,30 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const session = store.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    // Require "files-custom-bucket" project feature
-    if (!hasFeature(db, session.apiKey, 'files-custom-bucket')) {
-      return res.status(403).json({ error: 'Custom storage bucket is not enabled for this key' });
-    }
+    const { storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key } = req.body || {};
+    const storageType = (storage_type === 'webdav') ? 'webdav' : 's3';
 
-    const { bucket, region, endpoint, prefix, access_key_id, secret_access_key } = req.body || {};
-    if (!bucket || typeof bucket !== 'string' || !bucket.trim()) {
-      return res.status(400).json({ error: 'bucket is required' });
+    if (storageType === 'webdav') {
+      // Require "files-webdav" project feature
+      if (!hasFeature(db, session.apiKey, 'files-webdav')) {
+        return res.status(403).json({ error: 'WebDAV storage is not enabled for this key' });
+      }
+      if (!endpoint || typeof endpoint !== 'string' || !endpoint.trim()) {
+        return res.status(400).json({ error: 'endpoint (WebDAV server URL) is required' });
+      }
+    } else {
+      // Require "files-custom-bucket" project feature
+      if (!hasFeature(db, session.apiKey, 'files-custom-bucket')) {
+        return res.status(403).json({ error: 'Custom storage bucket is not enabled for this key' });
+      }
+      if (!bucket || typeof bucket !== 'string' || !bucket.trim()) {
+        return res.status(400).json({ error: 'bucket is required' });
+      }
     }
 
     setKeyStorageConfig(db, session.apiKey, {
-      bucket: bucket.trim(),
+      storage_type:      storageType,
+      bucket:            bucket ? bucket.trim() : '',
       region:            region            || 'auto',
       endpoint:          endpoint          || null,
       prefix:            prefix            || 'captions',

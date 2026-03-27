@@ -1,7 +1,7 @@
 /**
  * Storage adapter factory.
  *
- * Three storage modes:
+ * Four storage modes:
  *
  *   1. local (default) — writes to FILES_DIR on the local filesystem.
  *      Selected when FILE_STORAGE env var is absent or set to "local".
@@ -10,12 +10,15 @@
  *      Selected when FILE_STORAGE=s3.
  *
  *   3. User-defined S3 — per-API-key S3 credentials stored in the DB.
- *      Requires the "custom-storage" project feature to be enabled for the key.
- *      Configured via GET/PUT/DELETE /file/storage-config endpoints.
- *      Falls back to the global adapter (modes 1 or 2) when not configured.
+ *      Requires the "files-custom-bucket" project feature.
+ *      Configured via GET/PUT/DELETE /file/storage-config.
+ *
+ *   4. User-defined WebDAV — per-API-key WebDAV server stored in the DB.
+ *      Requires the "files-webdav" project feature.
+ *      Configured via GET/PUT/DELETE /file/storage-config with storage_type=webdav.
  *
  * The global adapter (mode 1 or 2) is created once at startup.  Per-key
- * adapters (mode 3) are created lazily and cached until invalidated.
+ * adapters (modes 3/4) are created lazily and cached until invalidated.
  */
 
 import { resolve } from 'node:path';
@@ -52,25 +55,25 @@ export async function createStorageAdapter() {
 }
 
 /**
- * Create a per-key storage resolver (mode 3 support).
+ * Create a per-key storage resolver (modes 3 and 4 support).
  *
  * The returned `resolveStorage(apiKey)` function checks the DB for a
- * user-defined S3 config and, if found, returns a per-key S3 adapter.
+ * user-defined config and, if found, returns a per-key adapter (S3 or WebDAV).
  * If no per-key config exists, it falls back to the global adapter.
  *
  * Per-key adapters are created lazily and cached in memory.
  * Call `invalidateCache(apiKey)` after the user updates or removes their
  * config so the next call picks up the new settings.
  *
- * Access control (custom-storage feature flag) is enforced in the route
- * handler before writing to key_storage_config, not here.
+ * Access control (feature flag checks) is enforced in the route handler
+ * before writing to key_storage_config, not here.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('./adapters/types.js').StorageAdapter} fallback  Global adapter (mode 1 or 2)
  * @returns {{ resolveStorage: (apiKey: string) => Promise<import('./adapters/types.js').StorageAdapter>, invalidateCache: (apiKey: string) => void }}
  */
 export function createStorageResolver(db, fallback) {
-  // Per-key S3 adapter cache: apiKey → StorageAdapter
+  // Per-key adapter cache: apiKey → StorageAdapter
   const cache = new Map();
 
   async function resolveStorage(apiKey) {
@@ -80,17 +83,30 @@ export function createStorageResolver(db, fallback) {
     const config = getKeyStorageConfig(db, apiKey);
     if (!config) return fallback;
 
-    const { createS3Adapter } = await import('./adapters/s3.js');
-    const adapter = await createS3Adapter({
-      bucket:      config.bucket,
-      region:      config.region || 'auto',
-      endpoint:    config.endpoint || undefined,
-      prefix:      config.prefix  || 'captions',
-      credentials: config.access_key_id ? {
-        accessKeyId:     config.access_key_id,
-        secretAccessKey: config.secret_access_key || '',
-      } : undefined,
-    });
+    let adapter;
+
+    if (config.storage_type === 'webdav') {
+      const { createWebDavAdapter } = await import('./adapters/webdav.js');
+      adapter = await createWebDavAdapter({
+        url:      config.endpoint,
+        prefix:   config.prefix   || 'captions',
+        username: config.access_key_id     || undefined,
+        password: config.secret_access_key || undefined,
+      });
+    } else {
+      // Default: s3
+      const { createS3Adapter } = await import('./adapters/s3.js');
+      adapter = await createS3Adapter({
+        bucket:      config.bucket,
+        region:      config.region || 'auto',
+        endpoint:    config.endpoint || undefined,
+        prefix:      config.prefix  || 'captions',
+        credentials: config.access_key_id ? {
+          accessKeyId:     config.access_key_id,
+          secretAccessKey: config.secret_access_key || '',
+        } : undefined,
+      });
+    }
 
     cache.set(apiKey, adapter);
     return adapter;
