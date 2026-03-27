@@ -6,6 +6,7 @@
   "main": "src/index.js",
   "exports": {
     ".": "./src/index.js",
+    "./db": "./src/db.js",
     "./ffmpeg": "./src/ffmpeg/index.js",
     "./ffmpeg/pipe-utils": "./src/ffmpeg/pipe-utils.js"
   },
@@ -25,6 +26,7 @@
     "bcryptjs": "^2.4.3",
     "lcyt": "*",
     "lcyt-dsk": "*",
+    "lcyt-files": "*",
     "lcyt-production": "*",
     "lcyt-rtmp": "*"
   },

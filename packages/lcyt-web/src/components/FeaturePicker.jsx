@@ -29,6 +29,15 @@ const FEATURE_GROUPS = [
     ],
   },
   {
+    label: 'Storage',
+    features: [
+      { code: 'files-local',          label: 'Local storage',         desc: 'Store caption files on the server\'s local filesystem (default)' },
+      { code: 'files-managed-bucket', label: 'Managed S3 storage',    desc: 'Store caption files in the operator-configured S3 bucket' },
+      { code: 'files-custom-bucket',  label: 'Custom S3 bucket',      desc: 'Store caption files in a user-supplied S3 bucket (configurable via Files → Storage)' },
+      { code: 'files-webdav',         label: 'WebDAV storage',        desc: 'Store caption files on a WebDAV server (Nextcloud, ownCloud, Apache mod_dav)' },
+    ],
+  },
+  {
     label: 'Graphics',
     features: [
       { code: 'graphics-client', label: 'Graphics viewer',  desc: 'DSK overlay viewer page (public)' },

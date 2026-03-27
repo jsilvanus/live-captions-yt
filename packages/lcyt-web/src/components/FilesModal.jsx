@@ -26,6 +26,12 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
   const pendingFileRef = useRef(null);
   const [shorthandPrompt, setShorthandPrompt] = useState(null); // { file } | null
 
+  // ── Storage config ──────────────────────────────────────
+  const [storageConfig, setStorageConfigState] = useState(null); // { storageMode, config }
+  const [loadingStorage, setLoadingStorage] = useState(false);
+  const [storageForm, setStorageForm] = useState({ storage_type: 's3', bucket: '', region: 'auto', endpoint: '', prefix: 'captions', access_key_id: '', secret_access_key: '' });
+  const [savingStorage, setSavingStorage] = useState(false);
+
   // Reset tab if initialTab changes while open
   useEffect(() => {
     if (isOpen && initialTab) setTab(initialTab);
@@ -35,6 +41,7 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
     if (!isOpen || !session.connected) return;
     if (tab === 'captions') loadFiles();
     if (tab === 'images') loadImages();
+    if (tab === 'storage') loadStorageConfig();
   }, [isOpen, session.connected, tab]);
 
   async function loadFiles() {
@@ -49,6 +56,57 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
     try { setImages((await session.listImages()).images || []); }
     catch (err) { showToast(err.message, 'error'); }
     finally { setLoadingImages(false); }
+  }
+
+  async function loadStorageConfig() {
+    setLoadingStorage(true);
+    try {
+      const data = await session.getStorageConfig();
+      setStorageConfigState(data);
+      if (data.config) {
+        setStorageForm({
+          storage_type:      data.config.storage_type      || 's3',
+          bucket:            data.config.bucket            || '',
+          region:            data.config.region            || 'auto',
+          endpoint:          data.config.endpoint          || '',
+          prefix:            data.config.prefix            || 'captions',
+          access_key_id:     data.config.access_key_id     || '',
+          secret_access_key: '',  // never pre-fill secret
+        });
+      }
+    } catch (err) { showToast(err.message, 'error'); }
+    finally { setLoadingStorage(false); }
+  }
+
+  async function handleSaveStorageConfig(e) {
+    e.preventDefault();
+    if (!storageForm.bucket.trim()) { showToast('Bucket name is required', 'error'); return; }
+    setSavingStorage(true);
+    try {
+      await session.setStorageConfig({
+        storage_type:      storageForm.storage_type,
+        bucket:            storageForm.bucket.trim()            || '',
+        region:            storageForm.region                   || 'auto',
+        endpoint:          storageForm.endpoint.trim()          || null,
+        prefix:            storageForm.prefix.trim()            || 'captions',
+        access_key_id:     storageForm.access_key_id.trim()     || null,
+        secret_access_key: storageForm.secret_access_key.trim() || null,
+      });
+      showToast('Storage config saved', 'success', 2500);
+      loadStorageConfig();
+    } catch (err) { showToast(err.message, 'error'); }
+    finally { setSavingStorage(false); }
+  }
+
+  async function handleDeleteStorageConfig() {
+    setSavingStorage(true);
+    try {
+      await session.deleteStorageConfig();
+      showToast('Custom storage config removed — reverted to default', 'success', 2500);
+      setStorageForm({ storage_type: 's3', bucket: '', region: 'auto', endpoint: '', prefix: 'captions', access_key_id: '', secret_access_key: '' });
+      loadStorageConfig();
+    } catch (err) { showToast(err.message, 'error'); }
+    finally { setSavingStorage(false); }
   }
 
   // ── Caption file actions ────────────────────────────────
@@ -111,7 +169,7 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
 
   if (!isOpen) return null;
 
-  const tabs = hasImages ? ['captions', 'images'] : ['captions'];
+  const tabs = ['captions', ...(hasImages ? ['images'] : []), 'storage'];
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
@@ -131,7 +189,7 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
                 className={`settings-tab${tab === tkey ? ' settings-tab--active' : ''}`}
                 onClick={() => setTab(tkey)}
               >
-                {tkey === 'captions' ? t('settings.files.tabCaptions') : t('settings.files.tabImages')}
+                {tkey === 'captions' ? t('settings.files.tabCaptions') : tkey === 'images' ? t('settings.files.tabImages') : 'Storage'}
               </button>
             ))}
           </div>
@@ -181,6 +239,118 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
                       ))}
                     </tbody>
                   </table>
+                )}
+              </>
+            )}
+
+            {/* ── Storage tab ── */}
+            {session.connected && tab === 'storage' && (
+              <>
+                {loadingStorage ? (
+                  <span className="settings-field__hint">Loading…</span>
+                ) : (
+                  <>
+                    <div style={{ marginBottom: 12 }}>
+                      <span className="settings-field__label">Current mode: </span>
+                      <strong>
+                        {storageConfig?.storageMode === 'custom-s3' ? 'Custom S3 bucket'
+                          : storageConfig?.storageMode === 'custom-webdav' ? 'WebDAV'
+                          : 'Default (server-configured)'}
+                      </strong>
+                      {storageConfig?.config?.updated_at && (
+                        <span className="settings-field__hint" style={{ marginLeft: 8 }}>Updated {storageConfig.config.updated_at.slice(0, 10)}</span>
+                      )}
+                    </div>
+                    <form onSubmit={handleSaveStorageConfig} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {/* Storage type selector */}
+                      <div className="settings-field">
+                        <label className="settings-field__label">Storage type</label>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {[{ value: 's3', label: 'S3-compatible' }, { value: 'webdav', label: 'WebDAV' }].map(opt => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              className={`btn btn--sm ${storageForm.storage_type === opt.value ? 'btn--primary' : 'btn--secondary'}`}
+                              onClick={() => setStorageForm(p => ({ ...p, storage_type: opt.value }))}
+                            >
+                              {opt.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* S3 fields */}
+                      {storageForm.storage_type === 's3' && (<>
+                        <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                          Requires the <em>Custom S3 bucket</em> feature. Works with AWS S3, Cloudflare R2, MinIO, Backblaze B2, and any S3-compatible endpoint.
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-field__label">Bucket *</label>
+                          <input className="settings-field__input" value={storageForm.bucket} onChange={e => setStorageForm(p => ({ ...p, bucket: e.target.value }))} placeholder="my-bucket" />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div className="settings-field">
+                            <label className="settings-field__label">Region</label>
+                            <input className="settings-field__input" value={storageForm.region} onChange={e => setStorageForm(p => ({ ...p, region: e.target.value }))} placeholder="auto" />
+                          </div>
+                          <div className="settings-field">
+                            <label className="settings-field__label">Prefix</label>
+                            <input className="settings-field__input" value={storageForm.prefix} onChange={e => setStorageForm(p => ({ ...p, prefix: e.target.value }))} placeholder="captions" />
+                          </div>
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-field__label">Endpoint URL</label>
+                          <input className="settings-field__input" value={storageForm.endpoint} onChange={e => setStorageForm(p => ({ ...p, endpoint: e.target.value }))} placeholder="https://… (leave empty for AWS)" />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div className="settings-field">
+                            <label className="settings-field__label">Access Key ID</label>
+                            <input className="settings-field__input" value={storageForm.access_key_id} onChange={e => setStorageForm(p => ({ ...p, access_key_id: e.target.value }))} placeholder="optional" autoComplete="off" />
+                          </div>
+                          <div className="settings-field">
+                            <label className="settings-field__label">Secret Access Key</label>
+                            <input className="settings-field__input" type="password" value={storageForm.secret_access_key} onChange={e => setStorageForm(p => ({ ...p, secret_access_key: e.target.value }))} placeholder={storageConfig?.config?.secret_access_key ? '••••••••' : 'optional'} autoComplete="new-password" />
+                          </div>
+                        </div>
+                      </>)}
+
+                      {/* WebDAV fields */}
+                      {storageForm.storage_type === 'webdav' && (<>
+                        <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                          Requires the <em>WebDAV storage</em> feature. Works with Nextcloud, ownCloud, Apache mod_dav, and any standard WebDAV server.
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-field__label">Server URL *</label>
+                          <input className="settings-field__input" value={storageForm.endpoint} onChange={e => setStorageForm(p => ({ ...p, endpoint: e.target.value }))} placeholder="https://cloud.example.com/remote.php/dav/files/user" />
+                        </div>
+                        <div className="settings-field">
+                          <label className="settings-field__label">Path prefix</label>
+                          <input className="settings-field__input" value={storageForm.prefix} onChange={e => setStorageForm(p => ({ ...p, prefix: e.target.value }))} placeholder="captions" />
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div className="settings-field">
+                            <label className="settings-field__label">Username</label>
+                            <input className="settings-field__input" value={storageForm.access_key_id} onChange={e => setStorageForm(p => ({ ...p, access_key_id: e.target.value }))} placeholder="optional" autoComplete="username" />
+                          </div>
+                          <div className="settings-field">
+                            <label className="settings-field__label">Password / App token</label>
+                            <input className="settings-field__input" type="password" value={storageForm.secret_access_key} onChange={e => setStorageForm(p => ({ ...p, secret_access_key: e.target.value }))} placeholder={storageConfig?.config?.secret_access_key ? '••••••••' : 'optional'} autoComplete="new-password" />
+                          </div>
+                        </div>
+                      </>)}
+
+                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                        <button type="submit" className="btn btn--primary btn--sm" disabled={savingStorage}>
+                          {savingStorage ? 'Saving…' : 'Save config'}
+                        </button>
+                        {(storageConfig?.storageMode === 'custom-s3' || storageConfig?.storageMode === 'custom-webdav') && (
+                          <button type="button" className="btn btn--secondary btn--sm" onClick={handleDeleteStorageConfig} disabled={savingStorage}>
+                            Remove / revert to default
+                          </button>
+                        )}
+                      </div>
+                    </form>
+                  </>
                 )}
               </>
             )}

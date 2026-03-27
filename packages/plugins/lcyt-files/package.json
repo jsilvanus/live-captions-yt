@@ -1,0 +1,35 @@
+{
+  "name": "lcyt-files",
+  "version": "0.1.0",
+  "description": "Caption file storage plugin for lcyt-backend — local FS and S3-compatible adapters",
+  "type": "module",
+  "main": "src/api.js",
+  "exports": {
+    ".": "./src/api.js",
+    "./src/adapters/local.js": "./src/adapters/local.js"
+  },
+  "scripts": {
+    "test": "node --experimental-test-module-mocks --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21",
+    "express-rate-limit": "^8.2.1",
+    "jsonwebtoken": "^9.0",
+    "lcyt-backend": "*"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/lib-storage": "^3.0.0",
+    "webdav": "^5.0.0"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-files"
+  }
+}

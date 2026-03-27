@@ -25,6 +25,7 @@ live-captions-yt/
 │   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
 │   └── plugins/                # Plugin packages (npm workspaces glob: packages/plugins/*)
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
+│       ├── lcyt-files/         # Caption file storage plugin (local FS + S3-compatible adapters)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
 │       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
 ├── python-packages/            # Python packages
@@ -192,6 +193,14 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `CONTACT_NAME` | Contact name returned by `GET /contact` | none |
 | `CONTACT_PHONE` | Contact phone returned by `GET /contact` | none |
 | `CONTACT_WEBSITE` | Contact website returned by `GET /contact` | none |
+| `FILES_DIR` | Local directory for per-key caption files (local adapter) | `/data/files` |
+| `FILE_STORAGE` | Caption file storage backend: `local` (default) or `s3` | `local` |
+| `S3_BUCKET` | S3 bucket name (required when `FILE_STORAGE=s3`) | none |
+| `S3_REGION` | S3 region (or `auto` for Cloudflare R2) | `auto` |
+| `S3_ENDPOINT` | Custom S3-compatible endpoint URL (R2, MinIO, Backblaze B2) | none |
+| `S3_PREFIX` | Object key prefix within the bucket | `captions` |
+| `S3_ACCESS_KEY_ID` | Static S3 credentials access key | none (uses AWS credential chain) |
+| `S3_SECRET_ACCESS_KEY` | Static S3 credentials secret | none |
 | `CEA` | Enable CEA-608/708 caption encoding (experimental) | unset |
 | `PLAYWRIGHT_DSK_CHROMIUM` | Path to Chromium binary for DSK renderer | Playwright cache path |
 | `DSK_LOCAL_SERVER` | Local server URL used by DSK renderer | `http://localhost:$PORT` |
@@ -295,7 +304,7 @@ PUT  /stt/config          — update per-key STT config (Bearer token)
 - `src/middleware/user-auth.js` — JWT Bearer verification for user tokens (`{ type: 'user', userId, email }`).
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
-- `src/caption-files.js` — Caption file storage helpers.
+- `src/caption-files.js` — Pure caption-text utilities: `composeCaptionText`, `formatVttTime`, `buildVttCue`. File I/O was extracted to `lcyt-files`.
 - `src/backup.js` — DB backup utilities.
 - `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`).
 
@@ -308,6 +317,61 @@ PUT  /stt/config          — update per-key STT config (Bearer token)
 **Docker:** `Dockerfile` — node:20-slim, exposes port 3000.
 
 **Tests:** `packages/lcyt-backend/test/*.test.js` — uses `node:test`.
+
+---
+
+### `packages/plugins/lcyt-files` — Caption File Storage Plugin (v0.1.0)
+
+Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default) and S3-compatible object storage backends behind a common interface. Imported by `lcyt-backend` as `lcyt-files`.
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { initFilesControl, createFilesRouter, writeToBackendFile, closeFileHandles } from 'lcyt-files';
+
+const { storage } = await initFilesControl(db);
+// Wire storage into captions.js (via createSessionRouters) and files route (via createContentRouters).
+// Close handles on session end:
+store.onSessionEnd = async (session) => {
+  if (session._fileHandles?.size > 0) await closeFileHandles(session._fileHandles);
+};
+```
+
+**Source files (`src/`):**
+- `api.js` — `initFilesControl(db)` → `{ storage }` (logs adapter type at startup). Exports `writeToBackendFile`, `closeFileHandles`, `createFilesRouter`.
+- `storage.js` — `createStorageAdapter()` factory; reads `FILE_STORAGE` env var.
+- `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`.
+- `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, storage)` → `GET /file`, `GET /file/:id`, `DELETE /file/:id`.
+- `adapters/local.js` — `createLocalAdapter(baseDir)`: wraps `fs.WriteStream` (append) and `fs.ReadStream`. `storedKey` is the full filesystem path.
+- `adapters/s3.js` — `createS3Adapter({ bucket, prefix, region, endpoint, credentials })`: multipart upload via `@aws-sdk/lib-storage`. `storedKey` is the S3 object key.
+
+**Storage adapter interface:**
+```
+keyDir(apiKey)                                  → string (safe per-key prefix)
+openAppend(apiKey, filename)                    → AppendHandle { storedKey, write(chunk), close(), sizeBytes() }
+openRead(apiKey, storedKey, format)             → { stream, contentType, size }  (throws ENOENT if missing)
+deleteFile(apiKey, storedKey)                   → Promise<void>
+describe()                                      → string (startup log message)
+```
+
+**Environment variables** (see also backend env vars above):
+| Variable | Purpose | Default |
+|---|---|---|
+| `FILE_STORAGE` | Storage backend: `local` or `s3` | `local` |
+| `FILES_DIR` | Base directory for local adapter | `/data/files` |
+| `S3_BUCKET` | S3 bucket name (required when `FILE_STORAGE=s3`) | — |
+| `S3_REGION` | AWS region (or `auto` for R2) | `auto` |
+| `S3_ENDPOINT` | Custom endpoint (R2, MinIO, Backblaze B2) | — |
+| `S3_PREFIX` | Object key prefix | `captions` |
+| `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Static credentials | — (uses AWS chain) |
+
+**Notes:**
+- The `caption_files` DB table is owned by `lcyt-backend/src/db/schema.js` (unchanged).
+- The `filename` column stores the adapter's `storedKey` — a full filesystem path for local, an S3 object key for S3. `basename()` is applied in list responses for display.
+- For S3: the multipart upload streams data as it is written; `close()` (called in `onSessionEnd`) completes the upload.
+- `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` are optional dependencies; not required when `FILE_STORAGE=local`.
+
+**Tests:** `packages/plugins/lcyt-files/test/local-adapter.test.js` — 17 tests covering adapter methods, `writeToBackendFile`, and `closeFileHandles`.
 
 ---
 

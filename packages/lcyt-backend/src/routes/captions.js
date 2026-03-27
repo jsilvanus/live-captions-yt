@@ -2,7 +2,8 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled } from '../db.js';
 import { broadcastToViewers, registerViewerKeyOwner } from './viewer.js';
-import { composeCaptionText, writeToBackendFile } from '../caption-files.js';
+import { composeCaptionText, buildVttCue } from '../caption-files.js';
+import { writeToBackendFile } from 'lcyt-files';
 
 /**
  * Factory for the /captions router.
@@ -17,7 +18,7 @@ import { composeCaptionText, writeToBackendFile } from '../caption-files.js';
  * @param {import('../rtmp-manager.js').RtmpRelayManager|null} [relayManager]
  * @returns {Router}
  */
-export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null) {
+export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null, resolveStorage = null) {
   const router = Router();
 
   // POST /captions — Send captions (auth required)
@@ -91,23 +92,25 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           const composedText = composeCaptionText(text, captionLang, translations, showOriginal);
 
           // Write original and all translations to backend files if enabled
-          if (backendFileEnabled && translations) {
-            for (const [lang, translatedText] of Object.entries(translations)) {
-              writeToBackendFile(
-                { apiKey: session.apiKey, sessionId, lang, format: 'youtube', fileHandles: session._fileHandles },
-                translatedText,
-                typeof timestamp === 'string' ? timestamp : (timestamp instanceof Date ? timestamp.toISOString() : undefined),
-                db
-              );
-            }
+          const tsStr = typeof timestamp === 'string' ? timestamp
+            : (timestamp instanceof Date ? timestamp.toISOString() : undefined);
+          if (backendFileEnabled && resolveStorage && translations) {
+            resolveStorage(session.apiKey).then(fileStorage => {
+              for (const [lang, translatedText] of Object.entries(translations)) {
+                writeToBackendFile(
+                  { apiKey: session.apiKey, sessionId, lang, format: 'youtube', fileHandles: session._fileHandles },
+                  translatedText, tsStr, db, fileStorage, buildVttCue
+                );
+              }
+            }).catch(() => {});
           }
-          if (backendFileEnabled) {
-            writeToBackendFile(
-              { apiKey: session.apiKey, sessionId, lang: 'original', format: 'youtube', fileHandles: session._fileHandles },
-              text,
-              typeof timestamp === 'string' ? timestamp : (timestamp instanceof Date ? timestamp.toISOString() : undefined),
-              db
-            );
+          if (backendFileEnabled && resolveStorage) {
+            resolveStorage(session.apiKey).then(fileStorage => {
+              writeToBackendFile(
+                { apiKey: session.apiKey, sessionId, lang: 'original', format: 'youtube', fileHandles: session._fileHandles },
+                text, tsStr, db, fileStorage, buildVttCue
+              );
+            }).catch(() => {});
           }
 
           return { text: composedText, timestamp, ...rest };

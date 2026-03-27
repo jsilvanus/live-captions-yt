@@ -577,6 +577,18 @@ export function useSession({
     return api.del(`/file/${fileId}`);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getStorageConfig = useCallback(async function getStorageConfig() {
+    return api.get('/file/storage-config');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const setStorageConfig = useCallback(async function setStorageConfig(config) {
+    return api.put('/file/storage-config', config);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const deleteStorageConfig = useCallback(async function deleteStorageConfig() {
+    return api.del('/file/storage-config');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Icons ──────────────────────────────────────────────
 
   const listIcons = useCallback(async function listIcons() {
@@ -668,7 +680,7 @@ export function useSession({
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,
-    listFiles, getFileDownloadUrl, deleteFile,
+    listFiles, getFileDownloadUrl, deleteFile, getStorageConfig, setStorageConfig, deleteStorageConfig,
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
     updateImageSettings,
     listIcons, uploadIcon, deleteIcon,

@@ -12,10 +12,10 @@ import { listViewports } from '../db/viewports.js';
  * GET /dsk/:apikey/events  — SSE stream; emits 'graphics' events when captions with <!-- graphics:... --> are received
  *
  * @param {import('better-sqlite3').Database} db
- * @param {import('../../../../lcyt-backend/src/store.js').SessionStore} store
+ * @param {import('../../../../lcyt-backend/src/dsk-bus.js').DskBus} dskBus
  * @returns {Router}
  */
-export function createDskRouter(db, store) {
+export function createDskRouter(db, dskBus) {
   const router = Router();
 
   // Validate API key exists and is active — shared by both endpoints
@@ -83,7 +83,7 @@ export function createDskRouter(db, store) {
     // Send initial connected event
     res.write(`event: connected\ndata: ${JSON.stringify({ apiKey: apikey })}\n\n`);
 
-    store.addDskSubscriber(apikey, res);
+    dskBus.addDskSubscriber(apikey, res);
 
     // Heartbeat every 25 s to keep connection alive through proxies
     const heartbeat = setInterval(() => {
@@ -92,7 +92,7 @@ export function createDskRouter(db, store) {
 
     function cleanup() {
       clearInterval(heartbeat);
-      store.removeDskSubscriber(apikey, res);
+      dskBus.removeDskSubscriber(apikey, res);
     }
 
     req.on('close', cleanup);

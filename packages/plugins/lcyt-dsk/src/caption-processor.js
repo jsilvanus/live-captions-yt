@@ -152,11 +152,11 @@ function parseDskMetacodes(text) {
  *   Always returns the cleaned caption text (with all <!-- graphics:... --> codes removed).
  *   If no graphics codes are present the text is returned unchanged.
  */
-export function createDskCaptionProcessor({ db, store, relayManager }) {
+export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
   return async function processDskCaption(apiKey, text, codes = {}) {
     // Emit 'bindings' SSE event if codes are present (section, stanza, speaker, etc.)
     if (codes && typeof codes === 'object' && Object.keys(codes).length > 0) {
-      store.emitDskEvent(apiKey, 'bindings', { codes, ts: Date.now() });
+      dskBus.emitDskEvent(apiKey, 'bindings', { codes, ts: Date.now() });
     }
 
     // Quick check: does the text contain any graphics metacode?
@@ -168,7 +168,7 @@ export function createDskCaptionProcessor({ db, store, relayManager }) {
     if (defaultSection === null && Object.keys(viewportSections).length === 0) return text;
 
     // ── Apply sections against current server-side state ────────────────────
-    const state = store.getDskGraphicsState(apiKey);
+    const state = dskBus.getDskGraphicsState(apiKey);
 
     // Default slot
     let newDefault = null;
@@ -186,7 +186,7 @@ export function createDskCaptionProcessor({ db, store, relayManager }) {
       newViewports[vpName] = resolved;
     }
 
-    store.setDskGraphicsState(apiKey, state);
+    dskBus.setDskGraphicsState(apiKey, state);
 
     // Build per-image metadata map by reading image.settings_json for names
     const imageMeta = {};
@@ -201,7 +201,7 @@ export function createDskCaptionProcessor({ db, store, relayManager }) {
     }
 
     // Emit SSE 'graphics' event to all open /dsk/:apikey/events subscribers
-    store.emitDskEvent(apiKey, 'graphics', {
+    dskBus.emitDskEvent(apiKey, 'graphics', {
       default:   newDefault,         // null if no default section touched this time
       viewports: newViewports,
       imageMeta: imageMeta,
@@ -209,7 +209,7 @@ export function createDskCaptionProcessor({ db, store, relayManager }) {
     });
 
     if (cleanText) {
-      store.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
+      dskBus.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
     }
 
     // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
