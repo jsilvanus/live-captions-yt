@@ -32,7 +32,6 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_captions.md](plans/plan_captions.md) | Caption Sending Pipeline | End-to-end caption delivery: input sources, composition, target fan-out (YouTube, viewer, generic), sequence tracking, NTP clock sync, and SSE result reporting. | |
 | [plan_translations.md](plans/plan_translations.md) | Caption Translation Pipeline | Client-side real-time translation before sending: vendor abstraction (MyMemory, Google, DeepL, LibreTranslate), multi-target routing, per-language viewer display, HLS subtitle sidecar, and local/backend file writing. | |
 | [plan_cea.md](plans/plan_cea.md) | CEA-708 SEI NAL Caption Embedding in RTMP Relay | CEA-708 caption embedding implemented in RtmpRelayManager via ffmpeg tee muxer with eia608 subtitle encoder and SRT stdin pipe. Per-slot captionMode and per-key cea708_delay_ms. | |
-| [plan_component_split.md](plans/plan_component_split.md) | Component Split (lcyt-web) | All monolithic components split into shared panels (`components/panels/`), sidebar extracted, setup wizard components extracted. | |
 
 ### In progress
 
@@ -42,7 +41,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [TODO_plan.md](plans/TODO_plan.md) | Implement TODO.md items | Resolve open TODO.md items: Python stderr logging, MCP auto-sync and time field, docs reorganisation, CLAUDE.md lcyt-mcp reference. | |
 | [plan_userprojects.md](plans/plan_userprojects.md) | Richer Projects System: Feature Flags, Membership, and Device Roles | Normalize per-project feature flags into a dedicated table, add user entitlement tiers, project membership with access levels, per-member permission overrides, and pin-code device roles (camera/mic/mixer/custom) for production devices. Phase 1 (data model + UI) implemented; Phase 2 (enforcement middleware) pending. | |
 | [plan_files3.md](plans/plan_files3.md) | `lcyt-files` Plugin — Storage-Adapter Caption & Stream File I/O | Core plugin implemented: local FS adapter, S3 adapter, WebDAV adapter, three storage modes, `GET/PUT/DELETE /file/storage-config` routes, `putObject`/`publicUrl` adapter methods. Pending: `listObjects`, wiring `putObject` into HLS manager, S3 adapter tests, GDPR erasure for S3 objects. | |
-| [plan_front.md](plans/plan_front.md) | Frontend Flow Improvement | Core sidebar navigation, dashboard, settings page, and route restructuring implemented. Remaining P0/P1 items (auto-reconnect, unsaved work protection) pending. | relates to `plan/ui` |
+| [plan_ui.md](plans/plan_ui.md) | Frontend & UI Plans | Three iterations: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard, core implemented), v3 (component split, completed). Remaining P0/P1: auto-reconnect, unsaved work protection. | |
 | [plan_server_stt.md](plans/plan_server_stt.md) | Server-side Speech-to-Text (STT) | Phase 1 implemented: HlsSegmentFetcher, GoogleSttAdapter, WhisperHttpAdapter, OpenAiAdapter, SttManager, /stt routes. Phases 2–4 (gRPC streaming, RTMP/WHEP fallback enhancements) remain. | |
 | [plan_dock_ffmpeg.md](plans/plan_dock_ffmpeg.md) | FFmpeg Compute Containers → Distributed Hetzner Architecture | Phases 1–3 implemented: DockerFfmpegRunner abstraction behind `FFMPEG_RUNNER` env flag, local/docker/worker runners. Orchestrator and worker-daemon packages scaffolded. Phases 4–7 (full distributed architecture) remain. | `plan/rtmp` (execution model) |
 | [plan_setup_wizard.md](plans/plan_setup_wizard.md) | Setup Wizard | Guided setup flow at `/setup`: feature selection, dependency auto-enable, config panels (targets, translation, relay, STT, embed, CEA), shared panels architecture. Backend feature deps and wizard shell implemented; config step panels implemented. | |
@@ -58,7 +57,6 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
-| [plan_UI.md](plans/plan_UI.md) | UI Reorganisation (lcyt-web) | Redesign lcyt-web desktop (two-column) and mobile (fixed bottom bar + FAB) layouts. Largely superseded by `plan/front`'s sidebar navigation which is now implemented. | superseded by `plan/front` |
 
 ### Reference
 
