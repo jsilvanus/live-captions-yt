@@ -77,10 +77,10 @@ Server-side MusicManager                Client-side useMusicDetector
 
 | Event | Payload |
 |---|---|
-| `sound_label` | `{ label: 'music'\|'speech'\|'silence', previous, confidence, source: 'server'\|'client', ts }` |
-| `bpm_update` | `{ bpm: number, confidence, source: 'server'\|'client', ts }` |
+| `sound_label` | `{ label: 'music'\|'speech'\|'silence', previous, confidence, ts }` |
+| `bpm_update` | `{ bpm: number, confidence, ts }` |
 
-The `source` field distinguishes server-side (HLS analysis) from client-side (browser mic analysis) so the frontend can display them with different indicators if desired.
+The frontend subscribes to these events on the existing `GET /events` session stream — no separate SSE connection needed.
 
 ---
 
@@ -262,7 +262,6 @@ export function createSoundCaptionProcessor({ store, db }) {
     if (soundMatch) {
       const label = soundMatch[1];        // 'music' | 'speech' | 'silence'
       const bpm   = bpmMatch ? parseInt(bpmMatch[1], 10) : null;
-      const source = text.includes('source:server') ? 'server' : 'client';
 
       // Persist to DB
       insertMusicEvent(db, apiKey, { event_type: 'label_change', label, bpm });
@@ -272,12 +271,12 @@ export function createSoundCaptionProcessor({ store, db }) {
       if (session?.emitter) {
         session.emitter.emit('event', {
           type: 'sound_label',
-          data: { label, bpm, confidence: null, source, ts: Date.now() },
+          data: { label, bpm, confidence: null, ts: Date.now() },
         });
         if (bpm != null) {
           session.emitter.emit('event', {
             type: 'bpm_update',
-            data: { bpm, confidence: null, source, ts: Date.now() },
+            data: { bpm, confidence: null, ts: Date.now() },
           });
         }
       }
@@ -359,7 +358,7 @@ const session = this.#store?.getByApiKey?.(apiKey);
 if (!session) return;
 
 // Build metacode string — never reaches YouTube (stripped by SoundCaptionProcessor)
-let metacode = `<!-- sound:${label} source:server -->`;
+let metacode = `<!-- sound:${label} -->`;
 if (label === 'music' && bpm != null) {
   metacode += ` <!-- bpm:${Math.round(bpm)} -->`;
 }
@@ -464,7 +463,6 @@ CREATE TABLE IF NOT EXISTS music_events (
   label      TEXT,              -- 'music' | 'speech' | 'silence'
   bpm        REAL,
   confidence REAL,
-  source     TEXT,              -- 'server' | 'client'
   ts         INTEGER NOT NULL DEFAULT (strftime('%s','now'))
 );
 CREATE INDEX IF NOT EXISTS music_events_key_ts ON music_events(api_key, ts);
@@ -511,10 +509,10 @@ Music detection fires onto the **existing session `/events` SSE stream** via `So
 
 | Event | Payload |
 |---|---|
-| `sound_label` | `{ label: 'music'\|'speech'\|'silence', previous, confidence, source: 'server'\|'client', ts }` |
-| `bpm_update` | `{ bpm: number, confidence, source: 'server'\|'client', ts }` |
-| `music_started` | `{ streamKey, source: 'server' }` — emitted on `POST /music/start` |
-| `music_stopped` | `{ source: 'server' }` — emitted on `POST /music/stop` |
+| `sound_label` | `{ label: 'music'\|'speech'\|'silence', previous, confidence, ts }` |
+| `bpm_update` | `{ bpm: number, confidence, ts }` |
+| `music_started` | `{ streamKey }` — emitted on `POST /music/start` |
+| `music_stopped` | `{}` — emitted on `POST /music/stop` |
 
 ### SSE events on `GET /music/:key/live` (public stream)
 
@@ -738,7 +736,7 @@ When `useMusicDetector` confirms a label change, it calls `captionContext.send` 
 
 ```js
 // In useMusicDetector, on confirmed label_change:
-let metacode = `<!-- sound:${label} source:client -->`;
+let metacode = `<!-- sound:${label} -->`;
 if (label === 'music' && bpm != null) {
   metacode += ` <!-- bpm:${Math.round(bpm)} -->`;
 }
@@ -759,7 +757,7 @@ export function useMusic({ analyserRef, sessionActive }) {
   const client = useMusicDetector({ analyserRef, enabled: clientEnabled, ... });
 
   // SSE listener for both paths (sound_label / bpm_update from GET /events):
-  const [soundState, setSoundState] = useState({ label: null, bpm: null, source: null });
+  const [soundState, setSoundState] = useState({ label: null, bpm: null });
   useEffect(() => {
     // Subscribe to session SSE events of type 'sound_label' and 'bpm_update'
     // (uses the existing sessionContext.addEventListener or EventSource pattern)
@@ -768,7 +766,6 @@ export function useMusic({ analyserRef, sessionActive }) {
   return {
     label:           soundState.label,
     bpm:             soundState.bpm,
-    source:          soundState.source,    // 'server' | 'client'
     clientAvailable: client.available,
     clientRunning:   client.running,
   };
@@ -808,43 +805,32 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 
 ## Phases
 
-### Phase 1 — Core detection + full UI (server-side and client-side browser mic)
+### Phase 1 — Full frontend sound detection and UI (browser mic only)
 
-**Goal:** Complete end-to-end feature: reliable music/speech/silence labelling, metacode emission, frontend indicator, and browser-mic analysis — all in Phase 1.
+**Goal:** Operators can see music/speech/silence detection and BPM in the UI using the browser microphone, without any server-side analysis.  The metacode pipeline (`SoundCaptionProcessor`) is also established in this phase so that Phase 2 (server-side HLS) can plug straight in.
 
-**Backend:**
-- `fft.js` — radix-2 FFT helper (tests first).
-- `spectral-detector.js` — RMS, spectral centroid, spectral flatness, ZCR, low-freq ratio, `classify()`.
-- `bpm-detector.js` — onset novelty function, autocorrelation, peak picking, octave disambiguation, smoothing.
-- `pcm-extractor.js` — ffmpeg `s16le` pipe, `Float32Array` output.
-- `music-manager.js` — wires `HlsSegmentFetcher` → `PcmExtractor` → `SpectralDetector` + `BpmDetector` → injects `<!-- sound:... --> <!-- bpm:N -->` metacodes into `session._sendQueue`.
-- `sound-caption-processor.js` — `createSoundCaptionProcessor()`: strips metacodes, fires `sound_label` / `bpm_update` SSE events, writes to `music_events` DB.
-- `db.js` — `music_config` + `music_events` migrations and helpers.
-- `api.js` — `initMusicControl()` + `createMusicRouters()` + exports `createSoundCaptionProcessor`.
-- Routes: `POST /music/start`, `POST /music/stop`, `GET /music/status`, `GET /music/:key/live` (SSE, public), `GET/PUT /music/config`.
-- `on_publish` / `on_publish_done` auto-start hooks in `lcyt-rtmp`.
-- `server.js` — mount `/music` routes + wire `soundCaptionProcessor` into `createSessionRouters` when `MUSIC_DETECTION_ACTIVE=1`.
+**Backend (metacode processor only):**
+- `sound-caption-processor.js` — `createSoundCaptionProcessor()`: strips `<!-- sound:... -->` and `<!-- bpm:... -->` metacodes, fires `sound_label` / `bpm_update` SSE events on `GET /events`, writes to `music_events` DB.
+- Minimal `db.js` — `music_events` table only (no `music_config` needed until Phase 2).
+- `packages/lcyt-backend/src/routes/session.js` — accept and apply `soundCaptionProcessor` in `createSessionRouters` / `createCaptionsRouter`.
+- `packages/lcyt-backend/src/server.js` — wire `soundCaptionProcessor`.
 
 **UI (lcyt-web) — shared analysis:**
-- `src/lib/musicAnalysis.js` — pure JS `classifyFromFrequency()` + `detectBpmFromPcm()`.
+- `src/lib/musicAnalysis.js` — pure JS `classifyFromFrequency()` (Web Audio API frequency bins) + `detectBpmFromPcm()` (onset-autocorrelation).
 
 **UI (lcyt-web) — hooks:**
-- `src/hooks/useMusicDetector.js` — attaches to `analyserRef`; runs analysis loop; emits `<!-- sound:... --> <!-- bpm:N -->` metacodes via `captionContext.send`.
-- `src/hooks/useMusic.js` — subscribes to `sound_label` / `bpm_update` SSE events; returns unified state.
+- `src/hooks/useMusicDetector.js` — attaches to `analyserRef`; runs analysis loop at configurable interval; on confirmed label change emits `<!-- sound:${label} -->` (and `<!-- bpm:N -->` for music) via `captionContext.send`.
+- `src/hooks/useMusic.js` — subscribes to `sound_label` / `bpm_update` SSE events on the session stream; returns unified `{ label, bpm, clientAvailable, clientRunning }`.
 
 **UI (lcyt-web) — components:**
-- `src/components/MusicChip.jsx` — StatusBar chip.
-- `src/components/panels/MusicPanel.jsx` — settings panel (both paths), source selector.
+- `src/components/MusicChip.jsx` — StatusBar chip: `♪ 128 BPM` / speech waveform / dash.
+- `src/components/panels/MusicPanel.jsx` — settings panel: source selector, enable toggle, BPM toggle, confidence threshold, analysis interval, start/stop.
 - `src/lib/storageKeys.js` — add `KEYS.audio.musicDetect*` keys.
 - `src/locales/en.js` — i18n strings (`settings.music.*`).
-- `packages/lcyt-web/src/components/AudioPanel.jsx` — increase `analyserRef` fftSize to 2048.
+- `packages/lcyt-web/src/components/AudioPanel.jsx` — increase `analyserRef` fftSize from 256 → 2048.
 
 **Backend tests:**
-- `test/fft.test.js` — correctness against known transform values.
-- `test/spectral-detector.test.js` — classify synthetic tonal, noisy, and silent PCM buffers.
-- `test/bpm-detector.test.js` — detect BPM from synthetic click-track buffers at 60, 120, 140 BPM.
 - `test/sound-caption-processor.test.js` — metacode parsing, SSE event emission, cleanText = `""`.
-- `test/music-manager.test.js` — start/stop lifecycle, metacode injection into `_sendQueue`, error handling.
 
 **Frontend tests (Vitest):**
 - `test/components/musicAnalysis.test.js` — `classifyFromFrequency` + `detectBpmFromPcm` unit tests.
@@ -852,24 +838,51 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 
 ---
 
-### Phase 2 — RTMP audio-source fallback + public SSE widget
+### Phase 2 — Server-side HLS detection
 
-**Goal:** Support deployments without MediaMTX; expose public BPM widget.
+**Goal:** Add server-side analysis of HLS audio segments so music detection works for headless streams where no browser mic is available.
 
 **Backend:**
-- `'rtmp'` audio source option in `MusicManager` (ffmpeg PCM pipe, same as `SttManager` rtmp path).
-- `GET /music/:key/live` subscribes to music events sourced from `music_events` DB.
+- `fft.js` — radix-2 Cooley–Tukey FFT.
+- `spectral-detector.js` — RMS, spectral centroid, spectral flatness, ZCR, low-freq ratio, `classify()`.
+- `bpm-detector.js` — onset novelty function, autocorrelation, peak picking, octave disambiguation, smoothing.
+- `pcm-extractor.js` — ffmpeg `s16le` pipe, `Float32Array` output.
+- `music-manager.js` — wires `HlsSegmentFetcher` → `PcmExtractor` → `SpectralDetector` + `BpmDetector` → injects `<!-- sound:... --> <!-- bpm:N -->` metacodes into `session._sendQueue`.
+- `music_config` DB table + `getMusicConfig` / `setMusicConfig` helpers.
+- `api.js` — `initMusicControl()` + `createMusicRouters()` + exports `createSoundCaptionProcessor`.
+- Routes: `POST /music/start`, `POST /music/stop`, `GET /music/status`, `GET /music/:key/live` (SSE, public), `GET/PUT /music/config`.
+- `on_publish` / `on_publish_done` auto-start hooks in `lcyt-rtmp`.
+- `server.js` — mount `/music` routes when `MUSIC_DETECTION_ACTIVE=1`.
+
+**UI (lcyt-web):**
+- Add `'server'` option to MusicPanel source selector (was mic-only in Phase 1).
+
+**Backend tests:**
+- `test/fft.test.js` — correctness against known transform values.
+- `test/spectral-detector.test.js` — classify synthetic tonal, noisy, and silent PCM buffers.
+- `test/bpm-detector.test.js` — detect BPM from synthetic click-track buffers at 60, 120, 140 BPM.
+- `test/music-manager.test.js` — start/stop lifecycle, metacode injection into `_sendQueue`, error handling.
 
 ---
 
-### Phase 3 — Tuning, export, and advanced classifiers
+### Phase 3 — RTMP audio-source fallback
+
+**Goal:** Support deployments without MediaMTX by adding a direct RTMP audio source.
+
+**Backend:**
+- `'rtmp'` audio source option in `MusicManager` (ffmpeg PCM pipe, same approach as `SttManager` rtmp path).
+- `GET /music/:key/live` full implementation consuming `music_events` DB table.
+
+---
+
+### Phase 4 — Tuning, export, and advanced classifiers
 
 **Goal:** Improve accuracy and add event history export.
 
 **Backend:**
 - `GET /music/events/history` — paginated list from `music_events` table.
 - Threshold auto-calibration: a short training window at stream start that adapts to the ambient noise floor.
-- Optional integration point for external classifiers (e.g., a TensorFlow.js model or a Python sidecar) via a configurable `MUSIC_CLASSIFIER_URL` HTTP hook.
+- Optional `MUSIC_CLASSIFIER_URL` HTTP hook for external classifiers (e.g., a TensorFlow.js model or a Python sidecar).
 
 **UI (lcyt-web):**
 - Simple event timeline in the `MusicPanel` showing the last N label changes with timestamps and BPM values.
@@ -879,19 +892,15 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 
 ## Open Questions
 
-1. **Shared `HlsSegmentFetcher`**: `SttManager` already owns one fetcher per key.  When both STT and music detection run concurrently for the same key, they would each poll the playlist independently.  Options: (a) expose the fetcher from `SttManager` and let `MusicManager` subscribe to the same segment events, or (b) accept the duplicate poll (low overhead — one extra HTTP request per segment per key).  Decision deferred to implementation.
+1. **Shared `HlsSegmentFetcher`** (Phase 2): `SttManager` already owns one fetcher per key.  When both STT and music detection run concurrently, they would each poll the playlist independently.  Options: (a) expose the fetcher from `SttManager` and let `MusicManager` subscribe to the same segment events, or (b) accept the duplicate poll (low overhead — one extra HTTP request per segment per key).  Decision deferred to Phase 2 implementation.
 
-2. **ffmpeg availability**: `PcmExtractor` requires ffmpeg.  If `FFMPEG_RUNNER=worker`, the local ffmpeg binary may not be present.  `MusicManager.start()` should probe for ffmpeg (reuse `probeFfmpegVersion()` from `lcyt-rtmp/src/stt-manager.js`) and emit a clear error if unavailable.
+2. **ffmpeg availability** (Phase 2): `PcmExtractor` requires ffmpeg.  If `FFMPEG_RUNNER=worker`, the local ffmpeg binary may not be present.  `MusicManager.start()` should probe for ffmpeg (reuse `probeFfmpegVersion()` from `lcyt-rtmp/src/stt-manager.js`) and emit a clear error if unavailable.
 
-3. **HLS segment duration**: Shorter segments (3 s) improve reaction time but give less audio context for BPM estimation.  The recommended MediaMTX setting is `hlsSegmentDuration: 6s` (same as for STT), which gives a comfortable 3–4 beat window at most tempos.
+3. **HLS segment duration** (Phase 2): Shorter segments (3 s) improve reaction time but give less audio context for BPM estimation.  The recommended MediaMTX setting is `hlsSegmentDuration: 6s` (same as for STT), which gives a comfortable 3–4 beat window at most tempos.
 
-4. **Live RTMP fallback**: Phase 1 uses the HLS path only.  A `'rtmp'` audio source option (using the same ffmpeg PCM pipe approach as `SttManager`) can be added in Phase 2 for deployments without MediaMTX.
+4. **Classification accuracy** (Phase 4): The hand-crafted threshold classifier works well for clear music vs. clear speech but may misclassify music with vocal lines or rhythmic speech.  If accuracy is insufficient, a lightweight TensorFlow.js model (e.g., a port of YAMNet's top-level classifier) could be embedded in Phase 4 without native dependencies.
 
-5. **Classification accuracy**: The hand-crafted threshold classifier works well for clear music vs. clear speech but may misclassify music with vocal lines or rhythmic speech.  If accuracy is insufficient, a lightweight TensorFlow.js model (e.g., a port of YAMNet's top-level classifier) could be embedded in Phase 3 without native dependencies.
-
-6. **Client-side `fftSize`**: `AudioPanel` currently creates the `AnalyserNode` with `fftSize = 256` (sufficient for the level meter).  Music classification needs more frequency resolution — `fftSize = 2048` is recommended.  `AudioPanel` must be updated to increase the fftSize (or create a second analyser node chained to the same source) so the level meter continues to work unchanged.
-
-7. **Concurrent client + server**: Both paths now flow through the same `SoundCaptionProcessor` on the server (client sends metacodes, server strips and emits SSE events) so `useMusic` naturally gets a single SSE stream.  The `source` field (`'client'` vs `'server'`) in each SSE event payload allows the frontend to apply different visual treatment if desired.
+5. **Client-side `fftSize`**: `AudioPanel` currently creates the `AnalyserNode` with `fftSize = 256` (sufficient for the level meter).  Music classification needs more frequency resolution — `fftSize = 2048` is recommended.  `AudioPanel` must be updated to increase the fftSize (or create a second analyser node chained to the same source) so the level meter continues to work unchanged.
 
 ---
 
@@ -903,76 +912,90 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 | Communication mechanism | `<!-- sound:music\|speech\|silence -->` + `<!-- bpm:N -->` metacodes in caption pipeline |
 | Signal stripping | `SoundCaptionProcessor` removes metacodes before YouTube delivery (cleanText = `""`) |
 | SSE delivery | `sound_label` + `bpm_update` events on existing `GET /events` session stream |
-| Server audio source | HLS Phase 1; RTMP fallback Phase 2 |
-| Client audio source | Browser mic via existing `AnalyserNode` in `AudioPanel` |
-| Classification | Spectral features + threshold rules; no ML required in Phases 1–2 |
+| Phase 1 | Browser mic analysis + full UI (no server-side analysis) |
+| Phase 2 | Server-side HLS analysis |
+| Phase 3 | RTMP fallback |
+| Phase 4 | Tuning, event history export, external classifier hook |
+| Classification | Spectral features + threshold rules; no ML required in Phases 1–3 |
 | BPM method | Autocorrelation of onset novelty function (both paths) |
 | Native deps (server) | None — plain JavaScript + ffmpeg (already required by `lcyt-rtmp`) |
 | Browser deps | Web Audio API only — built into all modern browsers |
-| Shared analysis code | Server: `lcyt-music/src/analyser/`; Client: `lcyt-web/src/lib/musicAnalysis.js` |
-| DB | Two new tables: `music_config`, `music_events` (server path only) |
+| DB | `music_events` (Phase 1); `music_config` (Phase 2) |
 | localStorage keys | `lcyt.audio.musicDetect*` (client path config) |
-| Phase 1 scope | Backend + Frontend + UI (complete end-to-end) |
 | Breaking changes | None — server plugin opt-in via `MUSIC_DETECTION_ACTIVE=1`; client hook only activates when `enabled=true` |
 
 ---
 
 ## Todo
 
-### Phase 1 — Core detection + full UI
+### Phase 1 — Frontend sound detection and UI
+
+**Backend (processor only)**
+- [ ] `packages/plugins/lcyt-music/src/sound-caption-processor.js` — createSoundCaptionProcessor()
+- [ ] `packages/plugins/lcyt-music/src/db.js` — `music_events` table migration + helpers
+- [ ] `packages/plugins/lcyt-music/src/api.js` — exports createSoundCaptionProcessor + db init
+- [ ] `packages/lcyt-backend/src/routes/session.js` — accept and apply `soundCaptionProcessor`
+- [ ] `packages/lcyt-backend/src/server.js` — wire soundCaptionProcessor
+
+**Backend tests**
+- [ ] `packages/plugins/lcyt-music/test/sound-caption-processor.test.js`
+
+**UI (lcyt-web) — shared analysis**
+- [ ] `src/lib/musicAnalysis.js` — `classifyFromFrequency()` + `detectBpmFromPcm()`
+
+**UI (lcyt-web) — hooks**
+- [ ] `src/hooks/useMusicDetector.js` — analysis loop; emits `<!-- sound:... -->` metacodes via captionContext.send
+- [ ] `src/hooks/useMusic.js` — SSE listener; unified state
+
+**UI (lcyt-web) — components**
+- [ ] `src/components/MusicChip.jsx` — StatusBar chip
+- [ ] `src/components/panels/MusicPanel.jsx` — settings panel (mic path)
+- [ ] `src/lib/storageKeys.js` — add `KEYS.audio.musicDetect*` keys
+- [ ] `src/locales/en.js` — i18n strings (`settings.music.*`)
+- [ ] `src/components/AudioPanel.jsx` — increase `analyserRef` fftSize to 2048
+
+**Frontend tests (Vitest)**
+- [ ] `test/components/musicAnalysis.test.js`
+- [ ] `test/components/useMusicDetector.test.jsx`
+
+---
+
+### Phase 2 — Server-side HLS detection
 
 **Backend**
 - [ ] `packages/plugins/lcyt-music/package.json` — plugin manifest
-- [ ] `packages/plugins/lcyt-music/src/analyser/fft.js` — radix-2 Cooley–Tukey FFT
-- [ ] `packages/plugins/lcyt-music/src/analyser/spectral-detector.js` — feature extraction + classify()
-- [ ] `packages/plugins/lcyt-music/src/analyser/bpm-detector.js` — onset → autocorrelation → BPM
-- [ ] `packages/plugins/lcyt-music/src/pcm-extractor.js` — ffmpeg PCM pipe helper
-- [ ] `packages/plugins/lcyt-music/src/music-manager.js` — MusicManager: injects `<!-- sound:... --> <!-- bpm:N -->` metacodes
-- [ ] `packages/plugins/lcyt-music/src/sound-caption-processor.js` — createSoundCaptionProcessor()
-- [ ] `packages/plugins/lcyt-music/src/db.js` — migrations + helpers
+- [ ] `packages/plugins/lcyt-music/src/analyser/fft.js`
+- [ ] `packages/plugins/lcyt-music/src/analyser/spectral-detector.js`
+- [ ] `packages/plugins/lcyt-music/src/analyser/bpm-detector.js`
+- [ ] `packages/plugins/lcyt-music/src/pcm-extractor.js`
+- [ ] `packages/plugins/lcyt-music/src/music-manager.js`
+- [ ] `packages/plugins/lcyt-music/src/db.js` — add `music_config` table
 - [ ] `packages/plugins/lcyt-music/src/routes/music.js` — start/stop/status/live routes
 - [ ] `packages/plugins/lcyt-music/src/routes/music-config.js` — GET/PUT /music/config
-- [ ] `packages/plugins/lcyt-music/src/api.js` — initMusicControl() + createMusicRouters() + export createSoundCaptionProcessor
-- [ ] `packages/lcyt-backend/src/server.js` — mount /music routes + wire soundCaptionProcessor into createSessionRouters when MUSIC_DETECTION_ACTIVE=1
-- [ ] `packages/lcyt-backend/src/routes/session.js` — accept and apply `soundCaptionProcessor` in createSessionRouters / createCaptionsRouter
-- [ ] `packages/plugins/lcyt-rtmp/src/routes/radio.js` — on_publish auto-start hook for music
+- [ ] `packages/plugins/lcyt-music/src/api.js` — initMusicControl() + createMusicRouters()
+- [ ] `packages/lcyt-backend/src/server.js` — mount /music routes when MUSIC_DETECTION_ACTIVE=1
+- [ ] `packages/plugins/lcyt-rtmp` — on_publish auto-start hook
 
 **Backend tests**
 - [ ] `packages/plugins/lcyt-music/test/fft.test.js`
 - [ ] `packages/plugins/lcyt-music/test/spectral-detector.test.js`
 - [ ] `packages/plugins/lcyt-music/test/bpm-detector.test.js`
-- [ ] `packages/plugins/lcyt-music/test/sound-caption-processor.test.js`
 - [ ] `packages/plugins/lcyt-music/test/music-manager.test.js`
 
-**UI (lcyt-web) — shared analysis**
-- [ ] `src/lib/musicAnalysis.js` — `classifyFromFrequency()` + `detectBpmFromPcm()` (Web Audio API input)
-
-**UI (lcyt-web) — hooks**
-- [ ] `src/hooks/useMusicDetector.js` — attaches to analyserRef; emits `<!-- sound:... --> <!-- bpm:N -->` via captionContext.send
-- [ ] `src/hooks/useMusic.js` — subscribes to sound_label / bpm_update SSE events; returns unified state
-
-**UI (lcyt-web) — components**
-- [ ] `src/components/MusicChip.jsx` — StatusBar chip (both paths via SSE)
-- [ ] `src/components/panels/MusicPanel.jsx` — full settings panel with source selector
-- [ ] `src/lib/storageKeys.js` — add `KEYS.audio.musicDetect*` keys
-- [ ] `src/locales/en.js` — i18n strings (`settings.music.*`)
-- [ ] `packages/lcyt-web/src/components/AudioPanel.jsx` — increase `analyserRef` fftSize to 2048
-
-**Frontend tests (Vitest)**
-- [ ] `test/components/musicAnalysis.test.js` — classifyFromFrequency + detectBpmFromPcm unit tests
-- [ ] `test/components/useMusicDetector.test.jsx` — hook lifecycle; metacode emission on label change
+**UI (lcyt-web)**
+- [ ] MusicPanel — add `'server'` option to source selector
 
 ---
 
-### Phase 2 — RTMP audio-source fallback + public SSE widget
+### Phase 3 — RTMP audio-source fallback
 
 **Backend**
 - [ ] `'rtmp'` audio source in MusicManager (ffmpeg PCM pipe)
-- [ ] `GET /music/:key/live` full implementation sourced from `music_events` DB
+- [ ] `GET /music/:key/live` full implementation from `music_events` DB
 
 ---
 
-### Phase 3 — Tuning and export
+### Phase 4 — Tuning and export
 
 **Backend**
 - [ ] `GET /music/events/history` — paginated event log
