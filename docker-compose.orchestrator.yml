@@ -13,7 +13,7 @@ version: "3.8"
 #   2. Build or pull the required images:
 #        docker build -t lcyt-site:latest .
 #        docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
-#        docker build -t lcyt-ffmpeg:latest images/lcyt-ffmpeg/
+#        docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 #   3. Create a Hetzner snapshot of a worker VM with docker + lcyt-ffmpeg pre-pulled.
 #      Set HETZNER_SNAPSHOT_ID to the snapshot ID.
 #

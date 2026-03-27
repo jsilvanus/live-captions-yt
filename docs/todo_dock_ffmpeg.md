@@ -16,7 +16,7 @@ PHASE 1 — Runner abstraction (no behavior change)
 - 1.4 Add unit tests for `local-runner` and a PreviewManager integration smoke test — Owner: Tester, Estimate: small. Acceptance: CI runs unit tests; smoke test passes locally.
 
 Implemented (2026-03-20):
-- Added `docker/ffmpeg/Dockerfile` and `images/ffmpeg/README.md` (minimal ffmpeg image).
+- Added `docker/lcyt-ffmpeg/Dockerfile` and `docker/lcyt-ffmpeg/README.md` (minimal ffmpeg image).
 - Added `scripts/ffmpeg-in-container.sh` wrapper to run host or docker ffmpeg.
 - Updated `packages/lcyt-backend/src/ffmpeg/docker-runner.js` to forward stdin (-i), pipe stdio and accept entrypoint setting.
 - Updated `packages/lcyt-backend/src/ffmpeg/index.js` to use env defaults (`FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_WRAPPER`).
@@ -31,7 +31,7 @@ Next steps (short):
 
 PHASE 2 — Docker runner for stateless jobs
 - 2.1 Implement `docker-runner.js` wrapping `docker run` options (image, volumes, network, cpu/memory) — Owner: Backend, Estimate: medium. Acceptance: can start/stop a container, map volumes, capture stderr.
-- 2.2 Add `images/lcyt-ffmpeg/Dockerfile` (minimal ffmpeg image) and a short README with build/push steps — Owner: Platform, Estimate: small. Acceptance: image builds locally.
+- 2.2 Add `docker/lcyt-ffmpeg/Dockerfile` (minimal ffmpeg image) and a short README with build/push steps — Owner: Platform, Estimate: small. Acceptance: image builds locally.
 - 2.3 Refactor `HlsManager` & `RadioManager` & `PreviewManager` to accept `runner` option and default to factory — Owner: Backend, Estimate: medium. Acceptance: jobs run as containers when `FFMPEG_RUNNER=docker`.
 - 2.4 Add `docker-compose.yml` for single-VM dev: `lcyt-backend`, socket-proxy sidecar, named volumes, network — Owner: Platform, Estimate: small. Acceptance: compose up runs services.
 - 2.5 Add guarded docker integration tests (env TEST_DOCKER=1) and CI notes — Owner: Tester/Platform, Estimate: small. Acceptance: tests run only when docker available.
@@ -61,7 +61,7 @@ PHASE 6 — Hetzner autoscaling (burst VMs)
 - 6.4 Add rate-limit/backoff & metrics (Prometheus counters) — Owner: Platform, Estimate: small. Acceptance: backoff triggers on 429 in tests.
 
 PHASE 7 — DSK renderer containerization
-- 7.1 Create `images/lcyt-dsk-renderer` image with Node + Playwright + ffmpeg, document startup args — Owner: Platform, Estimate: medium. Acceptance: renderer starts and can produce frames.
+- 7.1 Create `docker/lcyt-dsk-renderer` image with Node + Playwright + ffmpeg, document startup args — Owner: Platform, Estimate: medium. Acceptance: renderer starts and can produce frames.
 - 7.2 Update DSK renderer code to run in container and write frames to unix-socket/volume consumed by ffmpeg inside same container — Owner: Backend, Estimate: medium. Acceptance: RTMP output is produced by container.
 - 7.3 Add integration smoke tests for DSK rendering in compose (guarded) — Owner: Tester, Estimate: medium. Acceptance: smoke render completes locally.
 

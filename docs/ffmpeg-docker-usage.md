@@ -3,8 +3,7 @@
 This document describes the minimal wrapper and runner support added for running ffmpeg inside Docker or on the host.
 
 Files added:
-- `docker/ffmpeg/Dockerfile` — Debian-slim image with ffmpeg and common codecs.
-- `images/ffmpeg/README.md` — build/run snippet for the image.
+- `docker/lcyt-ffmpeg/Dockerfile` — Debian-slim image with ffmpeg and common codecs.
 - `scripts/ffmpeg-in-container.sh` — portable wrapper to run host ffmpeg or container ffmpeg.
 - `packages/lcyt-backend/src/ffmpeg/docker-runner.js` — Docker runner updated to forward stdin (-i) and pipe stdio.
 - `packages/lcyt-backend/src/ffmpeg/index.js` — factory now reads `FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_WRAPPER`.
@@ -14,7 +13,7 @@ Quick usage
 1. Build the image locally:
 
 ```bash
-docker build -t lcyt-ffmpeg:latest -f docker/ffmpeg/Dockerfile docker/ffmpeg
+docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg
 ```
 
 2. Run ffmpeg in container directly:
