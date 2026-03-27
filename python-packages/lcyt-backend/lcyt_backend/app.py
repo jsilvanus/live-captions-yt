@@ -1,37 +1,39 @@
-"""Flask application factory for lcyt-backend."""
+"""Flask application factory for lcyt-backend.
+
+This is a minimal CORS relay for YouTube caption sending.
+No API key database or admin management required.
+Any client with a valid YouTube stream key can register a session
+via POST /live and send captions via POST /captions.
+"""
 
 import logging
 import math
-import os
 import secrets
+import time
 
 from flask import Flask, jsonify
 
-from .db import init_db
-from .store import SessionStore
-from .middleware.cors import register_cors_middleware
 from .routes.live import live_bp
 from .routes.captions import captions_bp
 from .routes.sync import sync_bp
-from .routes.keys import keys_bp
 
 logger = logging.getLogger(__name__)
 
+# Features this backend supports — returned in GET /health so that
+# lcyt-web (or any client) can adapt its UI to the available capabilities.
+FEATURES = ["captions", "sync"]
 
-def create_app(db_path: str | None = None, testing: bool = False) -> Flask:
+
+def create_app(testing: bool = False) -> Flask:
     """Flask application factory.
 
+    Creates a minimal CORS relay for YouTube caption ingestion.
+    No API key database — any client with a stream key can connect.
+
     Environment variables:
-        JWT_SECRET   — HS256 secret for signing session JWTs.
-                       If unset a random secret is used (tokens won't survive restart).
-        ADMIN_KEY    — Secret for X-Admin-Key header on /keys routes.
-                       If unset the /keys admin API returns 503.
-        DB_PATH      — Path to the SQLite database file.
-        SESSION_TTL  — Session idle timeout in seconds (default 7200).
-        PORT         — Port for the dev server (used by __main__ only).
+        PORT — Port for the dev server (used by run.py only).
 
     Args:
-        db_path: Override the SQLite database path (useful in tests).
         testing: Set Flask testing mode (disables error catching).
 
     Returns:
@@ -41,42 +43,37 @@ def create_app(db_path: str | None = None, testing: bool = False) -> Flask:
     app.config["TESTING"] = testing
 
     # -------------------------------------------------------------------------
-    # JWT secret
+    # JWT secret (auto-generated; only used for session tokens)
     # -------------------------------------------------------------------------
-    jwt_secret = os.environ.get("JWT_SECRET")
-    if not jwt_secret:
-        jwt_secret = secrets.token_hex(32)
-        logger.warning(
-            "JWT_SECRET is not set — using a random secret. "
-            "Tokens will not survive restarts. "
-            "Set JWT_SECRET in your environment for production use."
-        )
-    app.config["JWT_SECRET"] = jwt_secret
+    app.config["JWT_SECRET"] = secrets.token_hex(32)
 
     # -------------------------------------------------------------------------
-    # Admin key notice
+    # Sender cache — keyed by session ID
     # -------------------------------------------------------------------------
-    if not os.environ.get("ADMIN_KEY"):
-        logger.info(
-            "ADMIN_KEY is not set — /keys admin endpoints are disabled. "
-            "Set ADMIN_KEY in your environment to enable API key management via HTTP."
-        )
+    app.config["SENDERS"] = {}
 
     # -------------------------------------------------------------------------
-    # Database and session store
+    # Permissive CORS — allow all origins (unauthenticated relay)
     # -------------------------------------------------------------------------
-    db = init_db(db_path)
-    store = SessionStore()
-    app.config["DB"] = db
-    app.config["STORE"] = store
+    @app.after_request
+    def add_cors_headers(response):
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+        return response
+
+    @app.before_request
+    def handle_preflight():
+        from flask import request
+        if request.method == "OPTIONS":
+            return ("", 204, {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            })
 
     # -------------------------------------------------------------------------
-    # CORS (dynamic, session-aware)
-    # -------------------------------------------------------------------------
-    register_cors_middleware(app, store)
-
-    # -------------------------------------------------------------------------
-    # JSON body limit (64 KB) — Flask enforces via MAX_CONTENT_LENGTH
+    # JSON body limit (64 KB)
     # -------------------------------------------------------------------------
     app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
@@ -90,15 +87,16 @@ def create_app(db_path: str | None = None, testing: bool = False) -> Flask:
         return response
 
     # -------------------------------------------------------------------------
-    # Health check — no auth required
+    # Health check — includes features list for client capability detection
     # -------------------------------------------------------------------------
     @app.get("/health")
     def health():
-        import time
+        senders = app.config["SENDERS"]
         return jsonify({
             "ok": True,
             "uptime": math.floor(time.process_time()),
-            "activeSessions": store.size(),
+            "activeSessions": len(senders),
+            "features": FEATURES,
         })
 
     # -------------------------------------------------------------------------
@@ -107,6 +105,5 @@ def create_app(db_path: str | None = None, testing: bool = False) -> Flask:
     app.register_blueprint(live_bp, url_prefix="/live")
     app.register_blueprint(captions_bp, url_prefix="/captions")
     app.register_blueprint(sync_bp, url_prefix="/sync")
-    app.register_blueprint(keys_bp, url_prefix="/keys")
 
     return app

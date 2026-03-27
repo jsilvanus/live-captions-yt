@@ -32,6 +32,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_captions.md](plans/plan_captions.md) | Caption Sending Pipeline | End-to-end caption delivery: input sources, composition, target fan-out (YouTube, viewer, generic), sequence tracking, NTP clock sync, and SSE result reporting. | |
 | [plan_translations.md](plans/plan_translations.md) | Caption Translation Pipeline | Client-side real-time translation before sending: vendor abstraction (MyMemory, Google, DeepL, LibreTranslate), multi-target routing, per-language viewer display, HLS subtitle sidecar, and local/backend file writing. | |
 | [plan_cea.md](plans/plan_cea.md) | CEA-708 SEI NAL Caption Embedding in RTMP Relay | CEA-708 caption embedding implemented in RtmpRelayManager via ffmpeg tee muxer with eia608 subtitle encoder and SRT stdin pipe. Per-slot captionMode and per-key cea708_delay_ms. | |
+| [plan_pyback.md](plans/plan_pyback.md) | Python Backend Scope Reduction | Python backend reduced to minimal unauthenticated CORS relay for YouTube caption sending. Removed API keys, JWT auth, admin routes, SQLite database. | |
 
 ### In progress
 

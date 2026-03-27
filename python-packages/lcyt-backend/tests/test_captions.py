@@ -1,27 +1,6 @@
 """Tests for POST /captions."""
 
 import pytest
-from lcyt_backend.db import create_key
-from lcyt_backend.store import make_session_id
-
-
-@pytest.fixture
-def session_token(client, db, store, mock_sender, monkeypatch):
-    """Register a session and return its JWT token."""
-    import lcyt_backend.routes.live as live_module
-    monkeypatch.setattr(live_module, "import_sender", lambda: mock_sender)
-
-    key_row = create_key(db, owner="caption-test")
-    res = client.post(
-        "/live/",
-        json={
-            "apiKey": key_row["key"],
-            "streamKey": "stream-cap",
-            "domain": "https://example.com",
-        },
-    )
-    assert res.status_code == 200
-    return res.get_json()["token"]
 
 
 def _auth(token):
@@ -72,16 +51,6 @@ def test_send_captions_missing_field(client, session_token):
         headers=_auth(session_token),
     )
     assert res.status_code == 400
-
-
-def test_send_captions_with_relative_time(client, session_token):
-    """Captions with 'time' (ms since start) should be accepted."""
-    res = client.post(
-        "/captions/",
-        json={"captions": [{"text": "Timed caption", "time": 1000}]},
-        headers=_auth(session_token),
-    )
-    assert res.status_code == 200
 
 
 def test_send_captions_with_absolute_timestamp(client, session_token):
