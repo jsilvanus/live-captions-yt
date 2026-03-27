@@ -2,19 +2,19 @@
 id: plan/music
 title: "Music Detection Plugin (`lcyt-music`)"
 status: draft
-summary: "Separate plugin for detecting when music is playing in a live stream and estimating beats-per-minute (BPM). No song identification. Feeds events into the caption pipeline and exposes an SSE stream."
+summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS segments via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE."
 ---
 
 # Music Detection Plugin (`lcyt-music`)
 
 **Status:** Draft  
-**Scope:** New plugin `packages/plugins/lcyt-music`; new `/music` routes in `packages/lcyt-backend`; optional UI additions in `packages/lcyt-web`.
+**Scope:** New plugin `packages/plugins/lcyt-music`; new `/music` routes in `packages/lcyt-backend`; client-side detection in `packages/lcyt-web` using the browser microphone via Web Audio API.
 
 ---
 
 ## Motivation
 
-Live-caption operators often want to know whether the audio currently flowing through the RTMP stream is speech, silence, or music.  Key use cases:
+Live-caption operators often want to know whether the audio currently coming from the microphone or flowing through the RTMP stream is speech, silence, or music.  Key use cases:
 
 - **Mute captions during music** — avoid STT garbage when a song or background track plays.
 - **Insert a music annotation** — send a caption like `♪ Music ♪` when music is detected, so the transcript record is complete.
@@ -30,6 +30,17 @@ What is explicitly **out of scope**:
 ---
 
 ## Architecture Overview
+
+There are **two independent analysis paths** that share the same feature-extraction logic and produce the same events:
+
+| Path | Audio source | Where it runs | When to use |
+|---|---|---|---|
+| **Server-side** | HLS segments (MediaMTX fMP4) | `lcyt-music` Node.js plugin | Headless / hardware streams; no browser required |
+| **Client-side** | Browser microphone | `lcyt-web` (Web Audio API) | Operator is already using the browser mic for STT |
+
+Both paths classify audio into `music / speech / silence` and estimate BPM.  They can run simultaneously but independently — a client that switches from browser STT to server STT can continue to receive music detection events from either source without reconfiguring.
+
+### Server-side path
 
 ```
 MediaMTX (fMP4 HLS output)
@@ -55,6 +66,33 @@ MediaMTX (fMP4 HLS output)
 ```
 
 The plugin taps the same HLS segment stream as `SttManager` (via the shared `HlsSegmentFetcher` in `lcyt-rtmp`) and pipelines each segment's audio through a lightweight ffmpeg decode step followed by in-process signal processing.
+
+### Client-side path
+
+```
+Browser microphone (getUserMedia)
+      │
+      ▼  (already set up in AudioPanel.jsx)
+Web Audio API
+  AudioContext → MediaStreamSource → AnalyserNode (fftSize 2048)
+                                          │
+                          getFloatFrequencyData()   ← per animation frame or timer
+                          getFloatTimeDomainData()
+                                          │
+                                          ▼
+                               useMusicDetector (hook)
+                               ├─ SpectralDetector (JS port)  → label
+                               └─ BpmDetector     (JS port)   → BPM
+                                          │
+                               { label, bpm, confidence }
+                                          │
+                               ┌──────────┴────────────────┐
+                               ▼                           ▼
+                       MusicChip (StatusBar)      caption injection
+                       MusicPanel (settings)      (optional "♪" caption)
+```
+
+The client-side detector runs entirely in the browser.  It **reuses the existing `analyserRef` from `AudioPanel`** — no second `getUserMedia` call is needed.  When the operator is in server-STT mode (no mic open), the client-side detector is unavailable and the server-side path is used instead.
 
 ---
 
@@ -376,9 +414,208 @@ All thresholds can be overridden per API key via `PUT /music/config`.
 
 ---
 
-## UI Integration (lcyt-web)
+## Client-Side Browser Mic Detection (`lcyt-web`)
 
-### Phase 2 additions to `packages/lcyt-web`
+The browser path runs the same spectral and BPM algorithms as the server but uses the **Web Audio API** instead of ffmpeg for audio decoding and the built-in `AnalyserNode` FFT instead of the custom radix-2 implementation.
+
+### Why the Web Audio API is a natural fit
+
+`AudioPanel.jsx` already creates an `AnalyserNode` (`analyserRef`) the moment the operator opens the microphone for STT — it currently drives `AudioLevelMeter`.  Music detection can **attach to this same node** at no cost: no second `getUserMedia` call, no extra `AudioContext`, no extra permissions prompt.
+
+```
+AudioPanel
+  MediaStreamSource → AnalyserNode (fftSize 2048)
+                            │
+                   ┌────────┴───────────┐
+                   ▼                   ▼
+           AudioLevelMeter        useMusicDetector  ← NEW
+           (existing)             (new hook)
+```
+
+When the operator is **not** using the browser mic (server-STT mode or session not started), the client-side path is unavailable.  In that case `useMusicDetector` returns `{ available: false }` and the MusicChip falls back to showing the server-side status polled from `GET /music/status`.
+
+### `useMusicDetector` hook
+
+**File:** `packages/lcyt-web/src/hooks/useMusicDetector.js`
+
+```js
+/**
+ * useMusicDetector
+ *
+ * Attaches to the AnalyserNode provided by AudioPanel (via analyserRef) and
+ * runs spectral + BPM analysis on each analysis frame.
+ *
+ * @param {object} opts
+ * @param {React.RefObject<AnalyserNode|null>} opts.analyserRef - ref from AudioPanel
+ * @param {boolean}  [opts.enabled=false]          - master on/off switch
+ * @param {boolean}  [opts.bpmEnabled=true]        - whether BPM estimation runs
+ * @param {number}   [opts.intervalMs=500]         - analysis interval in ms
+ * @param {number}   [opts.confirmFrames=4]        - frames before label transition fires
+ * @param {number}   [opts.confidenceThreshold=0.5]
+ * @param {function} [opts.onLabelChange]          - ({ label, previous, confidence, bpm })
+ * @param {function} [opts.onBpmUpdate]            - ({ bpm, confidence })
+ * @returns {{ label, bpm, confidence, available, running }}
+ */
+export function useMusicDetector({ analyserRef, enabled, bpmEnabled, intervalMs,
+                                   confirmFrames, confidenceThreshold,
+                                   onLabelChange, onBpmUpdate }) {}
+```
+
+**Behaviour:**
+
+1. On mount (and when `enabled` changes to `true`), the hook starts a `setInterval` at `intervalMs` (default 500 ms).
+2. Each tick reads frequency-domain and time-domain data from the analyser:
+   ```js
+   const freqData = new Float32Array(analyser.frequencyBinCount);
+   analyser.getFloatFrequencyData(freqData);  // dB values per FFT bin
+
+   const timeData = new Float32Array(analyser.fftSize);
+   analyser.getFloatTimeDomainData(timeData); // normalised PCM [-1, 1]
+   ```
+3. Passes `freqData` to `classifyFromFrequency(freqData, sampleRate)` — a thin wrapper around the shared feature-extraction logic adapted to the Web Audio API's decibel frequency bins.
+4. Passes `timeData` to `detectBpmFromPcm(timeData, sampleRate)` when `bpmEnabled`.
+5. Applies the same `confirmFrames` state machine as the server path.
+6. Fires `onLabelChange` and `onBpmUpdate` callbacks.
+7. Returns the current `{ label, bpm, confidence, available, running }` for the UI.
+
+**`available`** is `true` when `analyserRef.current` is non-null (mic is open). The hook never requests mic access itself.
+
+### Shared analysis logic in `lcyt-web`
+
+**File:** `packages/lcyt-web/src/lib/musicAnalysis.js`
+
+Pure functions — no DOM or Node.js dependencies — so they can also be unit-tested with Vitest:
+
+```js
+/**
+ * Classify frequency-domain data from Web Audio API AnalyserNode.
+ * freqData: Float32Array of dB values (output of getFloatFrequencyData).
+ * sampleRate: AudioContext.sampleRate (typically 44100 or 48000 Hz).
+ */
+export function classifyFromFrequency(freqData, sampleRate, opts = {})
+  // → { label: 'music'|'speech'|'silence', confidence, features }
+
+/**
+ * Estimate BPM from a time-domain PCM buffer (getFloatTimeDomainData output).
+ * pcm: Float32Array, normalised [-1, 1].
+ * sampleRate: AudioContext.sampleRate.
+ */
+export function detectBpmFromPcm(pcm, sampleRate, opts = {})
+  // → { bpm, confidence } | null
+```
+
+These are browser-side equivalents of the server-side `spectral-detector.js` and `bpm-detector.js`.  The algorithms are the same; the difference is that the Web Audio API delivers pre-computed frequency data (no FFT required in `classifyFromFrequency`), while `detectBpmFromPcm` runs the same onset-autocorrelation pipeline as the server.
+
+### `localStorage` keys
+
+New entries added to `KEYS.audio` in `storageKeys.js`:
+
+| Key | Purpose | Default |
+|---|---|---|
+| `lcyt.audio.musicDetect` | Client-side music detection enabled | `'0'` |
+| `lcyt.audio.musicDetectBpm` | BPM sub-feature enabled | `'1'` |
+| `lcyt.audio.musicDetectInject` | Send caption on music start | `'0'` |
+| `lcyt.audio.musicDetectText` | Caption text for music | `'♪'` |
+| `lcyt.audio.musicDetectThreshold` | Confidence threshold | `'0.5'` |
+| `lcyt.audio.musicDetectInterval` | Analysis interval (ms) | `'500'` |
+
+### `MusicPanel` component
+
+**File:** `packages/lcyt-web/src/components/panels/MusicPanel.jsx`
+
+Follows the same structure as `VadPanel` — receives props, renders settings fields:
+
+```jsx
+export function MusicPanel({
+  source,               // 'client' | 'server' | 'both' — which path is active
+  label,                // 'music' | 'speech' | 'silence' | null
+  bpm,                  // number | null
+  confidence,           // number | null
+  available,            // boolean — mic is open (client path available)
+  running,              // boolean
+  enabled, onEnabledChange,
+  bpmEnabled, onBpmEnabledChange,
+  injectCaption, onInjectCaptionChange,
+  captionText, onCaptionTextChange,
+  confidenceThreshold, onConfidenceThresholdChange,
+  intervalMs, onIntervalMsChange,
+  onStart, onStop,
+}) {}
+```
+
+Settings rendered:
+
+| Setting | Control | Notes |
+|---|---|---|
+| Detection source | radio: mic / server / both | `'mic'` requires mic to be open; greys out when `!available` |
+| Enable music detection | toggle | |
+| BPM detection | toggle | |
+| Analysis interval | slider 200–2000 ms | client path only; server path uses HLS segment duration |
+| Confidence threshold | slider 0–1 | |
+| Inject caption on music start | toggle | |
+| Caption text | text input | e.g. `♪` or `[Music]` |
+| Current status | read-only label | `♪ 128 BPM` / `Speech` / `Silence` / `—` |
+| Start / Stop | button | starts/stops whichever source(s) are configured |
+
+### `MusicChip` in `StatusBar`
+
+**File:** `packages/lcyt-web/src/components/MusicChip.jsx`
+
+```
+[ STT: google / en-US ]  [ ♪ 128 BPM ]
+                               ↑
+                    MusicChip — green when music,
+                                grey/dash when speech/silence/inactive
+```
+
+- Reads state from a `useMusicDetector` hook (client path) and/or polls `GET /music/status` (server path).
+- One chip handles both paths: shows `♪ <bpm> BPM` for music, a muted waveform icon for speech, a dash for silence.
+- Clicking opens/scrolls to the `MusicPanel` in the Audio settings section.
+
+### Caption injection (client path)
+
+When `injectCaption` is `true` and a `label_change` event fires in the client-side detector:
+
+```js
+// In useMusicDetector, on confirmed label_change:
+if (injectCaption && label === 'music') {
+  captionContext.send(captionText || '♪');
+}
+```
+
+`captionContext.send` is the same function used by the input bar — the injected caption flows through the full target fan-out (YouTube, viewer, generic) exactly as if the operator had typed it.
+
+The `speech` and `silence` transitions deliberately send **nothing** by default (configurable via `captionText` for those labels in a future enhancement).
+
+### `useMusic` hook (unified)
+
+**File:** `packages/lcyt-web/src/hooks/useMusic.js`
+
+A thin aggregator that merges client and server state into a single object for the `MusicPanel` and `MusicChip`:
+
+```js
+export function useMusic({ analyserRef, sessionActive }) {
+  // Client path:
+  const client = useMusicDetector({ analyserRef, enabled: clientEnabled, ... });
+
+  // Server path (polling + SSE):
+  const [serverStatus, setServerStatus] = useState(null);
+  // polls GET /music/status every 5 s when sessionActive
+
+  return {
+    label:      client.available && clientEnabled ? client.label : serverStatus?.label ?? null,
+    bpm:        client.available && clientEnabled ? client.bpm   : serverStatus?.bpm   ?? null,
+    confidence: ...
+    clientAvailable: client.available,
+    clientRunning:   client.running,
+    serverRunning:   serverStatus?.running ?? false,
+  };
+}
+```
+
+---
+
+## UI Integration (lcyt-web) — Summary
 
 A small `MusicChip` component appears in the `StatusBar` (alongside the existing STT chip):
 
@@ -388,28 +625,30 @@ A small `MusicChip` component appears in the `StatusBar` (alongside the existing
 
 - Shows the current `label` as an icon (`♪` for music, speech waveform for speech, dash for silence / not running).
 - Shows BPM when `label === 'music'`.
-- Polls `GET /music/status` every 5 s when a session is active (same polling pattern as the STT chip).
-- Clicking opens a collapsible **Music Detection** section in the Settings panel.
+- Aggregates state from **both paths** via `useMusic` — client path is preferred when the mic is open; server path is the fallback.
+- Clicking opens a collapsible **Music Detection** section in the Audio settings area.
 
 ### Settings panel additions
 
-A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
+A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings for both paths:
 
-| Setting | Type | Default |
-|---|---|---|
-| Enable music detection | toggle | off |
-| Auto-start on publish | toggle | off |
-| Inject captions on music start | toggle | off |
-| Caption text for music | text | `♪` |
-| BPM detection | toggle | on |
-| Confidence threshold | slider 0–1 | 0.5 |
-| Start / Stop | button | — |
+| Setting | Type | Default | Path |
+|---|---|---|---|
+| Detection source | radio: mic / server / both | mic (when available) | — |
+| Enable music detection | toggle | off | both |
+| BPM detection | toggle | on | both |
+| Analysis interval | slider 200–2000 ms | 500 ms | client only |
+| Confidence threshold | slider 0–1 | 0.5 | both |
+| Inject caption on music start | toggle | off | both |
+| Caption text for music | text | `♪` | both |
+| Auto-start on publish | toggle | off | server only |
+| Start / Stop | button | — | both |
 
 ---
 
 ## Phases
 
-### Phase 1 — Core detection (backend only)
+### Phase 1 — Core detection (server-side only)
 
 **Goal:** Reliable music/speech/silence labelling from HLS segments with no UI.
 
@@ -433,18 +672,28 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
 
 ---
 
-### Phase 2 — Caption injection + UI
+### Phase 2 — Caption injection + UI (server path) + client-side browser mic
 
-**Goal:** Operator-facing controls and optional caption annotation.
+**Goal:** Operator-facing controls, optional caption annotation, and real-time browser mic analysis.
 
 **Backend:**
 - Caption injection path (`inject_caption` config flag).
 - `GET /music/:key/live` public SSE route.
 
-**UI (lcyt-web):**
-- `MusicChip` in `StatusBar`.
-- `MusicPanel` in the Audio / Settings area.
-- `useMusic` hook — polls `GET /music/status`, subscribes to `GET /music/events`.
+**UI (lcyt-web) — shared infrastructure:**
+- `src/lib/musicAnalysis.js` — pure JS ports of `classifyFromFrequency` and `detectBpmFromPcm` (Web Audio API input variant).
+- `src/hooks/useMusicDetector.js` — attaches to `analyserRef`; runs analysis loop; fires `onLabelChange`/`onBpmUpdate`.
+- `src/hooks/useMusic.js` — aggregates client + server state.
+
+**UI (lcyt-web) — components:**
+- `src/components/MusicChip.jsx` — StatusBar music/BPM chip (reads `useMusic`).
+- `src/components/panels/MusicPanel.jsx` — full settings panel (both paths), `source` selector.
+- `src/lib/storageKeys.js` — add `KEYS.audio.musicDetect*` keys.
+- `src/locales/en.js` — i18n strings for all music detection UI labels.
+
+**Tests (Vitest):**
+- `test/components/musicAnalysis.test.js` — `classifyFromFrequency` with synthetic tonal and noisy arrays; `detectBpmFromPcm` with click-track PCM.
+- `test/components/useMusicDetector.test.jsx` — hook lifecycle: disabled when `analyserRef` is null, fires callbacks on label change.
 
 ---
 
@@ -459,6 +708,7 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
 
 **UI (lcyt-web):**
 - Simple event timeline in the `MusicPanel` showing the last N label changes with timestamps and BPM values.
+- Client-side auto-calibration: the hook samples the first 5 s of mic audio to set a personalised silence threshold.
 
 ---
 
@@ -474,6 +724,10 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
 
 5. **Classification accuracy**: The hand-crafted threshold classifier works well for clear music vs. clear speech but may misclassify music with vocal lines or rhythmic speech.  If accuracy is insufficient, a lightweight TensorFlow.js model (e.g., a port of YAMNet's top-level classifier) could be embedded in Phase 3 without native dependencies.
 
+6. **Client-side `fftSize`**: `AudioPanel` currently creates the `AnalyserNode` with `fftSize = 256` (sufficient for the level meter).  Music classification needs more frequency resolution — `fftSize = 2048` is recommended.  `AudioPanel` must be updated to increase the fftSize (or create a second analyser node chained to the same source) so the level meter continues to work unchanged.
+
+7. **Concurrent client + server**: If both paths are enabled and running simultaneously, `useMusic` must resolve conflicts.  Recommended policy: prefer the client label when `client.available && client.confidence > server.confidence`, otherwise use the server label.  The `source` setting in `MusicPanel` lets the operator override this automatically.
+
 ---
 
 ## Summary
@@ -481,20 +735,23 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
 | Aspect | Decision |
 |---|---|
 | Plugin name | `lcyt-music` |
-| Audio source | HLS (Phase 1); RTMP fallback (Phase 2) |
-| Classification | Spectral features + threshold rules; no ML required in Phase 1 |
-| BPM method | Autocorrelation of onset novelty function |
-| Native deps | None — plain JavaScript + ffmpeg (already required by `lcyt-rtmp`) |
-| External ML deps | Optional TensorFlow.js in Phase 3 |
-| Caption injection | Off by default; configurable text per key |
-| DB | Two new tables: `music_config`, `music_events` |
-| Breaking changes | None — the plugin is opt-in via `MUSIC_DETECTION_ACTIVE=1` |
+| Server audio source | HLS (Phase 1); RTMP fallback (Phase 2) |
+| Client audio source | Browser mic via existing `AnalyserNode` in `AudioPanel` |
+| Classification | Spectral features + threshold rules; no ML required in Phases 1–2 |
+| BPM method | Autocorrelation of onset novelty function (both paths) |
+| Native deps (server) | None — plain JavaScript + ffmpeg (already required by `lcyt-rtmp`) |
+| Browser deps | Web Audio API only — built into all modern browsers |
+| Shared analysis code | Server: `lcyt-music/src/analyser/`; Client: `lcyt-web/src/lib/musicAnalysis.js` |
+| Caption injection | Off by default; configurable text; works on both paths |
+| DB | Two new tables: `music_config`, `music_events` (server path only) |
+| localStorage keys | `lcyt.audio.musicDetect*` (client path config) |
+| Breaking changes | None — server plugin is opt-in via `MUSIC_DETECTION_ACTIVE=1`; client hook only activates when `enabled=true` |
 
 ---
 
 ## Todo
 
-### Phase 1 — Core detection
+### Phase 1 — Core detection (server-side)
 
 **Backend**
 - [ ] `packages/plugins/lcyt-music/package.json` — plugin manifest
@@ -518,17 +775,29 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
 
 ---
 
-### Phase 2 — Caption injection + UI
+### Phase 2 — Caption injection + UI (server) + client-side browser mic
 
 **Backend**
-- [ ] Caption injection path in MusicManager (inject_caption flag)
+- [ ] Caption injection path in MusicManager (`inject_caption` flag)
 - [ ] `GET /music/:key/live` public SSE route
 
-**UI (lcyt-web)**
-- [ ] `src/components/MusicChip.jsx` — StatusBar music/BPM chip
-- [ ] `src/components/panels/MusicPanel.jsx` — settings + start/stop
-- [ ] `src/hooks/useMusic.js` — status polling + SSE subscription
-- [ ] `src/locales/en.js` — i18n strings for music detection UI
+**UI (lcyt-web) — shared analysis**
+- [ ] `src/lib/musicAnalysis.js` — `classifyFromFrequency()` + `detectBpmFromPcm()` (Web Audio API input)
+
+**UI (lcyt-web) — hooks**
+- [ ] `src/hooks/useMusicDetector.js` — attaches to analyserRef; analysis loop; label/BPM callbacks
+- [ ] `src/hooks/useMusic.js` — aggregates client + server state; resolves conflicts
+
+**UI (lcyt-web) — components**
+- [ ] `src/components/MusicChip.jsx` — StatusBar chip (both paths)
+- [ ] `src/components/panels/MusicPanel.jsx` — full settings panel with source selector
+- [ ] `src/lib/storageKeys.js` — add `KEYS.audio.musicDetect*` keys
+- [ ] `src/locales/en.js` — i18n strings (`settings.music.*`)
+- [ ] `packages/lcyt-web/src/components/AudioPanel.jsx` — increase `analyserRef` fftSize to 2048
+
+**Tests (Vitest)**
+- [ ] `test/components/musicAnalysis.test.js` — classifyFromFrequency + detectBpmFromPcm unit tests
+- [ ] `test/components/useMusicDetector.test.jsx` — hook lifecycle tests
 
 ---
 
@@ -541,3 +810,4 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`):
 
 **UI (lcyt-web)**
 - [ ] Event timeline in MusicPanel
+- [ ] Client-side auto-calibration (5 s silence sampling on mic open)

@@ -58,6 +58,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
+| [plan_music.md](plans/plan_music.md) | Music Detection Plugin (`lcyt-music`) | Detect when music is playing and estimate BPM — no song identification. Two paths: server-side HLS analysis via a new `lcyt-music` plugin; client-side browser mic analysis via Web Audio API in lcyt-web. Events feed into the caption pipeline (optional `♪` annotation) and are exposed via SSE. | |
 
 ### Reference
 
