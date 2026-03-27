@@ -40,8 +40,6 @@ metricsAddress: :9998
 # RTMP server (publishers push audio/video streams here)
 rtmp: yes
 rtmpAddress: :1935
-# Disable RTMPS for dev; enable with rtmpsAddress + cert in production
-rtmps: no
 
 # HLS server (served to browser/mobile HLS players)
 hls: yes

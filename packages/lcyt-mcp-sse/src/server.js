@@ -30,7 +30,7 @@ import {
   incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd,
   incrementDomainHourlyCaptions,
   saveSession, listSessions, deleteSession,
-} from "lcyt-backend/src/db.js";
+} from "lcyt-backend/db";
 
 // ── Auth database (optional) ──────────────────────────────────────────────────
 

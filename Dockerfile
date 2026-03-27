@@ -9,6 +9,7 @@ COPY packages/lcyt-mcp-sse/package.json packages/lcyt-mcp-sse/
 COPY packages/plugins/lcyt-production/package.json packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/package.json packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/package.json packages/plugins/lcyt-rtmp/
+COPY packages/plugins/lcyt-files/package.json packages/plugins/lcyt-files/
 
 # Install workspace dependencies.
 RUN npm ci \
@@ -17,7 +18,8 @@ RUN npm ci \
   --workspace=packages/lcyt-mcp-sse \
   --workspace=packages/plugins/lcyt-production \
   --workspace=packages/plugins/lcyt-dsk \
-  --workspace=packages/plugins/lcyt-rtmp
+  --workspace=packages/plugins/lcyt-rtmp \
+  --workspace=packages/plugins/lcyt-files
 
 # Copy source
 COPY packages/lcyt/ packages/lcyt/
@@ -26,6 +28,7 @@ COPY packages/lcyt-mcp-sse/src/ packages/lcyt-mcp-sse/src/
 COPY packages/plugins/lcyt-production/ packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/ packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/ packages/plugins/lcyt-rtmp/
+COPY packages/plugins/lcyt-files/ packages/plugins/lcyt-files/
 
 FROM node:20-slim
 WORKDIR /app
