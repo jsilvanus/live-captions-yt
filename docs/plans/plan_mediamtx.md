@@ -25,7 +25,7 @@ Key repo files to review and update
 - `packages/lcyt-backend/src/rtmp-manager.js` — RTMP relay/slot management, where ingest URLs are composed and workers are started.
 - `packages/plugins/lcyt-dsk/src/renderer.js` — DSK renderer push targets (RTMP output configuration).
 - `packages/lcyt-bridge/src/bridge.js` — bridge command paths and any TCP relay assumptions (if bridges push to RTMP endpoints).
-- `docker/ffmpeg/Dockerfile` and `docker-compose.yml` — add MediaMTX service entries and update runner definitions where needed.
+- `docker/lcyt-ffmpeg/Dockerfile` and `docker-compose.yml` — add MediaMTX service entries and update runner definitions where needed.
 - `docs/ffmpeg-docker-usage.md` and `docs/plan_dock_ffmpeg.md` — add usage notes and Phase 8 appendix (see companion appendix below).
 - Tests referencing RTMP runner behaviour: `packages/lcyt-backend/test/rtmp.test.js` and `packages/lcyt-backend/test/rtmp-manager.test.js` (update mocks/expectations to support MediaMTX).
 
@@ -199,4 +199,4 @@ Notes
 
 References
 - MediaMTX docker image: https://github.com/bluenviron/mediamtx
-- Files in this repo to review: `packages/lcyt-backend/src/rtmp-manager.js`, `packages/plugins/lcyt-dsk/src/renderer.js`, `packages/lcyt-bridge/src/bridge.js`, `docker/ffmpeg/Dockerfile`, `docker-compose.yml`, `docs/ffmpeg-docker-usage.md`, `docs/plan_dock_ffmpeg.md`
+- Files in this repo to review: `packages/lcyt-backend/src/rtmp-manager.js`, `packages/plugins/lcyt-dsk/src/renderer.js`, `packages/lcyt-bridge/src/bridge.js`, `docker/lcyt-ffmpeg/Dockerfile`, `docker-compose.yml`, `docs/ffmpeg-docker-usage.md`, `docs/plan_dock_ffmpeg.md`

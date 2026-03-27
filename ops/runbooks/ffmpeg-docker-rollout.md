@@ -17,7 +17,7 @@ Prerequisites
 - If pushing to a registry: credentials configured (docker login)
 
 Files created by this rollout
-- `images/lcyt-ffmpeg/Dockerfile`
+- `docker/lcyt-ffmpeg/Dockerfile`
 - `docker-compose.yml` (root)
 
 1) Create branch
@@ -32,7 +32,7 @@ git checkout -b director/ffmpeg-phase1-3
 Build a local image used by docker-compose:
 
 ```bash
-docker build -t lcyt-ffmpeg:local ./images/lcyt-ffmpeg
+docker build -t lcyt-ffmpeg:local ./docker/lcyt-ffmpeg
 ```
 
 3) (Optional) Tag & push to registry
@@ -148,7 +148,7 @@ docker volume rm live-captions-yt_cea-pipes || true
 - If `docker compose up` fails to build `lcyt-ffmpeg`, re-run build with verbose output:
 
 ```bash
-docker build --progress=plain -t lcyt-ffmpeg:local ./images/lcyt-ffmpeg
+docker build --progress=plain -t lcyt-ffmpeg:local ./docker/lcyt-ffmpeg
 ```
 
 - If the backend cannot reach the proxy, validate connectivity from the backend container:

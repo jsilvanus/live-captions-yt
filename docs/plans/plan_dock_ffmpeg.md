@@ -166,7 +166,7 @@ During phases 1–3, the backend itself manages ephemeral containers via the Doc
 ### `lcyt-ffmpeg` Docker image
 
 ```dockerfile
-# images/lcyt-ffmpeg/Dockerfile
+# docker/lcyt-ffmpeg/Dockerfile
 FROM debian:bookworm-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg \
@@ -659,7 +659,7 @@ Each phase below is **independently deployable** and leaves the system fully ope
 **Changes:**
 - Implement `packages/lcyt-backend/src/ffmpeg/docker-runner.js` (`DockerFfmpegRunner`).
 - Refactor `HlsManager`, `RadioManager`, `PreviewManager` to use `createFfmpegRunner`.
-- Create `images/lcyt-ffmpeg/Dockerfile` and build + push `lcyt-ffmpeg:latest`.
+- Create `docker/lcyt-ffmpeg/Dockerfile` and build + push `lcyt-ffmpeg:latest`.
 - Add `docker-compose.yml` with named volumes (`hls-video`, `hls-audio`, `previews`), `lcyt-net` Docker network, and `tecnativa/docker-socket-proxy` sidecar.
 - Update `HLS_LOCAL_RTMP`, `RADIO_LOCAL_RTMP`, `DSK_LOCAL_RTMP` defaults to `rtmp://nginx-rtmp:1935`.
 - Add startup check: `docker image inspect $FFMPEG_IMAGE` — warn if absent, do not block.
