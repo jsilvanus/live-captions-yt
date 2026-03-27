@@ -1,33 +1,35 @@
-"""POST/GET/DELETE /live — session registration and management."""
+"""POST/GET/DELETE /live — session registration (no API key validation).
 
+This is a minimal relay backend. Any client with a valid stream key can
+register a session — there is no API key database or admin management.
+"""
+
+import hashlib
 import logging
 import os
 import time
 
 from flask import Blueprint, current_app, g, jsonify, request
 from .._jwt import encode as jwt_encode
-
-from ..db import validate_api_key
 from ..middleware.auth import require_auth
-from ..store import make_session_id
 from .._compat import import_sender
 
 live_bp = Blueprint("live", __name__)
+_log = logging.getLogger(__name__)
+
+
+def _make_session_id(api_key: str, stream_key: str, domain: str) -> str:
+    raw = f"{api_key}:{stream_key}:{domain}"
+    return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
 def _sync_sender(sender) -> dict:
-    """Perform an NTP-style sync using a heartbeat round-trip.
-
-    Returns:
-        dict with sync_offset (ms), round_trip_time (ms), server_timestamp, status_code.
-    """
     t0 = time.monotonic()
     result = sender.heartbeat()
     t1 = time.monotonic()
     rtt_ms = int((t1 - t0) * 1000)
-    sync_offset = rtt_ms // 2
     return {
-        "sync_offset": sync_offset,
+        "sync_offset": rtt_ms // 2,
         "round_trip_time": rtt_ms,
         "server_timestamp": result.server_timestamp,
         "status_code": result.status_code,
@@ -36,44 +38,47 @@ def _sync_sender(sender) -> dict:
 
 @live_bp.post("/")
 def register_session():
-    """POST /live — Register a new session (idempotent)."""
-    db = current_app.config["DB"]
-    store = current_app.config["STORE"]
+    """POST /live — Register a new caption session.
+
+    No API key validation — any key is accepted. The stream key
+    (either top-level or inside a targets array) determines which
+    YouTube ingestion URL is used.
+    """
+    senders = current_app.config["SENDERS"]
     jwt_secret = current_app.config["JWT_SECRET"]
 
     body = request.get_json(silent=True) or {}
-    api_key = body.get("apiKey")
-    stream_key = body.get("streamKey")
-    domain = body.get("domain")
-    start_seq = int(body.get("sequence", 0))
+    api_key = body.get("apiKey", "relay")
+    stream_key = body.get("streamKey", "")
+    domain = body.get("domain", request.host)
 
-    if not api_key or not stream_key or not domain:
-        return jsonify({"error": "apiKey, streamKey, and domain are required"}), 400
+    # Extract stream key from targets array if not given top-level
+    targets = body.get("targets", [])
+    if not stream_key and targets:
+        for t in targets:
+            if t.get("type") == "youtube" and t.get("streamKey"):
+                stream_key = t["streamKey"]
+                break
 
-    # Validate API key
-    validation = validate_api_key(db, api_key)
-    if not validation["valid"]:
-        return jsonify({"error": f"API key {validation['reason']}"}), 401
+    if not stream_key:
+        return jsonify({"error": "streamKey is required (top-level or in targets)"}), 400
 
-    # Deterministic session ID
-    session_id = make_session_id(api_key, stream_key, domain)
+    session_id = _make_session_id(api_key, stream_key, domain)
 
-    # Idempotent: return existing session if present
-    if store.has(session_id):
-        existing = store.get(session_id)
-        store.touch(session_id)
-        response = jsonify({
+    # Idempotent: return existing session
+    if session_id in senders:
+        existing = senders[session_id]
+        return jsonify({
             "token": existing["jwt"],
             "sessionId": session_id,
-            "sequence": existing["sequence"],
-            "syncOffset": existing["sync_offset"],
+            "sequence": existing["sender"].get_sequence(),
+            "syncOffset": existing.get("sync_offset", 0),
             "startedAt": existing["started_at"],
-        })
-        response.headers["Access-Control-Allow-Origin"] = domain
-        return response, 200
+        }), 200
 
-    # Create sender and start it
+    # Create sender
     YoutubeLiveCaptionSender = import_sender()
+    start_seq = int(body.get("sequence", 0))
     sender = YoutubeLiveCaptionSender(stream_key=stream_key, sequence=start_seq)
     sender.start()
 
@@ -83,57 +88,48 @@ def register_session():
         sync_result = _sync_sender(sender)
         sync_offset = sync_result["sync_offset"]
     except Exception:
-        logging.getLogger(__name__).warning("Initial clock sync failed", exc_info=True)
+        _log.warning("Initial clock sync failed", exc_info=True)
 
-    # Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
-    try:
-        session_ttl_s = int(os.environ.get("SESSION_TTL", "7200000")) // 1000
-    except (ValueError, TypeError):
-        session_ttl_s = 7200  # 2 hours default
+    # Sign JWT
     payload = {
         "sessionId": session_id,
         "apiKey": api_key,
-        "exp": int(time.time()) + session_ttl_s,
+        "exp": int(time.time()) + 7200,
     }
     token = jwt_encode(payload, jwt_secret)
 
-    # Store session
-    session = store.create(
-        api_key=api_key,
-        stream_key=stream_key,
-        domain=domain,
-        jwt=token,
-        sequence=sender.get_sequence(),
-        sync_offset=sync_offset,
-        sender=sender,
-    )
+    started_at = time.time()
+    senders[session_id] = {
+        "sender": sender,
+        "jwt": token,
+        "api_key": api_key,
+        "stream_key": stream_key,
+        "sync_offset": sync_offset,
+        "started_at": started_at,
+    }
 
-    response = jsonify({
+    return jsonify({
         "token": token,
         "sessionId": session_id,
-        "sequence": session["sequence"],
-        "syncOffset": session["sync_offset"],
-        "startedAt": session["started_at"],
-    })
-    response.headers["Access-Control-Allow-Origin"] = domain
-    return response, 200
+        "sequence": sender.get_sequence(),
+        "syncOffset": sync_offset,
+        "startedAt": started_at,
+    }), 200
 
 
 @live_bp.get("/")
 @require_auth
 def session_status():
     """GET /live — Get current session status."""
-    store = current_app.config["STORE"]
+    senders = current_app.config["SENDERS"]
     session_id = g.session["sessionId"]
-    session = store.get(session_id)
-
-    if not session:
+    entry = senders.get(session_id)
+    if not entry:
         return jsonify({"error": "Session not found"}), 404
 
-    store.touch(session_id)
     return jsonify({
-        "sequence": session["sequence"],
-        "syncOffset": session["sync_offset"],
+        "sequence": entry["sender"].get_sequence(),
+        "syncOffset": entry.get("sync_offset", 0),
     }), 200
 
 
@@ -141,17 +137,15 @@ def session_status():
 @require_auth
 def remove_session():
     """DELETE /live — Tear down session."""
-    store = current_app.config["STORE"]
+    senders = current_app.config["SENDERS"]
     session_id = g.session["sessionId"]
-    session = store.get(session_id)
-
-    if not session:
+    entry = senders.pop(session_id, None)
+    if not entry:
         return jsonify({"error": "Session not found"}), 404
 
     try:
-        session["sender"].end()
+        entry["sender"].end()
     except Exception:
-        logging.getLogger(__name__).warning("Sender cleanup failed on DELETE /live", exc_info=True)
+        _log.warning("Sender cleanup failed", exc_info=True)
 
-    store.remove(session_id)
     return jsonify({"removed": True, "sessionId": session_id}), 200

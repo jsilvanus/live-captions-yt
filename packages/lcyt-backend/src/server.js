@@ -269,11 +269,20 @@ if (process.env.STATIC_DIR) {
 
 // Health check — no auth required
 app.get('/health', (req, res) => {
+  // Build feature list based on enabled capabilities
+  const features = ['captions', 'sync'];
+  if (loginEnabled) features.push('login');
+  if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
+  if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
+  if (sttManager) features.push('stt');
+  features.push('files', 'viewer', 'production');
+
   res.status(200).json({
     ok: true,
     uptime: Math.floor(process.uptime()),
     activeSessions: store.size(),
     loginEnabled,
+    features,
     ...(process.env.RTMP_RELAY_ACTIVE === '1' ? {
       rtmpIngest: {
         host: process.env.RTMP_HOST || 'rtmp.lcyt.fi',

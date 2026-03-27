@@ -1,23 +1,16 @@
 """Shared pytest fixtures for lcyt-backend tests."""
 
 import os
-import sqlite3
 import pytest
 
 from lcyt_backend.app import create_app
-from lcyt_backend.db import init_db
 
 
 @pytest.fixture
-def app(tmp_path):
-    """Create a Flask test app with an in-memory-like temp database."""
-    db_path = str(tmp_path / "test.db")
-    os.environ["JWT_SECRET"] = "test-jwt-secret"
-    os.environ["ADMIN_KEY"] = "test-admin-key"
-    flask_app = create_app(db_path=db_path, testing=True)
+def app():
+    """Create a Flask test app."""
+    flask_app = create_app(testing=True)
     yield flask_app
-    flask_app.config["STORE"].stop_cleanup()
-    flask_app.config["DB"].close()
 
 
 @pytest.fixture
@@ -27,27 +20,9 @@ def client(app):
 
 
 @pytest.fixture
-def db(app):
-    """Direct database connection from the app config."""
-    return app.config["DB"]
-
-
-@pytest.fixture
-def store(app):
-    """Session store from the app config."""
-    return app.config["STORE"]
-
-
-@pytest.fixture
 def jwt_secret(app):
     """The JWT secret used by the app."""
     return app.config["JWT_SECRET"]
-
-
-@pytest.fixture
-def admin_headers():
-    """Headers with a valid admin key."""
-    return {"X-Admin-Key": "test-admin-key"}
 
 
 @pytest.fixture
@@ -100,3 +75,18 @@ def mock_sender():
             return result
 
     return MockSender
+
+
+@pytest.fixture
+def session_token(client, mock_sender, monkeypatch):
+    """Register a session and return the JWT token."""
+    monkeypatch.setattr(
+        "lcyt_backend.routes.live.import_sender", lambda: mock_sender
+    )
+    resp = client.post("/live/", json={
+        "apiKey": "test-key",
+        "streamKey": "test-stream-key",
+        "domain": "localhost",
+    })
+    assert resp.status_code == 200
+    return resp.get_json()["token"]

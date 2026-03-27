@@ -1,4 +1,4 @@
-"""POST /sync — NTP-style clock sync for the session's sender."""
+"""POST /sync — NTP-style clock sync for the session's sender (Bearer auth)."""
 
 import time
 
@@ -12,16 +12,16 @@ sync_bp = Blueprint("sync", __name__)
 @sync_bp.post("/")
 @require_auth
 def sync_session():
-    """POST /sync — Trigger a clock sync and update session syncOffset."""
-    store = current_app.config["STORE"]
+    """POST /sync — Trigger a clock sync for the current session."""
+    senders = current_app.config["SENDERS"]
     session_id = g.session["sessionId"]
-    session = store.get(session_id)
+    entry = senders.get(session_id)
 
-    if not session:
+    if not entry:
         return jsonify({"error": "Session not found"}), 404
 
     try:
-        sender = session["sender"]
+        sender = entry["sender"]
         t0 = time.monotonic()
         result = sender.heartbeat()
         t1 = time.monotonic()
@@ -29,8 +29,7 @@ def sync_session():
         rtt_ms = int((t1 - t0) * 1000)
         sync_offset = rtt_ms // 2
 
-        session["sync_offset"] = sync_offset
-        store.touch(session_id)
+        entry["sync_offset"] = sync_offset
 
         return jsonify({
             "syncOffset": sync_offset,

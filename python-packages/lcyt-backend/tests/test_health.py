@@ -15,23 +15,13 @@ def test_health_body(client):
     assert data["activeSessions"] == 0
 
 
+def test_health_features_list(client):
+    data = client.get("/health").get_json()
+    assert isinstance(data["features"], list)
+    assert "captions" in data["features"]
+    assert "sync" in data["features"]
+
+
 def test_health_no_auth_required(client):
     res = client.get("/health")
     assert res.status_code == 200
-
-
-def test_health_reflects_session_count(client, store):
-    class _MockSender:
-        def end(self):
-            pass
-
-    store.create(
-        api_key="h-key",
-        stream_key="h-stream",
-        domain="https://h.example.com",
-        jwt="tok",
-        sender=_MockSender(),
-    )
-
-    data = client.get("/health").get_json()
-    assert data["activeSessions"] == 1
