@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, Link } from 'wouter';
 import { useSessionContext } from '../../contexts/SessionContext';
 import { useToastContext } from '../../contexts/ToastContext';
@@ -233,6 +233,24 @@ function SidebarGroup({ group, expanded, onNavigate }) {
 
 export function Sidebar({ expanded, onNavigate }) {
   const [showAdvanced, setShowAdvancedState] = useState(getShowAdvanced);
+  const session = useSessionContext();
+  const features = session.backendFeatures;
+
+  // Filter nav items/groups based on backend features
+  const visibleItems = useMemo(() => {
+    if (!features) return NAV_ITEMS;
+    return NAV_ITEMS.filter(item => !item.feature || features.includes(item.feature));
+  }, [features]);
+
+  const visibleGroups = useMemo(() => {
+    if (!features) return NAV_GROUPS;
+    return NAV_GROUPS.filter(group => !group.feature || features.includes(group.feature));
+  }, [features]);
+
+  const visibleBottom = useMemo(() => {
+    if (!features) return NAV_BOTTOM;
+    return NAV_BOTTOM.filter(item => !item.feature || features.includes(item.feature));
+  }, [features]);
 
   function toggleAdvanced() {
     const next = !showAdvanced;
@@ -243,10 +261,10 @@ export function Sidebar({ expanded, onNavigate }) {
   return (
     <nav className={['sidebar', expanded ? 'sidebar--expanded' : 'sidebar--collapsed'].join(' ')} aria-label="Main navigation">
       <div className="sidebar__main">
-        {NAV_ITEMS.map(item => (
+        {visibleItems.map(item => (
           <SidebarItem key={item.id} {...item} expanded={expanded} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
         ))}
-        {NAV_GROUPS.map(group => (
+        {visibleGroups.map(group => (
           <SidebarGroup key={group.id} group={group} expanded={expanded} onNavigate={onNavigate} />
         ))}
         {showAdvanced && (
@@ -262,7 +280,7 @@ export function Sidebar({ expanded, onNavigate }) {
       </div>
       <div className="sidebar__divider" role="separator" />
       <div className="sidebar__bottom">
-        {NAV_BOTTOM.map(item => (
+        {visibleBottom.map(item => (
           <SidebarItem key={item.id} {...item} expanded={expanded} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
         ))}
         <button

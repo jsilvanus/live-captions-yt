@@ -1,5 +1,9 @@
 // All canonical localStorage keys — use these instead of raw strings
 export const KEYS = {
+  backend: {
+    features: 'lcyt.backend.features',
+    preset: 'lcyt.backend.preset',
+  },
   session: {
     config: 'lcyt.session.config',
     autoConnect: 'lcyt.session.autoConnect',

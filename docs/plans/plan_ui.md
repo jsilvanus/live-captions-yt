@@ -1326,7 +1326,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 ## Implementation Status & Priority
 
-> **Last audited: 2026-03-17**
+> **Last audited: 2026-03-27**
 
 ### ✅ Done
 
@@ -1340,13 +1340,11 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 | **3b** — Settings export/import | `settingsIO.js` + I/O tab in `SettingsPage` (`downloadSettings` / `importSettings`) |
 | **3c** — Normalize localStorage keys | `storageKeys.js` — all keys under `lcyt.{category}.{key}` convention |
 | **6a** — Connection health dot in top bar | `HealthDot` + `StatusPopover` in `SidebarLayout` (latency, seq, targets, uptime) |
-
-### 🔴 P0 — Do now
-
-| Priority | Item | Impact | Effort |
-|----------|------|--------|--------|
-| **P0** | **6b. Auto-reconnect with backoff** — on session expiry / network drop, auto-retry with exponential backoff; "Reconnecting…" banner; preserve target config across reconnect | High — prevents mid-broadcast failures | Low |
-| **P0** | **6c. Unsaved work protection** — `beforeunload` guard when batch queue items, unsaved raw edits, or active STT session are detected | High — prevents data loss | Low |
+| **6b. Auto-reconnect with backoff** | Exponential backoff (2s → 30s max), "Reconnecting…" banner, preserves target config, `reconnectNow()` for manual retry |
+| **6c. Unsaved work protection** | `beforeunload` guard when batch queue has pending items |
+| **7b. Context splitting** | `SessionContext` split into `ConnectionContext` / `CaptionContext` / `SessionApiContext` — reduces re-renders |
+| **8a. Two-phase login** | `LoginPage` rewritten: backend preset selector (Normal/Minimal/Custom) → probe `/health` → feature-aware auth (login form for full backends, API key for minimal) |
+| **8b. Feature-based sidebar** | Sidebar nav items and groups annotated with `feature` property; filtered by `backendFeatures` from `ConnectionContext`. Minimal backends hide Broadcast, Graphics, Production, Projects, Account |
 
 ### 🟠 P1 — Next up
 
@@ -1362,7 +1360,6 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 | **P2** | **5a. Command palette** (Ctrl/Cmd+K) — searchable action list (sync, heartbeat, language, DSK, shortcuts) | Medium — power user productivity | Medium |
 | **P2** | **4a. Context-aware layout modes** — left/right panel content adapts to active section (Caption/Audio/Broadcast/Graphics/Production) | Medium — better screen use | High |
 | **P2** | **5b. Keyboard shortcuts help** (`?` or Ctrl+/) — overlay listing all shortcuts | Low — discoverability | Low |
-| **P2** | **7b. Context splitting** — split `SessionContext` (623 lines) into `ConnectionContext` / `CaptionContext` / `SessionApiContext` | Low — reduces re-renders | Medium |
 
 ### 🔵 P3 — Backlog
 
@@ -1381,9 +1378,9 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 ## Summary
 
-The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support. The main gaps are **discoverability** (new users can't find features), **navigation** (features live in disconnected modals and separate pages), and **resilience** (no auto-reconnect, no unsaved-work protection).
+The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support.
 
-**As of 2026-03-17, the structural foundation is complete.** The sidebar navigation (Phases 1–4), Dashboard dockable panel grid, Settings page (with export/import), `/account` and `/projects` pages, normalized `storageKeys.js`, `HealthDot`/`StatusPopover`, and `QuickActionsPopover` are all shipped. The remaining work is resilience (auto-reconnect, unsaved-work guard), onboarding (guided setup, empty-state cards), and power-user features (command palette, context-aware layouts, keyboard shortcuts help).
+**As of 2026-03-27, the structural foundation and feature-based UI are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, and context splitting are all shipped. The remaining work is onboarding (guided setup, empty-state cards) and power-user features (command palette, context-aware layouts, keyboard shortcuts help).
 
 ---
 ---
