@@ -21,10 +21,13 @@ export const FEATURE_DEPS = {
   //   files-local          → save to the server's local filesystem (default)
   //   files-managed-bucket → save to the operator-configured S3 bucket
   //   files-custom-bucket  → save to the user's own S3 bucket (configured via /file/storage-config)
+  //   files-webdav         → save to a user-configured WebDAV server
+  //   files-browser-local  → save directly to the user's computer via browser File System Access API
   'files-local':           ['file-saving'],
   'files-managed-bucket':  ['file-saving'],
   'files-custom-bucket':   ['file-saving'],
   'files-webdav':          ['file-saving'],
+  'files-browser-local':   [],
 };
 
 /**

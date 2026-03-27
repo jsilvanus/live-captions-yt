@@ -1,18 +1,25 @@
 import { useState, useEffect, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
+import { useSentLogContext } from '../contexts/SentLogContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useBrowserFileSaving } from '../hooks/useBrowserFileSaving';
 
 const ACCEPTED_MIME = 'image/png,image/webp,image/svg+xml';
 
 export function FilesModal({ isOpen, onClose, initialTab }) {
   const session = useSessionContext();
+  const sentLog = useSentLogContext();
   const { showToast } = useToastContext();
   const { t } = useLang();
 
   const hasImages = session.graphicsEnabled;
   const [tab, setTab] = useState(initialTab || 'captions');
+
+  // ── Browser file saving ─────────────────────────────────
+  const [browserSaveFeature, setBrowserSaveFeature] = useState(null); // null=loading, true/false
+  const browserSave = useBrowserFileSaving({ entries: sentLog.entries });
 
   // ── Caption files ───────────────────────────────────────
   const [files, setFiles] = useState([]);
@@ -41,7 +48,7 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
     if (!isOpen || !session.connected) return;
     if (tab === 'captions') loadFiles();
     if (tab === 'images') loadImages();
-    if (tab === 'storage') loadStorageConfig();
+    if (tab === 'storage') { loadStorageConfig(); loadBrowserSaveFeature(); }
   }, [isOpen, session.connected, tab]);
 
   async function loadFiles() {
@@ -76,6 +83,13 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
       }
     } catch (err) { showToast(err.message, 'error'); }
     finally { setLoadingStorage(false); }
+  }
+
+  async function loadBrowserSaveFeature() {
+    try {
+      const { features } = await session.getSessionFeatures();
+      setBrowserSaveFeature(Array.isArray(features) && features.includes('files-browser-local'));
+    } catch { setBrowserSaveFeature(false); }
   }
 
   async function handleSaveStorageConfig(e) {
@@ -350,6 +364,41 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
                         )}
                       </div>
                     </form>
+
+                    {/* ── Browser local save ── */}
+                    {browserSaveFeature && (
+                      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--color-border)' }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>Browser local file</div>
+                        <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 10 }}>
+                          Save captions directly to your computer as a WebVTT file. No server storage needed.
+                          {!browserSave.hasFileAccess && ' (Your browser will download the file when you stop.)'}
+                        </div>
+                        {browserSave.error && (
+                          <div style={{ color: 'var(--color-error, #e55)', fontSize: 12, marginBottom: 8 }}>{browserSave.error}</div>
+                        )}
+                        {browserSave.isWriting ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ fontSize: 12 }}>
+                              {browserSave.hasFileAccess
+                                ? <>Writing to <strong>{browserSave.filename}</strong></>
+                                : <>Collecting in memory &mdash; will download on stop</>
+                              }
+                              {browserSave.cueCount > 0 && <span style={{ color: 'var(--color-text-muted)', marginLeft: 6 }}>({browserSave.cueCount} cues)</span>}
+                            </span>
+                            <button className="btn btn--secondary btn--sm" onClick={browserSave.stopSaving}>Stop</button>
+                          </div>
+                        ) : (
+                          <button className="btn btn--primary btn--sm" onClick={() => browserSave.startSaving()}>
+                            Start saving to file
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {browserSaveFeature === false && (
+                      <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px solid var(--color-border)', fontSize: 12, color: 'var(--color-text-muted)' }}>
+                        Browser local file saving is not enabled for this project key.
+                      </div>
+                    )}
                   </>
                 )}
               </>

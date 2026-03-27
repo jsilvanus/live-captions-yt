@@ -35,6 +35,7 @@ const FEATURE_GROUPS = [
       { code: 'files-managed-bucket', label: 'Managed S3 storage',    desc: 'Store caption files in the operator-configured S3 bucket' },
       { code: 'files-custom-bucket',  label: 'Custom S3 bucket',      desc: 'Store caption files in a user-supplied S3 bucket (configurable via Files → Storage)' },
       { code: 'files-webdav',         label: 'WebDAV storage',        desc: 'Store caption files on a WebDAV server (Nextcloud, ownCloud, Apache mod_dav)' },
+      { code: 'files-browser-local',  label: 'Browser local save',    desc: 'Save captions directly to the user\'s computer as a VTT file via the browser' },
     ],
   },
   {

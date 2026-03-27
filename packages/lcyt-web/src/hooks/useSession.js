@@ -577,6 +577,10 @@ export function useSession({
     return api.del(`/file/${fileId}`);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getSessionFeatures = useCallback(async function getSessionFeatures() {
+    return api.get('/features');
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const getStorageConfig = useCallback(async function getStorageConfig() {
     return api.get('/file/storage-config');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -680,6 +684,7 @@ export function useSession({
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,
+    getSessionFeatures,
     listFiles, getFileDownloadUrl, deleteFile, getStorageConfig, setStorageConfig, deleteStorageConfig,
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
     updateImageSettings,
