@@ -17,7 +17,8 @@
  */
 const { execSync }  = require('child_process');
 const { build }     = require('esbuild');
-const { resolve }   = require('path');
+const { resolve, basename } = require('path');
+const fs            = require('fs');
 const { version }   = require('../package.json');
 
 const targets = {
@@ -25,6 +26,14 @@ const targets = {
   mac:          { target: 'node18-macos-x64',     output: `dist/lcyt-bridge-${version}-mac` },
   linux:        { target: 'node18-linux-x64',     output: `dist/lcyt-bridge-${version}-linux` },
   'linux-arm64':{ target: 'node18-linux-arm64',   output: `dist/lcyt-bridge-${version}-linux-arm64` },
+};
+
+// Unversioned aliases so static-file serving works without knowing the version.
+const unversionedAliases = {
+  win:          'dist/lcyt-bridge.exe',
+  mac:          'dist/lcyt-bridge-mac',
+  linux:        'dist/lcyt-bridge-linux',
+  'linux-arm64':'dist/lcyt-bridge-linux-arm64',
 };
 
 // Resolve the @yao-pkg/pkg CLI binary via its package.json bin field so we
@@ -71,6 +80,15 @@ function pkg(platform) {
   }
   run(`node "${pkgEntry}" dist/bundle.cjs --target ${t.target} --output ${t.output}`);
   console.log(`[build] → ${t.output}`);
+
+  // Create an unversioned symlink so static-file serving works with a
+  // stable filename (e.g. lcyt-bridge.exe → lcyt-bridge-0.3.0.exe).
+  const alias = unversionedAliases[platform];
+  if (alias) {
+    try { fs.unlinkSync(alias); } catch { /* ignore if missing */ }
+    fs.symlinkSync(basename(t.output), alias);
+    console.log(`[build] symlink ${alias} → ${basename(t.output)}`);
+  }
 }
 
 async function main() {

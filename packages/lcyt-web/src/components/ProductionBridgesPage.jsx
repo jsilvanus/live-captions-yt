@@ -55,21 +55,18 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
 }
 
 const BRIDGE_DOWNLOADS = [
-  { label: 'Windows (.exe)',     file: 'lcyt-bridge.exe' },
-  { label: 'macOS',              file: 'lcyt-bridge-mac' },
-  { label: 'Linux (x64)',        file: 'lcyt-bridge-linux' },
-  { label: 'Linux (ARM64/RPi4)', file: 'lcyt-bridge-linux-arm64' },
+  { label: 'Windows (.exe)',     platform: 'win',   file: 'lcyt-bridge.exe' },
+  { label: 'macOS',              platform: 'mac',   file: 'lcyt-bridge-mac' },
+  { label: 'Linux (x64)',        platform: 'linux', file: 'lcyt-bridge-linux' },
+  { label: 'Linux (ARM64/RPi4)', platform: 'arm',   file: 'lcyt-bridge-linux-arm64' },
 ];
 
-function bridgeDownloadUrl(file) {
-  const siteBase = import.meta.env?.VITE_SITE_URL
-    ? import.meta.env.VITE_SITE_URL.replace(/\/$/, '')
-    : window.location.origin;
-  return `${siteBase}/downloads/bridge/${file}`;
+function bridgeDownloadUrl(backendUrl, platform) {
+  return `${backendUrl}/bridge-download?${platform}`;
 }
 
 /** Shown immediately after creation — displays exe + .env download buttons */
-function EnvDownloadBanner({ bridge, onDismiss }) {
+function EnvDownloadBanner({ bridge, backendUrl, onDismiss }) {
   function downloadEnv() {
     const blob = new Blob([bridge.envContent], { type: 'text/plain' });
     const url  = URL.createObjectURL(blob);
@@ -93,8 +90,8 @@ function EnvDownloadBanner({ bridge, onDismiss }) {
         place them in the same folder, then launch the app.
       </p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {BRIDGE_DOWNLOADS.map(({ label, file }) => (
-          <a key={file} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(file)} download={file}>
+        {BRIDGE_DOWNLOADS.map(({ label, platform, file }) => (
+          <a key={platform} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(backendUrl, platform)} download={file}>
             ↓ {label}
           </a>
         ))}
@@ -416,7 +413,7 @@ export function ProductionBridgesPage() {
       )}
 
       {newBridge && (
-        <EnvDownloadBanner bridge={newBridge} onDismiss={() => setNewBridge(null)} />
+        <EnvDownloadBanner bridge={newBridge} backendUrl={backendUrl} onDismiss={() => setNewBridge(null)} />
       )}
 
       {adding && (
@@ -444,8 +441,8 @@ export function ProductionBridgesPage() {
             commands to AMX and Roland hardware on the local AV network.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-            {BRIDGE_DOWNLOADS.map(({ label, file }) => (
-              <a key={file} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(file)} download={file}>
+            {BRIDGE_DOWNLOADS.map(({ label, platform, file }) => (
+              <a key={platform} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(backendUrl, platform)} download={file}>
                 ↓ {label}
               </a>
             ))}
