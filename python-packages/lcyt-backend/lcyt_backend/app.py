@@ -43,7 +43,9 @@ def create_app(testing: bool = False) -> Flask:
     app.config["TESTING"] = testing
 
     # -------------------------------------------------------------------------
-    # JWT secret (auto-generated; only used for session tokens)
+    # JWT secret (auto-generated; only used for session tokens).
+    # Tokens are invalidated on restart — this relay is designed for
+    # single-instance, ephemeral deployments.
     # -------------------------------------------------------------------------
     app.config["JWT_SECRET"] = secrets.token_hex(32)
 

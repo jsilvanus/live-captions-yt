@@ -13,8 +13,9 @@ def test_sync_returns_200(client, session_token):
 def test_sync_response_fields(client, session_token):
     res = client.post("/sync/", headers=_auth(session_token))
     data = res.get_json()
-    assert "syncOffset" in data
-    assert "roundTripTime" in data
+    assert isinstance(data["syncOffset"], int)
+    assert isinstance(data["roundTripTime"], int)
+    assert data["roundTripTime"] >= 0
     assert "serverTimestamp" in data
     assert "statusCode" in data
 
