@@ -11,11 +11,17 @@ const INSERT_CODE_TOOLTIP =
   '  • lang — caption / speech language (e.g. fi-FI, en-US)\n' +
   '    Sent as captionLang on every caption that follows.\n' +
   '  • no-translate — prevents translation for lines that follow\n\n' +
+  'Navigation & timing action codes (fire once, do not persist):\n' +
+  '  • timer: N    — auto-advance after N seconds (e.g. timer: 5)\n' +
+  '  • goto: N     — jump pointer to raw file line N\n' +
+  '  • file: name  — switch to open file by name\n' +
+  '  • audio: start/stop — toggle microphone capture\n\n' +
   'Other standard codes:\n' +
   '  • section — section / chapter name\n' +
   '  • speaker — speaker name\n' +
   '  • lyrics — marks lines as song lyrics (true/false)\n\n' +
-  'You can also use any custom key. Empty value (<!-- key: -->) removes the code.';
+  'You can also use any custom key. Empty value (<!-- key: -->) removes the code.\n' +
+  'See docs/METACODE.md for the full reference.';
 
 function escapeHtml(str) {
   return str
