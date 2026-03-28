@@ -1,3 +1,5 @@
+import { ValidationError } from 'lcyt/errors';
+import logger from 'lcyt/logger';
 /**
  * Embedding service — computes text embeddings via OpenAI-compatible APIs.
  *
@@ -25,7 +27,8 @@ export async function computeEmbeddings(texts, opts = {}) {
   const model = opts.model || process.env.EMBEDDING_MODEL || 'text-embedding-3-small';
 
   if (!apiKey) {
-    throw new Error('Embedding API key is not configured');
+    logger.error('Embedding API key missing');
+    throw new ValidationError('embedding_api_key', 'Embedding API key is not configured');
   }
 
   const url = `${apiUrl}/v1/embeddings`;
@@ -39,12 +42,33 @@ export async function computeEmbeddings(texts, opts = {}) {
     model,
   });
 
-  const res = await fetch(url, { method: 'POST', headers, body });
-  if (!res.ok) {
-    const errText = await res.text().catch(() => '');
-    throw new Error(`Embedding API error ${res.status}: ${errText.slice(0, 200)}`);
+  // Retry on transient errors (network issues, 5xx)
+  const MAX_RETRIES = 2;
+  let attempt = 0;
+  let res = null;
+  let lastErr = null;
+  while (attempt <= MAX_RETRIES) {
+    try {
+      res = await fetch(url, { method: 'POST', headers, body });
+      if (res.ok) break;
+      const status = res.status;
+      const errText = await res.text().catch(() => '');
+      if (status >= 500) {
+        lastErr = new Error(`Embedding API error ${status}: ${errText.slice(0,200)}`);
+        attempt++;
+        await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+        continue;
+      }
+      // Client error — do not retry
+      throw new Error(`Embedding API error ${status}: ${errText.slice(0,200)}`);
+    } catch (err) {
+      lastErr = err;
+      if (attempt >= MAX_RETRIES) throw err;
+      attempt++;
+      await new Promise(r => setTimeout(r, 200 * Math.pow(2, attempt)));
+    }
   }
-
+  if (!res || !res.ok) throw lastErr || new Error('Embedding API request failed');
   const data = await res.json();
   if (!data.data || !Array.isArray(data.data)) {
     throw new Error('Unexpected embedding API response format');
@@ -81,4 +105,9 @@ export function cosineSimilarity(a, b) {
  */
 export function isServerEmbeddingAvailable() {
   return !!(process.env.EMBEDDING_API_KEY);
+}
+
+export function isConfigured(opts = {}) {
+  const apiKey = opts.apiKey || process.env.EMBEDDING_API_KEY || '';
+  return !!apiKey;
 }

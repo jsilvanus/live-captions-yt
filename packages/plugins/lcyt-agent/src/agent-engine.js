@@ -14,6 +14,7 @@
 
 import { getAiConfigRaw, runAiMigrations } from './ai-config.js';
 import { computeEmbeddings, cosineSimilarity, isServerEmbeddingAvailable } from './embeddings.js';
+import logger from 'lcyt/logger';
 
 export class AgentEngine {
   /**
@@ -68,6 +69,37 @@ export class AgentEngine {
   clearContext(apiKey) {
     this._contextWindow.delete(apiKey);
   }
+function parseAssistantJson(text) {
+  if (!text || typeof text !== 'string') return null;
+  // Strip markdown code fences
+  let stripped = text.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
+
+  // Find outermost JSON object
+  const first = stripped.indexOf('{');
+  const last = stripped.lastIndexOf('}');
+  const candidate = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
+
+  // Try direct parse
+  try { return JSON.parse(candidate); } catch (e) {}
+
+  // Attempt heuristic fixes: single quotes -> double quotes, remove trailing commas
+  let heur = candidate.replace(/'/g, '"').replace(/,\s*\}/g, '}').replace(/,\s*\]/g, ']');
+  try { return JSON.parse(heur); } catch (e) {}
+
+  // Fallback: extract key/value pairs for matched/confidence/reasoning
+  const out = {};
+  const mMatched = /"?matched"?\s*:\s*(true|false)/i.exec(candidate);
+  if (mMatched) out.matched = mMatched[1].toLowerCase() === 'true';
+  const mConf = /"?confidence"?\s*:\s*([0-9.]+)/i.exec(candidate);
+  if (mConf) out.confidence = parseFloat(mConf[1]);
+  const mReason = /"?reasoning"?\s*:\s*"([^""]{0,500})"/i.exec(candidate);
+  if (mReason) out.reasoning = mReason[1];
+
+  // If we got something useful, return it
+  if (Object.keys(out).length > 0) return out;
+  return null;
+}
+
 
   // -------------------------------------------------------------------------
   // AI Config helpers — delegates to ai-config.js
@@ -212,19 +244,11 @@ export class AgentEngine {
     try {
       const result = await this._callChatCompletion(apiSettings, systemPrompt, userPrompt);
 
-      // Parse LLM response — extract JSON object robustly
-      let parsed;
-      try {
-        // Strip markdown code blocks, then find the outermost { ... } object
-        const stripped = result.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
-        const firstBrace = stripped.indexOf('{');
-        const lastBrace = stripped.lastIndexOf('}');
-        const jsonStr = firstBrace >= 0 && lastBrace > firstBrace
-          ? stripped.slice(firstBrace, lastBrace + 1)
-          : stripped;
-        parsed = JSON.parse(jsonStr);
-      } catch {
-        return { matched: false, confidence: 0, reasoning: `Failed to parse LLM response: ${result.slice(0, 100)}` };
+      // Parse LLM response using tolerant helper
+      const parsed = parseAssistantJson(result);
+      if (!parsed) {
+        logger.warn('[agent] Failed to parse assistant JSON response');
+        return { matched: false, confidence: 0, reasoning: 'Failed to parse LLM response' };
       }
 
       const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
@@ -283,12 +307,32 @@ export class AgentEngine {
       max_tokens: 200,
     });
 
-    const res = await fetch(url, { method: 'POST', headers, body });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(`Chat API error ${res.status}: ${errText.slice(0, 200)}`);
+    // Retry on transient failures (network / 5xx / rate-limit)
+    const MAX_RETRIES = 2;
+    let attempt = 0;
+    let res = null;
+    let lastErr = null;
+    while (attempt <= MAX_RETRIES) {
+      try {
+        res = await fetch(url, { method: 'POST', headers, body });
+        if (res.ok) break;
+        const status = res.status;
+        const errText = await res.text().catch(() => '');
+        if (status === 429 || status >= 500) {
+          lastErr = new Error(`Chat API error ${status}: ${errText.slice(0,200)}`);
+          attempt++;
+          await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
+          continue;
+        }
+        throw new Error(`Chat API error ${status}: ${errText.slice(0,200)}`);
+      } catch (err) {
+        lastErr = err;
+        if (attempt >= MAX_RETRIES) throw err;
+        attempt++;
+        await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
+      }
     }
-
+    if (!res || !res.ok) throw lastErr || new Error('Chat API request failed');
     const data = await res.json();
     const message = data?.choices?.[0]?.message?.content;
     if (typeof message !== 'string') {
