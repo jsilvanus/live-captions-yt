@@ -17,7 +17,7 @@ import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
-import { initCueEngine, createCueProcessor, createCueRouter } from 'lcyt-cues';
+import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
 import { initAi, createAiRouter, isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings } from './ai/index.js';
 
 // ---------------------------------------------------------------------------
@@ -163,6 +163,10 @@ const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 // rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
 const { engine: _cueEngine } = await initCueEngine(db);
 const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
+
+// Wire sound_label events (from lcyt-music) to cue engine for
+// music_start, music_stop, and silence cue rules.
+createSoundCueListener({ store, engine: _cueEngine });
 
 // AI / Embedding module — run DB migrations for ai_config table and wire
 // embedding functions into the CueEngine for fuzzy semantic matching.
