@@ -59,6 +59,7 @@ export function parseFileContent(rawText) {
         let gotoAction = null;
         let fileSwitchAction = null;
         let fileSwitchServerAction = null;
+        let cueAction = null;
         for (const m of raw.matchAll(MULTI_META_RE)) {
           const key = m[1].toLowerCase();
           const value = m[2].trim();
@@ -74,6 +75,8 @@ export function parseFileContent(rawText) {
             if (value !== '') fileSwitchAction = value;
           } else if (key === 'file[server]') {
             if (value !== '') fileSwitchServerAction = value;
+          } else if (key === 'cue') {
+            if (value !== '') cueAction = value;
           } else if (value === '') {
             delete currentCodes[key];
           } else {
@@ -84,7 +87,7 @@ export function parseFileContent(rawText) {
             currentCodes[key] = parsed;
           }
         }
-        const hasAction = audioAction || timerAction !== null || gotoAction !== null || fileSwitchAction !== null || fileSwitchServerAction !== null;
+        const hasAction = audioAction || timerAction !== null || gotoAction !== null || fileSwitchAction !== null || fileSwitchServerAction !== null || cueAction !== null;
         if (hasAction) {
           const actionCodes = { ...currentCodes };
           if (audioAction) actionCodes.audioCapture = audioAction;
@@ -92,6 +95,7 @@ export function parseFileContent(rawText) {
           if (gotoAction !== null) actionCodes.goto = gotoAction;
           if (fileSwitchAction !== null) actionCodes.fileSwitch = fileSwitchAction;
           if (fileSwitchServerAction !== null) actionCodes.fileSwitchServer = fileSwitchServerAction;
+          if (cueAction !== null) actionCodes.cue = cueAction;
           lines.push('');
           lineCodes.push(actionCodes);
           lineNumbers.push(i + 1);

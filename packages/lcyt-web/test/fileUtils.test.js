@@ -438,3 +438,48 @@ describe('parseFileContent() — combined action metacodes', () => {
     assert.equal(lineCodes[0].timer, 2);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cue metacode parsing
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — cue metacodes', () => {
+  it('parses <!-- cue:phrase --> as an action entry with cue property', () => {
+    const raw = '<!-- cue:Amen -->\nLet us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lines[1], 'Let us pray');
+  });
+
+  it('preserves cue phrase case', () => {
+    const raw = '<!-- cue:Prayer Start -->';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cue, 'Prayer Start');
+  });
+
+  it('parses multiple cue entries at different positions', () => {
+    const raw = '<!-- cue:Amen -->\nLine 1\n<!-- cue:Hallelujah -->\nLine 2';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 4);
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[2].cue, 'Hallelujah');
+  });
+
+  it('ignores empty cue value', () => {
+    const raw = '<!-- cue: -->\nLine 1';
+    const { lines } = parseFileContent(raw);
+    // Empty cue should not create an action entry; only Line 1
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Line 1');
+  });
+
+  it('cue combined with other persistent codes on same line', () => {
+    const raw = '<!-- section: Prayer --><!-- cue:Amen -->\nLet us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 2);
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].section, 'Prayer');
+  });
+});

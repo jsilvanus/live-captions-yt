@@ -172,6 +172,20 @@ export class SessionStore {
   }
 
   /**
+   * Get the first session whose apiKey matches the given key.
+   * Used by plugin processors (cue, music) that receive captions by apiKey
+   * and need to emit SSE events on the session emitter.
+   * @param {string} apiKey
+   * @returns {object|undefined}
+   */
+  getByApiKey(apiKey) {
+    for (const session of this._sessions.values()) {
+      if (session.apiKey === apiKey) return session;
+    }
+    return undefined;
+  }
+
+  /**
    * Get all sessions whose domain matches the given origin.
    * @param {string} domain
    * @returns {object[]}

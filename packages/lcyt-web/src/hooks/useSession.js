@@ -230,7 +230,7 @@ export function useSession({
     });
 
     // Dispatch plugin SSE events to registered listeners
-    const PLUGIN_SSE_EVENTS = ['sound_label', 'bpm_update'];
+    const PLUGIN_SSE_EVENTS = ['sound_label', 'bpm_update', 'cue_fired'];
     for (const evtName of PLUGIN_SSE_EVENTS) {
       es.addEventListener(evtName, (e) => {
         const data = JSON.parse(e.data);

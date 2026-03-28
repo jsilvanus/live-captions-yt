@@ -1,21 +1,26 @@
 /**
  * Cue caption processor.
  *
- * Extracts <!-- cue:... --> metacodes from caption text, evaluates them
- * (and all phrase/regex/section rules) via CueEngine, and fires cue_fired
- * SSE events on the session GET /events stream.
+ * Strips <!-- cue:... --> metacodes from caption text and evaluates
+ * incoming captions against CueEngine rules (phrase/regex/section).
+ * Fires cue_fired SSE events on the session GET /events stream.
  *
- * The returned cleanText is always the original text with all cue metacodes stripped.
- * For pure-metacode captions this will be "" — nothing is delivered to YouTube.
+ * The returned cleanText is always the original text with all cue metacodes
+ * stripped.  For pure-metacode captions this will be "" — nothing is
+ * delivered to YouTube.
  *
- * Analogous to createSoundCaptionProcessor in lcyt-music.
+ * Cue Engine flow:
+ *   1. <!-- cue:phrase --> in a rundown FILE defines a cue trigger point.
+ *      The frontend parser creates a cue entry at that line position.
+ *   2. When live captions pass through this processor, the CueEngine
+ *      matches against registered rules (DB or session-scoped) and fires
+ *      cue_fired SSE events.
+ *   3. The frontend receives cue_fired events and jumps the file pointer
+ *      to the matching cue line.
  *
- * Metacode syntax:
- *   <!-- cue:prayer-start -->    fires a named cue event immediately
- *   <!-- cue:offering -->        fires the "offering" cue
- *
- * Phrase/regex/section rules are evaluated automatically on every caption —
- * no metacode required. The <!-- cue:... --> metacode is for explicit manual triggers.
+ * If a <!-- cue:label --> metacode appears directly in outgoing caption
+ * text it is stripped and a cue_fired event is emitted so the frontend
+ * can react (explicit trigger).
  *
  * Usage:
  *   const cueProcessor = createCueProcessor({ store, db, engine });

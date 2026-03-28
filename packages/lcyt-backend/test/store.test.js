@@ -299,4 +299,27 @@ describe('SessionStore', () => {
       assert.strictEqual(sender.calls.end, 0);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // getByApiKey
+  // ---------------------------------------------------------------------------
+
+  describe('getByApiKey', () => {
+    it('returns the session matching the apiKey', () => {
+      const store = new SessionStore({ sessionTtl: 60000, cleanupInterval: 999999 });
+      store.create({ apiKey: 'key-abc', streamKey: 'sk', domain: 'https://x.com', jwt: 't' });
+      store.create({ apiKey: 'key-xyz', streamKey: 'sk', domain: 'https://y.com', jwt: 't' });
+      const found = store.getByApiKey('key-abc');
+      assert.ok(found);
+      assert.strictEqual(found.apiKey, 'key-abc');
+      store.stopCleanup();
+    });
+
+    it('returns undefined when no session matches', () => {
+      const store = new SessionStore({ sessionTtl: 60000, cleanupInterval: 999999 });
+      store.create({ apiKey: 'key-abc', streamKey: 'sk', domain: 'https://x.com', jwt: 't' });
+      assert.strictEqual(store.getByApiKey('key-nope'), undefined);
+      store.stopCleanup();
+    });
+  });
 });

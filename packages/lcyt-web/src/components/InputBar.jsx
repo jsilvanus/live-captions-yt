@@ -1,4 +1,4 @@
-import { useState, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
+import { useState, useRef, useMemo, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useFileContext } from '../contexts/FileContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
@@ -10,7 +10,7 @@ import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } f
 import { getActiveCodes } from '../lib/metacode-active.js';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 import { parseFileContent } from '../lib/metacode-parser.js';
-import { drainActions, findLineIndexForRaw, performFileSwitchAction } from '../lib/metacode-runtime.js';
+import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, checkCueMatch } from '../lib/metacode-runtime.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -47,6 +47,30 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   useEffect(() => {
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
+
+  // Build cue phrase → line index map from the active file's cue metacodes.
+  // When a sent caption matches a cue phrase, the pointer jumps to that line.
+  const cueMap = useMemo(
+    () => buildCueMap(fileStore.activeFile),
+    [fileStore.activeFile?.id, fileStore.activeFile?.lineCodes]
+  );
+
+  // Listen for backend-fired cue_fired SSE events (e.g. from CueEngine matching
+  // against STT transcripts) and jump the pointer to the matching cue line.
+  useEffect(() => {
+    if (!session.subscribeSseEvent) return;
+    const unsub = session.subscribeSseEvent('cue_fired', (data) => {
+      const file = fileStore.activeFile;
+      if (!file || cueMap.size === 0) return;
+      const label = (data.label || data.matched || '').toLowerCase();
+      if (cueMap.has(label)) {
+        const targetIdx = cueMap.get(label);
+        fileStore.setPointer(file.id, targetIdx);
+        showToast(`Cue: ${data.label}`, 'info', 2000);
+      }
+    });
+    return unsub;
+  }, [session.subscribeSseEvent, cueMap, fileStore, showToast]);
 
   // Per-language local file handles: Map<lang, { writable, seqIdx, format }>
   const localFileHandlesRef = useRef(new Map());
@@ -233,6 +257,17 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       try {
         await doSend(text.trim());
         setInputValue('');
+
+        // Check if the sent text matches any cue phrase in the active file.
+        // If so, jump the pointer to the cue line so the next send starts there.
+        const match = checkCueMatch(cueMap, text);
+        if (match) {
+          const file = fileStore.activeFile;
+          if (file) {
+            fileStore.setPointer(file.id, match.index);
+            showToast(`Cue: ${match.phrase}`, 'info', 2000);
+          }
+        }
       } catch (err) {
         handleSendError(err);
       }

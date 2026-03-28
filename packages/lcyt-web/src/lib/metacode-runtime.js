@@ -56,6 +56,10 @@ export async function drainActions({ file, startPtr = 0, fileStore, timerRef, ha
         try { window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: lc.audioCapture } })); } catch {}
       }
       ptr++;
+    } else if (lc.cue != null) {
+      // Cue marker — skip past it (cue matching is handled externally
+      // by buildCueMap / checkCueMatch or backend CueEngine events)
+      ptr++;
     } else if (lc.timer != null) {
       ptr++;
       const target = ptr < file.lines.length ? ptr : file.lines.length - 1;
@@ -81,4 +85,44 @@ export async function drainActions({ file, startPtr = 0, fileStore, timerRef, ha
     }
   }
   return ptr >= file.lines.length ? { status: 'done', pointer: file.lines.length - 1 } : { status: 'continue', pointer: ptr };
+}
+
+// ---------------------------------------------------------------------------
+// Cue map helpers — used by InputBar to detect cue phrase matches in captions
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a Map of lowercase cue phrase → line index from a parsed file.
+ * Each `<!-- cue:phrase -->` entry creates one mapping.
+ *
+ * @param {{ lineCodes: object[] }} file
+ * @returns {Map<string, number>}
+ */
+export function buildCueMap(file) {
+  const map = new Map();
+  if (!file?.lineCodes) return map;
+  for (let i = 0; i < file.lineCodes.length; i++) {
+    const lc = file.lineCodes[i];
+    if (lc.cue) {
+      map.set(lc.cue.toLowerCase(), i);
+    }
+  }
+  return map;
+}
+
+/**
+ * Check if caption text contains any registered cue phrase.
+ * Returns the first match (phrase + target line index) or null.
+ *
+ * @param {Map<string, number>} cueMap — from buildCueMap()
+ * @param {string} text — caption text to test
+ * @returns {{ phrase: string, index: number } | null}
+ */
+export function checkCueMatch(cueMap, text) {
+  if (!text || !cueMap || cueMap.size === 0) return null;
+  const lower = text.toLowerCase();
+  for (const [phrase, index] of cueMap) {
+    if (lower.includes(phrase)) return { phrase, index };
+  }
+  return null;
 }
