@@ -138,11 +138,12 @@ export function buildCueMap(file) {
 export function checkCueMatch(cueMap, text, pointer) {
   if (!text || !cueMap || cueMap.size === 0) return null;
   const lower = text.toLowerCase();
+  const hasPointer = pointer !== undefined && pointer !== null && pointer >= 0;
 
   // Determine the "next cue" index: the smallest cue index > pointer.
   // Cues with mode='next' can only fire if they are this exact next cue.
   let nextCueIndex = Infinity;
-  if (pointer != null && pointer >= 0) {
+  if (hasPointer) {
     for (const [, entry] of cueMap) {
       if (entry.index > pointer && entry.index < nextCueIndex) {
         nextCueIndex = entry.index;
@@ -152,7 +153,7 @@ export function checkCueMatch(cueMap, text, pointer) {
 
   for (const [phrase, entry] of cueMap) {
     // Check eligibility based on mode and pointer position
-    if (pointer != null && pointer >= 0) {
+    if (hasPointer) {
       if (entry.mode === 'next') {
         // Only fires if this is THE next cue after the pointer
         if (entry.index !== nextCueIndex) continue;

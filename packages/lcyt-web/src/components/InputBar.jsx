@@ -276,13 +276,15 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
         // Check if the sent text matches any cue phrase in the active file.
         // If so, jump the pointer to the cue line and auto-send its content.
         const file = fileStore.activeFile;
-        const match = checkCueMatch(cueMap, text, file?.pointer);
-        if (match && file) {
-          lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
-          fileStore.setPointer(file.id, match.index);
-          showToast(`Cue: ${match.phrase}`, 'info', 2000);
-          // Auto-send the cue line content after React processes the pointer update
-          setTimeout(() => handleSendRef.current?.(), 0);
+        if (file) {
+          const match = checkCueMatch(cueMap, text, file.pointer);
+          if (match) {
+            lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
+            fileStore.setPointer(file.id, match.index);
+            showToast(`Cue: ${match.phrase}`, 'info', 2000);
+            // Auto-send the cue line content after React processes the pointer update
+            setTimeout(() => handleSendRef.current?.(), 0);
+          }
         }
       } catch (err) {
         handleSendError(err);
