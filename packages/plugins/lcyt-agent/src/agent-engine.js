@@ -107,6 +107,9 @@ export class AgentEngine {
     if (apiKey) {
       const cfg = getAiConfigRaw(this._db, apiKey);
       if (cfg) {
+        if (cfg.embeddingProvider === 'none') {
+          throw new Error('Embedding is disabled for this API key (provider: none)');
+        }
         if (cfg.embeddingProvider === 'openai' || cfg.embeddingProvider === 'custom') {
           opts.apiKey = cfg.embeddingApiKey;
           opts.model = cfg.embeddingModel;

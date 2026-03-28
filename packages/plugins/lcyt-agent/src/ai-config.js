@@ -55,6 +55,10 @@ export function getAiConfig(db, apiKey) {
 
 /**
  * Get the raw AI config (includes actual API key, for internal use only).
+ *
+ * ⚠ SECURITY: Returns the real API key — only use in trusted server-side code.
+ * For client-facing responses, use getAiConfig() which masks the key.
+ *
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @returns {object|null}

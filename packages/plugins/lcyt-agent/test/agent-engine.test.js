@@ -124,12 +124,13 @@ describe('AgentEngine', () => {
   test('isServerEmbeddingAvailable reflects env', () => {
     const db = createDb();
     const agent = new AgentEngine(db);
-    // Without EMBEDDING_API_KEY set, should return false
     const orig = process.env.EMBEDDING_API_KEY;
-    delete process.env.EMBEDDING_API_KEY;
-    assert.equal(agent.isServerEmbeddingAvailable(), false);
-    // Restore
-    if (orig) process.env.EMBEDDING_API_KEY = orig;
+    try {
+      delete process.env.EMBEDDING_API_KEY;
+      assert.equal(agent.isServerEmbeddingAvailable(), false);
+    } finally {
+      if (orig !== undefined) process.env.EMBEDDING_API_KEY = orig;
+    }
   });
 
   test('cosineSimilarity returns 1 for identical vectors', () => {

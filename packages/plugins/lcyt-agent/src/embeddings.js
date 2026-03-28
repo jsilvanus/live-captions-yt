@@ -50,8 +50,10 @@ export async function computeEmbeddings(texts, opts = {}) {
     throw new Error('Unexpected embedding API response format');
   }
 
-  // Sort by index to ensure correct ordering
-  const sorted = data.data.sort((a, b) => a.index - b.index);
+  // Sort by index to ensure correct ordering (validate index exists)
+  const sorted = data.data
+    .filter(d => typeof d.index === 'number' && Array.isArray(d.embedding))
+    .sort((a, b) => a.index - b.index);
   return sorted.map(d => d.embedding);
 }
 
