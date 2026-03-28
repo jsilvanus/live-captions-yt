@@ -31,6 +31,9 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// Keys that have dedicated display in buildActionLabel — exclude from generic label
+const ACTION_DISPLAY_KEYS = ['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'emptySend', 'emptySendLabel'];
+
 /** Build a short indicator label for a metadata-only line. */
 function buildActionLabel(codes) {
   if (!codes) return null;
@@ -43,7 +46,7 @@ function buildActionLabel(codes) {
   if (codes.cue) parts.push(`🔔 cue:${codes.cue}`);
   // Persistent codes (section, speaker, etc.) — show as subtle labels
   for (const [k, v] of Object.entries(codes)) {
-    if (['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'emptySend', 'emptySendLabel'].includes(k)) continue;
+    if (ACTION_DISPLAY_KEYS.includes(k)) continue;
     if (typeof v === 'boolean' && !v) continue;
     parts.push(`${k}: ${v}`);
   }

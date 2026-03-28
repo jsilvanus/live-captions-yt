@@ -53,7 +53,7 @@ describe('parseFileContent() — metadata comments', () => {
     assert.equal(lines[1], 'Caption line');
   });
 
-  it('attaches metadata code to subsequent lines', () => {
+  it('attaches metadata code to the metadata line and persists to subsequent lines', () => {
     const raw = '<!-- lang: fi-FI -->\nCaption line';
     const { lineCodes } = parseFileContent(raw);
     assert.equal(lineCodes[0].lang, 'fi-FI');  // on the metadata line itself

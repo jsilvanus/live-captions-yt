@@ -21,10 +21,6 @@ const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 // separately from other metacode key-value pairs.
 const CUE_META_RE = /<!--\s*cue\s*:\s*([\s\S]*?)\s*-->/gi;
 
-// Action metacode keys — these produce per-line action codes and do NOT
-// persist into currentCodes for subsequent lines.
-const ACTION_KEYS = new Set(['audio', 'timer', 'goto', 'file', 'file[server]']);
-
 /**
  * Strip ALL HTML comment metacodes from a raw line and return the remaining
  * text content.  A generic pass that removes every `<!-- ... -->` block.
@@ -130,12 +126,12 @@ export function parseFileContent(rawText) {
     if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
     if (cuePhrase) codes.cue = cuePhrase;
 
-    // Did the line contain any HTML comments? (even if they parsed to nothing)
-    const hadComments = contentText !== lineRaw || cuePhrase != null;
+    // Did the line contain any metacode markers that were stripped?
+    const hadMetacodes = contentText !== lineRaw || cuePhrase != null;
 
     // Always emit the line — content lines, metadata-only lines, and lines
     // whose comments were stripped all produce entries in the output.
-    if (contentText || hadComments) {
+    if (contentText || hadMetacodes) {
       lines.push(contentText);
       lineCodes.push(codes);
       lineNumbers.push(i + 1);
