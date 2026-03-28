@@ -2,12 +2,10 @@ import { Router } from 'express';
 import { Readable } from 'node:stream';
 import { readFileSync, existsSync } from 'node:fs';
 import rateLimit from 'express-rate-limit';
+import { coercePreviewResponse } from '../preview/coerce-preview-response.js';
 
-// Preview key validation: same rules as radio / viewer keys
 const PREVIEW_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
 
-// Rate limiter for preview requests.
-// A UI polling every 5 s from one IP = 12 req/min; allow 60 for a few concurrent tabs.
 const previewRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
@@ -16,92 +14,74 @@ const previewRateLimit = rateLimit({
   message: { error: 'Too many requests, please try again later' },
 });
 
-/**
- * Return the CORS response headers for public preview endpoints.
- * @param {import('express').Response} res
- */
 function setCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Accept');
 }
 
-/**
- * Factory for the /preview router.
- *
- * Serves stream previews sourced from MediaMTX. Three preview types are
- * available for any active RTMP stream:
- *
- *   GET /preview/:key/incoming.jpg  — JPEG thumbnail snapshot (MediaMTX thumbnail API)
- *   GET /preview/:key/webrtc        — WebRTC preview info JSON { url, live }
- *   (HLS preview is available via /stream-hls/:key/index.m3u8)
- *
- * CORS: all endpoints are public with CORS * (thumbnails contain no private data).
- *
- * @param {import('../preview-manager.js').PreviewManager} previewManager
- * @returns {Router}
- */
 export function createPreviewRouter(previewManager) {
   const router = Router();
 
-  // CORS preflight
   router.options('/:key/*', (_req, res) => {
     setCorsHeaders(res);
     res.status(204).end();
   });
 
-  // GET /preview/:key/incoming.jpg — JPEG thumbnail from MediaMTX thumbnail API
-  router.get('/:key/incoming.jpg', previewRateLimit, async (req, res) => {
+  async function handleIncoming(req, res) {
     const { key } = req.params;
+    if (!PREVIEW_KEY_RE.test(key)) return res.status(400).json({ error: 'Invalid preview key format' });
 
-    if (!PREVIEW_KEY_RE.test(key)) {
-      return res.status(400).json({ error: 'Invalid preview key format' });
-    }
-
-    let response;
-    if (typeof previewManager.fetchThumbnail === 'function') {
-      response = await previewManager.fetchThumbnail(key);
-    } else if (typeof previewManager.previewPath === 'function') {
-      const p = previewManager.previewPath(key);
-      if (!existsSync(p)) response = null;
-      else {
-        const buf = readFileSync(p);
-        response = { headers: new Map([['content-type', 'image/jpeg']]), body: Readable.toWeb(Readable.from([buf])) };
+    let rawResponse;
+    try {
+      if (typeof previewManager?.fetchThumbnail === 'function') {
+        rawResponse = await previewManager.fetchThumbnail(key);
+      } else if (typeof previewManager?.previewPath === 'function') {
+        const p = previewManager.previewPath(key);
+        if (!existsSync(p)) rawResponse = null;
+        else {
+          const buf = readFileSync(p);
+          rawResponse = { headers: { 'content-type': 'image/jpeg', 'content-length': String(buf.length) }, body: buf };
+        }
+      } else {
+        rawResponse = null;
       }
-    } else {
-      response = null;
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('preview.fetchThumbnail error for key', key, err && err.message ? err.message : err);
+      return res.status(502).json({ error: 'Failed to fetch preview' });
     }
 
-    if (!response) {
-      return res.status(404).json({ error: 'Preview not available — stream may not be live' });
-    }
+    const coerced = await coercePreviewResponse(rawResponse);
+    if (!coerced || !coerced.stream) return res.status(404).json({ error: 'Preview not available — stream may not be live' });
 
     setCorsHeaders(res);
-    res.setHeader('Content-Type', response.headers.get('content-type') || 'image/jpeg');
+    const contentType = (coerced.headers && (coerced.headers['content-type'] || coerced.headers['Content-Type'])) || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    if (coerced.headers && coerced.headers['content-length']) res.setHeader('Content-Length', coerced.headers['content-length']);
     res.setHeader('Cache-Control', 'public, max-age=5, must-revalidate');
 
-    Readable.fromWeb(response.body)
-      .on('error', () => { if (!res.writableEnded) res.end(); })
-      .pipe(res);
-  });
+    const nodeStream = Readable.from(coerced.stream.readable ? coerced.stream : coerced.stream);
 
-  // GET /preview/:key/webrtc — WebRTC preview info
-  // Returns { url, live } where `url` is the MediaMTX WebRTC endpoint.
-  // Clients open this URL directly in a WebRTC-capable browser or embed it
-  // in a <video> element or custom WebRTC player.
+    const onClose = () => { try { if (typeof nodeStream.destroy === 'function') nodeStream.destroy(); } catch (e) {} };
+    res.on('close', onClose);
+
+    nodeStream.on('error', (err) => {
+      // eslint-disable-next-line no-console
+      console.warn('preview stream error for key', key, err && err.message ? err.message : err);
+      if (!res.writableEnded) res.end();
+    }).pipe(res);
+  }
+
+  router.get('/:key/incoming', previewRateLimit, handleIncoming);
+  router.get('/:key/incoming.jpg', previewRateLimit, handleIncoming);
+
   router.get('/:key/webrtc', previewRateLimit, (req, res) => {
     const { key } = req.params;
-
-    if (!PREVIEW_KEY_RE.test(key)) {
-      return res.status(400).json({ error: 'Invalid preview key format' });
-    }
-
+    if (!PREVIEW_KEY_RE.test(key)) return res.status(400).json({ error: 'Invalid preview key format' });
     setCorsHeaders(res);
     res.setHeader('Cache-Control', 'no-cache, no-store');
-    res.json({
-      url:  previewManager.getWebRtcUrl(key),
-      live: previewManager.isRunning(key),
-    });
+    res.json({ url: previewManager.getWebRtcUrl?.(key), live: previewManager.isRunning?.(key) });
   });
 
   return router;

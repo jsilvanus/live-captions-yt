@@ -29,7 +29,7 @@ const GOOGLE_STT_REST_URL = 'https://speech.googleapis.com/v1/speech:recognize';
 const GRPC_RESTART_INTERVAL_MS = 4.5 * 60 * 1000;
 
 // Minimum segment size in bytes — skip smaller buffers (silence / empty init)
-const MIN_SEGMENT_BYTES = 512;
+const MIN_SEGMENT_BYTES = 1;
 
 // ── Punctuation normalisation ─────────────────────────────────────────────────
 
