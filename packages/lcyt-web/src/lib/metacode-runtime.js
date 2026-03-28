@@ -59,11 +59,17 @@ export async function drainActions({ file, startPtr = 0, fileStore, timerRef, ha
       if (lineText?.trim()) break;
       ptr++;
     } else if (lc.timer != null) {
-      // Timer fires the CURRENT line after the delay.
-      // Set pointer here and schedule auto-send after timer seconds.
+      // Timer fires the CURRENT line after the delay, then advances to the next line.
       fileStore.setPointer(file.id, ptr);
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => handleSendRef.current?.(), lc.timer * 1000);
+      timerRef.current = setTimeout(() => {
+        handleSendRef.current?.();
+        // After firing, advance pointer to next line
+        const nextPtr = ptr + 1;
+        if (nextPtr < file.lines.length) {
+          fileStore.setPointer(file.id, nextPtr);
+        }
+      }, lc.timer * 1000);
       return { status: 'stop', pointer: ptr };
     } else if (lc.goto != null) {
       const maxRaw = file.lineNumbers?.at(-1) ?? 0;

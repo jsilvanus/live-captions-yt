@@ -63,19 +63,19 @@ describe('metacode-runtime drainActions()', () => {
     assert.equal(res.status, 'done');
   });
 
-  it('timer fires current line — returns stop with pointer at timer line', async () => {
+  it('timer fires current line then advances pointer to next line', async () => {
     const file = makeFile(['Let us pray', 'Next line'], [{ timer: 5 }, {}], [1, 2]);
     const store = makeFileStore([file]);
     const timerRef = { current: null };
     const handleSendRef = { current: () => {} };
     const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
     assert.equal(res.status, 'stop');
-    assert.equal(res.pointer, 0); // stays at timer line (fires current)
+    assert.equal(res.pointer, 0); // initially at timer line
     assert.ok(timerRef.current); // timer was set
     clearTimeout(timerRef.current);
   });
 
-  it('timer on empty line fires current line position', async () => {
+  it('timer on empty line fires current line position then advances', async () => {
     const file = makeFile(['', 'Content'], [{ timer: 3 }, {}], [1, 2]);
     const store = makeFileStore([file]);
     const timerRef = { current: null };
