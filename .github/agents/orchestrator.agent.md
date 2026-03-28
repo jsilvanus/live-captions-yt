@@ -171,6 +171,24 @@ The Director / Workflow Orchestrator breaks complex tasks into subtasks, assigns
 
 - **Rule for the Director:** Default to assigning larger or multi-source research tasks to `Research Synthesizer`. Use `Web Researcher` only for lightweight lookups or quick verification steps. 
 
+## On Finishing Work 
+
+- **New Tests:** Orchestrator will ensure that any code changes that require new tests have those tests implemented by the relevant agent (e.g., Testing Agent). It will check that the tests cover the new functionality and are included in the final commit and PR.
+
+- **Code Review:** Orchestrator will ask the Review Agent to review the final changes before merging to the main branch. It will provide the Review Agent with the context of the changes and any specific areas to focus on during the review.
+
+- **Test and Review Loop:** If the Review Agent requests changes or if any tests fail, Orchestrator will coordinate the necessary revisions by delegating back to the relevant agents (e.g., Backend Engineer for code changes, Testing Agent for test fixes) until all issues are resolved.
+
+- **Documentation Updates:** Orchestrator will ensure that any code changes that require documentation updates have those updates implemented by the Documentation Steward. It will check that the documentation changes are included in the final commit and PR.
+
+- **NPM  Version:** When the orchestrator finishes a task that includes code changes, it should check if any of the changes require a version bump. If it sees changes in packages that are published to NPM, it should determine the appropriate version bump (patch, minor, major) based on the nature of the changes and update the version in `package.json` accordingly. It should also include this information in the final summary output and provide option to rollback the version change if requested.
+
+- **Commits:** Orchestrator, when asked to commit, will create a concise commit message and commit only the files modified by the agents it  delegated to. It will not commit any other files, unless explicitly asked.
+
+- **Pull Requests:** Orchestrator, when asked to create a PR, will create a comprehensive PR description that includes a summary of the changes, the rationale behind them, and any relevant context or links to research. It will also provide a rollback plan in case the PR needs to be reverted.
+
+- **Final Output:** When the Orchestrator finishes its task, it will output a human-readable summary of what was done, which files were modified, and what the next steps are. It will also comment on the size of the change it made (eg. this was a major feature). If the requester asked for a specific JSON output, it will follow that format instead.
+
 ## Orchestrator Example Payloads
 
 Below are concise example payloads the orchestrator can use to invoke each specialized agent via `runSubagent`. Use these as templates when delegating subtasks.
@@ -324,5 +342,3 @@ Below are concise example payloads the orchestrator can use to invoke each speci
     args:
       query: "Find all usages of build-cjs.js and assess breakage risk"
   ``` 
-
-At the end of a series of delegations, the Orchestrator should inform the user of all the modified files and what was done. (Human-readable output, not JSON.) Orchestrator should ask the Codebase Expert to familiarize with the new code. Orchestrator will then, if requested, create a comprehensive pull request (PR) with all the changes for review. The PR description should include a summary of the changes, the rationale behind them, and any relevant context or links to research. The Orchestrator should also provide a rollback plan in case the PR needs to be reverted.
