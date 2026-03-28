@@ -24,6 +24,8 @@ live-captions-yt/
 │   ├── tools/                  # Standalone utilities
 │   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
 │   └── plugins/                # Plugin packages (npm workspaces glob: packages/plugins/*)
+│       ├── lcyt-agent/         # AI Agent plugin (AI config, embeddings, LLM event evaluation)
+│       ├── lcyt-cues/          # Cue Engine plugin (phrase/fuzzy/semantic/event cue matching)
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
 │       ├── lcyt-files/         # Caption file storage plugin (local FS + S3 + WebDAV adapters)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
@@ -240,6 +242,9 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `OPENAI_STT_URL` | Base URL for OpenAI-compatible STT endpoint | OpenAI default |
 | `OPENAI_STT_API_KEY` | API key for OpenAI STT endpoint | none |
 | `OPENAI_STT_MODEL` | Model name for OpenAI STT requests | `whisper-1` |
+| `EMBEDDING_API_URL` | Base URL for embedding API (server-level default) | `https://api.openai.com` |
+| `EMBEDDING_API_KEY` | API key for the embedding provider (server-level) | none |
+| `EMBEDDING_MODEL` | Embedding model name (server-level) | `text-embedding-3-small` |
 
 **API routes:**
 ```
@@ -329,6 +334,19 @@ POST /stt/stop            — stop STT session (Bearer token)
 GET  /stt/events          — SSE stream of transcript events (Bearer token or ?token=)
 GET  /stt/config          — get per-key STT config from DB (Bearer token)
 PUT  /stt/config          — update per-key STT config (Bearer token)
+
+GET/POST/PUT/DELETE /cues/rules — cue rule CRUD (Bearer token)
+GET  /cues/events         — list recent cue events (Bearer token)
+
+GET  /ai/config           — get per-key AI/embedding config (Bearer token)
+PUT  /ai/config           — update AI provider, model, key, threshold (Bearer token)
+GET  /ai/status           — server embedding capability info (Bearer token)
+
+GET  /agent/status        — agent capabilities and config state (Bearer token)
+GET  /agent/context       — current AI context window (Bearer token)
+POST /agent/context       — add a context entry manually (Bearer token)
+DELETE /agent/context     — clear context window (Bearer token)
+GET  /agent/events        — recent agent events (Bearer token)
 ```
 
 **Key internals:**
@@ -337,6 +355,9 @@ PUT  /stt/config          — update per-key STT config (Bearer token)
 - `src/routes/stt.js` — `createSttRouter()`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`.
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
 - The RTMP/HLS/radio/preview/STT managers previously lived in `lcyt-backend`; they were extracted to `packages/plugins/lcyt-rtmp`. The backend imports them via `import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp'`.
+- The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
+- The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, and LLM-based event cue evaluation. Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings } from 'lcyt-agent'`.
+- `src/ai/index.js` — Backward-compatible re-exports from `lcyt-agent` so existing imports from `lcyt-backend/src/ai/` continue to work.
 - `src/middleware/user-auth.js` — JWT Bearer verification for user tokens (`{ type: 'user', userId, email }`).
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
@@ -361,7 +382,7 @@ PUT  /stt/config          — update per-key STT config (Bearer token)
 - `src/db/project-members.js` — Project membership DB helpers (`project_members` table).
 - `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`).
 
-**SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`.
+**SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`, `cue_fired`. Plugin events are forwarded generically via `session.emitter.emit('event', { type, data })`.
 
 **Admin CLI:** `bin/lcyt-backend-admin` — local key management + user management.
 - Key commands: `list`, `add`, `update`, `revoke`, `delete`, `renew`, `info`, `clean`
@@ -592,6 +613,76 @@ await stopDsk();
 
 ---
 
+### `packages/plugins/lcyt-cues` — Cue Engine Plugin (v0.1.0)
+
+Cue engine for detecting spoken phrases, sounds, and AI-analyzed events to auto-advance rundown files. Supports inline cue metacodes in caption files. Imported by `lcyt-backend` as `lcyt-cues`.
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
+
+const { engine } = await initCueEngine(db);
+const cueProcessor = createCueProcessor({ store, db, engine });
+createSoundCueListener({ store, engine });
+app.use('/cues', createCueRouter(db, auth, engine));
+```
+
+**Source files (`src/`):**
+- `api.js` — `initCueEngine(db)` + `createCueProcessor()` + `createCueRouter()` + `createSoundCueListener()`.
+- `cue-engine.js` — `CueEngine`: evaluates cue rules per caption, per API key. Match types: `phrase` (substring), `regex`, `section`, `fuzzy` (Jaro-Winkler), `semantic` (embedding-based), `event_cue` (LLM-based). Per-rule cooldown enforcement. Silence timer logic. Embedding + AI config + agent evaluate function injection via setters.
+- `cue-processor.js` — `createCueProcessor()`: strips `<!-- cue:label -->` metacodes from caption text, fires cue events on session emitter, triggers CueEngine automatic rules and async event cue evaluation.
+- `db.js` — `cue_rules` and `cue_events` tables with indexes on `api_key`. Migrations run on init.
+- `routes/cues.js` — `GET/POST/PUT/DELETE /cues/rules`, `GET /cues/events`. Regex pattern validation on create/update.
+
+**Cue metacode syntax (frontend inline markers):**
+| Syntax | Mode | Matching |
+|---|---|---|
+| `<!-- cue:phrase -->` | next (default) | Exact/wildcard |
+| `<!-- cue*:phrase -->` | skip (forward past other cues) | Exact/wildcard |
+| `<!-- cue**:phrase -->` | any (including backwards) | Exact/wildcard |
+| `<!-- cue~:phrase -->` | next + fuzzy | Jaro-Winkler |
+| `<!-- cue[semantic]:phrase -->` | next + semantic | Embedding similarity (backend only) |
+| `<!-- cue[events]:description -->` | next + AI event | LLM evaluation (backend only) |
+
+**Sound cue match types:** `music_start`, `music_stop`, `silence` (with minimum duration timer).
+
+**Tests:** `packages/plugins/lcyt-cues/test/*.test.js` — uses `node:test`.
+
+---
+
+### `packages/plugins/lcyt-agent` — AI Agent Plugin (v0.1.0)
+
+Central AI service for LCYT. Owns AI configuration (per-user embedding/LLM provider settings), embedding computation, context window management, and LLM-based event cue evaluation. Other plugins delegate AI calls to the agent. Imported by `lcyt-backend` as `lcyt-agent`.
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings } from 'lcyt-agent';
+
+const { agent } = await initAgent(db);
+cueEngine.setEmbeddingFn(computeEmbeddings);
+cueEngine.setAiConfigFn((apiKey) => agent.getAiConfig(apiKey));
+cueEngine.setAgentEvaluateFn((apiKey, desc, opts) => agent.evaluateEventCue(apiKey, desc, opts));
+app.use('/ai', createAiRouter(db, auth));
+app.use('/agent', createAgentRouter(db, auth, agent));
+```
+
+**Source files (`src/`):**
+- `api.js` — `initAgent(db)` + `createAgentRouter()` + `createAiRouter()`. Re-exports AI config and embedding utilities.
+- `agent-engine.js` — `AgentEngine`: context window management (per-API-key, max 50 entries), `evaluateEventCue()` via LLM chat completions, `analyseImage()` stub for future vision inference.
+- `ai-config.js` — Per-API-key AI model settings DB helpers (`ai_config` table). Provider modes: `none`, `server`, `openai`, `custom`.
+- `embeddings.js` — OpenAI-compatible `/v1/embeddings` API client. `computeEmbeddings()`, `cosineSimilarity()`, `isServerEmbeddingAvailable()`.
+- `db.js` — `agent_events` and `agent_context` table migrations.
+- `routes/ai.js` — `GET/PUT /ai/config`, `GET /ai/status`.
+- `routes/agent.js` — `GET /agent/status`, `GET/POST/DELETE /agent/context`, `GET /agent/events`.
+
+**Backward compatibility:** `packages/lcyt-backend/src/ai/index.js` re-exports from `lcyt-agent`.
+
+**Tests:** `packages/plugins/lcyt-agent/test/*.test.js` — uses `node:test`.
+
+---
+
 ### `packages/lcyt-bridge` — Production Control Bridge Agent (v0.3.0)
 
 Standalone agent that connects to the LCYT backend via SSE and relays commands to physical AV hardware (AMX controllers, Roland mixers) over TCP. Designed to run on-site where the hardware is located.
@@ -784,6 +875,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/setup` | `SetupWizardPage` | Guided setup wizard |
 | `/account` | `AccountPage` | Login/register or user profile |
 | `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
+| `/ai` | `AiSettingsPage` | AI/embedding provider config (feature-gated: `ai`) |
 
 #### Standalone routes (no sidebar)
 
@@ -1027,6 +1119,7 @@ After selection, the frontend probes `GET /health` to discover the backend's fea
 | `graphics` | Graphics group | Sidebar "Graphics" group (Editor, Control, Viewports) |
 | `production` | Production group | Sidebar "Production" group (Operator, Devices) |
 | `login` | User account pages | Sidebar "Projects" and "Account" items |
+| `ai` | AI settings page | Sidebar "AI" item |
 
 **AuthGate** (`main.jsx`) supports two modes:
 1. **User login mode** — checks `lcyt-user` localStorage for `{ token, backendUrl }`
@@ -1082,9 +1175,9 @@ Server-side speech-to-text transcription converts an incoming RTMP/HLS/WHEP audi
 
 ### Metacode Organization
 
-- Plugin metacode handling stays inside plugin-owned processors; the DSK `graphics` metacode remains in `packages/plugins/lcyt-dsk/src/caption-processor.js`.
+- Plugin metacode handling stays inside plugin-owned processors; the DSK `graphics` metacode remains in `packages/plugins/lcyt-dsk/src/caption-processor.js`. The `cue` metacode is handled by `packages/plugins/lcyt-cues/src/cue-processor.js`.
 - Core backend metacode handoff now lives in `packages/lcyt-backend/src/metacode.js` (dedicated helper), used by the captions router and other backend consumers.
-- Frontend metacode parser, runtime, manual-state, and planner helpers live in `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/lib/metacode-active.js`, `packages/lcyt-web/src/lib/metacode-planner.js`, and `packages/lcyt-web/src/lib/metacode-runtime.js`.
+- Frontend metacode parser, runtime, manual-state, and planner helpers live in `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/lib/metacode-active.js`, `packages/lcyt-web/src/lib/metacode-planner.js`, and `packages/lcyt-web/src/lib/metacode-runtime.js`. The parser extracts cue metacodes (`cue:`, `cue*:`, `cue**:`, `cue~:`, `cue[semantic]:`, `cue[events]:`) alongside standard metacodes.
 - For compatibility, `packages/lcyt-web/src/lib/fileUtils.js`, `packages/lcyt-web/src/lib/activeCodes.js`, and `packages/lcyt-web/src/lib/plannerUtils.js` continue to re-export or adapt the moved helpers so existing imports keep working.
 - See `docs/METACODE.md` and `docs/plans/plan_metacode_refactor.md` for the current scoped refactor plan.
 
@@ -1182,6 +1275,13 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/plugins/lcyt-dsk/src/renderer-container.js` | Docker-based DSK renderer alternative |
 | `packages/plugins/lcyt-dsk/src/caption-processor.js` | DSK caption metacode processor (graphics:... comments → SSE events) |
 | `packages/plugins/lcyt-dsk/src/middleware/editor-auth.js` | X-API-Key auth + `editorAuthOrBearer` middleware |
+| `packages/plugins/lcyt-cues/src/api.js` | Cue Engine plugin entry: `initCueEngine()` + `createCueProcessor()` + `createCueRouter()` + `createSoundCueListener()` |
+| `packages/plugins/lcyt-cues/src/cue-engine.js` | CueEngine: phrase/regex/fuzzy/semantic/event cue matching + silence timer |
+| `packages/plugins/lcyt-cues/src/cue-processor.js` | Cue caption metacode processor (cue:... comments → SSE events) |
+| `packages/plugins/lcyt-agent/src/api.js` | AI Agent plugin entry: `initAgent()` + `createAgentRouter()` + `createAiRouter()` |
+| `packages/plugins/lcyt-agent/src/agent-engine.js` | AgentEngine: context window, event cue LLM evaluation, embeddings |
+| `packages/plugins/lcyt-agent/src/ai-config.js` | Per-API-key AI model settings DB helpers |
+| `packages/plugins/lcyt-agent/src/embeddings.js` | OpenAI-compatible embedding API client |
 | `packages/lcyt-bridge/src/index.js` | Bridge agent entrypoint |
 | `packages/lcyt-bridge/src/bridge.js` | Bridge SSE client + TCP command dispatcher |
 | `packages/lcyt-bridge/src/tcp-pool.js` | Managed TCP connection pool |

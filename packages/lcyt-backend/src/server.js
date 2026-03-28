@@ -312,7 +312,7 @@ app.get('/health', (req, res) => {
   if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
   if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
   if (sttManager) features.push('stt');
-  features.push('files', 'viewer', 'production', 'ai');
+  features.push('files', 'viewer', 'production', 'ai', 'cues', 'agent');
 
   res.status(200).json({
     ok: true,
