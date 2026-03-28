@@ -1,88 +1,71 @@
-import { Router } from 'express';
-import { Readable } from 'node:stream';
-import { readFileSync, existsSync } from 'node:fs';
+import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { coercePreviewResponse } from '../preview/coerce-preview-response.js';
+import fs from 'fs';
 
-const PREVIEW_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
-
-const previewRateLimit = rateLimit({
-  windowMs: 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' },
-});
-
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Accept');
+function isNodeReadable(s) {
+  return s && typeof s.pipe === 'function';
 }
 
-export function createPreviewRouter(previewManager) {
-  const router = Router();
-
-  router.options('/:key/*', (_req, res) => {
-    setCorsHeaders(res);
-    res.status(204).end();
-  });
+export function createPreviewRouter(previewManager, opts = {}) {
+  const router = express.Router();
+  const limiter = rateLimit({ windowMs: 1000, max: 5 });
 
   async function handleIncoming(req, res) {
-    const { key } = req.params;
-    if (!PREVIEW_KEY_RE.test(key)) return res.status(400).json({ error: 'Invalid preview key format' });
-
-    let rawResponse;
+    const key = req.params.key;
     try {
-      if (typeof previewManager?.fetchThumbnail === 'function') {
-        rawResponse = await previewManager.fetchThumbnail(key);
-      } else if (typeof previewManager?.previewPath === 'function') {
-        const p = previewManager.previewPath(key);
-        if (!existsSync(p)) rawResponse = null;
-        else {
-          const buf = readFileSync(p);
-          rawResponse = { headers: { 'content-type': 'image/jpeg', 'content-length': String(buf.length) }, body: buf };
-        }
-      } else {
-        rawResponse = null;
+      const resp = await previewManager.fetchThumbnail(key);
+      if (!resp) return res.status(404).end();
+      const coerced = await coercePreviewResponse(resp);
+      const contentType = (coerced.headers && coerced.headers['content-type']) || 'application/octet-stream';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'no-cache');
+
+      const stream = coerced.stream;
+      if (isNodeReadable(stream)) {
+        // Pipe Node Readable directly to response so destroy propagates
+        const original = stream;
+        const onClose = () => original.destroy?.();
+        res.on('close', onClose);
+        original.pipe(res);
+        original.on('end', () => res.removeListener('close', onClose));
+        return;
       }
+
+      // Fallback: stream may be an async iterable
+      const nodeStream = stream[Symbol.asyncIterator] ? (await import('stream')).Readable.from(stream) : null;
+      if (nodeStream) return nodeStream.pipe(res);
+
+      res.status(502).end();
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('preview.fetchThumbnail error for key', key, err && err.message ? err.message : err);
-      return res.status(502).json({ error: 'Failed to fetch preview' });
+      if (err && err.code === 'ENOENT') return res.status(404).end();
+      res.status(502).json({ error: err.message });
     }
-
-    const coerced = await coercePreviewResponse(rawResponse);
-    if (!coerced || !coerced.stream) return res.status(404).json({ error: 'Preview not available — stream may not be live' });
-
-    setCorsHeaders(res);
-    const contentType = (coerced.headers && (coerced.headers['content-type'] || coerced.headers['Content-Type'])) || 'application/octet-stream';
-    res.setHeader('Content-Type', contentType);
-    if (coerced.headers && coerced.headers['content-length']) res.setHeader('Content-Length', coerced.headers['content-length']);
-    res.setHeader('Cache-Control', 'public, max-age=5, must-revalidate');
-
-    const nodeStream = Readable.from(coerced.stream.readable ? coerced.stream : coerced.stream);
-
-    const onClose = () => { try { if (typeof nodeStream.destroy === 'function') nodeStream.destroy(); } catch (e) {} };
-    res.on('close', onClose);
-
-    nodeStream.on('error', (err) => {
-      // eslint-disable-next-line no-console
-      console.warn('preview stream error for key', key, err && err.message ? err.message : err);
-      if (!res.writableEnded) res.end();
-    }).pipe(res);
   }
 
-  router.get('/:key/incoming', previewRateLimit, handleIncoming);
-  router.get('/:key/incoming.jpg', previewRateLimit, handleIncoming);
+  router.get('/preview/:key/incoming', limiter, handleIncoming);
+  // Keep legacy alias for backwards compatibility
+  router.get('/preview/:key/incoming.jpg', limiter, handleIncoming);
 
-  router.get('/:key/webrtc', previewRateLimit, (req, res) => {
-    const { key } = req.params;
-    if (!PREVIEW_KEY_RE.test(key)) return res.status(400).json({ error: 'Invalid preview key format' });
-    setCorsHeaders(res);
-    res.setHeader('Cache-Control', 'no-cache, no-store');
-    res.json({ url: previewManager.getWebRtcUrl?.(key), live: previewManager.isRunning?.(key) });
+  router.options('/preview/:key/incoming', (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.sendStatus(204);
+  });
+
+  // Minimal JSON /webrtc route kept (delegates to manager)
+  router.get('/preview/:key/webrtc', async (req, res) => {
+    try {
+      const info = await previewManager.fetchWebRtcInfo(req.params.key);
+      if (!info) return res.status(404).end();
+      res.json(info);
+    } catch (err) {
+      res.status(502).json({ error: err.message });
+    }
   });
 
   return router;
 }
+
+export default createPreviewRouter;
