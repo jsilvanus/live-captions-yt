@@ -22,10 +22,17 @@
  * text it is stripped and a cue_fired event is emitted so the frontend
  * can react (explicit trigger).
  *
+ * Sound-state cue listening:
+ *   createSoundCueListener() subscribes to sound_label events on each
+ *   session emitter and evaluates music_start/music_stop/silence rules.
+ *
  * Usage:
  *   const cueProcessor = createCueProcessor({ store, db, engine });
  *   // In captions route:
  *   caption.text = cueProcessor(session.apiKey, caption.text || '', caption.codes);
+ *
+ *   // Wire sound events (call once after store is available):
+ *   createSoundCueListener({ store, engine });
  */
 
 import { insertCueEvent } from './db.js';
@@ -115,4 +122,76 @@ export function createCueProcessor({ store, db, engine }) {
 
     return cleanText;
   };
+}
+
+/**
+ * Wire sound_label events from session emitters to the CueEngine.
+ *
+ * When the music plugin emits a sound_label event (music/speech/silence),
+ * this listener evaluates music_start, music_stop, and silence cue rules.
+ *
+ * For silence rules: if silence persists for the configured minimum duration,
+ * the cue fires. If the silence is broken, the timer is cancelled.
+ *
+ * Call once after the session store is available.
+ *
+ * @param {{ store: object, engine: import('./cue-engine.js').CueEngine }} opts
+ */
+export function createSoundCueListener({ store, engine }) {
+  if (!store || !engine) return;
+
+  // Hook into the store's session-creation lifecycle.
+  // Each new session gets a listener on its emitter.
+  const origOnSession = store.onNewSession;
+  store.onNewSession = (session) => {
+    origOnSession?.(session);
+    _attachSoundListener(session, engine, store);
+  };
+
+  // Also attach to existing sessions
+  for (const session of store.all?.() ?? []) {
+    _attachSoundListener(session, engine, store);
+  }
+}
+
+function _attachSoundListener(session, engine, store) {
+  if (!session?.emitter || session._cueSoundListenerAttached) return;
+  session._cueSoundListenerAttached = true;
+
+  session.emitter.on('event', (evt) => {
+    if (evt.type !== 'sound_label') return;
+    const label = evt.data?.label;
+    if (!label) return;
+
+    // Evaluate music_start, music_stop, and silence rules
+    const fired = engine.evaluateSoundEvent(session.apiKey, label, (delayedResults) => {
+      // Silence timer callback — fire cue_fired events for the delayed results
+      _emitCueFired(session, delayedResults);
+    });
+
+    // Emit immediately fired rules (music_start, music_stop)
+    _emitCueFired(session, fired);
+  });
+}
+
+function _emitCueFired(session, fired) {
+  if (!fired || fired.length === 0 || !session?.emitter) return;
+  const ts = Date.now();
+  for (const { rule, matched } of fired) {
+    let action = {};
+    try { action = JSON.parse(rule.action); } catch { /* ignore */ }
+
+    session.emitter.emit('event', {
+      type: 'cue_fired',
+      data: {
+        label: rule.name,
+        source: 'sound',
+        ruleId: rule.id,
+        matchType: rule.match_type,
+        matched,
+        action,
+        ts,
+      },
+    });
+  }
 }

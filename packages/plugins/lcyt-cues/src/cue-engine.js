@@ -154,6 +154,12 @@ export class CueEngine {
      * Invalidated on CRUD via invalidate().
      */
     this._embeddingCache = new Map();
+
+    /**
+     * Silence tracking state per API key.
+     * Map<apiKey, { silenceStart: number|null, timer: NodeJS.Timeout|null, currentLabel: string }>
+     */
+    this._silenceState = new Map();
   }
 
   /** Invalidate the rule cache for a given API key (call after CRUD). */
@@ -271,5 +277,145 @@ export class CueEngine {
     }
 
     return fired;
+  }
+
+  /**
+   * Evaluate sound-state cue rules against a sound_label event.
+   *
+   * Supported match types:
+   *   - 'music_start' — fires when label transitions TO 'music'
+   *   - 'music_stop'  — fires when label transitions FROM 'music' to speech/silence
+   *   - 'silence'     — fires when silence has lasted >= `pattern` seconds
+   *                     (pattern is the minimum silence duration, e.g. "5")
+   *
+   * For silence rules: when silence is detected, a timer is started. If silence
+   * persists for the specified duration, the rule fires. If the silence is broken
+   * (label changes to speech/music), the timer is cancelled.
+   *
+   * @param {string} apiKey
+   * @param {string} label — current sound label ('music', 'speech', 'silence')
+   * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for async silence timer results
+   * @returns {Array<{ rule: object, matched: string }>} — immediately fired rules (music_start/music_stop)
+   */
+  evaluateSoundEvent(apiKey, label, onFired) {
+    const rules = this._loadRules(apiKey);
+    const now = Date.now();
+    const fired = [];
+
+    // Get or create silence tracking state for this API key
+    let state = this._silenceState.get(apiKey);
+    if (!state) {
+      state = { silenceStart: null, timer: null, currentLabel: '' };
+      this._silenceState.set(apiKey, state);
+    }
+
+    const prevLabel = state.currentLabel;
+    state.currentLabel = label;
+
+    // Cancel pending silence timer if silence is broken
+    if (label !== 'silence' && state.timer) {
+      clearTimeout(state.timer);
+      state.timer = null;
+      state.silenceStart = null;
+    }
+
+    for (const rule of rules) {
+      // Cooldown check
+      if (rule.cooldown_ms > 0) {
+        const last = this._lastFired.get(rule.id);
+        if (last && (now - last) < rule.cooldown_ms) continue;
+      }
+
+      let matched = null;
+
+      switch (rule.match_type) {
+        case 'music_start':
+          if (label === 'music' && prevLabel !== 'music') {
+            matched = 'music_start';
+          }
+          break;
+        case 'music_stop':
+          if (label !== 'music' && prevLabel === 'music') {
+            matched = 'music_stop';
+          }
+          break;
+        case 'silence': {
+          // Only trigger silence timer when silence starts or is ongoing
+          if (label === 'silence') {
+            const minSeconds = parseFloat(rule.pattern) || 5;
+            if (!state.silenceStart) {
+              state.silenceStart = now;
+            }
+            // Set a timer to fire the cue after the minimum silence duration
+            if (!state.timer) {
+              const ruleRef = rule;
+              const remainingMs = Math.max(0, (minSeconds * 1000) - (now - state.silenceStart));
+              state.timer = setTimeout(() => {
+                state.timer = null;
+                // Check if silence is still active
+                if (state.currentLabel === 'silence') {
+                  this._lastFired.set(ruleRef.id, Date.now());
+                  const result = { rule: ruleRef, matched: `silence:${minSeconds}s` };
+
+                  // Persist the cue event
+                  try {
+                    let action = {};
+                    try { action = JSON.parse(ruleRef.action); } catch {
+                      console.warn(`[cues] Malformed action JSON for rule ${ruleRef.id}`);
+                    }
+                    insertCueEvent(this._db, apiKey, {
+                      rule_id: ruleRef.id,
+                      rule_name: ruleRef.name,
+                      matched: result.matched,
+                      action,
+                    });
+                  } catch (err) {
+                    console.warn('[cues] Failed to insert cue_event:', err?.message);
+                  }
+
+                  onFired?.([result]);
+                }
+              }, remainingMs);
+            }
+          }
+          break;
+        }
+        default:
+          break;
+      }
+
+      if (matched !== null) {
+        this._lastFired.set(rule.id, now);
+        fired.push({ rule, matched });
+
+        // Persist the cue event
+        try {
+          let action = {};
+          try { action = JSON.parse(rule.action); } catch {
+            console.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+          }
+          insertCueEvent(this._db, apiKey, {
+            rule_id: rule.id,
+            rule_name: rule.name,
+            matched,
+            action,
+          });
+        } catch (err) {
+          console.warn('[cues] Failed to insert cue_event:', err?.message);
+        }
+      }
+    }
+
+    return fired;
+  }
+
+  /**
+   * Clean up all silence timers (call on shutdown).
+   */
+  clearSilenceTimers() {
+    for (const [, state] of this._silenceState) {
+      if (state.timer) clearTimeout(state.timer);
+    }
+    this._silenceState.clear();
   }
 }

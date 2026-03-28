@@ -21,7 +21,8 @@ const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 // separately from other metacode key-value pairs.
 // Supports optional modifier asterisks: cue: (next), cue*: (skip), cue**: (any)
 // Supports optional tilde for fuzzy matching: cue~: (fuzzy), cue*~: (skip+fuzzy)
-const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)\s*:\s*([\s\S]*?)\s*-->/gi;
+// Supports bracket modifier: cue[semantic]: (embedding-based semantic matching)
+const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)(\[semantic\])?\s*:\s*([\s\S]*?)\s*-->/gi;
 
 /**
  * Strip ALL HTML comment metacodes from a raw line and return the remaining
@@ -54,12 +55,14 @@ export function parseFileContent(rawText) {
     let cuePhrase = null;
     let cueMode = null;
     let cueFuzzy = false;
-    const afterCueStrip = raw.replace(CUE_META_RE, (_, stars, tilde, val) => {
+    let cueSemantic = false;
+    const afterCueStrip = raw.replace(CUE_META_RE, (_, stars, tilde, bracket, val) => {
       const trimmed = val.trim();
       if (trimmed && !cuePhrase) {
         cuePhrase = trimmed;
         cueMode = stars === '**' ? 'any' : stars === '*' ? 'skip' : 'next';
         cueFuzzy = tilde === '~';
+        cueSemantic = !!bracket;
       }
       return '';
     }).trim();
@@ -86,7 +89,7 @@ export function parseFileContent(rawText) {
     if (emptySendMatch) {
       const label = emptySendMatch[1]?.trim() || null;
       const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
-      if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; }
+      if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; }
       lines.push('');
       lineCodes.push(codes);
       lineNumbers.push(i + 1);
@@ -139,7 +142,7 @@ export function parseFileContent(rawText) {
     if (gotoAction !== null) codes.goto = gotoAction;
     if (fileSwitchAction !== null) codes.fileSwitch = fileSwitchAction;
     if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
-    if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; }
+    if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; }
 
     // Did the line contain any metacode markers that were stripped?
     const hadMetacodes = contentText !== lineRaw || cuePhrase != null;
