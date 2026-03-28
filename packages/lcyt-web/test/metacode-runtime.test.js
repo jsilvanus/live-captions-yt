@@ -150,8 +150,8 @@ describe('buildCueMap()', () => {
     );
     const map = buildCueMap(file);
     assert.equal(map.size, 2);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false });
-    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false, semantic: false });
+    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false, semantic: false });
   });
 
   it('stores phrases in lowercase', () => {
@@ -449,6 +449,53 @@ describe('checkCueMatch() — fuzzy cues', () => {
       [1, 2]
     );
     const map = buildCueMap(file);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true, semantic: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkCueMatch — semantic cues
+// ---------------------------------------------------------------------------
+
+describe('checkCueMatch() — semantic cues', () => {
+  it('semantic cues are skipped by frontend checkCueMatch', () => {
+    const map = new Map([
+      ['grace of god', { index: 3, mode: 'any', fuzzy: false, semantic: true }],
+    ]);
+    // Semantic cues fire only via backend SSE — frontend skips them
+    const r = checkCueMatch(map, 'grace of god', -1);
+    assert.equal(r, null);
+  });
+
+  it('non-semantic cues still match normally alongside semantic ones', () => {
+    const map = new Map([
+      ['grace of god', { index: 3, mode: 'any', fuzzy: false, semantic: true }],
+      ['amen', { index: 5, mode: 'any', fuzzy: false, semantic: false }],
+    ]);
+    const r = checkCueMatch(map, 'amen', -1);
+    assert.ok(r);
+    assert.equal(r.index, 5);
+  });
+
+  it('buildCueMap includes semantic flag from lineCodes', () => {
+    const file = makeFile(
+      ['Line 1', 'Line 2'],
+      [{ cue: 'deep meaning', cueMode: 'next', cueSemantic: true }, {}],
+      [1, 2]
+    );
+    const map = buildCueMap(file);
+    const entry = map.get('deep meaning');
+    assert.ok(entry);
+    assert.equal(entry.semantic, true);
+  });
+
+  it('buildCueMap defaults semantic to false', () => {
+    const file = makeFile(
+      ['Line 1'],
+      [{ cue: 'amen', cueMode: 'next' }],
+      [1]
+    );
+    const map = buildCueMap(file);
+    assert.equal(map.get('amen').semantic, false);
   });
 });

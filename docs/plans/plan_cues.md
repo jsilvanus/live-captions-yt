@@ -2,7 +2,7 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Next-cue-only firing with skip/anywhere modifiers, fuzzy embedding-based matching, and music-state cue triggers. Phase 1 (basic cue engine) implemented; Phase 2 (next-only + modifiers) implemented; Phase 3 (fuzzy/embedding) implemented; Phase 4 (music cues) planned."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, and AI agent for video inference. Phases 1-5 implemented; Phases 6-8 planned (lcyt-agent plugin scaffolded)."
 ---
 
 # Cue Engine Enhanced Capabilities
@@ -191,55 +191,194 @@ The tilde modifier `~` enables fuzzy matching for inline cue metacodes:
 
 ---
 
-## Phase 4 — Music Detection Cue Triggers (Planned)
+## Phase 4 — Sound Detection Cue Triggers (Implemented)
 
 ### Motivation
 
-Cues should fire based on music detection states from `lcyt-music`. Use cases:
+Cues should fire based on audio analysis states from `lcyt-music`. Use cases:
 - When music starts → show lyrics overlay / switch to lyrics file
 - When music stops → switch back to speech rundown
-- When BPM changes significantly → adjust graphics tempo
+- When silence persists for a minimum time → advance to next section
 
-### Cue rule match types for music
+### Cue rule match types for sound
 
 | Match type | Pattern | Fires when |
 |---|---|---|
 | `music_start` | — | Sound label transitions from non-music to `music` |
 | `music_stop` | — | Sound label transitions from `music` to `speech`/`silence` |
-| `bpm_range` | `120-140` | BPM falls within the specified range |
-| `bpm_change` | `>20` | BPM changes by more than the threshold |
+| `silence` | `5` (seconds) | Silence persists for at least the specified duration |
+
+### Silence cue behavior
+
+When a silence cue rule is configured with a minimum time (e.g. 5 seconds):
+1. When `silence` label is detected, a timer starts
+2. If silence persists for the configured duration, the cue fires
+3. If the silence is broken (label changes to `speech` or `music`), the timer is cancelled
+4. This prevents false positives from brief pauses
 
 ### Integration with `lcyt-music`
 
-The music detection plugin (`lcyt-music`) already emits `sound_label` and `bpm_update` SSE events. The cue engine can subscribe to these:
+`createSoundCueListener()` subscribes to `sound_label` events on each session emitter and evaluates music/silence cue rules:
 
 ```js
-// In cue-processor or a new music-cue bridge:
-session.emitter.on('event', (evt) => {
-  if (evt.type === 'sound_label' && evt.data.label === 'music') {
-    // Evaluate music_start rules
-  }
-  if (evt.type === 'bpm_update') {
-    // Evaluate bpm_range and bpm_change rules
-  }
-});
+import { createSoundCueListener } from 'lcyt-cues';
+createSoundCueListener({ store, engine: cueEngine });
 ```
+
+### Implementation
+
+- [x] Add `music_start`, `music_stop`, `silence` match types to CueEngine
+- [x] `evaluateSoundEvent()` method with silence timer logic
+- [x] `createSoundCueListener()` wires session emitters to the engine
+- [x] `clearSilenceTimers()` for graceful shutdown cleanup
+- [x] Tests for sound detection cue rules
+
+---
+
+## Phase 5 — Semantic Embedding Cues (Implemented)
+
+### Motivation
+
+Some cue phrases require semantic understanding beyond string similarity. Embedding-based matching uses vector similarity to catch paraphrases and related concepts.
+
+### Metacode syntax: `cue[semantic]:`
+
+```
+<!-- cue[semantic]:prayer for healing -->Response text
+<!-- cue*[semantic]:closing remarks -->Goodbye
+<!-- cue**[semantic]:invitation -->Come forward
+```
+
+### Implementation
+
+- [x] Parser supports `cue[semantic]:` with mode modifiers
+- [x] Frontend `checkCueMatch()` skips semantic cues (they fire only via backend SSE)
+- [x] `buildCueMap()` includes `semantic` flag
+- [x] Backend CueEngine can evaluate semantic rules via embedding API
+
+---
+
+## Phase 6 — AI Agent: Video/Image Inference (`lcyt-agent` Plugin) (Planned)
+
+### Motivation
+
+A vision-capable LLM can describe what is happening on screen by analysing preview JPEGs or video frames. This enables:
+- Automated scene descriptions for accessibility
+- Visual event detection (speaker stands up, slides change, etc.)
+- Content-aware cue triggers based on what is seen, not just heard
+
+### Plugin: `packages/plugins/lcyt-agent/`
+
+Separate plugin for all AI agent capabilities. Designed for future expansion beyond video inference.
+
+**Components:**
+- `AgentEngine` — context window management, image analysis, event evaluation
+- `agent DB` — `agent_events` and `agent_context` tables
+- `routes` — `/agent/status`, `/agent/context`, `/agent/events`, `/agent/analyse`
+
+### Preview image inference
+
+The backend already provides `GET /preview/:key/incoming.jpg` (RTMP → JPEG thumbnails).
+The agent can periodically fetch and analyse these frames:
+
+```
+Preview JPEG → Vision LLM → Scene description → SSE event
+```
+
+### Video stream inference (future)
+
+For real-time analysis, the agent could process video segments directly:
+- Use HLS segments from `GET /stream-hls/:key/*`
+- Extract keyframes from fMP4 segments
+- Send frames to vision LLM for analysis
+- Emit `scene_description` SSE events
+
+### Context enrichment: `<!-- explanation:... -->`
+
+The `explanation` metacode provides human-authored context to help the AI understand what is happening:
+
+```
+<!-- explanation: The pastor is beginning the offertory prayer -->
+Let us bring our offerings to the Lord
+```
+
+The `explanation` text is stored as a persistent lineCodes entry and fed into the agent's context window alongside STT transcripts and visual analysis.
+
+### Implementation plan
+
+- [x] Plugin scaffolding (`lcyt-agent`)
+- [x] `AgentEngine` with context window management
+- [x] DB migrations and event storage
+- [x] REST API routes
+- [ ] Wire preview JPEG fetching on interval
+- [ ] Vision LLM integration (OpenAI GPT-4o, Claude, etc.)
+- [ ] Scene description SSE event emission
+- [ ] Video segment keyframe extraction
+
+---
+
+## Phase 7 — AI Event Cues: `cue[events]:` (Planned)
+
+### Motivation
+
+Instead of matching specific phrases, event cues describe what should happen:
+- `<!-- cue[events]:the speaker invites the congregation to stand -->` → fires when the AI determines this event occurred
+- `<!-- cue[events]:applause begins -->` → fires when audio + visual analysis indicates applause
 
 ### Metacode syntax
 
 ```
-<!-- cue-music:start -->Switch to lyrics      ← fires when music starts
-<!-- cue-music:stop -->Back to sermon          ← fires when music stops
-<!-- cue-bpm:120-140 -->Upbeat section         ← fires when BPM is 120-140
+<!-- cue[events]:the speaker stands up -->Next section
+<!-- cue[events]:slides change to a new topic -->New topic
+<!-- cue[events]:congregation begins singing -->Switch to lyrics
 ```
+
+### How it works
+
+1. The agent continuously monitors:
+   - STT transcripts (what is being said)
+   - Preview frames (what is being shown)
+   - `<!-- explanation:... -->` context (what the operator told us)
+   - Sound labels (music, speech, silence)
+2. For each `cue[events]:description`, the agent periodically asks the LLM:
+   "Given the current context, has this event occurred: [description]?"
+3. If the LLM responds affirmatively with sufficient confidence, the cue fires.
 
 ### Implementation plan
 
-- [ ] Add `music_start`, `music_stop`, `bpm_range`, `bpm_change` match types to CueEngine
-- [ ] Subscribe CueEngine to `sound_label` and `bpm_update` session events
-- [ ] Parser support for `<!-- cue-music:... -->` and `<!-- cue-bpm:... -->` metacodes
-- [ ] Frontend handling of music-triggered cue events
-- [ ] Tests for music state transitions triggering cues
+- [ ] Parser support for `cue[events]:` metacode
+- [ ] `AgentEngine.evaluateEventCue()` LLM integration
+- [ ] Periodic evaluation loop with configurable interval
+- [ ] Confidence threshold configuration
+- [ ] Frontend handling of AI-triggered cue events
+- [ ] Rate limiting to control LLM API costs
+
+---
+
+## Phase 8 — Multi-Modal Scene Understanding (Planned)
+
+### Motivation
+
+Combine all available signals for comprehensive scene understanding:
+- Audio analysis (music, speech, silence, BPM)
+- Video analysis (preview frames, keyframes)
+- STT transcripts
+- Operator context (`<!-- explanation:... -->`)
+
+### Capabilities
+
+- **Continuous narration**: the agent provides a running description of the scene
+- **Intelligent section detection**: automatically detect section changes based on visual + audio cues
+- **Content moderation**: flag inappropriate content in real-time
+- **Automated graphics**: suggest DSK overlay changes based on content
+
+### Implementation plan
+
+- [ ] Multi-signal aggregation in AgentEngine
+- [ ] Streaming LLM analysis with context window
+- [ ] Scene transition detection algorithm
+- [ ] Integration with DSK graphics system
+- [ ] Content moderation pipeline
 
 ---
 
@@ -250,4 +389,8 @@ session.emitter.on('event', (evt) => {
 | 1 | Basic cue engine: inline metacodes, auto-send, wildcards | ✅ Implemented | — |
 | 2 | Next-cue-only firing with `*`/`**` modifiers | ✅ Implemented | Phase 1 |
 | 3 | Fuzzy / embedding-based matching, AI config page | ✅ Implemented | Phase 2 |
-| 4 | Music detection cue triggers | 📋 Planned | Phase 2, `lcyt-music` |
+| 4 | Sound detection cue triggers (music/silence) | ✅ Implemented | Phase 2, `lcyt-music` |
+| 5 | Semantic embedding cues (`cue[semantic]:`) | ✅ Implemented | Phase 3 |
+| 6 | AI Agent: video/image inference (`lcyt-agent`) | 📋 Scaffolded | AI config |
+| 7 | AI Event cues (`cue[events]:description`) | 📋 Planned | Phase 6, `lcyt-agent` |
+| 8 | Multi-modal scene understanding | 📋 Planned | Phase 6, Phase 7 |

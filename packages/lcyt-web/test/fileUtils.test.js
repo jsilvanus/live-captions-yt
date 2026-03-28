@@ -713,3 +713,89 @@ describe('parseFileContent — fuzzy cue modifier (cue~:)', () => {
     assert.equal(lineCodes[0].cueFuzzy, true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// cue[semantic]: parsing
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — cue[semantic]:', () => {
+  it('parses cue[semantic]:phrase into lineCodes with cueSemantic true', () => {
+    const raw = '<!-- cue[semantic]:grace of God -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].cue, 'grace of God');
+    assert.equal(lineCodes[0].cueSemantic, true);
+    assert.equal(lineCodes[0].cueMode, 'next');
+  });
+
+  it('cue[semantic] with skip modifier: cue*[semantic]:', () => {
+    const raw = '<!-- cue*[semantic]:deep prayer -->Response text';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cue, 'deep prayer');
+    assert.equal(lineCodes[0].cueSemantic, true);
+    assert.equal(lineCodes[0].cueMode, 'skip');
+  });
+
+  it('cue[semantic] with any modifier: cue**[semantic]:', () => {
+    const raw = '<!-- cue**[semantic]:closing -->Goodbye';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cue, 'closing');
+    assert.equal(lineCodes[0].cueSemantic, true);
+    assert.equal(lineCodes[0].cueMode, 'any');
+  });
+
+  it('cueSemantic is false for non-semantic cues', () => {
+    const raw = '<!-- cue:Amen -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueSemantic, false);
+  });
+
+  it('standalone cue[semantic] creates metadata-only line', () => {
+    const raw = '<!-- cue[semantic]:deep meaning -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cue, 'deep meaning');
+    assert.equal(lineCodes[0].cueSemantic, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// explanation metacode parsing
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — explanation metacode', () => {
+  it('parses explanation metacode into persistent code', () => {
+    const raw = '<!-- explanation: The speaker is praying -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].explanation, 'The speaker is praying');
+  });
+
+  it('explanation persists across lines (persistent code)', () => {
+    const raw = '<!-- explanation: Opening prayer -->\nFirst line\nSecond line';
+    const { lines, lineCodes } = parseFileContent(raw);
+    // Line 0 is the explanation-only line (metadata)
+    assert.equal(lineCodes[0].explanation, 'Opening prayer');
+    // Subsequent lines inherit the persistent code
+    assert.equal(lineCodes[1].explanation, 'Opening prayer');
+    assert.equal(lineCodes[2].explanation, 'Opening prayer');
+  });
+
+  it('explanation can be cleared with empty value', () => {
+    const raw = '<!-- explanation: Context -->\nLine 1\n<!-- explanation: -->\nLine 2';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].explanation, 'Context');
+    assert.equal(lineCodes[1].explanation, 'Context');
+    // After clearing
+    assert.ok(!lineCodes[2].explanation || lineCodes[2].explanation === undefined);
+    assert.ok(!lineCodes[3].explanation || lineCodes[3].explanation === undefined);
+  });
+
+  it('explanation works alongside other metacodes', () => {
+    const raw = '<!-- section: Prayer --><!-- explanation: Opening prayer -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].section, 'Prayer');
+    assert.equal(lineCodes[0].explanation, 'Opening prayer');
+  });
+});
