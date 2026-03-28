@@ -43,6 +43,7 @@ Following the recent refactor, metacode responsibilities are split as follows:
 - Planner serializer: `packages/lcyt-web/src/lib/metacode-planner.js`
 - Backend handoff / server-side helpers: `packages/lcyt-backend/src/metacode.js`
 - DSK graphics processing: `packages/plugins/lcyt-dsk/src/caption-processor.js`
+- Cue engine processing: `packages/plugins/lcyt-cues/src/cue-processor.js`
 
 Compatibility re-exports for older imports remain in `packages/lcyt-web/src/lib/fileUtils.js`,
 `activeCodes.js`, and `plannerUtils.js` so existing code paths continue to work.
@@ -179,16 +180,16 @@ Toggles the browser microphone / speech-to-text capture.
 
 ### `timer`
 
-After the pointer rests on this line for *N* seconds, the file automatically advances to the
-next line. Useful for teleprompter-style pacing.
+Fires the current line's content after *N* seconds, then advances the pointer to the next
+line. The timer is an inline marker that coexists with content on the same line.
 
 ```
-<!-- timer: 5 -->
+<!-- timer: 5 -->Let us pray
 <!-- timer: 0.5 -->
 ```
 
 - Values: positive number (seconds, fractions allowed)
-- Effect: schedules a deferred advancement; handled by runtime scheduling code
+- Effect: sends the line's content after the delay, then moves the pointer forward
 - Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime scheduling in
   `packages/lcyt-web/src/lib/metacode-runtime.js`.
 
@@ -237,6 +238,63 @@ token is added automatically as an `Authorization` header.
 - Effect: fetches text, loads file into file store, and sets it active (stops drain)
 - Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; fetch + execution
   in runtime helpers and UI code.
+
+### `cue`
+
+Inline cue trigger marker. Registers a phrase at this line position. When the phrase is
+recognised in an outgoing caption (typed or STT), the file pointer jumps to this line and
+its content is auto-sent. The cue metacode is stripped from the sent text.
+
+```
+<!-- cue:Amen -->Let us pray
+<!-- cue:Let us * -->Response text     ← wildcard matching
+```
+
+Modifier asterisks control firing eligibility relative to the current pointer:
+
+| Syntax | Mode | Fires when |
+|---|---|---|
+| `<!-- cue:phrase -->` | **next** | Only if this is the very next cue after the pointer |
+| `<!-- cue*:phrase -->` | **skip** | Can skip forward past other cues |
+| `<!-- cue**:phrase -->` | **any** | Can fire from any position, including backwards |
+
+The tilde modifier enables Jaro-Winkler fuzzy matching (catches STT spelling variations):
+
+```
+<!-- cue~:we beseech thee -->Lord hear us       ← fuzzy next
+<!-- cue*~:amen -->Let us close                  ← fuzzy + skip
+```
+
+Bracket modifiers enable backend-only AI matching (these are skipped by the frontend —
+they fire only via backend `cue_fired` SSE events):
+
+```
+<!-- cue[semantic]:prayer for healing -->Response   ← embedding similarity
+<!-- cue[events]:the speaker stands up -->Next      ← LLM event evaluation
+```
+
+- Values: phrase to match (supports `*` wildcard glob)
+- Type: Inline marker (coexists with content and other metacodes on the same line)
+- Effect: registers a cue trigger; on match → pointer jumps, content auto-sends
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; matching in
+  `packages/lcyt-web/src/lib/metacode-runtime.js` (`buildCueMap`, `checkCueMatch`);
+  auto-send in `packages/lcyt-web/src/components/InputBar.jsx`; backend cue engine in
+  `packages/plugins/lcyt-cues/src/cue-engine.js`.
+
+### `explanation`
+
+Provides human-authored context to help an AI agent understand what is happening. Stored
+as a persistent lineCode and fed into the agent's context window alongside STT transcripts.
+
+```
+<!-- explanation: The pastor is beginning the offertory prayer -->
+```
+
+- Values: any descriptive text
+- Type: Persistent (remains active until overridden)
+- Effect: stored in lineCodes, available to AI context window (`lcyt-agent`)
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js` as a generic
+  persistent metacode (no special-case handling needed).
 
 ---
 
@@ -309,11 +367,18 @@ metacode uses these raw line numbers.
 | `section: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → `packages/plugins/lcyt-dsk/src/caption-processor.js` |
 | `speaker: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → `packages/lcyt-web/src/lib/metacode-runtime.js` |
 | `lyrics: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → planner `packages/lcyt-web/src/lib/metacode-planner.js` |
+| `explanation: <text>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → AI context window (`packages/plugins/lcyt-agent`) |
 | `audio: start\|stop` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
 | `timer: <seconds>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
 | `goto: <line>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
 | `file: <name>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime helpers |
 | `file[server]: <path>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime helpers (fetch + fileStore) |
+| `cue: <phrase>` | Inline | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` → `InputBar.jsx` |
+| `cue*: <phrase>` | Inline | Same as `cue:` with skip-forward mode |
+| `cue**: <phrase>` | Inline | Same as `cue:` with any-position mode |
+| `cue~: <phrase>` | Inline | Same as `cue:` with Jaro-Winkler fuzzy matching |
+| `cue[semantic]: <phrase>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` (embedding similarity) |
+| `cue[events]: <desc>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` → `packages/plugins/lcyt-agent` (LLM evaluation) |
 | `stanza` block | Block | `packages/lcyt-web/src/lib/metacode-parser.js` (compatibility re-exports in `fileUtils.js`) |
 | `graphics: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
 | `graphics[vp]: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |

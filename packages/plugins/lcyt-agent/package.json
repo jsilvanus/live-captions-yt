@@ -1,0 +1,23 @@
+{
+  "name": "lcyt-agent",
+  "version": "0.1.0",
+  "description": "AI Agent plugin for LCYT — video/image inference, context-aware event cues, and LLM-driven scene description",
+  "type": "module",
+  "main": "src/api.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-agent"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "name": "lcyt-cues",
+  "version": "0.1.0",
+  "description": "Cue Engine plugin for LCYT — phrase/pattern triggers that fire events and write rundown metacodes",
+  "type": "module",
+  "main": "src/api.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-cues"
+  }
+}
