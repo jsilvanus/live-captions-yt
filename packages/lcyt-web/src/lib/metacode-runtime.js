@@ -156,14 +156,15 @@ export function fuzzyWordMatch(pattern, text) {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a Map of lowercase cue phrase → { index, mode, fuzzy, semantic } from a parsed file.
+ * Build a Map of lowercase cue phrase → { index, mode, fuzzy, semantic, events } from a parsed file.
  * Each `<!-- cue:phrase -->` entry creates one mapping.
  * Mode is 'next' (default), 'skip' (cue*:), or 'any' (cue**:).
  * Fuzzy is true when the cue uses `cue~:` modifier.
  * Semantic is true when the cue uses `cue[semantic]:` modifier.
+ * Events is true when the cue uses `cue[events]:` modifier.
  *
  * @param {{ lineCodes: object[] }} file
- * @returns {Map<string, { index: number, mode: string, fuzzy: boolean, semantic: boolean }>}
+ * @returns {Map<string, { index: number, mode: string, fuzzy: boolean, semantic: boolean, events: boolean }>}
  */
 export function buildCueMap(file) {
   const map = new Map();
@@ -171,7 +172,7 @@ export function buildCueMap(file) {
   for (let i = 0; i < file.lineCodes.length; i++) {
     const lc = file.lineCodes[i];
     if (lc.cue) {
-      map.set(lc.cue.toLowerCase(), { index: i, mode: lc.cueMode || 'next', fuzzy: !!lc.cueFuzzy, semantic: !!lc.cueSemantic });
+      map.set(lc.cue.toLowerCase(), { index: i, mode: lc.cueMode || 'next', fuzzy: !!lc.cueFuzzy, semantic: !!lc.cueSemantic, events: !!lc.cueEvents });
     }
   }
   return map;
@@ -194,12 +195,16 @@ export function buildCueMap(file) {
  * via embedding APIs. Frontend `checkCueMatch` skips them — they fire only via
  * backend `cue_fired` SSE events.
  *
+ * Event matching (`cue[events]:description`): these cues are matched server-side
+ * by the AI agent using LLM context evaluation. Frontend `checkCueMatch` skips
+ * them — they fire only via backend `cue_fired` SSE events.
+ *
  * Cue mode determines eligibility relative to the pointer:
  *   - 'next': only fires if this cue is the NEXT cue after the pointer
  *   - 'skip': fires if this cue is anywhere ahead of the pointer
  *   - 'any':  fires regardless of pointer position (can go backwards)
  *
- * @param {Map<string, { index: number, mode: string, fuzzy?: boolean, semantic?: boolean }>} cueMap — from buildCueMap()
+ * @param {Map<string, { index: number, mode: string, fuzzy?: boolean, semantic?: boolean, events?: boolean }>} cueMap — from buildCueMap()
  * @param {string} text — caption text to test
  * @param {number} [pointer=-1] — current file pointer position (-1 = legacy/no filtering)
  * @param {{ fuzzyThreshold?: number }} [opts] — optional config
@@ -239,6 +244,9 @@ export function checkCueMatch(cueMap, text, pointer, opts) {
     let matches = false;
     if (entry.semantic) {
       // Semantic cues are matched server-side via embedding API — skip in frontend
+      continue;
+    } else if (entry.events) {
+      // Event cues are matched server-side by the AI agent — skip in frontend
       continue;
     } else if (phrase.includes('*')) {
       // Glob pattern: escape regex chars, convert * to .*

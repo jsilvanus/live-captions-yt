@@ -93,12 +93,69 @@ describe('AgentEngine', () => {
     assert.equal(result.confidence, 0);
   });
 
-  test('evaluateEventCue returns stub result', async () => {
+  test('evaluateEventCue returns not-configured when no AI config', async () => {
     const db = createDb();
     const agent = new AgentEngine(db);
     const result = await agent.evaluateEventCue('key1', 'speaker stands up');
     assert.equal(result.matched, false);
     assert.equal(result.confidence, 0);
+    assert.ok(result.reasoning.includes('not configured'));
+  });
+
+  test('evaluateEventCue returns not-configured when provider is none', async () => {
+    const db = createDb();
+    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    const agent = new AgentEngine(db);
+    const result = await agent.evaluateEventCue('key1', 'speaker stands up');
+    assert.equal(result.matched, false);
+    assert.ok(result.reasoning.includes('not configured'));
+  });
+
+  test('evaluateEventCue returns no context when context window is empty', async () => {
+    const db = createDb();
+    setAiConfig(db, 'key1', {
+      embeddingProvider: 'openai',
+      embeddingApiKey: 'sk-test',
+    });
+    const agent = new AgentEngine(db);
+    const result = await agent.evaluateEventCue('key1', 'speaker stands up');
+    assert.equal(result.matched, false);
+    assert.ok(result.reasoning.includes('No context'));
+  });
+
+  test('_resolveApiSettings uses env vars for server provider', () => {
+    const db = createDb();
+    const agent = new AgentEngine(db);
+    const origUrl = process.env.EMBEDDING_API_URL;
+    const origKey = process.env.EMBEDDING_API_KEY;
+    const origModel = process.env.EMBEDDING_MODEL;
+    try {
+      process.env.EMBEDDING_API_URL = 'https://my-server.com';
+      process.env.EMBEDDING_API_KEY = 'server-key';
+      process.env.EMBEDDING_MODEL = 'gpt-4o';
+      const settings = agent._resolveApiSettings({ embeddingProvider: 'server' });
+      assert.equal(settings.apiUrl, 'https://my-server.com');
+      assert.equal(settings.apiKey, 'server-key');
+      assert.equal(settings.model, 'gpt-4o');
+    } finally {
+      if (origUrl !== undefined) process.env.EMBEDDING_API_URL = origUrl; else delete process.env.EMBEDDING_API_URL;
+      if (origKey !== undefined) process.env.EMBEDDING_API_KEY = origKey; else delete process.env.EMBEDDING_API_KEY;
+      if (origModel !== undefined) process.env.EMBEDDING_MODEL = origModel; else delete process.env.EMBEDDING_MODEL;
+    }
+  });
+
+  test('_resolveApiSettings uses user config for custom provider', () => {
+    const db = createDb();
+    const agent = new AgentEngine(db);
+    const settings = agent._resolveApiSettings({
+      embeddingProvider: 'custom',
+      embeddingApiUrl: 'https://custom.ai',
+      embeddingApiKey: 'user-key',
+      embeddingModel: 'custom-model',
+    });
+    assert.equal(settings.apiUrl, 'https://custom.ai');
+    assert.equal(settings.apiKey, 'user-key');
+    assert.equal(settings.model, 'custom-model');
   });
 
   test('getAiConfig returns null when no config exists', async () => {

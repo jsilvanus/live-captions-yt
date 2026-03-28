@@ -42,6 +42,30 @@ const CUE_RE = /<!--\s*cue\s*:\s*([^>]+?)\s*-->/gi;
 /** Sentinel rule ID for explicit (metacode-triggered) cue events. */
 const EXPLICIT_CUE_RULE_ID = '__explicit__';
 
+/** Emit cue_fired SSE events for fired rules. */
+function _emitCueResults(store, apiKey, fired) {
+  if (!fired || fired.length === 0) return;
+  const session = store?.getByApiKey?.(apiKey);
+  if (!session?.emitter) return;
+  const ts = Date.now();
+  for (const { rule, matched } of fired) {
+    let action = {};
+    try { action = JSON.parse(rule.action); } catch { /* ignore */ }
+    session.emitter.emit('event', {
+      type: 'cue_fired',
+      data: {
+        label: rule.name,
+        source: 'event_cue',
+        ruleId: rule.id,
+        matchType: rule.match_type,
+        matched,
+        action,
+        ts,
+      },
+    });
+  }
+}
+
 /**
  * @param {{ store: object|null, db: import('better-sqlite3').Database, engine: import('./cue-engine.js').CueEngine }} opts
  * @returns {(apiKey: string, text: string, codes?: object) => string}
@@ -118,6 +142,14 @@ export function createCueProcessor({ store, db, engine }) {
           });
         }
       }
+
+      // Evaluate event cue rules asynchronously via the AI agent.
+      // This runs in the background — results arrive via SSE callback.
+      engine.evaluateEventCues(apiKey, cleanText, (eventFired) => {
+        _emitCueResults(store, apiKey, eventFired);
+      }).catch(err => {
+        console.warn('[cues] Event cue evaluation error:', err?.message);
+      });
     }
 
     return cleanText;

@@ -180,6 +180,8 @@ const { agent: _agent } = await initAgent(db);
 // fuzzy semantic matching via cue[semantic]:phrase metacodes.
 _cueEngine.setEmbeddingFn(computeEmbeddings);
 _cueEngine.setAiConfigFn((apiKey) => _agent.getAiConfig(apiKey));
+// Wire the agent's event cue evaluation for cue[events]:description metacodes.
+_cueEngine.setAgentEvaluateFn((apiKey, desc, opts) => _agent.evaluateEventCue(apiKey, desc, opts));
 if (_agent.isServerEmbeddingAvailable()) {
   console.info('✓ Server-level embedding API configured (via lcyt-agent)');
 }

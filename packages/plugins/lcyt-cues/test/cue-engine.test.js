@@ -390,4 +390,90 @@ describe('cue DB helpers', () => {
     const rules = listCueRules(db, 'key1');
     assert.deepEqual(rules, []);
   });
+
+  test('evaluateEventCues does nothing without agentEvaluateFn', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    insertCueRule(db, 'key1', {
+      name: 'event1',
+      match_type: 'event_cue',
+      pattern: 'speaker stands up',
+      action: '{}',
+      cooldown_ms: 0,
+    });
+    const results = [];
+    await engine.evaluateEventCues('key1', 'text', (fired) => results.push(...fired));
+    assert.equal(results.length, 0);
+  });
+
+  test('evaluateEventCues calls agent for event_cue rules', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    insertCueRule(db, 'key1', {
+      name: 'stand-up',
+      match_type: 'event_cue',
+      pattern: 'speaker stands up',
+      action: '{"type":"event"}',
+      cooldown_ms: 0,
+    });
+    engine.setAgentEvaluateFn(async (apiKey, desc) => {
+      return { matched: true, confidence: 0.9, reasoning: 'detected' };
+    });
+    const results = [];
+    await engine.evaluateEventCues('key1', 'text', (fired) => results.push(...fired));
+    assert.equal(results.length, 1);
+    assert.ok(results[0].matched.includes('speaker stands up'));
+  });
+
+  test('evaluateEventCues respects cooldown', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    insertCueRule(db, 'key1', {
+      name: 'event2',
+      match_type: 'event_cue',
+      pattern: 'slides change',
+      action: '{}',
+      cooldown_ms: 60000,
+    });
+    engine.setAgentEvaluateFn(async () => ({ matched: true, confidence: 0.9, reasoning: 'ok' }));
+    const r1 = [];
+    await engine.evaluateEventCues('key1', 'text', (fired) => r1.push(...fired));
+    assert.equal(r1.length, 1);
+    // Second call within cooldown should not fire
+    const r2 = [];
+    await engine.evaluateEventCues('key1', 'text', (fired) => r2.push(...fired));
+    assert.equal(r2.length, 0);
+  });
+
+  test('evaluateEventCues skips non-event_cue rules', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    insertCueRule(db, 'key1', {
+      name: 'phrase-rule',
+      match_type: 'phrase',
+      pattern: 'amen',
+      action: '{}',
+      cooldown_ms: 0,
+    });
+    let called = false;
+    engine.setAgentEvaluateFn(async () => { called = true; return { matched: true, confidence: 0.9, reasoning: 'ok' }; });
+    await engine.evaluateEventCues('key1', 'amen', () => {});
+    assert.equal(called, false);
+  });
+
+  test('evaluateEventCues handles agent returning not matched', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    insertCueRule(db, 'key1', {
+      name: 'event3',
+      match_type: 'event_cue',
+      pattern: 'applause',
+      action: '{}',
+      cooldown_ms: 0,
+    });
+    engine.setAgentEvaluateFn(async () => ({ matched: false, confidence: 0.2, reasoning: 'not detected' }));
+    const r = [];
+    await engine.evaluateEventCues('key1', 'text', (fired) => r.push(...fired));
+    assert.equal(r.length, 0);
+  });
 });

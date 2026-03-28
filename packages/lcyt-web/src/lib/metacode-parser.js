@@ -21,8 +21,8 @@ const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 // separately from other metacode key-value pairs.
 // Supports optional modifier asterisks: cue: (next), cue*: (skip), cue**: (any)
 // Supports optional tilde for fuzzy matching: cue~: (fuzzy), cue*~: (skip+fuzzy)
-// Supports bracket modifier: cue[semantic]: (embedding-based semantic matching)
-const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)(\[semantic\])?\s*:\s*([\s\S]*?)\s*-->/gi;
+// Supports bracket modifier: cue[semantic]: (embedding-based), cue[events]: (AI event)
+const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)(\[(?:semantic|events)\])?\s*:\s*([\s\S]*?)\s*-->/gi;
 
 /**
  * Strip ALL HTML comment metacodes from a raw line and return the remaining
@@ -56,13 +56,15 @@ export function parseFileContent(rawText) {
     let cueMode = null;
     let cueFuzzy = false;
     let cueSemantic = false;
+    let cueEvents = false;
     const afterCueStrip = raw.replace(CUE_META_RE, (_, stars, tilde, bracket, val) => {
       const trimmed = val.trim();
       if (trimmed && !cuePhrase) {
         cuePhrase = trimmed;
         cueMode = stars === '**' ? 'any' : stars === '*' ? 'skip' : 'next';
         cueFuzzy = tilde === '~';
-        cueSemantic = !!bracket;
+        cueSemantic = bracket === '[semantic]';
+        cueEvents = bracket === '[events]';
       }
       return '';
     }).trim();
@@ -89,7 +91,7 @@ export function parseFileContent(rawText) {
     if (emptySendMatch) {
       const label = emptySendMatch[1]?.trim() || null;
       const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
-      if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; }
+      if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; }
       lines.push('');
       lineCodes.push(codes);
       lineNumbers.push(i + 1);
@@ -142,7 +144,7 @@ export function parseFileContent(rawText) {
     if (gotoAction !== null) codes.goto = gotoAction;
     if (fileSwitchAction !== null) codes.fileSwitch = fileSwitchAction;
     if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
-    if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; }
+    if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; }
 
     // Did the line contain any metacode markers that were stripped?
     const hadMetacodes = contentText !== lineRaw || cuePhrase != null;

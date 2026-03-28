@@ -32,7 +32,7 @@ function escapeHtml(str) {
 }
 
 // Keys that have dedicated display in buildActionLabel — exclude from generic label
-const ACTION_DISPLAY_KEYS = ['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'emptySend', 'emptySendLabel'];
+const ACTION_DISPLAY_KEYS = ['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'emptySend', 'emptySendLabel'];
 
 /** Build a short indicator label for a metadata-only line. */
 function buildActionLabel(codes) {
@@ -47,7 +47,8 @@ function buildActionLabel(codes) {
     const modSuffix = codes.cueMode === 'any' ? '**' : codes.cueMode === 'skip' ? '*' : '';
     const fuzzyMark = codes.cueFuzzy ? '~' : '';
     const semanticMark = codes.cueSemantic ? '[semantic]' : '';
-    parts.push(`🔔 cue${modSuffix}${fuzzyMark}${semanticMark}:${codes.cue}`);
+    const eventsMark = codes.cueEvents ? '[events]' : '';
+    parts.push(`🔔 cue${modSuffix}${fuzzyMark}${semanticMark}${eventsMark}:${codes.cue}`);
   }
   // Persistent codes (section, speaker, etc.) — show as subtle labels
   for (const [k, v] of Object.entries(codes)) {

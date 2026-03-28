@@ -42,6 +42,7 @@ function makeMockEngine(results = []) {
     evaluate(apiKey, text, codes) {
       return results;
     },
+    async evaluateEventCues() {},
     invalidate() {},
   };
 }
@@ -237,6 +238,7 @@ describe('createCueProcessor', () => {
         receivedCodes = codes;
         return [];
       },
+      async evaluateEventCues() {},
       invalidate() {},
     };
     const proc = createCueProcessor({ store, db, engine });

@@ -153,21 +153,140 @@ export class AgentEngine {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Event Cue Evaluation (Phase 7)
+  // -------------------------------------------------------------------------
+
   /**
    * Evaluate whether an event description matches the current context.
    * Used for `cue[events]:something happens` rules.
    *
+   * Builds a system prompt from the context window (transcripts, explanations,
+   * scene descriptions) and asks the LLM whether the described event has
+   * occurred. Returns confidence and reasoning.
+   *
    * @param {string} apiKey
    * @param {string} eventDescription — what should be detected
    * @param {object} [opts]
+   * @param {number} [opts.confidenceThreshold=0.7] — minimum confidence to consider a match
    * @returns {Promise<{ matched: boolean, confidence: number, reasoning: string }>}
    */
   async evaluateEventCue(apiKey, eventDescription, opts = {}) {
-    // Stub — requires LLM integration (Phase 7)
+    const threshold = opts.confidenceThreshold ?? 0.7;
+
+    // Get AI config for this key
+    const cfg = getAiConfigRaw(this._db, apiKey);
+    if (!cfg || cfg.embeddingProvider === 'none') {
+      return { matched: false, confidence: 0, reasoning: 'AI provider not configured' };
+    }
+
+    // Resolve API settings
+    const apiSettings = this._resolveApiSettings(cfg);
+    if (!apiSettings.apiKey) {
+      return { matched: false, confidence: 0, reasoning: 'No API key available' };
+    }
+
+    // Build context from the context window
+    const context = this.getContext(apiKey);
+    if (context.length === 0) {
+      return { matched: false, confidence: 0, reasoning: 'No context available' };
+    }
+
+    const contextStr = context
+      .map(e => `[${e.type}] ${e.text}`)
+      .join('\n');
+
+    const systemPrompt =
+      'You are an event detection assistant for a live captioning system. ' +
+      'You will be given a context window of recent transcripts, scene descriptions, and explanations. ' +
+      'You must determine whether a specific event has occurred based on the context. ' +
+      'Respond with a JSON object containing: ' +
+      '{"matched": true/false, "confidence": 0.0-1.0, "reasoning": "brief explanation"}. ' +
+      'Only respond with the JSON object, nothing else.';
+
+    const userPrompt =
+      `Context:\n${contextStr}\n\n` +
+      `Event to detect: "${eventDescription}"\n\n` +
+      'Has this event occurred based on the context above?';
+
+    try {
+      const result = await this._callChatCompletion(apiSettings, systemPrompt, userPrompt);
+
+      // Parse LLM response
+      let parsed;
+      try {
+        // Extract JSON from the response (handle markdown code blocks)
+        const jsonStr = result.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        return { matched: false, confidence: 0, reasoning: `Failed to parse LLM response: ${result.slice(0, 100)}` };
+      }
+
+      const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+      const reasoning = typeof parsed.reasoning === 'string' ? parsed.reasoning : '';
+      const matched = parsed.matched === true && confidence >= threshold;
+
+      return { matched, confidence, reasoning };
+    } catch (err) {
+      return { matched: false, confidence: 0, reasoning: `LLM error: ${err.message}` };
+    }
+  }
+
+  /**
+   * Resolve API settings from an AI config object.
+   * @param {object} cfg — raw AI config from DB
+   * @returns {{ apiUrl: string, apiKey: string, model: string }}
+   */
+  _resolveApiSettings(cfg) {
+    if (cfg.embeddingProvider === 'server') {
+      return {
+        apiUrl: process.env.EMBEDDING_API_URL || 'https://api.openai.com',
+        apiKey: process.env.EMBEDDING_API_KEY || '',
+        model: process.env.EMBEDDING_MODEL || 'gpt-4o-mini',
+      };
+    }
     return {
-      matched: false,
-      confidence: 0,
-      reasoning: 'LLM integration not yet configured',
+      apiUrl: cfg.embeddingApiUrl || 'https://api.openai.com',
+      apiKey: cfg.embeddingApiKey || '',
+      model: cfg.embeddingModel || 'gpt-4o-mini',
     };
+  }
+
+  /**
+   * Call an OpenAI-compatible chat completion endpoint.
+   * @param {{ apiUrl: string, apiKey: string, model: string }} settings
+   * @param {string} systemPrompt
+   * @param {string} userPrompt
+   * @returns {Promise<string>} — the assistant's message content
+   */
+  async _callChatCompletion(settings, systemPrompt, userPrompt) {
+    const url = `${settings.apiUrl.replace(/\/$/, '')}/v1/chat/completions`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.apiKey}`,
+    };
+
+    const body = JSON.stringify({
+      model: settings.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 200,
+    });
+
+    const res = await fetch(url, { method: 'POST', headers, body });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Chat API error ${res.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    const message = data?.choices?.[0]?.message?.content;
+    if (typeof message !== 'string') {
+      throw new Error('Unexpected chat API response format');
+    }
+    return message;
   }
 }

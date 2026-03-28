@@ -150,6 +150,13 @@ export class CueEngine {
     this._aiConfigFn = null;
 
     /**
+     * Optional function to evaluate event cues via the AI agent.
+     * Set via setAgentEvaluateFn().
+     * @type {((apiKey: string, description: string, opts?: object) => Promise<{ matched: boolean, confidence: number, reasoning: string }>)|null}
+     */
+    this._agentEvaluateFn = null;
+
+    /**
      * Cached cue phrase embeddings. Map<apiKey, Map<ruleId, number[]>>
      * Invalidated on CRUD via invalidate().
      */
@@ -179,6 +186,12 @@ export class CueEngine {
    * @param {(apiKey: string) => object|null} fn
    */
   setAiConfigFn(fn) { this._aiConfigFn = fn; }
+
+  /**
+   * Set the agent event cue evaluation function.
+   * @param {(apiKey: string, description: string, opts?: object) => Promise<{ matched: boolean, confidence: number, reasoning: string }>} fn
+   */
+  setAgentEvaluateFn(fn) { this._agentEvaluateFn = fn; }
 
   /**
    * Load (and cache) enabled rules for an API key.
@@ -277,6 +290,65 @@ export class CueEngine {
     }
 
     return fired;
+  }
+
+  /**
+   * Evaluate event cue rules asynchronously via the AI agent.
+   *
+   * Event cue rules have match_type 'event_cue'. They describe an event
+   * condition in their pattern field and delegate to the AI agent to determine
+   * whether the event has occurred based on the current context window.
+   *
+   * @param {string} apiKey
+   * @param {string} text — the caption text that triggered evaluation
+   * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for matches
+   * @returns {Promise<void>}
+   */
+  async evaluateEventCues(apiKey, text, onFired) {
+    if (!this._agentEvaluateFn) return;
+    const rules = this._loadRules(apiKey);
+    const now = Date.now();
+
+    for (const rule of rules) {
+      if (rule.match_type !== 'event_cue') continue;
+
+      // Cooldown check
+      if (rule.cooldown_ms > 0) {
+        const last = this._lastFired.get(rule.id);
+        if (last && (now - last) < rule.cooldown_ms) continue;
+      }
+
+      try {
+        const result = await this._agentEvaluateFn(apiKey, rule.pattern, {
+          confidenceThreshold: rule.fuzzy_threshold ?? 0.7,
+        });
+
+        if (result.matched) {
+          this._lastFired.set(rule.id, Date.now());
+          const matched = `event_cue:${rule.pattern} (${result.confidence.toFixed(2)})`;
+
+          // Persist the cue event
+          try {
+            let action = {};
+            try { action = JSON.parse(rule.action); } catch {
+              console.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+            }
+            insertCueEvent(this._db, apiKey, {
+              rule_id: rule.id,
+              rule_name: rule.name,
+              matched,
+              action,
+            });
+          } catch (err) {
+            console.warn('[cues] Failed to insert cue_event:', err?.message);
+          }
+
+          onFired?.([{ rule, matched }]);
+        }
+      } catch (err) {
+        console.warn(`[cues] Event cue evaluation error for rule ${rule.id}:`, err?.message);
+      }
+    }
   }
 
   /**

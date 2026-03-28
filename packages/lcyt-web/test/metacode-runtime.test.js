@@ -150,8 +150,8 @@ describe('buildCueMap()', () => {
     );
     const map = buildCueMap(file);
     assert.equal(map.size, 2);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false, semantic: false });
-    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false, semantic: false });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false, semantic: false, events: false });
+    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false, semantic: false, events: false });
   });
 
   it('stores phrases in lowercase', () => {
@@ -449,7 +449,7 @@ describe('checkCueMatch() — fuzzy cues', () => {
       [1, 2]
     );
     const map = buildCueMap(file);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true, semantic: false });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true, semantic: false, events: false });
   });
 });
 
@@ -460,7 +460,7 @@ describe('checkCueMatch() — fuzzy cues', () => {
 describe('checkCueMatch() — semantic cues', () => {
   it('semantic cues are skipped by frontend checkCueMatch', () => {
     const map = new Map([
-      ['grace of god', { index: 3, mode: 'any', fuzzy: false, semantic: true }],
+      ['grace of god', { index: 3, mode: 'any', fuzzy: false, semantic: true, events: false }],
     ]);
     // Semantic cues fire only via backend SSE — frontend skips them
     const r = checkCueMatch(map, 'grace of god', -1);
@@ -469,8 +469,8 @@ describe('checkCueMatch() — semantic cues', () => {
 
   it('non-semantic cues still match normally alongside semantic ones', () => {
     const map = new Map([
-      ['grace of god', { index: 3, mode: 'any', fuzzy: false, semantic: true }],
-      ['amen', { index: 5, mode: 'any', fuzzy: false, semantic: false }],
+      ['grace of god', { index: 3, mode: 'any', fuzzy: false, semantic: true, events: false }],
+      ['amen', { index: 5, mode: 'any', fuzzy: false, semantic: false, events: false }],
     ]);
     const r = checkCueMatch(map, 'amen', -1);
     assert.ok(r);
@@ -497,5 +497,53 @@ describe('checkCueMatch() — semantic cues', () => {
     );
     const map = buildCueMap(file);
     assert.equal(map.get('amen').semantic, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkCueMatch — event cues
+// ---------------------------------------------------------------------------
+
+describe('checkCueMatch() — event cues', () => {
+  it('event cues are skipped by frontend checkCueMatch', () => {
+    const map = new Map([
+      ['speaker stands up', { index: 3, mode: 'any', fuzzy: false, semantic: false, events: true }],
+    ]);
+    // Event cues fire only via backend agent — frontend skips them
+    const r = checkCueMatch(map, 'speaker stands up', -1);
+    assert.equal(r, null);
+  });
+
+  it('non-event cues still match normally alongside event ones', () => {
+    const map = new Map([
+      ['speaker stands up', { index: 3, mode: 'any', fuzzy: false, semantic: false, events: true }],
+      ['amen', { index: 5, mode: 'any', fuzzy: false, semantic: false, events: false }],
+    ]);
+    const r = checkCueMatch(map, 'amen', -1);
+    assert.ok(r);
+    assert.equal(r.index, 5);
+  });
+
+  it('buildCueMap includes events flag from lineCodes', () => {
+    const file = makeFile(
+      ['Next section', 'Line 2'],
+      [{ cue: 'speaker stands up', cueMode: 'next', cueEvents: true }, {}],
+      [1, 2]
+    );
+    const map = buildCueMap(file);
+    const entry = map.get('speaker stands up');
+    assert.ok(entry);
+    assert.equal(entry.events, true);
+    assert.equal(entry.semantic, false);
+  });
+
+  it('buildCueMap defaults events to false', () => {
+    const file = makeFile(
+      ['Line 1'],
+      [{ cue: 'amen', cueMode: 'next' }],
+      [1]
+    );
+    const map = buildCueMap(file);
+    assert.equal(map.get('amen').events, false);
   });
 });

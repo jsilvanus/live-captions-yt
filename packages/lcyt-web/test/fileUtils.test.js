@@ -799,3 +799,60 @@ describe('parseFileContent() — explanation metacode', () => {
     assert.equal(lineCodes[0].explanation, 'Opening prayer');
   });
 });
+
+// ---------------------------------------------------------------------------
+// cue[events]: parsing
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — cue[events]:', () => {
+  it('parses cue[events]:description into lineCodes with cueEvents true', () => {
+    const raw = '<!-- cue[events]:the speaker stands up -->Next section';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Next section');
+    assert.equal(lineCodes[0].cue, 'the speaker stands up');
+    assert.equal(lineCodes[0].cueMode, 'next');
+    assert.equal(lineCodes[0].cueEvents, true);
+    assert.equal(lineCodes[0].cueSemantic, false);
+  });
+
+  it('cue[events] with skip modifier: cue*[events]:', () => {
+    const raw = '<!-- cue*[events]:slides change -->New topic';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'New topic');
+    assert.equal(lineCodes[0].cue, 'slides change');
+    assert.equal(lineCodes[0].cueMode, 'skip');
+    assert.equal(lineCodes[0].cueEvents, true);
+  });
+
+  it('cue[events] with any modifier: cue**[events]:', () => {
+    const raw = '<!-- cue**[events]:applause begins -->Thank you';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Thank you');
+    assert.equal(lineCodes[0].cue, 'applause begins');
+    assert.equal(lineCodes[0].cueMode, 'any');
+    assert.equal(lineCodes[0].cueEvents, true);
+  });
+
+  it('cueEvents is false for non-event cues', () => {
+    const raw = '<!-- cue:Amen -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueEvents, false);
+  });
+
+  it('standalone cue[events] creates metadata-only line', () => {
+    const raw = '<!-- cue[events]:congregation starts singing -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cue, 'congregation starts singing');
+    assert.equal(lineCodes[0].cueEvents, true);
+  });
+
+  it('cue[events] coexists with other metacodes on same line', () => {
+    const raw = '<!-- section: Worship --><!-- cue[events]:music starts -->Switch to lyrics';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Switch to lyrics');
+    assert.equal(lineCodes[0].section, 'Worship');
+    assert.equal(lineCodes[0].cue, 'music starts');
+    assert.equal(lineCodes[0].cueEvents, true);
+  });
+});

@@ -2,13 +2,15 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, and AI agent for video inference. Phases 1-5 implemented; Phase 6 in progress (lcyt-agent owns AI config + embeddings); Phases 7-8 planned."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; Phase 8 planned."
+related: plan/agent
 ---
 
 # Cue Engine Enhanced Capabilities
 
 **Status:** In progress
 **Scope:** `packages/plugins/lcyt-cues`, `packages/plugins/lcyt-agent`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
+**Related plans:** [AI Agent Plan](plan_agent.md) (lcyt-agent owns AI config, embeddings, LLM calls, and future features including SVG graphics AI and rundown generation)
 
 ---
 
@@ -349,7 +351,7 @@ The `explanation` text is stored as a persistent lineCodes entry and fed into th
 
 ---
 
-## Phase 7 — AI Event Cues: `cue[events]:` (Planned)
+## Phase 7 — AI Event Cues: `cue[events]:` (Implemented)
 
 ### Motivation
 
@@ -361,29 +363,41 @@ Instead of matching specific phrases, event cues describe what should happen:
 
 ```
 <!-- cue[events]:the speaker stands up -->Next section
-<!-- cue[events]:slides change to a new topic -->New topic
-<!-- cue[events]:congregation begins singing -->Switch to lyrics
+<!-- cue*[events]:slides change to a new topic -->New topic
+<!-- cue**[events]:congregation begins singing -->Switch to lyrics
 ```
 
 ### How it works
 
 1. The agent continuously monitors:
    - STT transcripts (what is being said)
-   - Preview frames (what is being shown)
+   - Preview frames (what is being shown — Phase 6+)
    - `<!-- explanation:... -->` context (what the operator told us)
    - Sound labels (music, speech, silence)
-2. For each `cue[events]:description`, the agent periodically asks the LLM:
+2. For each `cue[events]:description`, the agent asks the LLM:
    "Given the current context, has this event occurred: [description]?"
 3. If the LLM responds affirmatively with sufficient confidence, the cue fires.
 
-### Implementation plan
+### Implementation
 
-- [ ] Parser support for `cue[events]:` metacode
-- [ ] `AgentEngine.evaluateEventCue()` LLM integration
-- [ ] Periodic evaluation loop with configurable interval
-- [ ] Confidence threshold configuration
-- [ ] Frontend handling of AI-triggered cue events
-- [ ] Rate limiting to control LLM API costs
+- [x] Parser support for `cue[events]:` metacode (alongside `cue[semantic]:`)
+- [x] Frontend `checkCueMatch` skips event cues (they fire only via backend SSE)
+- [x] `buildCueMap` includes `events` flag
+- [x] CaptionView indicator for `cue[events]:` lines (🔔 icon)
+- [x] `AgentEngine.evaluateEventCue()` LLM integration via chat completions API
+- [x] `CueEngine.evaluateEventCues()` async method for `event_cue` match type rules
+- [x] `CueProcessor` triggers async event cue evaluation on every caption
+- [x] `cue_fired` SSE events with `source: 'event_cue'` reach the frontend
+- [x] Confidence threshold configuration (default 0.7)
+- [x] Server.js wiring: agent evaluate fn → CueEngine
+- [x] Tests: parser (6 tests), runtime (4 tests), CueEngine (5 tests), AgentEngine (5 tests)
+
+### Rate limiting and cost control
+
+- Per-rule cooldown (`cooldown_ms`) prevents rapid repeated LLM calls
+- Agent falls back gracefully when no AI config or empty context
+- Low temperature (0.1) and max_tokens (200) limit API costs
+- Only `event_cue` rules trigger LLM calls — other match types are unaffected
 
 ---
 
@@ -424,5 +438,7 @@ Combine all available signals for comprehensive scene understanding:
 | 4 | Sound detection cue triggers (music/silence) | ✅ Implemented | Phase 2, `lcyt-music` |
 | 5 | Semantic embedding cues (`cue[semantic]:`) | ✅ Implemented | Phase 3 |
 | 6 | AI Agent: AI config + embeddings + video/image inference (`lcyt-agent`) | 🔧 In Progress | AI config |
-| 7 | AI Event cues (`cue[events]:description`) | 📋 Planned | Phase 6, `lcyt-agent` |
+| 7 | AI Event cues (`cue[events]:description`) | ✅ Implemented | Phase 6, `lcyt-agent` |
 | 8 | Multi-modal scene understanding | 📋 Planned | Phase 6, Phase 7 |
+
+> **See also:** [AI Agent Plan](plan_agent.md) for additional agent phases including SVG graphics AI (Phase 5) and AI-assisted rundown creation (Phase 6).
