@@ -207,17 +207,7 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       imageMeta: imageMeta,
       ts:        Date.now(),
     });
-
-    if (cleanText) {
-      dskBus.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
-    }
-
-   
-
-    return cleanText;
-  };
-}
- // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
+    // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
     // Relay accepts image assets and is responsible for any conversion (SVGs are allowed).
     if (relayManager && newDefault !== null) {
       // Respect per-image viewport visibility for the landscape/default slot.
@@ -232,3 +222,11 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       }
       relayManager.setDskOverlay(apiKey, newDefault, imagePaths).catch(() => {});
     }
+
+    if (cleanText) {
+      dskBus.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
+    }
+
+    return cleanText;
+  };
+}

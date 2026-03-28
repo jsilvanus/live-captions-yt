@@ -7,78 +7,78 @@
 > node --test test/*.test.js
 
 ▶ BackendCaptionSender constructor
-  ✔ should store all provided options (0.6261ms)
-  ✔ should use default values when optional fields are omitted (0.1376ms)
-  ✔ should default domain to http://localhost in Node (no location) (0.1569ms)
-✔ BackendCaptionSender constructor (1.5196ms)
+  ✔ should store all provided options (0.6448ms)
+  ✔ should use default values when optional fields are omitted (0.1456ms)
+  ✔ should default domain to http://localhost in Node (no location) (0.182ms)
+✔ BackendCaptionSender constructor (1.6153ms)
 ▶ BackendCaptionSender start()
-  ✔ should POST to /live with correct payload and store JWT (1.1803ms)
-  ✔ should not attach Authorization header on start() (auth: false) (0.1638ms)
-  ✔ should throw NetworkError on invalid API key (401) (0.6385ms)
-  ✔ should throw NetworkError on network failure (0.2151ms)
-✔ BackendCaptionSender start() (2.4331ms)
+  ✔ should POST to /live with correct payload and store JWT (0.5479ms)
+  ✔ should not attach Authorization header on start() (auth: false) (0.183ms)
+  ✔ should throw NetworkError on invalid API key (401) (0.7242ms)
+  ✔ should throw NetworkError on network failure (0.2526ms)
+✔ BackendCaptionSender start() (1.9946ms)
 ▶ BackendCaptionSender end()
-  ✔ should DELETE /live and clear token and isStarted (0.2691ms)
-✔ BackendCaptionSender end() (0.4139ms)
+  ✔ should DELETE /live and clear token and isStarted (0.3106ms)
+✔ BackendCaptionSender end() (0.4716ms)
 ▶ BackendCaptionSender send()
-  ✔ should POST to /captions with single caption and return requestId (0.8994ms)
-  ✔ should pass absolute timestamp when provided (0.2364ms)
-  ✔ should pass time field when { time } object provided (0.2288ms)
-  ✔ should include Authorization header (0.1628ms)
-✔ BackendCaptionSender send() (1.681ms)
+  ✔ should POST to /captions with single caption and return requestId (1.0366ms)
+  ✔ should pass absolute timestamp when provided (0.2784ms)
+  ✔ should pass time field when { time } object provided (0.2455ms)
+  ✔ should include Authorization header (0.2043ms)
+✔ BackendCaptionSender send() (1.9342ms)
 ▶ BackendCaptionSender sendBatch()
-  ✔ should POST to /captions with multiple captions (0.2775ms)
-  ✔ should drain local queue when no captions arg provided (0.2016ms)
-  ✔ should not modify queue when captions array provided explicitly (0.1558ms)
-✔ BackendCaptionSender sendBatch() (0.7423ms)
+  ✔ should POST to /captions with multiple captions (0.3345ms)
+  ✔ should drain local queue when no captions arg provided (0.2472ms)
+  ✔ should not modify queue when captions array provided explicitly (0.2073ms)
+✔ BackendCaptionSender sendBatch() (0.9184ms)
 ▶ BackendCaptionSender sync()
-  ✔ should POST to /sync and update syncOffset (0.2168ms)
-  ✔ should throw NetworkError when sync fails (0.1529ms)
-✔ BackendCaptionSender sync() (0.4556ms)
+  ✔ should POST to /sync and update syncOffset (0.219ms)
+  ✔ should throw NetworkError when sync fails (0.1855ms)
+✔ BackendCaptionSender sync() (0.5055ms)
 ▶ BackendCaptionSender heartbeat()
-  ✔ should GET /live and update sequence and syncOffset (0.1506ms)
-✔ BackendCaptionSender heartbeat() (0.2215ms)
+  ✔ should GET /live and update sequence and syncOffset (0.1749ms)
+✔ BackendCaptionSender heartbeat() (0.265ms)
 ▶ BackendCaptionSender local queue
-  ✔ construct() should add item to queue and return length (0.1413ms)
-  ✔ construct() with timestamp stores it correctly (0.0878ms)
-  ✔ construct() without timestamp stores null (0.1179ms)
-  ✔ getQueue() returns empty array initially (0.0744ms)
-  ✔ getQueue() returns a copy (not a reference) (0.0736ms)
-  ✔ clearQueue() clears all items and returns count (0.1171ms)
-✔ BackendCaptionSender local queue (0.7643ms)
+  ✔ construct() should add item to queue and return length (0.186ms)
+  ✔ construct() with timestamp stores it correctly (0.1182ms)
+  ✔ construct() without timestamp stores null (0.0735ms)
+  ✔ getQueue() returns empty array initially (0.0686ms)
+  ✔ getQueue() returns a copy (not a reference) (0.0718ms)
+  ✔ clearQueue() clears all items and returns count (0.1071ms)
+✔ BackendCaptionSender local queue (0.8057ms)
 ▶ BackendCaptionSender getters and setters
-  ✔ getSequence() returns current sequence (0.2358ms)
-  ✔ setSequence() sets sequence and returns this (0.0936ms)
-  ✔ getSyncOffset() returns current syncOffset (0.0845ms)
-  ✔ setSyncOffset() sets syncOffset and returns this (0.0819ms)
-  ✔ getStartedAt() returns startedAt value (0.0775ms)
-✔ BackendCaptionSender getters and setters (0.6986ms)
+  ✔ getSequence() returns current sequence (0.2391ms)
+  ✔ setSequence() sets sequence and returns this (0.0919ms)
+  ✔ getSyncOffset() returns current syncOffset (0.1101ms)
+  ✔ setSyncOffset() sets syncOffset and returns this (0.0869ms)
+  ✔ getStartedAt() returns startedAt value (0.0849ms)
+✔ BackendCaptionSender getters and setters (0.7371ms)
 ▶ BackendCaptionSender _fetch error handling
-  ✔ should use data.error message when backend returns error JSON (0.1723ms)
-  ✔ should fall back to HTTP status message when no error field (0.1423ms)
-✔ BackendCaptionSender _fetch error handling (0.4007ms)
+  ✔ should use data.error message when backend returns error JSON (0.1761ms)
+  ✔ should fall back to HTTP status message when no error field (0.1257ms)
+✔ BackendCaptionSender _fetch error handling (0.382ms)
 ▶ Error Classes
   ▶ LCYTError
-    ✔ should be an instance of Error (0.5884ms)
-    ✔ should have correct name and message (0.1579ms)
-  ✔ LCYTError (1.3521ms)
+    ✔ should be an instance of Error (0.7967ms)
+    ✔ should have correct name and message (0.157ms)
+  ✔ LCYTError (1.6719ms)
   ▶ ConfigError
-    ✔ should be an instance of LCYTError (0.1879ms)
-    ✔ should have correct name (0.1229ms)
-  ✔ ConfigError (0.4797ms)
+    ✔ should be an instance of LCYTError (0.281ms)
+    ✔ should have correct name (0.1215ms)
+  ✔ ConfigError (0.5545ms)
   ▶ NetworkError
-    ✔ should be an instance of LCYTError (0.2111ms)
-    ✔ should have correct name (0.1234ms)
-    ✔ should store statusCode (0.1335ms)
-    ✔ should default statusCode to null (0.1427ms)
-  ✔ NetworkError (0.856ms)
+    ✔ should be an instance of LCYTError (0.217ms)
+    ✔ should have correct name (0.1193ms)
+    ✔ should store statusCode (0.1293ms)
+    ✔ should default statusCode to null (0.1381ms)
+  ✔ NetworkError (0.8429ms)
   ▶ ValidationError
-    ✔ should be an instance of LCYTError (0.2435ms)
-    ✔ should have correct name (0.1581ms)
-    ✔ should store field (0.1298ms)
-    ✔ should default field to null (0.111ms)
-  ✔ ValidationError (0.8013ms)
-✔ Error Classes (4.64ms)
+    ✔ should be an instance of LCYTError (0.2115ms)
+    ✔ should have correct name (0.3523ms)
+    ✔ should store field (0.1397ms)
+    ✔ should default field to null (0.1234ms)
+  ✔ ValidationError (0.9892ms)
+✔ Error Classes (5.4788ms)
 [LCYT] Caption sender started
 [LCYT] Caption sender started
 [LCYT] Caption sender started
@@ -98,90 +98,90 @@
 [LCYT] Caption sender started
 ▶ YoutubeLiveCaptionSender
   ▶ constructor
-    ✔ should initialize with default values (0.7554ms)
-    ✔ should accept custom options with ingestionUrl (0.1636ms)
-    ✔ should build ingestionUrl from streamKey (0.3738ms)
-    ✔ should build ingestionUrl with custom region and cue (0.1983ms)
-    ✔ should allow custom baseUrl (0.1272ms)
-    ✔ should use ingestionUrl over streamKey when both provided (0.0961ms)
-  ✔ constructor (3.4356ms)
+    ✔ should initialize with default values (0.8287ms)
+    ✔ should accept custom options with ingestionUrl (0.1338ms)
+    ✔ should build ingestionUrl from streamKey (0.1138ms)
+    ✔ should build ingestionUrl with custom region and cue (0.1434ms)
+    ✔ should allow custom baseUrl (0.128ms)
+    ✔ should use ingestionUrl over streamKey when both provided (0.1483ms)
+  ✔ constructor (2.3168ms)
   ▶ start()
-    ✔ should set isStarted to true (0.6097ms)
-    ✔ should return the sender instance for chaining (0.1847ms)
-  ✔ start() (0.9976ms)
+    ✔ should set isStarted to true (1.5188ms)
+    ✔ should return the sender instance for chaining (0.1925ms)
+  ✔ start() (1.8854ms)
   ▶ end()
-    ✔ should set isStarted to false (0.2271ms)
-    ✔ should return the sender instance for chaining (0.1934ms)
-  ✔ end() (0.5199ms)
+    ✔ should set isStarted to false (0.1955ms)
+    ✔ should return the sender instance for chaining (0.1845ms)
+  ✔ end() (0.4799ms)
   ▶ _formatTimestamp()
-    ✔ should remove Z suffix from ISO timestamp (0.4185ms)
-    ✔ should keep timestamp without Z suffix as-is (0.0794ms)
-    ✔ should generate timestamp when none provided (0.2403ms)
-    ✔ should accept a Date object (0.079ms)
-    ✔ should treat number >= 1000 as epoch milliseconds (0.0778ms)
-    ✔ should treat number < 1000 as relative seconds offset from now (0.145ms)
-    ✔ should treat 0 as current time (0.1096ms)
-    ✔ should treat positive number < 1000 as future offset in seconds (0.0873ms)
-  ✔ _formatTimestamp() (1.4408ms)
+    ✔ should remove Z suffix from ISO timestamp (0.4179ms)
+    ✔ should keep timestamp without Z suffix as-is (0.0741ms)
+    ✔ should generate timestamp when none provided (0.2391ms)
+    ✔ should accept a Date object (0.0775ms)
+    ✔ should treat number >= 1000 as epoch milliseconds (0.0708ms)
+    ✔ should treat number < 1000 as relative seconds offset from now (0.1519ms)
+    ✔ should treat 0 as current time (0.1137ms)
+    ✔ should treat positive number < 1000 as future offset in seconds (0.0862ms)
+  ✔ _formatTimestamp() (1.4325ms)
   ▶ send()
-    ✔ should reject if sender not started (0.6271ms)
-    ✔ should reject if no ingestion URL configured (0.2245ms)
-    ✔ should reject if text is empty (0.1942ms)
-    ✔ should reject if text is not a string (0.1789ms)
-    ✔ should reject for invalid URL (0.4259ms)
-  ✔ send() (1.7942ms)
+    ✔ should reject if sender not started (0.6759ms)
+    ✔ should reject if no ingestion URL configured (0.2361ms)
+    ✔ should reject if text is empty (0.1994ms)
+    ✔ should reject if text is not a string (0.1838ms)
+    ✔ should reject for invalid URL (0.4776ms)
+  ✔ send() (1.9632ms)
   ▶ sendBatch()
-    ✔ should reject if sender not started (0.203ms)
-    ✔ should reject if no ingestion URL configured (0.1933ms)
-    ✔ should reject if captions is not an array (0.1997ms)
-    ✔ should reject if captions array is empty (0.2032ms)
-    ✔ should reject if caption in array has no text (0.2666ms)
-  ✔ sendBatch() (1.2028ms)
+    ✔ should reject if sender not started (0.2202ms)
+    ✔ should reject if no ingestion URL configured (0.1988ms)
+    ✔ should reject if captions is not an array (0.1938ms)
+    ✔ should reject if captions array is empty (0.2012ms)
+    ✔ should reject if caption in array has no text (0.3058ms)
+  ✔ sendBatch() (1.2767ms)
   ▶ heartbeat()
-    ✔ should reject if sender not started (0.1863ms)
-    ✔ should reject if no ingestion URL configured (0.1444ms)
-  ✔ heartbeat() (0.4202ms)
+    ✔ should reject if sender not started (0.2174ms)
+    ✔ should reject if no ingestion URL configured (0.1518ms)
+  ✔ heartbeat() (0.4419ms)
   ▶ getSequence() / setSequence()
-    ✔ should get the current sequence (0.1133ms)
-    ✔ should set the sequence (0.0873ms)
-    ✔ should return sender instance for chaining (0.064ms)
-  ✔ getSequence() / setSequence() (0.3877ms)
+    ✔ should get the current sequence (0.1167ms)
+    ✔ should set the sequence (0.1952ms)
+    ✔ should return sender instance for chaining (0.0648ms)
+  ✔ getSequence() / setSequence() (0.5203ms)
   ▶ construct()
-    ✔ should add caption to queue and return queue length (0.1551ms)
-    ✔ should add caption with timestamp to queue (0.1023ms)
-    ✔ should store null timestamp when not provided (0.0733ms)
-    ✔ should throw if text is empty (0.1855ms)
-    ✔ should throw if text is not a string (0.1098ms)
-  ✔ construct() (0.7702ms)
+    ✔ should add caption to queue and return queue length (0.1868ms)
+    ✔ should add caption with timestamp to queue (0.1175ms)
+    ✔ should store null timestamp when not provided (0.0779ms)
+    ✔ should throw if text is empty (0.1554ms)
+    ✔ should throw if text is not a string (0.1116ms)
+  ✔ construct() (0.8058ms)
   ▶ getQueue()
-    ✔ should return empty array initially (0.5263ms)
-    ✔ should return copy of queue (0.0729ms)
-  ✔ getQueue() (0.675ms)
+    ✔ should return empty array initially (0.6123ms)
+    ✔ should return copy of queue (0.0777ms)
+  ✔ getQueue() (0.771ms)
   ▶ clearQueue()
-    ✔ should clear all captions from queue (0.1257ms)
-    ✔ should return number of cleared captions (0.0652ms)
-  ✔ clearQueue() (0.2489ms)
+    ✔ should clear all captions from queue (0.1335ms)
+    ✔ should return number of cleared captions (0.0693ms)
+  ✔ clearQueue() (0.2693ms)
   ▶ syncOffset / _now()
-    ✔ should initialize syncOffset to 0 (0.1176ms)
-    ✔ should accept useSyncOffset constructor option (0.0651ms)
-    ✔ _now() should return approximately Date.now() when useSyncOffset is false (0.0682ms)
-    ✔ _now() should apply syncOffset when useSyncOffset is true (0.0636ms)
-    ✔ getSyncOffset() should return current syncOffset (0.0594ms)
-    ✔ setSyncOffset() should set syncOffset and return sender for chaining (0.0605ms)
-    ✔ _formatTimestamp(undefined) should use syncOffset when enabled (0.1015ms)
-    ✔ _formatTimestamp(relativeSeconds) should use syncOffset when enabled (0.0819ms)
-    ✔ _formatTimestamp(Date) should NOT apply syncOffset (0.0682ms)
-    ✔ _formatTimestamp(epochMs) should NOT apply syncOffset (0.0637ms)
-    ✔ _formatTimestamp(ISOString) should NOT apply syncOffset (0.0569ms)
-  ✔ syncOffset / _now() (1.7652ms)
+    ✔ should initialize syncOffset to 0 (0.2199ms)
+    ✔ should accept useSyncOffset constructor option (0.0815ms)
+    ✔ _now() should return approximately Date.now() when useSyncOffset is false (0.0661ms)
+    ✔ _now() should apply syncOffset when useSyncOffset is true (0.0635ms)
+    ✔ getSyncOffset() should return current syncOffset (0.0599ms)
+    ✔ setSyncOffset() should set syncOffset and return sender for chaining (0.0595ms)
+    ✔ _formatTimestamp(undefined) should use syncOffset when enabled (1.1946ms)
+    ✔ _formatTimestamp(relativeSeconds) should use syncOffset when enabled (0.1804ms)
+    ✔ _formatTimestamp(Date) should NOT apply syncOffset (0.0766ms)
+    ✔ _formatTimestamp(epochMs) should NOT apply syncOffset (0.0699ms)
+    ✔ _formatTimestamp(ISOString) should NOT apply syncOffset (0.0625ms)
+  ✔ syncOffset / _now() (2.3954ms)
   ▶ sync()
-    ✔ should reject if sender not started (0.1955ms)
-    ✔ should reject if no ingestion URL configured (0.1486ms)
-  ✔ sync() (0.4012ms)
+    ✔ should reject if sender not started (0.2222ms)
+    ✔ should reject if no ingestion URL configured (0.1651ms)
+  ✔ sync() (0.4497ms)
   ▶ sendBatch() with queue
-    ✔ should reject if queue is empty and no captions provided (0.1657ms)
-  ✔ sendBatch() with queue (0.2097ms)
-✔ YoutubeLiveCaptionSender (15.2308ms)
+    ✔ should reject if queue is empty and no captions provided (0.1715ms)
+  ✔ sendBatch() with queue (0.2177ms)
+✔ YoutubeLiveCaptionSender (16.4059ms)
 ℹ tests 99
 ℹ suites 30
 ℹ pass 99
@@ -189,151 +189,151 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 136.511
+ℹ duration_ms 156.2958
 
 > lcyt-cli@1.4.0 test
 > node --test test/*.test.js
 
 ▶ CLI
   ▶ --help
-    ✔ should display help text (185.4529ms)
-    ✔ should show -h alias for help (161.5241ms)
-  ✔ --help (347.729ms)
+    ✔ should display help text (192.8766ms)
+    ✔ should show -h alias for help (174.041ms)
+  ✔ --help (367.6242ms)
   ▶ --version
-    ✔ should display version number (155.4721ms)
-  ✔ --version (155.6851ms)
+    ✔ should display version number (163.2258ms)
+  ✔ --version (163.433ms)
   ▶ default behavior (no arguments)
-    ✔ should show config when stream key is configured (174.1737ms)
-    ✔ should show config with (not set) when no stream key (183.6316ms)
-  ✔ default behavior (no arguments) (358.0827ms)
+    ✔ should show config when stream key is configured (183.6254ms)
+    ✔ should show config with (not set) when no stream key (179.4321ms)
+  ✔ default behavior (no arguments) (363.3308ms)
   ▶ --stream-key
-    ✔ should save stream key to config (171.0217ms)
-    ✔ should accept -k alias (182.0092ms)
-  ✔ --stream-key (353.3263ms)
+    ✔ should save stream key to config (189.9907ms)
+    ✔ should accept -k alias (168.3947ms)
+  ✔ --stream-key (358.7637ms)
   ▶ --show-config
-    ✔ should display current configuration (165.3569ms)
-  ✔ --show-config (165.4995ms)
+    ✔ should display current configuration (165.5287ms)
+  ✔ --show-config (165.6678ms)
   ▶ --reset
-    ✔ should reset sequence counter to 0 (172.3387ms)
-  ✔ --reset (172.4694ms)
+    ✔ should reset sequence counter to 0 (179.1528ms)
+  ✔ --reset (179.2874ms)
   ▶ --base-url
-    ✔ should save custom base URL (181.4259ms)
-  ✔ --base-url (181.5663ms)
+    ✔ should save custom base URL (174.4738ms)
+  ✔ --base-url (174.6029ms)
   ▶ --region
-    ✔ should save custom region (168.6983ms)
-  ✔ --region (168.8427ms)
+    ✔ should save custom region (168.8196ms)
+  ✔ --region (168.9501ms)
   ▶ --cue
-    ✔ should save custom cue (177.4257ms)
-  ✔ --cue (177.5459ms)
+    ✔ should save custom cue (166.5871ms)
+  ✔ --cue (166.7029ms)
   ▶ sending captions (without real server)
-    ✔ should error when sending caption without stream key (338.7331ms)
-  ✔ sending captions (without real server) (338.8692ms)
+    ✔ should error when sending caption without stream key (332.6893ms)
+  ✔ sending captions (without real server) (332.8376ms)
   ▶ --heartbeat (without real server)
-    ✔ should attempt heartbeat and fail gracefully without server (168.9653ms)
-  ✔ --heartbeat (without real server) (169.0779ms)
+    ✔ should attempt heartbeat and fail gracefully without server (165.1707ms)
+  ✔ --heartbeat (without real server) (165.2877ms)
   ▶ multiple config options
-    ✔ should save multiple options at once (160.3764ms)
-  ✔ multiple config options (160.4988ms)
+    ✔ should save multiple options at once (166.947ms)
+  ✔ multiple config options (167.0745ms)
   ▶ --batch
-    ✔ should add caption to batch queue in config (158.544ms)
-    ✔ should accumulate multiple captions in batch queue (509.3368ms)
-    ✔ should use custom timestamp with -t (167.9914ms)
-    ✔ should error when --batch is used without caption text (173.0496ms)
-    ✔ should accept -b alias (159.8032ms)
-  ✔ --batch (1169.0865ms)
+    ✔ should add caption to batch queue in config (172.6186ms)
+    ✔ should accumulate multiple captions in batch queue (501.3164ms)
+    ✔ should use custom timestamp with -t (166.7264ms)
+    ✔ should error when --batch is used without caption text (167.8195ms)
+    ✔ should accept -b alias (173.8683ms)
+  ✔ --batch (1182.7319ms)
   ▶ --send
-    ✔ should warn when batch queue is empty (162.157ms)
-    ✔ should warn when batch queue is empty array (159.2999ms)
-    ✔ should fail gracefully when sending to non-existent server (161.0532ms)
-    ✔ should error when no stream key configured (158.3953ms)
-  ✔ --send (641.1589ms)
+    ✔ should warn when batch queue is empty (171.709ms)
+    ✔ should warn when batch queue is empty array (174.4253ms)
+    ✔ should fail gracefully when sending to non-existent server (168.6621ms)
+    ✔ should error when no stream key configured (167.772ms)
+  ✔ --send (682.8032ms)
   ▶ npx detection
-    ✔ should detect npx execution via npm_command env var (162.3958ms)
-  ✔ npx detection (162.5083ms)
+    ✔ should detect npx execution via npm_command env var (173.9025ms)
+  ✔ npx detection (174.0153ms)
   ▶ batch queue timestamp format
-    ✔ should store timestamp without trailing Z (164.9263ms)
-    ✔ should preserve custom timestamp as-is (162.2416ms)
-  ✔ batch queue timestamp format (327.3325ms)
-✔ CLI (5050.3851ms)
+    ✔ should store timestamp without trailing Z (170.0243ms)
+    ✔ should preserve custom timestamp as-is (167.462ms)
+  ✔ batch queue timestamp format (337.6387ms)
+✔ CLI (5151.9112ms)
 ▶ InteractiveUI.loadFile()
-  ✔ loads a real file and splits into lines (19.9076ms)
-  ✔ returns false for a non-existent file (0.2789ms)
-  ✔ logs an error message on failure (0.1993ms)
-✔ InteractiveUI.loadFile() (21.3464ms)
+  ✔ loads a real file and splits into lines (19.0283ms)
+  ✔ returns false for a non-existent file (0.2997ms)
+  ✔ logs an error message on failure (0.1826ms)
+✔ InteractiveUI.loadFile() (20.9504ms)
 ▶ InteractiveUI.shiftPointer()
-  ✔ advances pointer by positive offset (0.4832ms)
-  ✔ returns false when offset would go out of bounds (negative) (0.2151ms)
-  ✔ returns false when offset goes past end (0.9257ms)
-  ✔ returns false when no content is loaded (0.2349ms)
-✔ InteractiveUI.shiftPointer() (2.1448ms)
+  ✔ advances pointer by positive offset (0.5192ms)
+  ✔ returns false when offset would go out of bounds (negative) (0.2298ms)
+  ✔ returns false when offset goes past end (0.2091ms)
+  ✔ returns false when no content is loaded (0.1255ms)
+✔ InteractiveUI.shiftPointer() (1.3165ms)
 ▶ InteractiveUI.gotoLine()
-  ✔ jumps to a valid 1-indexed line number (0.4036ms)
-  ✔ returns false for line 0 (out of range) (0.3041ms)
-  ✔ returns false for line beyond file length (0.3874ms)
-✔ InteractiveUI.gotoLine() (1.3003ms)
+  ✔ jumps to a valid 1-indexed line number (0.3318ms)
+  ✔ returns false for line 0 (out of range) (0.2198ms)
+  ✔ returns false for line beyond file length (0.2723ms)
+✔ InteractiveUI.gotoLine() (0.9937ms)
 ▶ InteractiveUI.isSendableLine()
-  ✔ returns false for an out-of-range index (0.1423ms)
-  ✔ returns false for a heading line (starts with #) (0.0744ms)
-  ✔ returns false for an empty line (0.0662ms)
-  ✔ returns true for a normal text line (0.0696ms)
-✔ InteractiveUI.isSendableLine() (0.4656ms)
+  ✔ returns false for an out-of-range index (0.1316ms)
+  ✔ returns false for a heading line (starts with #) (0.0677ms)
+  ✔ returns false for an empty line (0.0593ms)
+  ✔ returns true for a normal text line (0.0682ms)
+✔ InteractiveUI.isSendableLine() (0.4291ms)
 ▶ InteractiveUI.sendCurrentLine()
-  ✔ logs warning when no content loaded (0.2346ms)
-  ✔ skips heading lines and advances pointer (0.0888ms)
-  ✔ sends a sendable line and advances pointer (0.159ms)
-  ✔ queues to batch when batchMode is on (0.1895ms)
-✔ InteractiveUI.sendCurrentLine() (0.7843ms)
+  ✔ logs warning when no content loaded (0.2192ms)
+  ✔ skips heading lines and advances pointer (0.0831ms)
+  ✔ sends a sendable line and advances pointer (0.1395ms)
+  ✔ queues to batch when batchMode is on (0.1836ms)
+✔ InteractiveUI.sendCurrentLine() (0.7366ms)
 ▶ InteractiveUI.sendCustomCaption()
-  ✔ logs warning for empty string (0.2014ms)
-  ✔ sends trimmed text via sender (0.0885ms)
-  ✔ does not advance pointer (0.1023ms)
-  ✔ queues to batch when batchMode is on (0.1154ms)
-✔ InteractiveUI.sendCustomCaption() (0.6325ms)
+  ✔ logs warning for empty string (0.2421ms)
+  ✔ sends trimmed text via sender (0.104ms)
+  ✔ does not advance pointer (0.1225ms)
+  ✔ queues to batch when batchMode is on (0.1242ms)
+✔ InteractiveUI.sendCustomCaption() (0.7396ms)
 ▶ InteractiveUI.sendBatch()
-  ✔ logs warning when queue is empty (0.1568ms)
-  ✔ flushes all queued captions (0.1286ms)
-✔ InteractiveUI.sendBatch() (0.3525ms)
+  ✔ logs warning when queue is empty (0.192ms)
+  ✔ flushes all queued captions (0.1515ms)
+✔ InteractiveUI.sendBatch() (0.4258ms)
 ▶ InteractiveUI.handleCommand() — /goto
-  ✔ logs warning when no argument given (0.3961ms)
-  ✔ logs warning for non-numeric argument (0.1464ms)
-  ✔ jumps to line and logs success (0.1093ms)
-  ✔ logs warning for out-of-range line (0.1136ms)
-✔ InteractiveUI.handleCommand() — /goto (0.8695ms)
+  ✔ logs warning when no argument given (0.4683ms)
+  ✔ logs warning for non-numeric argument (0.1847ms)
+  ✔ jumps to line and logs success (0.1217ms)
+  ✔ logs warning for out-of-range line (0.1251ms)
+✔ InteractiveUI.handleCommand() — /goto (1.0347ms)
 ▶ InteractiveUI.handleCommand() — /batch
-  ✔ toggles batch mode on (0.1017ms)
-  ✔ toggles batch mode off (and flushes if queued) (0.1037ms)
-  ✔ sets custom timeout when provided (0.085ms)
-✔ InteractiveUI.handleCommand() — /batch (0.3905ms)
+  ✔ toggles batch mode on (0.1199ms)
+  ✔ toggles batch mode off (and flushes if queued) (0.1218ms)
+  ✔ sets custom timeout when provided (0.1165ms)
+✔ InteractiveUI.handleCommand() — /batch (0.4795ms)
 ▶ InteractiveUI.handleCommand() — /timestamps
-  ✔ toggles showTimestamps off (0.1871ms)
-  ✔ /ts alias also toggles (0.179ms)
-✔ InteractiveUI.handleCommand() — /timestamps (0.4777ms)
+  ✔ toggles showTimestamps off (0.2186ms)
+  ✔ /ts alias also toggles (0.2002ms)
+✔ InteractiveUI.handleCommand() — /timestamps (0.5276ms)
 ▶ InteractiveUI.handleCommand() — /load
-  ✔ logs usage warning with no args (0.1423ms)
-  ✔ loads a file successfully (0.225ms)
-  ✔ loads a file and jumps to specified line (0.202ms)
-✔ InteractiveUI.handleCommand() — /load (0.6536ms)
+  ✔ logs usage warning with no args (0.171ms)
+  ✔ loads a file successfully (0.3192ms)
+  ✔ loads a file and jumps to specified line (0.2028ms)
+✔ InteractiveUI.handleCommand() — /load (0.7914ms)
 ▶ InteractiveUI.handleCommand() — /reload
-  ✔ logs warning when nothing loaded (0.1146ms)
-  ✔ reloads the currently loaded file (0.3845ms)
-✔ InteractiveUI.handleCommand() — /reload (0.578ms)
+  ✔ logs warning when nothing loaded (0.1147ms)
+  ✔ reloads the currently loaded file (0.252ms)
+✔ InteractiveUI.handleCommand() — /reload (0.4264ms)
 ▶ InteractiveUI.handleCommand() — /stream
-  ✔ logs usage warning with no args (0.1914ms)
-  ✔ sets watchVideoId from a bare 11-char video ID (0.2451ms)
-  ✔ extracts video ID from a youtube.com URL (0.1594ms)
-  ✔ logs error for invalid input (0.1953ms)
-✔ InteractiveUI.handleCommand() — /stream (0.9158ms)
+  ✔ logs usage warning with no args (0.1511ms)
+  ✔ sets watchVideoId from a bare 11-char video ID (0.2034ms)
+  ✔ extracts video ID from a youtube.com URL (0.1422ms)
+  ✔ logs error for invalid input (0.1944ms)
+✔ InteractiveUI.handleCommand() — /stream (0.7964ms)
 ▶ InteractiveUI.handleCommand() — /send
-  ✔ logs warning when batch queue is empty (0.1181ms)
-  ✔ flushes the batch queue (0.1032ms)
-✔ InteractiveUI.handleCommand() — /send (0.2803ms)
+  ✔ logs warning when batch queue is empty (0.1049ms)
+  ✔ flushes the batch queue (0.0954ms)
+✔ InteractiveUI.handleCommand() — /send (0.257ms)
 ▶ InteractiveUI._parseVideoId()
-  ✔ returns null for invalid input (0.2768ms)
-  ✔ returns a bare 11-char ID unchanged (0.0893ms)
-  ✔ extracts ID from watch?v= URL (0.0949ms)
-  ✔ extracts ID from youtu.be short URL (0.0827ms)
-  ✔ extracts ID from /live/ URL (0.1313ms)
-✔ InteractiveUI._parseVideoId() (0.7947ms)
+  ✔ returns null for invalid input (0.2451ms)
+  ✔ returns a bare 11-char ID unchanged (0.0819ms)
+  ✔ extracts ID from watch?v= URL (0.2476ms)
+  ✔ extracts ID from youtu.be short URL (0.0889ms)
+  ✔ extracts ID from /live/ URL (0.1204ms)
+✔ InteractiveUI._parseVideoId() (0.9336ms)
 ℹ tests 76
 ℹ suites 32
 ℹ pass 76
@@ -341,1673 +341,295 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 5122.5249
+ℹ duration_ms 5234.4684
 
 > lcyt-backend@1.0.0 test
 > cross-env ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/*.test.js
 
-▶ /auth — loginEnabled: false
-  ✔ returns 503 for any auth route (65.3576ms)
-✔ /auth — loginEnabled: false (72.9877ms)
-▶ POST /auth/register
-  ✔ returns 400 when email is missing (14.4851ms)
-  ✔ returns 400 when password is too short (7.0489ms)
-  ✔ registers successfully and returns a JWT token (359.461ms)
-  ✔ returns 409 when email already exists (254.1858ms)
-  ✔ stores email in lowercase (240.5163ms)
-✔ POST /auth/register (876.2288ms)
-▶ POST /auth/login
-  ✔ returns 400 when email or password is missing (2.0265ms)
-  ✔ returns 401 for unknown email (2.092ms)
-  ✔ returns 401 for wrong password (240.2786ms)
-  ✔ returns 200 with JWT for correct credentials (239.8059ms)
-✔ POST /auth/login (724.5016ms)
-▶ GET /auth/me
-  ✔ returns 401 without token (1.295ms)
-  ✔ returns 401 with a session token (wrong type) (1.1726ms)
-  ✔ returns user profile with valid user token (1.2122ms)
-✔ GET /auth/me (243.1919ms)
-▶ POST /auth/change-password
-  ✔ returns 400 when required fields are missing (1.5711ms)
-  ✔ returns 400 when newPassword is too short (1.4271ms)
-  ✔ returns 401 when currentPassword is wrong (238.8972ms)
-  ✔ changes password successfully (951.5165ms)
-✔ POST /auth/change-password (1433.1081ms)
-▶ parseBackupDays
-  ✔ returns 0 for undefined (0.9641ms)
-  ✔ returns 0 for "0" (0.1651ms)
-  ✔ returns 0 for negative values (0.1771ms)
-  ✔ returns 0 for non-numeric strings (0.2006ms)
-  ✔ returns 0 for NaN (0.1965ms)
-  ✔ returns the value for a valid positive integer (0.1618ms)
-  ✔ caps at 180 for values exceeding the maximum (0.1308ms)
-  ✔ returns 180 for exactly 180 (0.1218ms)
-  ✔ truncates decimals (0.1958ms)
-✔ parseBackupDays (3.811ms)
-▶ runBackup
-  ✔ creates a date-stamped subdirectory and database file (14.2512ms)
-  ✔ is idempotent — running twice on the same day overwrites without error (17.0477ms)
-✔ runBackup (54.1827ms)
-▶ cleanOldBackups
-  ✔ returns 0 when backupDays is 0 (disabled) (0.3829ms)
-  ✔ returns 0 when backup directory does not exist (1.3209ms)
-  ✔ removes directories older than the retention window (3.9459ms)
-  ✔ keeps directories within the retention window (2.4991ms)
-  ✔ ignores entries that do not match YYYY-MM-DD format (1.9684ms)
-✔ cleanOldBackups (14.0522ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\auth.test.js (1881.4904ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\backup.test.js (1445.7542ms)
+▶ GET /bridge-download — no platform
+  ✔ returns 400 with supported platform list (62.4295ms)
+✔ GET /bridge-download — no platform (67.014ms)
+▶ GET /bridge-download — platform redirects
+  ✔ redirects for ?win (15.67ms)
+  ✔ redirects for ?mac (9.3309ms)
+  ✔ redirects for ?linux (10.8555ms)
+  ✔ redirects for ?arm (5.1071ms)
+  ✔ redirect URL contains the version number (7.3639ms)
+  ✔ redirect URL uses BRIDGE_DOWNLOAD_BASE_URL when set (4.9013ms)
+✔ GET /bridge-download — platform redirects (54.421ms)
 ▶ composeCaptionText
-  ✔ returns original text when captionLang is null (1.0508ms)
-  ✔ returns original text when translations is null (0.1748ms)
-  ✔ returns original text when translations is empty (0.1728ms)
-  ✔ returns original text when translation is missing for the lang (0.2275ms)
-  ✔ returns only the translation when showOriginal=false (0.2028ms)
-  ✔ returns "original<br>translation" when showOriginal=true (0.1776ms)
-  ✔ returns original text when translation equals the original (same language no-op) (0.1813ms)
-  ✔ returns original text when showOriginal is undefined (0.1937ms)
-✔ composeCaptionText (3.9162ms)
+  ✔ returns original text when captionLang is null (1.1608ms)
+  ✔ returns original text when translations is null (0.2113ms)
+  ✔ returns original text when translations is empty (0.1748ms)
+  ✔ returns original text when translation is missing for the lang (0.2427ms)
+  ✔ returns only the translation when showOriginal=false (0.2051ms)
+  ✔ returns "original<br>translation" when showOriginal=true (0.1617ms)
+  ✔ returns original text when translation equals the original (same language no-op) (0.1449ms)
+  ✔ returns original text when showOriginal is undefined (0.1671ms)
+✔ composeCaptionText (4.0791ms)
 ▶ formatVttTime
-  ✔ formats 0ms as 00:00:00.000 (0.4108ms)
-  ✔ formats 1ms as 00:00:00.001 (0.22ms)
-  ✔ formats 1000ms (1s) as 00:00:01.000 (0.1924ms)
-  ✔ formats 60000ms (1m) as 00:01:00.000 (0.134ms)
-  ✔ formats 3600000ms (1h) as 01:00:00.000 (0.1473ms)
-  ✔ formats 3661001ms (1h 1m 1s 1ms) (0.131ms)
-  ✔ formats 90500ms (1m 30s 500ms) (0.1544ms)
-  ✔ pads milliseconds to 3 digits (0.1377ms)
-✔ formatVttTime (2.1238ms)
+  ✔ formats 0ms as 00:00:00.000 (0.3799ms)
+  ✔ formats 1ms as 00:00:00.001 (0.2273ms)
+  ✔ formats 1000ms (1s) as 00:00:01.000 (0.1873ms)
+  ✔ formats 60000ms (1m) as 00:01:00.000 (0.1339ms)
+  ✔ formats 3600000ms (1h) as 01:00:00.000 (0.1041ms)
+  ✔ formats 3661001ms (1h 1m 1s 1ms) (0.1171ms)
+  ✔ formats 90500ms (1m 30s 500ms) (0.1488ms)
+  ✔ pads milliseconds to 3 digits (0.0983ms)
+✔ formatVttTime (1.8916ms)
 ▶ buildVttCue
-  ✔ formats a single cue with sequence, timestamps, and text (0.2153ms)
-  ✔ includes the correct sequence number (0.1966ms)
-  ✔ uses startMs and endMs for the timestamp line (0.1501ms)
-  ✔ ends with a blank line (double newline) (0.1175ms)
-  ✔ handles multi-word text (0.1073ms)
-✔ buildVttCue (1.0438ms)
-▶ POST /captions
-  ✔ should return 401 when no Authorization header (68.1349ms)
-  ✔ should return 401 for invalid token (7.2245ms)
-  ✔ should return 400 when captions is missing (12.7871ms)
-  ✔ should return 400 when captions is empty array (6.7972ms)
-  ✔ should return 404 when session not found (5.1742ms)
-  ✔ should return 202 with ok and requestId for a single caption (9.1578ms)
-  ✔ should emit caption_result with sequence and statusCode after single caption send (6.9596ms)
-  ✔ should return 202 and emit caption_result with count for batch captions (5.5892ms)
-  ✔ should resolve relative time fields to absolute timestamps (5.7978ms)
-  ✔ should prefer timestamp over time when both provided (5.5505ms)
-  ✔ should emit caption_error (not reject the HTTP request) when sender throws (5.0128ms)
-✔ POST /captions (142.4199ms)
+  ✔ formats a single cue with sequence, timestamps, and text (0.2735ms)
+  ✔ includes the correct sequence number (0.1849ms)
+  ✔ uses startMs and endMs for the timestamp line (0.1022ms)
+  ✔ ends with a blank line (double newline) (0.1006ms)
+  ✔ handles multi-word text (0.0939ms)
+✔ buildVttCue (0.9729ms)
+node:internal/modules/package_json_reader:316
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'lcyt-files' imported from C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend\src\routes\captions.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:316:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:858:18)
+    at defaultResolve (node:internal/modules/esm/resolve:990:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:718:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:764:52)
+    at #resolve (node:internal/modules/esm/loader:700:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:620:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:143:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.13.0
+✖ test\captions.test.js (226.0885ms)
 ▶ cors — /keys routes
-  ✔ returns 204 for OPTIONS /keys with CORS headers (1.4187ms)
-  ✔ sets CORS headers for GET /keys (user project list) (0.2932ms)
-  ✔ sets CORS headers for DELETE /keys/123 (0.2577ms)
-✔ cors — /keys routes (3.4357ms)
+  ✔ returns 204 for OPTIONS /keys with CORS headers (1.0606ms)
+  ✔ sets CORS headers for GET /keys (user project list) (0.1548ms)
+  ✔ sets CORS headers for DELETE /keys/123 (0.1892ms)
+✔ cors — /keys routes (2.3556ms)
 ▶ cors — free-tier signup POST /keys?freetier
-  ✔ sets CORS headers for any origin on POST /keys?freetier (0.3157ms)
-  ✔ still calls next() for freetier even without origin header (0.2244ms)
-✔ cors — free-tier signup POST /keys?freetier (0.8465ms)
+  ✔ sets CORS headers for any origin on POST /keys?freetier (0.21ms)
+  ✔ still calls next() for freetier even without origin header (0.1646ms)
+✔ cors — free-tier signup POST /keys?freetier (0.5686ms)
 ▶ cors — permissive routes
-  ✔ sets ACAO for POST /live with any origin (0.3776ms)
-  ✔ sets ACAO for GET /health (0.2713ms)
-  ✔ sets ACAO for GET /contact (0.2885ms)
-  ✔ returns 204 for OPTIONS requests with origin (0.2871ms)
-  ✔ sets Allow-Credentials on permissive routes (0.3588ms)
-  ✔ does NOT set ACAO when there is no origin header (0.2606ms)
-✔ cors — permissive routes (2.333ms)
+  ✔ sets ACAO for POST /live with any origin (0.3254ms)
+  ✔ sets ACAO for GET /health (0.1678ms)
+  ✔ sets ACAO for GET /contact (0.2142ms)
+  ✔ returns 204 for OPTIONS requests with origin (0.2193ms)
+  ✔ sets Allow-Credentials on permissive routes (0.4643ms)
+  ✔ does NOT set ACAO when there is no origin header (0.3051ms)
+✔ cors — permissive routes (2.1543ms)
 ▶ cors — dynamic origin matching
-  ✔ sets ACAO when origin matches a registered session domain (0.318ms)
-  ✔ does NOT set ACAO when origin is NOT registered (0.2184ms)
-  ✔ calls next() even when origin is unregistered (0.4093ms)
-  ✔ returns 204 for OPTIONS even when origin is unregistered (0.1258ms)
-  ✔ sets Allow-Credentials for registered origins (0.1503ms)
-  ✔ calls next() for requests with no origin header (0.1488ms)
-✔ cors — dynamic origin matching (3.0119ms)
-▶ db.js
-  ▶ initDb
-    ✔ should create the api_keys table (0.9415ms)
-    ✔ should be idempotent — calling again does not throw (2.7267ms)
-  ✔ initDb (4.4654ms)
-  ▶ createKey
-    ✔ should create a key with auto-generated UUID when no key provided (1.2731ms)
-    ✔ should create a key with a custom key value (0.3538ms)
-    ✔ should create a key with an expiration date (0.4292ms)
-    ✔ should set created_at automatically (0.367ms)
-    ✔ should reject duplicate key values (0.6673ms)
-  ✔ createKey (3.5999ms)
-  ▶ getKey
-    ✔ should return the key row for an existing key (0.9895ms)
-    ✔ should return null for a non-existent key (0.7392ms)
-  ✔ getKey (2.0519ms)
-  ▶ getAllKeys
-    ✔ should return an array of all keys (3.1716ms)
-    ✔ should return empty array when no keys exist (3.2625ms)
-  ✔ getAllKeys (6.6549ms)
-  ▶ validateApiKey
-    ✔ should return valid=true for a valid active key (0.6869ms)
-    ✔ should return valid=false with reason=unknown_key for non-existent key (0.183ms)
-    ✔ should return valid=false with reason=revoked for revoked key (0.4696ms)
-    ✔ should return valid=false with reason=expired for expired key (0.345ms)
-    ✔ should return valid=true for key with future expiration (0.3654ms)
-    ✔ should return valid=true for key with null expires_at (never expires) (0.3708ms)
-  ✔ validateApiKey (2.7778ms)
-  ▶ revokeKey
-    ✔ should set active=0 for the key (0.4325ms)
-    ✔ should return false for non-existent key (0.2188ms)
-  ✔ revokeKey (0.7932ms)
-  ▶ deleteKey
-    ✔ should permanently remove the key from the database (0.4079ms)
-    ✔ should return false for non-existent key (0.1366ms)
-  ✔ deleteKey (0.6838ms)
-  ▶ renewKey
-    ✔ should update expires_at for the key (0.4347ms)
-    ✔ should clear expiration when null is passed (0.4309ms)
-    ✔ should return false for non-existent key (0.3937ms)
-  ✔ renewKey (1.425ms)
-  ▶ updateKey
-    ✔ should update owner field (0.6772ms)
-    ✔ should update expiresAt field (0.4058ms)
-    ✔ should update both owner and expiresAt together (0.4958ms)
-    ✔ should return false when no fields provided (0.7819ms)
-    ✔ should return false for non-existent key (0.1844ms)
-  ✔ updateKey (2.8043ms)
-  ▶ per-API-key sequence
-    ✔ getKeySequence returns 0 when no captions have been sent (0.6946ms)
-    ✔ updateKeySequence persists the sequence and getKeySequence returns it (0.971ms)
-    ✔ getKeySequence returns 0 when last_caption_at is older than 2 hours (0.4551ms)
-    ✔ getKeySequence returns stored sequence when last_caption_at is within 2 hours (0.3661ms)
-    ✔ resetKeySequence resets sequence to 0 and clears last_caption_at (0.4431ms)
-    ✔ getKeySequence returns 0 for unknown key (0.1393ms)
-  ✔ per-API-key sequence (3.6317ms)
-✔ db.js (43.4013ms)
-﹣ DockerFfmpegRunner integration (gated) — writes file into mounted volume (1.0248ms) # SKIP
-▶ GET /events — auth rejections
-  ✔ returns 401 when no token is provided (49.1429ms)
-  ✔ returns 401 when Authorization header has wrong prefix (8.511ms)
-  ✔ returns 401 for an invalid JWT (wrong secret) (10.7649ms)
-  ✔ returns 401 for an expired JWT (6.3082ms)
-  ✔ returns 401 for a malformed token string (2.819ms)
-✔ GET /events — auth rejections (80.6486ms)
-▶ GET /events — ?token= query parameter
-  ✔ accepts token via ?token= and opens SSE stream (11.5724ms)
-✔ GET /events — ?token= query parameter (11.8364ms)
-▶ GET /events — session not found
-  ✔ returns 404 when the session does not exist in the store (9.0701ms)
-✔ GET /events — session not found (9.4161ms)
-▶ GET /events — SSE response headers
-  ✔ sets Content-Type: text/event-stream (5.9969ms)
-  ✔ sets Cache-Control: no-cache (6.204ms)
-  ✔ sets X-Accel-Buffering: no (6.6356ms)
-✔ GET /events — SSE response headers (19.301ms)
-▶ GET /events — connected event
-  ✔ sends a "connected" event immediately after subscribing (7.6436ms)
-  ✔ connected event includes micHolder: null when no mic is held (8.0055ms)
-  ✔ connected event includes micHolder from session when a mic is held (6.8357ms)
-✔ GET /events — connected event (23.0338ms)
-▶ GET /events — event forwarding
-  ✔ forwards "caption_result" emitted on session.emitter (96.179ms)
-  ✔ forwards "caption_error" emitted on session.emitter (91.253ms)
-  ✔ forwards "mic_state" emitted on session.emitter (92.5356ms)
-✔ GET /events — event forwarding (280.3362ms)
-▶ GET /events — session_closed ends the stream
-  ✔ emits "session_closed" event and closes the response (92.1313ms)
-✔ GET /events — session_closed ends the stream (92.2608ms)
-▶ GET /events — listener cleanup on disconnect
-  ✔ removes emitter listeners after the SSE client disconnects (264.3511ms)
-✔ GET /events — listener cleanup on disconnect (264.4909ms)
-▶ Integration — POST /captions → caption_result on /events
-  ✔ delivers a caption_result SSE event after POST /captions in viewer-only session (107.8865ms)
-✔ Integration — POST /captions → caption_result on /events (108.0167ms)
-▶ GET /file
-  ✔ should return 401 with no Authorization header (49.7105ms)
-  ✔ should return 401 for invalid token (9.8117ms)
-  ✔ should return 404 when session not found (11.6246ms)
-  ✔ should return an empty files array when no files exist (7.3925ms)
-  ✔ should return registered files for the session key (12.7569ms)
-✔ GET /file (102.3527ms)
-▶ GET /file/:id
-  ✔ should return 401 with no auth (7.2169ms)
-  ✔ should return 401 for invalid token (3.6283ms)
-  ✔ should return 404 when session not found (token with unknown sessionId) (4.7024ms)
-  ✔ should return 400 for a non-numeric file id (4.8205ms)
-  ✔ should return 404 for a file id that does not exist in the DB (4.4607ms)
-  ✔ should stream file content with correct headers (8.0545ms)
-  ✔ should serve vtt files with text/vtt content type (9.9579ms)
-  ✔ should accept ?token= query param instead of Authorization header (10.6485ms)
-✔ GET /file/:id (54.5934ms)
-▶ DELETE /file/:id
-  ✔ should return 401 with no auth (4.4622ms)
-  ✔ should return 400 for a non-numeric id (5.6996ms)
-  ✔ should return 404 when session is not found (2.5947ms)
-  ✔ should return 404 for unknown file id (1.7866ms)
-  ✔ should delete the DB record and disk file, returning ok (8.0139ms)
-✔ DELETE /file/:id (23.1262ms)
-▶ GET /health
-  ✔ should return 200 with ok, uptime, and activeSessions (44.9623ms)
-  ✔ should not require authentication (6.7021ms)
-  ✔ should reflect active session count (5.6387ms)
-✔ GET /health (60.8518ms)
+  ✔ sets ACAO when origin matches a registered session domain (0.3711ms)
+  ✔ does NOT set ACAO when origin is NOT registered (1.5043ms)
+  ✔ calls next() even when origin is unregistered (0.2243ms)
+  ✔ returns 204 for OPTIONS even when origin is unregistered (0.1497ms)
+  ✔ sets Allow-Credentials for registered origins (0.131ms)
+  ✔ calls next() for requests with no origin header (0.0962ms)
+✔ cors — dynamic origin matching (2.7327ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\db.test.js (1461.2479ms)
+﹣ DockerFfmpegRunner integration (gated) — writes file into mounted volume (1.0082ms) # SKIP
+✔ DockerFfmpegRunner spawn args include image and provided args (6.1969ms)
+node:internal/modules/package_json_reader:316
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'lcyt-files' imported from C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend\src\routes\captions.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:316:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:858:18)
+    at defaultResolve (node:internal/modules/esm/resolve:990:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:718:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:764:52)
+    at #resolve (node:internal/modules/esm/loader:700:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:620:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:143:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.13.0
+✖ test\events.test.js (270.1385ms)
+✔ WorkerFfmpegRunner emits error and close events (2.555ms)
+node:internal/modules/package_json_reader:316
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'lcyt-files' imported from C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend\test\files.test.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:316:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:858:18)
+    at defaultResolve (node:internal/modules/esm/resolve:990:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:718:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:764:52)
+    at #resolve (node:internal/modules/esm/loader:700:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:620:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:143:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.13.0
+✖ test\files.test.js (262.2394ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\health.test.js (1828.7098ms)
 ▶ formatVttTime
-  ✔ zero (1.3497ms)
-  ✔ sub-second (0.2558ms)
-  ✔ seconds (0.211ms)
-  ✔ minutes (0.2306ms)
-  ✔ hours (0.3462ms)
-✔ formatVttTime (4.4414ms)
+  ✔ zero (1.2193ms)
+  ✔ sub-second (0.1981ms)
+  ✔ seconds (0.227ms)
+  ✔ minutes (0.2214ms)
+  ✔ hours (0.2049ms)
+✔ formatVttTime (3.5404ms)
 ▶ buildWebVTT
-  ✔ empty cues returns bare WEBVTT (0.4193ms)
-  ✔ single cue with default end (3.5 s, capped at seg end) (1.6928ms)
-  ✔ single cue end capped at segment boundary (0.7444ms)
-  ✔ two cues: first ends at second start minus gap (0.9618ms)
-  ✔ cue starting at or after segment end is skipped (0.2799ms)
-  ✔ negative offset cue clamped to 0 (0.2592ms)
-✔ buildWebVTT (6.424ms)
+  ✔ empty cues returns bare WEBVTT (0.3846ms)
+  ✔ single cue with default end (3.5 s, capped at seg end) (0.3075ms)
+  ✔ single cue end capped at segment boundary (0.2691ms)
+  ✔ two cues: first ends at second start minus gap (0.4472ms)
+  ✔ cue starting at or after segment end is skipped (1.8246ms)
+  ✔ negative offset cue clamped to 0 (0.2125ms)
+✔ buildWebVTT (3.9647ms)
 ▶ buildPlaylist
-  ✔ single segment playlist (0.7286ms)
-  ✔ rolling window with sequence > 0 (0.1688ms)
-✔ buildPlaylist (1.046ms)
+  ✔ single segment playlist (0.7584ms)
+  ✔ rolling window with sequence > 0 (0.1883ms)
+✔ buildPlaylist (1.1125ms)
 ▶ HlsSubsManager
-  ✔ getLanguages returns [] for unknown key (1.0895ms)
-  ✔ getPlaylist returns null for unknown key (0.3944ms)
-  ✔ addCue starts tracking a key (0.5607ms)
-  ✔ after flush, playlist and segment file exist (22.2404ms)
-  ✔ multiple languages tracked independently (12.038ms)
-  ✔ rolling window evicts oldest segment when full (11.443ms)
-  ✔ empty segment written when no cues in window (8.6662ms)
-  ✔ stopSubs cleans up state and files (22.0554ms)
-  ✔ invalid lang tags are ignored (0.3724ms)
-✔ HlsSubsManager (90.2258ms)
-▶ POST /icons — upload
-  ✔ returns 201 on valid PNG upload (80.3235ms)
-  ✔ returns 201 on valid SVG upload (13.1699ms)
-  ✔ returns 400 when filename is missing (9.3354ms)
-  ✔ returns 400 when mimeType is unsupported (6.5268ms)
-  ✔ returns 400 when data is missing (8.2751ms)
-  ✔ returns 400 when PNG magic bytes are invalid (6.2797ms)
-  ✔ returns 400 when SVG content is not valid SVG (6.9421ms)
-  ✔ returns 401 without Authorization (5.4674ms)
-  ✔ writes icon file to ICONS_DIR on upload (12.4191ms)
-✔ POST /icons — upload (159.2741ms)
-▶ GET /icons — list
-  ✔ returns empty array when none uploaded (7.9689ms)
-  ✔ includes uploaded icon in the list (10.5149ms)
-  ✔ returns 401 without Authorization (6.2007ms)
-✔ GET /icons — list (25.2491ms)
-▶ GET /icons/:id — public serve
-  ✔ returns 200 with correct Content-Type (14.9586ms)
-  ✔ sets Access-Control-Allow-Origin: * (10.5649ms)
-  ✔ sets Cache-Control: public (8.4504ms)
-  ✔ returns 404 for unknown id (7.6669ms)
-  ✔ returns 400 for non-numeric id (6.9468ms)
-  ✔ returns valid PNG binary content (5.8116ms)
-  ✔ does not require Authorization (public) (7.6393ms)
-✔ GET /icons/:id — public serve (62.702ms)
-▶ DELETE /icons/:id
-  ✔ deletes icon and removes from list (11.0412ms)
-  ✔ returns 404 for icon owned by different key (6.274ms)
-  ✔ returns 401 without Authorization (2.4985ms)
-  ✔ returns 404 for unknown id (2.295ms)
-✔ DELETE /icons/:id (22.4052ms)
-▶ Admin middleware
-  ✔ should return 503 when ADMIN_KEY is not set (46.0737ms)
-  ✔ should return 401 when X-Admin-Key header is missing (7.5595ms)
-  ✔ should return 403 when X-Admin-Key does not match (6.5364ms)
-✔ Admin middleware (63.5521ms)
-▶ GET /keys
-  ✔ should return empty list when no keys exist (14.181ms)
-  ✔ should return all keys in the database (4.656ms)
-  ✔ should format keys with key, owner, active, expires, createdAt (4.7315ms)
-✔ GET /keys (24.1986ms)
-▶ POST /keys
-  ✔ should return 400 when owner is missing (27.203ms)
-  ✔ should create key with auto-generated UUID when no key provided (6.5856ms)
-  ✔ should create key with custom key value (5.9263ms)
-  ✔ should create key with expiration date (6.0839ms)
-  ✔ should create key without expiration (never expires) (5.2987ms)
-✔ POST /keys (51.9386ms)
-▶ GET /keys/:key
-  ✔ should return 404 for non-existent key (3.7906ms)
-  ✔ should return key details for existing key (3.7967ms)
-✔ GET /keys/:key (7.8594ms)
-▶ PATCH /keys/:key
-  ✔ should return 404 for non-existent key (4.4667ms)
-  ✔ should update owner (4.6858ms)
-  ✔ should update expires (9.4773ms)
-  ✔ should update both owner and expires (4.2745ms)
-  ✔ should clear expiration when expires is null (4.0365ms)
-✔ PATCH /keys/:key (27.4798ms)
-▶ DELETE /keys/:key
-  ✔ should return 404 for non-existent key (4.0561ms)
-  ✔ should soft-delete (revoke) by default (3.2829ms)
-  ✔ should permanently delete when permanent=true (4.7715ms)
-✔ DELETE /keys/:key (12.507ms)
-▶ POST /live
-  ✔ should return 400 if apiKey is missing (68.1956ms)
-  ✔ should return 400 if domain is missing (10.3013ms)
-  ✔ should return 401 for unknown API key (5.816ms)
-  ✔ should return 401 for revoked API key (5.364ms)
-[LCYT] Caption sender started
-[LCYT] Caption sender stopped. Total captions sent: 0
-  ✔ should return 200 with token, sessionId, sequence, syncOffset, startedAt for valid key (target-array mode, no streamKey) (10.7994ms)
-[LCYT] Caption sender started
-[LCYT] ⚠ Heartbeat #0 returned status 401
-[LCYT] ⚠ Could not parse server timestamp — syncOffset not updated
-  ✔ should return 200 with token for valid key with legacy streamKey (705.026ms)
-  ✔ should store the session in the store (target-array mode) (2.6329ms)
-[LCYT] Caption sender started
-[LCYT] ⚠ Heartbeat #0 returned status 401
-[LCYT] ⚠ Could not parse server timestamp — syncOffset not updated
-  ✔ should store the session in the store (legacy streamKey mode) (686.533ms)
-  ✔ should be idempotent — re-registration returns same token (4.8048ms)
-  ✔ should set Access-Control-Allow-Origin header to domain (2.1828ms)
-  ✔ JWT payload should contain sessionId and apiKey, and must not expose streamKey or domain (3.132ms)
-✔ POST /live (1508.6356ms)
-▶ GET /live
-  ✔ should return 401 if no Authorization header (2.1386ms)
-  ✔ should return 401 for invalid token (1.5374ms)
-  ✔ should return 404 if session not found (1.5663ms)
-  ✔ should return 200 with sequence and syncOffset for valid session (2.8379ms)
-✔ GET /live (8.3371ms)
-▶ DELETE /live
-  ✔ should return 401 if no Authorization header (1.4711ms)
-  ✔ should return 401 for invalid token (1.282ms)
-  ✔ should return 404 if session not found (1.4866ms)
-  ✔ should return 200 with removed=true and remove the session (2.9852ms)
-✔ DELETE /live (7.4572ms)
+  ✔ getLanguages returns [] for unknown key (1.0375ms)
+  ✔ getPlaylist returns null for unknown key (0.1718ms)
+  ✔ addCue starts tracking a key (0.4415ms)
+  ✔ after flush, playlist and segment file exist (19.4317ms)
+  ✔ multiple languages tracked independently (8.5902ms)
+  ✔ rolling window evicts oldest segment when full (8.0161ms)
+  ✔ empty segment written when no cues in window (5.4228ms)
+  ✔ stopSubs cleans up state and files (6.8987ms)
+  ✔ invalid lang tags are ignored (0.2808ms)
+✔ HlsSubsManager (56.287ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\icons.test.js (1951.356ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\keys.test.js (1808.7851ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\live.test.js (1952.3932ms)
 ▶ LocalFfmpegRunner
-  ✔ starts and stops a process (uses node as a harmless subprocess) (20.0648ms)
-✔ LocalFfmpegRunner (21.5433ms)
-✔ LocalFfmpegRunner start/stop lifecycle (uses node as fake ffmpeg) (20.6152ms)
-[hls:key1] Starting HLS: rtmp://127.0.0.1:1935/live/key1 → \tmp\hls\key1\index.m3u8
-(node:26888) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-▶ HlsManager — constructor
-  ✔ uses provided options (1.269ms)
-  ✖ hlsDir() returns root/key path (6.6074ms)
-  ✔ isRunning() returns false initially (0.2674ms)
-✖ HlsManager — constructor (10.7852ms)
-[hls:key2] Starting HLS: rtmp://127.0.0.1:1935/live/key2 → \tmp\hls\key2\index.m3u8
-▶ HlsManager — start()
-  ✔ resolves and marks the key as running (14.8175ms)
-[hls:dupkey] ffmpeg exited with code 0
-[hls:errkey] ffmpeg error: ENOENT
-[hls:stopkey] ffmpeg exited with code 0
-[hls:key-a] ffmpeg exited with code 0
-[hls:key-b] ffmpeg exited with code 0
-[radio:rkey] ffmpeg exited with code 0
-[hls:mykey] Starting HLS: rtmp://127.0.0.1:1935/live/mykey → \tmp\hls\mykey\index.m3u8
-  ✔ creates the HLS output directory (1.7436ms)
-[hls:dupkey] Starting HLS: rtmp://127.0.0.1:1935/live/dupkey → \tmp\hls\dupkey\index.m3u8
-  ✔ passes correct ffmpeg args (stream copy mode) (1.0756ms)
-[radio:r1] ffmpeg exited with code 0
-[radio:r2] ffmpeg exited with code 0
-[preview:pk] ffmpeg exited with code 0
-[preview:p1] ffmpeg exited with code 0
-[preview:p2] ffmpeg exited with code 0
-[hls:dupkey] Starting HLS: rtmp://127.0.0.1:1935/live/dupkey → \tmp\hls\dupkey\index.m3u8
-[hls:errkey] Starting HLS: rtmp://127.0.0.1:1935/live/errkey → \tmp\hls\errkey\index.m3u8
-[hls:stopkey] Starting HLS: rtmp://127.0.0.1:1935/live/stopkey → \tmp\hls\stopkey\index.m3u8
-  ✔ stops any existing process before starting a new one (1.9024ms)
-  ✔ rejects when the process emits an error (nextTick fires before setImmediate) (1.4629ms)
-✔ HlsManager — start() (21.6321ms)
-▶ HlsManager — stop()
-  ✔ resolves immediately when the key is not running (0.5268ms)
-[hls:key-a] Starting HLS: rtmp://127.0.0.1:1935/live/key-a → \tmp\hls\key-a\index.m3u8
-  ✔ kills the process and marks key as not running (2.4131ms)
-✔ HlsManager — stop() (3.2249ms)
-[hls:key-b] Starting HLS: rtmp://127.0.0.1:1935/live/key-b → \tmp\hls\key-b\index.m3u8
-[radio:rkey] Starting HLS: rtmp://127.0.0.1:1935/live/rkey → \tmp\radio\rkey\index.m3u8
-▶ HlsManager — stopAll()
-  ✔ stops all running processes (1.9469ms)
-  ✔ is a no-op when no processes are running (0.2912ms)
-✔ HlsManager — stopAll() (2.391ms)
-▶ RadioManager
-  ✖ hlsDir() returns root/key (0.7457ms)
-[radio:rkey] Starting HLS: rtmp://127.0.0.1:1935/live/rkey → \tmp\radio\rkey\index.m3u8
-  ✔ start() marks key as running and spawns ffmpeg (3.7462ms)
-[radio:rkey] Starting HLS: rtmp://127.0.0.1:1935/live/rkey → \tmp\radio\rkey\index.m3u8
-  ✔ uses audio-only flags (-vn, aac) (2.8726ms)
-[radio:r1] Starting HLS: rtmp://127.0.0.1:1935/live/r1 → \tmp\radio\r1\index.m3u8
-  ✔ stop() marks key as not running (1.4682ms)
-[radio:r2] Starting HLS: rtmp://127.0.0.1:1935/live/r2 → \tmp\radio\r2\index.m3u8
-[preview:pkey] Starting preview: rtmp://127.0.0.1:1935/live/pkey → \tmp\prev\pkey\incoming.jpg
-[preview:pkey] Starting preview: rtmp://127.0.0.1:1935/live/pkey → \tmp\prev\pkey\incoming.jpg
-[preview:pkey] Starting preview: rtmp://127.0.0.1:1935/live/pkey → \tmp\prev\pkey\incoming.jpg
-[preview:pk] Starting preview: rtmp://127.0.0.1:1935/live/pk → \tmp\prev\pk\incoming.jpg
-  ✔ stopAll() clears all keys (3.1232ms)
-✖ RadioManager (12.4155ms)
-▶ PreviewManager — constructor
-  ✖ previewPath() returns root/key/incoming.jpg (0.5741ms)
-  ✔ isRunning() returns false initially (0.2455ms)
-✖ PreviewManager — constructor (0.9298ms)
-▶ PreviewManager — start()
-  ✔ resolves and marks key as running (0.5925ms)
-  ✔ uses image2 muxer with fps filter and -update 1 (0.3519ms)
-  ✔ creates the preview output directory (0.3239ms)
-✔ PreviewManager — start() (1.4111ms)
-▶ PreviewManager — stop() / stopAll()
-  ✔ stop() resolves when key is not running (0.3276ms)
-[preview:p1] Starting preview: rtmp://127.0.0.1:1935/live/p1 → \tmp\prev\p1\incoming.jpg
-[preview:p2] Starting preview: rtmp://127.0.0.1:1935/live/p2 → \tmp\prev\p2\incoming.jpg
-  ✔ stop() marks key as not running (5.4999ms)
-  ✔ stopAll() clears all keys (1.2832ms)
-✔ PreviewManager — stop() / stopAll() (7.3714ms)
-▶ POST /mic
-  ✔ should return 401 with no Authorization header (76.0294ms)
-  ✔ should return 401 for invalid token (10.4313ms)
-  ✔ should return 404 when session not found (11.8924ms)
-  ✔ should return 400 when clientId is missing (6.2998ms)
-  ✔ should return 400 when action is invalid (5.697ms)
-  ✔ claim: sets holder and returns ok with holder (6.2943ms)
-  ✔ claim: overwrites existing holder (soft lock is advisory) (7.6307ms)
-  ✔ release: clears holder when requester is the current holder (8.9472ms)
-  ✔ release: is a no-op when requester is not the current holder (6.1176ms)
-  ✔ release: is a no-op when no one holds the mic (4.0396ms)
-  ✔ emits mic_state event after claim (3.9769ms)
-  ✔ emits mic_state event after release (7.0637ms)
-✔ POST /mic (164.2999ms)
-✖ createFifoWriter: write times out when open fails (EAGAIN) (7.1352ms)
-✖ createFifoWriter: write succeeds when reader present and drains (1.6656ms)
-✖ createFifoWriter: write times out when open fails (EAGAIN) (1.8856ms)
-✖ createFifoWriter: write succeeds when reader present and drains (1.8668ms)
-✔ createFifoWriter writes to regular file (fallback) and resolves true (11.6287ms)
-✔ createFifoWriter on POSIX without reader should time out or throw ENXIO (1.2742ms)
-✔ isFifo / makeFifo basic behavior (3.5074ms)
-✔ makeFifo / isFifo behavior (platform aware) (3.9696ms)
-[preview:test-key] Starting preview: rtmp://127.0.0.1:1935/live/test-key → C:\Users\jsilv\AppData\Local\Temp\preview-test-7AXupM\test-key\incoming.jpg
-[preview:test-key] Preview stream ended
-✔ PreviewManager starts/stops using a fake ffmpeg in PATH (36.5516ms)
+  ✔ starts and stops a process (uses node as a harmless subprocess) (26.0173ms)
+✔ LocalFfmpegRunner (27.465ms)
+✔ LocalFfmpegRunner start/stop lifecycle (uses node as fake ffmpeg) (25.0747ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-rtmp/src/nginx-manager.js:46
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+         ^^^^^^^^^^^^
+SyntaxError: The requested module 'node:fs' does not provide an export named 'readFileSync'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:302:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:405:5)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/managers.test.js:73:28
+
+Node.js v24.13.0
+✖ test\managers.test.js (176.9468ms)
+▶ applyMetacodeProcessors
+  ✔ applies dsk then sound processors in order (dsk async, sound sync) (1.4225ms)
+  ✔ no-ops when processors are null (0.2277ms)
+✔ applyMetacodeProcessors (3.1404ms)
+file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222
+    if (relayManager && newDefault !== null) {
+    ^
+
+ReferenceError: relayManager is not defined
+    at file:///C:/Users/jsilv/Code/live-captions-yt/packages/plugins/lcyt-dsk/src/caption-processor.js:222:5
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.13.0
+✖ test\mic.test.js (1932.2982ms)
+✔ createFifoWriter: write times out when open fails (EAGAIN) (74.1809ms)
+✔ createFifoWriter: write succeeds when reader present and drains (6.6005ms)
+✔ createFifoWriter: write times out when open fails (EAGAIN) (69.461ms)
+✔ createFifoWriter: write succeeds when reader present and drains (12.3382ms)
+✔ createFifoWriter writes to regular file (fallback) and resolves true (5.6759ms)
+✔ createFifoWriter on POSIX without reader should time out or throw ENXIO (0.6682ms)
+✔ isFifo / makeFifo basic behavior (1.5358ms)
+✔ makeFifo / isFifo behavior (platform aware) (4.4002ms)
+✖ PreviewManager starts/stops using a fake ffmpeg in PATH (3.991ms)
 ▶ GET /preview/:key/incoming.jpg — key validation
-  ✔ returns 400 for a key that is too short (72.1365ms)
-  ✔ returns 400 for a key with invalid characters (5.6285ms)
-✔ GET /preview/:key/incoming.jpg — key validation (82.2209ms)
+  ✔ returns 400 for a key that is too short (62.5083ms)
+  ✔ returns 400 for a key with invalid characters (5.6963ms)
+✔ GET /preview/:key/incoming.jpg — key validation (71.2213ms)
 ▶ GET /preview/:key/incoming.jpg — file missing
-  ✔ returns 404 when preview file does not exist (7.5494ms)
-✔ GET /preview/:key/incoming.jpg — file missing (7.8743ms)
-▶ GET /preview/:key/incoming.jpg — file present
-  ✔ returns 200 with image/jpeg content type (7.591ms)
-  ✔ sets CORS header to * (5.5963ms)
-  ✔ sets Cache-Control with public max-age=5 (4.6296ms)
-  ✔ sets Last-Modified header (4.7409ms)
-  ✔ returns 304 when If-Modified-Since is in the future (4.7689ms)
-  ✔ returns 200 when If-Modified-Since is in the past (6.5612ms)
-✔ GET /preview/:key/incoming.jpg — file present (34.7484ms)
-▶ OPTIONS /preview/:key/* — CORS preflight
-  ✔ returns 204 with CORS headers (4.3658ms)
-✔ OPTIONS /preview/:key/* — CORS preflight (4.663ms)
-▶ radio_enabled DB column
-  ✔ defaults to false on createKey (2.3474ms)
-  ✔ can be set to true on createKey (0.7091ms)
-  ✔ isRadioEnabled returns false for unknown key (0.2784ms)
-  ✔ isRadioEnabled returns true after updateKey (0.5683ms)
-  ✔ isRadioEnabled returns false after disabling (0.6019ms)
-✔ radio_enabled DB column (25.0154ms)
-▶ RadioManager
-  ✔ hlsDir returns path inside hlsRoot (0.4923ms)
-  ✔ isRunning returns false for unstarted key (0.1984ms)
-  ✔ stop resolves immediately if not running (0.4386ms)
-  ✔ stopAll resolves immediately when no processes running (0.2353ms)
-✔ RadioManager (3.2968ms)
-▶ POST /radio (nginx-rtmp single-URL callbacks)
-  ✔ returns 400 if name is missing (70.9129ms)
-  ✔ returns 403 when radio is not enabled for the key (7.0327ms)
-  ✔ returns 200 and starts HLS when radio is enabled (call=publish) (3.9061ms)
-  ✔ returns 200 and stops HLS on call=publish_done (5.2298ms)
-  ✔ returns 400 for unknown call type (4.7489ms)
-✔ POST /radio (nginx-rtmp single-URL callbacks) (114.8645ms)
-▶ POST /radio/on_publish and /radio/on_publish_done
-  ✔ POST /radio/on_publish starts enabled key (12.7226ms)
-  ✔ POST /radio/on_publish denies disabled key (7.1223ms)
-  ✔ POST /radio/on_publish_done stops the stream (3.4666ms)
-✔ POST /radio/on_publish and /radio/on_publish_done (34.195ms)
-▶ GET /radio/:key/index.m3u8
-  ✔ returns 404 when no stream is live (12.1943ms)
-  ✔ returns 400 for too-short key (6.73ms)
-  ✔ returns 400 for key with path traversal characters (9.5501ms)
-  ✔ serves playlist with correct content-type when file exists (9.2939ms)
-✔ GET /radio/:key/index.m3u8 (49.5364ms)
-▶ GET /radio/:key/:segment
-  ✔ returns 400 for non-ts segment names (7.0285ms)
-  ✔ returns 400 for segment with wrong numeric format (4.1179ms)
-  ✔ returns 404 for valid segment name that does not exist (3.2777ms)
-  ✔ serves segment with correct content-type when file exists (5.554ms)
-✔ GET /radio/:key/:segment (3044.4658ms)
-▶ GET /radio/:key/player.js
-  ✔ returns 400 for too-short key (2.757ms)
-  ✔ returns JavaScript content-type (2.1727ms)
-  ✔ snippet contains the radio key and HLS URL (1.46ms)
-  ✔ snippet creates an audio element (1.4581ms)
-  ✔ has CORS header (1.2187ms)
-✔ GET /radio/:key/player.js (14.0207ms)
-✓ ffmpeg found — RTMP relay is available.
-✓ ffmpeg found — RTMP relay is available.
-✓ ffmpeg found — RTMP relay is available.
-✓ ffmpeg found — RTMP relay is available.
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/key1
-▶ probeFfmpeg
-  ✔ returns available=true when ffmpeg exists (3.4462ms)
-  ✔ returns hasLibx264=true when encoder is in output (0.5845ms)
-  ✔ returns hasEia608=true when encoder is in output (0.3326ms)
-  ✔ returns hasSubrip=true when demuxer is in output (1.653ms)
-✔ probeFfmpeg (10.3825ms)
-▶ RtmpRelayManager — constructor
-  ✔ isRunning() returns false initially (0.5286ms)
-(node:5340) ExperimentalWarning: Module mocking is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-  ✔ runningSlots() returns [] when nothing running (1.3904ms)
-  ✔ startedAt() returns null initially (0.5186ms)
-  ✔ hasCea708() returns false initially (2.7805ms)
-  ✔ isPublishing() returns false initially (0.8358ms)
-✔ RtmpRelayManager — constructor (6.9813ms)
-▶ RtmpRelayManager — publish tracking
-  ✔ markPublishing / isPublishing / markNotPublishing (0.5317ms)
-✔ RtmpRelayManager — publish tracking (0.6957ms)
-[rtmp] ffmpeg exited with code 0 for key dup
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/key1
-▶ RtmpRelayManager — start()
-  ✔ resolves and marks key as running (16.6022ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/key1
-  ✔ uses -c copy in simple stream copy mode (1.1213ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/dup
-  ✔ includes the target URL in tee args (0.9733ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/dup
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/empty
-  ✔ stops any existing process before starting new one (3.1451ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/k
-  ✔ resolves immediately with no relays (stops existing proc) (1.1496ms)
-  ✔ rejects when ffmpegCaps.available is false (0.9174ms)
-[rtmp] ffmpeg exited with code 0 for key empty
-[rtmp] Starting relay (2 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/k
-  ✔ records startedAt after start() (1.1629ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/k
-  ✔ runningSlots() returns correct slot numbers (0.9608ms)
-✔ RtmpRelayManager — start() (26.6349ms)
-▶ RtmpRelayManager — stop()
-  ✔ resolves immediately when key is not running (0.4446ms)
-[rtmp] ffmpeg exited with code 0 for key k
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/k
-  ✔ marks key as not running after stop() (1.9502ms)
-[rtmp] ffmpeg exited with code 0 for key k
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/a
-  ✔ stopKey() is an alias for stop() (0.8599ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/b
-[rtmp] ffmpeg exited with code 0 for key a
-[rtmp] ffmpeg exited with code 0 for key b
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/k
-  ✔ stopAll() stops all running processes (1.1177ms)
-✔ RtmpRelayManager — stop() (4.6365ms)
-[rtmp] Starting relay (1 slot(s), cea708=false, transcode=false, dsk=false): rtmp://rtmp.lcyt.fi/stream/k
-▶ RtmpRelayManager — startAll()
-  ✔ startAll() is an alias for start() (1.0671ms)
-✔ RtmpRelayManager — startAll() (1.1912ms)
-▶ RtmpRelayManager — isSlotRunning()
-  ✔ returns false when not running (0.2731ms)
-[rtmp] RTMP_CONTROL_URL not set -- skipping drop/publisher
-  ✔ returns true for running slot (4.0578ms)
-✔ RtmpRelayManager — isSlotRunning() (4.5402ms)
-▶ RtmpRelayManager — writeCaption()
-  ✖ returns false when key is not running in CEA-708 mode (2.0242ms)
-✖ RtmpRelayManager — writeCaption() (2.1838ms)
-▶ RtmpRelayManager — dropPublisher()
-  ✔ is a no-op when RTMP_CONTROL_URL is not set (0.3233ms)
-✔ RtmpRelayManager — dropPublisher() (0.463ms)
-﹣ FIFO host<->container communication (gated) (0.9375ms) # SKIP
-▶ relay_allowed column
-  ✔ defaults to false on createKey (1.5298ms)
-  ✔ can be set to true on createKey (0.6481ms)
-  ✔ isRelayAllowed returns false by default (0.5569ms)
-  ✔ isRelayAllowed returns true after updateKey (0.6681ms)
-  ✔ isRelayAllowed returns false for unknown key (0.2475ms)
-✔ relay_allowed column (20.029ms)
-▶ relay_active column
-  ✔ defaults to false on createKey (0.7007ms)
-  ✔ setRelayActive sets it to true (0.4977ms)
-  ✔ setRelayActive sets it back to false (0.4392ms)
-  ✔ isRelayActive returns false for unknown key (0.1994ms)
-  ✔ setRelayActive returns false for unknown key (0.2332ms)
-✔ relay_active column (7.1573ms)
-▶ rtmp_relays DB helpers (fan-out)
-  ✔ getRelaySlot returns null when no relay configured (0.3705ms)
-  ✔ getRelay (compat alias) returns null for slot 1 when no relay configured (0.1893ms)
-  ✔ upsertRelay creates relay at slot 1 by default (via compat alias) (4.7267ms)
-  ✔ upsertRelay creates relay at slot 2 (0.3151ms)
-  ✔ getRelays returns all slots ordered by slot (0.2548ms)
-  ✔ upsertRelay updates existing relay slot (0.4198ms)
-  ✔ deleteRelaySlot removes a specific slot (0.8977ms)
-  ✔ deleteAllRelays removes all slots for a key (0.5114ms)
-  ✔ deleteRelay (compat alias) removes all slots and returns boolean (0.3428ms)
-  ✔ upsertRelay rejects slot out of range (1.0294ms)
-  ✔ upsertRelay stores targetName and captionMode (0.4525ms)
-✔ rtmp_relays DB helpers (fan-out) (14.8021ms)
-▶ PATCH /keys/:key relay_allowed
-  ✔ should set relay_allowed via PATCH (68.9208ms)
-[rtmp] RTMP_CONTROL_URL not set -- skipping drop/publisher
-  ✔ should unset relay_allowed via PATCH (5.0792ms)
-✔ PATCH /keys/:key relay_allowed (88.2808ms)
-▶ RtmpRelayManager
-  ✔ isRunning returns false for unknown key (0.3551ms)
-  ✔ isSlotRunning returns false for unknown key+slot (0.1115ms)
-  ✔ runningSlots returns empty array for unknown key (0.7458ms)
-  ✔ stop is a no-op for unknown key (0.3318ms)
-  ✔ stopKey is a no-op for unknown key (0.1588ms)
-  ✔ stopAll resolves when no processes running (0.1663ms)
-  ✔ dropPublisher is a no-op when RTMP_CONTROL_URL not set (0.2608ms)
-  ✔ isPublishing returns false for unknown key (0.122ms)
-  ✔ startedAt returns null for unknown key (0.1302ms)
-  ✔ hasCea708 returns false for unknown key (0.1049ms)
-  ✖ writeCaption returns false when no process is running (1.5125ms)
-  ✔ start() with empty relays is a no-op (1.2222ms)
-  ✔ start() with empty relays resolves and stops any existing process (0.1179ms)
-  ✔ runningSlots reflects slots passed to start() (via meta, no real ffmpeg) (0.3274ms)
-  ✔ startedAt returns the startedAt Date from meta (0.1293ms)
-✖ RtmpRelayManager (6.358ms)
-▶ POST /rtmp (nginx-rtmp callbacks)
-  ✔ returns 400 when name is missing (24.4313ms)
-  ✔ returns 403 when relay not allowed (call=publish) (3.1959ms)
-[rtmp] Relay not active for d276a1ff…; accepting stream but not fanning out
-  ✔ returns 200 when relay_allowed (no relay configured) (2.1842ms)
-  ✔ returns 200 for call=publish_done even for unknown key (2.155ms)
-[rtmp] Relay not active for 90bfe9b7…; accepting stream but not fanning out
-  ✔ marks key as publishing on call=publish (2.4164ms)
-[rtmp] Relay not active for 4b96e698…; accepting stream but not fanning out
-  ✔ unmarks key on call=publish_done (2.641ms)
-[rtmp] Relay not active for ea2279cd…; accepting stream but not fanning out
-  ✔ does NOT start fan-out when relay_active=false even with slots configured (2.0287ms)
-  ✔ returns 400 for unknown call type (1.271ms)
-[rtmp] Rejected request: app 'wrong-app' !== expected 'expected-app'
-  ✔ rejects wrong app name when RTMP_APPLICATION is set (1.3321ms)
-  ✔ accepts correct app name when RTMP_APPLICATION is set (1.2059ms)
-✔ POST /rtmp (nginx-rtmp callbacks) (49.9189ms)
-▶ /stream CRUD (fan-out)
-  ✔ GET /stream returns empty relays when none configured (6.603ms)
-  ✔ PUT /stream/active returns 400 when active is not a boolean (3.3319ms)
-  ✔ PUT /stream/active sets relay active to true (4.0848ms)
-  ✔ PUT /stream/active sets relay active to false (1.7451ms)
-  ✔ POST /stream creates relay slot 1 with targetName and captionMode (1.8699ms)
-  ✔ POST /stream creates relay slot 2 (second target in fan-out) (1.5808ms)
-  ✔ GET /stream returns all configured slots + runningSlots (1.304ms)
-  ✔ GET /stream/history returns stream history array (1.4173ms)
-  ✔ PUT /stream/1 updates relay slot 1 (1.6979ms)
-  ✔ PUT /stream/3 returns 404 when slot 3 not configured (1.9519ms)
-  ✔ POST /stream returns 400 for invalid targetUrl (2.0602ms)
-  ✔ POST /stream returns 400 for slot out of range (1.6142ms)
-  ✔ DELETE /stream/2 removes slot 2 only (2.2792ms)
-[rtmp] RTMP_CONTROL_URL not set -- skipping drop/publisher
-  ✔ DELETE /stream removes all relay configs (2.1549ms)
-  ✔ GET /stream returns 403 for key without relay_allowed (1.5069ms)
-✔ /stream CRUD (fan-out) (42.7782ms)
-▶ cea708_delay_ms per-key column
-  ✔ defaults to 0 on createKey (0.2559ms)
-  ✔ can be set via createKey (0.1858ms)
-  ✔ can be updated via updateKey (0.2176ms)
-  ✔ is exposed in formatKey as cea708DelayMs (0.1734ms)
-✔ cea708_delay_ms per-key column (3.7137ms)
-▶ RtmpRelayManager CEA-708 (meta injection, no real ffmpeg)
-  ✔ hasCea708 returns false when meta.hasCea708 is false (0.14ms)
-  ✔ hasCea708 returns true when meta.hasCea708 is true (0.0775ms)
-  ✖ writeCaption returns false when hasCea708 is false (0.3465ms)
-  ✖ writeCaption returns false when proc has no stdin (e.g. stream copy mode) (0.2545ms)
-  ✖ writeCaption writes SRT cue to stdin and returns true (0.4753ms)
-  ✔ writeCaption uses speechStart for cue timing when provided (0.2556ms)
-  ✔ writeCaption increments srtSeq on each call (0.159ms)
-  ✔ CEA-708 not enabled when ffmpegCaps lacks libx264 or eia608 (0.1194ms)
-✖ RtmpRelayManager CEA-708 (meta injection, no real ffmpeg) (2.0227ms)
-▶ PATCH /keys/:key cea708_delay_ms
-  ✔ sets cea708_delay_ms via PATCH (12.4379ms)
-  ✔ resets cea708_delay_ms to 0 via PATCH (5.1225ms)
-✔ PATCH /keys/:key cea708_delay_ms (22.108ms)
-▶ POST /stream captionMode cea708 accepted
-  ✔ POST /stream with captionMode cea708 returns 201 with captionMode=cea708 (4.4978ms)
-  ✔ POST /stream with unknown captionMode defaults to http (3.4564ms)
-✔ POST /stream captionMode cea708 accepted (13.2532ms)
-▶ upsertRelay — per-slot transcoding fields
-  ✔ stores scale, fps, videoBitrate, audioBitrate in the DB (0.2027ms)
-  ✔ all transcode fields default to null (0.1509ms)
-  ✔ can update transcode fields via a second upsertRelay (0.2373ms)
-✔ upsertRelay — per-slot transcoding fields (2.8818ms)
-▶ POST /stream — transcode field validation
-  ✔ POST /stream with scale + fps stores transcode options (4.3591ms)
-  ✔ POST /stream with invalid scale returns 400 (2.6689ms)
-  ✔ POST /stream with invalid fps returns 400 (1.8208ms)
-  ✔ POST /stream with scale using colon notation is normalised to WxH (1.7736ms)
-  ✔ POST /stream with null scale stores null (1.3433ms)
-✔ POST /stream — transcode field validation (15.9352ms)
-▶ RtmpRelayManager server-side DSK overlay
-  ✔ hasDsk returns false for unknown key (0.1736ms)
-  ✔ dskNames returns empty array for unknown key (0.0999ms)
-  ✔ setDskOverlay stores DSK state (0.152ms)
-  ✔ setDskOverlay clears DSK state when imagePaths is empty (0.0938ms)
-  ✔ hasDsk returns true when meta.hasDsk is true (via meta injection) (0.1035ms)
-  ✔ dskNames returns ordered names from meta (0.0877ms)
-  ✔ start() with DSK state picks up _dskState for hasDsk flag in meta (0.1469ms)
-  ✔ setDskOverlay skips empty imagePaths entries (0.0917ms)
-  ✔ setDskOverlay clears state when only empty paths given (0.0808ms)
-✔ RtmpRelayManager server-side DSK overlay (1.2038ms)
-▶ GET /stats
-  ✔ should return 401 with no Authorization header (51.2846ms)
-  ✔ should return 401 for invalid token (8.9829ms)
-  ✔ should return stats for a valid JWT (session need not be in store) (10.5099ms)
-  ✔ should return stats for a valid session (5.4778ms)
-  ✔ should return 404 for unknown API key (11.5232ms)
-  ✔ usage.dailyLimit and lifetimeLimit are null when not set (9.7219ms)
-✔ GET /stats (101.1424ms)
-▶ DELETE /stats
-  ✔ should return 401 with no Authorization header (4.1073ms)
-  ✔ should anonymise the key and return ok (4.9411ms)
-  ✔ should return 404 for unknown API key (7.213ms)
-✔ DELETE /stats (16.6756ms)
-▶ makeSessionId
-  ✔ should return a 16-character hex string (1.0271ms)
-  ✔ should be deterministic — same inputs produce same output (0.1626ms)
-  ✔ should differ for different inputs (0.1864ms)
-  ✔ should differ when only the API key differs (0.1351ms)
-✔ makeSessionId (2.4615ms)
-▶ SessionStore
-  ▶ create, get, has
-    ✔ should create a session and retrieve it by sessionId (0.7847ms)
-    ✔ has() should return true for existing session (0.2931ms)
-    ✔ has() should return false for non-existent session (0.2183ms)
-    ✔ get() should return undefined for non-existent session (0.1762ms)
-    ✔ sessionId should match makeSessionId output (0.2627ms)
-    ✔ should default sequence and syncOffset to 0 (0.2623ms)
-  ✔ create, get, has (2.4072ms)
-  ▶ getByDomain
-    ✔ should return all sessions with matching domain (0.2548ms)
-    ✔ should return empty array when no sessions match the domain (0.8382ms)
-  ✔ getByDomain (1.2246ms)
-  ▶ remove
-    ✔ should remove and return the session (0.3209ms)
-    ✔ should return undefined for non-existent session (0.129ms)
-  ✔ remove (0.5625ms)
-  ▶ all and size
-    ✔ size() should return 0 for empty store (0.1634ms)
-    ✔ size() should return the count of active sessions (0.2184ms)
-    ✔ all() should iterate over all sessions (0.1944ms)
-  ✔ all and size (0.7215ms)
-  ▶ touch
-    ✔ should update lastActivityAt to approximately now (11.3168ms)
-    ✔ should do nothing for non-existent session (0.2628ms)
-  ✔ touch (11.7287ms)
-  ▶ stopCleanup
-    ✔ should not throw when called on a store with no timer (0.1467ms)
-    ✔ should stop the cleanup timer when it exists (0.1502ms)
-  ✔ stopCleanup (0.3814ms)
-  ▶ cleanup sweep
-    ✔ should remove idle sessions and call sender.end() (84.9037ms)
-    ✔ should not remove recently active sessions (61.5265ms)
-  ✔ cleanup sweep (146.7239ms)
-✔ SessionStore (164.376ms)
-[hls:dirtest] Starting HLS: rtmp://127.0.0.1:9999/testapp/dirtest → C:\Users\jsilv\AppData\Local\Temp\hls-mgr-test-1774164404020\dirtest\index.m3u8
-▶ hls_enabled DB column
-  ✔ defaults to false on createKey (2.1305ms)
-  ✔ can be set to true on createKey (0.5648ms)
-  ✔ isHlsEnabled returns false for unknown key (0.2265ms)
-  ✔ isHlsEnabled returns true after updateKey (0.7067ms)
-  ✔ isHlsEnabled returns false after disabling (0.4295ms)
-  ✔ formatKey includes hlsEnabled field (0.4997ms)
-✔ hls_enabled DB column (23.0844ms)
-▶ HlsManager
-  ✔ hlsDir returns path inside hlsRoot (0.4381ms)
-  ✔ isRunning returns false for unstarted key (0.245ms)
-  ✔ stopAll resolves immediately when no processes are running (0.3907ms)
-  ✔ stop resolves immediately for non-running key (0.2742ms)
-[hls:dirtest] HLS stream ended
-  ✔ start creates the HLS output directory (29.6713ms)
-✔ HlsManager (32.9017ms)
-▶ PreviewManager
-  ✔ previewPath returns path inside previewRoot with incoming.jpg (0.2339ms)
-  ✔ isRunning returns false for unstarted key (0.1115ms)
-  ✔ stopAll resolves immediately when no processes are running (0.1646ms)
-  ✔ stop resolves immediately for non-running key (0.1762ms)
-✔ PreviewManager (1.8588ms)
-▶ POST /stream-hls — nginx callbacks
-  ✔ returns 400 when name is missing (59.2442ms)
-  ✔ returns 403 when HLS is not enabled for the key (6.6776ms)
-  ✔ returns 200 for publish_done even if key is unknown (stop is idempotent) (5.4003ms)
-  ✔ returns 400 for unknown call type (4.6875ms)
-  ✔ POST /stream-hls/on_publish returns 403 if not enabled (4.1913ms)
-  ✔ POST /stream-hls/on_publish_done returns 200 (2.9176ms)
-✔ POST /stream-hls — nginx callbacks (101.8668ms)
-▶ GET /stream-hls/:key/index.m3u8
-  ✔ returns 404 when no stream is live (12.6329ms)
-  ✔ returns 400 for too-short key (2.9401ms)
-  ✔ returns 400 for key with path traversal characters (7.2481ms)
-  ✔ serves playlist with correct content-type when file exists (7.2309ms)
-✔ GET /stream-hls/:key/index.m3u8 (38.2776ms)
-▶ GET /stream-hls/:key/:segment
-  ✔ returns 400 for non-ts segment names (4.1997ms)
-  ✔ returns 400 for segment with wrong numeric format (2.2589ms)
-  ✔ returns 404 for valid segment name that does not exist (1.6282ms)
-  ✔ serves segment with correct content-type when file exists (2.8769ms)
-✔ GET /stream-hls/:key/:segment (3035.1157ms)
-▶ GET /stream-hls/:key/player.js
-  ✔ returns 400 for too-short key (2.3646ms)
-  ✔ returns JavaScript content-type (1.7214ms)
-  ✔ snippet contains the HLS key and playlist URL (1.0233ms)
-  ✔ snippet creates a video element (not audio) (1.0635ms)
-  ✔ has CORS header (0.9003ms)
-✔ GET /stream-hls/:key/player.js (11.1292ms)
-▶ GET /preview/:key/incoming.jpg
-  ✔ returns 400 for too-short key (2.6721ms)
-  ✔ returns 404 when no preview is available (1.8472ms)
-  ✔ returns 400 for path traversal characters in key (1.7597ms)
-  ✔ serves JPEG with correct content-type when file exists (2.3611ms)
-  ✔ response has Cache-Control with max-age=5 (1.8914ms)
-  ✔ response includes Last-Modified header (1.9265ms)
-  ✔ returns 304 when If-Modified-Since matches mtime (2.6875ms)
-  ✔ has CORS header (2.1123ms)
-✔ GET /preview/:key/incoming.jpg (3035.5122ms)
-▶ GET /stream — authentication
-  ✔ returns 401 without token (48.3107ms)
-  ✔ returns 401 with invalid token (7.9389ms)
-✔ GET /stream — authentication (59.3694ms)
-▶ /stream — relay_allowed check
-  ✔ returns 403 when relay_allowed = 0 (7.2035ms)
-✔ /stream — relay_allowed check (7.5798ms)
-▶ POST /stream — create relay slot
-  ✔ returns 400 for missing targetUrl (31.1783ms)
-  ✔ returns 400 for non-rtmp targetUrl (3.7966ms)
-  ✔ returns 400 for invalid slot (> 4) (4.2271ms)
-  ✔ returns 400 for invalid scale format (3.2874ms)
-  ✔ creates a relay slot and returns 201 (4.3282ms)
-  ✔ returns 400 when all 4 slots are used (14.9391ms)
-✔ POST /stream — create relay slot (62.7711ms)
-▶ GET /stream — list slots
-  ✔ returns 200 with empty relays when none configured (2.772ms)
-  ✔ lists configured slots (3.0293ms)
-✔ GET /stream — list slots (5.9906ms)
-▶ GET /stream/history
-  ✔ returns 200 with empty streams array initially (1.6943ms)
-✔ GET /stream/history (1.795ms)
-▶ PUT /stream/active
-  ✔ returns 400 when active is not boolean (1.8216ms)
-  ✔ sets relay_active to true and returns 200 (1.7179ms)
-  ✔ sets relay_active to false and stops running process (1.5126ms)
-✔ PUT /stream/active (5.2259ms)
-▶ PUT /stream/:slot — update slot
-  ✔ returns 404 for a slot that does not exist (2.2801ms)
-  ✔ returns 400 for invalid slot number (1.9082ms)
-  ✔ updates an existing slot and returns 200 (2.859ms)
-✔ PUT /stream/:slot — update slot (7.2367ms)
-▶ DELETE /stream/:slot
-  ✔ returns 400 for invalid slot (1.8031ms)
-  ✔ deletes a slot and returns 200 (2.85ms)
-✔ DELETE /stream/:slot (4.8139ms)
-▶ DELETE /stream — delete all slots
-  ✔ deletes all slots and returns count (4.6676ms)
-  ✔ returns 0 deleted when nothing was configured (1.6852ms)
-✔ DELETE /stream — delete all slots (6.5503ms)
-▶ POST /sync
-  ✔ should return 401 with no Authorization header (51.4962ms)
-  ✔ should return 401 for invalid token (23.9471ms)
-  ✔ should return 404 when session not found (9.4756ms)
-  ✔ should return 200 with syncOffset, roundTripTime, serverTimestamp, statusCode (6.8531ms)
-  ✔ should update session.syncOffset from the sync result (4.1263ms)
-  ✔ should touch session activity after sync (20.9855ms)
-  ✔ should return 502 when sender.sync() throws (4.2413ms)
-✔ POST /sync (124.9217ms)
-▶ GET /usage — authentication
-  ✔ returns 503 when neither USAGE_PUBLIC nor ADMIN_KEY is set (53.337ms)
-  ✔ returns 401 when ADMIN_KEY is set but no X-Admin-Key header is provided (8.5205ms)
-  ✔ returns 403 when X-Admin-Key header has wrong value (5.2238ms)
-  ✔ returns 200 when correct X-Admin-Key is provided (7.3633ms)
-  ✔ returns 200 when USAGE_PUBLIC is set (no auth needed) (3.7685ms)
-✔ GET /usage — authentication (82.4385ms)
-▶ GET /usage — validation
-  ✔ returns 400 for invalid from date format (4.4243ms)
-  ✔ returns 400 for invalid to date format (3.8239ms)
-  ✔ returns 400 when from > to (3.4463ms)
-  ✔ returns 403 when domain is not in ALLOWED_DOMAINS (4.1363ms)
-✔ GET /usage — validation (16.5701ms)
-▶ GET /usage — data and granularity
-  ✔ returns an array under data key (5.5736ms)
-  ✔ returns cache headers for historical (past) windows (6.1236ms)
-  ✔ returns no-store cache header for windows including today when global middleware is present (3.3793ms)
-  ✔ returns day-granularity data by default (3.5378ms)
-  ✔ granularity=hour returns hour-bucketed data (4.0027ms)
-✔ GET /usage — data and granularity (23.2483ms)
-▶ GET /video/:key — player HTML page
-  ✔ returns 400 for an invalid key (too short) (61.6616ms)
-  ✔ returns 400 for a key with invalid characters (11.4657ms)
-  ✔ returns 200 HTML for a valid key regardless of stream status (15.1606ms)
-  ✔ includes CORS headers (11.2666ms)
-  ✔ applies dark theme by default (12.6669ms)
-  ✔ applies light theme when ?theme=light (7.2441ms)
-  ✔ sets Cache-Control: no-cache (3.2223ms)
-✔ GET /video/:key — player HTML page (128.1145ms)
-▶ GET /video/:key/master.m3u8 — HLS master manifest
-  ✔ returns 404 when stream is not live (5.0822ms)
-  ✔ returns 400 for invalid key (3.8828ms)
-  ✔ returns 200 with HLS manifest for a running stream (4.5151ms)
-  ✔ includes subtitle tracks in manifest when subs manager has languages (5.2592ms)
-✔ GET /video/:key/master.m3u8 — HLS master manifest (19.3764ms)
-▶ GET /video/:key/subs/:lang/playlist.m3u8 — subtitle playlist
-  ✔ returns 404 when playlist is not available (2.9906ms)
-  ✔ returns 400 for invalid lang tag (4.2473ms)
-  ✔ returns 200 with playlist content when available (2.4091ms)
-✔ GET /video/:key/subs/:lang/playlist.m3u8 — subtitle playlist (10.0133ms)
-▶ GET /video/:key/subs/:lang/:segment — WebVTT segment file
-  ✔ returns 400 for invalid segment filename format (3.9481ms)
-  ✔ returns 400 for invalid key (3.1726ms)
-  ✔ returns 404 when segment file does not exist (existsSync returns false) (2.2455ms)
-✔ GET /video/:key/subs/:lang/:segment — WebVTT segment file (9.7076ms)
-▶ OPTIONS /video/* — CORS preflight
-  ✔ returns 204 with CORS headers (2.4182ms)
-✔ OPTIONS /video/* — CORS preflight (2.6002ms)
-▶ GET /viewer/:key — validation
-  ✔ returns 400 for a key that is too short (< 3 chars) (47.7282ms)
-  ✔ returns 400 for a key with invalid characters (6.5117ms)
-  ✔ returns 400 for a key with path traversal attempt (3.9604ms)
-  ✔ accepts a key with letters and digits (5.7439ms)
-  ✔ accepts a key with hyphens and underscores (6.3043ms)
-  ✔ accepts a minimum-length (3 char) key (7.306ms)
-✔ GET /viewer/:key — validation (81.1858ms)
-▶ GET /viewer/:key — SSE response headers
-  ✔ sets Content-Type to text/event-stream (5.558ms)
-  ✔ sets Access-Control-Allow-Origin to * (5.7898ms)
-  ✔ sets Cache-Control to no-cache (4.7751ms)
-✔ GET /viewer/:key — SSE response headers (16.5536ms)
-▶ OPTIONS /viewer/:key — CORS preflight
-  ✔ returns 204 with Allow-Origin: * (4.3417ms)
-  ✔ returns Allow-Methods containing GET (2.6684ms)
-✔ OPTIONS /viewer/:key — CORS preflight (7.2114ms)
-▶ GET /viewer/:key — connected event
-  ✔ emits a connected event immediately on connection (4.4018ms)
-✔ GET /viewer/:key — connected event (4.5973ms)
-▶ broadcastToViewers
-  ✔ does not throw when no clients are subscribed to a key (0.509ms)
-  ✔ delivers a caption event to a connected subscriber (96.3363ms)
-  ✔ delivers to multiple concurrent subscribers (92.2322ms)
-  ✔ forwards translations in the broadcast payload (93.7149ms)
-  ✔ forwards codes (section etc.) in the broadcast payload (93.4358ms)
-✔ broadcastToViewers (376.5659ms)
-▶ POST /live — viewer target validation
-  ✔ accepts a valid viewer target (18.0193ms)
-  ✔ returns 400 when viewerKey is missing (2.8959ms)
-  ✔ returns 400 when viewerKey is too short (2.3102ms)
-  ✔ returns 400 when viewerKey contains invalid characters (2.2752ms)
-✔ POST /live — viewer target validation (25.7059ms)
-▶ Integration — caption fan-out to viewer SSE
-  ✔ delivers caption text to SSE subscriber when viewer target is in session (87.729ms)
-  ✔ forwards translations from POST /captions payload to SSE subscribers (89.2154ms)
-  ✔ forwards codes (section) from POST /captions payload to SSE subscribers (92.793ms)
-  ✔ includes both text and composedText in the SSE payload (93.7635ms)
-  ✔ delivers to viewer SSE without a primary YouTube sender (target-array mode) (91.6871ms)
-  ✔ delivers batch captions as multiple SSE events (93.4459ms)
-✔ Integration — caption fan-out to viewer SSE (549.0058ms)
-▶ GET /youtube/config — authentication
-  ✔ returns 401 without a token (38.343ms)
-  ✔ returns 401 for an invalid token (4.5328ms)
-✔ GET /youtube/config — authentication (45.3753ms)
-▶ GET /youtube/config — client ID not configured
-  ✔ returns 503 when YOUTUBE_CLIENT_ID is not set (12.7151ms)
-✔ GET /youtube/config — client ID not configured (13.0453ms)
-▶ GET /youtube/config — client ID configured
-  ✔ returns 200 with clientId (5.1861ms)
-✔ GET /youtube/config — client ID configured (5.5674ms)
-ℹ tests 621
-ℹ suites 148
-ℹ pass 607
-ℹ fail 12
-ℹ cancelled 0
-ℹ skipped 2
-ℹ todo 0
-ℹ duration_ms 8668.6416
-
-✖ failing tests:
-
-test at test\managers.test.js:98:3
-✖ hlsDir() returns root/key path (6.6074ms)
-  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
-  
-    assert.ok(p.includes('/tmp/hls'))
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/managers.test.js:102:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at Suite.processPendingSubtests (node:internal/test_runner/test:788:18)
-      at Test.postRun (node:internal/test_runner/test:1235:19)
-      at Test.run (node:internal/test_runner/test:1163:12)
-      at async Promise.all (index 0)
-      at async Suite.run (node:internal/test_runner/test:1518:7)
-      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
-
-test at test\managers.test.js:213:3
-✖ hlsDir() returns root/key (0.7457ms)
-  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
-  
-    assert.ok(p.includes('/tmp/radio'))
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/managers.test.js:216:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async Promise.all (index 0)
-      at async Suite.run (node:internal/test_runner/test:1518:7)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
-
-test at test\managers.test.js:256:3
-✖ previewPath() returns root/key/incoming.jpg (0.5741ms)
-  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
-  
-    assert.ok(p.includes('/tmp/prev'))
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/managers.test.js:259:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at Test.start (node:internal/test_runner/test:1003:17)
-      at node:internal/test_runner/test:1516:71
-      at node:internal/per_context/primordials:466:82
-      at new Promise (<anonymous>)
-      at new SafePromise (node:internal/per_context/primordials:435:3)
-      at node:internal/per_context/primordials:466:9
-      at Array.map (<anonymous>) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: false,
-    expected: true,
-    operator: '==',
-    diff: 'simple'
-  }
-
-test at test\pipe-utils.added.test.js:7:1
-✖ createFifoWriter: write times out when open fails (EAGAIN) (7.1352ms)
-  TypeError: Cannot assign to read only property 'openFifoNonBlocking' of object '[object Module]'
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/pipe-utils.added.test.js:12:33)
-      at async Test.run (node:internal/test_runner/test:1113:7)
-      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
-
-test at test\pipe-utils.added.test.js:28:1
-✖ createFifoWriter: write succeeds when reader present and drains (1.6656ms)
-  TypeError: Cannot assign to read only property 'openFifoNonBlocking' of object '[object Module]'
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/pipe-utils.added.test.js:40:33)
-      at async Test.run (node:internal/test_runner/test:1113:7)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
-
-test at test\pipe-utils.test.js:10:1
-✖ createFifoWriter: write times out when open fails (EAGAIN) (1.8856ms)
-  TypeError: Cannot assign to read only property 'openFifoNonBlocking' of object '[object Module]'
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/pipe-utils.test.js:15:33)
-      at async Test.run (node:internal/test_runner/test:1113:7)
-      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
-
-test at test\pipe-utils.test.js:31:1
-✖ createFifoWriter: write succeeds when reader present and drains (1.8668ms)
-  TypeError: Cannot assign to read only property 'openFifoNonBlocking' of object '[object Module]'
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/pipe-utils.test.js:43:33)
-      at async Test.run (node:internal/test_runner/test:1113:7)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
-
-test at test\rtmp-manager.test.js:299:3
-✖ returns false when key is not running in CEA-708 mode (2.0242ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-  + actual - expected
-  
-  + Promise {
-  +   Symbol(async_id_symbol): 4071,
-  +   Symbol(trigger_async_id_symbol): 124,
-  +   false
-  + }
-  - false
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/rtmp-manager.test.js:302:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at async Promise.all (index 0)
-      at async Suite.run (node:internal/test_runner/test:1518:7)
-      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: [Promise],
-    expected: false,
-    operator: 'strictEqual',
-    diff: 'simple'
-  }
-
-test at test\rtmp.test.js:300:3
-✖ writeCaption returns false when no process is running (1.5125ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-  + actual - expected
-  
-  + Promise {
-  +   Symbol(async_id_symbol): 4097,
-  +   Symbol(trigger_async_id_symbol): 132,
-  +   false
-  + }
-  - false
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/rtmp.test.js:302:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at Suite.processPendingSubtests (node:internal/test_runner/test:788:18)
-      at Test.postRun (node:internal/test_runner/test:1235:19)
-      at Test.run (node:internal/test_runner/test:1163:12)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async Suite.processPendingSubtests (node:internal/test_runner/test:788:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: [Promise],
-    expected: false,
-    operator: 'strictEqual',
-    diff: 'simple'
-  }
-
-test at test\rtmp.test.js:708:3
-✖ writeCaption returns false when hasCea708 is false (0.3465ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-  + actual - expected
-  
-  + Promise {
-  +   Symbol(async_id_symbol): 11149,
-  +   Symbol(trigger_async_id_symbol): 238,
-  +   false
-  + }
-  - false
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/rtmp.test.js:711:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at Suite.processPendingSubtests (node:internal/test_runner/test:788:18)
-      at Test.postRun (node:internal/test_runner/test:1235:19)
-      at Test.run (node:internal/test_runner/test:1163:12)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async Suite.processPendingSubtests (node:internal/test_runner/test:788:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: [Promise],
-    expected: false,
-    operator: 'strictEqual',
-    diff: 'simple'
-  }
-
-test at test\rtmp.test.js:714:3
-✖ writeCaption returns false when proc has no stdin (e.g. stream copy mode) (0.2545ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-  + actual - expected
-  
-  + Promise {
-  +   Symbol(async_id_symbol): 11158,
-  +   Symbol(trigger_async_id_symbol): 240,
-  +   false
-  + }
-  - false
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/rtmp.test.js:720:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at Suite.processPendingSubtests (node:internal/test_runner/test:788:18)
-      at Test.postRun (node:internal/test_runner/test:1235:19)
-      at Test.run (node:internal/test_runner/test:1163:12)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async Suite.processPendingSubtests (node:internal/test_runner/test:788:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: [Promise],
-    expected: false,
-    operator: 'strictEqual',
-    diff: 'simple'
-  }
-
-test at test\rtmp.test.js:723:3
-✖ writeCaption writes SRT cue to stdin and returns true (0.4753ms)
-  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
-  + actual - expected
-  
-  + Promise {
-  +   Symbol(async_id_symbol): 11167,
-  +   Symbol(trigger_async_id_symbol): 242,
-  +   true
-  + }
-  - true
-  
-      at TestContext.<anonymous> (file:///C:/Users/jsilv/Code/live-captions-yt/packages/lcyt-backend/test/rtmp.test.js:733:12)
-      at Test.runInAsyncScope (node:async_hooks:214:14)
-      at Test.run (node:internal/test_runner/test:1106:25)
-      at Suite.processPendingSubtests (node:internal/test_runner/test:788:18)
-      at Test.postRun (node:internal/test_runner/test:1235:19)
-      at Test.run (node:internal/test_runner/test:1163:12)
-      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-      at async Suite.processPendingSubtests (node:internal/test_runner/test:788:7) {
-    generatedMessage: true,
-    code: 'ERR_ASSERTION',
-    actual: [Promise],
-    expected: true,
-    operator: 'strictEqual',
-    diff: 'simple'
-  }
-npm error Lifecycle script `test` failed with error:
-npm error code 1
-npm error path C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend
-npm error workspace lcyt-backend@1.0.0
-npm error location C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-backend
-npm error command failed
-npm error command C:\WINDOWS\system32\cmd.exe /d /s /c cross-env ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/*.test.js
-
-
-> lcyt-web@1.0.0 test
-> node --test test/*.test.js
-
-▶ createApi
-  ✔ get() sends a GET request with Authorization header (2.3708ms)
-  ✔ post() sends a POST request with JSON body (0.3317ms)
-  ✔ put() sends a PUT request (0.3077ms)
-  ✔ del() sends a DELETE request (0.3198ms)
-  ✔ throws "Not connected" when no token is available (0.6246ms)
-  ✔ throws on non-ok response (get) (0.2841ms)
-  ✔ throws with server error message on non-ok response (post, parseErrorBody) (0.3349ms)
-  ✔ del() with parseErrorBody uses server error message (0.3138ms)
-✔ createApi (5.9734ms)
-▶ parseFileContent() — basic
-  ✔ returns empty arrays for empty string (1.3249ms)
-  ✔ parses plain lines (0.7089ms)
-  ✔ ignores blank lines (0.3938ms)
-  ✔ trims leading/trailing whitespace from each line (0.262ms)
-✔ parseFileContent() — basic (3.7747ms)
-▶ parseFileContent() — metadata comments
-  ✔ does not include metadata comment lines in output (0.4397ms)
-  ✔ attaches metadata code to subsequent lines (0.1985ms)
-  ✔ metadata persists across multiple lines (0.3529ms)
-  ✔ removes a code when value is empty (0.2628ms)
-  ✔ overrides a code with a new value (0.9375ms)
-  ✔ accepts custom metadata keys (0.174ms)
-  ✔ coerces lyrics: true to boolean (0.1303ms)
-  ✔ coerces no-translate: true to boolean (0.091ms)
-  ✔ stores non-boolean codes as strings (0.0842ms)
-✔ parseFileContent() — metadata comments (3.1917ms)
-▶ parseFileContent() — stanza blocks
-  ✔ does not produce a caption line for the stanza block itself (0.1236ms)
-  ✔ sets stanza code on the following caption line (0.1302ms)
-  ✔ clears stanza code on empty stanza block (0.0828ms)
-✔ parseFileContent() — stanza blocks (0.4426ms)
-▶ parseFileContent() — empty-send markers
-  ✔ creates an entry with empty string and emptySend=true for bare _ (0.0996ms)
-  ✔ captures optional label after _ space (0.0804ms)
-  ✔ empty-send inherits current metadata codes (0.0812ms)
-✔ parseFileContent() — empty-send markers (0.3485ms)
-▶ parseFileContent() — lineNumbers
-  ✔ assigns sequential 1-based line numbers to text lines only (0.1283ms)
-  ✔ counts empty-send markers in line numbers (0.0948ms)
-  ✔ counts audio action lines in line numbers (0.0897ms)
-✔ parseFileContent() — lineNumbers (0.4044ms)
-▶ parseFileContent() — audio action metacode
-  ✔ parses <!-- audio: start --> as an action line with audioCapture=start (0.1391ms)
-  ✔ parses <!-- audio: stop --> as an action line with audioCapture=stop (0.0852ms)
-  ✔ audio lines are interleaved with caption lines (0.0851ms)
-  ✔ audio action does NOT persist into currentCodes for subsequent lines (0.0731ms)
-  ✔ audio action inherits currentCodes but does not add to them (0.0976ms)
-  ✔ ignores unknown audio values (neither start nor stop) (0.1433ms)
-✔ parseFileContent() — audio action metacode (0.7986ms)
-▶ parseFileContent() — multi-metacode lines
-  ✔ parses two codes on one line (0.1293ms)
-  ✔ parses three codes on one line (0.097ms)
-  ✔ mixed audio action + other code on one line: audio fires, other code persists (0.0986ms)
-  ✔ single-metacode lines still parse correctly (backward compat) (0.0902ms)
-  ✔ multi-metacode line does not appear as a caption line (0.0888ms)
-✔ parseFileContent() — multi-metacode lines (0.63ms)
-▶ formatTime
-  ✔ formats a valid ISO string as HH:MM:SS (21.3458ms)
-  ✔ returns a formatted time for a numeric epoch (null → epoch 0) (0.2575ms)
-  ✔ handles a Date-parseable numeric string (0.213ms)
-✔ formatTime (22.7092ms)
-▶ getMessages()
-  ✔ returns an object for "en" (0.6058ms)
-  ✔ returns an object for "fi" (0.1084ms)
-  ✔ returns an object for "sv" (0.1251ms)
-  ✔ falls back to English for unknown locale (0.3205ms)
-✔ getMessages() (2.0591ms)
-▶ translate()
-  ✔ returns a top-level string value (0.3569ms)
-  ✔ returns a nested dot-path value (0.1191ms)
-  ✔ returns the key as fallback when path does not exist (0.8447ms)
-  ✔ returns the key when value is an object (not a leaf string) (0.1393ms)
-  ✔ returns the key when messages is null (0.1228ms)
-  ✔ returns the key for empty messages object (0.1797ms)
-  ✔ handles single-segment keys (0.1304ms)
-  ✔ handles deep nesting (0.1295ms)
-✔ translate() (2.4034ms)
-▶ normalizeLines
-  ✔ preserves heading lines and wraps following paragraph (0.8698ms)
-✔ normalizeLines (1.6259ms)
-▶ serializePlan()
-  ✔ serializes an empty plan to empty string (0.7939ms)
-  ✔ serializes a caption block (0.177ms)
-  ✔ serializes audio-start block (0.1359ms)
-  ✔ serializes audio-stop block (0.1337ms)
-  ✔ serializes a graphics block (0.132ms)
-  ✔ serializes a codes block with one code (0.1478ms)
-  ✔ serializes a codes block with multiple codes on one line (0.1934ms)
-  ✔ omits codes with empty values (0.1614ms)
-  ✔ serializes a stanza block (0.1465ms)
-  ✔ serializes an empty-send block without label (0.216ms)
-  ✔ serializes an empty-send block with label (0.1422ms)
-  ✔ joins multiple blocks with newlines (0.2662ms)
-✔ serializePlan() (3.923ms)
-▶ deserializePlan()
-  ✔ deserializes empty string to empty array (1.8531ms)
-  ✔ deserializes a caption line (0.6124ms)
-  ✔ deserializes <!-- audio: start --> (0.1474ms)
-  ✔ deserializes <!-- audio: stop --> (0.0993ms)
-  ✔ deserializes <!-- graphics: logo, banner --> (0.1155ms)
-  ✔ deserializes a single-code line as a codes block (0.1455ms)
-  ✔ deserializes a multi-code line as one codes block (0.096ms)
-  ✔ deserializes a stanza block (0.1706ms)
-  ✔ deserializes _ as empty-send without label (0.0741ms)
-  ✔ deserializes _ label as empty-send with label (0.0719ms)
-  ✔ skips blank lines (0.0833ms)
-  ✔ deserializes a mixed script correctly (0.1224ms)
-  ✔ each block gets a unique id (0.0935ms)
-✔ deserializePlan() (4.0419ms)
-▶ serialize → deserialize round-trip
-  ✔ round-trips a simple script (0.1836ms)
-✔ serialize → deserialize round-trip (0.2373ms)
-▶ resolveViewerText
-  ✔ returns composedText when lang is empty string, undefined, or null (1.5675ms)
-  ✔ returns original text when lang is "original" (0.11ms)
-  ✔ returns composedText when lang is "all" (caller handles column layout separately) (0.1018ms)
-  ✔ returns requested translation when it exists (0.1081ms)
-  ✔ falls back to composedText when translation does not exist (0.1455ms)
-  ✔ falls back to text when translation and composedText are absent (0.1318ms)
-  ✔ falls back to empty string when all text fields are absent (0.0974ms)
-  ✔ handles data with no translations object but lang specified (0.1096ms)
-  ✔ returns composedText over text when lang is empty and composedText differs (0.1418ms)
-✔ resolveViewerText (3.6205ms)
-▶ collectLangTexts
-  ✔ returns original text under "original" key (0.3186ms)
-  ✔ includes all translations in the returned map (0.1205ms)
-  ✔ omits empty/falsy translation values (0.1377ms)
-  ✔ returns just original when translations is missing (0.8368ms)
-  ✔ returns empty original when text is missing (0.1451ms)
-  ✔ does not include composedText in the language map (0.1037ms)
-✔ collectLangTexts (1.9562ms)
-ℹ tests 98
-ℹ suites 17
-ℹ pass 98
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 119.116
-
-> lcyt-mcp-stdio@0.1.0 test
-> node --test test/*.test.js
-
-▶ lcyt-mcp server
-  ✔ lists all sixteen tools (1.0287ms)
-  ✔ TOOLS export matches handler list (0.4365ms)
-  ✔ start: creates a session and returns session_id (0.809ms)
-  ✔ start: stores startedAt metadata (0.288ms)
-  ✔ send_caption: returns ok and sequence (0.4542ms)
-  ✔ send_batch: returns ok, sequence, and count (0.2944ms)
-  ✔ sync_clock: returns syncOffset (0.3649ms)
-  ✔ get_status: returns sequence and syncOffset (0.2133ms)
-  ✔ stop: removes session and returns ok (0.2271ms)
-  ✔ full lifecycle: start → send → batch → status → stop (0.2877ms)
-  ✔ throws on unknown session_id (0.4258ms)
-  ✔ throws on unknown tool name (0.1432ms)
-  ✔ list_resources: reflects active sessions (0.223ms)
-  ✔ read_resource: returns session snapshot (0.2578ms)
-  ✔ read_resource: throws on unknown URI (0.1335ms)
-  ✔ list_cameras: returns error when LCYT_BACKEND_URL not set (1.4545ms)
-  ✔ camera_preset: returns error when LCYT_BACKEND_URL not set (0.1995ms)
-  ✔ list_mixers: returns error when LCYT_BACKEND_URL not set (0.1267ms)
-  ✔ switch_source: returns error when LCYT_BACKEND_URL not set (0.1318ms)
-  ✔ list_dsk_templates: returns error when LCYT_BACKEND_URL not set (0.1263ms)
-  ✔ activate_dsk_template: returns error when LCYT_BACKEND_URL not set (0.1163ms)
-  ✔ broadcast_dsk_data: returns error when LCYT_BACKEND_URL not set (0.1175ms)
-  ✔ dsk_renderer_status: returns error when LCYT_BACKEND_URL not set (0.1476ms)
-  ✔ start_dsk_renderer: returns error when LCYT_BACKEND_URL not set (0.1871ms)
-  ✔ stop_dsk_renderer: returns error when LCYT_BACKEND_URL not set (0.1447ms)
-✔ lcyt-mcp server (9.8555ms)
-ℹ tests 25
-ℹ suites 1
-ℹ pass 25
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 313.4893
-
-> lcyt-mcp-sse@0.1.0 test
-> LCYT_WEB_URL=https://lcyt-test.example SPEECH_PUBLIC_URL=https://mcp-test.example node --test test/*.test.js
-
-'LCYT_WEB_URL' is not recognized as an internal or external command,
-operable program or batch file.
-npm error Lifecycle script `test` failed with error:
-npm error code 1
-npm error path C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-mcp-sse
-npm error workspace lcyt-mcp-sse@0.1.0
-npm error location C:\Users\jsilv\Code\live-captions-yt\packages\lcyt-mcp-sse
-npm error command failed
-npm error command C:\WINDOWS\system32\cmd.exe /d /s /c LCYT_WEB_URL=https://lcyt-test.example SPEECH_PUBLIC_URL=https://mcp-test.example node --test test/*.test.js
-
-
-> lcyt-site@0.1.0 test
-> echo "No tests for lcyt-site" && exit 0
-
-"No tests for lcyt-site" 
-
-> lcyt-bridge@0.2.0 test
-> node --test test/*.test.js
-
-▶ AtemPool — switch()
-  ✔ throws when ATEM not connected (179.8065ms)
-  ✔ calls changeProgramInput with (input, me) (0.3005ms)
-  ✔ respects non-zero meIndex (0.2624ms)
-  ✔ auto-creates connection for unknown host (0.2993ms)
-✔ AtemPool — switch() (181.5807ms)
-▶ AtemPool — status()
-  ✔ returns empty array when no connections (0.9607ms)
-  ✔ returns entry per ATEM host with connected flag (0.2847ms)
-✔ AtemPool — status() (1.3969ms)
-▶ AtemPool — destroy()
-  ✔ clears all connections (0.3737ms)
-  ✔ calls disconnect on each ATEM (0.2529ms)
-  ✔ sets destroyed=true on entries before disconnect (0.8107ms)
-✔ AtemPool — destroy() (1.6253ms)
-▶ AtemPool — events
-  ✔ emits atem:connected when ATEM connects (0.332ms)
-  ✔ emits atem:disconnected when ATEM disconnects (0.1988ms)
-  ✔ emits atem:error on ATEM error (0.2089ms)
-  ✔ wraps non-Error error emissions (0.1842ms)
-✔ AtemPool — events (1.0465ms)
-▶ Bridge — atem_switch command handling
-  ✔ dispatches atem_switch to AtemPool and posts ok status (2.4125ms)
-  ✔ defaults meIndex to 0 when omitted (0.2176ms)
-  ✔ posts ok:false and emits command:error when AtemPool throws (0.3083ms)
-  ✔ does not reach unknown-type handler for atem_switch (0.2067ms)
-✔ Bridge — atem_switch command handling (3.2657ms)
-▶ Bridge — constructor and status()
-  ✔ initialises with sse: false and no TCP entries (1.1957ms)
-  ✔ strips trailing slash from backendUrl (0.1541ms)
-✔ Bridge — constructor and status() (2.1179ms)
-▶ Bridge — destroy()
-  ✔ is safe to call before start() (0.2553ms)
-  ✔ sets _destroyed = true so subsequent _connect() calls are no-ops (0.1795ms)
-  ✔ clears a pending reconnect timer (4.7832ms)
-✔ Bridge — destroy() (5.4446ms)
-▶ Bridge — SSE connection
-  ✔ emits "connected" when the SSE stream opens (0.8289ms)
-  ✔ emits "disconnected" and schedules reconnect on SSE error (0.5963ms)
-  ✔ resets reconnect delay to initial value on successful reconnect (0.5161ms)
-✔ Bridge — SSE connection (2.2036ms)
-▶ Bridge — _handleCommand() tcp_send
-  ✔ calls TcpPool.send() with correct host/port/payload (0.5005ms)
-  ✔ posts { ok: true } status after a successful tcp_send (0.274ms)
-  ✔ emits "command:ok" after a successful tcp_send (0.2065ms)
-  ✔ posts { ok: false, error } when TcpPool.send() rejects (0.206ms)
-  ✔ emits "command:error" when TcpPool.send() rejects (0.1502ms)
-✔ Bridge — _handleCommand() tcp_send (1.5089ms)
-▶ Bridge — _handleCommand() invalid input
-  ✔ emits "error" for non-JSON data (0.1561ms)
-  ✔ emits "error" for unknown command type (0.1212ms)
-✔ Bridge — _handleCommand() invalid input (0.3701ms)
-▶ Bridge — _postStatus() network failure
-  ✔ emits "error" when fetch throws (does not propagate exception) (0.2503ms)
-✔ Bridge — _postStatus() network failure (0.3039ms)
-▶ Bridge — startHeartbeat()
-  ✔ calls _postStatus at each interval (90.7573ms)
-  ✔ stops heartbeats after bridge.destroy() (63.0495ms)
-✔ Bridge — startHeartbeat() (154.0066ms)
-▶ Bridge — TCP pool event forwarding
-  ✔ forwards TcpPool "connected" as "tcp:connected" (0.321ms)
-  ✔ forwards TcpPool "disconnected" as "tcp:disconnected" (0.1067ms)
-  ✔ forwards TcpPool "error" as "tcp:error" with key and error (0.15ms)
-✔ Bridge — TCP pool event forwarding (0.6748ms)
-▶ Bridge — reconnectAll()
-  ✔ closes the existing SSE connection and calls tcpPool.reconnectAll() (0.1785ms)
-✔ Bridge — reconnectAll() (0.2339ms)
-▶ Bridge — _handleCommand() http_request
-  ✔ makes a GET request and posts { ok: true, status } on success (0.2423ms)
-  ✔ posts { ok: false } when the HTTP request throws (0.3741ms)
-  ✔ emits "command:ok" after a successful http_request (0.2246ms)
-  ✔ emits "command:error" when http_request fails (0.1699ms)
-  ✔ _httpRequest serialises object body as JSON (0.2467ms)
-✔ Bridge — _handleCommand() http_request (1.4158ms)
-▶ TcpPool — status()
-  ✔ returns an empty array when the pool has no connections (1.0167ms)
-✔ TcpPool — status() (1.7885ms)
-▶ TcpPool — destroy()
-  ✔ clears all connections and returns an empty status (73.3293ms)
-  ✔ does not throw when called on an already-empty pool (0.3164ms)
-  ✔ can be called multiple times without throwing (0.1132ms)
-✔ TcpPool — destroy() (74.0283ms)
-▶ TcpPool — ensure()
-  ✔ does not create a duplicate entry when called twice for the same host:port (61.2868ms)
-✔ TcpPool — ensure() (61.4402ms)
-▶ TcpPool — send()
-  ✔ throws when the connection is not yet established (1.8432ms)
-  ✔ delivers data to the socket when connected (60.2899ms)
-  ✔ creates a new connection automatically when send() is called without ensure() (1.4456ms)
-✔ TcpPool — send() (63.8455ms)
-▶ TcpPool — reconnectAll()
-  ✔ does not throw when called on an empty pool (0.1846ms)
-  ✔ re-establishes connections: emits a second connected event after reconnectAll() (217.078ms)
-✔ TcpPool — reconnectAll() (217.4372ms)
-▶ TcpPool — events
-  ✔ emits "connected" with the host:port key when the socket connects (2.0864ms)
-  ✔ emits "disconnected" when the server closes the connection (2.2478ms)
-  ✔ emits "error" with key and error when the socket errors (0.9454ms)
-✔ TcpPool — events (5.4821ms)
-ℹ tests 57
-ℹ suites 21
-ℹ pass 57
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 5291.8177
-
-> lcyt-dsk@0.1.0 test
-> node --test ./test/index.js
-
-✔ detects conflicting element ids across templates (7.7109ms)
-✔ auto-renames conflicting element ids on save (1.0607ms)
-ℹ tests 2
-ℹ suites 0
-ℹ pass 2
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 96.568
-
-> lcyt-production@0.1.0 test
-> node --test test/*.test.js
-
-▶ AMX adapter
-  ✔ callPreset sends command verbatim over TCP (2.8498ms)
-  ✔ callPreset throws for unknown presetId (0.6148ms)
-  ✔ callPreset throws when not connected (0.2296ms)
-  ✔ callPreset passes command string unchanged (no transformation) (0.227ms)
-  ✔ callPreset works with empty presets array gives clear error (0.2469ms)
-✔ AMX adapter (5.0982ms)
-▶ none adapter
-  ✔ connect returns a handle with connected=true (1.0286ms)
-  ✔ disconnect does not throw (0.4112ms)
-  ✔ callPreset throws with a descriptive error (0.3413ms)
-✔ none adapter (2.0182ms)
-▶ registry getCameraAdapter
-  ✔ returns amx adapter for controlType amx (251.5821ms)
-  ✔ returns none adapter for controlType none (0.2287ms)
-  ✔ throws for unknown controlType (0.1924ms)
-✔ registry getCameraAdapter (252.1912ms)
-▶ ATEM adapter — getSwitchCommand
-  ✔ returns typed atem_switch command object (199.6547ms)
-  ✔ defaults meIndex to 0 when not specified (0.2721ms)
-  ✔ respects non-zero meIndex (0.1658ms)
-✔ ATEM adapter — getSwitchCommand (200.9171ms)
-▶ ATEM adapter — switchSource
-  ✔ calls changeProgramInput with correct (input, meIndex) args (0.3903ms)
-  ✔ uses non-zero meIndex from handle config (0.2058ms)
-  ✔ throws when not connected (0.6047ms)
-  ✔ throws when atem is null (0.267ms)
-✔ ATEM adapter — switchSource (1.7104ms)
-▶ ATEM adapter — getActiveSource
-  ✔ returns null when atem is null (0.2765ms)
-  ✔ returns null when state is null (0.1531ms)
-  ✔ returns null when mixEffects is empty (0.8199ms)
-  ✔ returns programInput from state for meIndex 0 (0.1592ms)
-  ✔ returns programInput from the correct meIndex (0.1323ms)
-✔ ATEM adapter — getActiveSource (1.7536ms)
-▶ ATEM adapter — disconnect
-  ✔ sets destroyed=true and connected=false (0.1839ms)
-  ✔ clears reconnect timer if set (0.1877ms)
-  ✔ does not throw if atem is null (0.2321ms)
-✔ ATEM adapter — disconnect (0.7001ms)
-▶ registry getMixerAdapter — atem
-  ✔ returns atem adapter for type atem (49.2109ms)
-✔ registry getMixerAdapter — atem (49.2958ms)
-▶ Roland adapter — switchSource
-  ✔ switchSource sends a JSON command to the socket (2.5082ms)
-  ✔ switchSource updates _activeSource optimistically (0.3806ms)
-  ✔ switchSource throws when not connected (0.5868ms)
-  ✔ switchSource throws when socket is null (0.2192ms)
-✔ Roland adapter — switchSource (4.939ms)
-▶ Roland adapter — getActiveSource
-  ✔ returns null when no source known (0.4185ms)
-  ✔ returns the stored active source (0.1889ms)
-✔ Roland adapter — getActiveSource (0.7708ms)
-▶ Roland adapter — disconnect
-  ✔ sets destroyed=true and connected=false (0.3527ms)
-✔ Roland adapter — disconnect (0.5003ms)
-▶ Roland adapter — command format
-  ✔ switchSource to input 1 generates valid JSON with number=1 (0.2437ms)
-  ✔ each switchSource call includes a message id (1.1786ms)
-  ✔ command is newline-terminated (0.2865ms)
-✔ Roland adapter — command format (1.8994ms)
-▶ registry getMixerAdapter
-  ✔ returns roland adapter for type roland (247.9168ms)
-  ✔ throws for unknown mixer type (0.3416ms)
-✔ registry getMixerAdapter (248.3861ms)
-ℹ tests 39
-ℹ suites 13
-ℹ pass 39
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 347.9107
-
-> lcyt-rtmp@0.1.0 test
-> node --test test/rtmp-manager.test.js
-
-✔ writeCaption drops when FIFO writer.write times out (1.1063ms)
-ℹ tests 1
-ℹ suites 0
-ℹ pass 1
-ℹ fail 0
-ℹ cancelled 0
-ℹ skipped 0
-ℹ todo 0
-ℹ duration_ms 77.6947
+  ✖ returns 404 when preview file does not exist (306546.5273ms)
+✖ GET /preview/:key/incoming.jpg — file missing (306547.4547ms)

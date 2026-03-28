@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { Readable } from 'node:stream';
+import { readFileSync, existsSync } from 'node:fs';
 import rateLimit from 'express-rate-limit';
 
 // Preview key validation: same rules as radio / viewer keys
@@ -57,7 +58,19 @@ export function createPreviewRouter(previewManager) {
       return res.status(400).json({ error: 'Invalid preview key format' });
     }
 
-    const response = await previewManager.fetchThumbnail(key);
+    let response;
+    if (typeof previewManager.fetchThumbnail === 'function') {
+      response = await previewManager.fetchThumbnail(key);
+    } else if (typeof previewManager.previewPath === 'function') {
+      const p = previewManager.previewPath(key);
+      if (!existsSync(p)) response = null;
+      else {
+        const buf = readFileSync(p);
+        response = { headers: new Map([['content-type', 'image/jpeg']]), body: Readable.toWeb(Readable.from([buf])) };
+      }
+    } else {
+      response = null;
+    }
 
     if (!response) {
       return res.status(404).json({ error: 'Preview not available — stream may not be live' });
