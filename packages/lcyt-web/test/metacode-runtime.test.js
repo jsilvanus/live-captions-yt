@@ -142,22 +142,28 @@ describe('buildCueMap()', () => {
     assert.equal(map.size, 0);
   });
 
-  it('maps cue phrases to their line indices', () => {
+  it('maps cue phrases to their line indices with mode', () => {
     const file = makeFile(
       ['Let us pray', 'Line 1', 'Hallelujah!', 'Line 2'],
-      [{ cue: 'Amen' }, {}, { cue: 'Hallelujah' }, {}],
+      [{ cue: 'Amen', cueMode: 'next' }, {}, { cue: 'Hallelujah', cueMode: 'skip' }, {}],
       [1, 2, 3, 4]
     );
     const map = buildCueMap(file);
     assert.equal(map.size, 2);
-    assert.equal(map.get('amen'), 0);
-    assert.equal(map.get('hallelujah'), 2);
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next' });
+    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip' });
   });
 
   it('stores phrases in lowercase', () => {
-    const file = makeFile([''], [{ cue: 'AMEN' }], [1]);
+    const file = makeFile([''], [{ cue: 'AMEN', cueMode: 'next' }], [1]);
     const map = buildCueMap(file);
     assert.ok(map.has('amen'));
+  });
+
+  it('defaults to next mode when cueMode is missing', () => {
+    const file = makeFile([''], [{ cue: 'Amen' }], [1]);
+    const map = buildCueMap(file);
+    assert.equal(map.get('amen').mode, 'next');
   });
 
   it('returns empty map for null/undefined file', () => {
@@ -173,13 +179,13 @@ describe('checkCueMatch()', () => {
   });
 
   it('returns null when text is empty', () => {
-    const map = new Map([['amen', 0]]);
+    const map = new Map([['amen', { index: 0, mode: 'next' }]]);
     assert.equal(checkCueMatch(map, ''), null);
     assert.equal(checkCueMatch(map, null), null);
   });
 
-  it('matches when text contains the cue phrase', () => {
-    const map = new Map([['amen', 3]]);
+  it('matches when text contains the cue phrase (no pointer)', () => {
+    const map = new Map([['amen', { index: 3, mode: 'next' }]]);
     const result = checkCueMatch(map, 'And all the people said Amen!');
     assert.ok(result);
     assert.equal(result.phrase, 'amen');
@@ -187,29 +193,28 @@ describe('checkCueMatch()', () => {
   });
 
   it('match is case-insensitive', () => {
-    const map = new Map([['hallelujah', 5]]);
+    const map = new Map([['hallelujah', { index: 5, mode: 'next' }]]);
     const result = checkCueMatch(map, 'HALLELUJAH!');
     assert.ok(result);
     assert.equal(result.index, 5);
   });
 
   it('returns null when text does not contain phrase', () => {
-    const map = new Map([['amen', 0]]);
+    const map = new Map([['amen', { index: 0, mode: 'next' }]]);
     assert.equal(checkCueMatch(map, 'Hello world'), null);
   });
 
   it('returns the first matching cue', () => {
-    const map = new Map([['amen', 2], ['prayer', 5]]);
+    const map = new Map([['amen', { index: 2, mode: 'any' }], ['prayer', { index: 5, mode: 'any' }]]);
     const result = checkCueMatch(map, 'Let us say amen in prayer');
     assert.ok(result);
-    // Map iteration order is insertion order — 'amen' comes first
     assert.equal(result.phrase, 'amen');
     assert.equal(result.index, 2);
   });
 
   // Wildcard / asterisk tests
   it('matches glob wildcard: trailing *', () => {
-    const map = new Map([['let us *', 4]]);
+    const map = new Map([['let us *', { index: 4, mode: 'any' }]]);
     const result = checkCueMatch(map, 'Let us pray together');
     assert.ok(result);
     assert.equal(result.phrase, 'let us *');
@@ -217,33 +222,138 @@ describe('checkCueMatch()', () => {
   });
 
   it('matches glob wildcard: leading *', () => {
-    const map = new Map([['* amen', 2]]);
+    const map = new Map([['* amen', { index: 2, mode: 'any' }]]);
     const result = checkCueMatch(map, 'they said amen');
     assert.ok(result);
     assert.equal(result.index, 2);
   });
 
   it('matches glob wildcard: middle *', () => {
-    const map = new Map([['let * pray', 1]]);
+    const map = new Map([['let * pray', { index: 1, mode: 'any' }]]);
     const result = checkCueMatch(map, 'Let us pray');
     assert.ok(result);
     assert.equal(result.index, 1);
   });
 
   it('wildcard * at both ends matches any containing text', () => {
-    const map = new Map([['*grace*', 0]]);
+    const map = new Map([['*grace*', { index: 0, mode: 'any' }]]);
     const result = checkCueMatch(map, 'By the grace of God');
     assert.ok(result);
   });
 
   it('returns null when wildcard pattern does not match', () => {
-    const map = new Map([['let us *', 0]]);
+    const map = new Map([['let us *', { index: 0, mode: 'any' }]]);
     assert.equal(checkCueMatch(map, 'Hello world'), null);
   });
 
   it('escapes regex special chars in wildcard phrases', () => {
-    const map = new Map([['price is $*', 0]]);
+    const map = new Map([['price is $*', { index: 0, mode: 'any' }]]);
     const result = checkCueMatch(map, 'The price is $100');
     assert.ok(result);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkCueMatch — pointer-based next-cue-only logic
+// ---------------------------------------------------------------------------
+
+describe('checkCueMatch() — pointer-based eligibility', () => {
+  it('next mode: only fires if cue is the next cue after pointer', () => {
+    // pointer at 0, cues at indices 2 and 4 (both mode=next)
+    const map = new Map([
+      ['amen', { index: 2, mode: 'next' }],
+      ['mercy', { index: 4, mode: 'next' }],
+    ]);
+    // "amen" is the next cue after pointer=0 → should match
+    const r1 = checkCueMatch(map, 'amen', 0);
+    assert.ok(r1);
+    assert.equal(r1.index, 2);
+
+    // "mercy" is NOT the next cue (amen at 2 comes first) → should NOT match
+    const r2 = checkCueMatch(map, 'mercy', 0);
+    assert.equal(r2, null);
+  });
+
+  it('next mode: matches when cue becomes the next after pointer advances', () => {
+    const map = new Map([
+      ['amen', { index: 2, mode: 'next' }],
+      ['mercy', { index: 4, mode: 'next' }],
+    ]);
+    // pointer at 3 → next cue is mercy at 4
+    const r = checkCueMatch(map, 'mercy', 3);
+    assert.ok(r);
+    assert.equal(r.index, 4);
+  });
+
+  it('skip mode: can skip past other cues ahead of pointer', () => {
+    const map = new Map([
+      ['amen', { index: 2, mode: 'next' }],
+      ['mercy', { index: 4, mode: 'skip' }],
+    ]);
+    // pointer at 0 → mercy (skip mode) can skip past amen
+    const r = checkCueMatch(map, 'mercy', 0);
+    assert.ok(r);
+    assert.equal(r.index, 4);
+  });
+
+  it('skip mode: does NOT fire when cue is behind pointer', () => {
+    const map = new Map([
+      ['amen', { index: 2, mode: 'skip' }],
+    ]);
+    // pointer at 5 → cue at index 2 is behind pointer
+    const r = checkCueMatch(map, 'amen', 5);
+    assert.equal(r, null);
+  });
+
+  it('any mode: fires even when cue is behind pointer', () => {
+    const map = new Map([
+      ['amen', { index: 2, mode: 'any' }],
+    ]);
+    // pointer at 5 → cue at 2 is behind, but mode=any allows it
+    const r = checkCueMatch(map, 'amen', 5);
+    assert.ok(r);
+    assert.equal(r.index, 2);
+  });
+
+  it('any mode: fires when cue is ahead of pointer', () => {
+    const map = new Map([
+      ['amen', { index: 5, mode: 'any' }],
+    ]);
+    const r = checkCueMatch(map, 'amen', 0);
+    assert.ok(r);
+    assert.equal(r.index, 5);
+  });
+
+  it('mixed modes: next blocked but skip works', () => {
+    const map = new Map([
+      ['first', { index: 2, mode: 'next' }],
+      ['second', { index: 4, mode: 'next' }],
+      ['third', { index: 6, mode: 'skip' }],
+    ]);
+    // pointer at 0, next cue is "first" at 2
+    // "second" (next mode) should NOT fire — not the next cue
+    assert.equal(checkCueMatch(map, 'second', 0), null);
+    // "third" (skip mode) SHOULD fire — can skip ahead
+    const r = checkCueMatch(map, 'third', 0);
+    assert.ok(r);
+    assert.equal(r.index, 6);
+  });
+
+  it('no pointer (legacy): all cues are eligible', () => {
+    const map = new Map([
+      ['amen', { index: 5, mode: 'next' }],
+    ]);
+    // no pointer → legacy behavior, all cues match
+    const r = checkCueMatch(map, 'amen');
+    assert.ok(r);
+    assert.equal(r.index, 5);
+  });
+
+  it('pointer at -1 acts like no pointer (legacy)', () => {
+    const map = new Map([
+      ['amen', { index: 5, mode: 'next' }],
+    ]);
+    const r = checkCueMatch(map, 'amen', -1);
+    assert.ok(r);
   });
 });

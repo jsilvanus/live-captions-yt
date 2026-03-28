@@ -96,11 +96,12 @@ export async function drainActions({ file, startPtr = 0, fileStore, timerRef, ha
 // ---------------------------------------------------------------------------
 
 /**
- * Build a Map of lowercase cue phrase → line index from a parsed file.
+ * Build a Map of lowercase cue phrase → { index, mode } from a parsed file.
  * Each `<!-- cue:phrase -->` entry creates one mapping.
+ * Mode is 'next' (default), 'skip' (cue*:), or 'any' (cue**:).
  *
  * @param {{ lineCodes: object[] }} file
- * @returns {Map<string, number>}
+ * @returns {Map<string, { index: number, mode: string }>}
  */
 export function buildCueMap(file) {
   const map = new Map();
@@ -108,37 +109,73 @@ export function buildCueMap(file) {
   for (let i = 0; i < file.lineCodes.length; i++) {
     const lc = file.lineCodes[i];
     if (lc.cue) {
-      map.set(lc.cue.toLowerCase(), i);
+      map.set(lc.cue.toLowerCase(), { index: i, mode: lc.cueMode || 'next' });
     }
   }
   return map;
 }
 
 /**
- * Check if caption text matches any registered cue phrase.
+ * Check if caption text matches any registered cue phrase that is eligible
+ * to fire from the current pointer position.
+ *
  * Returns the first match (phrase + target line index) or null.
  *
  * Supports glob-style wildcards: `*` in a cue phrase matches any characters.
  * E.g. `Let us *` matches "Let us pray", "Let us go", etc.
  * Without `*`, the phrase is matched as a substring (case-insensitive).
  *
- * @param {Map<string, number>} cueMap — from buildCueMap()
+ * Cue mode determines eligibility relative to the pointer:
+ *   - 'next': only fires if this cue is the NEXT cue after the pointer
+ *   - 'skip': fires if this cue is anywhere ahead of the pointer
+ *   - 'any':  fires regardless of pointer position (can go backwards)
+ *
+ * @param {Map<string, { index: number, mode: string }>} cueMap — from buildCueMap()
  * @param {string} text — caption text to test
+ * @param {number} [pointer=-1] — current file pointer position (-1 = legacy/no filtering)
  * @returns {{ phrase: string, index: number } | null}
  */
-export function checkCueMatch(cueMap, text) {
+export function checkCueMatch(cueMap, text, pointer) {
   if (!text || !cueMap || cueMap.size === 0) return null;
   const lower = text.toLowerCase();
-  for (const [phrase, index] of cueMap) {
+
+  // Determine the "next cue" index: the smallest cue index > pointer.
+  // Cues with mode='next' can only fire if they are this exact next cue.
+  let nextCueIndex = Infinity;
+  if (pointer != null && pointer >= 0) {
+    for (const [, entry] of cueMap) {
+      if (entry.index > pointer && entry.index < nextCueIndex) {
+        nextCueIndex = entry.index;
+      }
+    }
+  }
+
+  for (const [phrase, entry] of cueMap) {
+    // Check eligibility based on mode and pointer position
+    if (pointer != null && pointer >= 0) {
+      if (entry.mode === 'next') {
+        // Only fires if this is THE next cue after the pointer
+        if (entry.index !== nextCueIndex) continue;
+      } else if (entry.mode === 'skip') {
+        // Can skip ahead but must be forward from the pointer
+        if (entry.index <= pointer) continue;
+      }
+      // mode === 'any': no position restriction
+    }
+
+    // Test if the text matches the cue phrase
+    let matches = false;
     if (phrase.includes('*')) {
       // Glob pattern: escape regex chars, convert * to .*
       const escaped = phrase.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
       try {
-        if (new RegExp(escaped).test(lower)) return { phrase, index };
+        matches = new RegExp(escaped).test(lower);
       } catch { /* invalid pattern — skip */ }
     } else {
-      if (lower.includes(phrase)) return { phrase, index };
+      matches = lower.includes(phrase);
     }
+
+    if (matches) return { phrase, index: entry.index };
   }
   return null;
 }

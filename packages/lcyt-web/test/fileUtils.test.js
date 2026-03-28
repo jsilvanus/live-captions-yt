@@ -614,3 +614,57 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lineCodes[2].cue, undefined);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Cue modifier syntax: cue*: (skip) and cue**: (any)
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — cue modifiers', () => {
+  it('plain cue: sets cueMode to "next"', () => {
+    const raw = '<!-- cue:Amen -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].cueMode, 'next');
+  });
+
+  it('cue*: sets cueMode to "skip"', () => {
+    const raw = '<!-- cue*:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].cueMode, 'skip');
+  });
+
+  it('cue**: sets cueMode to "any"', () => {
+    const raw = '<!-- cue**:Hallelujah -->Praise God';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Praise God');
+    assert.equal(lineCodes[0].cue, 'Hallelujah');
+    assert.equal(lineCodes[0].cueMode, 'any');
+  });
+
+  it('standalone cue*: with no content', () => {
+    const raw = '<!-- cue*:mercy -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cue, 'mercy');
+    assert.equal(lineCodes[0].cueMode, 'skip');
+  });
+
+  it('cue**: combined with other metacodes', () => {
+    const raw = '<!-- section: Closing --><!-- cue**:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].section, 'Closing');
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].cueMode, 'any');
+  });
+
+  it('multiple cue modifiers in file', () => {
+    const raw = '<!-- cue:first -->Line 1\n<!-- cue*:second -->Line 2\n<!-- cue**:third -->Line 3';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueMode, 'next');
+    assert.equal(lineCodes[1].cueMode, 'skip');
+    assert.equal(lineCodes[2].cueMode, 'any');
+  });
+});

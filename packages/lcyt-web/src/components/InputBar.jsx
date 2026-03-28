@@ -71,13 +71,14 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       const file = fileStore.activeFile;
       if (!file || cueMap.size === 0) return;
       const label = (data.label || data.matched || '').toLowerCase();
-      if (cueMap.has(label)) {
+      // Use checkCueMatch to respect pointer-based eligibility for SSE events too
+      const match = checkCueMatch(cueMap, label, file.pointer);
+      if (match) {
         // Dedup: skip if same cue was fired locally within the dedup window
         const last = lastCueFiredRef.current;
-        if (last.phrase === label && (Date.now() - last.time) < CUE_DEDUP_MS) return;
-        lastCueFiredRef.current = { phrase: label, time: Date.now() };
-        const targetIdx = cueMap.get(label);
-        fileStore.setPointer(file.id, targetIdx);
+        if (last.phrase === match.phrase && (Date.now() - last.time) < CUE_DEDUP_MS) return;
+        lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
+        fileStore.setPointer(file.id, match.index);
         showToast(`Cue: ${data.label}`, 'info', 2000);
         // Auto-send: the cue line has content — send it after pointer update
         setTimeout(() => handleSendRef.current?.(), 0);
@@ -274,16 +275,14 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
 
         // Check if the sent text matches any cue phrase in the active file.
         // If so, jump the pointer to the cue line and auto-send its content.
-        const match = checkCueMatch(cueMap, text);
-        if (match) {
-          const file = fileStore.activeFile;
-          if (file) {
-            lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
-            fileStore.setPointer(file.id, match.index);
-            showToast(`Cue: ${match.phrase}`, 'info', 2000);
-            // Auto-send the cue line content after React processes the pointer update
-            setTimeout(() => handleSendRef.current?.(), 0);
-          }
+        const file = fileStore.activeFile;
+        const match = checkCueMatch(cueMap, text, file?.pointer);
+        if (match && file) {
+          lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
+          fileStore.setPointer(file.id, match.index);
+          showToast(`Cue: ${match.phrase}`, 'info', 2000);
+          // Auto-send the cue line content after React processes the pointer update
+          setTimeout(() => handleSendRef.current?.(), 0);
         }
       } catch (err) {
         handleSendError(err);
