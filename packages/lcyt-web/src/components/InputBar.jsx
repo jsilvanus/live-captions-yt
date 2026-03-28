@@ -15,6 +15,10 @@ import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
 
+// Dedup window (ms) to prevent double-firing a cue from both local match
+// and backend SSE event arriving for the same phrase.
+const CUE_DEDUP_MS = 3000;
+
 export const InputBar = forwardRef(function InputBar(_props, ref) {
   const session = useSessionContext();
   const fileStore = useFileContext();
@@ -68,9 +72,9 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       if (!file || cueMap.size === 0) return;
       const label = (data.label || data.matched || '').toLowerCase();
       if (cueMap.has(label)) {
-        // Dedup: skip if same cue was fired locally within last 3 seconds
+        // Dedup: skip if same cue was fired locally within the dedup window
         const last = lastCueFiredRef.current;
-        if (last.phrase === label && (Date.now() - last.time) < 3000) return;
+        if (last.phrase === label && (Date.now() - last.time) < CUE_DEDUP_MS) return;
         lastCueFiredRef.current = { phrase: label, time: Date.now() };
         const targetIdx = cueMap.get(label);
         fileStore.setPointer(file.id, targetIdx);
