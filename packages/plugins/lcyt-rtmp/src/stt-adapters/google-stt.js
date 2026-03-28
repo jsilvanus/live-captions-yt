@@ -115,6 +115,9 @@ export class GoogleSttAdapter extends EventEmitter {
     this._tokenExpiry    = 0; // unix seconds
     this._mode           = (process.env.GOOGLE_STT_MODE === 'grpc' && SpeechClient) ? 'grpc' : 'rest';
 
+    // Track outstanding network promises so stop() can wait for them
+    this._pending = new Set();
+
     // gRPC state
     this._grpcClient     = null;
     this._grpcStream     = null;
@@ -163,7 +166,8 @@ export class GoogleSttAdapter extends EventEmitter {
     if (this._mode === 'grpc') {
       this._sendSegmentGrpc(buffer, timestamp);
     } else {
-      await this._sendSegmentRest(buffer, timestamp);
+      const p = this._sendSegmentRest(buffer, timestamp);
+      await this._track(p);
     }
   }
 
@@ -342,9 +346,8 @@ export class GoogleSttAdapter extends EventEmitter {
       this._pcmBuf.on('flush', ({ pcm, timestamp, durationMs }) => {
         // Encode PCM as WAV then send to Google STT using LINEAR16 encoding
         const wav = buildWav(pcm);
-        this._sendWav(wav, timestamp, durationMs).catch(err => {
-          this.emit('error', { error: err });
-        });
+        const p = this._sendWav(wav, timestamp, durationMs);
+        this._track(p).catch(err => { this.emit('error', { error: err }); });
       });
     }
     this._pcmBuf.write(pcmChunk);
@@ -433,6 +436,8 @@ export class GoogleSttAdapter extends EventEmitter {
       this._pcmBuf.reset();
       this._pcmBuf = null;
     }
+    // Wait for any outstanding network requests to settle
+    await this._waitPending();
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────
