@@ -73,7 +73,20 @@ export async function createStorageAdapter() {
  * @returns {{ resolveStorage: (apiKey: string) => Promise<import('./adapters/types.js').StorageAdapter>, invalidateCache: (apiKey: string) => void }}
  */
 export function createStorageResolver(db, fallback) {
-  // Per-key adapter cache: apiKey → StorageAdapter
+  // Per-key adapter cache: apiKey -> StorageAdapter
+  // Bounded LRU cache to avoid unbounded memory growth in multi-tenant setups.
+  const MAX_CACHE = parseInt(process.env.FILES_CACHE_LIMIT || '500', 10);
+  const cache = new Map();
+
+  // Helper to move a key to the most-recently-used position
+  function touchCacheKey(key) {
+    const v = cache.get(key);
+    if (v === undefined) return;
+    cache.delete(key);
+    cache.set(key, v);
+  }
+
+
   const cache = new Map();
 
   async function resolveStorage(apiKey) {
@@ -109,6 +122,11 @@ export function createStorageResolver(db, fallback) {
     }
 
     cache.set(apiKey, adapter);
+    // Evict least-recently-used when cache grows beyond limit
+    if (cache.size > MAX_CACHE) {
+      const firstKey = cache.keys().next().value;
+      if (firstKey) cache.delete(firstKey);
+    }
     return adapter;
   }
 

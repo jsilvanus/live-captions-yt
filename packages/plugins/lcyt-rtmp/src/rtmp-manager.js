@@ -3,6 +3,7 @@ import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
 import { makeFifo } from 'lcyt-backend/ffmpeg/pipe-utils';
 import { createWriteStream } from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
+import logger from 'lcyt/logger';
 
 const DEFAULT_RTMP_HOST       = process.env.RTMP_HOST             || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP        = process.env.RTMP_APP              || 'stream';
@@ -218,7 +219,7 @@ export class RtmpRelayManager {
 
       const src = sourceUrl(apiKey);
       
-      console.log(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}, dsk=${hasDsk}): ${src}`);
+      logger.info(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}, dsk=${hasDsk}): ${src}`);
 
       let args;
       let stdinMode = 'ignore';
@@ -341,21 +342,20 @@ export class RtmpRelayManager {
 
       } else if (this._mediamtx) {
         // ── Plain relay via MediaMTX runOnPublish (no local ffmpeg process) ─
-        // MediaMTX manages the forwarding command lifecycle.  When the publisher
-        // connects, MediaMTX runs `ffmpeg -i rtsp://…/<key> -c copy -f tee …`
-        // automatically, restarting it if it exits.
+        // Validate API key and target URLs strictly to avoid shell/command injection
+        const SAFE_APIKEY_RE = /^[A-Za-z0-9_-]+$/;
+        const SAFE_RTMP_RE = /^rtmp:\/\/[A-Za-z0-9.:-]+\/[A-Za-z0-9_\-\/\.]+$/;
+        const SAFE_NAME_RE = /^[A-Za-z0-9_\-]+$/;
 
-        // Validate target URLs against shell-dangerous characters before embedding
-        // them in the runOnPublish command string that MediaMTX passes to a shell.
-        // Valid RTMP URLs only need [a-zA-Z0-9:/._\-@%?&=].
-        const SAFE_URL_RE = /^[a-zA-Z0-9:/._\-@%?&=#]+$/;
-        if (!SAFE_URL_RE.test(apiKey)) {
-          throw new Error(`API key contains unsafe characters for shell command`);
+        if (!SAFE_APIKEY_RE.test(apiKey)) {
+          throw new Error('API key contains unsafe characters for MediaMTX runOnPublish');
         }
+
         for (const r of relays) {
+          const nameOk = r.targetName == null || SAFE_NAME_RE.test(r.targetName);
           const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
-          if (!SAFE_URL_RE.test(url)) {
-            throw new Error(`Target URL contains unsafe characters for shell command: ${url.slice(0, 80)}`);
+          if (!nameOk || !SAFE_RTMP_RE.test(url)) {
+            throw new Error(`Target URL or name unsafe for MediaMTX runOnPublish: ${String(url).slice(0,80)}`);
           }
         }
 
@@ -363,13 +363,16 @@ export class RtmpRelayManager {
           const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
           return `[f=flv]${url}`;
         }).join('|');
-        const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${apiKey} -c copy -f tee "${teeTargets}"`;
+
+        // Escape double-quotes as a safety measure (shouldn't be present after validation).
+        const safeTee = teeTargets.replace(/"/g, '');
+        const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${encodeURIComponent(apiKey)} -c copy -f tee "${safeTee}"`;
 
         try {
           await this._mediamtx.addPath(apiKey, { runOnPublish, runOnPublishRestart: true });
-          console.log(`[rtmp] Plain relay for ${apiKey.slice(0, 8)} configured via MediaMTX (${relays.length} slot(s))`);
+          logger.info(`[rtmp] Plain relay for ${apiKey.slice(0,8)} configured via MediaMTX (${relays.length} slot(s))`);
         } catch (err) {
-          console.warn(`[rtmp] MediaMTX addPath failed for ${apiKey.slice(0, 8)}: ${err.message} — stream may not forward`);
+          logger.warn(`[rtmp] MediaMTX addPath failed for ${apiKey.slice(0,8)}: ${err.message} — stream may not forward`);
         }
 
         // Kick the current publisher so MediaMTX fires runOnPublish immediately.
@@ -441,10 +444,10 @@ export class RtmpRelayManager {
             const meta = this._meta.get(apiKey);
             if (meta) meta._fifoWriter = writer;
           } catch (e) {
-            console.warn(`[rtmp] Failed to open FIFO writer for ${apiKey.slice(0,8)}: ${e.message}`);
+            logger.warn(`[rtmp] Failed to open FIFO writer for ${apiKey.slice(0,8)}: ${e.message}`);
           }
         } catch (err) {
-          console.warn(`[rtmp] makeFifo failed for ${fifoPath}: ${err.message}`);
+          logger.warn(`[rtmp] makeFifo failed for ${fifoPath}: ${err.message}`);
         }
       }
 
@@ -466,7 +469,7 @@ export class RtmpRelayManager {
       runner.on('error', (err) => {
         this._procs.delete(apiKey);
         this._meta.delete(apiKey);
-        console.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
+        logger.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
       });
 
       runner.on('close', (info) => {
@@ -494,13 +497,13 @@ export class RtmpRelayManager {
               });
             }
         } else {
-          console.warn(`[rtmp] Metadata missing on close for key ${apiKey.slice(0, 8)}`);
+          logger.warn(`[rtmp] Metadata missing on close for key ${apiKey.slice(0, 8)}`);
         }
 
         if (info && info.code !== undefined && info.code !== null) {
-          console.warn(`[rtmp] ffmpeg exited with code ${info.code} for key ${apiKey.slice(0, 8)}`);
+          logger.warn(`[rtmp] ffmpeg exited with code ${info.code} for key ${apiKey.slice(0, 8)}`);
         } else {
-          console.log(`[rtmp] Relay ended for key ${apiKey.slice(0, 8)}`);
+          logger.info(`[rtmp] Relay ended for key ${apiKey.slice(0, 8)}`);
         }
       });
   }
@@ -668,12 +671,12 @@ export class RtmpRelayManager {
           const ok = await meta._fifoWriter.write(cue);
           if (!ok) {
             // record metric and return false
-            console.warn(`[rtmp] FIFO write timed out/dropped for ${apiKey.slice(0,8)}`);
+            logger.warn(`[rtmp] FIFO write timed out/dropped for ${apiKey.slice(0,8)}`);
             return false;
           }
           return true;
         } catch (err) {
-          console.error(`[rtmp] FIFO writer error for ${apiKey.slice(0,8)}: ${err.message}`);
+          logger.error(`[rtmp] FIFO writer error for ${apiKey.slice(0,8)}: ${err.message}`);
           return false;
         }
       }
@@ -686,7 +689,7 @@ export class RtmpRelayManager {
       return false;
     } catch (err) {
       if (err.code !== 'EPIPE') {
-        console.error(`[rtmp] Failed to write CEA-708 cue for ${apiKey.slice(0, 8)}: ${err.message}`);
+        logger.error(`[rtmp] Failed to write CEA-708 cue for ${apiKey.slice(0, 8)}: ${err.message}`);
       }
       return false;
     }
@@ -791,7 +794,7 @@ export class RtmpRelayManager {
         try {
           await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
         } catch (err) {
-          console.error(`[rtmp] Failed to restart relay after DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
+          logger.error(`[rtmp] Failed to restart relay after DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
         }
       }
     }
@@ -819,7 +822,7 @@ export class RtmpRelayManager {
         try {
           await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
         } catch (err) {
-          console.error(`[rtmp] Failed to restart relay after RTMP DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
+          logger.error(`[rtmp] Failed to restart relay after RTMP DSK update for ${apiKey.slice(0, 8)}: ${err.message}`);
         }
       }
     }
@@ -862,9 +865,9 @@ export class RtmpRelayManager {
     if (this._mediamtx) {
       try {
         await this._mediamtx.kickPath(apiKey);
-        console.log(`[rtmp] mediamtx kick successful for key ${apiKey.slice(0, 8)}`);
+        logger.info(`[rtmp] mediamtx kick successful for key ${apiKey.slice(0, 8)}`);
       } catch (err) {
-        console.warn(`[rtmp] mediamtx kick failed for key ${apiKey.slice(0, 8)}: ${err.message}`);
+        logger.warn(`[rtmp] mediamtx kick failed for key ${apiKey.slice(0, 8)}: ${err.message}`);
       }
       return;
     }
@@ -878,12 +881,12 @@ export class RtmpRelayManager {
     try {
       const res = await fetch(url, { method: 'POST' });
       if (!res.ok) {
-        console.warn(`[rtmp] drop/publisher returned ${res.status} for key ${apiKey.slice(0, 8)}`);
+        logger.warn(`[rtmp] drop/publisher returned ${res.status} for key ${apiKey.slice(0, 8)}`);
       } else {
-        console.log(`[rtmp] drop/publisher successful for key ${apiKey.slice(0, 8)}`);
+        logger.info(`[rtmp] drop/publisher successful for key ${apiKey.slice(0, 8)}`);
       }
     } catch (err) {
-      console.error(`[rtmp] drop/publisher request failed: ${err.message}`);
+      logger.error(`[rtmp] drop/publisher request failed: ${err.message}`);
     }
   }
 
@@ -908,13 +911,13 @@ export class RtmpRelayManager {
       }
       if (proc.stdin && !proc.stdin.destroyed) proc.stdin.end();
     } catch (err) {
-      if (err.code !== 'EPIPE') console.warn(`[rtmp] stdin.end() failed for ${apiKey.slice(0, 8)}: ${err.message}`);
+      if (err.code !== 'EPIPE') logger.warn(`[rtmp] stdin.end() failed for ${apiKey.slice(0, 8)}: ${err.message}`);
     }
     try {
       if (typeof proc.kill === 'function') proc.kill('SIGTERM');
       const timer = setTimeout(() => {
         try { if (typeof proc.kill === 'function') proc.kill('SIGKILL'); } catch (err) {
-          if (err.code !== 'ESRCH') console.warn(`[rtmp] SIGKILL failed for ${apiKey.slice(0, 8)}: ${err.message}`);
+          if (err.code !== 'ESRCH') logger.warn(`[rtmp] SIGKILL failed for ${apiKey.slice(0, 8)}: ${err.message}`);
         }
       }, 3000);
       if (timer.unref) timer.unref();
@@ -932,10 +935,10 @@ export function probeFfmpeg() {
   if (which.error) {
     const isNotFound = which.error.code === 'ENOENT' || which.error.message?.includes('ENOENT');
     if (isNotFound) {
-      console.warn('⚠ ffmpeg not found in PATH — RTMP relay will not be available.');
-      console.warn('  Install ffmpeg to enable stream relay: https://ffmpeg.org/download.html');
+      logger.warn('⚠ ffmpeg not found in PATH — RTMP relay will not be available.');
+      logger.warn('  Install ffmpeg to enable stream relay: https://ffmpeg.org/download.html');
     } else {
-      console.warn('⚠ ffmpeg probe failed:', which.error.message);
+      logger.warn('⚠ ffmpeg probe failed:', which.error.message);
     }
     return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
   }
@@ -961,7 +964,7 @@ export function probeFfmpeg() {
 
     return { available: true, hasLibx264, hasEia608, hasSubrip };
   } catch (err) {
-    console.warn('⚠ ffmpeg probe failed:', err.message);
+    logger.warn('⚠ ffmpeg probe failed:', err.message);
     return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
   }
 }

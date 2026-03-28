@@ -9,6 +9,7 @@
  */
 
 import { registerCaptionFile, updateCaptionFileSize } from 'lcyt-backend/db';
+import logger from 'lcyt/logger';
 
 /**
  * Write caption text to a backend file (append-mode).
@@ -43,8 +44,9 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
       let handle;
       try {
         handle = storage.openAppend(apiKey, filename);
-      } catch {
-        return;
+      } catch (err) {
+        logger.error('[captions] storage.openAppend failed', { apiKey, filename, error: err.message });
+        throw err;
       }
 
       // Write VTT header if needed
@@ -76,9 +78,12 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
       line = text + '\n';
     }
 
-    await entry.handle.write(line).catch(err => {
-      console.warn('[captions] Backend file write error:', err.message);
-    });
+    try {
+      await entry.handle.write(line);
+    } catch (err) {
+      logger.error('[captions] Backend file write error', { error: err.message, apiKey, fileKey });
+      throw err;
+    }
 
     // Update DB size after write
     const sizeBytes = entry.handle.sizeBytes();
@@ -86,7 +91,8 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
       updateCaptionFileSize(db, entry.dbId, sizeBytes);
     }
   } catch (err) {
-    console.warn('[captions] Backend file write error:', err.message);
+    logger.error('[captions] Backend file write error (outer)', { error: err.message });
+    throw err;
   }
 }
 

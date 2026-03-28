@@ -17,6 +17,7 @@
  */
 
 import { listCueRules, insertCueEvent } from './db.js';
+import logger from 'lcyt/logger';
 
 // ---------------------------------------------------------------------------
 // Jaro-Winkler string similarity (pure JS, no deps)
@@ -275,7 +276,7 @@ export class CueEngine {
         try {
           let action = {};
           try { action = JSON.parse(rule.action); } catch {
-            console.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+            logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
           }
           insertCueEvent(this._db, apiKey, {
             rule_id: rule.id,
@@ -284,7 +285,7 @@ export class CueEngine {
             action,
           });
         } catch (err) {
-          console.warn('[cues] Failed to insert cue_event:', err?.message);
+          logger.warn('[cues] Failed to insert cue_event:', err?.message);
         }
       }
     }
@@ -319,9 +320,13 @@ export class CueEngine {
       }
 
       try {
-        const result = await this._agentEvaluateFn(apiKey, rule.pattern, {
-          confidenceThreshold: rule.fuzzy_threshold ?? 0.7,
-        });
+        const TIMEOUT_MS = parseInt(process.env.CUE_EVENT_TIMEOUT_MS || "5000", 10);
+        try {
+          const evPromise = this._agentEvaluateFn(apiKey, rule.pattern, { confidenceThreshold: rule.fuzzy_threshold ?? 0.7 });
+          const result = await Promise.race([
+            evPromise,
+            new Promise((_, rej) => setTimeout(() => rej(new Error("event-eval-timeout")), TIMEOUT_MS))
+          ]);
 
         if (result.matched) {
           this._lastFired.set(rule.id, Date.now());
@@ -331,7 +336,7 @@ export class CueEngine {
           try {
             let action = {};
             try { action = JSON.parse(rule.action); } catch {
-              console.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+              logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
             }
             insertCueEvent(this._db, apiKey, {
               rule_id: rule.id,
@@ -340,13 +345,13 @@ export class CueEngine {
               action,
             });
           } catch (err) {
-            console.warn('[cues] Failed to insert cue_event:', err?.message);
+            logger.warn('[cues] Failed to insert cue_event:', err?.message);
           }
 
           onFired?.([{ rule, matched }]);
         }
       } catch (err) {
-        console.warn(`[cues] Event cue evaluation error for rule ${rule.id}:`, err?.message);
+        logger.warn(`[cues] Event cue evaluation error for rule ${rule.id}:`, err?.message);
       }
     }
   }
@@ -433,7 +438,7 @@ export class CueEngine {
                   try {
                     let action = {};
                     try { action = JSON.parse(ruleRef.action); } catch {
-                      console.warn(`[cues] Malformed action JSON for rule ${ruleRef.id}`);
+                      logger.warn(`[cues] Malformed action JSON for rule ${ruleRef.id}`);
                     }
                     insertCueEvent(this._db, apiKey, {
                       rule_id: ruleRef.id,
@@ -442,7 +447,7 @@ export class CueEngine {
                       action,
                     });
                   } catch (err) {
-                    console.warn('[cues] Failed to insert cue_event:', err?.message);
+                    logger.warn('[cues] Failed to insert cue_event:', err?.message);
                   }
 
                   onFired?.([result]);
@@ -464,7 +469,7 @@ export class CueEngine {
         try {
           let action = {};
           try { action = JSON.parse(rule.action); } catch {
-            console.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+            logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
           }
           insertCueEvent(this._db, apiKey, {
             rule_id: rule.id,
@@ -473,7 +478,7 @@ export class CueEngine {
             action,
           });
         } catch (err) {
-          console.warn('[cues] Failed to insert cue_event:', err?.message);
+          logger.warn('[cues] Failed to insert cue_event:', err?.message);
         }
       }
     }

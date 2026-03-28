@@ -13,10 +13,21 @@
 
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import logger from 'lcyt/logger';
 import {
   listCueRules, getCueRule, insertCueRule, updateCueRule, deleteCueRule,
   getRecentCueEvents,
 } from '../db.js';
+
+function isSafeRegex(pattern) {
+  if (!pattern) return false;
+  if (pattern.length > 200) return false;
+  // Reject simple nested quantifier patterns like '(.+)+', '(.*)+', '(.+){2,}'
+  const nested = /\((?:[^)]{0,200})[+*{]/.test(pattern) && /\)[+*{]/.test(pattern);
+  if (nested) return false;
+  return true;
+}
+
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -37,7 +48,7 @@ export function createCueRouter(db, auth, engine) {
     // Parse action JSON for the response
     const parsed = rules.map(r => ({
       ...r,
-      action: (() => { try { return JSON.parse(r.action); } catch { console.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(),
+      action: (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(),
     }));
     return res.json({ rules: parsed });
   });
@@ -58,6 +69,7 @@ export function createCueRouter(db, auth, engine) {
 
     // Validate regex pattern if match_type is regex
     if (match_type === 'regex') {
+      if (!isSafeRegex(pattern)) return res.status(400).json({ error: 'Invalid or unsafe regex pattern' });
       try { new RegExp(pattern); } catch {
         return res.status(400).json({ error: 'Invalid regex pattern' });
       }
@@ -102,6 +114,7 @@ export function createCueRouter(db, auth, engine) {
     // Validate regex pattern if the rule is (or will remain) a regex rule
     const isRegexRule = match_type === 'regex' || (!match_type && rule.match_type === 'regex');
     if (isRegexRule && pattern) {
+      if (!isSafeRegex(pattern)) return res.status(400).json({ error: 'Invalid or unsafe regex pattern' });
       try { new RegExp(pattern); } catch {
         return res.status(400).json({ error: 'Invalid regex pattern' });
       }
@@ -151,7 +164,7 @@ export function createCueRouter(db, auth, engine) {
     // Parse action JSON for the response
     const parsed = events.map(e => ({
       ...e,
-      action: (() => { try { return JSON.parse(e.action); } catch { console.warn(`[cues] Malformed action JSON for event ${e.id}`); return {}; } })(),
+      action: (() => { try { return JSON.parse(e.action); } catch { logger.warn(`[cues] Malformed action JSON for event ${e.id}`); return {}; } })(),
     }));
     return res.json({ events: parsed });
   });
