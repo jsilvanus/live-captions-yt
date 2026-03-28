@@ -40,16 +40,19 @@ export function parseFileContent(rawText) {
     // Extract cue metacodes — they can appear alongside content and other
     // metacodes on any line.  Strip them so the remaining text is the
     // caption content (or remaining metadata).
+    // Only the first cue phrase is used; additional cues on the same line
+    // are stripped but ignored (one cue per line).
     CUE_META_RE.lastIndex = 0;
     let cuePhrase = null;
-    for (const m of raw.matchAll(CUE_META_RE)) {
-      const val = m[1].trim();
-      if (val && !cuePhrase) cuePhrase = val;
-    }
-    CUE_META_RE.lastIndex = 0;
-    const effectiveRaw = cuePhrase ? raw.replace(CUE_META_RE, '').trim() : raw;
+    const effectiveRaw = raw.replace(CUE_META_RE, (_, val) => {
+      const trimmed = val.trim();
+      if (trimmed && !cuePhrase) cuePhrase = trimmed;
+      return '';
+    }).trim();
+    // If no cue was found, use the original raw text
+    const lineRaw = cuePhrase != null ? effectiveRaw : raw;
 
-    if (STANZA_OPEN_RE.test(effectiveRaw)) {
+    if (STANZA_OPEN_RE.test(lineRaw)) {
       const stanzaLines = [];
       i++;
       while (i < rawLines.length) {
@@ -64,7 +67,7 @@ export function parseFileContent(rawText) {
         delete currentCodes.stanza;
       }
     } else {
-      const emptySendMatch = effectiveRaw.match(EMPTY_SEND_RE);
+      const emptySendMatch = lineRaw.match(EMPTY_SEND_RE);
       if (emptySendMatch) {
         const label = emptySendMatch[1]?.trim() || null;
         const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
@@ -72,13 +75,13 @@ export function parseFileContent(rawText) {
         lines.push('');
         lineCodes.push(codes);
         lineNumbers.push(i + 1);
-      } else if (isMetadataOnlyLine(effectiveRaw)) {
+      } else if (isMetadataOnlyLine(lineRaw)) {
         let audioAction = null;
         let timerAction = null;
         let gotoAction = null;
         let fileSwitchAction = null;
         let fileSwitchServerAction = null;
-        for (const m of effectiveRaw.matchAll(MULTI_META_RE)) {
+        for (const m of lineRaw.matchAll(MULTI_META_RE)) {
           const key = m[1].toLowerCase();
           const value = m[2].trim();
           if (key === 'audio' && (value === 'start' || value === 'stop')) {
@@ -119,7 +122,7 @@ export function parseFileContent(rawText) {
       } else {
         const codes = { ...currentCodes };
         if (cuePhrase) codes.cue = cuePhrase;
-        lines.push(effectiveRaw);
+        lines.push(lineRaw);
         lineCodes.push(codes);
         lineNumbers.push(i + 1);
       }
