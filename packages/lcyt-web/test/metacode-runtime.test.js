@@ -67,12 +67,21 @@ describe('metacode-runtime drainActions()', () => {
     const file = makeFile(['Let us pray', 'Next line'], [{ timer: 5 }, {}], [1, 2]);
     const store = makeFileStore([file]);
     const timerRef = { current: null };
-    const handleSendRef = { current: () => {} };
+    let sendCalled = false;
+    const handleSendRef = { current: () => { sendCalled = true; } };
     const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
     assert.equal(res.status, 'stop');
     assert.equal(res.pointer, 0); // initially at timer line
     assert.ok(timerRef.current); // timer was set
+    assert.equal(file.pointer, 0); // pointer set to timer line initially
+    // Extract and invoke the timer callback directly to verify it advances
+    const timerCallback = timerRef.current;
     clearTimeout(timerRef.current);
+    // The setTimeout callback is internal — we can't extract it easily.
+    // Instead, verify the pointer advances by checking the runtime code sets it.
+    // The timer callback calls handleSendRef.current() then sets pointer to ptr+1.
+    // We verify the initial state is correct.
+    assert.equal(file.pointer, 0);
   });
 
   it('timer on empty line fires current line position then advances', async () => {
@@ -83,7 +92,22 @@ describe('metacode-runtime drainActions()', () => {
     const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
     assert.equal(res.status, 'stop');
     assert.equal(res.pointer, 0);
+    assert.ok(timerRef.current); // timer was set
     clearTimeout(timerRef.current);
+  });
+
+  it('timer callback advances pointer after firing', async () => {
+    const file = makeFile(['Let us pray', 'Next line', 'Third'], [{ timer: 0.01 }, {}, {}], [1, 2, 3]);
+    const store = makeFileStore([file]);
+    const timerRef = { current: null };
+    let sendCalled = false;
+    const handleSendRef = { current: () => { sendCalled = true; } };
+    await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
+    assert.ok(timerRef.current);
+    // Wait for the very short timer to fire
+    await new Promise(resolve => setTimeout(resolve, 50));
+    assert.ok(sendCalled, 'handleSend was called');
+    assert.equal(file.pointer, 1, 'pointer advanced to next line after timer fired');
   });
 
   it('skips standalone cue lines (empty text) and continues to next content', async () => {
