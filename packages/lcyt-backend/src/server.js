@@ -16,6 +16,7 @@ import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
+import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -148,6 +149,12 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+
+// Music detection plugin — run DB migrations and create the SoundCaptionProcessor.
+// The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
+// and fires sound_label / bpm_update SSE events on the existing GET /events stream.
+await initMusicControl(db);
+const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -314,7 +321,7 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, resolveStorage }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);

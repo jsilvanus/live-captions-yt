@@ -3,6 +3,7 @@ import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
+import { MusicChip } from './MusicChip';
 
 const STT_POLL_INTERVAL_MS = 10_000;
 
@@ -77,6 +78,7 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
           {sttChipLabel}
         </button>
       )}
+      <MusicChip onClick={onCCOpen ?? (() => navigate('/settings?tab=cc'))} />
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">
         <button className="status-bar__btn status-bar__btn--icon" onClick={() => navigate('/broadcast')} title="Broadcast">

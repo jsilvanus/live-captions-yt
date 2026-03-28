@@ -1,10 +1,8 @@
 # LCYT Metacode Reference
 
 Caption files (`.txt`) can embed HTML comment metacodes to control caption delivery, file
-navigation, timing, metadata, and DSK graphics overlays.
-
-Metacodes are HTML comments and are stripped from the caption text before sending, so viewers
-and YouTube never see them.
+navigation, timing, metadata, and DSK graphics overlays. Metacodes are HTML comments and
+are stripped from caption text before sending, so viewers and YouTube never see them.
 
 ---
 
@@ -35,12 +33,28 @@ Some keys use a bracket modifier (e.g. `file[server]`, `graphics[viewport]`):
 
 ---
 
+## Implementation note (refactor mapping)
+
+Following the recent refactor, metacode responsibilities are split as follows:
+
+- Parser: `packages/lcyt-web/src/lib/metacode-parser.js`
+- Runtime helpers / send-time behaviour: `packages/lcyt-web/src/lib/metacode-runtime.js`
+- Manual state / active-codes: `packages/lcyt-web/src/lib/metacode-active.js`
+- Planner serializer: `packages/lcyt-web/src/lib/metacode-planner.js`
+- Backend handoff / server-side helpers: `packages/lcyt-backend/src/metacode.js`
+- DSK graphics processing: `packages/plugins/lcyt-dsk/src/caption-processor.js`
+
+Compatibility re-exports for older imports remain in `packages/lcyt-web/src/lib/fileUtils.js`,
+`activeCodes.js`, and `plannerUtils.js` so existing code paths continue to work.
+
+---
+
 ## Metacode Types
 
 | Type | Description |
 |------|-------------|
-| **Persistent** | Set once, tagged on every caption that follows until overridden |
-| **Action (one-shot)** | Produce an empty caption line; fire once when the pointer reaches them |
+| **Persistent** | Set once, applied to every caption that follows until overridden |
+| **Action (one-shot)** | Produce an empty caption-line entry; fire once when the pointer reaches it |
 
 ---
 
@@ -57,9 +71,11 @@ Sets the caption and speech language for subsequent lines.
 <!-- lang: fi-FI -->
 ```
 
-- **Values:** BCP-47 language tag (e.g. `en-US`, `fi-FI`, `sv-SE`)
-- **Effect:** Sent as `captionLang` to the backend on each caption
-- **Residence:** `packages/lcyt-web/src/components/InputBar.jsx` (`doSend`) + backend `captions` route
+- Values: BCP-47 language tag (e.g. `en-US`, `fi-FI`, `sv-SE`)
+- Effect: Sent as `captionLang` to the backend on each caption
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime/send-time
+  behaviour lives in `packages/lcyt-web/src/lib/metacode-runtime.js`; backend handoff via
+  `packages/lcyt-backend/src/metacode.js`.
 
 ### `no-translate`
 
@@ -70,8 +86,9 @@ Prevents automatic translation for lines that follow.
 <!-- no-translate: false -->
 ```
 
-- **Values:** `true` / `false`
-- **Residence:** `packages/lcyt-web/src/components/InputBar.jsx` (`doSend`)
+- Values: `true` / `false`
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; applied at send-time
+  in `packages/lcyt-web/src/lib/metacode-runtime.js`.
 
 ### `section`
 
@@ -81,9 +98,11 @@ Names the current section or chapter.
 <!-- section: Chorus -->
 ```
 
-- **Values:** any string
-- **Effect:** Sent in caption codes payload to the DSK system and viewer
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed); `packages/plugins/lcyt-dsk/src/caption-processor.js` (consumed)
+- Values: any string
+- Effect: Included in caption codes payloads (viewer, DSK)
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; consumed by the DSK
+  processor in `packages/plugins/lcyt-dsk/src/caption-processor.js`; backend handoff via
+  `packages/lcyt-backend/src/metacode.js` as needed.
 
 ### `speaker`
 
@@ -93,8 +112,10 @@ Names the current speaker.
 <!-- speaker: Alice -->
 ```
 
-- **Values:** any string
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed)
+- Values: any string
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime helpers in
+  `packages/lcyt-web/src/lib/metacode-runtime.js` and planner serializer in
+  `packages/lcyt-web/src/lib/metacode-planner.js`.
 
 ### `lyrics`
 
@@ -104,12 +125,13 @@ Marks subsequent lines as song lyrics.
 <!-- lyrics: true -->
 ```
 
-- **Values:** `true` / `false`
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed)
+- Values: `true` / `false`
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; surfaced to runtime
+  helpers and the planner via the metacode runtime and planner modules.
 
 ### Custom codes
 
-Any key not in the list above is accepted and forwarded as-is to the viewer and DSK systems.
+Any key not in the list above is accepted and forwarded as-is to viewers and plugins.
 
 ```
 <!-- my-custom-code: value -->
@@ -120,8 +142,7 @@ Any key not in the list above is accepted and forwarded as-is to the viewer and 
 ## Stanza Blocks
 
 Multi-line stanza text that is shown to the viewer *before* the singer begins. The stanza is
-**not** sent as a caption — it sets a `stanza` code on every line that follows until
-overridden.
+not sent as a caption — it sets a `stanza` code on every line that follows until overridden.
 
 ```
 <!-- stanza
@@ -131,15 +152,15 @@ Second line of the verse
 Caption line that triggers the stanza display
 ```
 
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (`parseFileContent`)
+- Where handled: parsed by `packages/lcyt-web/src/lib/metacode-parser.js`; compatibility
+  re-exports remain in `packages/lcyt-web/src/lib/fileUtils.js`.
 
 ---
 
 ## Action Metacodes (One-shot)
 
-Action metacodes produce an **empty caption line** entry in the parsed file. When the
-pointer reaches (or is advanced past) this entry, the action fires once and is consumed.
-The action code does **not** persist into subsequent lines.
+Action metacodes produce an empty caption-line entry in the parsed file. When the pointer
+reaches (or is advanced past) that entry, the action fires once and is consumed.
 
 ### `audio`
 
@@ -150,57 +171,56 @@ Toggles the browser microphone / speech-to-text capture.
 <!-- audio: stop -->
 ```
 
-- **Values:** `start` | `stop`
-- **Effect:** Dispatches `lcyt:audio-capture` CustomEvent on `window`
-- **Residence:** `packages/lcyt-web/src/components/InputBar.jsx` (`handleSend`, drain loop)
+- Values: `start` | `stop`
+- Effect: Runtime dispatch (e.g. `lcyt:audio-capture` event) handled by frontend runtime
+  helpers
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime dispatch in
+  `packages/lcyt-web/src/lib/metacode-runtime.js` and consuming UI code.
 
 ### `timer`
 
-After the pointer rests on this line for *N* seconds, the file automatically advances to
-the next line, triggering any further metacodes or captions in sequence. Useful for
-automatic teleprompter pacing.
+After the pointer rests on this line for *N* seconds, the file automatically advances to the
+next line. Useful for teleprompter-style pacing.
 
 ```
 <!-- timer: 5 -->
 <!-- timer: 0.5 -->
 ```
 
-- **Values:** positive number (seconds, fractions allowed)
-- **Effect:** Schedules a deferred `handleSend()` call; dispatches no event
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed) +
-  `packages/lcyt-web/src/components/InputBar.jsx` (`handleSend`, drain loop)
+- Values: positive number (seconds, fractions allowed)
+- Effect: schedules a deferred advancement; handled by runtime scheduling code
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime scheduling in
+  `packages/lcyt-web/src/lib/metacode-runtime.js`.
 
 ### `goto`
 
-Jumps the file pointer to a specific line number. Line numbers refer to the **actual
-1-based raw file position** (the same numbers shown in the caption view gutter), so
-the number matches the line in your text editor.
-
-If the target line is a metadata-only line, the pointer moves to the first caption entry
-at or after that position.
+Jumps the file pointer to a specific line number. Line numbers refer to the **actual 1-based
+raw file position** (the same numbers shown in the caption view gutter). If the target line
+is a metadata-only line, the pointer moves to the first caption entry at or after that
+position.
 
 ```
 <!-- goto: 42 -->
 ```
 
-- **Values:** positive integer (1-based raw file line number)
-- **Effect:** Calls `fileStore.setPointer()` to the resolved index; stops the current drain
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed) +
-  `packages/lcyt-web/src/components/InputBar.jsx` (`handleSend`, drain loop, `findLineIndexForRaw`)
+- Values: positive integer (1-based raw file line number)
+- Effect: resolves to an index and moves the file pointer (stops any active drain)
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime resolution
+  and pointer movement in `packages/lcyt-web/src/lib/metacode-runtime.js` and UI hooks.
 
 ### `file`
 
-Switches the active caption file to another already-open file by its display name. If
-the named file is not open, nothing happens.
+Switches the active caption file to another already-open file by its display name. If the
+named file is not open, nothing happens.
 
 ```
 <!-- file: My Script.txt -->
 ```
 
-- **Values:** display name of an open file (exact match)
-- **Effect:** Calls `fileStore.setActive()` for the matching file; stops the current drain
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed) +
-  `packages/lcyt-web/src/components/InputBar.jsx` (`handleSend`, `handleFileSwitchAction`)
+- Values: display name of an open file (exact match)
+- Effect: switches active file in the frontend file store (stops the drain)
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; execution in
+  runtime helpers and UI code (`packages/lcyt-web/src/lib/metacode-runtime.js`, file store).
 
 ### `file[server]`
 
@@ -213,45 +233,43 @@ token is added automatically as an `Authorization` header.
 <!-- file[server]: https://example.com/scripts/act2.txt -->
 ```
 
-- **Values:** absolute URL or path relative to the backend URL
-- **Effect:** `fetch()` → `fileStore.loadFileFromText()` → `fileStore.setActive()`; stops drain
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (parsed) +
-  `packages/lcyt-web/src/components/InputBar.jsx` (`handleSend`, `handleFileSwitchAction`)
+- Values: absolute URL or path relative to the backend URL
+- Effect: fetches text, loads file into file store, and sets it active (stops drain)
+- Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; fetch + execution
+  in runtime helpers and UI code.
 
 ---
 
 ## Empty-send Marker (`_`)
 
-A lone underscore `_` on its own line creates a *send-codes* entry: pressing Enter on it
+A lone underscore `_` on its own line creates a send-codes entry: pressing Enter on it
 fires the current metadata codes (e.g. `stanza`) to the viewer without sending any caption
-text to YouTube.
+text to YouTube. An optional label after `_` is shown in the caption view gutter.
 
 ```
 _
 _ intro label
 ```
 
-An optional label after `_` is shown in the caption view gutter. This is useful for pushing
-a stanza display to the viewer before the singing starts.
-
-- **Residence:** `packages/lcyt-web/src/lib/fileUtils.js` (`parseFileContent`, `EMPTY_SEND_RE`)
+- Where handled: parsed by `packages/lcyt-web/src/lib/metacode-parser.js` (exposes the empty-send
+  pattern); compatibility re-exports in `packages/lcyt-web/src/lib/fileUtils.js`.
 
 ---
 
 ## Graphics (DSK) Metacodes
 
-The `graphics` metacode is part of the **DSK plugin** (`packages/plugins/lcyt-dsk`) and
-controls overlay graphics on the downstream-key renderer.
+The `graphics` metacode is owned by the DSK plugin and controls overlay graphics on the
+downstream-key renderer. Plugin handling remains inside the plugin package.
 
 ### `graphics`
 
-Updates the active overlay graphic names for all viewports (or specific ones).
+Updates the active overlay graphic names for all viewports (or specific ones):
 
 ```
-<!-- graphics: logo,banner -->                  all viewports: absolute set
-<!-- graphics: +logo -->                        delta: add logo
-<!-- graphics: -banner -->                      delta: remove banner
-<!-- graphics: -->                              clear all graphics
+<!-- graphics: logo,banner -->   all viewports: absolute set
+<!-- graphics: +logo -->         delta: add logo
+<!-- graphics: -banner -->       delta: remove banner
+<!-- graphics: -->               clear all graphics
 ```
 
 ### `graphics[viewport]`
@@ -261,13 +279,15 @@ Targets a specific viewport or a comma-separated list of viewports.
 ```
 <!-- graphics[vertical-left]: stanza,logo -->
 <!-- graphics[v1,v2]: stanza -->
-<!-- graphics[vertical-right]: -->              clear this viewport
+<!-- graphics[vertical-right]: -->   clear this viewport
 ```
 
 Landscape aliases: `landscape`, `default`, `main` all refer to the same default viewport.
 
-- **Effect:** Emits DSK SSE events to overlay pages; updates RTMP relay overlay
-- **Residence:** `packages/plugins/lcyt-dsk/src/caption-processor.js`
+- Effect: emits DSK SSE events to overlay pages and updates RTMP overlay state
+- Where handled: `packages/plugins/lcyt-dsk/src/caption-processor.js` (the graphics pipeline
+  remains in the DSK plugin). Backend metacode handoff helpers live in
+  `packages/lcyt-backend/src/metacode.js`.
 
 ---
 
@@ -275,9 +295,8 @@ Landscape aliases: `landscape`, `default`, `main` all refer to the same default 
 
 Line numbers in the caption view gutter reflect the **actual 1-based position in the raw
 text file** — the same number shown in a text editor. Metadata-only lines and blank lines
-are not shown (they are consumed during parsing), so gaps may appear in the sequence.
-
-The `<!-- goto: N -->` metacode uses these same raw line numbers.
+are consumed during parsing, so gaps may appear in the sequence. The `<!-- goto: N -->`
+metacode uses these raw line numbers.
 
 ---
 
@@ -285,16 +304,36 @@ The `<!-- goto: N -->` metacode uses these same raw line numbers.
 
 | Metacode | Type | Where resolved |
 |----------|------|----------------|
-| `lang: <bcp47>` | Persistent | `InputBar.jsx` / backend captions route |
-| `no-translate: true\|false` | Persistent | `InputBar.jsx` |
-| `section: <name>` | Persistent | `fileUtils.js` / DSK caption-processor |
-| `speaker: <name>` | Persistent | `fileUtils.js` |
-| `lyrics: true\|false` | Persistent | `fileUtils.js` |
-| `audio: start\|stop` | Action | `InputBar.jsx` drain loop |
-| `timer: <seconds>` | Action | `InputBar.jsx` drain loop |
-| `goto: <line>` | Action | `InputBar.jsx` drain loop |
-| `file: <name>` | Action | `InputBar.jsx` `handleFileSwitchAction` |
-| `file[server]: <path>` | Action | `InputBar.jsx` `handleFileSwitchAction` |
-| `stanza` block | Block | `fileUtils.js` |
-| `graphics: <names>` | In-text | `lcyt-dsk/caption-processor.js` |
-| `graphics[vp]: <names>` | In-text | `lcyt-dsk/caption-processor.js` |
+| `lang: <bcp47>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js`; backend handoff `packages/lcyt-backend/src/metacode.js` |
+| `no-translate: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `section: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → `packages/plugins/lcyt-dsk/src/caption-processor.js` |
+| `speaker: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `lyrics: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → planner `packages/lcyt-web/src/lib/metacode-planner.js` |
+| `audio: start\|stop` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `timer: <seconds>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `goto: <line>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `file: <name>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime helpers |
+| `file[server]: <path>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime helpers (fetch + fileStore) |
+| `stanza` block | Block | `packages/lcyt-web/src/lib/metacode-parser.js` (compatibility re-exports in `fileUtils.js`) |
+| `graphics: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
+| `graphics[vp]: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
+
+---
+
+## Refactor Plan
+
+The scoped implementation plan for clarifying core metacode handling lives in
+`docs/plans/plan_metacode_refactor.md`.
+
+Plan boundaries:
+
+- Keep plugin metacode handling as-is (DSK graphics pipeline remains in
+  `packages/plugins/lcyt-dsk/src/caption-processor.js`).
+- Core backend metacode handoff lives in `packages/lcyt-backend/src/metacode.js`.
+- Frontend parser/runtime/manual-state/planner helpers live in
+  `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/lib/metacode-active.js`,
+  `packages/lcyt-web/src/lib/metacode-planner.js`, and
+  `packages/lcyt-web/src/lib/metacode-runtime.js`.
+- Keep compatibility re-exports in `packages/lcyt-web/src/lib/fileUtils.js`,
+  `activeCodes.js`, and `plannerUtils.js` where useful.
+

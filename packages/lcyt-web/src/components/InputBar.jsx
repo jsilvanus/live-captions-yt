@@ -7,9 +7,10 @@ import { KEYS } from '../lib/storageKeys.js';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
-import { getActiveCodes } from '../lib/activeCodes';
+import { getActiveCodes } from '../lib/metacode-active.js';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
-import { parseFileContent } from '../lib/fileUtils';
+import { parseFileContent } from '../lib/metacode-parser.js';
+import { drainActions, findLineIndexForRaw, performFileSwitchAction } from '../lib/metacode-runtime.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -186,84 +187,33 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       }
 
       let ptr = file.pointer;
-
-      /**
-       * Drain action lines starting at ptr:
-       *   audio     — fires lcyt:audio-capture event, advance ptr
-       *   timer     — set auto-advance timer, set pointer, return 'stop'
-       *   goto      — jump pointer to raw line N, return 'stop'
-       *   fileSwitch / fileSwitchServer — switch active file, return 'stop'
-       *   blank / heading — skip, advance ptr
-       *   else — sendable line, break
-       * Returns 'continue' | 'done' | 'stop'.
-       */
-      const drainActions = async () => {
-        while (ptr < file.lines.length) {
-          const lc = file.lineCodes?.[ptr] || {};
-          const lineText = file.lines[ptr];
-
-          if (lc.audioCapture) {
-            window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: lc.audioCapture } }));
-            ptr++;
-          } else if (lc.timer != null) {
-            // Timer: advance past the timer line, then schedule a deferred send.
-            ptr++;
-            const target = ptr < file.lines.length ? ptr : file.lines.length - 1;
-            fileStore.setPointer(file.id, target);
-            if (timerRef.current) clearTimeout(timerRef.current);
-            timerRef.current = setTimeout(() => handleSendRef.current?.(), lc.timer * 1000);
-            return 'stop';
-          } else if (lc.goto != null) {
-            // Goto: find the lines[] index whose lineNumber >= targetRaw, jump there.
-            const maxRaw = file.lineNumbers?.at(-1) ?? 0;
-            const targetIdx = findLineIndexForRaw(file.lineNumbers, lc.goto);
-            if (file.lineNumbers && lc.goto > maxRaw) {
-              showToast(`goto: line ${lc.goto} is past end of file`, 'info', 2500);
-            }
-            fileStore.setPointer(file.id, targetIdx);
-            return 'stop';
-          } else if (lc.fileSwitch != null || lc.fileSwitchServer != null) {
-            await handleFileSwitchAction(lc.fileSwitch, lc.fileSwitchServer);
-            return 'stop';
-          } else if (!lineText?.trim() || lineText?.startsWith('#')) {
-            ptr++; // skip blank / heading
-          } else {
-            break; // found a sendable line
-          }
-        }
-        return ptr >= file.lines.length ? 'done' : 'continue';
-      };
-
-      const preResult = await drainActions();
-      if (preResult === 'stop') return;
-      if (preResult === 'done') {
+      const pre = await drainActions({ file, startPtr: ptr, fileStore, timerRef, handleSendRef, showToast, session });
+      if (pre.status === 'stop') return;
+      if (pre.status === 'done') {
         fileStore.setPointer(file.id, file.lines.length - 1);
         showToast('End of file reached', 'info', 2500);
         return;
       }
-      // If we only skipped blank/heading lines, just reposition the pointer.
-      if (ptr !== file.pointer) {
-        fileStore.setPointer(file.id, ptr);
+      if (pre.pointer !== ptr) {
+        fileStore.setPointer(file.id, pre.pointer);
         return;
       }
 
       const lineText = file.lines[ptr];
       const lc = file.lineCodes?.[ptr] || {};
       const prevPointer = ptr;
-
       try {
         await doSend(lineText, lc);
         fileStore.setLastSentLine({ fileId: file.id, lineIndex: prevPointer });
 
-        // Advance past the sent line and drain any immediately following action lines.
         ptr = ptr + 1;
-        const postResult = await drainActions();
-        if (postResult === 'stop') return;
-        if (postResult === 'done') {
+        const post = await drainActions({ file, startPtr: ptr, fileStore, timerRef, handleSendRef, showToast, session });
+        if (post.status === 'stop') return;
+        if (post.status === 'done') {
           fileStore.setPointer(file.id, file.lines.length - 1);
           showToast('End of file reached', 'info', 2500);
         } else {
-          fileStore.setPointer(file.id, ptr);
+          fileStore.setPointer(file.id, post.pointer);
         }
       } catch (err) {
         handleSendError(err);
@@ -289,59 +239,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     }
   }
 
-  /**
-   * Find the first index in lineNumbers[] where lineNumbers[i] >= targetRaw.
-   * Used by the goto metacode to map raw file line numbers to lines[] indices.
-   */
-  function findLineIndexForRaw(lineNumbers, targetRaw) {
-    if (!lineNumbers || lineNumbers.length === 0) return 0;
-    for (let i = 0; i < lineNumbers.length; i++) {
-      if (lineNumbers[i] >= targetRaw) return i;
-    }
-    return lineNumbers.length - 1;
-  }
-
-  /**
-   * Handle a file-switch action metacode.
-   * - fileSwitch: switch to an already-open file by name (no-op if not found)
-   * - fileSwitchServer: fetch content from a URL and open (or switch if already open)
-   */
-  async function handleFileSwitchAction(switchName, switchServerPath) {
-    if (switchServerPath) {
-      try {
-        const isAbsoluteUrl = switchServerPath.startsWith('http://') || switchServerPath.startsWith('https://');
-        const url = isAbsoluteUrl ? switchServerPath : `${session.backendUrl}${switchServerPath}`;
-        const token = session.getSessionToken?.();
-        const fetchHeaders = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(url, { headers: fetchHeaders });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const rawText = await res.text();
-        // Derive a display name from the URL path (strip query string/fragment)
-        let fileName = 'server-file.txt';
-        try {
-          fileName = decodeURIComponent(
-            switchServerPath.replace(/[?#].*$/, '').split('/').pop() || 'server-file.txt'
-          );
-        } catch { /* malformed percent-encoding — keep default name */ }
-        const existing = fileStore.files.find(f => f.name === fileName);
-        if (existing) {
-          fileStore.setActive(existing.id);
-        } else {
-          const entry = fileStore.loadFileFromText(fileName, rawText);
-          fileStore.setActive(entry.id);
-        }
-      } catch (err) {
-        showToast(`file[server] error: ${err.message}`, 'warning');
-      }
-    } else if (switchName) {
-      const target = fileStore.files.find(f => f.name === switchName);
-      if (target) {
-        fileStore.setActive(target.id);
-      } else {
-        showToast(`file: "${switchName}" is not open`, 'info', 3000);
-      }
-    }
-  }
+  // File-switch and goto helpers live in src/lib/metacode-runtime.js
 
   // Keep handleSendRef pointing to the latest version of handleSend so that
   // the timer auto-advance always calls fresh state (synchronous render-body update).

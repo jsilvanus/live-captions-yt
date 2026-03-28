@@ -538,7 +538,9 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/images',   imagesRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-// Pass captionProcessor to createCaptionsRouter for <!-- graphics:... --> metacode:
+// Pass backend metacode handoff + captionProcessor to createCaptionsRouter:
+// backend metacode: packages/lcyt-backend/src/metacode.js
+// DSK graphics processor (plugin): packages/plugins/lcyt-dsk/src/caption-processor.js
 app.use('/captions', createCaptionsRouter(store, auth, db, relayManager, captionProcessor));
 // In graceful shutdown:
 await stopDsk();
@@ -754,6 +756,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 - `contexts/` — React context providers: AppProviders, AudioContext, CaptionContext, ConnectionContext, FileContext, LangContext, SentLogContext, SessionApiContext, SessionContext, ToastContext
 - `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useWebSpeech, useWindowEvent
 - `lib/` — Utilities: activeCodes.js, api.js, device.js, dskEditorAnimation.js, dskEditorGeometry.js, dskEditorPresets.js, fileUtils.js, formatting.js, googleCredential.js, i18n.js, inputLang.js, normalizeLines.js, plannerUtils.js, relayConfig.js, settings.js, settingsIO.js, storageKeys.js, sttConfig.js, targetConfig.js, translate.js, translationConfig.js, viewerUtils.js, youtubeApi.js, youtubeAuth.js
+- `lib/metacode-*` — Metacode helpers: metacode-parser.js, metacode-active.js, metacode-planner.js, metacode-runtime.js (frontend metacode logic; `fileUtils.js`, `activeCodes.js`, and `plannerUtils.js` keep compatibility re-exports)
 - `locales/` — i18n translation files: en.js, fi.js, sv.js
 - `styles/` — reset.css, layout.css, components.css, dashboard.css
 
@@ -1076,6 +1079,14 @@ Server-side speech-to-text transcription converts an incoming RTMP/HLS/WHEP audi
 - **Caption metacodes** (`<!-- graphics:... -->`) in caption text are intercepted by `captionProcessor` before delivery, triggering SSE events to connected DSK overlay pages.
 - **Viewports** define named display regions (e.g. `vertical-left`, `landscape`). The default landscape display is aliased as `landscape`, `default`, or `main`.
 - **Delta mode** (`+name`, `-name` prefixes) lets captions add/remove individual graphic elements without replacing the full active set.
+
+### Metacode Organization
+
+- Plugin metacode handling stays inside plugin-owned processors; the DSK `graphics` metacode remains in `packages/plugins/lcyt-dsk/src/caption-processor.js`.
+- Core backend metacode handoff now lives in `packages/lcyt-backend/src/metacode.js` (dedicated helper), used by the captions router and other backend consumers.
+- Frontend metacode parser, runtime, manual-state, and planner helpers live in `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/lib/metacode-active.js`, `packages/lcyt-web/src/lib/metacode-planner.js`, and `packages/lcyt-web/src/lib/metacode-runtime.js`.
+- For compatibility, `packages/lcyt-web/src/lib/fileUtils.js`, `packages/lcyt-web/src/lib/activeCodes.js`, and `packages/lcyt-web/src/lib/plannerUtils.js` continue to re-export or adapt the moved helpers so existing imports keep working.
+- See `docs/METACODE.md` and `docs/plans/plan_metacode_refactor.md` for the current scoped refactor plan.
 
 ### ESM/CJS Dual Package (`packages/lcyt`)
 - ESM source in `src/` (canonical).

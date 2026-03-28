@@ -1,12 +1,12 @@
 /**
- * Tests for serializePlan() and deserializePlan() from src/lib/plannerUtils.js
+ * Tests for serializePlan() and deserializePlan() from src/lib/metacode-planner.js
  *
  * Both functions are pure — no browser APIs required.
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { serializePlan, deserializePlan } from '../src/lib/plannerUtils.js';
+import { serializePlan, deserializePlan } from '../src/lib/metacode-planner.js';
 
 // ─── serializePlan ────────────────────────────────────────────────────────────
 

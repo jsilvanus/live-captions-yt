@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { parseFileContent } from '../lib/fileUtils';
+import { parseFileContent } from '../lib/metacode-parser.js';
 
 const POINTERS_KEY = 'lcyt-pointers';
 const FILES_STORAGE_KEY = 'lcyt:files';

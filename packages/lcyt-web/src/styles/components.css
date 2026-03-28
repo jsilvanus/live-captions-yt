@@ -121,6 +121,16 @@
   border-color: var(--color-success, #22c55e);
 }
 
+.status-bar__music-chip--music {
+  color: var(--color-success, #22c55e);
+  border-color: var(--color-success, #22c55e);
+}
+
+.status-bar__music-chip--other {
+  color: var(--color-text-dim);
+  border-color: var(--color-border);
+}
+
 .status-bar__btn {
   padding: 4px 8px;
   border-radius: 4px;

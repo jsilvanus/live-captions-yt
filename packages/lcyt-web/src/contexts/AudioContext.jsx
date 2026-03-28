@@ -1,5 +1,6 @@
 import { createContext, useContext, useRef, useState } from 'react';
 import { AudioPanel } from '../components/AudioPanel';
+import { useMusic } from '../hooks/useMusic';
 
 const AudioContext = createContext(null);
 
@@ -11,6 +12,9 @@ export function useAudioContext() {
 
 export function AudioProvider({ children }) {
   const audioPanelRef = useRef(null);
+  const analyserRef = useRef(null);
+
+  const music = useMusic({ analyserRef });
 
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState('');
@@ -36,6 +40,8 @@ export function AudioProvider({ children }) {
       utteranceTimerSec,
       toggle,
       utteranceEndClick,
+      analyserRef,
+      music,
     }}>
       {children}
       <AudioPanel
@@ -44,6 +50,7 @@ export function AudioProvider({ children }) {
         onListeningChange={setListening}
         onInterimChange={setInterimText}
         onUtteranceChange={handleUtteranceChange}
+        onAnalyserChange={(a) => { analyserRef.current = a; }}
       />
     </AudioContext.Provider>
   );

@@ -1,12 +1,12 @@
 /**
- * Tests for parseFileContent() from src/lib/fileUtils.js
+ * Tests for parseFileContent() from src/lib/metacode-parser.js
  *
  * parseFileContent() is a pure function — no browser APIs required.
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFileContent } from '../src/lib/fileUtils.js';
+import { parseFileContent } from '../src/lib/metacode-parser.js';
 
 // ---------------------------------------------------------------------------
 // Basic parsing

@@ -71,6 +71,19 @@ export function useSession({
   const cbs = useRef({});
   cbs.current = { onConnected, onDisconnected, onCaptionSent, onCaptionResult, onCaptionError, onSyncUpdated, onError, onBatchSent };
 
+  // Plugin SSE event listener registry — Map<string, Set<Function>>
+  const sseListenersRef = useRef(new Map());
+
+  const subscribeSseEvent = useCallback(function subscribeSseEvent(name, handler) {
+    if (!sseListenersRef.current.has(name)) {
+      sseListenersRef.current.set(name, new Set());
+    }
+    sseListenersRef.current.get(name).add(handler);
+    return function unsubscribe() {
+      sseListenersRef.current.get(name)?.delete(handler);
+    };
+  }, []);
+
   // Close EventSource + cancel reconnect on unmount
   useEffect(() => () => {
     esRef.current?.close();
@@ -215,6 +228,16 @@ export function useSession({
         if (cfg) scheduleReconnectRef.current(cfg);
       });
     });
+
+    // Dispatch plugin SSE events to registered listeners
+    const PLUGIN_SSE_EVENTS = ['sound_label', 'bpm_update'];
+    for (const evtName of PLUGIN_SSE_EVENTS) {
+      es.addEventListener(evtName, (e) => {
+        const data = JSON.parse(e.data);
+        const handlers = sseListenersRef.current.get(evtName);
+        if (handlers) handlers.forEach(h => h(data));
+      });
+    }
   }, [_disconnectInternal]);
 
   // ─── Health check ────────────────────────────────────────
@@ -712,5 +735,6 @@ export function useSession({
     getQueuedCount,
     /** Returns the active session JWT (for EventSource ?token= param) */
     getSessionToken: () => senderRef.current?._token ?? null,
+    subscribeSseEvent,
   };
 }
