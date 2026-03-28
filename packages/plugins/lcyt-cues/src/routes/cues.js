@@ -37,7 +37,7 @@ export function createCueRouter(db, auth, engine) {
     // Parse action JSON for the response
     const parsed = rules.map(r => ({
       ...r,
-      action: (() => { try { return JSON.parse(r.action); } catch { return {}; } })(),
+      action: (() => { try { return JSON.parse(r.action); } catch { console.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(),
     }));
     return res.json({ rules: parsed });
   });
@@ -90,8 +90,9 @@ export function createCueRouter(db, auth, engine) {
 
     const { name, match_type, pattern, action, enabled, cooldown_ms } = req.body || {};
 
-    // Validate regex pattern if changing to or updating a regex rule
-    if ((match_type === 'regex' || (!match_type && rule.match_type === 'regex')) && pattern) {
+    // Validate regex pattern if the rule is (or will remain) a regex rule
+    const isRegexRule = match_type === 'regex' || (!match_type && rule.match_type === 'regex');
+    if (isRegexRule && pattern) {
       try { new RegExp(pattern); } catch {
         return res.status(400).json({ error: 'Invalid regex pattern' });
       }
@@ -132,7 +133,7 @@ export function createCueRouter(db, auth, engine) {
     // Parse action JSON for the response
     const parsed = events.map(e => ({
       ...e,
-      action: (() => { try { return JSON.parse(e.action); } catch { return {}; } })(),
+      action: (() => { try { return JSON.parse(e.action); } catch { console.warn(`[cues] Malformed action JSON for event ${e.id}`); return {}; } })(),
     }));
     return res.json({ events: parsed });
   });

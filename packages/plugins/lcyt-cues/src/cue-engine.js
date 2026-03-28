@@ -111,7 +111,9 @@ export class CueEngine {
         // Persist the cue event
         try {
           let action = {};
-          try { action = JSON.parse(rule.action); } catch { /* ignore */ }
+          try { action = JSON.parse(rule.action); } catch {
+            console.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+          }
           insertCueEvent(this._db, apiKey, {
             rule_id: rule.id,
             rule_name: rule.name,

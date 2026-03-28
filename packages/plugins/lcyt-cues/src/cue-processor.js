@@ -27,6 +27,9 @@ import { insertCueEvent } from './db.js';
 
 const CUE_RE = /<!--\s*cue\s*:\s*([^>]+?)\s*-->/gi;
 
+/** Sentinel rule ID for explicit (metacode-triggered) cue events. */
+const EXPLICIT_CUE_RULE_ID = '__explicit__';
+
 /**
  * @param {{ store: object|null, db: import('better-sqlite3').Database, engine: import('./cue-engine.js').CueEngine }} opts
  * @returns {(apiKey: string, text: string, codes?: object) => string}
@@ -46,9 +49,10 @@ export function createCueProcessor({ store, db, engine }) {
     }
     CUE_RE.lastIndex = 0;
 
-    // Strip cue metacodes from text
+    // Strip cue metacodes from text — reuse CUE_RE pattern
+    CUE_RE.lastIndex = 0;
     const cleanText = (text || '')
-      .replace(/<!--\s*cue\s*:\s*[^>]+?\s*-->/gi, '')
+      .replace(CUE_RE, '')
       .trim();
 
     const ts = Date.now();
@@ -59,7 +63,7 @@ export function createCueProcessor({ store, db, engine }) {
       if (db) {
         try {
           insertCueEvent(db, apiKey, {
-            rule_id: '__explicit__',
+            rule_id: EXPLICIT_CUE_RULE_ID,
             rule_name: label,
             matched: label,
             action: { type: 'event', label },

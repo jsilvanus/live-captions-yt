@@ -32,7 +32,9 @@ export function runMigrations(db) {
       ON cue_rules(api_key)
   `);
 
-  // cue_events — log of fired cue events for audit/rundown export
+  // cue_events — log of fired cue events for audit/rundown export.
+  // Note: ts is stored as seconds-since-epoch (SQLite strftime('%s','now'));
+  // the cue processor uses Date.now() (milliseconds) for SSE event timestamps.
   db.exec(`
     CREATE TABLE IF NOT EXISTS cue_events (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
