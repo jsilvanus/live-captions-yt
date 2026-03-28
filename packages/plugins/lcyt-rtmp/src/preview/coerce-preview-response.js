@@ -1,43 +1,75 @@
-import { Readable } from 'node:stream';
+import { Readable } from 'stream';
+import fs from 'fs';
+
+function toLowerKeyMap(headers) {
+  const out = {};
+  if (!headers) return out;
+  for (const k of Object.keys(headers || {})) {
+    out[k.toLowerCase()] = headers[k];
+  }
+  return out;
+}
+
+async function streamFromWhatwg(rs) {
+  if (typeof Readable.fromWeb === 'function') return Readable.fromWeb(rs);
+  // Fallback: async iterator bridge
+  const reader = rs.getReader();
+  const asyncIterable = {
+    async *[Symbol.asyncIterator]() {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) return;
+        yield Buffer.from(value);
+      }
+    }
+  };
+  return Readable.from(asyncIterable);
+}
 
 export async function coercePreviewResponse(resp) {
-  if (resp == null) return null;
-
+  // Accept: Buffer, Uint8Array, ArrayBuffer, Node Readable, WHATWG ReadableStream,
+  // or { headers, body } where body is one of the above.
   let headers = {};
   let body = resp;
 
-  if (typeof resp === 'object' && resp !== null && 'headers' in resp && 'body' in resp) {
-    headers = resp.headers || {};
+  if (resp && typeof resp === 'object' && ('headers' in resp || 'body' in resp)) {
+    headers = toLowerKeyMap(resp.headers || {});
     body = resp.body;
   }
 
+  // Normalize typed arrays / ArrayBuffer
+  if (body instanceof ArrayBuffer) body = Buffer.from(new Uint8Array(body));
+  if (ArrayBuffer.isView(body) && !(body instanceof Buffer)) body = Buffer.from(body);
+
   // Buffer
   if (Buffer.isBuffer(body)) {
-    return { stream: Readable.from([body]), headers: normalizeHeaders(headers, { 'content-type': headers['content-type'] || 'application/octet-stream', 'content-length': String(body.length) }) };
+    const stream = Readable.from(body);
+    return { stream, headers };
   }
 
   // Node Readable
   if (body && typeof body.pipe === 'function') {
-    return { stream: body, headers: normalizeHeaders(headers, { 'content-type': headers['content-type'] || 'application/octet-stream' }) };
+    return { stream: body, headers };
   }
 
-  // WHATWG ReadableStream
-  const isWebStream = body && typeof body.getReader === 'function';
-  if (isWebStream && typeof Readable.fromWeb === 'function') {
-    return { stream: Readable.fromWeb(body), headers: normalizeHeaders(headers, { 'content-type': headers['content-type'] || 'application/octet-stream' }) };
+  // WHATWG ReadableStream (browser-like)
+  if (body && typeof body.getReader === 'function') {
+    const stream = await streamFromWhatwg(body);
+    return { stream, headers };
   }
 
-  // Plain object with a buffer-like `data` field
-  if (body && typeof body === 'object' && body.data && Buffer.isBuffer(body.data)) {
-    return { stream: Readable.from([body.data]), headers: normalizeHeaders(headers, { 'content-type': headers['content-type'] || 'application/octet-stream' }) };
+  // If it's a file path (string), create a fs stream
+  if (typeof body === 'string') {
+    try {
+      await fs.promises.access(body, fs.constants.R_OK);
+      const stream = fs.createReadStream(body);
+      return { stream, headers };
+    } catch (err) {
+      throw Object.assign(new Error('preview file not found'), { code: 'ENOENT' });
+    }
   }
 
-  return null;
+  throw new Error('unsupported preview response type');
 }
 
-function normalizeHeaders(incoming = {}, defaults = {}) {
-  const out = {};
-  for (const [k, v] of Object.entries(incoming || {})) out[String(k).toLowerCase()] = String(v);
-  for (const [k, v] of Object.entries(defaults || {})) if (!out[k.toLowerCase()]) out[k.toLowerCase()] = v;
-  return out;
-}
+export default coercePreviewResponse;
