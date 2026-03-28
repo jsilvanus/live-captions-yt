@@ -1,4 +1,20 @@
 /**
+
+function parseAssistantJson(text) {
+  if (!text || typeof text !== 'string') return null;
+  // Strip markdown code fences
+  let stripped = text.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
+
+  // Find outermost JSON object
+  const first = stripped.indexOf('{');
+  const last = stripped.lastIndexOf('}');
+  const candidate = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
+
+  // Try direct parse
+  try { return JSON.parse(candidate); } catch (e) {}
+
+  // Attempt heuristic fixes: single quotes -> double quotes, remove trailing commas
+  let heur = candidate.replace(/'/g, '"').replace(/,\s*\}
  * AgentEngine — AI-powered scene understanding and event detection.
  *
  * The Agent is the central AI service for LCYT. It owns:
@@ -69,21 +85,7 @@ export class AgentEngine {
   clearContext(apiKey) {
     this._contextWindow.delete(apiKey);
   }
-function parseAssistantJson(text) {
-  if (!text || typeof text !== 'string') return null;
-  // Strip markdown code fences
-  let stripped = text.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
-
-  // Find outermost JSON object
-  const first = stripped.indexOf('{');
-  const last = stripped.lastIndexOf('}');
-  const candidate = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
-
-  // Try direct parse
-  try { return JSON.parse(candidate); } catch (e) {}
-
-  // Attempt heuristic fixes: single quotes -> double quotes, remove trailing commas
-  let heur = candidate.replace(/'/g, '"').replace(/,\s*\}/g, '}').replace(/,\s*\]/g, ']');
+/g, '}').replace(/,\s*\]/g, ']');
   try { return JSON.parse(heur); } catch (e) {}
 
   // Fallback: extract key/value pairs for matched/confidence/reasoning

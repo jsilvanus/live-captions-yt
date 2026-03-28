@@ -23,7 +23,6 @@
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
 import logger from 'lcyt/logger';
-import logger from 'lcyt/logger';
 
 // ---------------------------------------------------------------------------
 // Chromium executable

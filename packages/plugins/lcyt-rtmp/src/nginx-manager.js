@@ -260,11 +260,11 @@ export class NginxManager {
    */
   _writeConfigAtomic() {
     const dir = dirname(resolvePath(this._configPath));
-    mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
 
     const content = this._buildConfig();
     const tmpPath = resolvePath(dir, `.lcyt-radio-${randomBytes(6).toString('hex')}.tmp`);
-    writeFileSync(tmpPath, content, 'utf8');
+    fs.writeFileSync(tmpPath, content, 'utf8');
     renameSync(tmpPath, resolvePath(this._configPath));
   }
 
@@ -280,7 +280,7 @@ export class NginxManager {
       // On test failure: remove our config file to avoid leaving nginx broken
       try {
         const empty = `${SECTION_START}\n  # (cleared after config test failure)\n${SECTION_END}\n`;
-        writeFileSync(resolvePath(this._configPath), empty, 'utf8');
+        fs.writeFileSync(resolvePath(this._configPath), empty, 'utf8');
       } catch {}
       throw err;
     }
