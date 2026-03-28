@@ -1,29 +1,48 @@
 /**
  * lcyt-agent plugin entry point — AI Agent.
  *
- * The Agent plugin provides AI-powered features:
- * - Video/image inference (describe what is happening on screen)
- * - Context-aware event cues (cue[events]:something happens)
- * - Scene description via LLM with STT + preview frame analysis
- * - `<!-- explanation:... -->` context enrichment for AI understanding
+ * The Agent plugin is the central AI service for LCYT. It owns:
+ * - AI configuration (embedding provider, model, API keys per user)
+ * - Embedding computation via OpenAI-compatible APIs
+ * - Context window management (STT transcripts + explanation metacodes)
+ * - Video/image inference (planned: vision-capable LLM)
+ * - Event cues (planned: cue[events]:something happens)
  *
- * Future capabilities:
- * - Continuous video stream analysis
- * - Multi-modal understanding (audio + video + text)
- * - Automated scene transition detection
- * - Content moderation and safety checks
+ * Other plugins (e.g. lcyt-cues CueEngine) delegate embedding calls
+ * to the Agent rather than calling the embedding API directly.
  *
  * Usage in lcyt-backend/src/server.js:
  *
- *   import { initAgent, createAgentRouter } from 'lcyt-agent';
+ *   import { initAgent, createAgentRouter, createAiRouter } from 'lcyt-agent';
  *
  *   const { agent } = await initAgent(db);
  *   app.use('/agent', createAgentRouter(db, auth, agent));
+ *   app.use('/ai', createAiRouter(db, auth));
+ *
+ *   // Wire embedding fn into CueEngine:
+ *   cueEngine.setEmbeddingFn((texts, opts) => agent.computeEmbeddings(texts));
+ *   cueEngine.setAiConfigFn((apiKey) => agent.getAiConfig(apiKey));
  */
 
 export { AgentEngine } from './agent-engine.js';
 export { createAgentRouter } from './routes/agent.js';
+export { createAiRouter } from './routes/ai.js';
 export { runMigrations } from './db.js';
+
+// Re-export AI config and embedding utilities so the backend can use them
+export {
+  runAiMigrations,
+  getAiConfig,
+  getAiConfigRaw,
+  setAiConfig,
+  VALID_PROVIDERS,
+} from './ai-config.js';
+
+export {
+  computeEmbeddings,
+  cosineSimilarity,
+  isServerEmbeddingAvailable,
+} from './embeddings.js';
 
 /**
  * Run DB migrations and create the AgentEngine instance.
@@ -31,12 +50,15 @@ export { runMigrations } from './db.js';
  *
  * @param {import('better-sqlite3').Database} db
  * @param {object} [opts]
- * @param {object} [opts.aiConfig] — AI configuration module reference
  * @returns {Promise<{ agent: import('./agent-engine.js').AgentEngine }>}
  */
 export async function initAgent(db, opts = {}) {
   const { runMigrations } = await import('./db.js');
   runMigrations(db);
+
+  // AI config table migrations (embedding provider config per user)
+  const { runAiMigrations } = await import('./ai-config.js');
+  runAiMigrations(db);
 
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);

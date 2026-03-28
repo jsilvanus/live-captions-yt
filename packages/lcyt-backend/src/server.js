@@ -18,7 +18,10 @@ import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
 import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
-import { initAi, createAiRouter, isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings } from './ai/index.js';
+import {
+  initAgent, createAgentRouter, createAiRouter,
+  isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
+} from 'lcyt-agent';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -168,13 +171,17 @@ const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
 // music_start, music_stop, and silence cue rules.
 createSoundCueListener({ store, engine: _cueEngine });
 
-// AI / Embedding module — run DB migrations for ai_config table and wire
-// embedding functions into the CueEngine for fuzzy semantic matching.
-await initAi(db);
+// AI Agent — central AI service. Owns AI configuration, embedding calls,
+// context window management, and future vision/LLM features.
+// Also runs AI config DB migrations (ai_config table).
+const { agent: _agent } = await initAgent(db);
+
+// Wire the agent's embedding capabilities into the CueEngine for
+// fuzzy semantic matching via cue[semantic]:phrase metacodes.
 _cueEngine.setEmbeddingFn(computeEmbeddings);
-_cueEngine.setAiConfigFn((apiKey) => getAiConfigRaw(db, apiKey));
-if (isServerEmbeddingAvailable()) {
-  console.info('✓ Server-level embedding API configured');
+_cueEngine.setAiConfigFn((apiKey) => _agent.getAiConfig(apiKey));
+if (_agent.isServerEmbeddingAvailable()) {
+  console.info('✓ Server-level embedding API configured (via lcyt-agent)');
 }
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
@@ -352,6 +359,7 @@ app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
 app.use('/cues', createCueRouter(db, auth, _cueEngine));
 app.use('/ai', createAiRouter(db, auth));
+app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

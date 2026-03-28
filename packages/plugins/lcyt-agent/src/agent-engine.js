@@ -1,32 +1,28 @@
 /**
  * AgentEngine — AI-powered scene understanding and event detection.
  *
- * Capabilities (planned phases):
- * - Video/image inference: analyse preview JPEGs or video frames to describe
- *   on-screen activity using a vision-capable LLM.
- * - Context enrichment: combine STT transcripts, `<!-- explanation:... -->`
- *   metacodes, and visual analysis to build a rich scene context.
- * - Event cues: evaluate `cue[events]:description` rules by asking an LLM
- *   whether the described event has occurred given the current context.
- * - Continuous monitoring: periodically analyse preview frames and emit
- *   scene_description SSE events.
+ * The Agent is the central AI service for LCYT. It owns:
+ * - AI configuration (embedding provider, model, API keys per user)
+ * - Embedding computation via OpenAI-compatible APIs
+ * - Context window management (STT transcripts + explanation metacodes)
+ * - Video/image inference (planned: vision-capable LLM)
+ * - Event cues: evaluate `cue[events]:description` rules against context
  *
- * The engine delegates to the AI configuration module (packages/lcyt-backend/src/ai/)
- * for model access and provider configuration.
+ * Other plugins (e.g. lcyt-cues CueEngine) delegate embedding calls
+ * to the Agent rather than calling the embedding API directly.
  */
+
+import { getAiConfigRaw, runAiMigrations } from './ai-config.js';
+import { computeEmbeddings, cosineSimilarity, isServerEmbeddingAvailable } from './embeddings.js';
 
 export class AgentEngine {
   /**
    * @param {import('better-sqlite3').Database} db
    * @param {object} [opts]
-   * @param {object} [opts.aiConfig] — AI configuration module reference
    */
   constructor(db, opts = {}) {
     /** @type {import('better-sqlite3').Database} */
     this._db = db;
-
-    /** @type {object|null} */
-    this._aiConfig = opts.aiConfig ?? null;
 
     /**
      * Per-API-key context window: recent STT transcripts + explanations.
@@ -72,6 +68,69 @@ export class AgentEngine {
   clearContext(apiKey) {
     this._contextWindow.delete(apiKey);
   }
+
+  // -------------------------------------------------------------------------
+  // AI Config helpers — delegates to ai-config.js
+  // -------------------------------------------------------------------------
+
+  /**
+   * Get AI config for an API key (raw, includes real API key for internal use).
+   * @param {string} apiKey
+   * @returns {object|null}
+   */
+  getAiConfig(apiKey) {
+    return getAiConfigRaw(this._db, apiKey);
+  }
+
+  /**
+   * Check if server-level embedding is available (env vars configured).
+   * @returns {boolean}
+   */
+  isServerEmbeddingAvailable() {
+    return isServerEmbeddingAvailable();
+  }
+
+  // -------------------------------------------------------------------------
+  // Embedding helpers — delegates to embeddings.js
+  // -------------------------------------------------------------------------
+
+  /**
+   * Compute embeddings using the configured provider for the given API key.
+   * Resolves provider settings (server / openai / custom) from the DB config.
+   *
+   * @param {string[]} texts
+   * @param {string} [apiKey] — if provided, looks up per-key config
+   * @returns {Promise<number[][]>}
+   */
+  async computeEmbeddings(texts, apiKey) {
+    const opts = {};
+    if (apiKey) {
+      const cfg = getAiConfigRaw(this._db, apiKey);
+      if (cfg) {
+        if (cfg.embeddingProvider === 'openai' || cfg.embeddingProvider === 'custom') {
+          opts.apiKey = cfg.embeddingApiKey;
+          opts.model = cfg.embeddingModel;
+          if (cfg.embeddingApiUrl) opts.apiUrl = cfg.embeddingApiUrl;
+        }
+        // 'server' provider uses env vars (no override needed)
+      }
+    }
+    return computeEmbeddings(texts, opts);
+  }
+
+  /**
+   * Compute cosine similarity between two vectors.
+   * @param {number[]} a
+   * @param {number[]} b
+   * @returns {number}
+   */
+  cosineSimilarity(a, b) {
+    return cosineSimilarity(a, b);
+  }
+
+  // -------------------------------------------------------------------------
+  // Vision / LLM stubs (Phase 6+)
+  // -------------------------------------------------------------------------
 
   /**
    * Analyse a preview image (JPEG buffer or URL) using a vision-capable LLM.

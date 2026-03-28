@@ -2,13 +2,13 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, and AI agent for video inference. Phases 1-5 implemented; Phases 6-8 planned (lcyt-agent plugin scaffolded)."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, and AI agent for video inference. Phases 1-5 implemented; Phase 6 in progress (lcyt-agent owns AI config + embeddings); Phases 7-8 planned."
 ---
 
 # Cue Engine Enhanced Capabilities
 
 **Status:** In progress
-**Scope:** `packages/plugins/lcyt-cues`, `packages/lcyt-backend/src/ai/`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
+**Scope:** `packages/plugins/lcyt-cues`, `packages/plugins/lcyt-agent`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
 
 ---
 
@@ -258,7 +258,7 @@ Some cue phrases require semantic understanding beyond string similarity. Embedd
 
 ---
 
-## Phase 6 — AI Agent: Video/Image Inference (`lcyt-agent` Plugin) (Planned)
+## Phase 6 — AI Agent: Video/Image Inference (`lcyt-agent` Plugin) (In Progress)
 
 ### Motivation
 
@@ -269,12 +269,39 @@ A vision-capable LLM can describe what is happening on screen by analysing previ
 
 ### Plugin: `packages/plugins/lcyt-agent/`
 
-Separate plugin for all AI agent capabilities. Designed for future expansion beyond video inference.
+The **AI Agent** is the central AI service for LCYT. It owns:
+- **AI configuration** — embedding provider, model, API keys per user (`ai_config` DB table)
+- **Embedding computation** — via OpenAI-compatible `/v1/embeddings` APIs
+- **Context window management** — STT transcripts + `<!-- explanation:... -->` metacodes
+- **Video/image inference** (planned) — vision-capable LLM analysis of preview frames
+
+Other plugins (e.g. `lcyt-cues` CueEngine) delegate embedding calls to the Agent.
 
 **Components:**
-- `AgentEngine` — context window management, image analysis, event evaluation
-- `agent DB` — `agent_events` and `agent_context` tables
-- `routes` — `/agent/status`, `/agent/context`, `/agent/events`, `/agent/analyse`
+- `AgentEngine` — AI config access, embedding computation, context window, image analysis stubs, event evaluation stubs
+- `ai-config.js` — per-API-key AI model settings DB helpers (migrated from `lcyt-backend/src/ai/config.js`)
+- `embeddings.js` — OpenAI-compatible embedding API client (migrated from `lcyt-backend/src/ai/embeddings.js`)
+- `routes/ai.js` — AI configuration routes (`GET/PUT /ai/config`, `GET /ai/status`)
+- `routes/agent.js` — Agent routes (`/agent/status`, `/agent/context`, `/agent/events`)
+- `db.js` — `agent_events` and `agent_context` table migrations
+
+### Integration in `server.js`
+
+```js
+import { initAgent, createAgentRouter, createAiRouter } from 'lcyt-agent';
+
+const { agent } = await initAgent(db);
+// Wire embedding fn into CueEngine:
+cueEngine.setEmbeddingFn(computeEmbeddings);
+cueEngine.setAiConfigFn((apiKey) => agent.getAiConfig(apiKey));
+
+app.use('/agent', createAgentRouter(db, auth, agent));
+app.use('/ai', createAiRouter(db, auth));
+```
+
+### Backward compatibility
+
+`packages/lcyt-backend/src/ai/index.js` re-exports from `lcyt-agent` so existing imports continue to work.
 
 ### Preview image inference
 
@@ -309,7 +336,12 @@ The `explanation` text is stored as a persistent lineCodes entry and fed into th
 - [x] Plugin scaffolding (`lcyt-agent`)
 - [x] `AgentEngine` with context window management
 - [x] DB migrations and event storage
-- [x] REST API routes
+- [x] REST API routes (`/agent/status`, `/agent/context`, `/agent/events`)
+- [x] AI config migrated from `lcyt-backend/src/ai/` into agent plugin
+- [x] AgentEngine owns `getAiConfig()`, `computeEmbeddings()`, `cosineSimilarity()`
+- [x] AI configuration routes (`/ai/config`, `/ai/status`) moved to agent plugin
+- [x] Backward-compatible re-exports in `lcyt-backend/src/ai/index.js`
+- [x] Agent wired into `server.js` with routes mounted
 - [ ] Wire preview JPEG fetching on interval
 - [ ] Vision LLM integration (OpenAI GPT-4o, Claude, etc.)
 - [ ] Scene description SSE event emission
@@ -391,6 +423,6 @@ Combine all available signals for comprehensive scene understanding:
 | 3 | Fuzzy / embedding-based matching, AI config page | ✅ Implemented | Phase 2 |
 | 4 | Sound detection cue triggers (music/silence) | ✅ Implemented | Phase 2, `lcyt-music` |
 | 5 | Semantic embedding cues (`cue[semantic]:`) | ✅ Implemented | Phase 3 |
-| 6 | AI Agent: video/image inference (`lcyt-agent`) | 📋 Scaffolded | AI config |
+| 6 | AI Agent: AI config + embeddings + video/image inference (`lcyt-agent`) | 🔧 In Progress | AI config |
 | 7 | AI Event cues (`cue[events]:description`) | 📋 Planned | Phase 6, `lcyt-agent` |
 | 8 | Multi-modal scene understanding | 📋 Planned | Phase 6, Phase 7 |

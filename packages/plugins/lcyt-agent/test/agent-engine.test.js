@@ -18,16 +18,18 @@ try {
 // ---------------------------------------------------------------------------
 
 describe('AgentEngine', () => {
-  let AgentEngine, runMigrations, insertAgentEvent, getRecentAgentEvents;
+  let AgentEngine, runMigrations, runAiMigrations, setAiConfig, insertAgentEvent, getRecentAgentEvents;
 
   before(async () => {
     ({ AgentEngine } = await import('../src/agent-engine.js'));
     ({ runMigrations, insertAgentEvent, getRecentAgentEvents } = await import('../src/db.js'));
+    ({ runAiMigrations, setAiConfig } = await import('../src/ai-config.js'));
   });
 
   function createDb() {
     const db = new Database(':memory:');
     runMigrations(db);
+    runAiMigrations(db);
     return db;
   }
 
@@ -97,6 +99,49 @@ describe('AgentEngine', () => {
     const result = await agent.evaluateEventCue('key1', 'speaker stands up');
     assert.equal(result.matched, false);
     assert.equal(result.confidence, 0);
+  });
+
+  test('getAiConfig returns null when no config exists', async () => {
+    const db = createDb();
+    const agent = new AgentEngine(db);
+    assert.equal(agent.getAiConfig('key1'), null);
+  });
+
+  test('getAiConfig returns config after setAiConfig', async () => {
+    const db = createDb();
+    setAiConfig(db, 'key1', {
+      embeddingProvider: 'openai',
+      embeddingModel: 'text-embedding-3-small',
+      embeddingApiKey: 'sk-test-123',
+    });
+    const agent = new AgentEngine(db);
+    const cfg = agent.getAiConfig('key1');
+    assert.equal(cfg.embeddingProvider, 'openai');
+    assert.equal(cfg.embeddingModel, 'text-embedding-3-small');
+    assert.equal(cfg.embeddingApiKey, 'sk-test-123');
+  });
+
+  test('isServerEmbeddingAvailable reflects env', () => {
+    const db = createDb();
+    const agent = new AgentEngine(db);
+    // Without EMBEDDING_API_KEY set, should return false
+    const orig = process.env.EMBEDDING_API_KEY;
+    delete process.env.EMBEDDING_API_KEY;
+    assert.equal(agent.isServerEmbeddingAvailable(), false);
+    // Restore
+    if (orig) process.env.EMBEDDING_API_KEY = orig;
+  });
+
+  test('cosineSimilarity returns 1 for identical vectors', () => {
+    const db = createDb();
+    const agent = new AgentEngine(db);
+    assert.equal(agent.cosineSimilarity([1, 0, 0], [1, 0, 0]), 1);
+  });
+
+  test('cosineSimilarity returns 0 for orthogonal vectors', () => {
+    const db = createDb();
+    const agent = new AgentEngine(db);
+    assert.equal(agent.cosineSimilarity([1, 0], [0, 1]), 0);
   });
 });
 
