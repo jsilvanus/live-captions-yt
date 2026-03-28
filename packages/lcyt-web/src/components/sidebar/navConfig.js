@@ -32,6 +32,7 @@ export const NAV_GROUPS = [
 ];
 
 export const NAV_BOTTOM = [
+  { id: 'ai',       icon: '🤖', label: 'AI',       path: '/ai',       feature: 'ai' },
   { id: 'projects', icon: '📁', label: 'Projects', path: '/projects', feature: 'login' },
   { id: 'account',  icon: '👤', label: 'Account',  path: '/account',  feature: 'login' },
   { id: 'settings', icon: '⚙️',  label: 'Settings', path: '/settings' },

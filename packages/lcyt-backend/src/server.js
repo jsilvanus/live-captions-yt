@@ -17,6 +17,11 @@ import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
+import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
+import {
+  initAgent, createAgentRouter, createAiRouter,
+  isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
+} from 'lcyt-agent';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -156,6 +161,31 @@ const { storage, resolveStorage, invalidateStorageCache } = await initFilesContr
 await initMusicControl(db);
 const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 
+// Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.
+// The processor strips <!-- cue:... --> metacodes and evaluates phrase/regex/section
+// rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
+const { engine: _cueEngine } = await initCueEngine(db);
+const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
+
+// Wire sound_label events (from lcyt-music) to cue engine for
+// music_start, music_stop, and silence cue rules.
+createSoundCueListener({ store, engine: _cueEngine });
+
+// AI Agent — central AI service. Owns AI configuration, embedding calls,
+// context window management, and future vision/LLM features.
+// Also runs AI config DB migrations (ai_config table).
+const { agent: _agent } = await initAgent(db);
+
+// Wire the agent's embedding capabilities into the CueEngine for
+// fuzzy semantic matching via cue[semantic]:phrase metacodes.
+_cueEngine.setEmbeddingFn(computeEmbeddings);
+_cueEngine.setAiConfigFn((apiKey) => _agent.getAiConfig(apiKey));
+// Wire the agent's event cue evaluation for cue[events]:description metacodes.
+_cueEngine.setAgentEvaluateFn((apiKey, desc, opts) => _agent.evaluateEventCue(apiKey, desc, opts));
+if (_agent.isServerEmbeddingAvailable()) {
+  console.info('✓ Server-level embedding API configured (via lcyt-agent)');
+}
+
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
 
@@ -282,7 +312,7 @@ app.get('/health', (req, res) => {
   if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
   if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
   if (sttManager) features.push('stt');
-  features.push('files', 'viewer', 'production');
+  features.push('files', 'viewer', 'production', 'ai', 'cues', 'agent');
 
   res.status(200).json({
     ok: true,
@@ -321,7 +351,7 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, resolveStorage }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
@@ -329,6 +359,9 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
+app.use('/cues', createCueRouter(db, auth, _cueEngine));
+app.use('/ai', createAiRouter(db, auth));
+app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

@@ -31,7 +31,33 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
-/** Build a tooltip string from a codes object, or null if no codes. */
+// Keys that have dedicated display in buildActionLabel — exclude from generic label
+const ACTION_DISPLAY_KEYS = ['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'emptySend', 'emptySendLabel'];
+
+/** Build a short indicator label for a metadata-only line. */
+function buildActionLabel(codes) {
+  if (!codes) return null;
+  const parts = [];
+  if (codes.timer != null) parts.push(`⏱ ${codes.timer}s`);
+  if (codes.goto != null) parts.push(`↗ goto:${codes.goto}`);
+  if (codes.audioCapture) parts.push(`🎙 audio:${codes.audioCapture}`);
+  if (codes.fileSwitch) parts.push(`📄 file:${codes.fileSwitch}`);
+  if (codes.fileSwitchServer) parts.push(`📄 file[server]`);
+  if (codes.cue) {
+    const modSuffix = codes.cueMode === 'any' ? '**' : codes.cueMode === 'skip' ? '*' : '';
+    const fuzzyMark = codes.cueFuzzy ? '~' : '';
+    const semanticMark = codes.cueSemantic ? '[semantic]' : '';
+    const eventsMark = codes.cueEvents ? '[events]' : '';
+    parts.push(`🔔 cue${modSuffix}${fuzzyMark}${semanticMark}${eventsMark}:${codes.cue}`);
+  }
+  // Persistent codes (section, speaker, etc.) — show as subtle labels
+  for (const [k, v] of Object.entries(codes)) {
+    if (ACTION_DISPLAY_KEYS.includes(k)) continue;
+    if (typeof v === 'boolean' && !v) continue;
+    parts.push(`${k}: ${v}`);
+  }
+  return parts.length > 0 ? parts.join(' │ ') : null;
+}
 function buildCodesTitle(codes) {
   if (!codes || Object.keys(codes).length === 0) return null;
   return Object.entries(codes)
@@ -227,12 +253,14 @@ export function CaptionView({ onLineSend }) {
     const isHeading = lines[i].startsWith('#');
     const codes = lineCodes?.[i];
     const isEmptySend = !!codes?.emptySend;
+    const isMetaOnly = !isEmptySend && !lines[i]?.trim() && codes && Object.keys(codes).length > 0;
 
     let cls = 'caption-line';
     if (isActive) cls += ' caption-line--active';
     if (isSent) cls += ' caption-line--sent';
     if (isHeading) cls += ' caption-line--heading';
     if (isEmptySend) cls += ' caption-line--empty-send';
+    if (isMetaOnly) cls += ' caption-line--meta-only';
 
     const displayText = isHeading
       ? escapeHtml(lines[i].replace(/^#+\s*/, ''))
@@ -243,6 +271,7 @@ export function CaptionView({ onLineSend }) {
     const lineNum = lineNumbers?.[i] ?? (i + 1);
     const codesTitle = buildCodesTitle(codes);
     const hasCodes = !!codesTitle;
+    const actionLabel = isMetaOnly ? buildActionLabel(codes) : null;
 
     visibleLines.push(
       <li
@@ -250,7 +279,7 @@ export function CaptionView({ onLineSend }) {
         className={cls}
         data-index={i}
         onClick={() => setPointer(fileId, i)}
-        onDoubleClick={!isHeading && !isEmptySend ? () => onLineSend?.(lines[i], fileId, i) : undefined}
+        onDoubleClick={!isHeading && !isEmptySend && !isMetaOnly ? () => onLineSend?.(lines[i], fileId, i) : undefined}
       >
         <span
           className={`caption-line__linenum${hasCodes ? ' caption-line__linenum--coded' : ''}`}
@@ -262,7 +291,9 @@ export function CaptionView({ onLineSend }) {
         <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
         {isEmptySend
           ? <span className={`caption-line__empty-send-label${codes.emptySendLabel ? ' caption-line__empty-send-label--named' : ''}`}>{codes.emptySendLabel ?? '⊘ send codes'}</span>
-          : <span className="caption-line__text" dangerouslySetInnerHTML={{ __html: displayText }} />
+          : isMetaOnly
+            ? <span className="caption-line__meta-label">{actionLabel}</span>
+            : <span className="caption-line__text" dangerouslySetInnerHTML={{ __html: displayText }} />
         }
       </li>
     );

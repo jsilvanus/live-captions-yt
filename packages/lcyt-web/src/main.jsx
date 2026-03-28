@@ -30,6 +30,7 @@ const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridges
 const ProductionDevicesPage  = lazy(() => import('./components/ProductionDevicesPage').then(m => ({ default: m.ProductionDevicesPage })));
 const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
 const TranslationsPage       = lazy(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
+const AiSettingsPage         = lazy(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
 
 // Standalone / path-gated pages
 const SpeechCapturePage      = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
@@ -164,6 +165,7 @@ function SidebarApp() {
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />
+            <Route path="/ai" component={AiSettingsPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />
