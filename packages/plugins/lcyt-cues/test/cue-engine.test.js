@@ -247,6 +247,57 @@ describe('CueEngine', () => {
     assert.deepEqual(engine.evaluate('key1', null), []);
     assert.deepEqual(engine.evaluate('key1', ''), []);
   });
+
+  test('fuzzy match fires for similar text (Jaro-Winkler)', () => {
+    const db = createDb();
+    insertCueRule(db, {
+      id: 'r1', api_key: 'key1', name: 'fuzzy-amen',
+      match_type: 'fuzzy', pattern: 'we beseech thee',
+      fuzzy_threshold: 0.75,
+    });
+    const engine = new CueEngine(db);
+    // Exact match
+    const fired1 = engine.evaluate('key1', 'we beseech thee o lord');
+    assert.equal(fired1.length, 1);
+    assert.ok(fired1[0].matched.includes('beseech'));
+  });
+
+  test('fuzzy match does not fire for very different text', () => {
+    const db = createDb();
+    insertCueRule(db, {
+      id: 'r1', api_key: 'key1', name: 'fuzzy-test',
+      match_type: 'fuzzy', pattern: 'hallelujah praise god',
+      fuzzy_threshold: 0.75,
+    });
+    const engine = new CueEngine(db);
+    const fired = engine.evaluate('key1', 'the cat sat on the mat');
+    assert.equal(fired.length, 0);
+  });
+
+  test('fuzzy match respects threshold', () => {
+    const db = createDb();
+    insertCueRule(db, {
+      id: 'r1', api_key: 'key1', name: 'strict-fuzzy',
+      match_type: 'fuzzy', pattern: 'amen',
+      fuzzy_threshold: 0.99, // very strict
+    });
+    const engine = new CueEngine(db);
+    // Close but not exact enough for 0.99 threshold
+    const fired = engine.evaluate('key1', 'ameen');
+    assert.equal(fired.length, 0);
+  });
+
+  test('fuzzy match fires with lenient threshold', () => {
+    const db = createDb();
+    insertCueRule(db, {
+      id: 'r1', api_key: 'key1', name: 'lenient-fuzzy',
+      match_type: 'fuzzy', pattern: 'amen',
+      fuzzy_threshold: 0.5,
+    });
+    const engine = new CueEngine(db);
+    const fired = engine.evaluate('key1', 'ameen');
+    assert.equal(fired.length, 1);
+  });
 });
 
 // ---------------------------------------------------------------------------

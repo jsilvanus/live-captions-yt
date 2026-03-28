@@ -668,3 +668,48 @@ describe('parseFileContent() — cue modifiers', () => {
     assert.equal(lineCodes[2].cueMode, 'any');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Fuzzy cue modifier: cue~: syntax
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent — fuzzy cue modifier (cue~:)', () => {
+  it('cue~: sets cueFuzzy to true', () => {
+    const raw = '<!-- cue~:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].cueMode, 'next');
+    assert.equal(lineCodes[0].cueFuzzy, true);
+  });
+
+  it('cue*~: sets skip mode and fuzzy', () => {
+    const raw = '<!-- cue*~:beseech thee -->We beseech';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cue, 'beseech thee');
+    assert.equal(lineCodes[0].cueMode, 'skip');
+    assert.equal(lineCodes[0].cueFuzzy, true);
+  });
+
+  it('cue**~: sets any mode and fuzzy', () => {
+    const raw = '<!-- cue**~:hallelujah -->Praise God';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cue, 'hallelujah');
+    assert.equal(lineCodes[0].cueMode, 'any');
+    assert.equal(lineCodes[0].cueFuzzy, true);
+  });
+
+  it('plain cue: without tilde has cueFuzzy false', () => {
+    const raw = '<!-- cue:Amen -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueFuzzy, false);
+  });
+
+  it('standalone fuzzy cue creates a metadata-only line', () => {
+    const raw = '<!-- cue~:mercy -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cue, 'mercy');
+    assert.equal(lineCodes[0].cueFuzzy, true);
+  });
+});

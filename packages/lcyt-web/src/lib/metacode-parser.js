@@ -20,7 +20,8 @@ const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 // Cue metacodes use a dedicated regex so the phrase value is captured
 // separately from other metacode key-value pairs.
 // Supports optional modifier asterisks: cue: (next), cue*: (skip), cue**: (any)
-const CUE_META_RE = /<!--\s*cue(\*{0,2})\s*:\s*([\s\S]*?)\s*-->/gi;
+// Supports optional tilde for fuzzy matching: cue~: (fuzzy), cue*~: (skip+fuzzy)
+const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)\s*:\s*([\s\S]*?)\s*-->/gi;
 
 /**
  * Strip ALL HTML comment metacodes from a raw line and return the remaining
@@ -52,11 +53,13 @@ export function parseFileContent(rawText) {
     CUE_META_RE.lastIndex = 0;
     let cuePhrase = null;
     let cueMode = null;
-    const afterCueStrip = raw.replace(CUE_META_RE, (_, stars, val) => {
+    let cueFuzzy = false;
+    const afterCueStrip = raw.replace(CUE_META_RE, (_, stars, tilde, val) => {
       const trimmed = val.trim();
       if (trimmed && !cuePhrase) {
         cuePhrase = trimmed;
         cueMode = stars === '**' ? 'any' : stars === '*' ? 'skip' : 'next';
+        cueFuzzy = tilde === '~';
       }
       return '';
     }).trim();
@@ -83,7 +86,7 @@ export function parseFileContent(rawText) {
     if (emptySendMatch) {
       const label = emptySendMatch[1]?.trim() || null;
       const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
-      if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; }
+      if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; }
       lines.push('');
       lineCodes.push(codes);
       lineNumbers.push(i + 1);
@@ -136,7 +139,7 @@ export function parseFileContent(rawText) {
     if (gotoAction !== null) codes.goto = gotoAction;
     if (fileSwitchAction !== null) codes.fileSwitch = fileSwitchAction;
     if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
-    if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; }
+    if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; }
 
     // Did the line contain any metacode markers that were stripped?
     const hadMetacodes = contentText !== lineRaw || cuePhrase != null;

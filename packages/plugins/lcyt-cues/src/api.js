@@ -24,7 +24,7 @@
  */
 
 export { createCueProcessor } from './cue-processor.js';
-export { CueEngine } from './cue-engine.js';
+export { CueEngine, jaroWinkler, fuzzyWordMatch } from './cue-engine.js';
 export { createCueRouter } from './routes/cues.js';
 export {
   runMigrations, insertCueEvent, getRecentCueEvents,

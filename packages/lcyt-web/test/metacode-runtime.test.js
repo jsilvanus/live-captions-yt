@@ -150,8 +150,8 @@ describe('buildCueMap()', () => {
     );
     const map = buildCueMap(file);
     assert.equal(map.size, 2);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next' });
-    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip' });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false });
+    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false });
   });
 
   it('stores phrases in lowercase', () => {
@@ -355,5 +355,100 @@ describe('checkCueMatch() — pointer-based eligibility', () => {
     ]);
     const r = checkCueMatch(map, 'amen', -1);
     assert.ok(r);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fuzzy matching (Jaro-Winkler)
+// ---------------------------------------------------------------------------
+
+import { jaroWinkler, fuzzyWordMatch } from '../src/lib/metacode-runtime.js';
+
+describe('jaroWinkler()', () => {
+  it('returns 1 for identical strings', () => {
+    assert.equal(jaroWinkler('amen', 'amen'), 1.0);
+  });
+
+  it('returns 0 for completely different strings', () => {
+    assert.ok(jaroWinkler('abc', 'xyz') < 0.5);
+  });
+
+  it('returns high score for similar strings', () => {
+    const score = jaroWinkler('beseech', 'bseeech');
+    assert.ok(score > 0.85, `Expected > 0.85 but got ${score}`);
+  });
+
+  it('returns 0 for empty strings', () => {
+    assert.equal(jaroWinkler('', 'test'), 0);
+    assert.equal(jaroWinkler('test', ''), 0);
+  });
+});
+
+describe('fuzzyWordMatch()', () => {
+  it('matches exact words with score 1', () => {
+    const { score } = fuzzyWordMatch('we beseech', 'we beseech thee o lord');
+    assert.equal(score, 1.0);
+  });
+
+  it('matches similar words with high score', () => {
+    const { score, matched } = fuzzyWordMatch('beseech thee', 'we bseeech thee o lord');
+    assert.ok(score > 0.85, `Expected > 0.85 but got ${score}`);
+    assert.ok(matched.includes('thee'));
+  });
+
+  it('returns low score for unrelated text', () => {
+    const { score } = fuzzyWordMatch('hallelujah', 'the cat sat on the mat');
+    assert.ok(score < 0.7, `Expected < 0.7 but got ${score}`);
+  });
+
+  it('returns 0 for empty pattern', () => {
+    const { score } = fuzzyWordMatch('', 'some text');
+    assert.equal(score, 0);
+  });
+
+  it('returns 0 for empty text', () => {
+    const { score } = fuzzyWordMatch('test', '');
+    assert.equal(score, 0);
+  });
+});
+
+describe('checkCueMatch() — fuzzy cues', () => {
+  it('fuzzy cue matches similar text', () => {
+    const map = new Map([
+      ['we beseech', { index: 3, mode: 'any', fuzzy: true }],
+    ]);
+    const r = checkCueMatch(map, 'we bseeech thee o lord', -1, { fuzzyThreshold: 0.75 });
+    assert.ok(r, 'Expected fuzzy match');
+    assert.equal(r.index, 3);
+  });
+
+  it('fuzzy cue does not match very different text', () => {
+    const map = new Map([
+      ['hallelujah praise', { index: 0, mode: 'any', fuzzy: true }],
+    ]);
+    const r = checkCueMatch(map, 'the cat sat on the mat', -1, { fuzzyThreshold: 0.75 });
+    assert.equal(r, null);
+  });
+
+  it('non-fuzzy cue uses exact substring match', () => {
+    const map = new Map([
+      ['beseech', { index: 0, mode: 'any', fuzzy: false }],
+    ]);
+    // Exact substring: "beseech" is in the text
+    const r1 = checkCueMatch(map, 'we beseech thee', -1);
+    assert.ok(r1);
+    // Misspelled "bseeech" does NOT match without fuzzy
+    const r2 = checkCueMatch(map, 'we bseeech thee', -1);
+    assert.equal(r2, null);
+  });
+
+  it('buildCueMap includes fuzzy flag from lineCodes', () => {
+    const file = makeFile(
+      ['Line 1', 'Line 2'],
+      [{ cue: 'Amen', cueMode: 'next', cueFuzzy: true }, {}],
+      [1, 2]
+    );
+    const map = buildCueMap(file);
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true });
   });
 });

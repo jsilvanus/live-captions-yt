@@ -18,6 +18,7 @@ import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
 import { initCueEngine, createCueProcessor, createCueRouter } from 'lcyt-cues';
+import { initAi, createAiRouter, isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings } from './ai/index.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -163,6 +164,15 @@ const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 const { engine: _cueEngine } = await initCueEngine(db);
 const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
 
+// AI / Embedding module — run DB migrations for ai_config table and wire
+// embedding functions into the CueEngine for fuzzy semantic matching.
+await initAi(db);
+_cueEngine.setEmbeddingFn(computeEmbeddings);
+_cueEngine.setAiConfigFn((apiKey) => getAiConfigRaw(db, apiKey));
+if (isServerEmbeddingAvailable()) {
+  console.info('✓ Server-level embedding API configured');
+}
+
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
 
@@ -289,7 +299,7 @@ app.get('/health', (req, res) => {
   if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
   if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
   if (sttManager) features.push('stt');
-  features.push('files', 'viewer', 'production');
+  features.push('files', 'viewer', 'production', 'ai');
 
   res.status(200).json({
     ok: true,
@@ -337,6 +347,7 @@ app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
 app.use('/cues', createCueRouter(db, auth, _cueEngine));
+app.use('/ai', createAiRouter(db, auth));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

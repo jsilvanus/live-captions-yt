@@ -47,11 +47,11 @@ export function createCueRouter(db, auth, engine) {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
 
-    const { name, match_type, pattern, action, enabled, cooldown_ms } = req.body || {};
+    const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold } = req.body || {};
     if (!name || !pattern) {
       return res.status(400).json({ error: 'name and pattern are required' });
     }
-    const validTypes = ['phrase', 'regex', 'section'];
+    const validTypes = ['phrase', 'regex', 'section', 'fuzzy'];
     if (match_type && !validTypes.includes(match_type)) {
       return res.status(400).json({ error: `match_type must be one of: ${validTypes.join(', ')}` });
     }
@@ -60,6 +60,14 @@ export function createCueRouter(db, auth, engine) {
     if (match_type === 'regex') {
       try { new RegExp(pattern); } catch {
         return res.status(400).json({ error: 'Invalid regex pattern' });
+      }
+    }
+
+    // Validate fuzzy_threshold
+    if (fuzzy_threshold !== undefined) {
+      const t = parseFloat(fuzzy_threshold);
+      if (isNaN(t) || t < 0 || t > 1) {
+        return res.status(400).json({ error: 'fuzzy_threshold must be between 0 and 1' });
       }
     }
 
@@ -73,6 +81,7 @@ export function createCueRouter(db, auth, engine) {
       action: action || {},
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
       cooldown_ms: cooldown_ms || 0,
+      fuzzy_threshold: fuzzy_threshold ?? 0.75,
     });
 
     engine.invalidate(apiKey);
@@ -88,7 +97,7 @@ export function createCueRouter(db, auth, engine) {
     if (!rule) return res.status(404).json({ error: 'Rule not found' });
     if (rule.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
-    const { name, match_type, pattern, action, enabled, cooldown_ms } = req.body || {};
+    const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold } = req.body || {};
 
     // Validate regex pattern if the rule is (or will remain) a regex rule
     const isRegexRule = match_type === 'regex' || (!match_type && rule.match_type === 'regex');
@@ -98,10 +107,19 @@ export function createCueRouter(db, auth, engine) {
       }
     }
 
+    // Validate fuzzy_threshold
+    if (fuzzy_threshold !== undefined) {
+      const t = parseFloat(fuzzy_threshold);
+      if (isNaN(t) || t < 0 || t > 1) {
+        return res.status(400).json({ error: 'fuzzy_threshold must be between 0 and 1' });
+      }
+    }
+
     updateCueRule(db, req.params.id, {
       name, match_type, pattern, action,
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : undefined,
       cooldown_ms,
+      fuzzy_threshold,
     });
 
     engine.invalidate(apiKey);

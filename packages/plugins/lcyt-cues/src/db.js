@@ -32,6 +32,12 @@ export function runMigrations(db) {
       ON cue_rules(api_key)
   `);
 
+  // Additive migration: fuzzy_threshold column (Phase 3)
+  const cols = new Set(db.prepare('PRAGMA table_info(cue_rules)').all().map(c => c.name));
+  if (!cols.has('fuzzy_threshold')) {
+    db.exec('ALTER TABLE cue_rules ADD COLUMN fuzzy_threshold REAL NOT NULL DEFAULT 0.75');
+  }
+
   // cue_events — log of fired cue events for audit/rundown export.
   // Note: ts is stored as seconds-since-epoch (SQLite strftime('%s','now'));
   // the cue processor uses Date.now() (milliseconds) for SSE event timestamps.
@@ -84,10 +90,11 @@ export function getCueRule(db, id) {
  */
 export function insertCueRule(db, rule) {
   db.prepare(`
-    INSERT INTO cue_rules (id, api_key, name, match_type, pattern, action, enabled, cooldown_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cue_rules (id, api_key, name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(rule.id, rule.api_key, rule.name, rule.match_type, rule.pattern,
-         JSON.stringify(rule.action ?? {}), rule.enabled ?? 1, rule.cooldown_ms ?? 0);
+         JSON.stringify(rule.action ?? {}), rule.enabled ?? 1, rule.cooldown_ms ?? 0,
+         rule.fuzzy_threshold ?? 0.75);
 }
 
 /**
@@ -99,7 +106,7 @@ export function insertCueRule(db, rule) {
 export function updateCueRule(db, id, fields) {
   const sets = [];
   const vals = [];
-  for (const key of ['name', 'match_type', 'pattern', 'enabled', 'cooldown_ms']) {
+  for (const key of ['name', 'match_type', 'pattern', 'enabled', 'cooldown_ms', 'fuzzy_threshold']) {
     if (fields[key] !== undefined) {
       sets.push(`${key} = ?`);
       vals.push(fields[key]);

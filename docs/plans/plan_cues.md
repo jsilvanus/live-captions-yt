@@ -2,13 +2,13 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Next-cue-only firing with skip/anywhere modifiers, fuzzy embedding-based matching, and music-state cue triggers. Phase 1 (basic cue engine) implemented; Phase 2 (next-only + modifiers) in progress; Phase 3 (fuzzy/embedding) and Phase 4 (music cues) planned."
+summary: "Next-cue-only firing with skip/anywhere modifiers, fuzzy embedding-based matching, and music-state cue triggers. Phase 1 (basic cue engine) implemented; Phase 2 (next-only + modifiers) implemented; Phase 3 (fuzzy/embedding) implemented; Phase 4 (music cues) planned."
 ---
 
 # Cue Engine Enhanced Capabilities
 
 **Status:** In progress
-**Scope:** `packages/plugins/lcyt-cues`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`
+**Scope:** `packages/plugins/lcyt-cues`, `packages/lcyt-backend/src/ai/`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
 
 ---
 
@@ -47,7 +47,7 @@ summary: "Next-cue-only firing with skip/anywhere modifiers, fuzzy embedding-bas
 
 ---
 
-## Phase 2 — Next-Cue-Only Firing with Modifiers (In Progress)
+## Phase 2 — Next-Cue-Only Firing with Modifiers (Implemented)
 
 ### Motivation
 
@@ -106,75 +106,88 @@ checkCueMatch(cueMap, text, pointer) → { phrase, index } | null
 
 ---
 
-## Phase 3 — Fuzzy / Embedding-Based Matching (Planned)
+## Phase 3 — Fuzzy / Embedding-Based Matching (Implemented)
 
 ### Motivation
 
 Live speech (especially via STT) introduces variations: "we beseech thee" vs "we beseech you", "amen" vs "ah men", "hallelujah" vs "alleluia". Exact substring matching misses these. Fuzzy matching catches near-misses.
 
-### Approach: Embedding similarity
+### Implementation
 
-Use text embeddings to compare the spoken context against registered cue phrases. When the cosine similarity exceeds a threshold, the cue fires.
+Three tiers of fuzzy matching have been implemented:
 
-#### Architecture
+#### Tier 1: Jaro-Winkler (Built-in, No Dependencies)
 
-```
-Caption text → embedding model → vector
-Cue phrases  → embedding model → vectors (pre-computed, cached)
-cosine_similarity(caption_vector, cue_vector) > threshold → fire
-```
+Word-level Jaro-Winkler string similarity is available on both frontend and backend with zero external dependencies. This catches spelling variations and STT artifacts.
 
-#### Embedding options
+**Frontend** (`metacode-runtime.js`):
+- `jaroWinkler(s1, s2)` — character-level Jaro-Winkler similarity (0-1)
+- `fuzzyWordMatch(pattern, text)` — slides a window of pattern words over text words, returns best average Jaro-Winkler score
+- `checkCueMatch()` — uses `fuzzyWordMatch` when a cue has `fuzzy: true` flag
 
-| Option | Pros | Cons |
+**Backend** (`cue-engine.js`):
+- Same `jaroWinkler()` and `fuzzyWordMatch()` functions
+- `match_type: 'fuzzy'` rule type in CueEngine with configurable `fuzzy_threshold`
+- Rules created via CRUD API `POST /cues/rules`
+
+#### Tier 2: Embedding-Based Semantic Matching (API-Backed)
+
+Embedding similarity via OpenAI-compatible APIs. Computes text embeddings and uses cosine similarity to match semantically related phrases.
+
+**Backend** (`packages/lcyt-backend/src/ai/`):
+- `computeEmbeddings(texts, opts)` — calls OpenAI-compatible `/v1/embeddings` endpoint
+- `cosineSimilarity(a, b)` — cosine similarity between embedding vectors
+- CueEngine wired with `setEmbeddingFn()` and `setAiConfigFn()` for per-key embedding config
+
+**Configuration** (`/ai/config` routes):
+- `GET /ai/config` — get per-key AI configuration
+- `PUT /ai/config` — update embedding provider, model, API key, threshold
+- `GET /ai/status` — server capability info (is server embedding available?)
+
+#### Tier 3: Server-Level Embedding (Admin-Configured)
+
+Server administrators can configure a default embedding API via environment variables. Users can then select "Server-provided" as their embedding provider.
+
+**Environment variables:**
+| Variable | Purpose | Default |
 |---|---|---|
-| **Local lightweight model** (e.g. `all-MiniLM-L6-v2` via `@xenova/transformers`) | No API calls, low latency, runs in Node.js | ~80 MB model download, CPU cost per caption |
-| **OpenAI `text-embedding-3-small`** | High quality, small vectors (1536-d) | Requires API key, network latency, cost |
-| **Sentence-level Levenshtein / Jaro-Winkler** | Zero deps, instant | Only catches spelling variations, not semantic |
+| `EMBEDDING_API_URL` | Base URL for embedding API | `https://api.openai.com` |
+| `EMBEDDING_API_KEY` | API key for the embedding provider | none |
+| `EMBEDDING_MODEL` | Model name | `text-embedding-3-small` |
 
-#### Recommended approach
+### Metacode syntax: `cue~:` (Fuzzy Cue)
 
-1. **Tier 1 (default)**: Enhanced fuzzy string matching — Jaro-Winkler distance on word tokens, no external dependencies. Catches "beseech thee" ≈ "beseech you" at word level.
-2. **Tier 2 (opt-in)**: Embedding similarity via `@xenova/transformers` (ONNX runtime, runs in Node.js). Pre-compute cue phrase embeddings on rule create/update. Compare per-caption.
-3. **Tier 3 (opt-in)**: External embedding API (OpenAI, Cohere). Configured via env vars.
-
-#### Context window
-
-Instead of matching single captions, maintain a sliding window of the last N captions (e.g. last 30 seconds of spoken text). Compare the window against cue phrases for context-aware matching.
+The tilde modifier `~` enables fuzzy matching for inline cue metacodes:
 
 ```
-Window: "O Lord hear us. We come before you. We beseech thee."
-Cue:    "we beseech"
-Match:  ✅ (substring found in window)
+<!-- cue~:we beseech thee -->Lord, hear us    ← fuzzy match: catches "we beseech you", "we bseech thee"
+<!-- cue*~:amen -->Let us close               ← skip mode + fuzzy
+<!-- cue**~:hallelujah -->Praise God          ← any mode + fuzzy
 ```
 
-This is especially useful for STT where recognition arrives in fragments.
+### Model configuration modes
 
-#### Configuration
+| Mode | Config field | How it works |
+|---|---|---|
+| **None** | `embeddingProvider: 'none'` | AI features disabled (default) |
+| **Server** | `embeddingProvider: 'server'` | Uses server-level env var API key; no user key needed |
+| **OpenAI** | `embeddingProvider: 'openai'` | User provides their own OpenAI API key |
+| **Custom** | `embeddingProvider: 'custom'` | User provides any OpenAI-compatible API URL + key |
+| **Ollama** | *(future)* | Local embedding model via Ollama — planned |
 
-```js
-// cue_rules table additions:
-match_type: 'fuzzy'          // new match type
-fuzzy_threshold: 0.85        // similarity threshold (0-1)
-fuzzy_method: 'jaro-winkler' // or 'embedding'
-```
+### AI Settings page
 
-#### Frontend
+`/ai` sidebar route — configuration UI for embedding provider selection, API key entry, model selection, and fuzzy threshold slider. Shows server status indicator and Ollama future feature placeholder.
 
-- `checkCueMatch()` gains a fuzzy matching path alongside exact and glob.
-- Fuzzy matching uses word-level Jaro-Winkler (client-side, no deps).
-- Embedding matching stays server-side only (too heavy for browser).
+### DB additions
 
-### Implementation plan
+- `ai_config` table — per-API-key embedding config (`embedding_provider`, `embedding_model`, `embedding_api_key`, `embedding_api_url`, `fuzzy_threshold`)
+- `cue_rules.fuzzy_threshold` column — per-rule threshold for fuzzy match type
 
-- [ ] Add `fuzzy_threshold` and `fuzzy_method` columns to `cue_rules`
-- [ ] Implement Jaro-Winkler word-token matcher in runtime
-- [ ] Add sliding context window (last N captions) for broader matching
-- [ ] Optional: `@xenova/transformers` embedding adapter in backend
-- [ ] Optional: External embedding API adapter
-- [ ] CRUD route updates for fuzzy configuration
-- [ ] Frontend `checkCueMatch()` fuzzy path
-- [ ] Tests for fuzzy matching edge cases
+### Tests
+
+- **Backend**: 8 embedding utility tests (cosine similarity, server availability), 4 fuzzy match type tests in CueEngine, 7 jaroWinkler backend tests, 7 fuzzyWordMatch backend tests, 8 AI config DB tests
+- **Frontend**: 4 jaroWinkler tests, 5 fuzzyWordMatch tests, 4 checkCueMatch fuzzy tests, 5 parser fuzzy cue tests
 
 ---
 
@@ -235,6 +248,6 @@ session.emitter.on('event', (evt) => {
 | Phase | Description | Status | Dependencies |
 |---|---|---|---|
 | 1 | Basic cue engine: inline metacodes, auto-send, wildcards | ✅ Implemented | — |
-| 2 | Next-cue-only firing with `*`/`**` modifiers | 🔧 In progress | Phase 1 |
-| 3 | Fuzzy / embedding-based matching | 📋 Planned | Phase 2 |
+| 2 | Next-cue-only firing with `*`/`**` modifiers | ✅ Implemented | Phase 1 |
+| 3 | Fuzzy / embedding-based matching, AI config page | ✅ Implemented | Phase 2 |
 | 4 | Music detection cue triggers | 📋 Planned | Phase 2, `lcyt-music` |

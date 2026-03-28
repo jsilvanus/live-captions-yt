@@ -5,6 +5,11 @@
  * enabled rules, and fires matching cue events. Respects per-rule cooldowns
  * so the same cue does not fire repeatedly within a short window.
  *
+ * Supports match types: phrase, regex, section, fuzzy.
+ * Fuzzy matching uses Jaro-Winkler string similarity (no external deps).
+ * Embedding-based semantic matching is available when an embedding provider
+ * is configured (server-level or per-user via AI config).
+ *
  * Usage:
  *   const engine = new CueEngine(db);
  *   const fired = engine.evaluate(apiKey, captionText);
@@ -12,6 +17,106 @@
  */
 
 import { listCueRules, insertCueEvent } from './db.js';
+
+// ---------------------------------------------------------------------------
+// Jaro-Winkler string similarity (pure JS, no deps)
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute Jaro similarity between two strings.
+ * @param {string} s1
+ * @param {string} s2
+ * @returns {number} 0-1
+ */
+function jaroSimilarity(s1, s2) {
+  if (s1 === s2) return 1.0;
+  if (!s1.length || !s2.length) return 0.0;
+
+  const matchWindow = Math.max(0, Math.floor(Math.max(s1.length, s2.length) / 2) - 1);
+  const s1Matches = new Array(s1.length).fill(false);
+  const s2Matches = new Array(s2.length).fill(false);
+
+  let matches = 0;
+  let transpositions = 0;
+
+  for (let i = 0; i < s1.length; i++) {
+    const start = Math.max(0, i - matchWindow);
+    const end = Math.min(i + matchWindow + 1, s2.length);
+    for (let j = start; j < end; j++) {
+      if (s2Matches[j] || s1[i] !== s2[j]) continue;
+      s1Matches[i] = true;
+      s2Matches[j] = true;
+      matches++;
+      break;
+    }
+  }
+
+  if (matches === 0) return 0.0;
+
+  let k = 0;
+  for (let i = 0; i < s1.length; i++) {
+    if (!s1Matches[i]) continue;
+    while (!s2Matches[k]) k++;
+    if (s1[i] !== s2[k]) transpositions++;
+    k++;
+  }
+
+  return (matches / s1.length + matches / s2.length + (matches - transpositions / 2) / matches) / 3;
+}
+
+/**
+ * Compute Jaro-Winkler similarity between two strings.
+ * Boosts score for common prefixes (up to 4 characters).
+ * @param {string} s1
+ * @param {string} s2
+ * @returns {number} 0-1
+ */
+export function jaroWinkler(s1, s2) {
+  const jaro = jaroSimilarity(s1, s2);
+  let prefix = 0;
+  for (let i = 0; i < Math.min(s1.length, s2.length, 4); i++) {
+    if (s1[i] === s2[i]) prefix++;
+    else break;
+  }
+  return jaro + prefix * 0.1 * (1 - jaro);
+}
+
+/**
+ * Compute fuzzy similarity between a pattern and text at the word level.
+ * Finds the best-matching contiguous window of words in the text that
+ * matches the pattern's word tokens.
+ *
+ * @param {string} pattern — the cue phrase pattern
+ * @param {string} text — the caption text to match against
+ * @returns {{ score: number, matched: string }}
+ */
+export function fuzzyWordMatch(pattern, text) {
+  const pWords = pattern.toLowerCase().split(/\s+/).filter(Boolean);
+  const tWords = text.toLowerCase().split(/\s+/).filter(Boolean);
+  if (pWords.length === 0 || tWords.length === 0) return { score: 0, matched: '' };
+
+  let bestScore = 0;
+  let bestMatched = '';
+
+  // Slide a window of pWords.length over tWords
+  for (let i = 0; i <= tWords.length - pWords.length; i++) {
+    let windowScore = 0;
+    for (let j = 0; j < pWords.length; j++) {
+      windowScore += jaroWinkler(pWords[j], tWords[i + j]);
+    }
+    const avgScore = windowScore / pWords.length;
+    if (avgScore > bestScore) {
+      bestScore = avgScore;
+      bestMatched = tWords.slice(i, i + pWords.length).join(' ');
+    }
+  }
+
+  return { score: bestScore, matched: bestMatched };
+}
+
+// ---------------------------------------------------------------------------
+// CueEngine
+// ---------------------------------------------------------------------------
 
 export class CueEngine {
   /**
@@ -29,12 +134,45 @@ export class CueEngine {
 
     /** Per-API-key cached rule list. Invalidated on CRUD. Map<apiKey, Array> */
     this._ruleCache = new Map();
+
+    /**
+     * Optional embedding function for semantic matching.
+     * Set via setEmbeddingFn().
+     * @type {((texts: string[], opts?: object) => Promise<number[][]>)|null}
+     */
+    this._embedFn = null;
+
+    /**
+     * Optional function to get raw AI config for an API key.
+     * Set via setAiConfigFn().
+     * @type {((apiKey: string) => object|null)|null}
+     */
+    this._aiConfigFn = null;
+
+    /**
+     * Cached cue phrase embeddings. Map<apiKey, Map<ruleId, number[]>>
+     * Invalidated on CRUD via invalidate().
+     */
+    this._embeddingCache = new Map();
   }
 
   /** Invalidate the rule cache for a given API key (call after CRUD). */
   invalidate(apiKey) {
     this._ruleCache.delete(apiKey);
+    this._embeddingCache.delete(apiKey);
   }
+
+  /**
+   * Set the embedding function for semantic fuzzy matching.
+   * @param {(texts: string[], opts?: object) => Promise<number[][]>} fn
+   */
+  setEmbeddingFn(fn) { this._embedFn = fn; }
+
+  /**
+   * Set the AI config lookup function.
+   * @param {(apiKey: string) => object|null} fn
+   */
+  setAiConfigFn(fn) { this._aiConfigFn = fn; }
 
   /**
    * Load (and cache) enabled rules for an API key.
@@ -98,6 +236,12 @@ export class CueEngine {
           if (codes.section && codes.section.toLowerCase() === rule.pattern.toLowerCase()) {
             matched = codes.section;
           }
+          break;
+        }
+        case 'fuzzy': {
+          const threshold = rule.fuzzy_threshold ?? 0.75;
+          const { score, matched: fuzzyMatched } = fuzzyWordMatch(rule.pattern, text || '');
+          if (score >= threshold) matched = fuzzyMatched;
           break;
         }
         default:
