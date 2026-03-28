@@ -125,6 +125,19 @@ export class GoogleSttAdapter extends EventEmitter {
     this._grpcRestartTimer = null;
   }
 
+
+  _track(p) {
+    this._pending.add(p);
+    const cleanup = () => this._pending.delete(p);
+    p.then(cleanup, cleanup);
+    return p;
+  }
+
+  async _waitPending() {
+    if (this._pending.size === 0) return;
+    await Promise.allSettled(Array.from(this._pending));
+  }
+
   /** The active recognition mode: 'rest' | 'grpc' */
   get mode() { return this._mode; }
 
