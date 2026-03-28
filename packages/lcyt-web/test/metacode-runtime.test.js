@@ -52,7 +52,7 @@ describe('metacode-runtime drainActions()', () => {
     assert.equal(res.status, 'done');
   });
 
-  it('skips cue marker lines and continues to next content', async () => {
+  it('skips standalone cue lines (empty text) and continues to next content', async () => {
     const file = makeFile(['', 'Let us pray'], [{ cue: 'Amen' }, {}], [1, 2]);
     const store = makeFileStore([file]);
     const timerRef = { current: null };
@@ -60,6 +60,16 @@ describe('metacode-runtime drainActions()', () => {
     const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
     assert.equal(res.status, 'continue');
     assert.equal(res.pointer, 1); // index of 'Let us pray'
+  });
+
+  it('does NOT skip cue lines that have content', async () => {
+    const file = makeFile(['Let us pray', 'Goodbye'], [{ cue: 'Amen' }, {}], [1, 2]);
+    const store = makeFileStore([file]);
+    const timerRef = { current: null };
+    const handleSendRef = { current: null };
+    const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
+    assert.equal(res.status, 'continue');
+    assert.equal(res.pointer, 0); // stops at 'Let us pray' — it has sendable content
   });
 });
 
@@ -76,7 +86,7 @@ describe('buildCueMap()', () => {
 
   it('maps cue phrases to their line indices', () => {
     const file = makeFile(
-      ['', 'Line 1', '', 'Line 2'],
+      ['Let us pray', 'Line 1', 'Hallelujah!', 'Line 2'],
       [{ cue: 'Amen' }, {}, { cue: 'Hallelujah' }, {}],
       [1, 2, 3, 4]
     );

@@ -56,10 +56,6 @@ export async function drainActions({ file, startPtr = 0, fileStore, timerRef, ha
         try { window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: lc.audioCapture } })); } catch {}
       }
       ptr++;
-    } else if (lc.cue != null) {
-      // Cue marker — skip past it (cue matching is handled externally
-      // by buildCueMap / checkCueMatch or backend CueEngine events)
-      ptr++;
     } else if (lc.timer != null) {
       ptr++;
       const target = ptr < file.lines.length ? ptr : file.lines.length - 1;

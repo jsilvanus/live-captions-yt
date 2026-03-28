@@ -444,7 +444,7 @@ describe('parseFileContent() — combined action metacodes', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseFileContent() — cue metacodes', () => {
-  it('parses <!-- cue:phrase --> as an action entry with cue property', () => {
+  it('standalone cue creates an entry with empty text and cue property', () => {
     const raw = '<!-- cue:Amen -->\nLet us pray';
     const { lines, lineCodes } = parseFileContent(raw);
     assert.equal(lines.length, 2);
@@ -481,5 +481,54 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lines.length, 2);
     assert.equal(lineCodes[0].cue, 'Amen');
     assert.equal(lineCodes[0].section, 'Prayer');
+  });
+
+  it('cue inline with content — strips cue and keeps text', () => {
+    const raw = '<!-- cue:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].cue, 'Amen');
+  });
+
+  it('cue at end of content line', () => {
+    const raw = 'Let us pray<!-- cue:Amen -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].cue, 'Amen');
+  });
+
+  it('cue with other metacodes and content on same line — non-cue metadata stays in text', () => {
+    // When non-cue metacodes are inline with content text, they remain in the text
+    // because the parser only strips cue metacodes inline. Other metadata should
+    // be placed on their own preceding line for proper processing.
+    const raw = '<!-- section: Closing --><!-- cue:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    // section comment stays in text (parser limitation for mixed lines)
+    assert.equal(lines[0], '<!-- section: Closing -->Let us pray');
+    assert.equal(lineCodes[0].cue, 'Amen');
+  });
+
+  it('cue with metadata on preceding line and content inline', () => {
+    const raw = '<!-- section: Closing -->\n<!-- cue:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].section, 'Closing');
+  });
+
+  it('content lines without cue are unaffected', () => {
+    const raw = 'Hello world\n<!-- cue:Test -->Jump here\nGoodbye';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 3);
+    assert.equal(lines[0], 'Hello world');
+    assert.equal(lineCodes[0].cue, undefined);
+    assert.equal(lines[1], 'Jump here');
+    assert.equal(lineCodes[1].cue, 'Test');
+    assert.equal(lines[2], 'Goodbye');
+    assert.equal(lineCodes[2].cue, undefined);
   });
 });

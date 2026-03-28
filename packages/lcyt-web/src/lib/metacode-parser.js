@@ -6,6 +6,11 @@ const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
 const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 
+// Cue metacodes are extracted and stripped BEFORE other processing because
+// they can coexist with content text and other metacodes on the same line.
+// E.g. `<!-- cue:Amen -->Let us pray` → content "Let us pray" with cue "Amen".
+const CUE_META_RE = /<!--\s*cue\s*:\s*([\s\S]*?)\s*-->/gi;
+
 function isMetadataOnlyLine(raw) {
   let pos = 0;
   while (pos < raw.length) {
@@ -32,7 +37,19 @@ export function parseFileContent(rawText) {
     const raw = rawLines[i].trim();
     if (!raw) continue;
 
-    if (STANZA_OPEN_RE.test(raw)) {
+    // Extract cue metacodes — they can appear alongside content and other
+    // metacodes on any line.  Strip them so the remaining text is the
+    // caption content (or remaining metadata).
+    CUE_META_RE.lastIndex = 0;
+    let cuePhrase = null;
+    for (const m of raw.matchAll(CUE_META_RE)) {
+      const val = m[1].trim();
+      if (val && !cuePhrase) cuePhrase = val;
+    }
+    CUE_META_RE.lastIndex = 0;
+    const effectiveRaw = cuePhrase ? raw.replace(CUE_META_RE, '').trim() : raw;
+
+    if (STANZA_OPEN_RE.test(effectiveRaw)) {
       const stanzaLines = [];
       i++;
       while (i < rawLines.length) {
@@ -47,20 +64,21 @@ export function parseFileContent(rawText) {
         delete currentCodes.stanza;
       }
     } else {
-      const emptySendMatch = raw.match(EMPTY_SEND_RE);
+      const emptySendMatch = effectiveRaw.match(EMPTY_SEND_RE);
       if (emptySendMatch) {
         const label = emptySendMatch[1]?.trim() || null;
+        const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
+        if (cuePhrase) codes.cue = cuePhrase;
         lines.push('');
-        lineCodes.push({ ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) });
+        lineCodes.push(codes);
         lineNumbers.push(i + 1);
-      } else if (isMetadataOnlyLine(raw)) {
+      } else if (isMetadataOnlyLine(effectiveRaw)) {
         let audioAction = null;
         let timerAction = null;
         let gotoAction = null;
         let fileSwitchAction = null;
         let fileSwitchServerAction = null;
-        let cueAction = null;
-        for (const m of raw.matchAll(MULTI_META_RE)) {
+        for (const m of effectiveRaw.matchAll(MULTI_META_RE)) {
           const key = m[1].toLowerCase();
           const value = m[2].trim();
           if (key === 'audio' && (value === 'start' || value === 'stop')) {
@@ -75,8 +93,6 @@ export function parseFileContent(rawText) {
             if (value !== '') fileSwitchAction = value;
           } else if (key === 'file[server]') {
             if (value !== '') fileSwitchServerAction = value;
-          } else if (key === 'cue') {
-            if (value !== '') cueAction = value;
           } else if (value === '') {
             delete currentCodes[key];
           } else {
@@ -87,22 +103,24 @@ export function parseFileContent(rawText) {
             currentCodes[key] = parsed;
           }
         }
-        const hasAction = audioAction || timerAction !== null || gotoAction !== null || fileSwitchAction !== null || fileSwitchServerAction !== null || cueAction !== null;
-        if (hasAction) {
+        const hasAction = audioAction || timerAction !== null || gotoAction !== null || fileSwitchAction !== null || fileSwitchServerAction !== null;
+        if (hasAction || cuePhrase) {
           const actionCodes = { ...currentCodes };
           if (audioAction) actionCodes.audioCapture = audioAction;
           if (timerAction !== null) actionCodes.timer = timerAction;
           if (gotoAction !== null) actionCodes.goto = gotoAction;
           if (fileSwitchAction !== null) actionCodes.fileSwitch = fileSwitchAction;
           if (fileSwitchServerAction !== null) actionCodes.fileSwitchServer = fileSwitchServerAction;
-          if (cueAction !== null) actionCodes.cue = cueAction;
+          if (cuePhrase) actionCodes.cue = cuePhrase;
           lines.push('');
           lineCodes.push(actionCodes);
           lineNumbers.push(i + 1);
         }
       } else {
-        lines.push(raw);
-        lineCodes.push({ ...currentCodes });
+        const codes = { ...currentCodes };
+        if (cuePhrase) codes.cue = cuePhrase;
+        lines.push(effectiveRaw);
+        lineCodes.push(codes);
         lineNumbers.push(i + 1);
       }
     }
