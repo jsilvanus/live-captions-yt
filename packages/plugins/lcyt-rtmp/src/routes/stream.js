@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey } from '../db.js';
+import logger from 'lcyt/logger';
 
 const MAX_RELAY_SLOTS = 4;
 
@@ -170,7 +171,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
             const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
             await relayManager.startAll(apiKey, relays, { cea708DelayMs });
           } catch (err) {
-            console.warn(`[stream] Failed to start fan-out on relay activate: ${err.message}`);
+            logger.warn(`[stream] Failed to start fan-out on relay activate: ${err.message}`);
           }
         }
       }
@@ -180,7 +181,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
       try {
         await relayManager.stopKey(apiKey);
       } catch (err) {
-        console.warn(`[stream] Failed to stop relay on deactivate: ${err.message}`);
+        logger.warn(`[stream] Failed to stop relay on deactivate: ${err.message}`);
       }
     }
 
@@ -231,14 +232,14 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
           const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
           await relayManager.start(apiKey, remaining, { cea708DelayMs });
         } catch (err) {
-          console.warn(`[stream] Failed to restart relay after slot ${slot} removal: ${err.message}`);
+          logger.warn(`[stream] Failed to restart relay after slot ${slot} removal: ${err.message}`);
         }
       } else {
         // No targets left — stop the process entirely.
         try {
           await relayManager.stop(apiKey);
         } catch (err) {
-          console.warn(`[stream] Failed to stop relay after removing last slot: ${err.message}`);
+          logger.warn(`[stream] Failed to stop relay after removing last slot: ${err.message}`);
         }
       }
     }
@@ -256,7 +257,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
       // Also stop any remaining ffmpeg procs (in case control API is unavailable)
       await relayManager.stopKey(apiKey);
     } catch (err) {
-      console.warn(`[stream] stop all / drop publisher failed: ${err.message}`);
+      logger.warn(`[stream] stop all / drop publisher failed: ${err.message}`);
     }
     const count = deleteAllRelays(db, apiKey);
     return res.status(200).json({ ok: true, deleted: count });

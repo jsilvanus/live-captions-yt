@@ -4,6 +4,7 @@ import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync, u
 import { join, resolve, basename, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import {
+import logger from 'lcyt/logger';
   isGraphicsEnabled,
   registerImage,
   listImages,
@@ -67,7 +68,7 @@ export function createImagesRouter(db, auth) {
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 
     if (!isGraphicsEnabled(db, apiKey)) {
-      console.warn(`[images] upload rejected: graphics_enabled=false for apiKey=${apiKey}`);
+      logger.warn(`[images] upload rejected: graphics_enabled=false for apiKey=${apiKey}`);
       return res.status(403).json({ error: 'Graphics upload not enabled for this API key' });
     }
 
@@ -301,7 +302,7 @@ export function createImagesRouter(db, auth) {
       const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
       if (existsSync(filepath)) unlinkSync(filepath);
     } catch (e) {
-      console.warn('[images] Could not delete disk file:', e.message);
+      logger.warn('[images] Could not delete disk file:', e.message);
     }
 
     return res.json({ ok: true });

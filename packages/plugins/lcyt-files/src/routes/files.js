@@ -21,6 +21,7 @@ import {
   hasFeature,
 } from 'lcyt-backend/db';
 import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
+import logger from 'lcyt/logger';
 
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({
@@ -219,7 +220,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     // Best-effort deletion from storage backend (uses per-key adapter if configured)
     const storage = await _resolve(session.apiKey).catch(() => null);
     await storage?.deleteFile(session.apiKey, row.filename).catch(err => {
-      console.warn('[file] Could not delete from storage:', err.message);
+      logger.warn('[file] Could not delete from storage:', err.message);
     });
 
     return res.json({ ok: true });

@@ -4,6 +4,7 @@ import { makeFifo } from 'lcyt-backend/ffmpeg/pipe-utils';
 import { createWriteStream } from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
 import logger from 'lcyt/logger';
+import logger from 'lcyt/logger';
 
 const DEFAULT_RTMP_HOST       = process.env.RTMP_HOST             || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP        = process.env.RTMP_APP              || 'stream';
@@ -874,7 +875,7 @@ export class RtmpRelayManager {
 
     // --- nginx-rtmp fallback --------------------------------------------------
     if (!this._controlUrl) {
-      console.debug('[rtmp] neither MEDIAMTX_API_URL nor RTMP_CONTROL_URL set -- skipping drop/publisher');
+      logger.debug('[rtmp] neither MEDIAMTX_API_URL nor RTMP_CONTROL_URL set -- skipping drop/publisher');
       return;
     }
     const url = `${this._controlUrl}/drop/publisher?app=${encodeURIComponent(this._rtmpApp)}&name=${encodeURIComponent(apiKey)}`;
@@ -956,10 +957,10 @@ export function probeFfmpeg() {
     const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
     const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
 
-    console.info('✓ ffmpeg found — RTMP relay is available.');
+    logger.info('✓ ffmpeg found — RTMP relay is available.');
 
     if (!hasLibx264) {
-      console.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
+      logger.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
     }
 
     return { available: true, hasLibx264, hasEia608, hasSubrip };

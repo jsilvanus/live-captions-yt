@@ -32,6 +32,7 @@ export { createFilesRouter } from './routes/files.js';
 
 import { createStorageAdapter, createStorageResolver } from './storage.js';
 import { runFilesDbMigrations } from './db.js';
+import logger from 'lcyt/logger';
 
 /**
  * Initialise the files plugin: run DB migrations, create the global storage
@@ -50,7 +51,7 @@ export async function initFilesControl(db) {
 
   // Create the global (operator-configured) adapter
   const storage = await createStorageAdapter();
-  console.info(storage.describe?.() ?? '✓ File storage initialised');
+  logger.info(storage.describe?.() ?? '✓ File storage initialised');
 
   // Create the per-key resolver (falls back to global adapter when no per-key config)
   const { resolveStorage, invalidateCache } = createStorageResolver(db, storage);

@@ -1,3 +1,4 @@
+import logger from 'lcyt/logger';
 const DEFAULT_MEDIAMTX_HLS_BASE = process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080';
 
 /**
@@ -45,14 +46,14 @@ export class HlsManager {
     if (this._mediamtx) {
       try {
         await this._mediamtx.addPath(hlsKey, { source: 'publisher' });
-        console.log(`${tag} MediaMTX path registered`);
+        logger.info(`${tag} MediaMTX path registered`);
       } catch (err) {
         // Path may already exist; non-fatal
-        console.warn(`${tag} MediaMTX addPath warning: ${err.message}`);
+        logger.warn(`${tag} MediaMTX addPath warning: ${err.message}`);
       }
     }
     this._active.add(hlsKey);
-    console.log(`${tag} HLS active (MediaMTX)`);
+    logger.info(`${tag} HLS active (MediaMTX)`);
   }
 
   /**
@@ -69,12 +70,12 @@ export class HlsManager {
     if (this._mediamtx) {
       try {
         await this._mediamtx.deletePath(hlsKey);
-        console.log(`${tag} MediaMTX path removed`);
+        logger.info(`${tag} MediaMTX path removed`);
       } catch (err) {
-        console.warn(`${tag} MediaMTX deletePath warning: ${err.message}`);
+        logger.warn(`${tag} MediaMTX deletePath warning: ${err.message}`);
       }
     }
-    console.log(`${tag} HLS stopped`);
+    logger.info(`${tag} HLS stopped`);
   }
 
   /**

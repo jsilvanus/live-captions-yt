@@ -38,6 +38,7 @@ import {
   autoRenameConflictingIds,
 } from '../db/dsk-templates.js';
 import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../renderer.js';
+import logger from 'lcyt/logger';
 import { editorAuthOrBearer } from '../middleware/editor-auth.js';
 
 // Local RTMP base URL — matches the env vars used by dsk-rtmp.js
@@ -86,7 +87,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       if (Object.keys(renameMap).length > 0) resp.renames = renameMap;
       res.status(201).json(resp);
     } catch (err) {
-      console.error('[dsk-templates] saveTemplate error:', err.message);
+      logger.error('[dsk-templates] saveTemplate error:', err.message);
       res.status(500).json({ error: 'Failed to save template' });
     }
   });
@@ -142,7 +143,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       if (Object.keys(renameMap).length > 0) resp.renames = renameMap;
       res.json(resp);
     } catch (err) {
-      console.error('[dsk-templates] PUT error:', err.message);
+      logger.error('[dsk-templates] PUT error:', err.message);
       res.status(500).json({ error: 'Failed to update template' });
     }
   });
@@ -236,7 +237,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       if (items.length > 0) await broadcastData(req.params.apikey, items);
       res.json({ ok: true, updated: items.length, templates: idList.length });
     } catch (err) {
-      console.error(`[dsk-templates] broadcast error:`, err.message);
+      logger.error(`[dsk-templates] broadcast error:`, err.message);
       res.status(500).json({ error: 'Failed to broadcast data' });
     }
   });
@@ -264,7 +265,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       }
       res.json({ ok: true, rtmpUrl });
     } catch (err) {
-      console.error(`[dsk-renderer] start error for ${apiKey}:`, err.message);
+      logger.error(`[dsk-renderer] start error for ${apiKey}:`, err.message);
       res.status(500).json({ error: 'Failed to start renderer stream' });
     }
   });
@@ -302,7 +303,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       }
       res.json({ ok: true });
     } catch (err) {
-      console.error(`[dsk-renderer] stop error for ${apiKey}:`, err.message);
+      logger.error(`[dsk-renderer] stop error for ${apiKey}:`, err.message);
       res.status(500).json({ error: 'Failed to stop renderer stream' });
     }
   });

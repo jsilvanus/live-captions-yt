@@ -23,6 +23,7 @@
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
 import logger from 'lcyt/logger';
+import logger from 'lcyt/logger';
 
 // ---------------------------------------------------------------------------
 // Chromium executable
@@ -291,7 +292,7 @@ export async function stopRenderer() {
   if (_browser) {
     try { await _browser.close(); } catch {}
     _browser = null;
-    console.log('[dsk-renderer] Chromium stopped.');
+    logger.info('[dsk-renderer] Chromium stopped.');
   }
 }
 
@@ -397,7 +398,7 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
     const msg = buf.toString().trim();
     // Only log ffmpeg errors, not the regular encoding chatter
     if (/error|warning/i.test(msg)) {
-      console.error(`[dsk-renderer:${apiKey}] ffmpeg: ${msg}`);
+      logger.error(`[dsk-renderer:${apiKey}] ffmpeg: ${msg}`);
     }
   });
 

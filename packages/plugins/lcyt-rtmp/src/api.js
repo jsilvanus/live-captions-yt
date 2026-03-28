@@ -38,6 +38,7 @@
 
 import { runMigrations, writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat } from './db.js';
 import { RtmpRelayManager, probeFfmpeg } from './rtmp-manager.js';
+import logger from 'lcyt/logger';
 import { HlsManager } from './hls-manager.js';
 import { RadioManager } from './radio-manager.js';
 import { PreviewManager } from './preview-manager.js';
@@ -106,7 +107,7 @@ export async function initRtmpControl(db, store = null) {
         });
         _rtmpStatIds.set(`${apiKey}:${slot}`, id);
       } catch (err) {
-        console.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
+        logger.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
       }
     },
     onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs, captionsSent = 0 }) {
@@ -124,7 +125,7 @@ export async function initRtmpControl(db, store = null) {
         }
         incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
       } catch (err) {
-        console.error(`[rtmp] Failed to write stream end stat: ${err.message}`);
+        logger.error(`[rtmp] Failed to write stream end stat: ${err.message}`);
       }
     },
   });
@@ -141,10 +142,10 @@ export async function initRtmpControl(db, store = null) {
   const sttManager     = new SttManager(store);
 
   if (nginxManager.isEnabled) {
-    console.log(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
+    logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
   }
   if (mediamtxClient) {
-    console.log(`[lcyt-rtmp] MediaMTX API: ${process.env.MEDIAMTX_API_URL}`);
+    logger.info(`[lcyt-rtmp] MediaMTX API: ${process.env.MEDIAMTX_API_URL}`);
   }
 
   async function stop() {

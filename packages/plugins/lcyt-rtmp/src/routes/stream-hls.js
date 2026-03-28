@@ -3,6 +3,7 @@ import express from 'express';
 import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
 import { isHlsEnabled, getEmbedCors } from '../db.js';
+import logger from 'lcyt/logger';
 
 // HLS key validation: same rules as radio / viewer keys
 const HLS_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
@@ -146,7 +147,7 @@ export function createStreamHlsRouter(db, hlsManager) {
       try {
         await hlsManager.start(hlsKey);
       } catch (err) {
-        console.error(`[stream-hls] Failed to start HLS for ${hlsKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[stream-hls] Failed to start HLS for ${hlsKey.slice(0, 8)}…: ${err.message}`);
         // Still return 200 so nginx allows the publish (HLS is best-effort)
       }
       return res.status(200).send('ok');
@@ -156,7 +157,7 @@ export function createStreamHlsRouter(db, hlsManager) {
       try {
         await hlsManager.stop(hlsKey);
       } catch (err) {
-        console.error(`[stream-hls] Failed to stop HLS for ${hlsKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[stream-hls] Failed to stop HLS for ${hlsKey.slice(0, 8)}…: ${err.message}`);
       }
       return res.status(200).send('ok');
     }
@@ -230,7 +231,7 @@ export function createStreamHlsRouter(db, hlsManager) {
     try {
       upstream = await fetch(upstreamUrl);
     } catch (err) {
-      console.error(`[stream-hls] MediaMTX proxy error for ${key.slice(0, 8)}: ${err.message}`);
+      logger.error(`[stream-hls] MediaMTX proxy error for ${key.slice(0, 8)}: ${err.message}`);
       return res.status(502).json({ error: 'Stream backend unavailable' });
     }
 
