@@ -26,7 +26,14 @@ const CUE_META_RE = /<!--\s*cue\s*:\s*([\s\S]*?)\s*-->/gi;
  * text content.  A generic pass that removes every `<!-- ... -->` block.
  */
 function stripAllComments(raw) {
-  return raw.replace(/<!--[\s\S]*?-->/g, '').trim();
+  let result = raw;
+  // Loop until no more comment blocks remain (handles nested/overlapping markers)
+  while (result.includes('<!--')) {
+    const next = result.replace(/<!--[\s\S]*?-->/g, '');
+    if (next === result) break; // no match → unclosed comment, stop
+    result = next;
+  }
+  return result.trim();
 }
 
 export function parseFileContent(rawText) {
