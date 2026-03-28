@@ -55,14 +55,16 @@ export async function drainActions({ file, startPtr = 0, fileStore, timerRef, ha
       if (typeof window !== 'undefined' && window?.dispatchEvent) {
         try { window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: lc.audioCapture } })); } catch {}
       }
+      // If the line has content text, stop here so it gets sent
+      if (lineText?.trim()) break;
       ptr++;
     } else if (lc.timer != null) {
-      ptr++;
-      const target = ptr < file.lines.length ? ptr : file.lines.length - 1;
-      fileStore.setPointer(file.id, target);
+      // Timer fires the CURRENT line after the delay.
+      // Set pointer here and schedule auto-send after timer seconds.
+      fileStore.setPointer(file.id, ptr);
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => handleSendRef.current?.(), lc.timer * 1000);
-      return { status: 'stop', pointer: target };
+      return { status: 'stop', pointer: ptr };
     } else if (lc.goto != null) {
       const maxRaw = file.lineNumbers?.at(-1) ?? 0;
       const targetIdx = findLineIndexForRaw(file.lineNumbers, lc.goto);

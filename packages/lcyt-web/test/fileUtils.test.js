@@ -45,17 +45,19 @@ describe('parseFileContent() — basic', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseFileContent() — metadata comments', () => {
-  it('does not include metadata comment lines in output', () => {
+  it('metadata-only lines produce entries with empty text', () => {
     const raw = '<!-- lang: fi-FI -->\nCaption line';
     const { lines } = parseFileContent(raw);
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0], 'Caption line');
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '');  // metadata-only line shown as empty content
+    assert.equal(lines[1], 'Caption line');
   });
 
   it('attaches metadata code to subsequent lines', () => {
     const raw = '<!-- lang: fi-FI -->\nCaption line';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].lang, 'fi-FI');
+    assert.equal(lineCodes[0].lang, 'fi-FI');  // on the metadata line itself
+    assert.equal(lineCodes[1].lang, 'fi-FI');  // persists to next line
   });
 
   it('metadata persists across multiple lines', () => {
@@ -63,20 +65,23 @@ describe('parseFileContent() — metadata comments', () => {
     const { lineCodes } = parseFileContent(raw);
     assert.equal(lineCodes[0].lang, 'fi-FI');
     assert.equal(lineCodes[1].lang, 'fi-FI');
+    assert.equal(lineCodes[2].lang, 'fi-FI');
   });
 
   it('removes a code when value is empty', () => {
     const raw = '<!-- lang: fi-FI -->\nLine 1\n<!-- lang: -->\nLine 2';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].lang, 'fi-FI');
-    assert.equal(lineCodes[1].lang, undefined);
+    assert.equal(lineCodes[0].lang, 'fi-FI'); // metadata line
+    assert.equal(lineCodes[1].lang, 'fi-FI'); // Line 1
+    // <!-- lang: --> clears the code
+    assert.equal(lineCodes[3].lang, undefined); // Line 2
   });
 
   it('overrides a code with a new value', () => {
     const raw = '<!-- lang: fi-FI -->\nLine 1\n<!-- lang: en-US -->\nLine 2';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].lang, 'fi-FI');
-    assert.equal(lineCodes[1].lang, 'en-US');
+    assert.equal(lineCodes[1].lang, 'fi-FI');   // Line 1
+    assert.equal(lineCodes[3].lang, 'en-US');   // Line 2
   });
 
   it('accepts custom metadata keys', () => {
@@ -157,8 +162,9 @@ describe('parseFileContent() — empty-send markers', () => {
   it('empty-send inherits current metadata codes', () => {
     const raw = '<!-- lang: fi-FI -->\n_\nCaption';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].lang, 'fi-FI');
-    assert.equal(lineCodes[0].emptySend, true);
+    // index 0 = metadata line, index 1 = empty-send, index 2 = Caption
+    assert.equal(lineCodes[1].lang, 'fi-FI');
+    assert.equal(lineCodes[1].emptySend, true);
   });
 });
 
@@ -167,11 +173,11 @@ describe('parseFileContent() — empty-send markers', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseFileContent() — lineNumbers', () => {
-  it('uses actual raw file line numbers (not sequential text-only count)', () => {
+  it('uses actual raw file line numbers including metadata lines', () => {
     const raw = '<!-- lang: fi-FI -->\nLine 1\nLine 2\n<!-- section: x -->\nLine 3';
     const { lineNumbers } = parseFileContent(raw);
-    // Metadata lines are skipped; text lines are at raw positions 2, 3, 5
-    assert.deepEqual(lineNumbers, [2, 3, 5]);
+    // All lines including metadata produce entries
+    assert.deepEqual(lineNumbers, [1, 2, 3, 4, 5]);
   });
 
   it('plain lines with no metadata have sequential 1-based line numbers', () => {
@@ -192,11 +198,11 @@ describe('parseFileContent() — lineNumbers', () => {
     assert.deepEqual(lineNumbers, [1, 2, 3]);
   });
 
-  it('gaps appear in line numbers when metadata lines are interspersed', () => {
+  it('metadata lines are included in line numbers', () => {
     const raw = 'Line 1\n<!-- lang: fi-FI -->\nLine 2';
     const { lineNumbers } = parseFileContent(raw);
-    // Line 1 is at raw pos 1, Line 2 is at raw pos 3 (metadata at pos 2 is skipped)
-    assert.deepEqual(lineNumbers, [1, 3]);
+    // All lines produce entries, including metadata
+    assert.deepEqual(lineNumbers, [1, 2, 3]);
   });
 });
 
@@ -236,17 +242,21 @@ describe('parseFileContent() — audio action metacode', () => {
   it('audio action inherits currentCodes but does not add to them', () => {
     const raw = '<!-- lang: fi-FI -->\n<!-- audio: start -->\nLine 1';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].audioCapture, 'start');
-    assert.equal(lineCodes[0].lang, 'fi-FI');   // inherits
-    assert.equal(lineCodes[1].audioCapture, undefined);
-    assert.equal(lineCodes[1].lang, 'fi-FI');   // lang persists normally
+    // index 0 = lang metadata line, index 1 = audio action line, index 2 = Line 1
+    assert.equal(lineCodes[1].audioCapture, 'start');
+    assert.equal(lineCodes[1].lang, 'fi-FI');   // inherits
+    assert.equal(lineCodes[2].audioCapture, undefined);
+    assert.equal(lineCodes[2].lang, 'fi-FI');   // lang persists normally
   });
 
   it('ignores unknown audio values (neither start nor stop)', () => {
-    // "pause" is not a valid audio action — treated as regular metadata
+    // "pause" is not a valid audio action — the comment is stripped but no action emitted
     const raw = '<!-- audio: pause -->\nLine 1';
     const { lines } = parseFileContent(raw);
-    assert.deepEqual(lines, ['Line 1']); // not added as an action line
+    // Unknown audio value → metadata-only line with empty content + Line 1
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '');
+    assert.equal(lines[1], 'Line 1');
   });
 });
 
@@ -255,12 +265,17 @@ describe('parseFileContent() — audio action metacode', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseFileContent() — multi-metacode lines', () => {
-  it('parses two codes on one line', () => {
+  it('parses two codes on one line — inline, stripped from text', () => {
     const raw = '<!-- section: Intro --><!-- speaker: Alice -->\nHello';
     const { lines, lineCodes } = parseFileContent(raw);
-    assert.deepEqual(lines, ['Hello']);
+    // Both metacodes on their own line → empty content entry + Hello
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '');  // metadata-only
+    assert.equal(lines[1], 'Hello');
     assert.equal(lineCodes[0].section, 'Intro');
     assert.equal(lineCodes[0].speaker, 'Alice');
+    assert.equal(lineCodes[1].section, 'Intro');   // persists
+    assert.equal(lineCodes[1].speaker, 'Alice');   // persists
   });
 
   it('parses three codes on one line', () => {
@@ -286,12 +301,16 @@ describe('parseFileContent() — multi-metacode lines', () => {
     const raw = '<!-- lang: en-US -->\nLine 1';
     const { lineCodes } = parseFileContent(raw);
     assert.equal(lineCodes[0].lang, 'en-US');
+    assert.equal(lineCodes[1].lang, 'en-US');
   });
 
-  it('multi-metacode line does not appear as a caption line', () => {
-    const raw = '<!-- section: S1 --><!-- speaker: Bob -->\nCaption';
-    const { lines } = parseFileContent(raw);
-    assert.deepEqual(lines, ['Caption']);
+  it('metacodes inline with content text are stripped', () => {
+    const raw = '<!-- section: S1 --><!-- speaker: Bob -->Caption';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Caption');
+    assert.equal(lineCodes[0].section, 'S1');
+    assert.equal(lineCodes[0].speaker, 'Bob');
   });
 });
 
@@ -324,19 +343,20 @@ describe('parseFileContent() — timer metacode', () => {
     const rawNeg = '<!-- timer: -1 -->\nLine 1';
     const result0 = parseFileContent(raw0);
     const resultNeg = parseFileContent(rawNeg);
-    // No action line should be created; only the text line
-    assert.equal(result0.lines.length, 1);
-    assert.equal(result0.lines[0], 'Line 1');
+    // Invalid timer values → metadata-only line with no timer code
+    assert.equal(result0.lines.length, 2);
+    assert.equal(result0.lines[1], 'Line 1');
     assert.equal(result0.lineCodes[0].timer, undefined);
-    assert.equal(resultNeg.lines.length, 1);
+    assert.equal(resultNeg.lines.length, 2);
     assert.equal(resultNeg.lineCodes[0].timer, undefined);
   });
 
   it('timer action inherits currentCodes', () => {
     const raw = '<!-- lang: fi-FI -->\n<!-- timer: 2 -->\nLine 1';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].timer, 2);
-    assert.equal(lineCodes[0].lang, 'fi-FI');
+    // index 0 = lang metadata, index 1 = timer action, index 2 = Line 1
+    assert.equal(lineCodes[1].timer, 2);
+    assert.equal(lineCodes[1].lang, 'fi-FI');
   });
 });
 
@@ -359,16 +379,20 @@ describe('parseFileContent() — goto metacode', () => {
   });
 
   it('ignores goto with zero or non-positive values', () => {
-    assert.deepEqual(parseFileContent('<!-- goto: 0 -->\nLine 1').lines, ['Line 1']);
+    const result = parseFileContent('<!-- goto: 0 -->\nLine 1');
+    assert.equal(result.lines.length, 2);
+    assert.equal(result.lines[1], 'Line 1');
+    assert.equal(result.lineCodes[0].goto, undefined); // invalid goto not set
   });
 
   it('goto action inherits currentCodes', () => {
     const raw = '<!-- section: Intro -->\n<!-- goto: 3 -->\nCaption';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].goto, 3);
-    assert.equal(lineCodes[0].section, 'Intro');
+    // index 0 = section metadata, index 1 = goto action, index 2 = Caption
+    assert.equal(lineCodes[1].goto, 3);
     assert.equal(lineCodes[1].section, 'Intro');
-    assert.equal(lineCodes[1].goto, undefined);
+    assert.equal(lineCodes[2].section, 'Intro');
+    assert.equal(lineCodes[2].goto, undefined);
   });
 });
 
@@ -411,10 +435,11 @@ describe('parseFileContent() — file metacode', () => {
   it('file action inherits currentCodes', () => {
     const raw = '<!-- section: Act1 -->\n<!-- file: part2.txt -->\nCaption';
     const { lineCodes } = parseFileContent(raw);
-    assert.equal(lineCodes[0].fileSwitch, 'part2.txt');
-    assert.equal(lineCodes[0].section, 'Act1');
+    // index 0 = section metadata, index 1 = file action, index 2 = Caption
+    assert.equal(lineCodes[1].fileSwitch, 'part2.txt');
     assert.equal(lineCodes[1].section, 'Act1');
-    assert.equal(lineCodes[1].fileSwitch, undefined);
+    assert.equal(lineCodes[2].section, 'Act1');
+    assert.equal(lineCodes[2].fileSwitch, undefined);
   });
 });
 
@@ -436,6 +461,62 @@ describe('parseFileContent() — combined action metacodes', () => {
     const { lineCodes } = parseFileContent(raw);
     assert.equal(lineCodes[0].goto, 3);
     assert.equal(lineCodes[0].timer, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// All metacodes inline — they coexist with content text on the same line
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — inline metacodes with content', () => {
+  it('timer inline with content: strips timer, keeps text', () => {
+    const raw = '<!-- timer: 5 -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].timer, 5);
+  });
+
+  it('section inline with content', () => {
+    const raw = '<!-- section: Prayer -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].section, 'Prayer');
+  });
+
+  it('goto inline with content', () => {
+    const raw = '<!-- goto: 10 -->Jump back';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Jump back');
+    assert.equal(lineCodes[0].goto, 10);
+  });
+
+  it('multiple metacodes + content on same line', () => {
+    const raw = '<!-- section: Prayer --><!-- cue:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Let us pray');
+    assert.equal(lineCodes[0].section, 'Prayer');
+    assert.equal(lineCodes[0].cue, 'Amen');
+  });
+
+  it('audio inline with content', () => {
+    const raw = '<!-- audio: start -->Recording begins';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Recording begins');
+    assert.equal(lineCodes[0].audioCapture, 'start');
+  });
+
+  it('content after metacode at end of line', () => {
+    const raw = 'Amen.<!-- cue:Amen --><!-- timer: 5 -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0], 'Amen.');
+    assert.equal(lineCodes[0].cue, 'Amen');
+    assert.equal(lineCodes[0].timer, 5);
   });
 });
 
@@ -467,12 +548,14 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lineCodes[2].cue, 'Hallelujah');
   });
 
-  it('ignores empty cue value', () => {
+  it('ignores empty cue value but still produces an entry', () => {
     const raw = '<!-- cue: -->\nLine 1';
-    const { lines } = parseFileContent(raw);
-    // Empty cue should not create an action entry; only Line 1
-    assert.equal(lines.length, 1);
-    assert.equal(lines[0], 'Line 1');
+    const { lines, lineCodes } = parseFileContent(raw);
+    // Empty cue produces a metadata-only entry (no cue code set)
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cue, undefined);
+    assert.equal(lines[1], 'Line 1');
   });
 
   it('cue combined with other persistent codes on same line', () => {
@@ -499,25 +582,24 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lineCodes[0].cue, 'Amen');
   });
 
-  it('cue with other metacodes and content on same line — non-cue metadata stays in text', () => {
-    // When non-cue metacodes are inline with content text, they remain in the text
-    // because the parser only strips cue metacodes inline. Other metadata should
-    // be placed on their own preceding line for proper processing.
+  it('cue with other metacodes and content on same line — all are stripped inline', () => {
+    // All metacodes are inline markers — stripped from content text
     const raw = '<!-- section: Closing --><!-- cue:Amen -->Let us pray';
-    const { lines, lineCodes } = parseFileContent(raw);
-    assert.equal(lines.length, 1);
-    // section comment stays in text (parser limitation for mixed lines)
-    assert.equal(lines[0], '<!-- section: Closing -->Let us pray');
-    assert.equal(lineCodes[0].cue, 'Amen');
-  });
-
-  it('cue with metadata on preceding line and content inline', () => {
-    const raw = '<!-- section: Closing -->\n<!-- cue:Amen -->Let us pray';
     const { lines, lineCodes } = parseFileContent(raw);
     assert.equal(lines.length, 1);
     assert.equal(lines[0], 'Let us pray');
     assert.equal(lineCodes[0].cue, 'Amen');
     assert.equal(lineCodes[0].section, 'Closing');
+  });
+
+  it('cue with metadata on preceding line and content inline', () => {
+    const raw = '<!-- section: Closing -->\n<!-- cue:Amen -->Let us pray';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines.length, 2);
+    assert.equal(lines[0], '');  // metadata-only line
+    assert.equal(lines[1], 'Let us pray');
+    assert.equal(lineCodes[1].cue, 'Amen');
+    assert.equal(lineCodes[1].section, 'Closing');
   });
 
   it('content lines without cue are unaffected', () => {

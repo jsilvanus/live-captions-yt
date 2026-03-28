@@ -1,29 +1,36 @@
 // Metacode-aware file parser extracted from fileUtils.js
 // Exports a single pure function: parseFileContent(rawText)
+//
+// ALL metacodes are inline markers — they can appear alongside content text
+// and other metacodes on the same line.  They are stripped from the line and
+// their key-value pairs are stored in lineCodes.  The remaining non-comment
+// text becomes the sendable caption content.
+//
+// Examples:
+//   <!-- section: Prayer --><!-- cue:Amen -->Let us pray.
+//     → content "Let us pray.", lineCodes { section: 'Prayer', cue: 'Amen' }
+//   <!-- timer: 5 -->
+//     → content "", lineCodes { timer: 5 }
 
 const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
 const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 
-// Cue metacodes are extracted and stripped BEFORE other processing because
-// they can coexist with content text and other metacodes on the same line.
-// E.g. `<!-- cue:Amen -->Let us pray` → content "Let us pray" with cue "Amen".
+// Cue metacodes use a dedicated regex so the phrase value is captured
+// separately from other metacode key-value pairs.
 const CUE_META_RE = /<!--\s*cue\s*:\s*([\s\S]*?)\s*-->/gi;
 
-function isMetadataOnlyLine(raw) {
-  let pos = 0;
-  while (pos < raw.length) {
-    if (raw[pos] === ' ' || raw[pos] === '\t' || raw[pos] === '\r') { pos++; continue; }
-    if (raw.startsWith('<!--', pos)) {
-      const end = raw.indexOf('-->', pos + 4);
-      if (end === -1) return false;
-      pos = end + 3;
-    } else {
-      return false;
-    }
-  }
-  return true;
+// Action metacode keys — these produce per-line action codes and do NOT
+// persist into currentCodes for subsequent lines.
+const ACTION_KEYS = new Set(['audio', 'timer', 'goto', 'file', 'file[server]']);
+
+/**
+ * Strip ALL HTML comment metacodes from a raw line and return the remaining
+ * text content.  A generic pass that removes every `<!-- ... -->` block.
+ */
+function stripAllComments(raw) {
+  return raw.replace(/<!--[\s\S]*?-->/g, '').trim();
 }
 
 export function parseFileContent(rawText) {
@@ -37,20 +44,15 @@ export function parseFileContent(rawText) {
     const raw = rawLines[i].trim();
     if (!raw) continue;
 
-    // Extract cue metacodes — they can appear alongside content and other
-    // metacodes on any line.  Strip them so the remaining text is the
-    // caption content (or remaining metadata).
-    // Only the first cue phrase is used; additional cues on the same line
-    // are stripped but ignored (one cue per line).
+    // --- Extract cue metacodes first (dedicated regex) ---
     CUE_META_RE.lastIndex = 0;
     let cuePhrase = null;
-    const effectiveRaw = raw.replace(CUE_META_RE, (_, val) => {
+    const afterCueStrip = raw.replace(CUE_META_RE, (_, val) => {
       const trimmed = val.trim();
       if (trimmed && !cuePhrase) cuePhrase = trimmed;
       return '';
     }).trim();
-    // If no cue was found, use the original raw text
-    const lineRaw = cuePhrase != null ? effectiveRaw : raw;
+    const lineRaw = cuePhrase != null ? afterCueStrip : raw;
 
     if (STANZA_OPEN_RE.test(lineRaw)) {
       const stanzaLines = [];
@@ -66,66 +68,77 @@ export function parseFileContent(rawText) {
       } else {
         delete currentCodes.stanza;
       }
-    } else {
-      const emptySendMatch = lineRaw.match(EMPTY_SEND_RE);
-      if (emptySendMatch) {
-        const label = emptySendMatch[1]?.trim() || null;
-        const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
-        if (cuePhrase) codes.cue = cuePhrase;
-        lines.push('');
-        lineCodes.push(codes);
-        lineNumbers.push(i + 1);
-      } else if (isMetadataOnlyLine(lineRaw)) {
-        let audioAction = null;
-        let timerAction = null;
-        let gotoAction = null;
-        let fileSwitchAction = null;
-        let fileSwitchServerAction = null;
-        for (const m of lineRaw.matchAll(MULTI_META_RE)) {
-          const key = m[1].toLowerCase();
-          const value = m[2].trim();
-          if (key === 'audio' && (value === 'start' || value === 'stop')) {
-            audioAction = value;
-          } else if (key === 'timer') {
-            const secs = parseFloat(value);
-            if (!isNaN(secs) && secs > 0) timerAction = secs;
-          } else if (key === 'goto') {
-            const lineN = parseInt(value, 10);
-            if (!isNaN(lineN) && lineN > 0) gotoAction = lineN;
-          } else if (key === 'file') {
-            if (value !== '') fileSwitchAction = value;
-          } else if (key === 'file[server]') {
-            if (value !== '') fileSwitchServerAction = value;
-          } else if (value === '') {
-            delete currentCodes[key];
-          } else {
-            let parsed = value;
-            if (BOOLEAN_CODES.includes(key)) {
-              parsed = value.toLowerCase() === 'true';
-            }
-            currentCodes[key] = parsed;
-          }
-        }
-        const hasAction = audioAction || timerAction !== null || gotoAction !== null || fileSwitchAction !== null || fileSwitchServerAction !== null;
-        if (hasAction || cuePhrase) {
-          const actionCodes = { ...currentCodes };
-          if (audioAction) actionCodes.audioCapture = audioAction;
-          if (timerAction !== null) actionCodes.timer = timerAction;
-          if (gotoAction !== null) actionCodes.goto = gotoAction;
-          if (fileSwitchAction !== null) actionCodes.fileSwitch = fileSwitchAction;
-          if (fileSwitchServerAction !== null) actionCodes.fileSwitchServer = fileSwitchServerAction;
-          if (cuePhrase) actionCodes.cue = cuePhrase;
-          lines.push('');
-          lineCodes.push(actionCodes);
-          lineNumbers.push(i + 1);
-        }
+      continue;
+    }
+
+    const emptySendMatch = lineRaw.match(EMPTY_SEND_RE);
+    if (emptySendMatch) {
+      const label = emptySendMatch[1]?.trim() || null;
+      const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
+      if (cuePhrase) codes.cue = cuePhrase;
+      lines.push('');
+      lineCodes.push(codes);
+      lineNumbers.push(i + 1);
+      continue;
+    }
+
+    // --- Extract ALL metacode comments inline ---
+    // Process key-value pairs from every `<!-- key: value -->` on the line.
+    let audioAction = null;
+    let timerAction = null;
+    let gotoAction = null;
+    let fileSwitchAction = null;
+    let fileSwitchServerAction = null;
+
+    MULTI_META_RE.lastIndex = 0;
+    for (const m of lineRaw.matchAll(MULTI_META_RE)) {
+      const key = m[1].toLowerCase();
+      const value = m[2].trim();
+      if (key === 'cue') continue; // already handled above
+      if (key === 'audio' && (value === 'start' || value === 'stop')) {
+        audioAction = value;
+      } else if (key === 'timer') {
+        const secs = parseFloat(value);
+        if (!isNaN(secs) && secs > 0) timerAction = secs;
+      } else if (key === 'goto') {
+        const lineN = parseInt(value, 10);
+        if (!isNaN(lineN) && lineN > 0) gotoAction = lineN;
+      } else if (key === 'file') {
+        if (value !== '') fileSwitchAction = value;
+      } else if (key === 'file[server]') {
+        if (value !== '') fileSwitchServerAction = value;
+      } else if (value === '') {
+        delete currentCodes[key];
       } else {
-        const codes = { ...currentCodes };
-        if (cuePhrase) codes.cue = cuePhrase;
-        lines.push(lineRaw);
-        lineCodes.push(codes);
-        lineNumbers.push(i + 1);
+        let parsed = value;
+        if (BOOLEAN_CODES.includes(key)) {
+          parsed = value.toLowerCase() === 'true';
+        }
+        currentCodes[key] = parsed;
       }
+    }
+
+    // Strip all comment metacodes to get the remaining content text
+    const contentText = stripAllComments(lineRaw);
+
+    // Build the codes object for this line
+    const codes = { ...currentCodes };
+    if (audioAction) codes.audioCapture = audioAction;
+    if (timerAction !== null) codes.timer = timerAction;
+    if (gotoAction !== null) codes.goto = gotoAction;
+    if (fileSwitchAction !== null) codes.fileSwitch = fileSwitchAction;
+    if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
+    if (cuePhrase) codes.cue = cuePhrase;
+
+    // Did the line contain any HTML comments? (even if they parsed to nothing)
+    const hadComments = contentText !== lineRaw || cuePhrase != null;
+
+    // Always emit the line — content lines, metadata-only lines, and lines
+    // whose comments were stripped all produce entries in the output.
+    if (contentText || hadComments) {
+      lines.push(contentText);
+      lineCodes.push(codes);
+      lineNumbers.push(i + 1);
     }
   }
 

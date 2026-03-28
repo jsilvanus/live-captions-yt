@@ -31,15 +31,26 @@ describe('metacode-runtime drainActions()', () => {
     assert.equal(res.pointer, 2); // index of 'Line 1'
   });
 
-  it('handles audioCapture by advancing pointer', async () => {
+  it('handles audioCapture on empty line by advancing pointer', async () => {
     const file = makeFile(['', '', 'Line A'], [{}, { audioCapture: 'start' }, {}], [1,2,3]);
     const store = makeFileStore([file]);
     const timerRef = { current: null };
     const handleSendRef = { current: null };
     const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
-    // audioCapture should be skipped and we should land on the 'Line A' index
+    // audioCapture on empty line should be skipped → land on 'Line A'
     assert.equal(res.status, 'continue');
     assert.equal(res.pointer, 2);
+  });
+
+  it('audioCapture with content stops at that line', async () => {
+    const file = makeFile(['Recording begins', 'Line 2'], [{ audioCapture: 'start' }, {}], [1,2]);
+    const store = makeFileStore([file]);
+    const timerRef = { current: null };
+    const handleSendRef = { current: null };
+    const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
+    // audioCapture with content → dispatch event and stop here
+    assert.equal(res.status, 'continue');
+    assert.equal(res.pointer, 0);
   });
 
   it('returns done when pointer past end', async () => {
@@ -50,6 +61,29 @@ describe('metacode-runtime drainActions()', () => {
     const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
     // single empty-send then done (pointer at last index)
     assert.equal(res.status, 'done');
+  });
+
+  it('timer fires current line — returns stop with pointer at timer line', async () => {
+    const file = makeFile(['Let us pray', 'Next line'], [{ timer: 5 }, {}], [1, 2]);
+    const store = makeFileStore([file]);
+    const timerRef = { current: null };
+    const handleSendRef = { current: () => {} };
+    const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
+    assert.equal(res.status, 'stop');
+    assert.equal(res.pointer, 0); // stays at timer line (fires current)
+    assert.ok(timerRef.current); // timer was set
+    clearTimeout(timerRef.current);
+  });
+
+  it('timer on empty line fires current line position', async () => {
+    const file = makeFile(['', 'Content'], [{ timer: 3 }, {}], [1, 2]);
+    const store = makeFileStore([file]);
+    const timerRef = { current: null };
+    const handleSendRef = { current: () => {} };
+    const res = await drainActions({ file, startPtr: 0, fileStore: store, timerRef, handleSendRef, showToast: () => {}, session: {} });
+    assert.equal(res.status, 'stop');
+    assert.equal(res.pointer, 0);
+    clearTimeout(timerRef.current);
   });
 
   it('skips standalone cue lines (empty text) and continues to next content', async () => {
