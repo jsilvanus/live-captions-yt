@@ -107,8 +107,12 @@ export function buildCueMap(file) {
 }
 
 /**
- * Check if caption text contains any registered cue phrase.
+ * Check if caption text matches any registered cue phrase.
  * Returns the first match (phrase + target line index) or null.
+ *
+ * Supports glob-style wildcards: `*` in a cue phrase matches any characters.
+ * E.g. `Let us *` matches "Let us pray", "Let us go", etc.
+ * Without `*`, the phrase is matched as a substring (case-insensitive).
  *
  * @param {Map<string, number>} cueMap — from buildCueMap()
  * @param {string} text — caption text to test
@@ -118,7 +122,15 @@ export function checkCueMatch(cueMap, text) {
   if (!text || !cueMap || cueMap.size === 0) return null;
   const lower = text.toLowerCase();
   for (const [phrase, index] of cueMap) {
-    if (lower.includes(phrase)) return { phrase, index };
+    if (phrase.includes('*')) {
+      // Glob pattern: escape regex chars, convert * to .*
+      const escaped = phrase.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      try {
+        if (new RegExp(escaped).test(lower)) return { phrase, index };
+      } catch { /* invalid pattern — skip */ }
+    } else {
+      if (lower.includes(phrase)) return { phrase, index };
+    }
   }
   return null;
 }

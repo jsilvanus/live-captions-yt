@@ -148,4 +148,44 @@ describe('checkCueMatch()', () => {
     assert.equal(result.phrase, 'amen');
     assert.equal(result.index, 2);
   });
+
+  // Wildcard / asterisk tests
+  it('matches glob wildcard: trailing *', () => {
+    const map = new Map([['let us *', 4]]);
+    const result = checkCueMatch(map, 'Let us pray together');
+    assert.ok(result);
+    assert.equal(result.phrase, 'let us *');
+    assert.equal(result.index, 4);
+  });
+
+  it('matches glob wildcard: leading *', () => {
+    const map = new Map([['* amen', 2]]);
+    const result = checkCueMatch(map, 'they said amen');
+    assert.ok(result);
+    assert.equal(result.index, 2);
+  });
+
+  it('matches glob wildcard: middle *', () => {
+    const map = new Map([['let * pray', 1]]);
+    const result = checkCueMatch(map, 'Let us pray');
+    assert.ok(result);
+    assert.equal(result.index, 1);
+  });
+
+  it('wildcard * at both ends matches any containing text', () => {
+    const map = new Map([['*grace*', 0]]);
+    const result = checkCueMatch(map, 'By the grace of God');
+    assert.ok(result);
+  });
+
+  it('returns null when wildcard pattern does not match', () => {
+    const map = new Map([['let us *', 0]]);
+    assert.equal(checkCueMatch(map, 'Hello world'), null);
+  });
+
+  it('escapes regex special chars in wildcard phrases', () => {
+    const map = new Map([['price is $*', 0]]);
+    const result = checkCueMatch(map, 'The price is $100');
+    assert.ok(result);
+  });
 });
