@@ -1,42 +1,71 @@
-import test from 'node:test';
-import assert from 'node:assert';
-import express from 'express';
+import assert from 'assert';
 import http from 'http';
+import express from 'express';
+import fetch from 'node-fetch';
 import { createPreviewRouter } from '../src/routes/preview.js';
 
-function startApp(app) {
+async function startApp(previewManager) {
+  const app = express();
+  app.use(createPreviewRouter(previewManager));
   return new Promise((resolve) => {
-    const srv = http.createServer(app);
-    srv.listen(0, () => {
-      const addr = srv.address();
-      resolve({ srv, url: `http://127.0.0.1:${addr.port}` });
-    });
+    const srv = app.listen(0, () => resolve({ app, srv }));
   });
 }
 
-test('preview route returns provider content-type (image/webp) for buffer response', async () => {
+function bufferToStream(buf) {
+  const { Readable } = require('stream');
+  return Readable.from(buf);
+}
+
+export async function testBufferResponse() {
   const previewManager = {
-    async fetchThumbnail(key) {
-      const buf = Buffer.from([0x00,0x01,0x02]);
-      return { headers: { 'content-type': 'image/webp', 'content-length': String(buf.length) }, body: buf };
-    }
+    async fetchThumbnail() {
+      return { headers: { 'Content-Type': 'image/webp' }, body: Buffer.from('hello') };
+    },
+    async fetchWebRtcInfo() { return { ok: true }; }
   };
+  const { srv } = await startApp(previewManager);
+  const port = srv.address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/preview/key1/incoming`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get('content-type'), 'image/webp');
+  const b = await res.arrayBuffer();
+  assert.ok(b.byteLength > 0);
+  srv.close();
+}
 
-  const app = express();
-  app.use('/preview', createPreviewRouter(previewManager));
+export async function testStreamResponse() {
+  const previewManager = {
+    async fetchThumbnail() {
+      return { headers: { 'Content-Type': 'image/png' }, body: bufferToStream(Buffer.from('stream')) };
+    },
+    async fetchWebRtcInfo() { return { ok: true }; }
+  };
+  const { srv } = await startApp(previewManager);
+  const port = srv.address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/preview/key2/incoming.jpg`);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get('content-type'), 'image/png');
+  const b = await res.arrayBuffer();
+  assert.ok(b.byteLength > 0);
+  srv.close();
+}
 
-  const { srv, url } = await startApp(app);
-  try {
-    const res = await new Promise((resolve, reject) => {
-      http.get(`${url}/preview/testkey/incoming`, (r) => resolve(r)).on('error', reject);
-    });
+export async function testOptionsPreflight() {
+  const previewManager = { async fetchThumbnail() { return null; }, async fetchWebRtcInfo() { return null; } };
+  const { srv } = await startApp(previewManager);
+  const port = srv.address().port;
+  const res = await fetch(`http://127.0.0.1:${port}/preview/key3/incoming`, { method: 'OPTIONS' });
+  assert.strictEqual(res.status, 204);
+  srv.close();
+}
 
-    assert.strictEqual(res.headers['content-type'], 'image/webp');
-    const chunks = [];
-    for await (const chunk of res) chunks.push(chunk);
-    const body = Buffer.concat(chunks);
-    assert.ok(body.length >= 1);
-  } finally {
-    srv.close();
-  }
-});
+if (import.meta.url === `file://${process.argv[1]}`) {
+  (async () => {
+    await testBufferResponse();
+    await testStreamResponse();
+    await testOptionsPreflight();
+    console.log('ok');
+  })().catch(err => { console.error(err); process.exit(1); });
+}
+
