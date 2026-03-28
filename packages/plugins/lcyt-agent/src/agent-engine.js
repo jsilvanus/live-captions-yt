@@ -212,11 +212,16 @@ export class AgentEngine {
     try {
       const result = await this._callChatCompletion(apiSettings, systemPrompt, userPrompt);
 
-      // Parse LLM response
+      // Parse LLM response — extract JSON object robustly
       let parsed;
       try {
-        // Extract JSON from the response (handle markdown code blocks)
-        const jsonStr = result.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+        // Strip markdown code blocks, then find the outermost { ... } object
+        const stripped = result.replace(/```json?\s*/g, '').replace(/```/g, '').trim();
+        const firstBrace = stripped.indexOf('{');
+        const lastBrace = stripped.lastIndexOf('}');
+        const jsonStr = firstBrace >= 0 && lastBrace > firstBrace
+          ? stripped.slice(firstBrace, lastBrace + 1)
+          : stripped;
         parsed = JSON.parse(jsonStr);
       } catch {
         return { matched: false, confidence: 0, reasoning: `Failed to parse LLM response: ${result.slice(0, 100)}` };
@@ -272,7 +277,9 @@ export class AgentEngine {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
+      // Low temperature for deterministic event detection (not creative)
       temperature: 0.1,
+      // Short response — only need a JSON object with matched/confidence/reasoning
       max_tokens: 200,
     });
 
