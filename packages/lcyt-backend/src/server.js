@@ -17,6 +17,7 @@ import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
+import { initCueEngine, createCueProcessor, createCueRouter } from 'lcyt-cues';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -155,6 +156,12 @@ const { storage, resolveStorage, invalidateStorageCache } = await initFilesContr
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
 await initMusicControl(db);
 const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
+
+// Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.
+// The processor strips <!-- cue:... --> metacodes and evaluates phrase/regex/section
+// rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
+const { engine: _cueEngine } = await initCueEngine(db);
+const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
@@ -321,7 +328,7 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, resolveStorage }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
@@ -329,6 +336,7 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
+app.use('/cues', createCueRouter(db, auth, _cueEngine));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

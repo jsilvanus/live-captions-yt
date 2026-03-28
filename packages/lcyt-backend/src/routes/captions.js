@@ -18,9 +18,10 @@ import { writeToBackendFile } from 'lcyt-files';
  * @param {object} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager|null} [relayManager]
  * @param {Function|null} [soundProcessor]
+ * @param {Function|null} [cueProcessor]
  * @returns {Router}
  */
-export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null, resolveStorage = null, soundProcessor = null) {
+export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null, resolveStorage = null, soundProcessor = null, cueProcessor = null) {
   const router = Router();
 
   // POST /captions — Send captions (auth required)
@@ -81,7 +82,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
       let result;
       try {
         // Apply core backend metacode processors in the canonical order.
-        await applyMetacodeProcessors(session, resolvedCaptions, dskProcessor, soundProcessor);
+        await applyMetacodeProcessors(session, resolvedCaptions, dskProcessor, soundProcessor, cueProcessor);
 
         // For each caption, compose text from translations and write backend files
         const sendCaptions = resolvedCaptions.map(caption => {
