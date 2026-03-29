@@ -11,6 +11,7 @@ import { createSessionRouters } from './routes/session.js';
 import { createAccountRouters } from './routes/account.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
+import { createAdminRouter } from './routes/admin.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
@@ -309,6 +310,7 @@ app.get('/health', (req, res) => {
   // Build feature list based on enabled capabilities
   const features = ['captions', 'sync'];
   if (loginEnabled) features.push('login');
+  if (process.env.ADMIN_KEY) features.push('admin');
   if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
   if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
   if (sttManager) features.push('stt');
@@ -353,6 +355,7 @@ app.get('/contact', (req, res) => {
 
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
+app.use('/admin', createAdminRouter(db));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);

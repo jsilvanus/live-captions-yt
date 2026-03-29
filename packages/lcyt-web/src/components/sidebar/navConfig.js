@@ -29,6 +29,16 @@ export const NAV_GROUPS = [
       { id: 'prod-devices',  label: 'Devices',  path: '/production/devices' },
     ],
   },
+  {
+    id: 'admin',
+    icon: '🛡️',
+    label: 'Admin',
+    feature: 'admin',
+    items: [
+      { id: 'admin-users',    label: 'Users',    path: '/admin/users' },
+      { id: 'admin-projects', label: 'Projects', path: '/admin/projects' },
+    ],
+  },
 ];
 
 export const NAV_BOTTOM = [
