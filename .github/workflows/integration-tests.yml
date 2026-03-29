@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Tests
 
 on:
   push:
@@ -7,23 +7,58 @@ on:
     branches: [ main ]
 
 jobs:
-  integration:
+  test:
+    name: Test ${{ matrix.package }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
+      fail-fast: false
       matrix:
-        node: [20]
-    timeout-minutes: 30
+        package:
+          - packages/lcyt
+          - packages/lcyt-cli
+          - packages/lcyt-backend
+          - packages/lcyt-web
+          - packages/lcyt-bridge
+          - packages/lcyt-mcp-stdio
+          - packages/lcyt-mcp-sse
+          - packages/plugins/lcyt-agent
+          - packages/plugins/lcyt-cues
+          - packages/plugins/lcyt-dsk
+          - packages/plugins/lcyt-files
+          - packages/plugins/lcyt-music
+          - packages/plugins/lcyt-production
+          - packages/plugins/lcyt-rtmp
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
-      - name: Install
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
         run: npm ci
-      - name: Run bridge integration test
-        run: node --test packages/lcyt-backend/test/bridge-integration.test.js
+      - name: Run tests
+        run: npm test -w ${{ matrix.package }}
         env:
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret
           ADMIN_KEY: test-admin-key
+
+  component-tests:
+    name: Web Component Tests (Vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Vitest component tests
+        run: npm run test:components -w packages/lcyt-web
+        env:
+          NODE_ENV: test
