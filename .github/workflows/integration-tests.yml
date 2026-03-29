@@ -10,17 +10,17 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: Test ${{ matrix.package }}
+  # ── Tier 1: Unit tests (fast, no external deps) ──────────────────────
+  unit-node:
+    name: "Unit: ${{ matrix.package }}"
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         package:
           - packages/lcyt
           - packages/lcyt-cli
-          - packages/lcyt-backend
           - packages/lcyt-web
           - packages/lcyt-bridge
           - packages/lcyt-mcp-stdio
@@ -34,33 +34,94 @@ jobs:
           - packages/plugins/lcyt-rtmp
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - name: Install dependencies
-        run: npm ci
-      - name: Run tests
+      - run: npm ci
+      - name: Run unit tests
         run: npm test -w ${{ matrix.package }}
+        env:
+          NODE_ENV: test
+
+  unit-python:
+    name: "Unit: python ${{ matrix.package }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: python-packages/lcyt
+            install: pip install pytest -e .
+            cmd: pytest tests/ -v
+          - package: python-packages/lcyt-mcp
+            install: pip install pytest pytest-asyncio mcp httpx -e ../lcyt
+            cmd: PYTHONPATH=. pytest tests/ -v
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        working-directory: ${{ matrix.package }}
+        run: ${{ matrix.install }}
+      - name: Run unit tests
+        working-directory: ${{ matrix.package }}
+        run: ${{ matrix.cmd }}
+
+  # ── Tier 2: Integration tests (real servers / DBs, after unit) ───────
+  integration-node:
+    name: "Integration: lcyt-backend"
+    needs: unit-node
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run backend tests
+        run: npm test -w packages/lcyt-backend
         env:
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret
           ADMIN_KEY: test-admin-key
 
+  integration-python:
+    name: "Integration: python lcyt-backend"
+    needs: unit-python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        working-directory: python-packages/lcyt-backend
+        run: pip install -e ../lcyt -e ".[dev]"
+      - name: Run integration tests
+        working-directory: python-packages/lcyt-backend
+        run: pytest tests/ -v
+
+  # ── Tier 2: Component tests (React DOM, after unit) ──────────────────
   component-tests:
-    name: Web Component Tests (Vitest)
+    name: "Component: lcyt-web (Vitest)"
+    needs: unit-node
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - name: Install dependencies
-        run: npm ci
+      - run: npm ci
       - name: Run Vitest component tests
         run: npm run test:components -w packages/lcyt-web
         env:
