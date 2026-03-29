@@ -10,9 +10,33 @@ permissions:
   contents: read
 
 jobs:
-  # ── Tier 1: Unit tests (fast, no external deps) ──────────────────────
+  # ── Tier 1: Build verification (fastest signal — broken imports) ────
+  build:
+    name: "Build: ${{ matrix.name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lcyt CJS
+            cmd: npm run build -w packages/lcyt
+          - name: lcyt-web Vite
+            cmd: npm run build -w packages/lcyt-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: ${{ matrix.cmd }}
+
+  # ── Tier 2: Unit tests (after build passes) ─────────────────────────
   unit-node:
     name: "Unit: ${{ matrix.package }}"
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -46,6 +70,7 @@ jobs:
 
   unit-python:
     name: "Unit: python ${{ matrix.package }}"
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -71,10 +96,37 @@ jobs:
         working-directory: ${{ matrix.package }}
         run: ${{ matrix.cmd }}
 
-  # ── Tier 2: Integration tests (real servers / DBs, after unit) ───────
+  standalone-tests:
+    name: "Unit: ${{ matrix.name }}"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lcyt-orchestrator
+            dir: packages/lcyt-orchestrator
+          - name: lcyt-worker-daemon
+            dir: packages/lcyt-worker-daemon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: ${{ matrix.dir }}
+        run: npm install --ignore-scripts
+      - name: Run tests
+        working-directory: ${{ matrix.dir }}
+        run: npm test
+        env:
+          NODE_ENV: test
+
+  # ── Tier 3: Integration, component, Docker (after unit passes) ──────
   integration-node:
     name: "Integration: lcyt-backend"
-    needs: unit-node
+    needs: [unit-node, unit-python, standalone-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -109,10 +161,9 @@ jobs:
         working-directory: python-packages/lcyt-backend
         run: pytest tests/ -v
 
-  # ── Tier 2: Component tests (React DOM, after unit) ──────────────────
   component-tests:
     name: "Component: lcyt-web (Vitest)"
-    needs: unit-node
+    needs: [unit-node, standalone-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -127,60 +178,9 @@ jobs:
         env:
           NODE_ENV: test
 
-  # ── Tier 2: Build verification (after unit) ─────────────────────────
-  build:
-    name: "Build: ${{ matrix.name }}"
-    needs: unit-node
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: lcyt CJS
-            cmd: npm run build -w packages/lcyt
-          - name: lcyt-web Vite
-            cmd: npm run build -w packages/lcyt-web
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - name: Build
-        run: ${{ matrix.cmd }}
-
-  # ── Tier 1: Non-workspace package tests (parallel with unit) ───────
-  standalone-tests:
-    name: "Standalone: ${{ matrix.name }}"
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: lcyt-orchestrator
-            dir: packages/lcyt-orchestrator
-          - name: lcyt-worker-daemon
-            dir: packages/lcyt-worker-daemon
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install dependencies
-        working-directory: ${{ matrix.dir }}
-        run: npm install --ignore-scripts
-      - name: Run tests
-        working-directory: ${{ matrix.dir }}
-        run: npm test
-        env:
-          NODE_ENV: test
-
-  # ── Tier 1: Docker & infrastructure validation (parallel with unit) ─
   docker-lint:
     name: "Docker: lint & config"
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -207,7 +207,7 @@ jobs:
 
   docker-build:
     name: "Docker: build ${{ matrix.image }}"
-    needs: docker-lint
+    needs: [docker-lint, unit-node, unit-python, standalone-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -235,9 +235,9 @@ jobs:
           --tag ${{ matrix.image }}:ci
           ${{ matrix.context }}
 
-  # ── Tier 1: Script & shell validation (parallel with unit) ──────────
   script-lint:
     name: "Scripts: shellcheck & syntax"
+    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -259,3 +259,38 @@ jobs:
         with:
           scandir: ci
           severity: error
+
+  # ── Tier 4: E2E tests (after integration passes) ───────────────────
+  # Placeholder for future end-to-end tests.
+  # Plan: start lcyt-backend in CI, run Playwright against lcyt-web.
+  # Could also run in a GitHub Codespace for a full environment with
+  # Docker services (nginx-rtmp, MediaMTX) if the standard runner is
+  # too limited.
+  #
+  # e2e:
+  #   name: "E2E: Playwright"
+  #   needs: [integration-node, component-tests]
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: npm
+  #     - run: npm ci
+  #     - run: npx playwright install --with-deps chromium
+  #     - name: Start backend
+  #       run: |
+  #         npm run build -w packages/lcyt
+  #         npm run build -w packages/lcyt-web
+  #         node packages/lcyt-backend/src/index.js &
+  #       env:
+  #         JWT_SECRET: test-jwt-secret
+  #         ADMIN_KEY: test-admin-key
+  #         PORT: 3000
+  #         STATIC_DIR: packages/lcyt-web/dist
+  #     - name: Run E2E tests
+  #       run: npx playwright test
+  #       env:
+  #         BASE_URL: http://localhost:3000
