@@ -126,3 +126,85 @@ jobs:
         run: npm run test:components -w packages/lcyt-web
         env:
           NODE_ENV: test
+
+  # ── Tier 1: Docker & infrastructure validation (parallel with unit) ─
+  docker-lint:
+    name: "Docker: lint & config"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Docker Compose configs
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.orchestrator.yml config --quiet
+        env:
+          JWT_SECRET: ci-placeholder
+          BACKEND_INTERNAL_TOKEN: ci-placeholder
+
+      - name: Lint Dockerfiles with hadolint
+        run: |
+          wget -qO hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x hadolint
+          ./hadolint --failure-threshold error \
+            Dockerfile \
+            docker/lcyt-ffmpeg/Dockerfile \
+            docker/lcyt-dsk-renderer/Dockerfile \
+            packages/lcyt-mcp-sse/Dockerfile \
+            packages/lcyt-mcp-stdio/Dockerfile
+
+  docker-build:
+    name: "Docker: build ${{ matrix.image }}"
+    needs: docker-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: lcyt-site
+            context: .
+            file: Dockerfile
+          - image: lcyt-ffmpeg
+            context: docker/lcyt-ffmpeg
+            file: docker/lcyt-ffmpeg/Dockerfile
+          - image: lcyt-mcp-sse
+            context: .
+            file: packages/lcyt-mcp-sse/Dockerfile
+          - image: lcyt-mcp-stdio
+            context: .
+            file: packages/lcyt-mcp-stdio/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: >
+          docker build
+          --file ${{ matrix.file }}
+          --tag ${{ matrix.image }}:ci
+          ${{ matrix.context }}
+
+  # ── Tier 1: Script & shell validation (parallel with unit) ──────────
+  script-lint:
+    name: "Scripts: shellcheck & syntax"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check shell scripts
+        run: |
+          bash -n scripts/deploy.sh
+          bash -n scripts/entrypoint.sh
+          bash -n ci/test-docker.sh
+
+      - name: Shellcheck scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: scripts
+          severity: error
+      - name: Shellcheck CI helpers
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ci
+          severity: error
