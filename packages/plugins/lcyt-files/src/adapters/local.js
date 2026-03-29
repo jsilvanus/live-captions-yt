@@ -9,8 +9,8 @@ import * as fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { promisify } from 'node:util';
 
-const unlinkAsync   = promisify(unlink);
-const writeFileAsync = promisify(writeFile);
+const unlinkAsync   = promisify(fs.unlink);
+const writeFileAsync = promisify(fs.writeFile);
 
 /**
  * Create a local filesystem storage adapter.
