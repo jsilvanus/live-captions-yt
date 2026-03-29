@@ -9,8 +9,8 @@ on:
 permissions:
   contents: read
 
+# ── Tier 1: Build verification (fastest signal — broken imports) ────
 jobs:
-  # ── Tier 1: Build verification (fastest signal — broken imports) ────
   build:
     name: "Build: ${{ matrix.name }}"
     runs-on: ubuntu-latest
