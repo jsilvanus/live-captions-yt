@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react';
-import { AppProviders } from '../../src/contexts/AppProviders.jsx';
+import { AppProviders } from '../../src/contexts/AppProviders';
 
 // Lightweight render helper kept intentionally minimal. Tests which require
 // specific providers (SessionContext, CaptionContext, AudioProvider, etc.)

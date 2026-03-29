@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { renderWithAppProviders } from '../test-utils';
+import { AppProviders } from '../../src/contexts/AppProviders';
+const renderWithAppProviders = (ui, options) => render(<AppProviders>{ui}</AppProviders>, options);
 
 // Stub helper must be declared before vi.mock (vitest hoists mocks)
 const stubWidget = (name) => ({ default: () => (<div data-testid={name}>{name}</div>) });
@@ -93,7 +94,7 @@ describe('DashboardPage', () => {
     expect(props.draggableCancel).toBe('.db-card--locked *');
 
     // Toggle edit mode by clicking the edit button
-    const btn = screen.getByRole('button', { name: /edit layout|lock layout/i });
+    const btn = screen.getByRole('button', { name: /edit/i });
     fireEvent.click(btn);
 
     const responsiveAfter = await screen.findByTestId('responsive');

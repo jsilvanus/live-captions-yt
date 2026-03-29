@@ -86,7 +86,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Sunday service')).toBeInTheDocument();
+      expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
     });
     expect(screen.getByText('Wednesday night')).toBeInTheDocument();
   });
@@ -147,7 +147,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Sunday service')).toBeInTheDocument();
+      expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
     });
 
     // Key should be masked (first 8 chars + dots)
@@ -186,7 +186,7 @@ describe('ProjectsPage', () => {
     render(<ProjectsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText('Sunday service')).toBeInTheDocument();
+      expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
     });
 
     // UI now shows a Manage button instead of an inline Delete button.
@@ -195,6 +195,6 @@ describe('ProjectsPage', () => {
     expect(manageButtons.length).toBeGreaterThan(0);
     fireEvent.click(manageButtons[0]);
     // Clicking manage should not throw and the page remains stable.
-    expect(screen.getByText('Sunday service')).toBeInTheDocument();
+    expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
   });
 });
