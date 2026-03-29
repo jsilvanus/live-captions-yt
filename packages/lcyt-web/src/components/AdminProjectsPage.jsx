@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
+import { useUserAuth } from '../hooks/useUserAuth';
 import { adminFetch } from '../lib/admin.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
 
@@ -9,10 +10,11 @@ import { AdminKeyGate } from './AdminKeyGate.jsx';
 export function AdminProjectsPage() {
   const session = useSessionContext();
   const backendUrl = session.backendUrl;
+  const { user } = useUserAuth();
   const [, navigate] = useLocation();
 
   return (
-    <AdminKeyGate backendUrl={backendUrl}>
+    <AdminKeyGate backendUrl={backendUrl} userIsAdmin={!!user?.isAdmin}>
       <AdminProjectsContent backendUrl={backendUrl} navigate={navigate} />
     </AdminKeyGate>
   );

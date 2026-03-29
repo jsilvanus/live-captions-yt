@@ -340,7 +340,9 @@ app.get('/health', (req, res) => {
   // Build feature list based on enabled capabilities
   const features = ['captions', 'sync'];
   if (loginEnabled) features.push('login');
-  if (process.env.ADMIN_KEY) features.push('admin');
+  // Admin panel is available if: user-based logins are enabled (any admin user can use it)
+  // or the legacy ADMIN_KEY env var is set.
+  if (loginEnabled || process.env.ADMIN_KEY) features.push('admin');
   if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
   if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
   if (sttManager) features.push('stt');
@@ -385,7 +387,7 @@ app.get('/contact', (req, res) => {
 
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
-app.use('/admin', createAdminRouter(db));
+app.use('/admin', createAdminRouter(db, jwtSecret));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
