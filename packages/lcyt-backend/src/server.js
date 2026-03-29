@@ -348,6 +348,7 @@ app.get('/health', (req, res) => {
   if (sttManager) features.push('stt');
   features.push('files', 'viewer', 'production', 'ai', 'cues', 'agent');
 
+  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
   res.status(200).json({
     ok: true,
     uptime: Math.floor(process.uptime()),

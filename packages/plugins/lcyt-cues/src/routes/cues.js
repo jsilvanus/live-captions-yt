@@ -50,6 +50,7 @@ export function createCueRouter(db, auth, engine) {
       ...r,
       action: (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(),
     }));
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ rules: parsed });
   });
 
@@ -166,6 +167,7 @@ export function createCueRouter(db, auth, engine) {
       ...e,
       action: (() => { try { return JSON.parse(e.action); } catch { logger.warn(`[cues] Malformed action JSON for event ${e.id}`); return {}; } })(),
     }));
+    res.set('Cache-Control', 'private, max-age=15');
     return res.json({ events: parsed });
   });
 

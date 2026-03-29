@@ -173,7 +173,7 @@ export function createIconRouter(db, auth, store, baseDir) {
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', row.mime_type);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Content-Length', row.size_bytes);
     createReadStream(filepath).pipe(res);
   });

@@ -149,13 +149,14 @@ describe('NginxManager._buildConfig()', () => {
     }
   });
 
-  test('multiple streams produce multiple location blocks', async () => {
+  test('multiple streams produce multiple location blocks (3 per stream: playlist, segment, fallback)', async () => {
     const mgr = new NginxManager({ enabled: false });
     await mgr.addStream('keyA');
     await mgr.addStream('keyB');
     const cfg = mgr._buildConfig();
     const locationCount = (cfg.match(/^\s+location /mg) || []).length;
-    assert.equal(locationCount, 2);
+    // Each stream generates 3 location blocks: m3u8 (no-cache), .ts (immutable), fallback
+    assert.equal(locationCount, 6);
   });
 
   test('includes CORS headers in proxy block', async () => {

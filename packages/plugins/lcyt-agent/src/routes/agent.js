@@ -26,6 +26,7 @@ export function createAgentRouter(db, auth, agent) {
 
   // GET /agent/status — capabilities and configuration state
   router.get('/status', auth, (req, res) => {
+    res.set('Cache-Control', 'private, max-age=3600, stale-while-revalidate=3600');
     res.json({
       ok: true,
       capabilities: [
@@ -40,6 +41,7 @@ export function createAgentRouter(db, auth, agent) {
   router.get('/context', auth, (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
+    res.set('Cache-Control', 'private, max-age=30');
     res.json({ ok: true, entries: agent.getContext(apiKey) });
   });
 
@@ -67,6 +69,7 @@ export function createAgentRouter(db, auth, agent) {
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
     const events = getRecentAgentEvents(db, apiKey, limit);
+    res.set('Cache-Control', 'private, max-age=15');
     res.json({ ok: true, events });
   });
 

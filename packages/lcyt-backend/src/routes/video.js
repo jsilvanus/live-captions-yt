@@ -294,7 +294,7 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
 
     setCors(res);
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
-    res.setHeader('Cache-Control', 'public, max-age=60');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     fs.createReadStream(file).pipe(res);
   });
 
