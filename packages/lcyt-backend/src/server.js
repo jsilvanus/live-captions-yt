@@ -17,7 +17,37 @@ import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
-import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
+// Optional music detection plugin (lcyt-music) — load dynamically so the
+// server can run when the optional package is not installed in minimal
+// container/CI images.
+let initMusicControl;
+let createSoundCaptionProcessor;
+try {
+  const _music = await import('lcyt-music');
+  initMusicControl = _music.initMusicControl ?? _music.default?.initMusicControl ?? _music.initMusicControl;
+  createSoundCaptionProcessor = _music.createSoundCaptionProcessor ?? _music.default?.createSoundCaptionProcessor ?? _music.createSoundCaptionProcessor;
+  console.info('✓ Optional plugin lcyt-music loaded');
+} catch (err) {
+  // If lcyt-music isn't available, try the renamed package lcyt-sound.
+  const notFound = err && (err.code === 'ERR_MODULE_NOT_FOUND' || /Cannot find module|Cannot find package/i.test(String(err.message)));
+  if (notFound) {
+    try {
+      const _sound = await import('lcyt-sound');
+      initMusicControl = _sound.initMusicControl ?? _sound.default?.initMusicControl ?? _sound.initMusicControl;
+      createSoundCaptionProcessor = _sound.createSoundCaptionProcessor ?? _sound.default?.createSoundCaptionProcessor ?? _sound.createSoundCaptionProcessor;
+      console.info('✓ Optional plugin lcyt-sound loaded');
+    } catch (err2) {
+      console.info('ℹ Optional plugins lcyt-music and lcyt-sound not available — continuing without music detection.');
+      initMusicControl = async () => ({ });
+      createSoundCaptionProcessor = (_opts) => () => undefined;
+    }
+  } else {
+    // Unexpected error importing — surface info but fall back to no-op to keep server running.
+    console.error('! Error while loading optional music plugin:', err);
+    initMusicControl = async () => ({ });
+    createSoundCaptionProcessor = (_opts) => () => undefined;
+  }
+}
 import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
 import {
   initAgent, createAgentRouter, createAiRouter,
