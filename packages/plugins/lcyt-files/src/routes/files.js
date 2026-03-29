@@ -68,6 +68,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const config = getKeyStorageConfig(db, session.apiKey);
+    res.set('Cache-Control', 'private, max-age=300');
     if (!config) {
       return res.json({ storageMode: 'default', config: null });
     }
@@ -162,6 +163,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
       updatedAt: row.updated_at,
       sizeBytes: row.size_bytes,
     }));
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ files });
   });
 
@@ -190,6 +192,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     try {
       const storage = await _resolve(apiKey);
       const { stream, contentType, size } = await storage.openRead(apiKey, row.filename, row.format);
+      res.set('Cache-Control', 'private, max-age=31536000, immutable');
       res.set('Content-Type', contentType + '; charset=utf-8');
       res.set('Content-Disposition', `attachment; filename="${basename(row.filename)}"`);
       if (size != null) res.set('Content-Length', String(size));

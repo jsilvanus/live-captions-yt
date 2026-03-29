@@ -170,6 +170,7 @@ export function createSttRouter(auth, sttManager, db) {
   router.get('/config', auth, (req, res) => {
     const { apiKey } = req.session;
     const cfg = getSttConfig(db, apiKey);
+    res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
     if (!cfg) {
       return res.json({
         provider:            process.env.STT_PROVIDER         || 'google',

@@ -33,6 +33,7 @@ export function createAiRouter(db, auth) {
       fuzzyThreshold: 0.75,
     };
 
+    res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
     return res.json({ config: config || defaults });
   });
 
@@ -67,6 +68,7 @@ export function createAiRouter(db, auth) {
 
   /** GET /ai/status — server-level AI capability info (no auth required for feature detection) */
   router.get('/status', (req, res) => {
+    res.set('Cache-Control', 'private, max-age=3600, stale-while-revalidate=3600');
     return res.json({
       serverEmbeddingAvailable: isServerEmbeddingAvailable(),
       serverEmbeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',

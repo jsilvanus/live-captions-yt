@@ -209,12 +209,15 @@ export class NginxManager {
     const lines = [SECTION_START, ''];
 
     for (const [apiKey, slug] of this._streams) {
-      // Proxy from public slug URL to MediaMTX HLS path using the real API key
+      // Proxy from public slug URL to MediaMTX HLS path using the real API key.
       // The API key appears only in the nginx server-side config, not in any public URL.
       const internalPath = `${this._mediamtxBase}/${encodeURIComponent(apiKey)}/`;
+      const prefix = `${this._prefix}/${slug}`;
+
+      // ── Playlist location (live — must not be cached) ─────────────────────
       lines.push(
-        `  # HLS radio proxy — public slug: ${slug} (api key not in public URL)`,
-        `  location ${this._prefix}/${slug}/ {`,
+        `  # HLS radio — playlist (no cache) — public slug: ${slug}`,
+        `  location ~ ^${prefix}/.*\\.m3u8$ {`,
         `    proxy_pass ${internalPath};`,
         `    proxy_http_version 1.1;`,
         `    proxy_set_header Host $host;`,
@@ -225,6 +228,44 @@ export class NginxManager {
         `    add_header Access-Control-Allow-Methods "GET, OPTIONS" always;`,
         `    add_header Access-Control-Allow-Headers "Accept, Range" always;`,
         `    add_header Cache-Control "no-cache, no-store" always;`,
+        `  }`,
+        ``,
+      );
+
+      // ── Segment location (immutable — cache aggressively) ─────────────────
+      lines.push(
+        `  # HLS radio — segments (immutable, cache 24 h) — public slug: ${slug}`,
+        `  location ~ ^${prefix}/.*\\.ts$ {`,
+        `    proxy_pass ${internalPath};`,
+        `    proxy_http_version 1.1;`,
+        `    proxy_set_header Host $host;`,
+        `    proxy_set_header X-Real-IP $remote_addr;`,
+        `    proxy_cache lcyt_media;`,
+        `    proxy_cache_valid 200 24h;`,
+        `    proxy_cache_use_stale error timeout updating;`,
+        `    add_header Access-Control-Allow-Origin "*" always;`,
+        `    add_header Access-Control-Allow-Methods "GET, OPTIONS" always;`,
+        `    add_header Access-Control-Allow-Headers "Accept, Range" always;`,
+        `    add_header Cache-Control "public, max-age=86400, immutable" always;`,
+        `    add_header X-Cache-Status $upstream_cache_status always;`,
+        `  }`,
+        ``,
+      );
+
+      // ── Fallback location (init segments, manifests with other extensions) ─
+      lines.push(
+        `  # HLS radio — fallback (other files) — public slug: ${slug}`,
+        `  location ${prefix}/ {`,
+        `    proxy_pass ${internalPath};`,
+        `    proxy_http_version 1.1;`,
+        `    proxy_set_header Host $host;`,
+        `    proxy_set_header X-Real-IP $remote_addr;`,
+        `    proxy_buffering off;`,
+        `    proxy_cache off;`,
+        `    add_header Access-Control-Allow-Origin "*" always;`,
+        `    add_header Access-Control-Allow-Methods "GET, OPTIONS" always;`,
+        `    add_header Access-Control-Allow-Headers "Accept, Range" always;`,
+        `    add_header Cache-Control "no-cache" always;`,
         `  }`,
         ``,
       );

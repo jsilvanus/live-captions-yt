@@ -36,6 +36,7 @@ export function createStatsRouter(db, auth, store) {
     const { sessions, captionErrors, authEvents } = getKeyStats(db, apiKey);
     const viewerStats = getViewerKeyStats(db, apiKey);
 
+    res.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120');
     return res.status(200).json({
       apiKey,
       owner: keyRow.owner || null,

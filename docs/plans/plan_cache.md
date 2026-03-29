@@ -1,6 +1,6 @@
 # HTTP Caching Strategy — Backend, Plugins & nginx
 
-**Status:** pending
+**Status:** implemented
 **Date:** 2026-03-29
 
 ---

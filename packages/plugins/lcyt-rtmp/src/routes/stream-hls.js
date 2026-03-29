@@ -243,7 +243,7 @@ export function createStreamHlsRouter(db, hlsManager) {
 
     const cors = getEmbedCors(db, key);
     setCorsHeaders(res, cors);
-    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=60');
+    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=86400, immutable');
     res.setHeader('Content-Type', file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
 
     Readable.fromWeb(upstream.body)

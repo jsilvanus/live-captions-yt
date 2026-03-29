@@ -44,7 +44,7 @@ export function createDskRouter(db, dskBus) {
       // The DSK page fetches image bytes from /images/:id (public endpoint)
       url: `/images/${r.id}`,
     }));
-    res.set('Cache-Control', 'no-store');
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
     res.json({ images });
   });
 
@@ -56,7 +56,7 @@ export function createDskRouter(db, dskBus) {
     const { apikey } = req.params;
     if (!resolveKey(apikey, res)) return;
     const rows = listViewports(db, apikey);
-    res.set('Cache-Control', 'no-store');
+    res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=3600');
     res.json({
       viewports: rows.map(r => ({
         name:         r.name,

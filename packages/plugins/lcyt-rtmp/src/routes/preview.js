@@ -2,6 +2,7 @@ import express from 'express';
 import rateLimit from 'express-rate-limit';
 import { coercePreviewResponse } from '../preview/coerce-preview-response.js';
 import fs from 'fs';
+import { createHash } from 'node:crypto';
 
 function isNodeReadable(s) {
   return s && typeof s.pipe === 'function';
@@ -18,25 +19,41 @@ export function createPreviewRouter(previewManager, opts = {}) {
       if (!resp) return res.status(404).end();
       const coerced = await coercePreviewResponse(resp);
       const contentType = (coerced.headers && coerced.headers['content-type']) || 'application/octet-stream';
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'no-cache');
 
+      // Buffer the full thumbnail so we can compute an ETag for conditional GETs.
+      // Thumbnails are small (50–200 KB) so buffering is acceptable.
       const stream = coerced.stream;
+      let buffer;
       if (isNodeReadable(stream)) {
-        // Pipe Node Readable directly to response so destroy propagates
-        const original = stream;
-        const onClose = () => original.destroy?.();
-        res.on('close', onClose);
-        original.pipe(res);
-        original.on('end', () => res.removeListener('close', onClose));
-        return;
+        buffer = await new Promise((resolve, reject) => {
+          const chunks = [];
+          stream.on('data', c => chunks.push(c));
+          stream.on('end', () => resolve(Buffer.concat(chunks)));
+          stream.on('error', reject);
+        });
+      } else if (stream && stream[Symbol.asyncIterator]) {
+        const readable = (await import('stream')).Readable.from(stream);
+        buffer = await new Promise((resolve, reject) => {
+          const chunks = [];
+          readable.on('data', c => chunks.push(c));
+          readable.on('end', () => resolve(Buffer.concat(chunks)));
+          readable.on('error', reject);
+        });
+      } else {
+        return res.status(502).end();
       }
 
-      // Fallback: stream may be an async iterable
-      const nodeStream = stream[Symbol.asyncIterator] ? (await import('stream')).Readable.from(stream) : null;
-      if (nodeStream) return nodeStream.pipe(res);
+      const etag = `W/"${createHash('md5').update(buffer).digest('hex')}"`;
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'public, max-age=2');
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', buffer.length);
 
-      res.status(502).end();
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+
+      res.send(buffer);
     } catch (err) {
       if (err && err.code === 'ENOENT') return res.status(404).end();
       res.status(502).json({ error: err.message });
