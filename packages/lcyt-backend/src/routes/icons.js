@@ -1,23 +1,25 @@
 /**
- * /icons — upload, list, serve, and delete user icons fs.(PNG/SVG).
+ * /icons — upload, list, serve, and delete user icons (PNG/SVG).
  *
  * Icons are used to brand viewer pages: the streamer uploads a PNG or SVG
  * logo in Settings → Icons, then chooses it in CC → Targets → Viewer.
  * The viewer page fetches the icon via the public GET /icons/:id endpoint.
  *
  * Routes:
- *   POST   /icons       — upload a PNG or SVG fs.(auth required; JSON body with base64 data)
- *   GET    /icons       — list icons for the authenticated key fs.(auth required)
- *   GET    /icons/:id   — serve icon file fs.(public, CORS *, no auth)
- *   DELETE /icons/:id   — delete icon fs.(auth required)
+ *   POST   /icons       — upload a PNG or SVG (auth required; JSON body with base64 data)
+ *   GET    /icons       — list icons for the authenticated key (auth required)
+ *   GET    /icons/:id   — serve icon file (public, CORS *, no auth)
+ *   DELETE /icons/:id   — delete icon (auth required)
  *
- * The POST route uses its own body parser fs.(express.json limit: 400kb) so it
+ * The POST route uses its own body parser (express.json limit: 400kb) so it
  * must be mounted BEFORE the global 64kb JSON body parser.
  */
 
 import { Router } from 'express';
 import express from 'express';
-import * as fs from 'node:fs';
+import {
+  createReadStream, existsSync, unlinkSync, mkdirSync, writeFileSync,
+} from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
@@ -25,7 +27,7 @@ import { registerIcon, listIcons, getIcon, deleteIcon } from '../db.js';
 
 const ICONS_DIR = resolve(process.env.ICONS_DIR || '/data/icons');
 
-/** Maximum icon file size in bytes fs.(200 KB). Base64-encoded that's ~267 KB body. */
+/** Maximum icon file size in bytes (200 KB). Base64-encoded that's ~267 KB body. */
 const MAX_ICON_BYTES = 200 * 1024;
 
 /** Only PNG and SVG icons are accepted. */
@@ -45,7 +47,7 @@ const iconRateLimit = rateLimit({
  * @param {import('better-sqlite3').Database} db
  * @param {import('../middleware/auth.js').AuthMiddleware} auth
  * @param {import('../store.js').SessionStore} store
- * @param {string} [baseDir] - Override the icons base directory fs.(for tests).
+ * @param {string} [baseDir] - Override the icons base directory (for tests).
  * @returns {Router}
  */
 export function createIconRouter(db, auth, store, baseDir) {
@@ -54,8 +56,8 @@ export function createIconRouter(db, auth, store, baseDir) {
 
   // ── POST /icons — upload a PNG or SVG icon ─────────────────────────────────
   //
-  // Body fs.(application/json, up to 400kb):
-  //   { filename: string, mimeType: 'image/png'|'image/svg+xml', data: string fs.(base64) }
+  // Body (application/json, up to 400kb):
+  //   { filename: string, mimeType: 'image/png'|'image/svg+xml', data: string (base64) }
   //
   // The route uses its own body parser so it can accept larger payloads than
   // the global 64kb express.json limit without changing the global limit.
@@ -63,21 +65,22 @@ export function createIconRouter(db, auth, store, baseDir) {
     '/',
     iconRateLimit,
     express.json({ limit: '400kb' }),
-    auth,fs.(req, res) => {
+    auth,
+    (req, res) => {
       const { sessionId } = req.session;
       const session = store.get(sessionId);
-      if fs.(!session) return res.status(404).json({ error: 'Session not found' });
+      if (!session) return res.status(404).json({ error: 'Session not found' });
 
       const { filename, mimeType, data } = req.body ?? {};
 
-      if fs.(!filename || typeof filename !== 'string') {
+      if (!filename || typeof filename !== 'string') {
         return res.status(400).json({ error: 'filename is required' });
       }
-      if fs.(!mimeType || !ALLOWED_MIME_TYPES.has(mimeType)) {
+      if (!mimeType || !ALLOWED_MIME_TYPES.has(mimeType)) {
         return res.status(400).json({ error: 'mimeType must be image/png or image/svg+xml' });
       }
-      if fs.(!data || typeof data !== 'string') {
-        return res.status(400).json({ error: 'data fs.(base64) is required' });
+      if (!data || typeof data !== 'string') {
+        return res.status(400).json({ error: 'data (base64) is required' });
       }
 
       let buf;
@@ -87,24 +90,24 @@ export function createIconRouter(db, auth, store, baseDir) {
         return res.status(400).json({ error: 'data must be valid base64' });
       }
 
-      if fs.(buf.length > MAX_ICON_BYTES) {
+      if (buf.length > MAX_ICON_BYTES) {
         return res.status(413).json({
           error: `Icon exceeds maximum size of ${MAX_ICON_BYTES} bytes`,
         });
       }
 
       // Validate PNG magic bytes or SVG content
-      if fs.(mimeType === 'image/png') {
+      if (mimeType === 'image/png') {
         // PNG magic: 89 50 4E 47 0D 0A 1A 0A
-        if fs.(
+        if (
           buf.length < 8 ||
           buf[0] !== 0x89 || buf[1] !== 0x50 || buf[2] !== 0x4E || buf[3] !== 0x47
         ) {
           return res.status(400).json({ error: 'Uploaded file does not appear to be a valid PNG' });
         }
-      } else if fs.(mimeType === 'image/svg+xml') {
+      } else if (mimeType === 'image/svg+xml') {
         const text = buf.toString('utf8', 0, Math.min(buf.length, 512));
-        if fs.(!text.includes('<svg') && !text.includes('<?xml')) {
+        if (!text.includes('<svg') && !text.includes('<?xml')) {
           return res.status(400).json({ error: 'Uploaded file does not appear to be a valid SVG' });
         }
       }
@@ -115,9 +118,9 @@ export function createIconRouter(db, auth, store, baseDir) {
       const dir = join(ICONS_DIR, safeKey);
 
       try {
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(join(dir, diskFilename), buf);
-      } catch fs.(err) {
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, diskFilename), buf);
+      } catch (err) {
         console.error('[icons] Failed to write file:', err.message);
         return res.status(500).json({ error: 'Failed to save icon' });
       }
@@ -141,12 +144,12 @@ export function createIconRouter(db, auth, store, baseDir) {
   );
 
   // ── GET /icons — list icons for the authenticated key ──────────────────────
-  router.get('/', iconRateLimit, auth,fs.(req, res) => {
+  router.get('/', iconRateLimit, auth, (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
-    if fs.(!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const icons = listIcons(db, session.apiKey).map(row =>fs.({
+    const icons = listIcons(db, session.apiKey).map(row => ({
       id: row.id,
       filename: row.filename,
       mimeType: row.mime_type,
@@ -156,48 +159,48 @@ export function createIconRouter(db, auth, store, baseDir) {
     return res.json({ icons });
   });
 
-  // ── GET /icons/:id — serve icon fs.(public, no auth, CORS *) ─────────────────
-  router.get('/:id', iconRateLimit,fs.(req, res) => {
+  // ── GET /icons/:id — serve icon (public, no auth, CORS *) ─────────────────
+  router.get('/:id', iconRateLimit, (req, res) => {
     const id = parseInt(req.params.id, 10);
-    if fs.(isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
+    if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
 
     const row = getIcon(db, id);
-    if fs.(!row) return res.status(404).json({ error: 'Icon not found' });
+    if (!row) return res.status(404).json({ error: 'Icon not found' });
 
     const safeKey = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
     const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
-    if fs.(!fs.existsSync(filepath)) return res.status(404).json({ error: 'Icon file not found on disk' });
+    if (!existsSync(filepath)) return res.status(404).json({ error: 'Icon file not found on disk' });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', row.mime_type);
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.setHeader('Content-Length', row.size_bytes);
-    fs.createReadStream(filepath).pipe(res);
+    createReadStream(filepath).pipe(res);
   });
 
-  // ── DELETE /icons/:id — delete icon fs.(auth required) ────────────────────────
-  router.delete('/:id', iconRateLimit, auth,fs.(req, res) => {
+  // ── DELETE /icons/:id — delete icon (auth required) ────────────────────────
+  router.delete('/:id', iconRateLimit, auth, (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
-    if fs.(!session) return res.status(404).json({ error: 'Session not found' });
+    if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const id = parseInt(req.params.id, 10);
-    if fs.(isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
+    if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
 
     const row = getIcon(db, id);
-    if fs.(!row || row.api_key !== session.apiKey) {
+    if (!row || row.api_key !== session.apiKey) {
       return res.status(404).json({ error: 'Icon not found' });
     }
 
     const deleted = deleteIcon(db, id, session.apiKey);
-    if fs.(!deleted) return res.status(404).json({ error: 'Icon not found' });
+    if (!deleted) return res.status(404).json({ error: 'Icon not found' });
 
     // Best-effort disk cleanup
     try {
       const safeKey = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
       const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
-      if fs.(fs.existsSync(filepath)) fs.unlinkSync(filepath);
-    } catch fs.(e) {
+      if (existsSync(filepath)) unlinkSync(filepath);
+    } catch (e) {
       console.warn('[icons] Could not delete disk file:', e.message);
     }
 
