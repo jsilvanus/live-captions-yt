@@ -24,9 +24,9 @@ export function createTestServer(dbPath) {
   const app = express();
   app.use(bodyParser.json());
 
-  // Mount production router (which includes bridge routes)
+  // Mount bridge router under /production/bridge
   const prodRouter = createBridgeRouter(db, bridgeManager, 'http://localhost');
-  app.use('/production', prodRouter);
+  app.use('/production/bridge', prodRouter);
 
   return { app, db, bridgeManager };
 }
