@@ -1,4 +1,4 @@
-name: Integration Tests
+name: Tests
 
 on:
   push:
@@ -6,24 +6,285 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+# ── Tier 1: Build verification (fastest signal — broken imports) ────
 jobs:
-  integration:
+  build:
+    name: "Build: ${{ matrix.name }}"
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
-        node: [20]
-    timeout-minutes: 30
+        include:
+          - name: lcyt CJS
+            cmd: npm run build -w packages/lcyt
+          - name: lcyt-web Vite
+            cmd: npm run build -w packages/lcyt-web
     steps:
       - uses: actions/checkout@v4
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node }}
-      - name: Install
-        run: npm ci
-      - name: Run bridge integration test
-        run: node --test packages/lcyt-backend/test/bridge-integration.test.js
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: ${{ matrix.cmd }}
+
+  # ── Tier 2: Unit tests (after build passes) ─────────────────────────
+  unit-node:
+    name: "Unit: ${{ matrix.package }}"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - packages/lcyt
+          - packages/lcyt-cli
+          - packages/lcyt-web
+          - packages/lcyt-bridge
+          - packages/lcyt-mcp-stdio
+          - packages/lcyt-mcp-sse
+          - packages/plugins/lcyt-agent
+          - packages/plugins/lcyt-cues
+          - packages/plugins/lcyt-dsk
+          - packages/plugins/lcyt-files
+          - packages/plugins/lcyt-music
+          - packages/plugins/lcyt-production
+          - packages/plugins/lcyt-rtmp
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run unit tests
+        run: npm test -w ${{ matrix.package }}
+        env:
+          NODE_ENV: test
+
+  unit-python:
+    name: "Unit: python ${{ matrix.package }}"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: python-packages/lcyt
+            install: pip install pytest -e .
+            cmd: pytest tests/ -v
+          - package: python-packages/lcyt-mcp
+            install: pip install pytest pytest-asyncio mcp httpx -e ../lcyt
+            cmd: PYTHONPATH=. pytest tests/ -v
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        working-directory: ${{ matrix.package }}
+        run: ${{ matrix.install }}
+      - name: Run unit tests
+        working-directory: ${{ matrix.package }}
+        run: ${{ matrix.cmd }}
+
+  standalone-tests:
+    name: "Unit: ${{ matrix.name }}"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lcyt-orchestrator
+            dir: packages/lcyt-orchestrator
+          - name: lcyt-worker-daemon
+            dir: packages/lcyt-worker-daemon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: ${{ matrix.dir }}
+        run: npm install --ignore-scripts
+      - name: Run tests
+        working-directory: ${{ matrix.dir }}
+        run: npm test
+        env:
+          NODE_ENV: test
+
+  # ── Tier 3: Integration, component, Docker (after unit passes) ──────
+  integration-node:
+    name: "Integration: lcyt-backend"
+    needs: [unit-node, unit-python, standalone-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run backend tests
+        run: npm test -w packages/lcyt-backend
         env:
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret
           ADMIN_KEY: test-admin-key
+
+  integration-python:
+    name: "Integration: python lcyt-backend"
+    needs: unit-python
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        working-directory: python-packages/lcyt-backend
+        run: pip install -e ../lcyt -e ".[dev]"
+      - name: Run integration tests
+        working-directory: python-packages/lcyt-backend
+        run: pytest tests/ -v
+
+  component-tests:
+    name: "Component: lcyt-web (Vitest)"
+    needs: [unit-node, standalone-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run Vitest component tests
+        run: npm run test:components -w packages/lcyt-web
+        env:
+          NODE_ENV: test
+
+  docker-lint:
+    name: "Docker: lint & config"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate Docker Compose configs
+        run: |
+          docker compose -f docker-compose.yml config --quiet
+          docker compose -f docker-compose.orchestrator.yml config --quiet
+        env:
+          JWT_SECRET: ci-placeholder
+          BACKEND_INTERNAL_TOKEN: ci-placeholder
+
+      - name: Lint Dockerfiles with hadolint
+        run: |
+          wget -qO hadolint https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64
+          chmod +x hadolint
+          ./hadolint --failure-threshold error \
+            Dockerfile \
+            docker/lcyt-ffmpeg/Dockerfile \
+            docker/lcyt-dsk-renderer/Dockerfile \
+            packages/lcyt-mcp-sse/Dockerfile \
+            packages/lcyt-mcp-stdio/Dockerfile
+
+  docker-build:
+    name: "Docker: build ${{ matrix.image }}"
+    needs: [docker-lint, unit-node, unit-python, standalone-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: lcyt-site
+            context: .
+            file: Dockerfile
+          - image: lcyt-ffmpeg
+            context: docker/lcyt-ffmpeg
+            file: docker/lcyt-ffmpeg/Dockerfile
+          - image: lcyt-mcp-sse
+            context: .
+            file: packages/lcyt-mcp-sse/Dockerfile
+          - image: lcyt-mcp-stdio
+            context: .
+            file: packages/lcyt-mcp-stdio/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: >
+          docker build
+          --file ${{ matrix.file }}
+          --tag ${{ matrix.image }}:ci
+          ${{ matrix.context }}
+
+  script-lint:
+    name: "Scripts: shellcheck & syntax"
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check shell scripts
+        run: |
+          bash -n scripts/deploy.sh
+          bash -n scripts/entrypoint.sh
+          bash -n ci/test-docker.sh
+
+      - name: Shellcheck scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: scripts
+          severity: error
+      - name: Shellcheck CI helpers
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: ci
+          severity: error
+          
+  # ── Tier 4: E2E tests (after integration passes) ───────────────────
+  e2e:
+    name: "E2E: Playwright"
+    needs: [integration-node, component-tests]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start backend
+        run: |
+          npm run build -w packages/lcyt
+          npm run build -w packages/lcyt-web
+          node packages/lcyt-backend/src/index.js &
+        env:
+          JWT_SECRET: test-jwt-secret
+          ADMIN_KEY: test-admin-key
+          PORT: 3000
+          STATIC_DIR: packages/lcyt-web/dist
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          BASE_URL: http://localhost:3000
