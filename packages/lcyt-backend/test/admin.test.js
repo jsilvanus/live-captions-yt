@@ -1,20 +1,22 @@
 /**
  * Tests for the /admin router (user/project management, search, batch ops).
  *
- * Uses an in-memory SQLite database. All routes require X-Admin-Key.
+ * Uses an in-memory SQLite database. Supports both X-Admin-Key and user-based admin auth.
  */
 
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
 import { createAdminRouter } from '../src/routes/admin.js';
-import { createUser, getUserById } from '../src/db/users.js';
+import { createUser, getUserById, setUserAdmin } from '../src/db/users.js';
 import { createKey, getKey, formatKey } from '../src/db/keys.js';
 import bcrypt from 'bcryptjs';
 
 const ADMIN_KEY = 'test-admin-key-123';
+const JWT_SECRET = 'test-jwt-secret-for-admin';
 
 let server, baseUrl, db;
 
@@ -24,7 +26,7 @@ before(() => new Promise((resolve) => {
 
   const app = express();
   app.use(express.json());
-  app.use('/admin', createAdminRouter(db));
+  app.use('/admin', createAdminRouter(db, JWT_SECRET));
 
   server = createServer(app);
   server.listen(0, () => {
@@ -110,6 +112,33 @@ describe('/admin — authentication', () => {
       headers: { 'X-Admin-Key': 'wrong-key' },
     });
     assert.equal(res.status, 403);
+  });
+
+  it('rejects non-admin user JWT tokens', async () => {
+    const hash = bcrypt.hashSync('pass1234', 1);
+    const user = createUser(db, { email: 'nonadmin@test.com', passwordHash: hash });
+    const token = jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
+    const res = await fetch(`${baseUrl}/admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    assert.equal(res.status, 401);
+    assert.ok(body.error, 'should include error message');
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  });
+
+  it('accepts user JWT token when user has is_admin = 1', async () => {
+    const hash = bcrypt.hashSync('pass1234', 1);
+    const user = createUser(db, { email: 'adminuser@test.com', passwordHash: hash });
+    setUserAdmin(db, user.id, true);
+    const token = jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
+    const res = await fetch(`${baseUrl}/admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.ok(Array.isArray(body.users), 'should return users array');
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   });
 });
 

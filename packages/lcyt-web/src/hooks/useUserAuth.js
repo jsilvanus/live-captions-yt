@@ -48,7 +48,7 @@ export function useUserAuth() {
         if (data?.userId) {
           setToken(stored.token);
           setBackendUrl(stored.backendUrl);
-          setUser({ userId: data.userId, email: data.email, name: data.name });
+          setUser({ userId: data.userId, email: data.email, name: data.name, isAdmin: !!data.isAdmin });
         } else {
           saveStored(null);
         }
@@ -73,7 +73,7 @@ export function useUserAuth() {
     saveStored({ token: data.token, backendUrl: base });
     setToken(data.token);
     setBackendUrl(base);
-    setUser({ userId: data.userId, email: data.email, name: data.name });
+    setUser({ userId: data.userId, email: data.email, name: data.name, isAdmin: !!data.isAdmin });
     return data;
   }, []);
 
@@ -89,7 +89,7 @@ export function useUserAuth() {
     saveStored({ token: data.token, backendUrl: base });
     setToken(data.token);
     setBackendUrl(base);
-    setUser({ userId: data.userId, email: data.email, name: data.name });
+    setUser({ userId: data.userId, email: data.email, name: data.name, isAdmin: !!data.isAdmin });
     return data;
   }, []);
 

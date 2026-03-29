@@ -9,9 +9,9 @@ import { deviceLoginHandler } from './device-roles.js';
 const BCRYPT_ROUNDS = 12;
 const USER_TOKEN_TTL_DAYS = 30;
 
-function issueUserToken(jwtSecret, { userId, email }) {
+function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
   return jwt.sign(
-    { type: 'user', userId, email },
+    { type: 'user', userId, email, isAdmin: !!isAdmin },
     jwtSecret,
     { expiresIn: `${USER_TOKEN_TTL_DAYS}d` }
   );
@@ -65,8 +65,8 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = createUser(db, { email, passwordHash, name: name || null });
       provisionDefaultUserFeatures(db, user.id);
-      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email });
-      res.status(201).json({ token, userId: user.id, email: user.email, name: user.name });
+      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false });
+      res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false });
     } catch (err) {
       console.error('[auth] register error:', err.message);
       res.status(500).json({ error: 'Registration failed' });
@@ -88,8 +88,8 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       if (!match) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
-      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email });
-      res.json({ token, userId: user.id, email: user.email, name: user.name });
+      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin });
+      res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin });
     } catch (err) {
       console.error('[auth] login error:', err.message);
       res.status(500).json({ error: 'Login failed' });
@@ -100,7 +100,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   router.get('/me', userAuth, (req, res) => {
     const user = getUserById(db, req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at });
+    res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
   });
 
   // POST /auth/change-password — requires user token

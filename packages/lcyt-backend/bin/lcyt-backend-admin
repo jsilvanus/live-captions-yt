@@ -4,7 +4,8 @@ import {
   initDb,
   getAllKeys, getKey, createKey, revokeKey, deleteKey, renewKey, updateKey, cleanRevokedKeys,
   createUser, getUserByEmail, getUserById, updateUserPassword, getKeysByUserId,
-  getProjectFeatures, setProjectFeature,
+  getAllUsers, setUserAdmin, updateUser,
+  getProjectFeatures, setProjectFeature, setProjectFeatures, applyFeatureDeps,
 } from '../src/db.js';
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,7 @@ function padEnd(str, len) {
 // Output formatting
 // ---------------------------------------------------------------------------
 
-function printKeyTable(keys) {
+function printProjectTable(keys) {
   const header = [
     padEnd('KEY', 38),
     padEnd('OWNER', 16),
@@ -80,9 +81,9 @@ function printKeyTable(keys) {
   }
 }
 
-function printKey(k) {
+function printProject(k) {
   if (!k) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
   console.log(`key:             ${k.key}`);
@@ -110,6 +111,7 @@ function printUserTable(users) {
     padEnd('EMAIL', 32),
     padEnd('NAME', 20),
     padEnd('ACTIVE', 8),
+    padEnd('ADMIN', 6),
     'CREATED'
   ].join(' ');
   console.log('  ' + header);
@@ -119,6 +121,7 @@ function printUserTable(users) {
       padEnd(u.email, 32),
       padEnd(u.name || '—', 20),
       padEnd(u.active ? 'yes' : 'INACTIVE', 8),
+      padEnd(u.is_admin ? 'yes' : 'no', 6),
       formatDate(u.created_at)
     ].join(' ');
     console.log('  ' + row);
@@ -134,23 +137,162 @@ function printUser(u) {
   console.log(`email:           ${u.email}`);
   console.log(`name:            ${u.name || '—'}`);
   console.log(`active:          ${u.active ? 'yes' : 'INACTIVE'}`);
+  console.log(`admin:           ${u.is_admin ? 'yes' : 'no'}`);
   console.log(`created:         ${formatDate(u.created_at)}`);
 }
 
 // ---------------------------------------------------------------------------
-// Key commands
+// User resolution helper
 // ---------------------------------------------------------------------------
 
-function cmdList(db) {
-  const keys = getAllKeys(db);
-  if (keys.length === 0) {
-    console.log('No API keys found.');
-    return;
+function resolveUser(db, ref) {
+  if (!ref) {
+    console.error('Error: user email or id required');
+    process.exit(1);
   }
-  printKeyTable(keys);
+  const user = /^\d+$/.test(ref)
+    ? getUserById(db, Number(ref))
+    : getUserByEmail(db, ref);
+  if (!user) {
+    console.error(`User not found: ${ref}`);
+    process.exit(1);
+  }
+  return user;
 }
 
-function cmdAdd(db, flags) {
+// ---------------------------------------------------------------------------
+// User commands
+// ---------------------------------------------------------------------------
+
+function cmdUsersList(db) {
+  const users = getAllUsers(db);
+  if (users.length === 0) {
+    console.log('No users found.');
+    return;
+  }
+  printUserTable(users);
+}
+
+function cmdUsersInfo(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  printUser(user);
+  const keys = getKeysByUserId(db, user.id);
+  if (keys.length === 0) {
+    console.log('\n  (no projects)');
+  } else {
+    console.log(`\nProjects (${keys.length}):`);
+    printProjectTable(keys);
+  }
+}
+
+async function cmdUsersAdd(db, flags) {
+  const { email, name } = flags;
+  const password = flags.password;
+  if (!email) {
+    console.error('Error: --email is required');
+    process.exit(1);
+  }
+  if (!password || password.length < 8) {
+    console.error('Error: --password is required and must be at least 8 characters');
+    process.exit(1);
+  }
+  if (getUserByEmail(db, email)) {
+    console.error(`Error: a user with email '${email}' already exists`);
+    process.exit(1);
+  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  const user = createUser(db, { email, passwordHash, name: name || null });
+  console.log('Created user:');
+  printUser(getUserById(db, user.id));
+}
+
+async function cmdUsersSetPassword(db, positional, flags) {
+  const user = resolveUser(db, positional[2]);
+  const password = flags.password;
+  if (!password || password.length < 8) {
+    console.error('Error: --password is required and must be at least 8 characters');
+    process.exit(1);
+  }
+  const hash = await bcrypt.hash(password, 10);
+  updateUserPassword(db, user.id, hash);
+  console.log(`Password updated for user ${user.id} (${user.email})`);
+}
+
+function cmdUsersUpdate(db, positional, flags) {
+  const user = resolveUser(db, positional[2]);
+  const updates = {};
+  if ('name' in flags) updates.name = flags.name || null;
+  if ('active' in flags) updates.active = flags.active === true || flags.active === 'true';
+  if (Object.keys(updates).length === 0) {
+    console.error('Error: nothing to update. Use --name or --active');
+    process.exit(1);
+  }
+  updateUser(db, user.id, updates);
+  console.log('Updated user:');
+  printUser(getUserById(db, user.id));
+}
+
+function cmdUsersDeactivate(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(user.id);
+  console.log(`Deactivated user ${user.id} (${user.email})`);
+}
+
+function cmdUsersActivate(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(user.id);
+  console.log(`Activated user ${user.id} (${user.email})`);
+}
+
+function cmdUsersDelete(db, positional, flags) {
+  const user = resolveUser(db, positional[2]);
+  const keyCount = db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE user_id = ? AND active = 1').get(user.id)?.n ?? 0;
+  if (keyCount > 0 && !flags.force) {
+    console.error(`Error: user has ${keyCount} active project(s). Revoke them first, or use --force.`);
+    process.exit(1);
+  }
+  db.prepare('UPDATE api_keys SET user_id = NULL WHERE user_id = ?').run(user.id);
+  try { db.prepare('DELETE FROM user_features WHERE user_id = ?').run(user.id); } catch { /* table may not exist */ }
+  try { db.prepare('DELETE FROM project_members WHERE user_id = ?').run(user.id); } catch { /* table may not exist */ }
+  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  console.log(`Deleted user ${user.id} (${user.email}).${keyCount > 0 ? ' Their projects have been unlinked.' : ''}`);
+}
+
+function cmdUsersGrantAdmin(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  setUserAdmin(db, user.id, true);
+  console.log(`Granted admin rights to user ${user.id} (${user.email})`);
+}
+
+function cmdUsersRevokeAdmin(db, positional) {
+  const user = resolveUser(db, positional[2]);
+  setUserAdmin(db, user.id, false);
+  console.log(`Revoked admin rights from user ${user.id} (${user.email})`);
+}
+
+// ---------------------------------------------------------------------------
+// Project commands
+// ---------------------------------------------------------------------------
+
+function cmdProjectsList(db) {
+  const keys = getAllKeys(db);
+  if (keys.length === 0) {
+    console.log('No projects found.');
+    return;
+  }
+  printProjectTable(keys);
+}
+
+function cmdProjectsInfo(db, positional) {
+  const key = positional[2];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  printProject(getKey(db, key));
+}
+
+function cmdProjectsAdd(db, flags) {
   const { owner, key, expires, email } = flags;
   if (!owner) {
     console.error('Error: --owner is required');
@@ -190,18 +332,18 @@ function cmdAdd(db, flags) {
     embed_cors: flags['embed-cors'] || undefined,
     user_id: userId ?? null,
   });
-  console.log('Created API key:');
-  printKey(created);
+  console.log('Created project:');
+  printProject(created);
 }
 
-function cmdUpdate(db, positional, flags) {
-  const key = positional[1];
+function cmdProjectsUpdate(db, positional, flags) {
+  const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
   if (!getKey(db, key)) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
 
@@ -225,39 +367,53 @@ function cmdUpdate(db, positional, flags) {
 
   updateKey(db, key, updates);
   console.log('Updated:');
-  printKey(getKey(db, key));
+  printProject(getKey(db, key));
 }
 
-function cmdRevoke(db, positional) {
-  const key = positional[1];
+function cmdProjectsRevoke(db, positional) {
+  const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
   const ok = revokeKey(db, key);
   if (!ok) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
   console.log(`Revoked: ${key}`);
 }
 
-function cmdDelete(db, positional) {
-  const key = positional[1];
+function cmdProjectsActivate(db, positional) {
+  const key = positional[2];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  if (!getKey(db, key)) {
+    console.error('Project not found.');
+    process.exit(1);
+  }
+  db.prepare("UPDATE api_keys SET active = 1, revoked_at = NULL WHERE key = ?").run(key);
+  console.log(`Activated: ${key}`);
+}
+
+function cmdProjectsDelete(db, positional) {
+  const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
   const ok = deleteKey(db, key);
   if (!ok) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
   console.log(`Deleted: ${key}`);
 }
 
-function cmdRenew(db, positional, flags) {
-  const key = positional[1];
+function cmdProjectsRenew(db, positional, flags) {
+  const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
@@ -269,161 +425,47 @@ function cmdRenew(db, positional, flags) {
   }
   const ok = renewKey(db, key, expires);
   if (!ok) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
-  const updated = getKey(db, key);
   console.log('Renewed:');
-  printKey(updated);
+  printProject(getKey(db, key));
 }
 
-function cmdInfo(db, positional) {
-  const key = positional[1];
-  if (!key) {
-    console.error('Error: key argument required');
-    process.exit(1);
-  }
-  printKey(getKey(db, key));
-}
-
-function cmdClean(db, flags) {
+function cmdProjectsClean(db, flags) {
   const days = flags.days !== undefined ? Number(flags.days) : 30;
   if (!Number.isFinite(days) || days < 0) {
     console.error('Error: --days must be a non-negative number');
     process.exit(1);
   }
   const dryRun = flags['dry-run'] === true;
-  const { count, deleted } = cleanRevokedKeys(db, days, dryRun);
+  const { count } = cleanRevokedKeys(db, days, dryRun);
   if (count === 0) {
-    console.log(`No revoked keys older than ${days} day(s) found.`);
+    console.log(`No revoked projects older than ${days} day(s) found.`);
   } else if (dryRun) {
-    console.log(`Would purge ${count} revoked key(s) older than ${days} day(s). Re-run without --dry-run to delete.`);
+    console.log(`Would purge ${count} revoked project(s) older than ${days} day(s). Re-run without --dry-run to delete.`);
   } else {
-    console.log(`Purged ${count} revoked key(s) older than ${days} day(s).`);
+    console.log(`Purged ${count} revoked project(s) older than ${days} day(s).`);
   }
 }
 
 // ---------------------------------------------------------------------------
-// User commands
+// Project feature commands
 // ---------------------------------------------------------------------------
 
-function resolveUser(db, ref) {
-  if (!ref) {
-    console.error('Error: user email or id required');
-    process.exit(1);
-  }
-  const user = /^\d+$/.test(ref)
-    ? getUserById(db, Number(ref))
-    : getUserByEmail(db, ref);
-  if (!user) {
-    console.error(`User not found: ${ref}`);
-    process.exit(1);
-  }
-  return user;
-}
-
-function cmdUsersList(db) {
-  const users = db.prepare('SELECT * FROM users ORDER BY id').all();
-  if (users.length === 0) {
-    console.log('No users found.');
-    return;
-  }
-  printUserTable(users);
-}
-
-function cmdUsersInfo(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  printUser(user);
-  const keys = getKeysByUserId(db, user.id);
-  if (keys.length === 0) {
-    console.log('  (no API keys)');
-  } else {
-    console.log(`\nAPI keys (${keys.length}):`);
-    printKeyTable(keys);
-  }
-}
-
-async function cmdUsersAdd(db, flags) {
-  const { email, name } = flags;
-  const password = flags.password;
-  if (!email) {
-    console.error('Error: --email is required');
-    process.exit(1);
-  }
-  if (!password || password.length < 8) {
-    console.error('Error: --password is required and must be at least 8 characters');
-    process.exit(1);
-  }
-  if (getUserByEmail(db, email)) {
-    console.error(`Error: a user with email '${email}' already exists`);
-    process.exit(1);
-  }
-  const passwordHash = await bcrypt.hash(password, 10);
-  const user = createUser(db, { email, passwordHash, name: name || null });
-  console.log('Created user:');
-  printUser(getUserById(db, user.id));
-}
-
-async function cmdUsersSetPassword(db, positional, flags) {
-  const user = resolveUser(db, positional[2]);
-  const password = flags.password;
-  if (!password || password.length < 8) {
-    console.error('Error: --password is required and must be at least 8 characters');
-    process.exit(1);
-  }
-  const hash = await bcrypt.hash(password, 10);
-  updateUserPassword(db, user.id, hash);
-  console.log(`Password updated for user ${user.id} (${user.email})`);
-}
-
-function cmdUsersDeactivate(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(user.id);
-  console.log(`Deactivated user ${user.id} (${user.email})`);
-}
-
-function cmdUsersActivate(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(user.id);
-  console.log(`Activated user ${user.id} (${user.email})`);
-}
-
-function cmdUsersDelete(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  const keyCount = db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE user_id = ? AND active = 1').get(user.id)?.n ?? 0;
-  if (keyCount > 0) {
-    console.error(`Error: user has ${keyCount} active key(s). Revoke them first, or use --force.`);
-    process.exit(1);
-  }
-  db.prepare('UPDATE api_keys SET user_id = NULL WHERE user_id = ?').run(user.id);
-  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
-  console.log(`Deleted user ${user.id} (${user.email}). ${keyCount === 0 ? '' : `Their keys have been unlinked.`}`);
-}
-
-function cmdUsersDeleteForce(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  db.prepare('UPDATE api_keys SET user_id = NULL WHERE user_id = ?').run(user.id);
-  db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
-  console.log(`Deleted user ${user.id} (${user.email}) and unlinked their keys.`);
-}
-
-// ---------------------------------------------------------------------------
-// Feature commands
-// ---------------------------------------------------------------------------
-
-function cmdFeaturesList(db, positional) {
-  const key = positional[1];
+function cmdProjectsFeaturesList(db, positional) {
+  const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
   if (!getKey(db, key)) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
   const rows = getProjectFeatures(db, key);
   if (rows.length === 0) {
-    console.log('No features set for this key.');
+    console.log('No features set for this project.');
     return;
   }
   const header = [padEnd('FEATURE', 28), padEnd('ENABLED', 8), 'GRANTED AT'].join(' ');
@@ -434,21 +476,49 @@ function cmdFeaturesList(db, positional) {
   }
 }
 
-function cmdFeaturesSet(db, positional, flags) {
-  const key = positional[1];
-  const code = positional[2];
-  const val = positional[3];
+function cmdProjectsFeaturesSet(db, positional) {
+  const key = positional[2];
+  const code = positional[3];
+  const val = positional[4];
   if (!key || !code) {
     console.error('Error: key and feature-code arguments required');
     process.exit(1);
   }
   if (!getKey(db, key)) {
-    console.error('Key not found.');
+    console.error('Project not found.');
     process.exit(1);
   }
   const enabled = val === undefined || val === 'true' || val === '1';
   setProjectFeature(db, key, code, enabled);
-  console.log(`Feature '${code}' ${enabled ? 'enabled' : 'disabled'} for key ${key}`);
+  console.log(`Feature '${code}' ${enabled ? 'enabled' : 'disabled'} for project ${key}`);
+}
+
+function cmdProjectsFeaturesBatch(db, positional, flags) {
+  const key = positional[2];
+  if (!key) {
+    console.error('Error: key argument required');
+    process.exit(1);
+  }
+  if (!getKey(db, key)) {
+    console.error('Project not found.');
+    process.exit(1);
+  }
+  const featuresJson = flags.features;
+  if (!featuresJson) {
+    console.error('Error: --features <json> is required (e.g. --features \'{"ai":true,"stt":false}\')');
+    process.exit(1);
+  }
+  let features;
+  try {
+    features = JSON.parse(featuresJson);
+  } catch {
+    console.error('Error: --features value must be valid JSON');
+    process.exit(1);
+  }
+  const resolved = applyFeatureDeps(features);
+  setProjectFeatures(db, key, resolved, 'admin');
+  console.log(`Features updated for project ${key}`);
+  cmdProjectsFeaturesList(db, positional);
 }
 
 // ---------------------------------------------------------------------------
@@ -458,41 +528,49 @@ function cmdFeaturesSet(db, positional, flags) {
 function usage() {
   console.log(`Usage: lcyt-backend-admin <command> [options]
 
-Key commands:
-  list                              List all API keys
-  add --owner <name> [--key <key>] [--email <email>] [--expires <date>]
-      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving] [--graphics]
-      [--relay] [--radio] [--hls] [--cea708-delay <ms>] [--embed-cors <origin>]
-      [--user-email <email>] [--user-id <id>]
-                                    Create a new API key (optionally linked to a user)
-  update <key> [--owner <name>] [--expires <date>]
-      [--daily-limit <n|none>] [--lifetime-limit <n|none>]
-      [--file-saving [true|false]] [--graphics [true|false]]
-      [--relay [true|false]] [--radio [true|false]] [--hls [true|false]]
-      [--cea708-delay <ms>] [--embed-cors <origin>]
-                                    Update key fields (use 'none' to remove a limit)
-  revoke <key>                      Revoke (soft-delete) a key
-  delete <key>                      Permanently remove a key
-  renew <key> --expires <date>      Extend key expiration
-  info <key>                        Show details for a key
-  clean [--days 30] [--dry-run]     Purge revoked keys older than N days
-
 User commands:
   users list                        List all user accounts
-  users info <email|id>             Show user details and their API keys
+  users info <email|id>             Show user details and their projects
   users add --email <email> --password <password> [--name <name>]
                                     Create a new user account
   users set-password <email|id> --password <password>
                                     Reset a user's password
+  users update <email|id> [--name <name>] [--active true|false]
+                                    Update user fields
   users deactivate <email|id>       Disable a user account (login blocked)
   users activate <email|id>         Re-enable a disabled user account
-  users delete <email|id>           Delete a user (fails if they have active keys)
-  users delete <email|id> --force   Delete a user and unlink their keys
+  users delete <email|id> [--force] Delete a user (--force unlinks active projects)
+  users grant-admin <email|id>      Grant admin rights to a user
+  users revoke-admin <email|id>     Revoke admin rights from a user
 
-Feature commands:
-  features list <key>               List all feature flags for an API key
-  features set <key> <code> [true|false]
+Project commands:
+  projects list                     List all projects (API keys)
+  projects info <key>               Show details for a project
+  projects add --owner <name> [--key <key>] [--email <email>] [--expires <date>]
+      [--daily-limit <n>] [--lifetime-limit <n>] [--file-saving] [--graphics]
+      [--relay] [--radio] [--hls] [--cea708-delay <ms>] [--embed-cors <origin>]
+      [--user-email <email>] [--user-id <id>]
+                                    Create a new project (optionally linked to a user)
+  projects update <key> [--owner <name>] [--expires <date>]
+      [--daily-limit <n|none>] [--lifetime-limit <n|none>]
+      [--file-saving [true|false]] [--graphics [true|false]]
+      [--relay [true|false]] [--radio [true|false]] [--hls [true|false]]
+      [--cea708-delay <ms>] [--embed-cors <origin>]
+                                    Update project fields (use 'none' to remove a limit)
+  projects revoke <key>             Revoke (soft-delete) a project
+  projects activate <key>           Re-activate a revoked project
+  projects delete <key>             Permanently remove a project
+  projects renew <key> --expires <date>
+                                    Extend project expiration
+  projects clean [--days 30] [--dry-run]
+                                    Purge revoked projects older than N days
+
+Project feature commands:
+  projects features list <key>      List all feature flags for a project
+  projects features set <key> <code> [true|false]
                                     Enable or disable a feature flag (default: enable)
+  projects features batch <key> --features <json>
+                                    Batch set features, e.g. --features '{"ai":true,"stt":false}'
 
 Options:
   --db <path>    Path to the SQLite database (default: ./lcyt-backend.db or DB_PATH env var)
@@ -517,21 +595,7 @@ const db = initDb(dbPath);
 
 const command = positional[0];
 
-if (command === 'features') {
-  const sub = positional[1];
-  switch (sub) {
-    case 'list':
-      cmdFeaturesList(db, positional.slice(1));
-      break;
-    case 'set':
-      cmdFeaturesSet(db, positional.slice(1), flags);
-      break;
-    default:
-      console.error(`Unknown features subcommand: ${sub || '(none)'}`);
-      usage();
-      process.exit(1);
-  }
-} else if (command === 'users') {
+if (command === 'users') {
   const sub = positional[1];
   switch (sub) {
     case 'list':
@@ -546,6 +610,9 @@ if (command === 'features') {
     case 'set-password':
       await cmdUsersSetPassword(db, positional, flags);
       break;
+    case 'update':
+      cmdUsersUpdate(db, positional, flags);
+      break;
     case 'deactivate':
       cmdUsersDeactivate(db, positional);
       break;
@@ -553,45 +620,78 @@ if (command === 'features') {
       cmdUsersActivate(db, positional);
       break;
     case 'delete':
-      if (flags.force) cmdUsersDeleteForce(db, positional);
-      else cmdUsersDelete(db, positional);
+      cmdUsersDelete(db, positional, flags);
+      break;
+    case 'grant-admin':
+      cmdUsersGrantAdmin(db, positional);
+      break;
+    case 'revoke-admin':
+      cmdUsersRevokeAdmin(db, positional);
       break;
     default:
       console.error(`Unknown users subcommand: ${sub || '(none)'}`);
       usage();
       process.exit(1);
   }
-} else {
-  switch (command) {
-    case 'list':
-      cmdList(db);
-      break;
-    case 'add':
-      await cmdAdd(db, flags);
-      break;
-    case 'update':
-      cmdUpdate(db, positional, flags);
-      break;
-    case 'revoke':
-      cmdRevoke(db, positional);
-      break;
-    case 'delete':
-      cmdDelete(db, positional);
-      break;
-    case 'renew':
-      cmdRenew(db, positional, flags);
-      break;
-    case 'info':
-      cmdInfo(db, positional);
-      break;
-    case 'clean':
-      cmdClean(db, flags);
-      break;
-    default:
-      console.error(`Unknown command: ${command}`);
-      usage();
-      process.exit(1);
+} else if (command === 'projects') {
+  const sub = positional[1];
+  if (sub === 'features') {
+    const featureSub = positional[2];
+    switch (featureSub) {
+      case 'list':
+        cmdProjectsFeaturesList(db, positional.slice(1));
+        break;
+      case 'set':
+        cmdProjectsFeaturesSet(db, positional.slice(1));
+        break;
+      case 'batch':
+        cmdProjectsFeaturesBatch(db, positional.slice(1), flags);
+        break;
+      default:
+        console.error(`Unknown projects features subcommand: ${featureSub || '(none)'}`);
+        usage();
+        process.exit(1);
+    }
+  } else {
+    switch (sub) {
+      case 'list':
+        cmdProjectsList(db);
+        break;
+      case 'info':
+        cmdProjectsInfo(db, positional);
+        break;
+      case 'add':
+        cmdProjectsAdd(db, flags);
+        break;
+      case 'update':
+        cmdProjectsUpdate(db, positional, flags);
+        break;
+      case 'revoke':
+        cmdProjectsRevoke(db, positional);
+        break;
+      case 'activate':
+        cmdProjectsActivate(db, positional);
+        break;
+      case 'delete':
+        cmdProjectsDelete(db, positional);
+        break;
+      case 'renew':
+        cmdProjectsRenew(db, positional, flags);
+        break;
+      case 'clean':
+        cmdProjectsClean(db, flags);
+        break;
+      default:
+        console.error(`Unknown projects subcommand: ${sub || '(none)'}`);
+        usage();
+        process.exit(1);
+    }
   }
+} else {
+  console.error(`Unknown command: ${command}`);
+  usage();
+  process.exit(1);
 }
 
 db.close();
+
