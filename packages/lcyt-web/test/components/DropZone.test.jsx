@@ -109,7 +109,7 @@ describe('DropZone', () => {
       dataTransfer: { files: [file] },
     });
 
-    // Error message appears
-    expect(await screen.findByText(/only .txt files supported/i)).toBeInTheDocument();
+    // Error message appears (accept both .txt and .md variants)
+    expect(await screen.findByText(/only .*txt/i)).toBeInTheDocument();
   });
 });

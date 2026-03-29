@@ -1,13 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 test('DockerFfmpegRunner integration (gated) — writes file into mounted volume', { skip: process.env.TEST_DOCKER !== '1' }, async () => {
   const { DockerFfmpegRunner } = await import('../src/ffmpeg/docker-runner.js');
 
-  const tmp = mkdtempSync(join(tmpdir(), 'docker-runner-test-'));
+  const tmp = fs.mkdtempSync(join(tmpdir(), 'docker-runner-test-'));
   const outPath = join(tmp, 'hello.txt');
 
   // Use a small base image and run a sh command that writes a file then exits.
@@ -47,8 +47,8 @@ test('DockerFfmpegRunner integration (gated) — writes file into mounted volume
   });
 
   // Verify file was written by container
-  const content = readFileSync(outPath, 'utf8').trim();
+  const content = fs.readFileSync(outPath, 'utf8').trim();
   assert.equal(content, 'container-write');
 
-  try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 });

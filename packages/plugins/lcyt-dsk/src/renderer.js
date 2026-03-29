@@ -22,6 +22,7 @@
 
 import { spawn } from 'node:child_process';
 import { chromium } from 'playwright-core';
+import logger from 'lcyt/logger';
 
 // ---------------------------------------------------------------------------
 // Chromium executable
@@ -29,9 +30,7 @@ import { chromium } from 'playwright-core';
 
 // Allow operators to point at a specific Chrome/Chromium binary.
 // Falls back to the well-known Playwright cache location used in this repo.
-const CHROMIUM_EXEC =
-  process.env.PLAYWRIGHT_DSK_CHROMIUM ||
-  '/root/.cache/ms-playwright/chromium-1194/chrome-linux/chrome';
+const CHROMIUM_EXEC = process.env.PLAYWRIGHT_DSK_CHROMIUM || null;
 
 // ---------------------------------------------------------------------------
 // Module-level browser state
@@ -91,9 +90,10 @@ export function renderTemplateToHtml(templateJson, opts = {}) {
       layer.animation ? `animation:${escHtml(layer.animation)}` : '',
     ].filter(Boolean).join(';');
 
-    const extraStyle = layer.style
-      ? Object.entries(layer.style).map(([k, v]) => `${k}:${v}`).join(';')
-      : '';
+    const extraStyle = layer.style ? Object.entries(layer.style).map(([k, v]) => {
+      if (!/^[a-zA-Z-]+$/.test(k)) return '';
+      return `${k}:${escHtml(String(v))}`;
+    }).filter(Boolean).join(';') : '';
 
     const style = [baseStyle, extraStyle].filter(Boolean).join(';');
 
@@ -212,6 +212,7 @@ function escHtml(s) {
 let _stopping = false;
 
 async function _launchBrowser() {
+  if (!CHROMIUM_EXEC) throw new Error('PLAYWRIGHT_DSK_CHROMIUM is not set or no accessible Chromium binary found');
   _browser = await chromium.launch({
     headless: true,
     executablePath: CHROMIUM_EXEC,
@@ -227,7 +228,7 @@ async function _launchBrowser() {
   // the last active template for each key that had an active capture loop.
   _browser.on('disconnected', async () => {
     if (_stopping) return;
-    console.warn('[dsk-renderer] Chromium disconnected — attempting restart in 2s...');
+    logger.warn('[dsk-renderer] Chromium disconnected — attempting restart in 2s...');
     _browser = null;
 
     // Snapshot the state we need to restore (pages are gone after crash).
@@ -252,18 +253,18 @@ async function _launchBrowser() {
 
     try {
       await _launchBrowser();
-      console.log('[dsk-renderer] Chromium restarted.');
+      logger.info('[dsk-renderer] Chromium restarted.');
 
       for (const { apiKey, templateJson, wasCapturing, rtmpBase, rtmpApp } of toRestore) {
         try {
           if (templateJson) await updateTemplate(apiKey, templateJson);
           if (wasCapturing && rtmpBase) await startRtmpStream(apiKey, rtmpBase, rtmpApp || 'dsk');
         } catch (err) {
-          console.error(`[dsk-renderer] Recovery failed for ${apiKey}: ${err.message}`);
+          logger.error(`[dsk-renderer] Recovery failed for ${apiKey}: ${err.message}`);
         }
       }
     } catch (err) {
-      console.error(`[dsk-renderer] Restart failed: ${err.message}`);
+      logger.error(`[dsk-renderer] Restart failed: ${err.message}`);
     }
   });
 }
@@ -273,10 +274,10 @@ export async function startRenderer() {
   _stopping = false;
   try {
     await _launchBrowser();
-    console.log('[dsk-renderer] Chromium started.');
+    logger.info('[dsk-renderer] Chromium started.');
   } catch (err) {
-    console.error(`[dsk-renderer] Failed to launch Chromium: ${err.message}`);
-    console.error('[dsk-renderer] Set PLAYWRIGHT_DSK_CHROMIUM to a valid Chromium binary path.');
+    logger.error(`[dsk-renderer] Failed to launch Chromium: ${err.message}`);
+    logger.error('[dsk-renderer] Set PLAYWRIGHT_DSK_CHROMIUM to a valid Chromium binary path.');
     _browser = null;
   }
 }
@@ -290,7 +291,7 @@ export async function stopRenderer() {
   if (_browser) {
     try { await _browser.close(); } catch {}
     _browser = null;
-    console.log('[dsk-renderer] Chromium stopped.');
+    logger.info('[dsk-renderer] Chromium stopped.');
   }
 }
 
@@ -396,13 +397,13 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
     const msg = buf.toString().trim();
     // Only log ffmpeg errors, not the regular encoding chatter
     if (/error|warning/i.test(msg)) {
-      console.error(`[dsk-renderer:${apiKey}] ffmpeg: ${msg}`);
+      logger.error(`[dsk-renderer:${apiKey}] ffmpeg: ${msg}`);
     }
   });
 
   ffmpeg.on('exit', (code, signal) => {
     if (state.capturing) {
-      console.warn(`[dsk-renderer:${apiKey}] ffmpeg exited unexpectedly (code=${code}, signal=${signal})`);
+      logger.warn(`[dsk-renderer:${apiKey}] ffmpeg exited unexpectedly (code=${code}, signal=${signal})`);
     }
     if (_keys.get(apiKey)?.ffmpeg === ffmpeg) {
       const s = _keys.get(apiKey);
@@ -429,7 +430,7 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
         }
       } catch (err) {
         if (state.capturing) {
-          console.error(`[dsk-renderer:${apiKey}] capture error: ${err.message}`);
+          logger.error(`[dsk-renderer:${apiKey}] capture error: ${err.message}`);
         }
         break;
       }
@@ -443,10 +444,10 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
   };
 
   loop().catch((err) => {
-    if (state.capturing) console.error(`[dsk-renderer:${apiKey}] loop error: ${err.message}`);
+    if (state.capturing) logger.error(`[dsk-renderer:${apiKey}] loop error: ${err.message}`);
   });
 
-  console.log(`[dsk-renderer:${apiKey}] RTMP stream started → ${rtmpUrl}`);
+  logger.info(`[dsk-renderer:${apiKey}] RTMP stream started → ${rtmpUrl}`);
 }
 
 /**
@@ -470,7 +471,7 @@ export async function stopRtmpStream(apiKey) {
   }
 
   _keys.delete(apiKey);
-  console.log(`[dsk-renderer:${apiKey}] RTMP stream stopped.`);
+  logger.info(`[dsk-renderer:${apiKey}] RTMP stream stopped.`);
 }
 
 // ---------------------------------------------------------------------------

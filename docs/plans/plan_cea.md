@@ -1,8 +1,8 @@
 ---
 id: plan/cea
 title: "CEA-708 SEI NAL Caption Embedding in RTMP Relay"
-status: draft
-summary: "Embed closed captions as H.264 SEI NAL units in the RTMP relay stream using ffmpeg tee muxer with PTS-anchored payloads."
+status: implemented
+summary: "CEA-708 caption embedding implemented in RtmpRelayManager via ffmpeg tee muxer with eia608 subtitle encoder and SRT stdin pipe. Controlled by per-slot captionMode and per-key cea708_delay_ms."
 ---
 
 # Plan: CEA-708 SEI NAL Caption Embedding in the RTMP Relay

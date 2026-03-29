@@ -121,6 +121,16 @@
   border-color: var(--color-success, #22c55e);
 }
 
+.status-bar__music-chip--music {
+  color: var(--color-success, #22c55e);
+  border-color: var(--color-success, #22c55e);
+}
+
+.status-bar__music-chip--other {
+  color: var(--color-text-dim);
+  border-color: var(--color-border);
+}
+
 .status-bar__btn {
   padding: 4px 8px;
   border-radius: 4px;
@@ -445,6 +455,22 @@
   color: #e05555;
   font-size: 1em;
   letter-spacing: normal;
+}
+
+.caption-line--meta-only {
+  opacity: 0.55;
+  font-style: italic;
+}
+
+.caption-line--meta-only:hover {
+  opacity: 0.8;
+}
+
+.caption-line__meta-label {
+  font-size: 0.8em;
+  color: var(--color-text-secondary, #888);
+  user-select: none;
+  letter-spacing: 0.02em;
 }
 
 .caption-line--sent {

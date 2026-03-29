@@ -14,6 +14,20 @@
 #
 # Then point `root` below at /var/www/html/lcyt-web (or the dist path directly).
 
+# ── Upstream & proxy cache (place inside the http {} block, outside server {}) ──
+#
+#   upstream lcyt_backend {
+#       server 127.0.0.1:3000;
+#       keepalive 32;
+#   }
+#
+#   # Shared on-disk cache for public media: HLS segments, VTT files, images, icons.
+#   # levels=1:2 distributes files across subdirectories to avoid huge flat dirs.
+#   # max_size=1g caps total disk usage; inactive=24h evicts cold entries automatically.
+#   proxy_cache_path /var/cache/nginx/lcyt
+#       levels=1:2 keys_zone=lcyt_media:10m
+#       max_size=1g inactive=24h use_temp_path=off;
+
 server {
     listen 443 ssl;
     server_name app.lcyt.fi;
@@ -44,3 +58,113 @@ server {
 
     # ssl_certificate / ssl_certificate_key — managed by certbot or similar.
 }
+
+# ── API reverse proxy vhost ─────────────────────────────────────────────────────
+#
+# Separate vhost (or location block within the SPA vhost) for the lcyt-backend.
+# Assumes the backend runs at http://127.0.0.1:3000.
+#
+# Uncomment and adapt this block when deploying lcyt-backend behind nginx.
+#
+# server {
+#     listen 443 ssl;
+#     server_name api.lcyt.fi;
+#
+#     # ── Immutable HLS segments ──────────────────────────────────────────────
+#     # TS segments are content-addressed by sequence number — never change once written.
+#     # Cache at the nginx level for 24 h on top of the backend's max-age=86400 header.
+#     location ~ ^/(stream-hls|radio)/[^/]+/[^/]+\.ts$ {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache lcyt_media;
+#         proxy_cache_valid 200 24h;
+#         proxy_cache_use_stale error timeout updating http_500 http_502;
+#         add_header X-Cache-Status $upstream_cache_status;
+#     }
+#
+#     # ── HLS playlists (live — must never be cached) ─────────────────────────
+#     location ~ ^/(stream-hls|radio)/[^/]+/index\.m3u8$ {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache off;
+#         add_header Cache-Control "no-cache, no-store" always;
+#     }
+#
+#     # ── WebVTT subtitle segments ────────────────────────────────────────────
+#     # Subtitle segments are immutable once written (named by sequence number).
+#     location ~ ^/video/[^/]+/subs/[^/]+/[^/]+\.vtt$ {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache lcyt_media;
+#         proxy_cache_valid 200 24h;
+#         add_header X-Cache-Status $upstream_cache_status;
+#     }
+#
+#     # ── Public image and icon assets ────────────────────────────────────────
+#     # Images are deleted and re-uploaded, not edited in place, so 24 h cache is safe.
+#     location ~ ^/(images|icons)/[0-9]+ {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache lcyt_media;
+#         proxy_cache_valid 200 24h;
+#         add_header X-Cache-Status $upstream_cache_status;
+#     }
+#
+#     # ── Preview thumbnails ──────────────────────────────────────────────────
+#     # Thumbnails update every ~5 s; cache for 5 s at nginx level.
+#     # The backend sets ETag so clients can skip the body on 304.
+#     location ~ ^/preview/[^/]+/incoming {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_cache lcyt_media;
+#         proxy_cache_valid 200 5s;
+#         add_header X-Cache-Status $upstream_cache_status;
+#     }
+#
+#     # ── SSE endpoints (no buffering, no caching) ────────────────────────────
+#     # EventSource connections must not be buffered or cached.
+#     location ~ ^/(events|viewer/|stt/events|dsk/[^/]+/events|production/bridge/commands) {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#         proxy_set_header Connection "";
+#         proxy_buffering off;
+#         proxy_cache off;
+#         proxy_read_timeout 86400s;
+#     }
+#
+#     # ── Default API proxy ───────────────────────────────────────────────────
+#     # All other requests: pass through with no caching.
+#     # The backend sets appropriate Cache-Control headers per-route.
+#     location / {
+#         proxy_pass http://lcyt_backend;
+#         proxy_http_version 1.1;
+#         proxy_set_header Host $host;
+#         proxy_set_header X-Real-IP $remote_addr;
+#         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+#         proxy_set_header X-Forwarded-Proto $scheme;
+#     }
+# }

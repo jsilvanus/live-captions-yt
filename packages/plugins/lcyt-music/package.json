@@ -1,0 +1,24 @@
+{
+  "name": "lcyt-music",
+  "version": "0.1.0",
+  "description": "Music detection plugin for LCYT — client-side and server-side audio classification, BPM estimation, metacode pipeline",
+  "type": "module",
+  "main": "src/api.js",
+  "scripts": {
+    "test": "node --test test/sound-caption-processor.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21",
+    "lcyt-backend": "*"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-music"
+  }
+}

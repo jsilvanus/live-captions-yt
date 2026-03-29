@@ -1,8 +1,8 @@
 ---
 id: plan/server-stt
 title: "Server-side Speech-to-Text (STT)"
-status: draft
-summary: "Server-side STT by fetching fMP4 HLS audio segments directly from MediaMTX and posting them to pluggable STT provider adapters (Google Cloud STT, whisper.cpp, OpenAI-compatible Whisper); segment timestamps from the HLS playlist drive caption timing with no ffmpeg required for the default path."
+status: in-progress
+summary: "Phase 1 implemented: HlsSegmentFetcher, GoogleSttAdapter, WhisperHttpAdapter, OpenAiAdapter, SttManager, /stt routes, StatusBar STT chip. Phases 2–4 (gRPC streaming, RTMP/WHEP fallback enhancements) remain."
 ---
 
 # Server-side Speech-to-Text (STT)

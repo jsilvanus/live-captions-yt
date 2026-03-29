@@ -1,4 +1,4 @@
-"""JWT authentication middleware for lcyt-backend."""
+"""JWT authentication middleware for lcyt-backend (minimal relay)."""
 
 import functools
 
@@ -9,15 +9,7 @@ from flask import current_app, g, jsonify, request
 def require_auth(f):
     """Decorator that enforces JWT Bearer authentication.
 
-    On success, sets ``g.session`` to the decoded JWT payload::
-
-        {
-            "sessionId": str,
-            "apiKey":    str,
-            "streamKey": str,
-            "domain":    str,
-        }
-
+    On success, sets ``g.session`` to the decoded JWT payload.
     On failure, returns 401 JSON.
     """
     @functools.wraps(f)
@@ -32,10 +24,10 @@ def require_auth(f):
 
         try:
             payload = jwt_decode(token, secret)
-            g.session = payload
-        except PyJWTError:
-            return jsonify({"error": "Invalid or expired token"}), 401
+        except PyJWTError as exc:
+            return jsonify({"error": f"Invalid token: {exc}"}), 401
 
+        g.session = payload
         return f(*args, **kwargs)
 
     return wrapper

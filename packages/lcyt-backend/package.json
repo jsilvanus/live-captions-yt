@@ -28,7 +28,10 @@
     "lcyt-dsk": "*",
     "lcyt-files": "*",
     "lcyt-production": "*",
-    "lcyt-rtmp": "*"
+    "lcyt-rtmp": "*",
+    "lcyt-music": "*",
+    "lcyt-cues": "*",
+    "lcyt-agent": "*"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "MIT",

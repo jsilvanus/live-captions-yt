@@ -33,11 +33,11 @@ export function getUserByEmail(db, email) {
  * Fetch a user by ID (excludes password_hash).
  * @param {import('better-sqlite3').Database} db
  * @param {number} id
- * @returns {{ id: number, email: string, name: string|null, created_at: string, active: number }|undefined}
+ * @returns {{ id: number, email: string, name: string|null, created_at: string, active: number, is_admin: number }|undefined}
  */
 export function getUserById(db, id) {
   return db.prepare(
-    'SELECT id, email, name, created_at, active FROM users WHERE id = ?'
+    'SELECT id, email, name, created_at, active, is_admin FROM users WHERE id = ?'
   ).get(id);
 }
 
@@ -61,4 +61,41 @@ export function getKeysByUserId(db, userId) {
   return db.prepare(
     'SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC'
   ).all(userId);
+}
+
+/**
+ * Grant or revoke admin rights for a user.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ * @param {boolean} isAdmin
+ */
+export function setUserAdmin(db, userId, isAdmin) {
+  db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, userId);
+}
+
+/**
+ * List all users (excludes password_hash).
+ * @param {import('better-sqlite3').Database} db
+ * @returns {object[]}
+ */
+export function getAllUsers(db) {
+  return db.prepare(
+    'SELECT id, email, name, created_at, active, is_admin FROM users ORDER BY id'
+  ).all();
+}
+
+/**
+ * Update user fields (name, active).
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ * @param {{ name?: string|null, active?: boolean }} updates
+ */
+export function updateUser(db, userId, updates) {
+  const parts = [];
+  const params = [];
+  if ('name' in updates) { parts.push('name = ?'); params.push(updates.name ?? null); }
+  if ('active' in updates) { parts.push('active = ?'); params.push(updates.active ? 1 : 0); }
+  if (parts.length === 0) return;
+  params.push(userId);
+  db.prepare(`UPDATE users SET ${parts.join(', ')} WHERE id = ?`).run(...params);
 }

@@ -1,5 +1,9 @@
 // All canonical localStorage keys — use these instead of raw strings
 export const KEYS = {
+  backend: {
+    features: 'lcyt.backend.features',
+    preset: 'lcyt.backend.preset',
+  },
   session: {
     config: 'lcyt.session.config',
     autoConnect: 'lcyt.session.autoConnect',
@@ -24,6 +28,10 @@ export const KEYS = {
     clientVad: 'lcyt.audio.clientVad',
     clientVadSilenceMs: 'lcyt.audio.clientVadSilenceMs',
     clientVadThreshold: 'lcyt.audio.clientVadThreshold',
+    musicDetect:          'lcyt.audio.musicDetect',
+    musicDetectBpm:       'lcyt.audio.musicDetectBpm',
+    musicDetectThreshold: 'lcyt.audio.musicDetectThreshold',
+    musicDetectInterval:  'lcyt.audio.musicDetectInterval',
   },
   captions: {
     batchInterval: 'lcyt.captions.batchInterval',

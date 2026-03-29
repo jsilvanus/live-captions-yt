@@ -23,6 +23,7 @@ export function createYouTubeRouter(auth) {
         error: 'YouTube OAuth not configured on this server (YOUTUBE_CLIENT_ID not set)',
       });
     }
+    res.set('Cache-Control', 'private, max-age=3600');
     res.json({ clientId });
   });
 

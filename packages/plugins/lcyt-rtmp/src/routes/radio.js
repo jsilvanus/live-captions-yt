@@ -3,6 +3,7 @@ import express from 'express';
 import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
 import { isRadioEnabled, getEmbedCors, getSttConfig } from '../db.js';
+import logger from 'lcyt/logger';
 
 // Radio key validation: same rules as viewer keys
 const RADIO_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
@@ -153,7 +154,7 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
       try {
         await radioManager.start(radioKey);
       } catch (err) {
-        console.error(`[radio] Failed to start HLS for ${radioKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[radio] Failed to start HLS for ${radioKey.slice(0, 8)}…: ${err.message}`);
         // Still return 200 so nginx allows the publish (HLS is best-effort)
       }
 
@@ -168,11 +169,11 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
               audioSource: cfg.audioSource,
               streamKey:   cfg.streamKey,
             }).catch(err => {
-              console.error(`[radio] STT auto-start failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
+              logger.error(`[radio] STT auto-start failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
             });
           }
         } catch (err) {
-          console.error(`[radio] STT auto-start lookup failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
+          logger.error(`[radio] STT auto-start lookup failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
         }
       }
 
@@ -183,13 +184,13 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
       try {
         await radioManager.stop(radioKey);
       } catch (err) {
-        console.error(`[radio] Failed to stop HLS for ${radioKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[radio] Failed to stop HLS for ${radioKey.slice(0, 8)}…: ${err.message}`);
       }
 
       // Stop STT when stream ends
       if (sttManager && sttManager.isRunning(radioKey)) {
         sttManager.stop(radioKey).catch(err => {
-          console.error(`[radio] STT stop failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
+          logger.error(`[radio] STT stop failed for ${radioKey.slice(0, 8)}…: ${err.message}`);
         });
       }
 
@@ -289,7 +290,7 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
     try {
       upstream = await fetch(upstreamUrl);
     } catch (err) {
-      console.error(`[radio] MediaMTX proxy error for ${key.slice(0, 8)}: ${err.message}`);
+      logger.error(`[radio] MediaMTX proxy error for ${key.slice(0, 8)}: ${err.message}`);
       return res.status(502).json({ error: 'Stream backend unavailable' });
     }
 
@@ -301,7 +302,7 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
 
     const cors = getEmbedCors(db, key);
     setCorsHeaders(res, cors);
-    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=60');
+    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=86400, immutable');
     res.setHeader('Content-Type', file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
 
     Readable.fromWeb(upstream.body)

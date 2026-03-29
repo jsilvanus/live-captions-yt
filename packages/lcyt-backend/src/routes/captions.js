@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled } from '../db.js';
 import { broadcastToViewers, registerViewerKeyOwner } from './viewer.js';
 import { composeCaptionText, buildVttCue } from '../caption-files.js';
+import { applyMetacodeProcessors } from '../metacode.js';
 import { writeToBackendFile } from 'lcyt-files';
 
 /**
@@ -16,9 +17,11 @@ import { writeToBackendFile } from 'lcyt-files';
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @param {object} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager|null} [relayManager]
+ * @param {Function|null} [soundProcessor]
+ * @param {Function|null} [cueProcessor]
  * @returns {Router}
  */
-export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null, resolveStorage = null) {
+export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null, resolveStorage = null, soundProcessor = null, cueProcessor = null) {
   const router = Router();
 
   // POST /captions — Send captions (auth required)
@@ -78,13 +81,8 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
     session._sendQueue = session._sendQueue.then(async () => {
       let result;
       try {
-        // DSK: strip <!-- graphics:... --> codes and trigger overlay updates.
-        // Handled by the lcyt-dsk plugin processor injected at startup.
-        if (dskProcessor) {
-          for (const caption of resolvedCaptions) {
-            caption.text = await dskProcessor(session.apiKey, caption.text || '', caption.codes ?? {});
-          }
-        }
+        // Apply core backend metacode processors in the canonical order.
+        await applyMetacodeProcessors(session, resolvedCaptions, dskProcessor, soundProcessor, cueProcessor);
 
         // For each caption, compose text from translations and write backend files
         const sendCaptions = resolvedCaptions.map(caption => {

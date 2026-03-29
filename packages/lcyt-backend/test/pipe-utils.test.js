@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { makeFifo, createFifoWriter, isFifo } from '../src/ffmpeg/pipe-utils.js';
 
@@ -60,7 +60,7 @@ test('createFifoWriter: write succeeds when reader present and drains', async ()
 });
 
 test('createFifoWriter writes to regular file (fallback) and resolves true', async () => {
-  const tmp = mkdtempSync(join(process.env.TEMP || '/tmp', 'pipe-utils-'));
+  const tmp = fs.mkdtempSync(join(process.env.TEMP || '/tmp', 'pipe-utils-'));
   try {
     const p = join(tmp, 'out.txt');
     // On non-POSIX this acts like fallback file
@@ -70,14 +70,14 @@ test('createFifoWriter writes to regular file (fallback) and resolves true', asy
     assert.equal(ok, true);
     await writer.close();
   } finally {
-    try { rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
   }
 });
 
 test('createFifoWriter on POSIX without reader should time out or throw ENXIO', async () => {
   if (process.platform === 'win32') return;
 
-  const tmp = mkdtempSync(join('/tmp', 'pipe-utils-'));
+  const tmp = fs.mkdtempSync(join('/tmp', 'pipe-utils-'));
   try {
     const p = join(tmp, 'fifo.srt');
     await makeFifo(p);
@@ -93,7 +93,7 @@ test('createFifoWriter on POSIX without reader should time out or throw ENXIO', 
       await writer.close();
     }
   } finally {
-    try { rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
+    try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) {}
   }
 });
 
@@ -104,7 +104,7 @@ test('isFifo / makeFifo basic behavior', async () => {
   try {
     assert.equal(isFifo(TEST_TMP), false);
   } finally {
-    try { unlinkSync(TEST_TMP); } catch (e) {}
+    try { fs.unlinkSync(TEST_TMP); } catch (e) {}
   }
 
   if (process.platform !== 'win32') {
@@ -115,7 +115,7 @@ test('isFifo / makeFifo basic behavior', async () => {
     } catch (err) {
       console.warn('makeFifo test skipped (mkfifo unavailable):', err.message);
     } finally {
-      try { unlinkSync(pathF); } catch (e) {}
+      try { fs.unlinkSync(pathF); } catch (e) {}
     }
   }
 });

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import express from 'express';
 import { isRelayAllowed, isRelayActive, getRelays, getKey } from '../db.js';
+import logger from 'lcyt/logger';
 
 /**
  * Factory for the /rtmp router.
@@ -42,7 +43,7 @@ export function createRtmpRouter(db, relayManager) {
     // Read env at request time so it can be changed in tests or via hot config.
     const expectedApp = process.env.RTMP_APPLICATION || null;
     if (expectedApp && appName !== expectedApp) {
-      console.warn(`[rtmp] Rejected request: app '${appName}' !== expected '${expectedApp}'`);
+      logger.warn(`[rtmp] Rejected request: app '${appName}' !== expected '${expectedApp}'`);
       return res.status(403).send('wrong application');
     }
 
@@ -72,11 +73,11 @@ export function createRtmpRouter(db, relayManager) {
             const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
             await relayManager.startAll(apiKey, relays, { cea708DelayMs });
           } catch (err) {
-            console.error(`[rtmp] Failed to start relay fan-out for ${apiKey.slice(0, 8)}…: ${err.message}`);
+            logger.error(`[rtmp] Failed to start relay fan-out for ${apiKey.slice(0, 8)}…: ${err.message}`);
           }
         }
       } else {
-        console.log(`[rtmp] Relay not active for ${apiKey.slice(0, 8)}…; accepting stream but not fanning out`);
+        logger.info(`[rtmp] Relay not active for ${apiKey.slice(0, 8)}…; accepting stream but not fanning out`);
       }
 
       // Always 200 to allow the publish (relay fan-out is best-effort)
@@ -89,7 +90,7 @@ export function createRtmpRouter(db, relayManager) {
       try {
         await relayManager.stopKey(apiKey);
       } catch (err) {
-        console.error(`[rtmp] Failed to stop relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[rtmp] Failed to stop relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }
       return res.status(200).send('ok');
     }

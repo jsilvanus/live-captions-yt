@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { LocalFfmpegRunner } from '../src/ffmpeg/local-runner.js';
 
 test('LocalFfmpegRunner start/stop lifecycle (uses node as fake ffmpeg)', async (t) => {

@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { createServer } from 'node:http';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -91,12 +91,12 @@ describe('HlsManager', () => {
 
   before(() => {
     tmpRoot = join(tmpdir(), `hls-mgr-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
   });
 
   after(() => {
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   it('hlsDir returns path inside hlsRoot', () => {
@@ -149,12 +149,12 @@ describe('PreviewManager', () => {
 
   before(() => {
     tmpRoot = join(tmpdir(), `preview-mgr-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new PreviewManager({ previewRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
   });
 
   after(() => {
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   it('previewPath returns path inside previewRoot with incoming.jpg', () => {
@@ -187,7 +187,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-nginx-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
 
     const app = express();
@@ -201,7 +201,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
   after(() => new Promise(resolve => {
     server.close(resolve);
     db.close();
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 400 when name is missing', async () => {
@@ -248,7 +248,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-playlist-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot });
 
     const app = express();
@@ -262,7 +262,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
   after(() => new Promise(resolve => {
     server.close(resolve);
     db.close();
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 404 when no stream is live', async () => {
@@ -287,8 +287,8 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
   it('serves playlist with correct content-type when file exists', async () => {
     const key = 'teststream';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'index.m3u8'), '#EXTM3U\n#EXT-X-VERSION:3\n');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'index.m3u8'), '#EXTM3U\n#EXT-X-VERSION:3\n');
 
     const res = await getJson(server, `/stream-hls/${key}/index.m3u8`);
     assert.strictEqual(res.status, 200);
@@ -309,7 +309,7 @@ describe('GET /stream-hls/:key/:segment', () => {
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-seg-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot });
 
     const app = express();
@@ -323,7 +323,7 @@ describe('GET /stream-hls/:key/:segment', () => {
   after(() => new Promise(resolve => {
     server.close(resolve);
     db.close();
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 400 for non-ts segment names', async () => {
@@ -344,8 +344,8 @@ describe('GET /stream-hls/:key/:segment', () => {
   it('serves segment with correct content-type when file exists', async () => {
     const key = 'segtest';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'seg00001.ts'), 'fake ts data');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'seg00001.ts'), 'fake ts data');
 
     const res = await getJson(server, `/stream-hls/${key}/seg00001.ts`);
     assert.strictEqual(res.status, 200);
@@ -364,7 +364,7 @@ describe('GET /stream-hls/:key/player.js', () => {
   before(async () => {
     db = initTestDb();
     const tmpRoot = join(tmpdir(), `hls-player-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager({ hlsRoot: tmpRoot });
 
     const app = express();
@@ -422,7 +422,7 @@ describe('GET /preview/:key/incoming.jpg', () => {
 
   before(async () => {
     tmpRoot = join(tmpdir(), `preview-route-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new PreviewManager({ previewRoot: tmpRoot });
 
     const app = express();
@@ -435,7 +435,7 @@ describe('GET /preview/:key/incoming.jpg', () => {
 
   after(() => new Promise(resolve => {
     server.close(resolve);
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 400 for too-short key', async () => {
@@ -460,9 +460,9 @@ describe('GET /preview/:key/incoming.jpg', () => {
   it('serves JPEG with correct content-type when file exists', async () => {
     const key = 'streampreview';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
     // Write a minimal JPEG (just fake bytes — test only checks content-type + status)
-    writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
 
     const res = await getJson(server, `/preview/${key}/incoming.jpg`);
     assert.strictEqual(res.status, 200);
@@ -473,8 +473,8 @@ describe('GET /preview/:key/incoming.jpg', () => {
   it('response has Cache-Control with max-age=5', async () => {
     const key = 'cachetest';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
 
     const res = await getJson(server, `/preview/${key}/incoming.jpg`);
     assert.strictEqual(res.status, 200);
@@ -485,8 +485,8 @@ describe('GET /preview/:key/incoming.jpg', () => {
   it('response includes Last-Modified header', async () => {
     const key = 'lmtest';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
 
     const res = await getJson(server, `/preview/${key}/incoming.jpg`);
     assert.ok(res.headers.get('last-modified'), 'should include Last-Modified header');
@@ -495,8 +495,8 @@ describe('GET /preview/:key/incoming.jpg', () => {
   it('returns 304 when If-Modified-Since matches mtime', async () => {
     const key = 'condrequest';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
 
     // First request to get the mtime
     const first = await getJson(server, `/preview/${key}/incoming.jpg`);
@@ -514,8 +514,8 @@ describe('GET /preview/:key/incoming.jpg', () => {
   it('has CORS header', async () => {
     const key = 'corstest';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
 
     const res = await getJson(server, `/preview/${key}/incoming.jpg`);
     assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');

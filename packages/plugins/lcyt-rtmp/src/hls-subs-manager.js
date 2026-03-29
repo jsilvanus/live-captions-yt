@@ -1,5 +1,6 @@
 import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join, resolve as resolvePath, sep } from 'node:path';
+import logger from 'lcyt/logger';
 
 const DEFAULT_SUBS_ROOT      = process.env.HLS_SUBS_ROOT             || '/tmp/hls-subs';
 const DEFAULT_SEG_DURATION   = Number(process.env.HLS_SUBS_SEGMENT_DURATION ?? 6);
@@ -314,7 +315,7 @@ export class HlsSubsManager {
         await mkdir(dir, { recursive: true });
         await writeFile(join(dir, filename), vttContent, 'utf8');
       } catch (err) {
-        console.warn(`[hls-subs] Failed to write segment ${filename} for ${viewerKey}/${lang}: ${err.message}`);
+        logger.warn(`[hls-subs] Failed to write segment ${filename} for ${viewerKey}/${lang}: ${err.message}`);
       }
 
       // Update the in-memory rolling window
@@ -338,7 +339,7 @@ export class HlsSubsManager {
     if (!anyCues) {
       state.idleCount++;
       if (state.idleCount >= this._maxIdle) {
-        console.log(`[hls-subs] Auto-stopping idle subs for viewer key "${viewerKey}"`);
+        logger.info(`[hls-subs] Auto-stopping idle subs for viewer key "${viewerKey}"`);
         this.stopSubs(viewerKey).catch(() => {});
       }
     } else {
@@ -367,7 +368,7 @@ export class HlsSubsManager {
       const dir = join(this._subsRoot, viewerKey);
       await rm(dir, { recursive: true, force: true });
     } catch (err) {
-      console.warn(`[hls-subs] Failed to remove dir for "${viewerKey}": ${err.message}`);
+      logger.warn(`[hls-subs] Failed to remove dir for "${viewerKey}": ${err.message}`);
     }
   }
 

@@ -1,7 +1,4 @@
-"""POST /captions — Send captions through the session's sender."""
-
-import time
-from datetime import datetime, timezone
+"""POST /captions — Send captions through the session's sender (Bearer auth)."""
 
 from flask import Blueprint, current_app, g, jsonify, request
 
@@ -13,8 +10,19 @@ captions_bp = Blueprint("captions", __name__)
 @captions_bp.post("/")
 @require_auth
 def send_captions():
-    """POST /captions — Send one or more captions (auth required)."""
-    store = current_app.config["STORE"]
+    """POST /captions — Send one or more captions (auth via Bearer token).
+
+    Request body:
+        {
+            "captions": [{"text": "Hello", "timestamp": "..."}]
+        }
+    """
+    senders = current_app.config["SENDERS"]
+    session_id = g.session["sessionId"]
+    entry = senders.get(session_id)
+
+    if not entry:
+        return jsonify({"error": "Session not found"}), 404
 
     body = request.get_json(silent=True) or {}
     captions = body.get("captions")
@@ -22,29 +30,16 @@ def send_captions():
     if not isinstance(captions, list) or len(captions) == 0:
         return jsonify({"error": "captions must be a non-empty array"}), 400
 
-    session_id = g.session["sessionId"]
-    session = store.get(session_id)
-    if not session:
-        return jsonify({"error": "Session not found"}), 404
-
-    # Resolve relative `time` fields to absolute datetime timestamps.
-    # time (ms since session start) + session.started_at + session.sync_offset (ms)
-    resolved = []
-    for caption in captions:
-        text = caption.get("text", "")
-        ts = caption.get("timestamp")
-        rel_time = caption.get("time")  # ms since session start
-
-        if rel_time is not None and ts is None:
-            abs_ms = session["started_at"] * 1000 + rel_time + session["sync_offset"]
-            ts = datetime.fromtimestamp(abs_ms / 1000, tz=timezone.utc)
-
-        resolved.append({"text": text, "timestamp": ts})
-
     try:
         from lcyt.sender import Caption  # type: ignore[import]
 
-        sender = session["sender"]
+        sender = entry["sender"]
+
+        resolved = []
+        for caption in captions:
+            text = caption.get("text", "")
+            ts = caption.get("timestamp")
+            resolved.append({"text": text, "timestamp": ts})
 
         caption_objs = [Caption(text=c["text"], timestamp=c["timestamp"]) for c in resolved]
 
@@ -52,10 +47,6 @@ def send_captions():
             result = sender.send(caption_objs[0].text, caption_objs[0].timestamp)
         else:
             result = sender.send_batch(caption_objs)
-
-        # Sync sequence from sender
-        session["sequence"] = sender.get_sequence()
-        store.touch(session_id)
 
         if 200 <= result.status_code < 300:
             if len(caption_objs) == 1:

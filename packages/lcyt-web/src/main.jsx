@@ -30,6 +30,11 @@ const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridges
 const ProductionDevicesPage  = lazy(() => import('./components/ProductionDevicesPage').then(m => ({ default: m.ProductionDevicesPage })));
 const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
 const TranslationsPage       = lazy(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
+const AiSettingsPage         = lazy(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
+const AdminUsersPage         = lazy(() => import('./components/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
+const AdminUserDetailPage    = lazy(() => import('./components/AdminUserDetailPage').then(m => ({ default: m.AdminUserDetailPage })));
+const AdminProjectsPage      = lazy(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
+const AdminProjectDetailPage = lazy(() => import('./components/AdminProjectDetailPage').then(m => ({ default: m.AdminProjectDetailPage })));
 
 // Standalone / path-gated pages
 const SpeechCapturePage      = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
@@ -57,10 +62,22 @@ const path = window.location.pathname;
 function AuthGate({ children }) {
   const hasAuth = (() => {
     try {
+      // Mode 1: User login (backend with login feature)
       const raw = localStorage.getItem('lcyt-user');
-      if (!raw) return false;
-      const parsed = JSON.parse(raw);
-      return !!(parsed?.token && parsed?.backendUrl);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.token && parsed?.backendUrl) return true;
+      }
+      // Mode 2: Minimal backend (no login feature — session config + features)
+      const featuresRaw = localStorage.getItem('lcyt.backend.features');
+      if (featuresRaw) {
+        const features = JSON.parse(featuresRaw);
+        if (Array.isArray(features) && !features.includes('login')) {
+          const cfg = JSON.parse(localStorage.getItem('lcyt.session.config') || '{}');
+          if (cfg.backendUrl && cfg.apiKey) return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
@@ -152,6 +169,11 @@ function SidebarApp() {
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />
+            <Route path="/ai" component={AiSettingsPage} />
+            <Route path="/admin/users/:id" component={AdminUserDetailPage} />
+            <Route path="/admin/users" component={AdminUsersPage} />
+            <Route path="/admin/projects/:key" component={AdminProjectDetailPage} />
+            <Route path="/admin/projects" component={AdminProjectsPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />

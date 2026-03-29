@@ -19,6 +19,7 @@ import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
 import { OpenAiAdapter } from './stt-adapters/openai.js';
+import logger from 'lcyt/logger';
 
 const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8888';
 
@@ -78,11 +79,11 @@ export class SttManager extends EventEmitter {
     probeFfmpegVersion().then(v => {
       this.ffmpegVersion = v;
       if (!v) {
-        console.warn('[stt] ffmpeg not found — RTMP/WHEP audioSource will be unavailable');
+        logger.warn('[stt] ffmpeg not found — RTMP/WHEP audioSource will be unavailable');
       } else if (v.major < 6 || (v.major === 6 && v.minor < 1)) {
-        console.warn(`[stt] ffmpeg ${v.major}.${v.minor} detected — WHEP audioSource requires ffmpeg ≥ 6.1`);
+        logger.warn(`[stt] ffmpeg ${v.major}.${v.minor} detected — WHEP audioSource requires ffmpeg ≥ 6.1`);
       } else {
-        console.log(`[stt] ffmpeg ${v.major}.${v.minor} detected — RTMP and WHEP audioSources available`);
+        logger.info(`[stt] ffmpeg ${v.major}.${v.minor} detected — RTMP and WHEP audioSources available`);
       }
     }).catch(() => {});
   }
@@ -148,7 +149,7 @@ export class SttManager extends EventEmitter {
       // Confidence threshold filtering — discard transcripts below the minimum
       const threshold = sess.confidenceThreshold;
       if (threshold !== null && threshold > 0 && confidence !== null && confidence < threshold) {
-        console.log(`[stt] Discarded low-confidence transcript (${confidence?.toFixed(2)} < ${threshold}) for key ${apiKey.slice(0, 8)}…`);
+        logger.info(`[stt] Discarded low-confidence transcript (${confidence?.toFixed(2)} < ${threshold}) for key ${apiKey.slice(0, 8)}…`);
         return;
       }
       sess.lastTranscript = text;
@@ -230,7 +231,7 @@ export class SttManager extends EventEmitter {
       throw new Error(`SttManager: unsupported audioSource "${audioSource}". Supported: hls, rtmp, whep`);
     }
 
-    console.log(`[stt] Started for key ${apiKey.slice(0, 8)}… provider=${provider} lang=${language} source=${audioSource} stream=${effectiveStreamKey}`);
+    logger.info(`[stt] Started for key ${apiKey.slice(0, 8)}… provider=${provider} lang=${language} source=${audioSource} stream=${effectiveStreamKey}`);
   }
 
   /**
@@ -248,7 +249,7 @@ export class SttManager extends EventEmitter {
     try { await session.adapter.stop(); } catch {}
 
     this.emit('stopped', { apiKey });
-    console.log(`[stt] Stopped for key ${apiKey.slice(0, 8)}…`);
+    logger.info(`[stt] Stopped for key ${apiKey.slice(0, 8)}…`);
   }
 
   /**
@@ -359,7 +360,7 @@ export class SttManager extends EventEmitter {
           for (const target of backendSession.extraTargets) {
             if (target.type === 'youtube' && target.sender) {
               target.sender.send(trimmed, ts).catch(err => {
-                console.warn(`[stt] YouTube target ${target.id} error: ${err.message}`);
+                logger.warn(`[stt] YouTube target ${target.id} error: ${err.message}`);
               });
             } else if (target.type === 'viewer' && target.viewerKey && broadcastToViewers) {
               broadcastToViewers(target.viewerKey, {
@@ -378,7 +379,7 @@ export class SttManager extends EventEmitter {
                   captions: [{ text: trimmed, composedText: trimmed, timestamp: ts.toISOString() }],
                 }),
               }).catch(err => {
-                console.warn(`[stt] Generic target ${target.id} error: ${err.message}`);
+                logger.warn(`[stt] Generic target ${target.id} error: ${err.message}`);
               });
             }
           }
@@ -387,12 +388,12 @@ export class SttManager extends EventEmitter {
         // Legacy primary sender
         if (backendSession.sender) {
           backendSession.sender.send(trimmed, ts).catch(err => {
-            console.warn(`[stt] Primary sender error: ${err.message}`);
+            logger.warn(`[stt] Primary sender error: ${err.message}`);
           });
           backendSession.sequence = backendSession.sender.sequence;
         }
       } catch (err) {
-        console.error(`[stt] _deliverTranscript error for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[stt] _deliverTranscript error for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }
     });
   }

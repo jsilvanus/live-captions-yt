@@ -11,6 +11,7 @@ import json
 import time
 from typing import Any
 
+
 _HEADER = base64.urlsafe_b64encode(
     json.dumps({"alg": "HS256", "typ": "JWT"}).encode()
 ).rstrip(b"=").decode()
@@ -41,15 +42,7 @@ def _b64url_decode(s: str) -> bytes:
 
 
 def encode(payload: dict[str, Any], secret: str) -> str:
-    """Sign a payload dict as an HS256 JWT.
-
-    Args:
-        payload: Claims dict (will be JSON-encoded).
-        secret: HMAC secret string.
-
-    Returns:
-        Compact JWT string (header.payload.signature).
-    """
+    """Sign a payload dict as an HS256 JWT."""
     payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
     signing_input = f"{_HEADER}.{payload_b64}"
     sig = hmac.new(
@@ -59,20 +52,7 @@ def encode(payload: dict[str, Any], secret: str) -> str:
 
 
 def decode(token: str, secret: str) -> dict[str, Any]:
-    """Verify and decode an HS256 JWT.
-
-    Args:
-        token: Compact JWT string.
-        secret: HMAC secret for verification.
-
-    Returns:
-        Decoded payload dict.
-
-    Raises:
-        DecodeError: If the token is malformed.
-        InvalidSignatureError: If the signature does not match.
-        ExpiredSignatureError: If the token has an ``exp`` claim in the past.
-    """
+    """Verify and decode an HS256 JWT."""
     try:
         header_b64, payload_b64, sig_b64 = token.split(".")
     except ValueError:

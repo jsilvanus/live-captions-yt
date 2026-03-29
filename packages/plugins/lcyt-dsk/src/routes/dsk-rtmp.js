@@ -25,6 +25,7 @@
  */
 
 import express, { Router } from 'express';
+import logger from 'lcyt/logger';
 
 // The local nginx-rtmp base URL and DSK application name.
 // These must match the nginx-rtmp config on the server.
@@ -70,22 +71,22 @@ export function createDskRtmpRouter(relayManager) {
     const rtmpUrl = dskSourceUrl(apiKey);
 
     if (call === 'publish') {
-      console.log(`[dsk-rtmp] on_publish: key=${apiKey.slice(0, 8)}… → ${rtmpUrl}`);
+      logger.info(`[dsk-rtmp] on_publish: key=${apiKey.slice(0, 8)}… → ${rtmpUrl}`);
       try {
         await relayManager.setDskRtmpSource(apiKey, rtmpUrl);
       } catch (err) {
-        console.error(`[dsk-rtmp] Failed to set DSK RTMP source for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[dsk-rtmp] Failed to set DSK RTMP source for ${apiKey.slice(0, 8)}…: ${err.message}`);
         // Return 200 so nginx allows the ingest; DSK is best-effort
       }
       return res.status(200).send('ok');
     }
 
     if (call === 'publish_done') {
-      console.log(`[dsk-rtmp] on_publish_done: key=${apiKey.slice(0, 8)}…`);
+      logger.info(`[dsk-rtmp] on_publish_done: key=${apiKey.slice(0, 8)}…`);
       try {
         await relayManager.setDskRtmpSource(apiKey, null);
       } catch (err) {
-        console.error(`[dsk-rtmp] Failed to clear DSK RTMP source for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        logger.error(`[dsk-rtmp] Failed to clear DSK RTMP source for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }
       return res.status(200).send('ok');
     }

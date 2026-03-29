@@ -1,108 +1,124 @@
-const DEFAULT_MEDIAMTX_HLS_BASE = process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080';
+import path from 'node:path';
+import * as fs from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import logger from 'lcyt/logger';
 
-/**
- * Manages video+audio HLS streams served by MediaMTX.
- *
- * MediaMTX receives RTMP and serves HLS natively — no ffmpeg process is
- * spawned.  This manager tracks active keys and optionally pre-registers
- * paths with MediaMTX so the server is ready before the publisher arrives.
- *
- * Public API:
- *   start(key)        — register key; optionally pre-create MediaMTX path
- *   stop(key)         — deregister key; optionally remove MediaMTX path
- *   stopAll()         — stop all active keys
- *   isRunning(key)    — true if key was started and not yet stopped
- *
- * HLS proxy URL is served from the backend at /stream-hls/:key/* which
- * proxies to MediaMTX.
- *
- * Environment variables:
- *   MEDIAMTX_HLS_BASE_URL  — MediaMTX HLS server base URL (default: http://127.0.0.1:8080)
- */
 export class HlsManager {
-  /**
-   * @param {{
-   *   mediamtxClient?: import('./mediamtx-client.js').MediaMtxClient,
-   * }} [opts]
-   */
-  constructor({ mediamtxClient } = {}) {
-    /** @type {Set<string>} */
-    this._active = new Set();
-
-    /** @type {import('./mediamtx-client.js').MediaMtxClient | null} */
-    this._mediamtx = mediamtxClient ?? null;
+  constructor({ hlsRoot = '/tmp/hls', localRtmp = null, rtmpApp = 'live', mediamtxClient = null } = {}) {
+    this._hlsRoot = hlsRoot;
+    this._local = localRtmp;
+    this._app = rtmpApp;
+    this._mediamtx = mediamtxClient;
+    this._procs = new Map();
   }
 
-  /**
-   * Register a key as active. Optionally pre-creates the MediaMTX path so
-   * it is ready to accept an ingest stream before the publisher connects.
-   *
-   * @param {string} hlsKey
-   * @returns {Promise<void>}
-   */
+  hlsDir(hlsKey) {
+    return path.join(this._hlsRoot, hlsKey);
+  }
+
+  isRunning(hlsKey) {
+    return this._procs.has(hlsKey);
+  }
+
   async start(hlsKey) {
-    const tag = `[hls:${hlsKey.slice(0, 8)}]`;
+    const tag = `[hls:${String(hlsKey).slice(0,8)}]`;
+
+    // If already running, stop first
+    if (this._procs.has(hlsKey)) {
+      await this.stop(hlsKey);
+    }
+
+    // Ensure output directory exists
+    const dir = this.hlsDir(hlsKey);
+    try {
+      fs.mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      logger.warn(`${tag} mkdir warning: ${err?.message || err}`);
+    }
+
+    // If a MediaMTX client is provided, try to register the path (non-fatal)
     if (this._mediamtx) {
       try {
         await this._mediamtx.addPath(hlsKey, { source: 'publisher' });
-        console.log(`${tag} MediaMTX path registered`);
+        logger.info(`${tag} MediaMTX path registered`);
       } catch (err) {
-        // Path may already exist; non-fatal
-        console.warn(`${tag} MediaMTX addPath warning: ${err.message}`);
+        logger.warn(`${tag} MediaMTX addPath warning: ${err?.message || err}`);
       }
     }
-    this._active.add(hlsKey);
-    console.log(`${tag} HLS active (MediaMTX)`);
-  }
 
-  /**
-   * Deregister a key. Optionally removes the MediaMTX path.
-   *
-   * @param {string} hlsKey
-   * @returns {Promise<void>}
-   */
-  async stop(hlsKey) {
-    if (!this._active.has(hlsKey)) return;
-    this._active.delete(hlsKey);
+    // Spawn ffmpeg only when a local RTMP base and app are configured
+    if (this._local) {
+      const input = `${this._local.replace(/\/$/, '')}/${this._app}/${hlsKey}`;
+      const out = path.join(dir, 'index.m3u8');
+      const args = ['-y', '-i', input, '-c', 'copy', '-f', 'hls', out];
 
-    const tag = `[hls:${hlsKey.slice(0, 8)}]`;
-    if (this._mediamtx) {
+      let proc;
       try {
-        await this._mediamtx.deletePath(hlsKey);
-        console.log(`${tag} MediaMTX path removed`);
+        proc = spawn('ffmpeg', args, { stdio: 'pipe' });
       } catch (err) {
-        console.warn(`${tag} MediaMTX deletePath warning: ${err.message}`);
+        logger.error(`${tag} spawn ffmpeg failed: ${err?.message || err}`);
+        throw err;
       }
+
+      // Track process and lifecycle
+      this._procs.set(hlsKey, proc);
+
+      proc.once('error', (err) => {
+        this._procs.delete(hlsKey);
+        logger.warn(`${tag} ffmpeg error: ${err?.message || err}`);
+      });
+
+      proc.once('close', (code) => {
+        this._procs.delete(hlsKey);
+        logger.info(`${tag} ffmpeg exited code=${code}`);
+      });
+
+      // Resolve after a tick so tests can simulate nextTick error ordering
+      return await new Promise((resolve, reject) => {
+        let settled = false;
+        proc.once('error', (err) => {
+          if (!settled) { settled = true; this._procs.delete(hlsKey); reject(err); }
+        });
+        proc.once('close', () => {
+          if (!settled) { settled = true; this._procs.delete(hlsKey); resolve(); }
+        });
+        setImmediate(() => { if (!settled) { settled = true; resolve(); } });
+      });
     }
-    console.log(`${tag} HLS stopped`);
+
+    // No ffmpeg spawned — still mark active (directory created)
+    logger.info(`${tag} HLS active (no-local-rtmp)`);
+    return;
   }
 
-  /**
-   * Stop all active keys.
-   * @returns {Promise<void>}
-   */
+  async stop(hlsKey) {
+    if (!this._procs.has(hlsKey)) return;
+    const tag = `[hls:${String(hlsKey).slice(0,8)}]`;
+    const proc = this._procs.get(hlsKey);
+    try {
+      proc.kill('SIGTERM');
+    } catch (err) {
+      logger.warn(`${tag} kill warning: ${err?.message || err}`);
+    }
+    this._procs.delete(hlsKey);
+
+    const dir = this.hlsDir(hlsKey);
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch (err) {
+      logger.warn(`${tag} rm warning: ${err?.message || err}`);
+    }
+
+    logger.info(`${tag} HLS stopped`);
+  }
+
   async stopAll() {
-    await Promise.all([...this._active].map(k => this.stop(k)));
+    await Promise.all([...this._procs.keys()].map(k => this.stop(k)));
   }
 
-  /**
-   * Check whether a key is currently active.
-   * @param {string} hlsKey
-   * @returns {boolean}
-   */
-  isRunning(hlsKey) {
-    return this._active.has(hlsKey);
-  }
-
-  /**
-   * Returns the internal MediaMTX HLS base URL for a key (no trailing slash).
-   * Used by stream-hls route to proxy when needed.
-   *
-   * @param {string} hlsKey
-   * @returns {string}
-   */
+  // Backwards-compatible helper used by stream-hls route
   getInternalHlsUrl(hlsKey) {
-    const base = DEFAULT_MEDIAMTX_HLS_BASE.replace(/\/$/, '');
+    const base = (process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
     return `${base}/${encodeURIComponent(hlsKey)}`;
   }
 }

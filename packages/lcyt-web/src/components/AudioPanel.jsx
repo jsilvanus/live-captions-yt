@@ -24,7 +24,7 @@ const VAD_GRACE_PERIOD_MS        = 1000; // cooldown after a VAD-triggered force
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const AudioPanel = forwardRef(function AudioPanel(
-  { visible, onListeningChange, onHoldingChange, onUtteranceChange, onInterimChange, extraMeterCanvasRef },
+  { visible, onListeningChange, onHoldingChange, onUtteranceChange, onInterimChange, extraMeterCanvasRef, onAnalyserChange },
   ref
 ) {
   const [listening, setListening] = useState(false);
@@ -569,7 +569,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
           vadAudioCtxRef.current = ctx;
           const src = ctx.createMediaStreamSource(stream);
           const an = ctx.createAnalyser();
-          an.fftSize = 256;
+          an.fftSize = 2048;
           src.connect(an);
           vadAnalyserRef.current = an;
           analyser = an;
@@ -793,9 +793,10 @@ export const AudioPanel = forwardRef(function AudioPanel(
       audioCtxRef.current = ctx;
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 2048;
       src.connect(analyser);
       analyserRef.current = analyser;
+      onAnalyserChange?.(analyser);
     } catch {}
   }
 
@@ -803,6 +804,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     if (analyserRef.current) {
       try { analyserRef.current.disconnect(); } catch {}
       analyserRef.current = null;
+      onAnalyserChange?.(null);
     }
     if (audioCtxRef.current) {
       try { audioCtxRef.current.close(); } catch {}

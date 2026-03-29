@@ -21,6 +21,7 @@ import {
   hasFeature,
 } from 'lcyt-backend/db';
 import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
+import logger from 'lcyt/logger';
 
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({
@@ -67,6 +68,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const config = getKeyStorageConfig(db, session.apiKey);
+    res.set('Cache-Control', 'private, max-age=300');
     if (!config) {
       return res.json({ storageMode: 'default', config: null });
     }
@@ -161,6 +163,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
       updatedAt: row.updated_at,
       sizeBytes: row.size_bytes,
     }));
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ files });
   });
 
@@ -189,6 +192,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     try {
       const storage = await _resolve(apiKey);
       const { stream, contentType, size } = await storage.openRead(apiKey, row.filename, row.format);
+      res.set('Cache-Control', 'private, max-age=31536000, immutable');
       res.set('Content-Type', contentType + '; charset=utf-8');
       res.set('Content-Disposition', `attachment; filename="${basename(row.filename)}"`);
       if (size != null) res.set('Content-Length', String(size));
@@ -219,7 +223,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     // Best-effort deletion from storage backend (uses per-key adapter if configured)
     const storage = await _resolve(session.apiKey).catch(() => null);
     await storage?.deleteFile(session.apiKey, row.filename).catch(err => {
-      console.warn('[file] Could not delete from storage:', err.message);
+      logger.warn('[file] Could not delete from storage:', err.message);
     });
 
     return res.json({ ok: true });

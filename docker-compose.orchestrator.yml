@@ -1,5 +1,3 @@
-version: "3.8"
-
 # ─── Distributed compute orchestrator (Phases 4–7) ───────────────────────────
 #
 # Three-tier architecture:
@@ -78,7 +76,6 @@ services:
     depends_on:
       - lcyt-orchestrator
       - mediamtx
-    restart: unless-stopped
     volumes:
       - lcyt-db:/data
     healthcheck:

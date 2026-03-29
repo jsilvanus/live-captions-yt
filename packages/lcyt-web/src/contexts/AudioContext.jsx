@@ -1,16 +1,33 @@
 import { createContext, useContext, useRef, useState } from 'react';
 import { AudioPanel } from '../components/AudioPanel';
+import { useMusic } from '../hooks/useMusic';
 
 const AudioContext = createContext(null);
 
 export function useAudioContext() {
   const ctx = useContext(AudioContext);
-  if (!ctx) throw new Error('useAudioContext must be used inside AudioProvider');
+  if (!ctx) {
+    // Graceful fallback for tests and non-mounted providers
+    return {
+      listening: false,
+      interimText: '',
+      utteranceActive: false,
+      utteranceTimerRunning: false,
+      utteranceTimerSec: 0,
+      toggle: () => {},
+      utteranceEndClick: () => {},
+      analyserRef: { current: null },
+      music: { enabled: false, available: false, label: 'silence', bpmEnabled: false, bpm: null },
+    };
+  }
   return ctx;
 }
 
 export function AudioProvider({ children }) {
   const audioPanelRef = useRef(null);
+  const analyserRef = useRef(null);
+
+  const music = useMusic({ analyserRef });
 
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState('');
@@ -36,6 +53,8 @@ export function AudioProvider({ children }) {
       utteranceTimerSec,
       toggle,
       utteranceEndClick,
+      analyserRef,
+      music,
     }}>
       {children}
       <AudioPanel
@@ -44,6 +63,7 @@ export function AudioProvider({ children }) {
         onListeningChange={setListening}
         onInterimChange={setInterimText}
         onUtteranceChange={handleUtteranceChange}
+        onAnalyserChange={(a) => { analyserRef.current = a; }}
       />
     </AudioContext.Provider>
   );

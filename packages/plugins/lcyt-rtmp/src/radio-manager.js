@@ -1,4 +1,5 @@
 import { NginxManager } from './nginx-manager.js';
+import logger from 'lcyt/logger';
 
 const DEFAULT_MEDIAMTX_HLS_BASE = process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080';
 
@@ -64,18 +65,18 @@ export class RadioManager {
     if (this._mediamtx) {
       try {
         await this._mediamtx.addPath(radioKey, { source: 'publisher' });
-        console.log(`${tag} MediaMTX path registered`);
+        logger.info(`${tag} MediaMTX path registered`);
       } catch (err) {
-        console.warn(`${tag} MediaMTX addPath warning: ${err.message}`);
+        logger.warn(`${tag} MediaMTX addPath warning: ${err.message}`);
       }
     }
 
     let slug;
     try {
       slug = await this._nginxManager.addStream(radioKey);
-      console.log(`${tag} nginx proxy active → ${this._nginxManager.getPublicUrl(radioKey, '')}`);
+      logger.info(`${tag} nginx proxy active → ${this._nginxManager.getPublicUrl(radioKey, '')}`);
     } catch (err) {
-      console.warn(`${tag} nginx update warning: ${err.message}`);
+      logger.warn(`${tag} nginx update warning: ${err.message}`);
       slug = NginxManager.keyToSlug(radioKey);
     }
 
@@ -97,17 +98,17 @@ export class RadioManager {
 
     try {
       await this._nginxManager.removeStream(radioKey);
-      console.log(`${tag} nginx proxy removed`);
+      logger.info(`${tag} nginx proxy removed`);
     } catch (err) {
-      console.warn(`${tag} nginx remove warning: ${err.message}`);
+      logger.warn(`${tag} nginx remove warning: ${err.message}`);
     }
 
     if (this._mediamtx) {
       try {
         await this._mediamtx.deletePath(radioKey);
-        console.log(`${tag} MediaMTX path removed`);
+        logger.info(`${tag} MediaMTX path removed`);
       } catch (err) {
-        console.warn(`${tag} MediaMTX deletePath warning: ${err.message}`);
+        logger.warn(`${tag} MediaMTX deletePath warning: ${err.message}`);
       }
     }
   }

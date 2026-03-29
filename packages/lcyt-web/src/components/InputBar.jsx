@@ -1,4 +1,4 @@
-import { useState, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
+import { useState, useRef, useMemo, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useFileContext } from '../contexts/FileContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
@@ -7,11 +7,17 @@ import { KEYS } from '../lib/storageKeys.js';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
 import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } from '../lib/translate';
-import { getActiveCodes } from '../lib/activeCodes';
+import { getActiveCodes } from '../lib/metacode-active.js';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
+import { parseFileContent } from '../lib/metacode-parser.js';
+import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, checkCueMatch } from '../lib/metacode-runtime.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
+
+// Dedup window (ms) to prevent double-firing a cue from both local match
+// and backend SSE event arriving for the same phrase.
+const CUE_DEDUP_MS = 3000;
 
 export const InputBar = forwardRef(function InputBar(_props, ref) {
   const session = useSessionContext();
@@ -29,12 +35,57 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const inputRef = useRef(null);
   const langPickerRef = useRef(null);
 
+  // Ref always pointing to latest handleSend — used by the timer auto-advance.
+  const handleSendRef = useRef(null);
+  // Active timer handle for auto-advance (timer metacode).
+  const timerRef = useRef(null);
+  // Dedup guard: tracks last cue fired (phrase + timestamp) to prevent
+  // double-firing when both local match and SSE event trigger for the same cue.
+  const lastCueFiredRef = useRef({ phrase: '', time: 0 });
+
   // Keep inputLang in sync when changed by ActionsPanel or file metadata
   useEffect(() => {
     function onLangChange() { setInputLang(readInputLang()); }
     window.addEventListener(INPUT_LANG_EVENT, onLangChange);
     return () => window.removeEventListener(INPUT_LANG_EVENT, onLangChange);
   }, []);
+
+  // Clean up any pending timer on unmount
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, []);
+
+  // Build cue phrase → line index map from the active file's cue metacodes.
+  // When a sent caption matches a cue phrase, the pointer jumps to that line
+  // and the cue line's content is auto-sent.
+  const cueMap = useMemo(
+    () => buildCueMap(fileStore.activeFile),
+    [fileStore.activeFile?.id, fileStore.activeFile?.lineCodes]
+  );
+
+  // Listen for backend-fired cue_fired SSE events (e.g. from CueEngine matching
+  // against STT transcripts) and jump the pointer + auto-send the cue line.
+  useEffect(() => {
+    if (!session.subscribeSseEvent) return;
+    const unsub = session.subscribeSseEvent('cue_fired', (data) => {
+      const file = fileStore.activeFile;
+      if (!file || cueMap.size === 0) return;
+      const label = (data.label || data.matched || '').toLowerCase();
+      // Use checkCueMatch to respect pointer-based eligibility for SSE events too
+      const match = checkCueMatch(cueMap, label, file.pointer);
+      if (match) {
+        // Dedup: skip if same cue was fired locally within the dedup window
+        const last = lastCueFiredRef.current;
+        if (last.phrase === match.phrase && (Date.now() - last.time) < CUE_DEDUP_MS) return;
+        lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
+        fileStore.setPointer(file.id, match.index);
+        showToast(`Cue: ${data.label}`, 'info', 2000);
+        // Auto-send: the cue line has content — send it after pointer update
+        setTimeout(() => handleSendRef.current?.(), 0);
+      }
+    });
+    return unsub;
+  }, [session.subscribeSseEvent, cueMap, fileStore, showToast]);
 
   // Per-language local file handles: Map<lang, { writable, seqIdx, format }>
   const localFileHandlesRef = useRef(new Map());
@@ -174,58 +225,34 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
         return;
       }
 
-      // Advance past blank / #-comment / audio-action lines, firing audio events.
-      // Audio action lines have empty text so they fall into the skip path naturally.
-      const isSkippable = (lineText, lc) => (!lineText?.trim() && !lc?.audioCapture) || lineText?.startsWith('#');
       let ptr = file.pointer;
-      // Drain audio/skip lines at the current position first
-      while (ptr < file.lines.length) {
-        const lc = file.lineCodes?.[ptr] || {};
-        const lineText = file.lines[ptr];
-        if (lc.audioCapture) {
-          window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: lc.audioCapture } }));
-          ptr++;
-        } else if (isSkippable(lineText, lc)) {
-          ptr++;
-        } else {
-          break;
-        }
-      }
-      if (ptr >= file.lines.length) {
+      const pre = await drainActions({ file, startPtr: ptr, fileStore, timerRef, handleSendRef, showToast, session });
+      if (pre.status === 'stop') return;
+      if (pre.status === 'done') {
         fileStore.setPointer(file.id, file.lines.length - 1);
         showToast('End of file reached', 'info', 2500);
         return;
       }
-      // If we skipped ahead without finding an audio line, just move the pointer
-      if (ptr !== file.pointer) {
-        fileStore.setPointer(file.id, ptr);
+      if (pre.pointer !== ptr) {
+        fileStore.setPointer(file.id, pre.pointer);
         return;
       }
 
       const lineText = file.lines[ptr];
       const lc = file.lineCodes?.[ptr] || {};
       const prevPointer = ptr;
-
       try {
         await doSend(lineText, lc);
         fileStore.setLastSentLine({ fileId: file.id, lineIndex: prevPointer });
 
-        // Advance past the sent line, draining any immediately following audio lines
-        let nextPtr = ptr + 1;
-        while (nextPtr < file.lines.length) {
-          const nextLc = file.lineCodes?.[nextPtr] || {};
-          if (nextLc.audioCapture) {
-            window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: nextLc.audioCapture } }));
-            nextPtr++;
-          } else {
-            break;
-          }
-        }
-        if (nextPtr >= file.lines.length) {
+        ptr = ptr + 1;
+        const post = await drainActions({ file, startPtr: ptr, fileStore, timerRef, handleSendRef, showToast, session });
+        if (post.status === 'stop') return;
+        if (post.status === 'done') {
           fileStore.setPointer(file.id, file.lines.length - 1);
           showToast('End of file reached', 'info', 2500);
         } else {
-          fileStore.setPointer(file.id, nextPtr);
+          fileStore.setPointer(file.id, post.pointer);
         }
       } catch (err) {
         handleSendError(err);
@@ -245,11 +272,31 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       try {
         await doSend(text.trim());
         setInputValue('');
+
+        // Check if the sent text matches any cue phrase in the active file.
+        // If so, jump the pointer to the cue line and auto-send its content.
+        const file = fileStore.activeFile;
+        if (file) {
+          const match = checkCueMatch(cueMap, text, file.pointer);
+          if (match) {
+            lastCueFiredRef.current = { phrase: match.phrase, time: Date.now() };
+            fileStore.setPointer(file.id, match.index);
+            showToast(`Cue: ${match.phrase}`, 'info', 2000);
+            // Auto-send the cue line content after React processes the pointer update
+            setTimeout(() => handleSendRef.current?.(), 0);
+          }
+        }
       } catch (err) {
         handleSendError(err);
       }
     }
   }
+
+  // File-switch and goto helpers live in src/lib/metacode-runtime.js
+
+  // Keep handleSendRef pointing to the latest version of handleSend so that
+  // the timer auto-advance always calls fresh state (synchronous render-body update).
+  handleSendRef.current = handleSend;
 
   function handleSendError(err) {
     const status = err.statusCode || err.status;

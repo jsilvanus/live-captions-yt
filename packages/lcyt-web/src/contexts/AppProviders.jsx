@@ -147,6 +147,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     healthStatus:    session.healthStatus,
     latencyMs:       session.latencyMs,
     reconnecting:    session.reconnecting,
+    backendFeatures: session.backendFeatures,
     // Methods (stable via useCallback)
     connect:              session.connect,
     disconnect:           session.disconnect,
@@ -162,6 +163,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     session.connected, session.backendUrl, session.apiKey, session.streamKey,
     session.startedAt, session.micHolder, session.graphicsEnabled,
     session.healthStatus, session.latencyMs, session.reconnecting,
+    session.backendFeatures,
     // Functions omitted from deps — they are stable (useCallback []) in useSession
   ]);
 

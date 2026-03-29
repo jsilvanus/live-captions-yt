@@ -17,6 +17,8 @@ import {
 } from '../lib/googleCredential';
 import { applyTextSize } from '../lib/settings';
 import { VadPanel } from './panels/VadPanel.jsx';
+import { MusicPanel } from './panels/MusicPanel.jsx';
+import { useAudioContext } from '../contexts/AudioContext';
 
 export function CaptionsModal({ isOpen, onClose }) {
   const session = useSessionContext();
@@ -224,7 +226,9 @@ export function CaptionsModal({ isOpen, onClose }) {
       )
     : [];
 
-  const TABS = ['model', 'vad', 'other'];
+  const { music } = useAudioContext();
+
+  const TABS = ['model', 'vad', 'music', 'other'];
 
   return (
     <div className="settings-modal" role="dialog" aria-modal="true">
@@ -526,6 +530,22 @@ export function CaptionsModal({ isOpen, onClose }) {
                   setVadThreshold(v);
                   try { localStorage.setItem(KEYS.audio.clientVadThreshold, String(v)); } catch {}
                 }}
+              />
+            </div>
+          )}
+
+          {/* ── Music Detection ── */}
+          {activeTab === 'music' && (
+            <div className="settings-panel settings-panel--active">
+              <MusicPanel
+                enabled={music.enabled}
+                onEnabledChange={music.setEnabled}
+                bpmEnabled={music.bpmEnabled}
+                onBpmEnabledChange={music.setBpmEnabled}
+                label={music.label}
+                bpm={music.bpm}
+                available={music.available}
+                running={music.running}
               />
             </div>
           )}

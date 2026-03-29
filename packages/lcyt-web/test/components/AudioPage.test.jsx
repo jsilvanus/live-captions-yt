@@ -5,6 +5,8 @@ import { SessionContext } from '../../src/contexts/SessionContext.jsx';
 import { SentLogContext } from '../../src/contexts/SentLogContext.jsx';
 import { ToastContext } from '../../src/contexts/ToastContext.jsx';
 import { LangProvider } from '../../src/contexts/LangContext.jsx';
+import { AudioProvider } from '../../src/contexts/AudioContext.jsx';
+import { CaptionContext } from '../../src/contexts/CaptionContext.jsx';
 
 // ---------------------------------------------------------------------------
 // Mock AudioPanel — it depends on Web Audio API / SpeechRecognition / MediaStream
@@ -58,16 +60,35 @@ function mockToast() {
   return { toasts: [], showToast: vi.fn(), dismissToast: vi.fn() };
 }
 
+function mockCaption() {
+  return {
+    sequence: 0,
+    syncOffset: 0,
+    send: vi.fn().mockResolvedValue({ ok: true }),
+    sendBatch: vi.fn().mockResolvedValue({ ok: true }),
+    construct: vi.fn(),
+    flushBatch: vi.fn(),
+    sync: vi.fn(),
+    updateSequence: vi.fn(),
+    updateTargets: vi.fn(),
+    getQueuedCount: vi.fn(() => 0),
+  };
+}
+
 function renderPage(session = mockSession()) {
   return render(
     <SessionContext.Provider value={session}>
-      <SentLogContext.Provider value={mockSentLog()}>
-        <ToastContext.Provider value={mockToast()}>
-          <LangProvider>
-            <AudioPage />
-          </LangProvider>
-        </ToastContext.Provider>
-      </SentLogContext.Provider>
+      <CaptionContext.Provider value={mockCaption()}>
+        <AudioProvider>
+          <SentLogContext.Provider value={mockSentLog()}>
+            <ToastContext.Provider value={mockToast()}>
+              <LangProvider>
+                <AudioPage />
+              </LangProvider>
+            </ToastContext.Provider>
+          </SentLogContext.Provider>
+        </AudioProvider>
+      </CaptionContext.Provider>
     </SessionContext.Provider>
   );
 }
@@ -88,9 +109,9 @@ describe('AudioPage', () => {
     expect(screen.getByTestId('audio-panel')).toBeInTheDocument();
   });
 
-  it('passes visible=true to AudioPanel', () => {
+  it('passes visible flag to AudioPanel (expected false in provider)', () => {
     renderPage();
-    expect(screen.getByTestId('audio-panel')).toHaveAttribute('data-visible', 'true');
+    expect(screen.getByTestId('audio-panel')).toHaveAttribute('data-visible', 'false');
   });
 
   it('provides onListeningChange callback to AudioPanel', () => {
@@ -113,9 +134,9 @@ describe('AudioPage', () => {
     expect(container.querySelector('.audio-page')).toBeInTheDocument();
   });
 
-  it('renders audio-page__panel wrapper', () => {
+  it('renders audio-page__inner wrapper', () => {
     const { container } = renderPage();
-    expect(container.querySelector('.audio-page__panel')).toBeInTheDocument();
+    expect(container.querySelector('.audio-page__inner')).toBeInTheDocument();
   });
 
   it('does not show interim text area when no interim text', () => {

@@ -11,11 +11,48 @@ import { createSessionRouters } from './routes/session.js';
 import { createAccountRouters } from './routes/account.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
+import { createAdminRouter } from './routes/admin.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
+// Optional music detection plugin (lcyt-music) — load dynamically so the
+// server can run when the optional package is not installed in minimal
+// container/CI images.
+let initMusicControl;
+let createSoundCaptionProcessor;
+try {
+  const _music = await import('lcyt-music');
+  initMusicControl = _music.initMusicControl ?? _music.default?.initMusicControl ?? _music.initMusicControl;
+  createSoundCaptionProcessor = _music.createSoundCaptionProcessor ?? _music.default?.createSoundCaptionProcessor ?? _music.createSoundCaptionProcessor;
+  console.info('✓ Optional plugin lcyt-music loaded');
+} catch (err) {
+  // If lcyt-music isn't available, try the renamed package lcyt-sound.
+  const notFound = err && (err.code === 'ERR_MODULE_NOT_FOUND' || /Cannot find module|Cannot find package/i.test(String(err.message)));
+  if (notFound) {
+    try {
+      const _sound = await import('lcyt-sound');
+      initMusicControl = _sound.initMusicControl ?? _sound.default?.initMusicControl ?? _sound.initMusicControl;
+      createSoundCaptionProcessor = _sound.createSoundCaptionProcessor ?? _sound.default?.createSoundCaptionProcessor ?? _sound.createSoundCaptionProcessor;
+      console.info('✓ Optional plugin lcyt-sound loaded');
+    } catch (err2) {
+      console.info('ℹ Optional plugins lcyt-music and lcyt-sound not available — continuing without music detection.');
+      initMusicControl = async () => ({ });
+      createSoundCaptionProcessor = (_opts) => () => undefined;
+    }
+  } else {
+    // Unexpected error importing — surface info but fall back to no-op to keep server running.
+    console.error('! Error while loading optional music plugin:', err);
+    initMusicControl = async () => ({ });
+    createSoundCaptionProcessor = (_opts) => () => undefined;
+  }
+}
+import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
+import {
+  initAgent, createAgentRouter, createAiRouter,
+  isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
+} from 'lcyt-agent';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -149,6 +186,37 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
 
+// Music detection plugin — run DB migrations and create the SoundCaptionProcessor.
+// The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
+// and fires sound_label / bpm_update SSE events on the existing GET /events stream.
+await initMusicControl(db);
+const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
+
+// Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.
+// The processor strips <!-- cue:... --> metacodes and evaluates phrase/regex/section
+// rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
+const { engine: _cueEngine } = await initCueEngine(db);
+const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
+
+// Wire sound_label events (from lcyt-music) to cue engine for
+// music_start, music_stop, and silence cue rules.
+createSoundCueListener({ store, engine: _cueEngine });
+
+// AI Agent — central AI service. Owns AI configuration, embedding calls,
+// context window management, and future vision/LLM features.
+// Also runs AI config DB migrations (ai_config table).
+const { agent: _agent } = await initAgent(db);
+
+// Wire the agent's embedding capabilities into the CueEngine for
+// fuzzy semantic matching via cue[semantic]:phrase metacodes.
+_cueEngine.setEmbeddingFn(computeEmbeddings);
+_cueEngine.setAiConfigFn((apiKey) => _agent.getAiConfig(apiKey));
+// Wire the agent's event cue evaluation for cue[events]:description metacodes.
+_cueEngine.setAgentEvaluateFn((apiKey, desc, opts) => _agent.evaluateEventCue(apiKey, desc, opts));
+if (_agent.isServerEmbeddingAvailable()) {
+  console.info('✓ Server-level embedding API configured (via lcyt-agent)');
+}
+
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
 store.rehydrate();
 
@@ -269,11 +337,24 @@ if (process.env.STATIC_DIR) {
 
 // Health check — no auth required
 app.get('/health', (req, res) => {
+  // Build feature list based on enabled capabilities
+  const features = ['captions', 'sync'];
+  if (loginEnabled) features.push('login');
+  // Admin panel is available if: user-based logins are enabled (any admin user can use it)
+  // or the legacy ADMIN_KEY env var is set.
+  if (loginEnabled || process.env.ADMIN_KEY) features.push('admin');
+  if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
+  if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
+  if (sttManager) features.push('stt');
+  features.push('files', 'viewer', 'production', 'ai', 'cues', 'agent');
+
+  res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
   res.status(200).json({
     ok: true,
     uptime: Math.floor(process.uptime()),
     activeSessions: store.size(),
     loginEnabled,
+    features,
     ...(process.env.RTMP_RELAY_ACTIVE === '1' ? {
       rtmpIngest: {
         host: process.env.RTMP_HOST || 'rtmp.lcyt.fi',
@@ -305,14 +386,18 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, resolveStorage }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
+app.use('/admin', createAdminRouter(db, jwtSecret));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
+app.use('/cues', createCueRouter(db, auth, _cueEngine));
+app.use('/ai', createAiRouter(db, auth));
+app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

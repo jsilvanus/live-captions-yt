@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, createReadStream, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -9,13 +9,13 @@ import { makeFifo } from '../src/ffmpeg/pipe-utils.js';
 test('FIFO host<->container communication (gated)', { skip: process.env.TEST_DOCKER !== '1' }, async () => {
   const { DockerFfmpegRunner } = await import('../src/ffmpeg/docker-runner.js');
 
-  const tmp = mkdtempSync(join(tmpdir(), 'fifo-int-'));
+  const tmp = fs.mkdtempSync(join(tmpdir(), 'fifo-int-'));
   const fifo = join(tmp, 'thefifo');
   await makeFifo(fifo);
 
   // Start reader on host — createReadStream will block until writer opens on POSIX FIFOs.
   const readPromise = new Promise((resolve, reject) => {
-    const rs = createReadStream(fifo, { encoding: 'utf8' });
+    const rs = fs.createReadStream(fifo, { encoding: 'utf8' });
     let buf = '';
     rs.on('data', (c) => { buf += c; });
     rs.on('end', () => resolve(buf.trim()));
@@ -39,5 +39,5 @@ test('FIFO host<->container communication (gated)', { skip: process.env.TEST_DOC
     assert(content.includes('hello-from-container'));
   });
 
-  try { rmSync(tmp, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
 });

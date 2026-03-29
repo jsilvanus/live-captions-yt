@@ -46,6 +46,13 @@ export function useSession({
   const [latencyMs, setLatencyMs] = useState(null);
   // Auto-reconnect state
   const [reconnecting, setReconnecting] = useState(false);
+  // Backend features list from /health (populated on connect)
+  const [backendFeatures, setBackendFeatures] = useState(() => {
+    try {
+      const raw = localStorage.getItem(KEYS.backend.features);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  });
 
   const senderRef = useRef(null);
   const esRef = useRef(null);
@@ -63,6 +70,19 @@ export function useSession({
   // Keep all callbacks in a ref so SSE handlers always see the latest version
   const cbs = useRef({});
   cbs.current = { onConnected, onDisconnected, onCaptionSent, onCaptionResult, onCaptionError, onSyncUpdated, onError, onBatchSent };
+
+  // Plugin SSE event listener registry — Map<string, Set<Function>>
+  const sseListenersRef = useRef(new Map());
+
+  const subscribeSseEvent = useCallback(function subscribeSseEvent(name, handler) {
+    if (!sseListenersRef.current.has(name)) {
+      sseListenersRef.current.set(name, new Set());
+    }
+    sseListenersRef.current.get(name).add(handler);
+    return function unsubscribe() {
+      sseListenersRef.current.get(name)?.delete(handler);
+    };
+  }, []);
 
   // Close EventSource + cancel reconnect on unmount
   useEffect(() => () => {
@@ -208,6 +228,16 @@ export function useSession({
         if (cfg) scheduleReconnectRef.current(cfg);
       });
     });
+
+    // Dispatch plugin SSE events to registered listeners
+    const PLUGIN_SSE_EVENTS = ['sound_label', 'bpm_update', 'cue_fired'];
+    for (const evtName of PLUGIN_SSE_EVENTS) {
+      es.addEventListener(evtName, (e) => {
+        const data = JSON.parse(e.data);
+        const handlers = sseListenersRef.current.get(evtName);
+        if (handlers) handlers.forEach(h => h(data));
+      });
+    }
   }, [_disconnectInternal]);
 
   // ─── Health check ────────────────────────────────────────
@@ -226,6 +256,14 @@ export function useSession({
       if (res.ok) {
         setHealthStatus('ok');
         setLatencyMs(rtt);
+        // Update backend features from /health response
+        try {
+          const data = await res.clone().json();
+          if (Array.isArray(data.features)) {
+            setBackendFeatures(data.features);
+            localStorage.setItem(KEYS.backend.features, JSON.stringify(data.features));
+          }
+        } catch { /* ignore JSON parse or localStorage errors */ }
       } else {
         setHealthStatus('unreachable');
         setLatencyMs(null);
@@ -681,6 +719,7 @@ export function useSession({
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
     healthStatus, latencyMs, checkHealth,
     reconnecting, reconnectNow,
+    backendFeatures,
     connect, disconnect, send, sendBatch, construct, flushBatch, sync, heartbeat, updateSequence, updateTargets,
     claimMic, releaseMic,
     getStats, eraseSelf,
@@ -696,5 +735,6 @@ export function useSession({
     getQueuedCount,
     /** Returns the active session JWT (for EventSource ?token= param) */
     getSessionToken: () => senderRef.current?._token ?? null,
+    subscribeSseEvent,
   };
 }

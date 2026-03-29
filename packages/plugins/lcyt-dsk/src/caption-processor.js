@@ -207,25 +207,24 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       imageMeta: imageMeta,
       ts:        Date.now(),
     });
-
-    if (cleanText) {
-      dskBus.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
-    }
-
     // Server-side DSK overlay (RTMP relay): use the resolved default for the landscape stream.
-    // SVG is not supported by ffmpeg's overlay filter; only PNG/WebP are included.
+    // Relay accepts image assets and is responsible for any conversion (SVGs are allowed).
     if (relayManager && newDefault !== null) {
       // Respect per-image viewport visibility for the landscape/default slot.
       const imagePaths = [];
       for (const name of newDefault) {
         const row = getImageByShorthand(db, apiKey, name);
-        if (!row || row.mime_type === 'image/svg+xml') continue;
+        if (!row) continue;
         const meta = safeParseJson(row.settings_json);
         const vpMeta = meta?.viewports?.landscape ?? meta?.viewports?.default ?? {};
         if (vpMeta?.visible === false) continue; // skip if explicitly disabled for landscape
         imagePaths.push(join(GRAPHICS_BASE_DIR, safeApiKey(apiKey), basename(row.filename)));
       }
       relayManager.setDskOverlay(apiKey, newDefault, imagePaths).catch(() => {});
+    }
+
+    if (cleanText) {
+      dskBus.emitDskEvent(apiKey, 'text', { text: cleanText, ts: Date.now() });
     }
 
     return cleanText;

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { readFileSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,7 +9,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let BRIDGE_VERSION;
 try {
   const pkgPath = resolve(__dirname, '../../../../packages/lcyt-bridge/package.json');
-  const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
   BRIDGE_VERSION = pkg.version;
 } catch {
   BRIDGE_VERSION = 'latest';

@@ -8,7 +8,7 @@ import { useSentLogContext } from '../contexts/SentLogContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
-import { getActiveCodes, setActiveCode, clearActiveCode } from '../lib/activeCodes';
+import { getActiveCodes, setActiveCode, clearActiveCode } from '../lib/metacode-active.js';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 
 export function ControlsPanel({ onClose }) {

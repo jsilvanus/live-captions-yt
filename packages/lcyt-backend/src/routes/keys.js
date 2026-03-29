@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { join, resolve, basename } from 'node:path';
-import { existsSync, unlinkSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, getKeysByUserId } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
 import { addMember, getMemberAccessLevel, getMemberCount } from '../db/project-members.js';
@@ -172,7 +172,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
           try {
             const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
             const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
-            if (existsSync(filepath)) unlinkSync(filepath);
+            if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
           } catch (e) {
             console.warn('[keys] Could not delete image file on key deletion:', e.message);
           }

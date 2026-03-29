@@ -19,7 +19,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { createSign } from 'node:crypto';
 import { PcmSilenceBuffer, buildWav } from './pcm-buffer.js';
 
@@ -29,7 +29,7 @@ const GOOGLE_STT_REST_URL = 'https://speech.googleapis.com/v1/speech:recognize';
 const GRPC_RESTART_INTERVAL_MS = 4.5 * 60 * 1000;
 
 // Minimum segment size in bytes — skip smaller buffers (silence / empty init)
-const MIN_SEGMENT_BYTES = 512;
+const MIN_SEGMENT_BYTES = 1;
 
 // ── Punctuation normalisation ─────────────────────────────────────────────────
 
@@ -115,11 +115,27 @@ export class GoogleSttAdapter extends EventEmitter {
     this._tokenExpiry    = 0; // unix seconds
     this._mode           = (process.env.GOOGLE_STT_MODE === 'grpc' && SpeechClient) ? 'grpc' : 'rest';
 
+    // Track outstanding network promises so stop() can wait for them
+    this._pending = new Set();
+
     // gRPC state
     this._grpcClient     = null;
     this._grpcStream     = null;
     this._grpcStartedAt  = 0;
     this._grpcRestartTimer = null;
+  }
+
+
+  _track(p) {
+    this._pending.add(p);
+    const cleanup = () => this._pending.delete(p);
+    p.then(cleanup, cleanup);
+    return p;
+  }
+
+  async _waitPending() {
+    if (this._pending.size === 0) return;
+    await Promise.allSettled(Array.from(this._pending));
   }
 
   /** The active recognition mode: 'rest' | 'grpc' */
@@ -132,7 +148,7 @@ export class GoogleSttAdapter extends EventEmitter {
     const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     if (credPath && !this._serviceAccount) {
       try {
-        this._serviceAccount = JSON.parse(readFileSync(credPath, 'utf8'));
+        this._serviceAccount = JSON.parse(fs.readFileSync(credPath, 'utf8'));
       } catch (err) {
         throw new Error(`GoogleSttAdapter: failed to read service account at ${credPath}: ${err.message}`);
       }
@@ -163,7 +179,8 @@ export class GoogleSttAdapter extends EventEmitter {
     if (this._mode === 'grpc') {
       this._sendSegmentGrpc(buffer, timestamp);
     } else {
-      await this._sendSegmentRest(buffer, timestamp);
+      const p = this._sendSegmentRest(buffer, timestamp);
+      await this._track(p);
     }
   }
 
@@ -342,9 +359,8 @@ export class GoogleSttAdapter extends EventEmitter {
       this._pcmBuf.on('flush', ({ pcm, timestamp, durationMs }) => {
         // Encode PCM as WAV then send to Google STT using LINEAR16 encoding
         const wav = buildWav(pcm);
-        this._sendWav(wav, timestamp, durationMs).catch(err => {
-          this.emit('error', { error: err });
-        });
+        const p = this._sendWav(wav, timestamp, durationMs);
+        this._track(p).catch(err => { this.emit('error', { error: err }); });
       });
     }
     this._pcmBuf.write(pcmChunk);
@@ -433,6 +449,8 @@ export class GoogleSttAdapter extends EventEmitter {
       this._pcmBuf.reset();
       this._pcmBuf = null;
     }
+    // Wait for any outstanding network requests to settle
+    await this._waitPending();
   }
 
   // ── Internal ─────────────────────────────────────────────────────────────

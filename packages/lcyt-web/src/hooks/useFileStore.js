@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { parseFileContent } from '../lib/fileUtils';
+import { parseFileContent } from '../lib/metacode-parser.js';
 
 const POINTERS_KEY = 'lcyt-pointers';
 const FILES_STORAGE_KEY = 'lcyt:files';
@@ -272,6 +272,24 @@ export function useFileStore({
     return entry;
   }
 
+  /**
+   * Load a file from raw text content and add it to the store.
+   * Does NOT change the active file (caller is responsible).
+   * @param {string} name
+   * @param {string} rawText
+   * @returns {{ id, name, lines, lineCodes, lineNumbers, pointer, rawText }}
+   */
+  function loadFileFromText(name, rawText) {
+    const { lines, lineCodes, lineNumbers } = parseFileContent(rawText);
+    const id = newId();
+    const entry = { id, name, lines, lineCodes, lineNumbers, pointer: 0, rawText };
+    const newFiles = [...filesRef.current, entry];
+    setFiles(newFiles);
+    saveFilesToStorage(newFiles);
+    cbs.current.onFileLoaded?.(entry);
+    return entry;
+  }
+
   const activeFile = files.find(f => f.id === activeId) ?? null;
 
   return {
@@ -285,6 +303,7 @@ export function useFileStore({
     rawEditValue,
     setRawEditValue,
     loadFile,
+    loadFileFromText,
     removeFile,
     setActive,
     cycleActive,

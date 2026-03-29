@@ -18,13 +18,13 @@ import { getProjectFeatures } from '../db/project-features.js';
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
  * @param {import('express').RequestHandler} auth
- * @param {{ relayManager?: object, dskCaptionProcessor?: Function, resolveStorage?: Function }} [opts]
+ * @param {{ relayManager?: object, dskCaptionProcessor?: Function, soundCaptionProcessor?: Function, cueProcessor?: Function, resolveStorage?: Function }} [opts]
  * @returns {Router}
  */
-export function createSessionRouters(db, store, jwtSecret, auth, { relayManager = null, dskCaptionProcessor = null, resolveStorage = null } = {}) {
+export function createSessionRouters(db, store, jwtSecret, auth, { relayManager = null, dskCaptionProcessor = null, soundCaptionProcessor = null, cueProcessor = null, resolveStorage = null } = {}) {
   const router = Router();
   router.use('/live',     createLiveRouter(db, store, jwtSecret));
-  router.use('/captions', createCaptionsRouter(store, auth, db, relayManager, dskCaptionProcessor, resolveStorage));
+  router.use('/captions', createCaptionsRouter(store, auth, db, relayManager, dskCaptionProcessor, resolveStorage, soundCaptionProcessor, cueProcessor));
   router.use('/events',   createEventsRouter(store, jwtSecret));
   router.use('/sync',     createSyncRouter(store, auth));
   router.use('/mic',      createMicRouter(store, auth));

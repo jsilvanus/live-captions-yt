@@ -80,17 +80,30 @@ export function createEventsRouter(store, jwtSecret) {
       try { res.write(': heartbeat\n\n'); } catch { cleanup(); }
     }, 25000);
 
+    // Forward plugin events (cue_fired, sound_label, bpm_update, etc.) to the
+    // SSE stream.  Plugin processors emit on the session emitter as:
+    //   session.emitter.emit('event', { type: 'cue_fired', data: { ... } })
+    // We forward them as named SSE events so the frontend EventSource can
+    // subscribe with es.addEventListener('cue_fired', ...).
+    function onPluginEvent(payload) {
+      if (payload?.type) {
+        send(payload.type, payload.data ?? payload);
+      }
+    }
+
     function cleanup() {
       clearInterval(heartbeat);
       session.emitter.off('caption_result', onResult);
       session.emitter.off('caption_error', onError);
       session.emitter.off('mic_state', onMicState);
+      session.emitter.off('event', onPluginEvent);
       session.emitter.off('session:closed', onClosed);
     }
 
     session.emitter.on('caption_result', onResult);
     session.emitter.on('caption_error', onError);
     session.emitter.on('mic_state', onMicState);
+    session.emitter.on('event', onPluginEvent);
     session.emitter.once('session:closed', onClosed);
 
     // Client closed the connection

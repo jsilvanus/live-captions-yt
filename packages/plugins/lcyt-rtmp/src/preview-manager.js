@@ -1,3 +1,4 @@
+import logger from 'lcyt/logger';
 const DEFAULT_WEBRTC_BASE = (process.env.MEDIAMTX_WEBRTC_BASE_URL || 'http://127.0.0.1:8889').replace(/\/$/, '');
 
 /**
@@ -98,7 +99,7 @@ export class PreviewManager {
     try {
       return await this._mediamtx.getThumbnail(key);
     } catch (err) {
-      console.warn(`[preview:${key.slice(0, 8)}] thumbnail fetch error: ${err.message}`);
+      logger.warn(`[preview:${key.slice(0, 8)}] thumbnail fetch error: ${err.message}`);
       return null;
     }
   }
