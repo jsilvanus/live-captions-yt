@@ -347,6 +347,19 @@ GET  /agent/context       — current AI context window (Bearer token)
 POST /agent/context       — add a context entry manually (Bearer token)
 DELETE /agent/context     — clear context window (Bearer token)
 GET  /agent/events        — recent agent events (Bearer token)
+
+GET    /admin/users                  — list users with search (X-Admin-Key)
+GET    /admin/users/:id              — user detail with projects (X-Admin-Key)
+POST   /admin/users                  — create user (X-Admin-Key)
+PATCH  /admin/users/:id              — update user name/active (X-Admin-Key)
+POST   /admin/users/:id/set-password — admin password reset (X-Admin-Key)
+DELETE /admin/users/:id              — delete user (X-Admin-Key)
+GET    /admin/projects               — list projects with search (X-Admin-Key)
+GET    /admin/projects/:key          — project detail + features + members (X-Admin-Key)
+PATCH  /admin/projects/:key          — update project (X-Admin-Key)
+PUT    /admin/projects/:key/features — batch update features (X-Admin-Key)
+POST   /admin/batch/users            — batch user operations (X-Admin-Key)
+POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
 ```
 
 **Key internals:**
@@ -354,6 +367,7 @@ GET  /agent/events        — recent agent events (Bearer token)
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter()`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`.
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
+- `src/routes/admin.js` — `createAdminRouter(db)`: admin panel routes (`/admin/*`). User CRUD with search/pagination, project management with cross-entity `user:email` search, batch operations (activate/deactivate/delete users; revoke/activate/delete projects), feature flag management. All routes require `X-Admin-Key` header.
 - The RTMP/HLS/radio/preview/STT managers previously lived in `lcyt-backend`; they were extracted to `packages/plugins/lcyt-rtmp`. The backend imports them via `import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp'`.
 - The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
 - The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, and LLM-based event cue evaluation. Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings } from 'lcyt-agent'`.
@@ -876,6 +890,10 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/account` | `AccountPage` | Login/register or user profile |
 | `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
 | `/ai` | `AiSettingsPage` | AI/embedding provider config (feature-gated: `ai`) |
+| `/admin/users` | `AdminUsersPage` | User list, search, batch actions (feature-gated: `admin`) |
+| `/admin/users/:id` | `AdminUserDetailPage` | User detail, projects, password reset (feature-gated: `admin`) |
+| `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |
+| `/admin/projects/:key` | `AdminProjectDetailPage` | Project detail, features, members (feature-gated: `admin`) |
 
 #### Standalone routes (no sidebar)
 
@@ -1120,6 +1138,7 @@ After selection, the frontend probes `GET /health` to discover the backend's fea
 | `production` | Production group | Sidebar "Production" group (Operator, Devices) |
 | `login` | User account pages | Sidebar "Projects" and "Account" items |
 | `ai` | AI settings page | Sidebar "AI" item |
+| `admin` | Admin panel | Sidebar "Admin" group (Users, Projects) |
 
 **AuthGate** (`main.jsx`) supports two modes:
 1. **User login mode** — checks `lcyt-user` localStorage for `{ token, backendUrl }`
@@ -1263,6 +1282,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/db/index.js` | DB init + all table migrations (users, api_keys, sessions, etc.) |
 | `packages/lcyt-backend/src/db/users.js` | User CRUD operations |
 | `packages/lcyt-backend/src/middleware/auth.js` | Session JWT Bearer verification |
+| `packages/lcyt-backend/src/routes/admin.js` | Admin panel API: user/project CRUD, search, batch ops (X-Admin-Key) |
 | `packages/lcyt-backend/src/middleware/user-auth.js` | User JWT Bearer verification |
 | `packages/lcyt-backend/bin/lcyt-backend-admin` | Admin CLI for key + user management |
 | `packages/lcyt-mcp-stdio/src/server.js` | MCP server — stdio transport |
@@ -1326,6 +1346,10 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-web/src/components/LoginPage.jsx` | `/login` — two-phase login (backend preset → probe → auth/API key) |
 | `packages/lcyt-web/src/components/RegisterPage.jsx` | `/register` — user registration (standalone) |
 | `packages/lcyt-web/src/components/ProjectsPage.jsx` | `/projects` — user project (API key) management |
+| `packages/lcyt-web/src/components/AdminUsersPage.jsx` | `/admin/users` — admin user list with search and batch ops |
+| `packages/lcyt-web/src/components/AdminUserDetailPage.jsx` | `/admin/users/:id` — admin user detail and management |
+| `packages/lcyt-web/src/components/AdminProjectsPage.jsx` | `/admin/projects` — admin project list with cross-entity search |
+| `packages/lcyt-web/src/components/AdminProjectDetailPage.jsx` | `/admin/projects/:key` — admin project detail with feature toggles |
 | `python-packages/lcyt/lcyt/sender.py` | Core caption sender (Python) |
 | `python-packages/lcyt-backend/lcyt_backend/app.py` | Flask app factory |
 | `python-packages/lcyt-backend/lcyt_backend/_jwt.py` | Stdlib-only HS256 JWT |
@@ -1392,6 +1416,9 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 **Added 2026-03-17:**
 - `test/cors.test.js` (19 tests) — `createCorsMiddleware`: free-tier signup, admin routes (no CORS), permissive routes (POST /live, GET /health, GET /contact, OPTIONS), dynamic origin matching via session store.
 - `test/caption-files.test.js` (21 tests) — Pure-function exports: `composeCaptionText` (all translation/showOriginal branches), `formatVttTime` (edge cases: 0ms, sub-second, multi-hour), `buildVttCue` (format, end newline).
+
+**Added 2026-03-29:**
+- `test/admin.test.js` (32 tests) — Admin panel API (`/admin/*`): auth enforcement, user CRUD with search/pagination, user detail with projects, create/update/deactivate/delete users, admin password reset, project listing with cross-entity `user:email` search, project detail with features/members, project update, feature batch update, batch user operations (activate/deactivate/delete), batch project operations (revoke/activate/delete/features).
 
 **Gaps (Low):**
 - **Core:** `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT), `routes/stt.js` (server-side STT routes).

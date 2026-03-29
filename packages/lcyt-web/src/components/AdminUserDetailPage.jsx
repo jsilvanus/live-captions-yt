@@ -1,24 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRoute, useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
-
-const ADMIN_KEY_STORAGE = 'lcyt.admin.key';
-
-function getAdminKey() {
-  try { return sessionStorage.getItem(ADMIN_KEY_STORAGE) || ''; } catch { return ''; }
-}
-
-function adminFetch(backendUrl, path, opts = {}) {
-  const key = getAdminKey();
-  return fetch(`${backendUrl}${path}`, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Admin-Key': key,
-      ...opts.headers,
-    },
-  });
-}
+import { adminFetch } from '../lib/admin.js';
 
 export function AdminUserDetailPage() {
   const session = useSessionContext();

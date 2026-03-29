@@ -84,6 +84,7 @@ async function adminDelete(path) {
 }
 
 // Seed a test user directly in DB
+// Uses bcrypt rounds=1 intentionally for test speed — not security-relevant in tests.
 function seedUser(email, name = null) {
   const hash = bcrypt.hashSync('password123', 1);
   return createUser(db, { email, passwordHash: hash, name });
