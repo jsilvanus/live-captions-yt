@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { renderWithProviders } from '../test-utils';
+import { renderWithAppProviders } from '../test-utils';
 
 // Stub helper must be declared before vi.mock (vitest hoists mocks)
 const stubWidget = (name) => ({ default: () => (<div data-testid={name}>{name}</div>) });
@@ -80,7 +80,7 @@ beforeEach(() => { vi.clearAllMocks(); });
 
 describe('DashboardPage', () => {
   it('passes draggableHandle and draggableCancel and respects editMode toggle', async () => {
-    renderWithProviders(<DashboardPage />);
+    renderWithAppProviders(<DashboardPage />);
 
     const responsive = await screen.findByTestId('responsive');
     const props = JSON.parse(responsive.getAttribute('data-props'));
