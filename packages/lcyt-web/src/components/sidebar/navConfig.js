@@ -25,7 +25,7 @@ export const NAV_GROUPS = [
     label: 'Production',
     feature: 'production',
     items: [
-      { id: 'prod-operator', label: 'Operator', path: '/production' },
+      { id: 'prod-operator', label: 'Operator', path: '/production', exact: true },
       { id: 'prod-devices',  label: 'Devices',  path: '/production/devices' },
     ],
   },

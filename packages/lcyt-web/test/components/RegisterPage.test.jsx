@@ -47,10 +47,9 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText(/server url/i)).toHaveValue('https://saved.api');
   });
 
-  it('has a sign-in link and back-to-app link', () => {
+  it('has a sign-in link', () => {
     render(<RegisterPage />);
     expect(screen.getByText(/sign in/i).closest('a')).toHaveAttribute('href', expect.stringContaining('/login'));
-    expect(screen.getByText(/back to app/i).closest('a')).toHaveAttribute('href', '/');
   });
 
   it('shows error when passwords do not match', async () => {

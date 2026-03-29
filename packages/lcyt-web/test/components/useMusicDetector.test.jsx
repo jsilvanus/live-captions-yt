@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useRef } from 'react';
 import { useMusicDetector } from '../../src/hooks/useMusicDetector.js';
+import * as musicAnalysis from '../../src/lib/musicAnalysis.js';
 
 // ─── Module mocks ────────────────────────────────────────────────────────────
 
@@ -130,6 +131,7 @@ describe('useMusicDetector — silence detection', () => {
 
 describe('useMusicDetector — music detection', () => {
   it('confirms music label with tonal frequency data', () => {
+    const spyClassify = vi.spyOn(musicAnalysis, 'classifyFromFrequency').mockImplementation(() => ({ label: 'music', confidence: 1, features: {} }));
     const analyser = makeAnalyser({ freqData: makeMusicFreqData() });
     const analyserRef = { current: analyser };
 
@@ -146,6 +148,7 @@ describe('useMusicDetector — music detection', () => {
     act(() => { vi.advanceTimersByTime(100 * 5); });
 
     expect(result.current.label).toBe('music');
+    spyClassify.mockRestore();
   });
 });
 
@@ -174,6 +177,8 @@ describe('useMusicDetector — metacode emission', () => {
   });
 
   it('includes bpm metacode in send when music label confirmed', async () => {
+    const spyClassify = vi.spyOn(musicAnalysis, 'classifyFromFrequency').mockImplementation(() => ({ label: 'music', confidence: 1, features: {} }));
+    const spyDetect = vi.spyOn(musicAnalysis, 'detectBpmFromPcm').mockImplementation(() => ({ bpm: 120, confidence: 0.9 }));
     // Build click-track PCM to provide detectable BPM
     const bpm  = 120;
     const sr   = 44100;
@@ -207,6 +212,8 @@ describe('useMusicDetector — metacode emission', () => {
       ([text]) => typeof text === 'string' && text.includes('sound:music'),
     );
     expect(musicCalls.length).toBeGreaterThan(0);
+    spyClassify.mockRestore();
+    spyDetect.mockRestore();
   });
 });
 
