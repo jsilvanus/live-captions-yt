@@ -55,6 +55,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
+| [plan_cache.md](plans/plan_cache.md) | HTTP Caching Strategy — Backend, Plugins & nginx | Comprehensive caching plan: Cache-Control headers for all backend GET endpoints (6 tiers), nginx proxy_cache for HLS/media, NginxManager segment vs. playlist split, frontend `api.getCached()` layer, preview ETag support, operator deployment guide. | |
 | [plan_help.md](plans/plan_help.md) | Help Page Screenshot Capture | Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page. | |
 
 ### Draft
