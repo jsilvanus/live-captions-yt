@@ -22,7 +22,8 @@ export function initDb(dbPath) {
       password_hash TEXT    NOT NULL,
       name          TEXT,
       created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-      active        INTEGER NOT NULL DEFAULT 1
+      active        INTEGER NOT NULL DEFAULT 1,
+      is_admin      INTEGER NOT NULL DEFAULT 0
     )
   `);
 
@@ -68,6 +69,12 @@ export function initDb(dbPath) {
   if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
   if (!existingCols.has('device_code'))       db.exec('ALTER TABLE api_keys ADD COLUMN device_code TEXT');
+
+  // Additive migrations for users table
+  const existingUserCols = new Set(
+    db.prepare('PRAGMA table_info(users)').all().map(c => c.name)
+  );
+  if (!existingUserCols.has('is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (

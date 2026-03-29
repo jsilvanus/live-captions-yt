@@ -1,13 +1,15 @@
 /**
  * Admin routes — user, project, and feature management.
  *
- * All routes require the `X-Admin-Key` header (adminMiddleware).
+ * All routes require either:
+ * - A user JWT Bearer token for a user with `is_admin = 1`, OR
+ * - The legacy `X-Admin-Key` header (when ADMIN_KEY env var is set).
  *
- * Mount: app.use('/admin', createAdminRouter(db))
+ * Mount: app.use('/admin', createAdminRouter(db, jwtSecret))
  */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import { adminMiddleware } from '../middleware/admin.js';
+import { createAdminMiddleware } from '../middleware/admin.js';
 import {
   getUserById,
   getKeysByUserId,
@@ -33,13 +35,14 @@ const BCRYPT_ROUNDS = 12;
 
 /**
  * @param {import('better-sqlite3').Database} db
+ * @param {string} jwtSecret
  * @returns {Router}
  */
-export function createAdminRouter(db) {
+export function createAdminRouter(db, jwtSecret) {
   const router = Router();
 
-  // All admin routes require the admin key
-  router.use(adminMiddleware);
+  // All admin routes require admin authentication (user-based or legacy key)
+  router.use(createAdminMiddleware(db, jwtSecret));
 
   // -----------------------------------------------------------------------
   // Users

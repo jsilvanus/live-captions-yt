@@ -2,14 +2,22 @@ import { useState, useEffect } from 'react';
 import { getAdminKey, setAdminKey } from '../lib/admin.js';
 
 /**
- * Gate component that requires admin key entry before rendering children.
- * Verifies the key by making a test request to the admin API.
+ * Gate component that allows access when the logged-in user is an admin.
+ *
+ * If the user is logged in and has `isAdmin: true` (from the user JWT / /auth/me),
+ * the children are rendered immediately.
+ *
+ * Falls back to prompting for the legacy X-Admin-Key for servers that still use
+ * the ADMIN_KEY environment variable without user-based logins.
  */
-export function AdminKeyGate({ backendUrl, children }) {
+export function AdminKeyGate({ backendUrl, userIsAdmin = false, children }) {
   const [key, setKey] = useState(getAdminKey);
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState('');
   const [valid, setValid] = useState(false);
+
+  // User-based admin: skip the key gate entirely
+  if (userIsAdmin) return children;
 
   useEffect(() => {
     if (key) verify(key);
