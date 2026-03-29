@@ -57,7 +57,7 @@ export function LoginPage() {
   const [preset, setPreset] = useState(getInitialPreset);
   const [customUrl, setCustomUrl] = useState('');
   const [probing, setProbing] = useState(false);
-  const [features, setFeatures] = useState(null);    // null = not probed yet
+  const [features, setFeatures] = useState(() => getBackendFeatures() || ['login']);    // null = not probed yet
   const [probeError, setProbeError] = useState(null);
 
   // Phase 2: authentication (depends on features)

@@ -22,3 +22,12 @@ global.BroadcastChannel = class FakeBroadcastChannel {
     this.close = vi.fn();
   }
 };
+
+// Provide a lightweight mock for AudioContext used by many components in tests
+vi.mock('src/contexts/AudioContext', () => ({
+  AudioProvider: ({ children }) => children,
+  useAudioContext: () => ({
+    music: { enabled: false, available: false, label: 'silence', bpmEnabled: false, bpm: null },
+    analyserRef: { current: null },
+  }),
+}));

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '../test-utils';
 
 // Stub helper must be declared before vi.mock (vitest hoists mocks)
 const stubWidget = (name) => ({ default: () => (<div data-testid={name}>{name}</div>) });
@@ -27,15 +28,51 @@ vi.mock('../../src/hooks/useDashboardConfig', () => ({
 }));
 
 // Stub individual dashboard widgets so tests don't require providers
-vi.mock('../../src/components/dashboard/StatusWidget', () => ({ default: () => (<div data-testid="status-widget">status-widget</div>) }));
-vi.mock('../../src/components/dashboard/SentLogWidget', () => ({ default: () => (<div data-testid="sentlog-widget">sentlog-widget</div>) }));
-vi.mock('../../src/components/dashboard/AudioWidget', () => ({ default: () => (<div data-testid="audio-widget">audio-widget</div>) }));
-vi.mock('../../src/components/dashboard/InputWidget', () => ({ default: () => (<div data-testid="input-widget">input-widget</div>) }));
-vi.mock('../../src/components/dashboard/FileWidget', () => ({ default: () => (<div data-testid="file-widget">file-widget</div>) }));
-vi.mock('../../src/components/dashboard/BroadcastWidget', () => ({ default: () => (<div data-testid="broadcast-widget">broadcast-widget</div>) }));
-vi.mock('../../src/components/dashboard/ViewerWidget', () => ({ default: () => (<div data-testid="viewer-widget">viewer-widget</div>) }));
-vi.mock('../../src/components/dashboard/ViewportsWidget', () => ({ default: () => (<div data-testid="viewports-widget">viewports-widget</div>) }));
-vi.mock('../../src/components/dashboard/MetacodeWidget', () => ({ default: () => (<div data-testid="metacode-widget">metacode-widget</div>) }));
+vi.mock('../../src/components/dashboard/StatusWidget', () => ({
+  __esModule: true,
+  StatusWidget: () => (<div data-testid="status-widget">status-widget</div>),
+  default: () => (<div data-testid="status-widget">status-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/SentLogWidget', () => ({
+  __esModule: true,
+  SentLogWidget: () => (<div data-testid="sentlog-widget">sentlog-widget</div>),
+  default: () => (<div data-testid="sentlog-widget">sentlog-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/AudioWidget', () => ({
+  __esModule: true,
+  AudioWidget: () => (<div data-testid="audio-widget">audio-widget</div>),
+  default: () => (<div data-testid="audio-widget">audio-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/InputWidget', () => ({
+  __esModule: true,
+  InputWidget: () => (<div data-testid="input-widget">input-widget</div>),
+  default: () => (<div data-testid="input-widget">input-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/FileWidget', () => ({
+  __esModule: true,
+  FileWidget: () => (<div data-testid="file-widget">file-widget</div>),
+  default: () => (<div data-testid="file-widget">file-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/BroadcastWidget', () => ({
+  __esModule: true,
+  BroadcastWidget: () => (<div data-testid="broadcast-widget">broadcast-widget</div>),
+  default: () => (<div data-testid="broadcast-widget">broadcast-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/ViewerWidget', () => ({
+  __esModule: true,
+  ViewerWidget: () => (<div data-testid="viewer-widget">viewer-widget</div>),
+  default: () => (<div data-testid="viewer-widget">viewer-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/ViewportsWidget', () => ({
+  __esModule: true,
+  ViewportsWidget: () => (<div data-testid="viewports-widget">viewports-widget</div>),
+  default: () => (<div data-testid="viewports-widget">viewports-widget</div>),
+}));
+vi.mock('../../src/components/dashboard/MetacodeWidget', () => ({
+  __esModule: true,
+  MetacodeWidget: () => (<div data-testid="metacode-widget">metacode-widget</div>),
+  default: () => (<div data-testid="metacode-widget">metacode-widget</div>),
+}));
 
 import { DashboardPage } from '../../src/components/DashboardPage.jsx';
 
@@ -43,7 +80,7 @@ beforeEach(() => { vi.clearAllMocks(); });
 
 describe('DashboardPage', () => {
   it('passes draggableHandle and draggableCancel and respects editMode toggle', async () => {
-    render(<DashboardPage />);
+    renderWithProviders(<DashboardPage />);
 
     const responsive = await screen.findByTestId('responsive');
     const props = JSON.parse(responsive.getAttribute('data-props'));
