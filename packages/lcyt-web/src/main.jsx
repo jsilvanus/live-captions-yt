@@ -31,6 +31,10 @@ const ProductionDevicesPage  = lazy(() => import('./components/ProductionDevices
 const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
 const TranslationsPage       = lazy(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
 const AiSettingsPage         = lazy(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
+const AdminUsersPage         = lazy(() => import('./components/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
+const AdminUserDetailPage    = lazy(() => import('./components/AdminUserDetailPage').then(m => ({ default: m.AdminUserDetailPage })));
+const AdminProjectsPage      = lazy(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
+const AdminProjectDetailPage = lazy(() => import('./components/AdminProjectDetailPage').then(m => ({ default: m.AdminProjectDetailPage })));
 
 // Standalone / path-gated pages
 const SpeechCapturePage      = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
@@ -166,6 +170,10 @@ function SidebarApp() {
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />
             <Route path="/ai" component={AiSettingsPage} />
+            <Route path="/admin/users/:id" component={AdminUserDetailPage} />
+            <Route path="/admin/users" component={AdminUsersPage} />
+            <Route path="/admin/projects/:key" component={AdminProjectDetailPage} />
+            <Route path="/admin/projects" component={AdminProjectsPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />
