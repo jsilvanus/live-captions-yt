@@ -128,15 +128,14 @@ describe('StatusPanel', () => {
     });
   });
 
-  it('shows toast when stats requested while disconnected', async () => {
+  it('does not call getStats when disconnected and stats button is disabled', async () => {
     const session = mockSession({ connected: false, getRelayStatus: vi.fn().mockResolvedValue(null) });
     const toast = mockToast();
     renderStatusPanel(session, toast);
 
     const statsBtn = document.querySelectorAll('.btn--secondary')[0];
-    fireEvent.click(statsBtn);
-
-    expect(toast.showToast).toHaveBeenCalled();
+    expect(statsBtn).toBeDisabled();
+    expect(toast.showToast).not.toHaveBeenCalled();
     expect(session.getStats).not.toHaveBeenCalled();
   });
 
