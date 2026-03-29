@@ -22,14 +22,17 @@ function makeSilentBins(n = 1024) {
 }
 
 /**
- * Build frequency bins with most energy concentrated at a single low-frequency
- * bin — simulating a tonal, bass-heavy signal (music-like).
+ * Build frequency bins with energy concentrated at low-frequency bins —
+ * simulating a tonal, bass-heavy signal (music-like).
+ * Uses 15 prominent peaks at low frequencies so the overall RMS exceeds the
+ * silence threshold while spectral flatness stays low (tonal).
  */
-function makeTonalBins(n = 1024, peakBin = 20) {
+function makeTonalBins(n = 1024) {
   const bins = new Float32Array(n).fill(-96);
-  bins[peakBin]     = -3;
-  bins[peakBin - 1] = -12;
-  bins[peakBin + 1] = -12;
+  // 15 prominent low-frequency peaks at −3 dBFS
+  for (let i = 5; i <= 19; i++) {
+    bins[i] = -3;
+  }
   return bins;
 }
 
@@ -114,8 +117,9 @@ describe('classifyFromFrequency — edge cases', () => {
   });
 
   it('respects custom silenceThreshold override', () => {
-    // Very low energy bins — should be speech at default threshold but silence at raised one
-    const bins = new Float32Array(1024).fill(-60);
+    // Flat bins at −30 dBFS — energy is above default threshold so speech,
+    // but below silenceThreshold=0.9 so should be silence when raised
+    const bins = new Float32Array(1024).fill(-30);
     const defaultResult = classifyFromFrequency(bins, SAMPLE_RATE);
     const highThreshold = classifyFromFrequency(bins, SAMPLE_RATE, { silenceThreshold: 0.9 });
     assert.equal(highThreshold.label, 'silence');

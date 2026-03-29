@@ -353,7 +353,8 @@ export class CueEngine {
       } catch (err) {
         logger.warn(`[cues] Event cue evaluation error for rule ${rule.id}:`, err?.message);
       }
-    } catch (e) { throw e; } 
+    } catch (e) { throw e; }
+    }
   }
 
   /**

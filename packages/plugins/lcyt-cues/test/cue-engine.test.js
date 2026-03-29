@@ -305,9 +305,11 @@ describe('CueEngine', () => {
 // ---------------------------------------------------------------------------
 
 describe('cue DB helpers', () => {
+  let CueEngine;
   let runMigrations, insertCueRule, getCueRule, updateCueRule, deleteCueRule, listCueRules, insertCueEvent, getRecentCueEvents;
 
   before(async () => {
+    ({ CueEngine } = await import('../src/cue-engine.js'));
     ({
       runMigrations, insertCueRule, getCueRule, updateCueRule,
       deleteCueRule, listCueRules, insertCueEvent, getRecentCueEvents,
@@ -394,11 +396,12 @@ describe('cue DB helpers', () => {
   test('evaluateEventCues does nothing without agentEvaluateFn', async () => {
     const db = createDb();
     const engine = new CueEngine(db);
-    insertCueRule(db, 'key1', {
+    insertCueRule(db, {
+      id: 'ev1', api_key: 'key1',
       name: 'event1',
       match_type: 'event_cue',
       pattern: 'speaker stands up',
-      action: '{}',
+      action: {},
       cooldown_ms: 0,
     });
     const results = [];
@@ -409,11 +412,12 @@ describe('cue DB helpers', () => {
   test('evaluateEventCues calls agent for event_cue rules', async () => {
     const db = createDb();
     const engine = new CueEngine(db);
-    insertCueRule(db, 'key1', {
+    insertCueRule(db, {
+      id: 'ev2', api_key: 'key1',
       name: 'stand-up',
       match_type: 'event_cue',
       pattern: 'speaker stands up',
-      action: '{"type":"event"}',
+      action: { type: 'event' },
       cooldown_ms: 0,
     });
     engine.setAgentEvaluateFn(async (apiKey, desc) => {
@@ -428,11 +432,12 @@ describe('cue DB helpers', () => {
   test('evaluateEventCues respects cooldown', async () => {
     const db = createDb();
     const engine = new CueEngine(db);
-    insertCueRule(db, 'key1', {
+    insertCueRule(db, {
+      id: 'ev3', api_key: 'key1',
       name: 'event2',
       match_type: 'event_cue',
       pattern: 'slides change',
-      action: '{}',
+      action: {},
       cooldown_ms: 60000,
     });
     engine.setAgentEvaluateFn(async () => ({ matched: true, confidence: 0.9, reasoning: 'ok' }));
@@ -448,11 +453,12 @@ describe('cue DB helpers', () => {
   test('evaluateEventCues skips non-event_cue rules', async () => {
     const db = createDb();
     const engine = new CueEngine(db);
-    insertCueRule(db, 'key1', {
+    insertCueRule(db, {
+      id: 'ev4', api_key: 'key1',
       name: 'phrase-rule',
       match_type: 'phrase',
       pattern: 'amen',
-      action: '{}',
+      action: {},
       cooldown_ms: 0,
     });
     let called = false;
@@ -464,11 +470,12 @@ describe('cue DB helpers', () => {
   test('evaluateEventCues handles agent returning not matched', async () => {
     const db = createDb();
     const engine = new CueEngine(db);
-    insertCueRule(db, 'key1', {
+    insertCueRule(db, {
+      id: 'ev5', api_key: 'key1',
       name: 'event3',
       match_type: 'event_cue',
       pattern: 'applause',
-      action: '{}',
+      action: {},
       cooldown_ms: 0,
     });
     engine.setAgentEvaluateFn(async () => ({ matched: false, confidence: 0.2, reasoning: 'not detected' }));

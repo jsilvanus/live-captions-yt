@@ -1,20 +1,4 @@
 /**
-
-function parseAssistantJson(text) {
-  if (!text || typeof text !== 'string') return null;
-  // Strip markdown code fences
-  let stripped = text.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
-
-  // Find outermost JSON object
-  const first = stripped.indexOf('{');
-  const last = stripped.lastIndexOf('}');
-  const candidate = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
-
-  // Try direct parse
-  try { return JSON.parse(candidate); } catch (e) {}
-
-  // Attempt heuristic fixes: single quotes -> double quotes, remove trailing commas
-  let heur = candidate.replace(/'/g, '"').replace(/,\s*\}
  * AgentEngine — AI-powered scene understanding and event detection.
  *
  * The Agent is the central AI service for LCYT. It owns:
@@ -31,6 +15,37 @@ function parseAssistantJson(text) {
 import { getAiConfigRaw, runAiMigrations } from './ai-config.js';
 import { computeEmbeddings, cosineSimilarity, isServerEmbeddingAvailable } from './embeddings.js';
 import logger from 'lcyt/logger';
+
+function parseAssistantJson(text) {
+  if (!text || typeof text !== 'string') return null;
+  // Strip markdown code fences
+  let stripped = text.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
+
+  // Find outermost JSON object
+  const first = stripped.indexOf('{');
+  const last = stripped.lastIndexOf('}');
+  const candidate = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
+
+  // Try direct parse
+  try { return JSON.parse(candidate); } catch (e) {}
+
+  // Attempt heuristic fixes: single quotes -> double quotes, remove trailing commas
+  let heur = candidate.replace(/'/g, '"').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+  try { return JSON.parse(heur); } catch (e) {}
+
+  // Fallback: extract key/value pairs for matched/confidence/reasoning
+  const out = {};
+  const mMatched = /"?matched"?\s*:\s*(true|false)/i.exec(candidate);
+  if (mMatched) out.matched = mMatched[1].toLowerCase() === 'true';
+  const mConf = /"?confidence"?\s*:\s*([0-9.]+)/i.exec(candidate);
+  if (mConf) out.confidence = parseFloat(mConf[1]);
+  const mReason = /"?reasoning"?\s*:\s*"([^""]{0,500})"/i.exec(candidate);
+  if (mReason) out.reasoning = mReason[1];
+
+  // If we got something useful, return it
+  if (Object.keys(out).length > 0) return out;
+  return null;
+}
 
 export class AgentEngine {
   /**
@@ -85,23 +100,6 @@ export class AgentEngine {
   clearContext(apiKey) {
     this._contextWindow.delete(apiKey);
   }
-/g, '}').replace(/,\s*\]/g, ']');
-  try { return JSON.parse(heur); } catch (e) {}
-
-  // Fallback: extract key/value pairs for matched/confidence/reasoning
-  const out = {};
-  const mMatched = /"?matched"?\s*:\s*(true|false)/i.exec(candidate);
-  if (mMatched) out.matched = mMatched[1].toLowerCase() === 'true';
-  const mConf = /"?confidence"?\s*:\s*([0-9.]+)/i.exec(candidate);
-  if (mConf) out.confidence = parseFloat(mConf[1]);
-  const mReason = /"?reasoning"?\s*:\s*"([^""]{0,500})"/i.exec(candidate);
-  if (mReason) out.reasoning = mReason[1];
-
-  // If we got something useful, return it
-  if (Object.keys(out).length > 0) return out;
-  return null;
-}
-
 
   // -------------------------------------------------------------------------
   // AI Config helpers — delegates to ai-config.js

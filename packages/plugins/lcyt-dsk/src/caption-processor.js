@@ -215,6 +215,7 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       for (const name of newDefault) {
         const row = getImageByShorthand(db, apiKey, name);
         if (!row) continue;
+        if (row.mime_type === 'image/svg+xml') continue; // SVG not supported by relay overlay
         const meta = safeParseJson(row.settings_json);
         const vpMeta = meta?.viewports?.landscape ?? meta?.viewports?.default ?? {};
         if (vpMeta?.visible === false) continue; // skip if explicitly disabled for landscape
