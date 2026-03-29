@@ -261,36 +261,35 @@ jobs:
           severity: error
 
   # ── Tier 4: E2E tests (after integration passes) ───────────────────
-  # Placeholder for future end-to-end tests.
   # Plan: start lcyt-backend in CI, run Playwright against lcyt-web.
   # Could also run in a GitHub Codespace for a full environment with
   # Docker services (nginx-rtmp, MediaMTX) if the standard runner is
   # too limited.
-  #
-  # e2e:
-  #   name: "E2E: Playwright"
-  #   needs: [integration-node, component-tests]
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 20
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: 20
-  #         cache: npm
-  #     - run: npm ci
-  #     - run: npx playwright install --with-deps chromium
-  #     - name: Start backend
-  #       run: |
-  #         npm run build -w packages/lcyt
-  #         npm run build -w packages/lcyt-web
-  #         node packages/lcyt-backend/src/index.js &
-  #       env:
-  #         JWT_SECRET: test-jwt-secret
-  #         ADMIN_KEY: test-admin-key
-  #         PORT: 3000
-  #         STATIC_DIR: packages/lcyt-web/dist
-  #     - name: Run E2E tests
-  #       run: npx playwright test
-  #       env:
-  #         BASE_URL: http://localhost:3000
+  
+   e2e:
+     name: "E2E: Playwright"
+     needs: [integration-node, component-tests]
+     runs-on: ubuntu-latest
+     timeout-minutes: 20
+     steps:
+       - uses: actions/checkout@v4
+       - uses: actions/setup-node@v4
+         with:
+           node-version: 20
+           cache: npm
+       - run: npm ci
+       - run: npx playwright install --with-deps chromium
+       - name: Start backend
+         run: |
+           npm run build -w packages/lcyt
+           npm run build -w packages/lcyt-web
+           node packages/lcyt-backend/src/index.js &
+         env:
+           JWT_SECRET: test-jwt-secret
+           ADMIN_KEY: test-admin-key
+           PORT: 3000
+           STATIC_DIR: packages/lcyt-web/dist
+       - name: Run E2E tests
+         run: npx playwright test
+         env:
+           BASE_URL: http://localhost:3000
