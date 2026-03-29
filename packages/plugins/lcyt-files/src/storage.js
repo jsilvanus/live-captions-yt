@@ -87,8 +87,6 @@ export function createStorageResolver(db, fallback) {
   }
 
 
-  const cache = new Map();
-
   async function resolveStorage(apiKey) {
     if (cache.has(apiKey)) return cache.get(apiKey);
 
