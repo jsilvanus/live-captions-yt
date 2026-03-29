@@ -1,0 +1,47 @@
+*** Begin Patch
+*** Update File: packages/lcyt-backend/test/bridge-integration.test.js
+@@
+-  // Use the lightweight test server helper (avoids importing full backend plugins)
+-  const { createTestServer } = await import('./test-server.js');
+-  const { app, db, bridgeManager: productionBridgeManager } = createTestServer(DB_PATH);
+-
+-  // Start test backend on ephemeral port
+-  const srv = app.listen(0);
++  // Use the lightweight test server helper (avoids importing full backend plugins)
++  // Use an in-memory SQLite DB here to avoid filesystem races where background
++  // timers write after the test deletes the DB file on CI runners.
++  const { createTestServer } = await import('./test-server.js');
++  const { app, db, bridgeManager: productionBridgeManager } = createTestServer();
++
++  // Start test backend on ephemeral port
++  const srv = app.listen(0);
+@@
+-  const created = await createRes.json();
++  const created = await createRes.json();
+   assert.ok(created.id && created.envContent, 'expected id and envContent');
+   const instanceId = created.id;
+@@
+-  // Spawn bridge agent process pointing to our backend
++  // Spawn bridge agent process pointing to our backend
+   const bridgeProc = spawn(process.execPath, ['packages/lcyt-bridge/src/index.js'], {
+     env: { ...process.env, BACKEND_URL: baseUrl, BRIDGE_TOKEN: token },
+     stdio: ['ignore', 'pipe', 'pipe'],
+   });
+   startedProcs.push(bridgeProc);
+@@
+-  // Clean up
+-  cleanUp();
++  // Request the bridge manager disconnect the instance to stop background
++  // activity (heartbeats / DB writes) before we teardown resources.
++  try {
++    productionBridgeManager.disconnect(instanceId);
++  } catch (e) {
++    // ignore
++  }
++
++  // Give a small grace period for any pending async work to finish.
++  await new Promise((r) => setTimeout(r, 200));
++
++  // Clean up
++  cleanUp();
+*** End Patch
