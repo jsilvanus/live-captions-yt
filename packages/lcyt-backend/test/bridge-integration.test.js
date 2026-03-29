@@ -9,9 +9,7 @@ import fs from 'node:fs';
 const TEST_TIMEOUT_MS = 30_000;
 
 // NOTE: Set env before importing the backend server module (it runs init on import)
-const tmpDir = os.tmpdir();
-const DB_PATH = path.join(tmpDir, `lcyt-backend-test-bridge-${Date.now()}.db`);
-process.env.DB_PATH = DB_PATH;
+// Use an in-memory DB for tests to avoid CI filesystem races.
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-jwt-secret';
 process.env.ADMIN_KEY = process.env.ADMIN_KEY || 'test-admin-key';
 process.env.GRAPHICS_ENABLED = '0';
@@ -67,7 +65,6 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   const startedProcs = [];
   const cleanUp = () => {
     for (const p of startedProcs) killIfRunning(p);
-    try { if (fs.existsSync(DB_PATH)) fs.unlinkSync(DB_PATH); } catch {}
   };
   t.after(cleanUp);
 
@@ -91,7 +88,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
 
   // Use the lightweight test server helper (avoids importing full backend plugins)
   const { createTestServer } = await import('./test-server.js');
-  const { app, db, bridgeManager: productionBridgeManager } = createTestServer(DB_PATH);
+  const { app, db, bridgeManager: productionBridgeManager } = createTestServer();
 
   // Start test backend on ephemeral port
   const srv = app.listen(0);
