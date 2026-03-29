@@ -5,6 +5,7 @@ import { SessionContext } from '../../src/contexts/SessionContext.jsx';
 import { SentLogContext } from '../../src/contexts/SentLogContext.jsx';
 import { ToastContext } from '../../src/contexts/ToastContext.jsx';
 import { LangProvider } from '../../src/contexts/LangContext.jsx';
+import { AudioProvider } from '../../src/contexts/AudioContext.jsx';
 
 // ---------------------------------------------------------------------------
 // Mock AudioPanel — it depends on Web Audio API / SpeechRecognition / MediaStream
@@ -61,13 +62,15 @@ function mockToast() {
 function renderPage(session = mockSession()) {
   return render(
     <SessionContext.Provider value={session}>
-      <SentLogContext.Provider value={mockSentLog()}>
-        <ToastContext.Provider value={mockToast()}>
-          <LangProvider>
-            <AudioPage />
-          </LangProvider>
-        </ToastContext.Provider>
-      </SentLogContext.Provider>
+      <AudioProvider>
+        <SentLogContext.Provider value={mockSentLog()}>
+          <ToastContext.Provider value={mockToast()}>
+            <LangProvider>
+              <AudioPage />
+            </LangProvider>
+          </ToastContext.Provider>
+        </SentLogContext.Provider>
+      </AudioProvider>
     </SessionContext.Provider>
   );
 }
