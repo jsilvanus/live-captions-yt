@@ -1,603 +1,567 @@
 # Deployment Guide
 
-This document covers how to deploy the LCYT platform and documents all environment variables.
+This guide covers building, configuring, and deploying LCYT in all supported
+configurations — from a single VM with the helper script to a distributed
+compute setup with Hetzner autoscaling.
 
 ---
 
 ## Table of Contents
 
-- [Quick Start](#quick-start)
-- [Deployment Options](#deployment-options)
-  - [Docker Compose (recommended)](#docker-compose-recommended)
-  - [Bare-metal / systemd](#bare-metal--systemd)
-  - [Distributed (Orchestrator mode)](#distributed-orchestrator-mode)
-- [Building](#building)
-  - [Backend + API](#backend--api)
-  - [Web UI](#web-ui)
-  - [Docker Images](#docker-images)
-- [Ports & Firewall](#ports--firewall)
-- [Environment Variables](#environment-variables)
-  - [Required](#required)
-  - [Application](#application)
-  - [Session & Cleanup](#session--cleanup)
-  - [RTMP Relay](#rtmp-relay)
-  - [MediaMTX Integration](#mediamtx-integration)
-  - [NginxManager (Radio Proxy)](#nginxmanager-radio-proxy)
-  - [ffmpeg Runner](#ffmpeg-runner)
-  - [HLS & Video](#hls--video)
-  - [Radio HLS](#radio-hls)
-  - [Stream Preview](#stream-preview)
-  - [HLS Subtitle Sidecar](#hls-subtitle-sidecar)
-  - [DSK Graphics](#dsk-graphics)
-  - [File Storage](#file-storage)
-  - [S3-Compatible Storage](#s3-compatible-storage)
-  - [Server-Side STT](#server-side-stt)
-  - [Google Cloud STT](#google-cloud-stt)
-  - [Whisper HTTP STT](#whisper-http-stt)
-  - [OpenAI STT](#openai-stt)
-  - [YouTube OAuth](#youtube-oauth)
-  - [User Accounts](#user-accounts)
-  - [Contact Info](#contact-info)
-  - [Backups](#backups)
-  - [Bridge Agent Downloads](#bridge-agent-downloads)
-  - [MCP Server (SSE)](#mcp-server-sse)
-  - [Compute Orchestrator](#compute-orchestrator)
-  - [Hetzner Cloud (Burst VMs)](#hetzner-cloud-burst-vms)
-  - [Worker Daemon](#worker-daemon)
-  - [Dockerfile Build Args](#dockerfile-build-args)
-- [Reverse Proxy (nginx)](#reverse-proxy-nginx)
-- [SSL / TLS](#ssl--tls)
-- [Database](#database)
-- [Monitoring](#monitoring)
+1. [Deployment modes](#deployment-modes)
+2. [Prerequisites](#prerequisites)
+3. [Quick start — single VM](#quick-start--single-vm)
+4. [Docker images](#docker-images)
+5. [Build-time configuration](#build-time-configuration)
+6. [Runtime environment variables](#runtime-environment-variables)
+7. [ffmpeg runner modes](#ffmpeg-runner-modes)
+8. [Distributed mode (orchestrator)](#distributed-mode-orchestrator)
+9. [Hetzner autoscaling](#hetzner-autoscaling)
+10. [Updating a running deployment](#updating-a-running-deployment)
+11. [Networking and reverse proxy](#networking-and-reverse-proxy)
+12. [Database and backups](#database-and-backups)
 
 ---
 
-## Quick Start
+## Deployment modes
+
+| Mode | Compose file | When to use |
+|------|-------------|-------------|
+| **Single VM** | `docker-compose.yml` | One server, all features, local ffmpeg or MediaMTX |
+| **Distributed** | `docker-compose.orchestrator.yml` | Horizontal scaling, Hetzner burst VMs, worker pool |
+
+In both modes the web UI (`lcyt-web`) and the marketing site (`lcyt-site`) are
+built on the host and served by nginx as static files — they are **not** baked
+into any Docker image.
+
+---
+
+## Prerequisites
+
+- Docker Engine 24+ and Docker Compose v2 (`docker compose`)
+- Node.js 20+ and npm 10+ (for host-side builds: web UI, site, bridge)
+- nginx (reverse proxy + optional RTMP ingest)
+- A domain with DNS pointed at the server and a TLS certificate (certbot works)
+
+---
+
+## Quick start — single VM
+
+### 1. Configure environment
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/jsilvanus/live-captions-yt.git
-cd live-captions-yt
-npm install
-
-# 2. Configure
 cp .env.example .env
-# Edit .env — at minimum set JWT_SECRET and ADMIN_KEY
+# Required: set JWT_SECRET and ADMIN_KEY at minimum
+$EDITOR .env
+```
 
-# 3. Start with Docker Compose
-docker compose up
+### 2. Run the deploy script
 
-# Or start bare-metal
-npm run start:backend
+The `scripts/deploy.sh` script handles everything in one shot: git
+clone/pull, web UI build, Docker Compose up, site and bridge builds.
+
+```bash
+# First deploy (clones the repo)
+REPO_URL=git@github.com:you/live-captions-yt.git \
+JWT_SECRET=your-secret \
+bash scripts/deploy.sh ~/lcyt
+
+# Subsequent deploys (pulls, rebuilds, restarts)
+bash ~/lcyt/scripts/deploy.sh
+```
+
+The script runs these steps in order:
+
+| Step | What it does |
+|------|-------------|
+| git clone / pull | Fetches latest from `GIT_BRANCH` (default: `main`). Self-updates if `deploy.sh` itself changed. |
+| Build `lcyt-web` | Runs `npm run build -w packages/lcyt-web` → `packages/lcyt-web/dist/` |
+| Capture screenshots | Background job: installs Playwright Chromium, captures UI screenshots for Astro site |
+| `docker compose up` | Builds and starts `lcyt-site` + `mediamtx` containers |
+| Build `lcyt-bridge` | Compiles bridge executables (win/mac/linux/linux-arm64) |
+| Build `lcyt-site` | Runs Astro build → `packages/lcyt-site/dist/` |
+
+After the first deploy, create nginx symlinks so the static files are served:
+
+```bash
+# Web UI
+ln -sfn ~/lcyt/packages/lcyt-web/dist /var/www/html/lcyt-web
+
+# Marketing / docs site
+ln -sfn ~/lcyt/packages/lcyt-site/dist /var/www/html/lcyt-site
+```
+
+See [Networking and reverse proxy](#networking-and-reverse-proxy) for the nginx
+config.
+
+### 3. Partial deploys (`--only`)
+
+```bash
+# Rebuild and restart only the backend container
+bash scripts/deploy.sh --only backend
+
+# Rebuild only the web UI
+bash scripts/deploy.sh --only app
+
+# Rebuild only the Astro marketing site
+bash scripts/deploy.sh --only site
+
+# Rebuild only the bridge executables
+bash scripts/deploy.sh --only bridge
+
+# Re-capture UI screenshots only
+bash scripts/deploy.sh --only screenshots
+```
+
+### 4. Verify
+
+```bash
+curl http://localhost:3000/health    # backend
+curl http://localhost:3001/sse       # MCP SSE (text/event-stream)
 ```
 
 ---
 
-## Deployment Options
+## Docker images
 
-### Docker Compose (recommended)
+All image build contexts live under `docker/` or their respective package
+directory.
 
-The simplest production setup. Uses `docker-compose.yml` which starts:
+| Image | Build context | Purpose |
+|-------|--------------|---------|
+| `lcyt-site:latest` | `.` (repo root) | Backend API + MCP SSE server |
+| `lcyt-worker-daemon:latest` | `packages/lcyt-worker-daemon/` | ffmpeg worker daemon (distributed mode) |
+| `lcyt-ffmpeg:latest` | `docker/lcyt-ffmpeg/` | Ephemeral ffmpeg runner (`FFMPEG_RUNNER=docker`) |
+| `lcyt-dsk-renderer:latest` | `docker/lcyt-dsk-renderer/` | Playwright + ffmpeg DSK graphics renderer |
 
-- **lcyt-site** — LCYT backend API (port 3000) + MCP SSE server (port 3001)
-- **mediamtx** — MediaMTX RTMP/HLS broker (ports 1935, 8080, 9997)
-- **docker-socket-proxy** — (opt-in) secure Docker socket proxy for containerised ffmpeg
-
-```bash
-cp .env.example .env
-# Fill in JWT_SECRET, ADMIN_KEY, and other required vars
-
-# Basic (no RTMP relay)
-docker compose up -d
-
-# With RTMP relay + MediaMTX radio
-RTMP_RELAY_ACTIVE=1 RADIO_HLS_SOURCE=mediamtx docker compose up -d
-
-# With Docker socket proxy (for FFMPEG_RUNNER=docker)
-docker compose --profile docker-runner up -d
-```
-
-### Bare-metal / systemd
+Build all images locally:
 
 ```bash
-npm install
-npm run build          # Build CJS output for lcyt core library
-npm run build:web      # Build web UI → packages/lcyt-web/dist/
-
-# Start the backend (serves API + optionally static web UI)
-STATIC_DIR=packages/lcyt-web/dist npm run start:backend
-```
-
-Create a systemd unit:
-
-```ini
-[Unit]
-Description=LCYT Backend
-After=network.target
-
-[Service]
-Type=simple
-User=lcyt
-WorkingDirectory=/opt/live-captions-yt
-EnvironmentFile=/opt/live-captions-yt/.env
-ExecStart=/usr/bin/node packages/lcyt-backend/src/index.js
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Distributed (Orchestrator mode)
-
-For high-availability deployments with autoscaling ffmpeg workers. Uses `docker-compose.orchestrator.yml` which starts four services:
-
-- **lcyt-backend** — API server (no Docker socket, `FFMPEG_RUNNER=worker`)
-- **lcyt-orchestrator** — Job scheduler + Hetzner VM lifecycle (port 4000)
-- **lcyt-worker-daemon** — Docker socket owner, runs ffmpeg containers (port 5000)
-- **mediamtx** — RTMP/HLS broker
-
-```bash
-# Build required images
 docker build -t lcyt-site:latest .
+docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
 docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
-# Build worker daemon (if separate image needed)
-# docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
-
-# Fill in required vars
-cp .env.example .env
-# Set: JWT_SECRET, ADMIN_KEY, BACKEND_INTERNAL_TOKEN
-# For Hetzner burst: HETZNER_API_TOKEN, HETZNER_NETWORK_ID, HETZNER_SNAPSHOT_ID
-
-docker compose -f docker-compose.orchestrator.yml up -d
-```
-
----
-
-## Building
-
-### Backend + API
-
-```bash
-npm install              # Install all workspace dependencies
-npm run build            # Build lcyt CJS output (ESM→CJS)
-```
-
-### Web UI
-
-```bash
-npm run build:web        # Build lcyt-web for production → packages/lcyt-web/dist/
-npm run build:site       # Build lcyt-web then lcyt-site (Astro marketing site)
-```
-
-### Docker Images
-
-```bash
-# Main backend image (includes backend + all plugins + MCP SSE)
-docker build -t lcyt-site:latest .
-
-# With ffmpeg (for RTMP relay, radio, HLS, preview)
-docker build -t lcyt-site:latest --build-arg RTMP_RELAY_ACTIVE=1 .
-
-# With Chromium (for DSK graphics rendering)
-docker build -t lcyt-site:latest --build-arg GRAPHICS_ENABLED=1 .
-
-# ffmpeg compute container (for FFMPEG_RUNNER=docker)
-docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
-
-# DSK renderer container (for containerised Playwright rendering)
 docker build -t lcyt-dsk-renderer:latest docker/lcyt-dsk-renderer/
 ```
 
----
-
-## Ports & Firewall
-
-| Port | Protocol | Service | Public? | Env override |
-|------|----------|---------|---------|-------------|
-| **3000** | HTTP | lcyt-backend (Express) | Behind nginx | `PORT` |
-| **3001** | HTTP | lcyt-mcp-sse server | Optional | `PORT` (MCP) |
-| **1935** | RTMP | MediaMTX — publisher ingest | Yes | — |
-| **8080** | HTTP | MediaMTX — HLS output | No (internal) | `MEDIAMTX_HLS_BASE_URL` |
-| **8554** | RTSP | MediaMTX — RTSP output | No (loopback) | `MEDIAMTX_RTSP_BASE_URL` |
-| **8889** | HTTP/WS | MediaMTX — WebRTC preview | Optional | `MEDIAMTX_WEBRTC_BASE_URL` |
-| **9997** | HTTP | MediaMTX — REST API | No (internal) | `MEDIAMTX_API_URL` |
-| **80/443** | HTTP/S | nginx reverse proxy | Yes | — |
-| **4000** | HTTP | lcyt-orchestrator | No (internal) | `PORT` (orchestrator) |
-| **5000** | HTTP | lcyt-worker-daemon | No (internal) | `PORT` (worker) |
-
-**Recommended firewall rules (production):**
-
-```
-# Public — must be open
-TCP  80    nginx HTTP (→ HTTPS redirect)
-TCP  443   nginx HTTPS
-TCP  1935  MediaMTX RTMP ingest
-
-# Optional — open only if WebRTC preview is needed
-TCP  8889  MediaMTX WebRTC
-
-# Internal — loopback / private network only
-TCP  3000  lcyt-backend
-TCP  3001  lcyt-mcp-sse
-TCP  4000  lcyt-orchestrator
-TCP  5000  lcyt-worker-daemon
-TCP  8080  MediaMTX HLS
-TCP  8554  MediaMTX RTSP
-TCP  9997  MediaMTX REST API
-```
+Only `lcyt-site` is required for a basic deployment. The others are needed
+depending on which features are enabled.
 
 ---
 
-## Environment Variables
+## Build-time configuration
 
-All configuration is via environment variables (12-factor style). Copy `.env.example` to `.env` and fill in required values.
+Build args are passed with `--build-arg` on the CLI or via the `args:` block
+in `docker-compose.yml`. See `scripts/build.env.example` for a template.
+
+### `lcyt-site` build args
+
+| Arg | Default | Effect |
+|-----|---------|--------|
+| `APT_MIRROR` | _(unset)_ | Replace `deb.debian.org` with a faster mirror during build. Example for Hetzner: `http://mirror.hetzner.com/debian/packages` |
+| `RTMP_RELAY_ACTIVE` | `0` | Install ffmpeg for RTMP relay in local-spawn mode. **Not needed** when `FFMPEG_RUNNER=docker` or `FFMPEG_RUNNER=worker`. |
+| `RADIO_ACTIVE` | `0` | Install ffmpeg for audio-only HLS (radio) in local-spawn mode. **Not needed** when `RADIO_HLS_SOURCE=mediamtx`. |
+| `HLS_ACTIVE` | `0` | Install ffmpeg for video+audio HLS in local-spawn mode. |
+| `PREVIEW_ACTIVE` | `0` | Install ffmpeg for JPEG thumbnail generation in local-spawn mode. |
+| `GRAPHICS_ENABLED` | `0` | Install Chromium for the DSK Playwright renderer. Also controls the `/images` and `/dsk` endpoints at runtime. |
+
+**When is ffmpeg needed in the image?**
+
+ffmpeg is only installed in `lcyt-site` when one of the four feature flags
+above is set to `1` **and** `FFMPEG_RUNNER=spawn` (the default). If you use
+`FFMPEG_RUNNER=docker` (ephemeral containers) or `FFMPEG_RUNNER=worker`
+(worker daemon), ffmpeg is never called inside this image, so all four flags
+can stay at `0`.
+
+### Vite build args (`lcyt-web`)
+
+These are passed as environment variables during `npm run build:web`:
+
+| Variable | Purpose |
+|----------|---------|
+| `VITE_BACKUP_DAYS` | Backup retention value shown in the Privacy modal |
+| `VITE_SITE_URL` | Base URL baked into the web bundle |
+| `VITE_API_KEY` | Optional API key baked into the bundle — **do not commit** |
+
+---
+
+## Runtime environment variables
+
+Set these in your `.env` file (loaded by `docker compose`) or export them
+before running the backend directly.
 
 ### Required
 
-| Variable | Description | Default |
-|---|---|---|
-| `JWT_SECRET` | HS256 signing key for session and user JWTs. **Must be set in production.** | Auto-generated (warns at startup) |
-| `ADMIN_KEY` | Admin API key for `/keys` admin routes. Uses constant-time comparison. | None (disables admin endpoints) |
+| Variable | Description |
+|----------|-------------|
+| `JWT_SECRET` | HS256 signing key for session and user JWTs. Generate with `openssl rand -hex 32`. A random key is used if unset, but all tokens become invalid on restart. |
+| `ADMIN_KEY` | API key for admin endpoints (`X-Admin-Key` header). Disables admin routes if unset. |
 
-### Application
+### Core application
 
-| Variable | Description | Default |
-|---|---|---|
-| `PORT` | HTTP port for lcyt-backend | `3000` |
-| `DB_PATH` | SQLite database file path | `./lcyt-backend.db` |
-| `STATIC_DIR` | Serve static files from this directory (e.g. built web UI) | None |
-| `PUBLIC_URL` | Server's public URL (used in generated .env downloads, bridge URLs) | None |
-| `BACKEND_URL` | Server's own URL for internal use (DSK renderer, etc.) | None |
-| `TRUST_PROXY` | Express `trust proxy` value (set to `true` behind nginx) | `true` |
-| `ALLOWED_DOMAINS` | Comma-separated domains for session CORS filter | `lcyt.fi,www.lcyt.fi,localhost` |
-| `ALLOWED_RTMP_DOMAINS` | Domains allowed to use `/stream` relay endpoints; falls back to `ALLOWED_DOMAINS` | Falls back |
-| `NODE_ENV` | Node.js environment (`production` / `development`) | `development` |
-| `FREE_APIKEY_ACTIVE` | Set to `1` to enable free API key self-registration at `POST /keys?freetier` | `0` |
-| `USAGE_PUBLIC` | If set, `/usage` endpoint needs no auth | Unset |
-| `ICONS_DIR` | Directory for icon assets served at `/icons/*` | None |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | HTTP port for the backend |
+| `DB_PATH` | `./lcyt-backend.db` | Path to the SQLite database file |
+| `PUBLIC_URL` | _(unset)_ | Server's public URL, used in generated `.env` file downloads |
+| `STATIC_DIR` | _(unset)_ | Directory to serve as static files (e.g. `packages/lcyt-web/dist`) |
+| `TRUST_PROXY` | `true` | Express `trust proxy` setting; keep `true` behind nginx |
+| `NODE_ENV` | `production` | Node environment |
 
-### Session & Cleanup
+### Access control
 
-| Variable | Description | Default |
-|---|---|---|
-| `SESSION_TTL` | Session timeout in milliseconds | `7200000` (2h) |
-| `CLEANUP_INTERVAL` | Session cleanup sweep interval in milliseconds | `300000` (5m) |
-| `REVOKED_KEY_TTL_DAYS` | Days before revoked API keys are purged | `30` |
-| `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval in milliseconds | `86400000` (24h) |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ALLOWED_DOMAINS` | `lcyt.fi,www.lcyt.fi,localhost` | Comma-separated domains permitted as session origins (CORS allowlist) |
+| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Domains allowed to use the `/stream` RTMP relay endpoints |
+| `FREE_APIKEY_ACTIVE` | _(unset)_ | Set to `1` to enable free-tier API key self-registration at `POST /keys?freetier` |
+| `USE_USER_LOGINS` | _(enabled)_ | Set to `0` to disable user registration and login (`/auth` routes) |
+| `USAGE_PUBLIC` | _(unset)_ | Set to any value to make `GET /usage` public (no admin key required) |
 
-### RTMP Relay
+### Session management
 
-| Variable | Description | Default |
-|---|---|---|
-| `RTMP_RELAY_ACTIVE` | Set to `1` to enable RTMP relay functionality | `0` |
-| `RTMP_HOST` | RTMP host for relay destination | None |
-| `RTMP_APP` / `RTMP_APPLICATION` | RTMP application name for relay | None |
-| `RTMP_CONTROL_URL` | nginx-rtmp control URL (legacy fallback for `dropPublisher`) | None |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SESSION_TTL` | `7200000` | Session idle timeout in milliseconds (default 2 h) |
+| `CLEANUP_INTERVAL` | `300000` | How often to sweep and expire idle sessions (ms) |
+| `REVOKED_KEY_TTL_DAYS` | `30` | Days before purging revoked API keys from the database |
+| `REVOKED_KEY_CLEANUP_INTERVAL` | `86400000` | Interval for the revoked-key cleanup sweep (ms) |
 
-### MediaMTX Integration
+### Contact info
 
-| Variable | Description | Default |
-|---|---|---|
-| `MEDIAMTX_API_URL` | MediaMTX v3 REST API base URL | `http://localhost:9997` |
-| `MEDIAMTX_HLS_BASE_URL` | MediaMTX HLS base URL (used by NginxManager for proxy_pass) | `http://127.0.0.1:8080` |
-| `MEDIAMTX_RTSP_BASE_URL` | MediaMTX RTSP base URL (used by relay `runOnPublish`) | `rtsp://127.0.0.1:8554` |
-| `MEDIAMTX_WEBRTC_BASE_URL` | MediaMTX WebRTC base URL (returned by `/preview/:key/webrtc`) | `http://127.0.0.1:8889` |
-| `MEDIAMTX_API_USER` | Basic-auth username for the MediaMTX API | None |
-| `MEDIAMTX_API_PASSWORD` | Basic-auth password for the MediaMTX API | None |
-| `MEDIAMTX_LOG_LEVEL` | MediaMTX log level: `debug`, `info`, `warn`, `error` | `info` |
+Returned by `GET /contact` (public endpoint).
 
-### NginxManager (Radio Proxy)
+| Variable | Description |
+|----------|-------------|
+| `CONTACT_NAME` | Operator display name |
+| `CONTACT_EMAIL` | Contact email |
+| `CONTACT_PHONE` | Contact phone |
+| `CONTACT_WEBSITE` | Contact website URL |
 
-| Variable | Description | Default |
-|---|---|---|
-| `NGINX_RADIO_CONFIG_PATH` | Path to nginx include file managed by NginxManager; empty = no-op mode | Unset |
-| `NGINX_TEST_CMD` | Command to test nginx config before reloading | `nginx -t` |
-| `NGINX_RELOAD_CMD` | Command to reload nginx after config write | `nginx -s reload` |
-| `NGINX_RADIO_PREFIX` | Public URL prefix for slug-based radio proxy locations | `/r` |
+### RTMP relay
 
-### ffmpeg Runner
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RTMP_RELAY_ACTIVE` | _(unset)_ | Set to `1` to enable RTMP relay endpoints |
+| `RTMP_HOST` | _(unset)_ | Default RTMP host for relay |
+| `RTMP_APP` / `RTMP_APPLICATION` | _(unset)_ | Default RTMP application name |
+| `RTMP_CONTROL_URL` | _(unset)_ | nginx-rtmp control URL (legacy fallback for `dropPublisher`) |
 
-| Variable | Description | Default |
-|---|---|---|
-| `FFMPEG_RUNNER` | ffmpeg execution backend: `spawn` (local), `docker` (containerised), `worker` (remote daemon) | `spawn` |
-| `FFMPEG_IMAGE` | Docker image for ffmpeg when `FFMPEG_RUNNER=docker` | `lcyt-ffmpeg:latest` |
-| `FFMPEG_WRAPPER` | Custom ffmpeg wrapper script path | None |
-| `DOCKER_BUILD_TIMEOUT_MS` | Timeout for Docker image builds in milliseconds | None |
-| `DOCKER_HOST` | Docker socket URL (for `FFMPEG_RUNNER=docker`) | System default |
+### HLS and radio streaming
 
-### HLS & Video
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RADIO_HLS_SOURCE` | `ffmpeg` | Radio HLS backend: `ffmpeg` (spawn local) or `mediamtx` (no ffmpeg) |
+| `HLS_ROOT` | `/tmp/hls-video` | Directory for video+audio HLS output |
+| `HLS_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local RTMP base URL for HLS pipelines |
+| `HLS_RTMP_APP` | `live` | RTMP application name for HLS |
+| `HLS_SUBS_ROOT` | `/tmp/hls-subs` | Directory for WebVTT subtitle segment files |
+| `HLS_SUBS_SEGMENT_DURATION` | `6` | Subtitle segment length in seconds |
+| `HLS_SUBS_WINDOW_SIZE` | `10` | Number of subtitle segments to keep per language |
+| `RADIO_HLS_ROOT` | `/tmp/hls` | Directory for audio-only HLS output (ffmpeg mode) |
+| `RADIO_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local RTMP base URL for radio pipelines |
+| `RADIO_RTMP_APP` | `live` | RTMP application name for radio |
 
-| Variable | Description | Default |
-|---|---|---|
-| `HLS_ROOT` | HLS output directory for video+audio streams | `/tmp/hls-video` |
-| `HLS_LOCAL_RTMP` | Local nginx-rtmp/MediaMTX base URL for HLS | `rtmp://127.0.0.1:1935` |
-| `HLS_RTMP_APP` | RTMP application name for HLS | `live` |
+### Preview thumbnails
 
-### Radio HLS
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PREVIEW_ROOT` | `/tmp/previews` | Directory for JPEG thumbnail files |
+| `PREVIEW_INTERVAL_S` | `5` | Seconds between thumbnail refresh |
 
-| Variable | Description | Default |
-|---|---|---|
-| `RADIO_HLS_SOURCE` | Radio HLS backend: `ffmpeg` (default) or `mediamtx` (no ffmpeg) | `ffmpeg` |
-| `RADIO_HLS_ROOT` | HLS output directory for audio-only streams | `/tmp/hls` |
-| `RADIO_LOCAL_RTMP` | Local nginx-rtmp URL for radio streams | `rtmp://127.0.0.1:1935` |
-| `RADIO_RTMP_APP` | RTMP application name for radio | `live` |
+### MediaMTX integration
 
-### Stream Preview
+Used when `RADIO_HLS_SOURCE=mediamtx` or when MediaMTX manages RTMP paths.
 
-| Variable | Description | Default |
-|---|---|---|
-| `PREVIEW_ROOT` | Directory for JPEG thumbnail files | `/tmp/previews` |
-| `PREVIEW_INTERVAL_S` | Seconds between thumbnail updates | `5` |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MEDIAMTX_API_URL` | `http://mediamtx:9997` | MediaMTX v3 REST API base URL |
+| `MEDIAMTX_HLS_BASE_URL` | `http://mediamtx:8080` | HLS base URL used by NginxManager for internal `proxy_pass` |
+| `MEDIAMTX_API_USER` | _(unset)_ | Basic-auth username for the MediaMTX API |
+| `MEDIAMTX_API_PASSWORD` | _(unset)_ | Basic-auth password for the MediaMTX API |
 
-### HLS Subtitle Sidecar
+### nginx radio proxy (NginxManager)
 
-| Variable | Description | Default |
-|---|---|---|
-| `HLS_SUBS_ROOT` | Directory for WebVTT subtitle segment files | `/tmp/hls-subs` |
-| `HLS_SUBS_SEGMENT_DURATION` | Subtitle segment length in seconds | `6` |
-| `HLS_SUBS_WINDOW_SIZE` | Number of subtitle segments to keep per language | `10` |
+NginxManager writes slug-based nginx `location` blocks so radio streams are
+served at public URLs like `/r/<slug>/` without exposing API keys.
+Leave `NGINX_RADIO_CONFIG_PATH` unset to skip this and serve radio HLS
+directly from the Node.js backend.
 
-### DSK Graphics
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NGINX_RADIO_CONFIG_PATH` | _(unset)_ | Path to the nginx include file managed by NginxManager |
+| `NGINX_TEST_CMD` | `nginx -t` | Command to test nginx config before reloading |
+| `NGINX_RELOAD_CMD` | `nginx -s reload` | Command to reload nginx after writing the config |
+| `NGINX_RADIO_PREFIX` | `/r` | Public URL prefix for radio slug locations |
 
-| Variable | Description | Default |
-|---|---|---|
-| `GRAPHICS_ENABLED` | Set to `1` to enable image upload/management | `0` |
-| `GRAPHICS_DIR` | Image storage directory for DSK overlays | `/data/images` |
-| `GRAPHICS_MAX_FILE_BYTES` | Max uploaded image size in bytes | `5242880` (5 MB) |
-| `GRAPHICS_MAX_STORAGE_BYTES` | Max total image storage per key in bytes | `52428800` (50 MB) |
-| `PLAYWRIGHT_DSK_CHROMIUM` | Path to Chromium binary for DSK renderer | Playwright cache path |
-| `DSK_LOCAL_SERVER` | Local server URL used by DSK renderer | `http://localhost:$PORT` |
-| `DSK_LOCAL_RTMP` | Local nginx-rtmp base URL for DSK RTMP output | `rtmp://127.0.0.1:1935` |
-| `DSK_RTMP_APP` | RTMP application name for DSK renderer output | `dsk` |
-| `DSK_RENDERER_IMAGE` | Docker image for containerised DSK renderer | `lcyt-dsk-renderer:latest` |
+### DSK graphics
 
-### File Storage
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GRAPHICS_ENABLED` | _(unset)_ | Set to `1` to enable image upload, DSK endpoints, and the Playwright renderer |
+| `GRAPHICS_DIR` | `/data/images` | Directory for uploaded overlay images |
+| `GRAPHICS_MAX_FILE_BYTES` | `5242880` | Max bytes per uploaded image (5 MB) |
+| `GRAPHICS_MAX_STORAGE_BYTES` | `52428800` | Max total image storage per API key (50 MB) |
+| `PLAYWRIGHT_DSK_CHROMIUM` | Playwright cache | Path to the Chromium binary used by the DSK renderer |
+| `DSK_LOCAL_SERVER` | `http://localhost:$PORT` | URL Chromium fetches templates from |
+| `DSK_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | nginx-rtmp base URL for DSK RTMP output |
+| `DSK_RTMP_APP` | `live` | RTMP application name for DSK renderer output |
 
-| Variable | Description | Default |
-|---|---|---|
-| `FILE_STORAGE` | Storage backend: `local`, `s3`, or `webdav` | `local` |
-| `FILES_DIR` | Base directory for local file adapter | `/data/files` |
+### Caption file storage
 
-### S3-Compatible Storage
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `FILE_STORAGE` | `local` | Storage backend: `local` or `s3` |
+| `FILES_DIR` | `/data/files` | Base directory for the local storage adapter |
+| `S3_BUCKET` | _(unset)_ | S3 bucket name (required when `FILE_STORAGE=s3`) |
+| `S3_REGION` | `auto` | AWS region, or `auto` for Cloudflare R2 |
+| `S3_ENDPOINT` | _(unset)_ | Custom S3-compatible endpoint (R2, MinIO, Backblaze B2) |
+| `S3_PREFIX` | `captions` | Object key prefix within the bucket |
+| `S3_ACCESS_KEY_ID` | _(unset)_ | Static credentials (falls back to AWS credential chain) |
+| `S3_SECRET_ACCESS_KEY` | _(unset)_ | Static credentials secret |
 
-| Variable | Description | Default |
-|---|---|---|
-| `S3_BUCKET` | S3 bucket name (required when `FILE_STORAGE=s3`) | None |
-| `S3_REGION` | AWS region (or `auto` for Cloudflare R2) | `auto` |
-| `S3_ENDPOINT` | Custom S3-compatible endpoint URL (R2, MinIO, Backblaze B2) | None |
-| `S3_PREFIX` | Object key prefix within the bucket | `captions` |
-| `S3_ACCESS_KEY_ID` | Static S3 credentials access key | None (uses AWS chain) |
-| `S3_SECRET_ACCESS_KEY` | Static S3 credentials secret | None |
+### Database backups
 
-### Server-Side STT
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BACKUP_DAYS` | `0` | Days of daily backups to retain (0 = disabled, max 180) |
+| `BACKUP_DIR` | _(unset)_ | Directory where daily backups are written |
 
-| Variable | Description | Default |
-|---|---|---|
-| `STT_PROVIDER` | Default STT provider: `google`, `whisper_http`, `openai` | `google` |
-| `STT_DEFAULT_LANGUAGE` | Default BCP-47 language tag for STT | `en-US` |
-| `STT_AUDIO_SOURCE` | Default audio source for STT: `hls`, `rtmp`, `whep` | `hls` |
+### Server-side STT
 
-### Google Cloud STT
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STT_PROVIDER` | `google` | Default STT provider: `google`, `whisper_http`, or `openai` |
+| `STT_DEFAULT_LANGUAGE` | `en-US` | Default BCP-47 language tag |
+| `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls`, `rtmp`, or `whep` |
+| `GOOGLE_APPLICATION_CREDENTIALS` | _(unset)_ | Path to Google service account JSON |
+| `GOOGLE_STT_KEY` | _(unset)_ | Google Cloud STT REST API key (simpler alternative to service account) |
+| `GOOGLE_STT_MODE` | `rest` | Google STT mode: `rest` or `grpc` (lower latency; requires `@google-cloud/speech`) |
+| `WHISPER_HTTP_URL` | _(unset)_ | Base URL of a Whisper-compatible HTTP STT server |
+| `WHISPER_HTTP_MODEL` | _(unset)_ | Model name for the Whisper HTTP server |
+| `OPENAI_STT_URL` | OpenAI default | Base URL for an OpenAI-compatible STT endpoint |
+| `OPENAI_STT_API_KEY` | _(unset)_ | API key for the OpenAI STT endpoint |
+| `OPENAI_STT_MODEL` | `whisper-1` | Model name for OpenAI STT requests |
 
-| Variable | Description | Default |
-|---|---|---|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google service account JSON (for OAuth2 STT) | None |
-| `GOOGLE_STT_KEY` | Google Cloud STT REST API key (simpler alternative to service account) | None |
-| `GOOGLE_STT_MODE` | Google STT mode: `rest` (default) or `grpc` (lower latency; requires `@google-cloud/speech`) | `rest` |
+### YouTube / OAuth
 
-### Whisper HTTP STT
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `YOUTUBE_CLIENT_ID` | _(unset)_ | Google OAuth 2.0 Web client ID returned by `GET /youtube/config` |
 
-| Variable | Description | Default |
-|---|---|---|
-| `WHISPER_HTTP_URL` | Base URL of a Whisper-compatible HTTP STT server | None |
-| `WHISPER_HTTP_MODEL` | Model name to request from the Whisper HTTP server | None |
+### MCP SSE server
 
-### OpenAI STT
-
-| Variable | Description | Default |
-|---|---|---|
-| `OPENAI_STT_URL` | Base URL for OpenAI-compatible STT endpoint | OpenAI default |
-| `OPENAI_STT_API_KEY` | API key for OpenAI STT endpoint | None |
-| `OPENAI_STT_MODEL` | Model name for OpenAI STT requests | `whisper-1` |
-
-### YouTube OAuth
-
-| Variable | Description | Default |
-|---|---|---|
-| `YOUTUBE_CLIENT_ID` | Google OAuth 2.0 Web client ID (for client-side token flow) | None |
-
-### User Accounts
-
-| Variable | Description | Default |
-|---|---|---|
-| `USE_USER_LOGINS` | Set to `0` to disable user registration/login (`/auth` routes) | Enabled |
-
-### Contact Info
-
-| Variable | Description | Default |
-|---|---|---|
-| `CONTACT_EMAIL` | Contact info returned by `GET /contact` | None |
-| `CONTACT_NAME` | Contact name returned by `GET /contact` | None |
-| `CONTACT_PHONE` | Contact phone returned by `GET /contact` | None |
-| `CONTACT_WEBSITE` | Contact website returned by `GET /contact` | None |
-
-### Backups
-
-| Variable | Description | Default |
-|---|---|---|
-| `BACKUP_DIR` | Directory for DB backup files | None |
-| `BACKUP_DAYS` | Number of daily DB backups to retain | None |
-
-### Bridge Agent Downloads
-
-| Variable | Description | Default |
-|---|---|---|
-| `BRIDGE_DOWNLOAD_BASE_URL` | Base URL serving pre-built bridge agent binaries | None |
-
-### MCP Server (SSE)
-
-| Variable | Description | Default |
-|---|---|---|
-| `LCYT_BACKEND_URL` | Backend URL for MCP server to connect to | `http://localhost:3000` |
-| `LCYT_API_KEY` | API key for MCP server backend connection | None |
-| `LCYT_ADMIN_KEY` | Admin key for MCP server backend connection | None |
-| `LCYT_WEB_URL` | Web UI URL (for MCP speech session links) | None |
-| `SPEECH_PUBLIC_URL` | Public URL for speech capture sessions | None |
-| `MCP_REQUIRE_API_KEY` | Set to `1` to require API key for MCP SSE connections | `0` |
-| `MCP_SESSION_TTL_MS` | MCP session timeout in milliseconds | `7200000` (2h) |
-
-### Compute Orchestrator
-
-| Variable | Description | Default |
-|---|---|---|
-| `COMPUTE_ORCHESTRATOR_URL` | Orchestrator URL (used by backend in worker mode) | `http://lcyt-orchestrator:4000` |
-| `BACKEND_INTERNAL_TOKEN` | Shared secret for backend ↔ orchestrator auth | None |
-| `ORCHESTRATOR_FALLBACK` | Fallback runner if orchestrator is unavailable: `spawn` | None |
-| `ORCHESTRATOR_BACKOFF_MS` | Base backoff ms for Hetzner retries | `1000` |
-| `ORCHESTRATOR_MAX_PENDING_JOBS` | Max queued jobs before 503 | `50` |
-
-### Hetzner Cloud (Burst VMs)
-
-| Variable | Description | Default |
-|---|---|---|
-| `HETZNER_API_TOKEN` | Enables burst VM provisioning (required for autoscaling) | None (disables Hetzner) |
-| `HETZNER_NETWORK_ID` | Hetzner private network ID for inter-VM communication | None |
-| `HETZNER_SNAPSHOT_ID` | Image/snapshot ID for burst VMs | None |
-| `HETZNER_SERVER_TYPE_BURST` | Server type for burst VMs | `cx31` |
-| `HETZNER_SERVER_TYPE_WARM` | Server type for warm-pool VMs | `cx21` |
-| `HETZNER_LOCATION` | Hetzner datacenter location | `hel1` |
-| `WARM_POOL_SIZE` | Minimum number of warm workers to keep running | `1` |
-| `BURST_COOLDOWN_MS` | Idle ms before destroying a burst worker | `300000` (5m) |
-| `BURST_QUEUE_LIMIT` | Jobs in queue that trigger burst provisioning | `20` |
-| `MAX_CONCURRENT_BURST_CREATES` | Max parallel burst VM provisions | `3` |
-
-### Worker Daemon
-
-| Variable | Description | Default |
-|---|---|---|
-| `WORKER_ID` | This worker's identifier | `worker-0` |
-| `WORKER_AUTH_TOKEN` | Optional auth token for `/jobs` endpoints | None |
-| `WORKER_MAX_JOBS` | Maximum concurrent jobs per worker | `4` |
-| `WORKER_DAEMON_URL` | Worker daemon URL (used by backend in worker mode) | `http://127.0.0.1:5000` |
-| `DSK_IMAGE` | Docker image for DSK renderer on worker | `lcyt-dsk-renderer:latest` |
-
-### Dockerfile Build Args
-
-These are build-time arguments passed to `docker build`:
-
-| Build arg | Description | Default |
-|---|---|---|
-| `RTMP_RELAY_ACTIVE` | Install ffmpeg for RTMP relay | `0` |
-| `RADIO_ACTIVE` | Install ffmpeg for radio HLS | `0` |
-| `HLS_ACTIVE` | Install ffmpeg for video HLS | `0` |
-| `PREVIEW_ACTIVE` | Install ffmpeg for preview thumbnails | `0` |
-| `GRAPHICS_ENABLED` | Install Chromium for DSK graphics rendering | `0` |
-| `APT_MIRROR` | Custom apt mirror URL (e.g. Hetzner mirror for faster builds) | None |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MCP_REQUIRE_API_KEY` | _(unset)_ | Set to `1` to require `X-Api-Key` on MCP SSE connections |
+| `MCP_SESSION_TTL_MS` | `7200000` | MCP session idle timeout (ms) |
+| `LCYT_BACKEND_URL` | `http://localhost:3000` | Backend URL the MCP server connects to |
+| `LCYT_API_KEY` | _(unset)_ | API key the MCP server uses for DSK/editor tool calls |
+| `LCYT_ADMIN_KEY` | _(unset)_ | Admin key the MCP server uses for production control tools |
+| `LCYT_WEB_URL` | _(unset)_ | Public web UI URL embedded in MCP speech session links |
+| `SPEECH_PUBLIC_URL` | _(unset)_ | Public URL for MCP speech/ASR capture endpoints |
+| `LCYT_LOG_STDERR` | _(unset)_ | Set to `1` to route logs to stderr (required for MCP stdio transport) |
 
 ---
 
-## Reverse Proxy (nginx)
+## ffmpeg runner modes
 
-Example nginx configuration for production:
+The backend can run ffmpeg in three ways, controlled by `FFMPEG_RUNNER`:
 
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name api.example.com;
+### `spawn` (default)
 
-    ssl_certificate     /etc/letsencrypt/live/api.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/api.example.com/privkey.pem;
+ffmpeg is executed as a child process inside the `lcyt-site` container.
+Requires ffmpeg to be installed in the image (set the appropriate build args).
 
-    # LCYT Backend API
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # SSE: disable buffering
-        proxy_buffering off;
-        proxy_cache off;
-    }
-
-    # Radio slug proxy (when NGINX_RADIO_CONFIG_PATH is set)
-    include /etc/nginx/conf.d/lcyt-radio.conf;
-}
-
-# RTMP ingest (if nginx-rtmp is used as the frontend)
-# rtmp {
-#     server {
-#         listen 1935;
-#         application live {
-#             live on;
-#             push rtmp://127.0.0.1:1936;  # Forward to MediaMTX
-#         }
-#     }
-# }
+```
+FFMPEG_RUNNER=spawn
 ```
 
----
+### `docker`
 
-## SSL / TLS
+The backend spawns ephemeral `lcyt-ffmpeg` containers per job via the Docker
+socket. The `lcyt-site` image does **not** need ffmpeg installed. A Docker
+socket proxy is recommended for security.
 
-For automated TLS certificates, use [Let's Encrypt](https://letsencrypt.org/) with Certbot:
+```
+FFMPEG_RUNNER=docker
+FFMPEG_IMAGE=lcyt-ffmpeg:latest
+DOCKER_HOST=http://docker-socket-proxy:2375   # recommended
+```
+
+Enable the socket proxy profile in the compose file:
 
 ```bash
-apt install certbot python3-certbot-nginx
-certbot --nginx -d api.example.com
+docker compose --profile docker-runner up -d
 ```
 
-Certificates auto-renew via a systemd timer created by Certbot.
+### `worker`
+
+Jobs are dispatched to `lcyt-worker-daemon` via HTTP through the
+`lcyt-orchestrator`. Used in the distributed setup (Phase 4+). The
+`lcyt-site` image does **not** need ffmpeg installed.
+
+```
+FFMPEG_RUNNER=worker
+COMPUTE_ORCHESTRATOR_URL=http://lcyt-orchestrator:4000
+BACKEND_INTERNAL_TOKEN=shared-secret
+ORCHESTRATOR_FALLBACK=spawn   # fallback if orchestrator is unreachable
+```
+
+### `FFMPEG_WRAPPER`
+
+Alternative: set `FFMPEG_WRAPPER` to a path or wrapper script and the
+factory will use it regardless of `FFMPEG_RUNNER`. Useful for custom codec
+builds or sandboxed binaries.
 
 ---
 
-## Database
+## Distributed mode (orchestrator)
 
-LCYT uses SQLite (via `better-sqlite3`). The database file location is controlled by `DB_PATH`.
+The orchestrator compose file (`docker-compose.orchestrator.yml`) runs a
+three-tier architecture:
 
-- **Default:** `./lcyt-backend.db` (relative to working directory)
-- **Docker:** `/data/lcyt.sqlite` (persisted in `lcyt-db` volume)
+```
+lcyt-backend ──► lcyt-orchestrator ──► lcyt-worker-daemon (warm pool)
+                                  └──► burst VMs (Hetzner Cloud, on demand)
+```
 
-**Migrations** run automatically on startup (additive only, safe to run repeatedly).
-
-**Backups:** Set `BACKUP_DIR` and `BACKUP_DAYS` to enable automatic daily backups. The backend creates timestamped `.sqlite` copies and prunes backups older than `BACKUP_DAYS`.
-
-Manual backup:
+### Build images
 
 ```bash
-sqlite3 /data/lcyt.sqlite ".backup /backups/lcyt-$(date +%Y%m%d).sqlite"
+docker build -t lcyt-site:latest .
+docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
+docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 ```
+
+### Configure
+
+Copy `.env.example` to `.env` and set:
+
+```
+JWT_SECRET=...
+ADMIN_KEY=...
+BACKEND_INTERNAL_TOKEN=...        # shared secret between backend and orchestrator
+HETZNER_API_TOKEN=...             # omit to disable burst provisioning
+HETZNER_NETWORK_ID=...
+HETZNER_SNAPSHOT_ID=...           # see Hetzner autoscaling section
+```
+
+### Start
+
+```bash
+docker compose -f docker-compose.orchestrator.yml up -d
+```
+
+### Orchestrator env vars
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `COMPUTE_ORCHESTRATOR_URL` | `http://lcyt-orchestrator:4000` | Orchestrator base URL (used by the backend) |
+| `BACKEND_INTERNAL_TOKEN` | _(required)_ | Shared secret for backend ↔ orchestrator auth |
+| `ORCHESTRATOR_FALLBACK` | `spawn` | Runner to use if the orchestrator is unreachable |
+| `WARM_POOL_SIZE` | `1` | Minimum number of warm workers to keep alive |
+| `BURST_COOLDOWN_MS` | `300000` | Idle milliseconds before destroying a burst worker (5 min) |
+| `BURST_QUEUE_LIMIT` | `20` | Pending jobs before the autoscaler provisions burst VMs |
+| `MAX_CONCURRENT_BURST_CREATES` | `3` | Max parallel Hetzner VM provisions |
+| `ORCHESTRATOR_MAX_PENDING_JOBS` | `50` | Max queued jobs before returning 503 |
+| `ORCHESTRATOR_BACKOFF_MS` | `60000` | Base backoff for Hetzner API retries |
+
+### Worker daemon env vars
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WORKER_ID` | `worker-0` | Unique identifier for this worker instance |
+| `WORKER_MAX_JOBS` | `4` | Maximum concurrent jobs |
+| `FFMPEG_IMAGE` | `lcyt-ffmpeg:latest` | Docker image used for ffmpeg jobs |
+| `DSK_IMAGE` | `lcyt-dsk-renderer:latest` | Docker image used for DSK renderer jobs |
+| `WORKER_AUTH_TOKEN` / `BACKEND_INTERNAL_TOKEN` | _(unset)_ | Optional auth token for all `/jobs` endpoints |
 
 ---
 
-## Monitoring
+## Hetzner autoscaling
 
-### Health Checks
+When `HETZNER_API_TOKEN` is set, the orchestrator automatically provisions
+burst VMs from a pre-baked snapshot when the job queue exceeds
+`BURST_QUEUE_LIMIT`.
 
-- `GET /health` — backend uptime, session count, login state
-- `GET /compute/health` — orchestrator worker/job counts (port 4000)
-- `GET /health` — worker daemon status (port 5000)
-- `GET /metrics` — Prometheus text format (orchestrator, port 4000)
+### Hetzner env vars
 
-### Docker Compose Health Checks
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HETZNER_API_TOKEN` | _(unset)_ | Hetzner Cloud API token. Autoscaling is disabled without this. |
+| `HETZNER_NETWORK_ID` | _(unset)_ | Hetzner private network ID for inter-VM communication |
+| `HETZNER_SNAPSHOT_ID` | _(unset)_ | ID of the pre-baked worker VM snapshot |
+| `HETZNER_SERVER_TYPE_BURST` | `cx31` | Server type for on-demand burst VMs |
+| `HETZNER_SERVER_TYPE_WARM` | `cx21` | Server type for warm-pool VMs |
+| `HETZNER_LOCATION` | `hel1` | Datacenter location for new VMs |
 
-All services in `docker-compose.yml` and `docker-compose.orchestrator.yml` include health checks with 30s interval, 5s timeout, and 3 retries.
+### Preparing a worker snapshot
 
-### Logging
+See `docs/hetzner_snapshot.md` for the full runbook. The short version:
 
-The backend uses the `lcyt/logger` module. Set `LCYT_LOG_STDERR=1` to route logs to stderr (useful for MCP contexts where stdout is reserved for the protocol).
+1. Boot a fresh Hetzner `cx21` Debian 12 VM
+2. Install Docker Engine and enable live-restore
+3. Pre-pull `lcyt-ffmpeg:latest` (and optionally `lcyt-dsk-renderer:latest`)
+4. Install and enable `lcyt-worker-daemon` as a systemd service
+5. Stop services and create a snapshot in the Hetzner Console
+6. Set `HETZNER_SNAPSHOT_ID` to the snapshot ID
 
-In production, capture logs via your process manager (systemd journal, Docker logs, etc.):
+New burst VMs boot from this snapshot and self-register with the orchestrator
+via cloud-init. See `docs/hetzner_snapshot.md` for the cloud-init template.
+
+---
+
+## Updating a running deployment
 
 ```bash
-# Docker
-docker compose logs -f lcyt-site
+# Full redeploy (pull, rebuild web UI, restart backend)
+bash scripts/deploy.sh
 
-# systemd
-journalctl -u lcyt-backend -f
+# Backend only (fastest for server-side changes)
+bash scripts/deploy.sh --only backend
+
+# Web UI only (no container restart)
+bash scripts/deploy.sh --only app
 ```
+
+The deploy script detects if `deploy.sh` itself changed during the git pull
+and automatically re-executes the updated version before continuing.
+
+---
+
+## Networking and reverse proxy
+
+See `docs/FIREWALL.md` for:
+- The full port reference (public vs. internal-only)
+- nginx reverse proxy config (API, SSE streams, MCP SSE, radio HLS)
+- UFW firewall rules
+- RTMP ingest configuration (nginx-rtmp vs. MediaMTX)
+
+**Summary of ports:**
+
+| Port | Service | Expose publicly? |
+|------|---------|-----------------|
+| 80 / 443 | nginx | Yes |
+| 1935 | RTMP ingest | Yes (if streaming is in use) |
+| 3000 | lcyt-backend API | No — via nginx only |
+| 3001 | lcyt-mcp-sse | No — via nginx if needed |
+| 4000 | lcyt-orchestrator | No — internal |
+| 5000 | lcyt-worker-daemon | No — internal |
+| 8080 | MediaMTX HLS | No — via nginx proxy |
+| 9997 | MediaMTX REST API | No — internal |
+
+---
+
+## Database and backups
+
+The backend uses SQLite. The database file is stored at `DB_PATH`
+(default `/data/lcyt.sqlite` in Docker, backed by the `lcyt-db` named volume).
+
+Enable daily backups by setting:
+
+```
+BACKUP_DAYS=30        # keep 30 days of backups
+BACKUP_DIR=/backups   # volume-mount this directory
+```
+
+Backups are written once per day to `$BACKUP_DIR/<YYYY-MM-DD>/lcyt-backend.db`.
