@@ -42,9 +42,13 @@ RUN if [ -n "$APT_MIRROR" ]; then \
       sed -i "s|http://deb.debian.org/debian|$APT_MIRROR|g" /etc/apt/sources.list 2>/dev/null || true; \
     fi
 
-# Install ffmpeg when any feature that uses it is active:
-# RTMP relay, radio HLS, video HLS embed (/stream-hls), or preview thumbnails (/preview).
-# (build with --build-arg RTMP_RELAY_ACTIVE=1, RADIO_ACTIVE=1, HLS_ACTIVE=1, or PREVIEW_ACTIVE=1)
+# Install ffmpeg when a feature that spawns it locally is active.
+# Only relevant when FFMPEG_RUNNER=spawn (the default). If you set
+# FFMPEG_RUNNER=docker the backend launches ephemeral lcyt-ffmpeg
+# containers instead, and FFMPEG_RUNNER=worker offloads to
+# lcyt-worker-daemon — neither requires ffmpeg in this image.
+# Build with --build-arg RTMP_RELAY_ACTIVE=1 (or RADIO/HLS/PREVIEW)
+# to install ffmpeg for local-spawn mode.
 ARG RTMP_RELAY_ACTIVE=0
 ARG RADIO_ACTIVE=0
 ARG HLS_ACTIVE=0
