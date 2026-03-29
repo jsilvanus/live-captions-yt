@@ -4,7 +4,6 @@ import { makeFifo } from 'lcyt-backend/ffmpeg/pipe-utils';
 import * as fs from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
 import logger from 'lcyt/logger';
-import logger from 'lcyt/logger';
 
 const DEFAULT_RTMP_HOST       = process.env.RTMP_HOST             || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP        = process.env.RTMP_APP              || 'stream';

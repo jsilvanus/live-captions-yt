@@ -3,7 +3,7 @@ import * as fs from 'node:fs';
 import { dirname } from 'node:path';
 import { promisify } from 'node:util';
 
-const writeAsync = promisify(fsWrite);
+const writeAsync = promisify(fs.write);
 
 export function isFifo(path) {
   try {
@@ -49,11 +49,11 @@ export function makeFifo(path) {
  * On POSIX this will set O_NONBLOCK. On Windows this falls back to a normal open.
  * Note: Caller is responsible for closing the fd with `fs.closeSync(fd)`.
  */
-export let openFifoNonBlocking = function openFifoNonBlocking(path, flags = constants.O_WRONLY | constants.O_APPEND) {
+export let openFifoNonBlocking = function openFifoNonBlocking(path, flags = fs.constants.O_WRONLY | fs.constants.O_APPEND) {
   // Prefer O_NONBLOCK on POSIX so open()/write() do not block when no reader is present.
-  if (process.platform !== 'win32' && constants.O_NONBLOCK) {
+  if (process.platform !== 'win32' && fs.constants.O_NONBLOCK) {
     try {
-      return fs.openSync(path, flags | constants.O_NONBLOCK, 0o600);
+      return fs.openSync(path, flags | fs.constants.O_NONBLOCK, 0o600);
     } catch (err) {
       // If open fails with EINVAL on some platforms, fallback to blocking open to surface error.
       throw err;
@@ -81,7 +81,7 @@ export function createFifoWriter(path, { timeoutMs = 250 } = {}) {
   function ensureOpen() {
     if (fd !== null) return fd;
     try {
-      fd = openFifoNonBlocking(path, constants.O_WRONLY | constants.O_APPEND);
+      fd = openFifoNonBlocking(path, fs.constants.O_WRONLY | fs.constants.O_APPEND);
       return fd;
     } catch (err) {
       // rethrow for caller to handle
