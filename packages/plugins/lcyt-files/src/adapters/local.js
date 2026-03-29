@@ -5,7 +5,7 @@
  * so the same write/read/delete path works for both local and S3 deployments.
  */
 
-import { createWriteStream, createReadStream, mkdirSync, statSync, unlink, writeFile } from 'node:fs';
+import * as fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -27,7 +27,7 @@ export function createLocalAdapter(baseDir) {
   function keyDir(apiKey) {
     const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
     const dir = join(baseDir, safe);
-    mkdirSync(dir, { recursive: true });
+    fs.mkdirSync(dir, { recursive: true });
     return dir;
   }
 
@@ -42,7 +42,7 @@ export function createLocalAdapter(baseDir) {
   function openAppend(apiKey, filename) {
     const dir = keyDir(apiKey);
     const filepath = join(dir, filename);
-    const stream = createWriteStream(filepath, { flags: 'a' });
+    const stream = fs.createWriteStream(filepath, { flags: 'a' });
 
     return {
       /** The full filesystem path — used as `filename` stored in DB for local adapter. */
@@ -61,7 +61,7 @@ export function createLocalAdapter(baseDir) {
       },
 
       sizeBytes() {
-        try { return statSync(filepath).size; } catch { return 0; }
+        try { return fs.statSync(filepath).size; } catch { return 0; }
       },
     };
   }
@@ -78,8 +78,8 @@ export function createLocalAdapter(baseDir) {
     const contentType = format === 'vtt' ? 'text/vtt' : 'text/plain';
     // statSync throws ENOENT for missing files — caught by the route handler which sends 404.
     // This prevents sending headers before discovering the file is absent.
-    const { size } = statSync(storedKey);
-    return { stream: createReadStream(storedKey), contentType, size };
+    const { size } = fs.statSync(storedKey);
+    return { stream: fs.createReadStream(storedKey), contentType, size };
   }
 
   /**
@@ -124,7 +124,7 @@ export function createLocalAdapter(baseDir) {
     const filepath = join(dir, objectKey);
     // Create any intermediate directories (e.g. the 'hls/' subdirectory)
     const subdir = dirname(filepath);
-    if (subdir !== dir) mkdirSync(subdir, { recursive: true });
+    if (subdir !== dir) fs.mkdirSync(subdir, { recursive: true });
     await writeFileAsync(filepath, buffer);
     return { storedKey: filepath };
   }

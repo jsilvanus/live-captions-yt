@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, chmodSync, existsSync, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -8,13 +8,13 @@ import { join } from 'node:path';
 import { PreviewManager } from '../../plugins/lcyt-rtmp/src/preview-manager.js';
 
 test('PreviewManager starts/stops using a fake ffmpeg in PATH', async () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'preview-test-'));
-  const fakeBinDir = mkdtempSync(join(tmpdir(), 'fakebin-'));
+  const tmp = fs.mkdtempSync(join(tmpdir(), 'preview-test-'));
+  const fakeBinDir = fs.mkdtempSync(join(tmpdir(), 'fakebin-'));
 
   // Create a fake `ffmpeg` shell script that sleeps to simulate a running process.
   const ffPath = join(fakeBinDir, 'ffmpeg');
-  writeFileSync(ffPath, '#!/bin/sh\n# fake ffmpeg for tests\nsleep 2\n', 'utf8');
-  chmodSync(ffPath, 0o755);
+  fs.writeFileSync(ffPath, '#!/bin/sh\n# fake ffmpeg for tests\nsleep 2\n', 'utf8');
+  fs.chmodSync(ffPath, 0o755);
 
   // Prepend fake bin to PATH so child_process.spawn('ffmpeg') finds our script.
   const oldPath = process.env.PATH;
@@ -28,13 +28,13 @@ test('PreviewManager starts/stops using a fake ffmpeg in PATH', async () => {
 
   // Directory should exist
   const p = manager.previewPath(key);
-  assert(existsSync(join(tmp, key)), 'preview directory should exist');
+  assert(fs.existsSync(join(tmp, key)), 'preview directory should exist');
 
   await manager.stop(key);
   assert.equal(manager.isRunning(key), false);
 
   // cleanup
   process.env.PATH = oldPath;
-  try { rmSync(tmp, { recursive: true, force: true }); } catch {}
-  try { rmSync(fakeBinDir, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(fakeBinDir, { recursive: true, force: true }); } catch {}
 });

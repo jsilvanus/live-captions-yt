@@ -9,7 +9,7 @@
  * Exe:  lcyt-bridge.exe (built with pkg)
  */
 
-import { readFileSync, existsSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseDotenv } from 'dotenv';
@@ -40,9 +40,9 @@ function loadConfig() {
   const envPath = join(exeDir, '.env');
 
   let vars = {};
-  if (existsSync(envPath)) {
+  if (fs.existsSync(envPath)) {
     try {
-      vars = parseDotenv(readFileSync(envPath, 'utf8'));
+      vars = parseDotenv(fs.readFileSync(envPath, 'utf8'));
     } catch (e) {
       console.warn(`[lcyt-bridge] Could not parse .env at ${envPath}: ${e.message}`);
     }
@@ -130,7 +130,7 @@ function getVersion() {
   if (typeof __BRIDGE_VERSION__ !== 'undefined') return __BRIDGE_VERSION__;
   try {
     const __dir = getModuleDir();
-    const pkg   = JSON.parse(readFileSync(join(__dir, '..', 'package.json'), 'utf8'));
+    const pkg   = JSON.parse(fs.readFileSync(join(__dir, '..', 'package.json'), 'utf8'));
     return pkg.version ?? '?';
   } catch {
     return '?';

@@ -6,7 +6,7 @@
 
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -16,7 +16,7 @@ import { writeToBackendFile, closeFileHandles } from '../src/caption-files.js';
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeTmpDir() {
-  return mkdtempSync(join(tmpdir(), 'lcyt-files-test-'));
+  return fs.mkdtempSync(join(tmpdir(), 'lcyt-files-test-'));
 }
 
 function makeDb(overrides = {}) {
@@ -61,13 +61,13 @@ describe('createLocalAdapter', () => {
   let baseDir;
 
   beforeEach(() => { baseDir = makeTmpDir(); });
-  afterEach(() => { rmSync(baseDir, { recursive: true, force: true }); });
+  afterEach(() => { fs.rmSync(baseDir, { recursive: true, force: true }); });
 
   test('keyDir creates subdirectory', () => {
     const adapter = createLocalAdapter(baseDir);
     const dir = adapter.keyDir('myApiKey123');
     assert.match(dir, /myApiKey123/);
-    assert.ok(existsSync(dir));
+    assert.ok(fs.existsSync(dir));
   });
 
   test('keyDir sanitizes special characters', () => {
@@ -90,7 +90,7 @@ describe('createLocalAdapter', () => {
     await handle.write('Hello\n');
     await handle.write('World\n');
     await handle.close();
-    const content = readFileSync(handle.storedKey, 'utf8');
+    const content = fs.readFileSync(handle.storedKey, 'utf8');
     assert.equal(content, 'Hello\nWorld\n');
   });
 
@@ -143,9 +143,9 @@ describe('createLocalAdapter', () => {
     const handle = adapter.openAppend('myApiKey123', 'del.txt');
     await handle.write('bye');
     await handle.close();
-    assert.ok(existsSync(handle.storedKey));
+    assert.ok(fs.existsSync(handle.storedKey));
     await adapter.deleteFile('myApiKey123', handle.storedKey);
-    assert.ok(!existsSync(handle.storedKey));
+    assert.ok(!fs.existsSync(handle.storedKey));
   });
 
   test('deleteFile() is safe when file does not exist', async () => {
@@ -167,7 +167,7 @@ describe('writeToBackendFile', () => {
   let baseDir;
 
   beforeEach(() => { baseDir = makeTmpDir(); });
-  afterEach(() => { rmSync(baseDir, { recursive: true, force: true }); });
+  afterEach(() => { fs.rmSync(baseDir, { recursive: true, force: true }); });
 
   test('creates new file handle on first call and appends plain text', async () => {
     const adapter = createLocalAdapter(baseDir);
@@ -180,7 +180,7 @@ describe('writeToBackendFile', () => {
     assert.equal(fileHandles.size, 1);
     assert.equal(db.registered.length, 1);
     const entry = fileHandles.get('original:youtube');
-    const content = readFileSync(entry.handle.storedKey, 'utf8');
+    const content = fs.readFileSync(entry.handle.storedKey, 'utf8');
     assert.ok(content.includes('Hello world'));
   });
 
@@ -197,7 +197,7 @@ describe('writeToBackendFile', () => {
     assert.equal(db.registered.length, 1);
     assert.equal(fileHandles.size, 1);
     const entry = fileHandles.get('original:youtube');
-    const content = readFileSync(entry.handle.storedKey, 'utf8');
+    const content = fs.readFileSync(entry.handle.storedKey, 'utf8');
     assert.ok(content.includes('Line 1'));
     assert.ok(content.includes('Line 2'));
   });
@@ -233,7 +233,7 @@ describe('writeToBackendFile', () => {
 
     const entry = fileHandles.get('original:vtt');
     await entry.handle.close();
-    const content = readFileSync(entry.handle.storedKey, 'utf8');
+    const content = fs.readFileSync(entry.handle.storedKey, 'utf8');
     assert.ok(content.startsWith('WEBVTT\n\n'));
     assert.ok(content.includes('VTT caption'));
     assert.ok(content.includes('-->'));
@@ -260,7 +260,7 @@ describe('closeFileHandles', () => {
   let baseDir;
 
   beforeEach(() => { baseDir = makeTmpDir(); });
-  afterEach(() => { rmSync(baseDir, { recursive: true, force: true }); });
+  afterEach(() => { fs.rmSync(baseDir, { recursive: true, force: true }); });
 
   test('closes all open handles and clears the map', async () => {
     const adapter = createLocalAdapter(baseDir);

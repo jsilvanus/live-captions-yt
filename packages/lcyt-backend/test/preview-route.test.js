@@ -10,7 +10,7 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -26,13 +26,13 @@ const JPEG_DIR     = join(PREVIEW_ROOT, JPEG_KEY);
 const JPEG_FILE    = join(JPEG_DIR, 'incoming.jpg');
 
 before(() => {
-  mkdirSync(JPEG_DIR, { recursive: true });
+  fs.mkdirSync(JPEG_DIR, { recursive: true });
   // Minimal valid JPEG magic bytes + filler
-  writeFileSync(JPEG_FILE, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]));
+  fs.writeFileSync(JPEG_FILE, Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]));
 });
 
 after(() => {
-  rmSync(PREVIEW_ROOT, { recursive: true, force: true });
+  fs.rmSync(PREVIEW_ROOT, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------

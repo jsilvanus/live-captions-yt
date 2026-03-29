@@ -19,7 +19,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { readFileSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { createSign } from 'node:crypto';
 import { PcmSilenceBuffer, buildWav } from './pcm-buffer.js';
 
@@ -148,7 +148,7 @@ export class GoogleSttAdapter extends EventEmitter {
     const credPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
     if (credPath && !this._serviceAccount) {
       try {
-        this._serviceAccount = JSON.parse(readFileSync(credPath, 'utf8'));
+        this._serviceAccount = JSON.parse(fs.readFileSync(credPath, 'utf8'));
       } catch (err) {
         throw new Error(`GoogleSttAdapter: failed to read service account at ${credPath}: ${err.message}`);
       }

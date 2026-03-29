@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
 import { makeFifo } from 'lcyt-backend/ffmpeg/pipe-utils';
-import { createWriteStream } from 'node:fs';
+import * as fs from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
 import logger from 'lcyt/logger';
 import logger from 'lcyt/logger';

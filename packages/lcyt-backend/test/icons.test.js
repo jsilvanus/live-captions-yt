@@ -1,7 +1,7 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdirSync, rmSync, readdirSync, unlinkSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -23,7 +23,7 @@ let server, baseUrl, store, db, iconsDir;
 
 before(() => new Promise((resolve) => {
   iconsDir = join(tmpdir(), `lcyt-icons-test-${Date.now()}`);
-  mkdirSync(iconsDir, { recursive: true });
+  fs.mkdirSync(iconsDir, { recursive: true });
 
   db = initDb(':memory:');
   createKey(db, { key: API_KEY, owner: 'Test' });
@@ -44,7 +44,7 @@ before(() => new Promise((resolve) => {
 
 after(() => new Promise((resolve) => {
   server.close(() => {
-    try { rmSync(iconsDir, { recursive: true, force: true }); } catch {}
+    try { fs.rmSync(iconsDir, { recursive: true, force: true }); } catch {}
     resolve();
   });
 }));
@@ -55,8 +55,8 @@ beforeEach(() => {
   db.prepare('DELETE FROM icons WHERE api_key = ?').run(API_KEY);
   db.prepare('DELETE FROM icons WHERE api_key LIKE ?').run('other-key%');
   // Clear the icons directory (recursive, including subdirectories)
-  try { rmSync(iconsDir, { recursive: true, force: true }); } catch {}
-  try { mkdirSync(iconsDir, { recursive: true }); } catch {}
+  try { fs.rmSync(iconsDir, { recursive: true, force: true }); } catch {}
+  try { fs.mkdirSync(iconsDir, { recursive: true }); } catch {}
 });
 
 function makeSession(suffix = Math.random().toString(36).slice(2)) {
@@ -126,7 +126,7 @@ describe('POST /icons — upload', () => {
 
   it('writes icon file to ICONS_DIR on upload', async () => {
     await postIcon(makeSession(), { filename: 'disk.png', mimeType: 'image/png', data: VALID_PNG_BASE64 });
-    const files = readdirSync(iconsDir, { recursive: true });
+    const files = fs.readdirSync(iconsDir, { recursive: true });
     assert.ok(files.some(f => String(f).endsWith('.png')));
   });
 });

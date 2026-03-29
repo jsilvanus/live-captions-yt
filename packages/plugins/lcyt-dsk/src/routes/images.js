@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import busboy from 'busboy';
-import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join, resolve, basename, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import logger from 'lcyt/logger';
@@ -39,7 +39,7 @@ const SHORTHAND_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$/;
  */
 function ensureImageDir(apiKey) {
   const dir = join(GRAPHICS_BASE_DIR, safeApiKey(apiKey));
-  mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
@@ -99,7 +99,7 @@ export function createImagesRouter(db, auth) {
       // Close and delete partial file
       if (writeStream) {
         writeStream.destroy();
-        if (diskPath) try { unlinkSync(diskPath); } catch {}
+        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
       }
       if (!res.headersSent) res.status(statusCode).json({ error: message });
     }
@@ -142,7 +142,7 @@ export function createImagesRouter(db, auth) {
       diskPath = join(dir, storedFilename);
 
       try {
-        writeStream = createWriteStream(diskPath);
+        writeStream = fs.createWriteStream(diskPath);
       } catch (err) {
         fileStream.resume();
         return abort(500, 'Could not open file for writing');
@@ -183,25 +183,25 @@ export function createImagesRouter(db, auth) {
 
       // Validate shorthand
       if (!shorthand || !SHORTHAND_RE.test(shorthand)) {
-        if (diskPath) try { unlinkSync(diskPath); } catch {}
+        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(400).json({ error: 'shorthand is required and must be 1-32 alphanumeric/dash/underscore characters, starting with a letter or digit' });
       }
 
       if (!mimeType || !ACCEPTED_MIMES.has(mimeType)) {
-        if (diskPath) try { unlinkSync(diskPath); } catch {}
+        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(400).json({ error: 'No valid image file received' });
       }
 
       // Check shorthand uniqueness
       if (isShorthandTaken(db, apiKey, shorthand)) {
-        if (diskPath) try { unlinkSync(diskPath); } catch {}
+        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(409).json({ error: `Shorthand '${shorthand}' is already in use for this key` });
       }
 
       // Re-check quota including this file (race condition guard)
       const nowUsed = getTotalImageStorageBytes(db, apiKey);
       if (nowUsed + uploadedBytes > MAX_STORAGE_BYTES) {
-        if (diskPath) try { unlinkSync(diskPath); } catch {}
+        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(413).json({ error: 'Storage quota would be exceeded' });
       }
 
@@ -273,16 +273,16 @@ export function createImagesRouter(db, auth) {
     const safeFilename = basename(row.filename);
     const filepath = join(GRAPHICS_BASE_DIR, safe, safeFilename);
 
-    if (!existsSync(filepath)) return res.status(404).json({ error: 'Image file not found on disk' });
+    if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Image file not found on disk' });
 
     res.setHeader('Content-Type', row.mime_type || 'application/octet-stream');
     res.setHeader('Cache-Control', 'public, max-age=86400');
     // Allow cross-origin loading from the DSK page (different subdomain / OBS)
     res.setHeader('Access-Control-Allow-Origin', '*');
 
-    try { res.setHeader('Content-Length', statSync(filepath).size); } catch {}
+    try { res.setHeader('Content-Length', fs.statSync(filepath).size); } catch {}
 
-    createReadStream(filepath).pipe(res);
+    fs.createReadStream(filepath).pipe(res);
   });
 
   // DELETE /images/:id — delete (auth required)
@@ -300,7 +300,7 @@ export function createImagesRouter(db, auth) {
     try {
       const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
       const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
-      if (existsSync(filepath)) unlinkSync(filepath);
+      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
     } catch (e) {
       logger.warn('[images] Could not delete disk file:', e.message);
     }

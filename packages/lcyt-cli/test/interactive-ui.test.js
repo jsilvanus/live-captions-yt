@@ -12,7 +12,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { InteractiveUI } from '../src/interactive-ui.js';
@@ -31,12 +31,12 @@ const FILE_CONTENT = [
   'Third line',
 ].join('\n');
 
-mkdirSync(TMP_DIR, { recursive: true });
-writeFileSync(TMP_FILE, FILE_CONTENT);
+fs.mkdirSync(TMP_DIR, { recursive: true });
+fs.writeFileSync(TMP_FILE, FILE_CONTENT);
 
 // Clean up after all tests (best-effort)
 process.on('exit', () => {
-  try { rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
+  try { fs.rmSync(TMP_DIR, { recursive: true, force: true }); } catch {}
 });
 
 // ---------------------------------------------------------------------------

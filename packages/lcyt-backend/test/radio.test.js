@@ -1,7 +1,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
 import { createServer } from 'node:http';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
@@ -82,12 +82,12 @@ describe('RadioManager', () => {
 
   before(() => {
     tmpRoot = join(tmpdir(), `radio-mgr-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
   });
 
   after(() => {
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   it('hlsDir returns path inside hlsRoot', () => {
@@ -239,7 +239,7 @@ describe('GET /radio/:key/index.m3u8', () => {
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `radio-hls-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });
 
     const app = express();
@@ -253,7 +253,7 @@ describe('GET /radio/:key/index.m3u8', () => {
   after(() => new Promise(resolve => {
     server.close(resolve);
     db.close();
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 404 when no stream is live', async () => {
@@ -279,8 +279,8 @@ describe('GET /radio/:key/index.m3u8', () => {
   it('serves playlist with correct content-type when file exists', async () => {
     const key = 'teststream';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'index.m3u8'), '#EXTM3U\n#EXT-X-VERSION:3\n');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'index.m3u8'), '#EXTM3U\n#EXT-X-VERSION:3\n');
 
     const res = await getJson(server, `/radio/${key}/index.m3u8`);
     assert.strictEqual(res.status, 200);
@@ -301,7 +301,7 @@ describe('GET /radio/:key/:segment', () => {
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `radio-seg-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });
 
     const app = express();
@@ -315,7 +315,7 @@ describe('GET /radio/:key/:segment', () => {
   after(() => new Promise(resolve => {
     server.close(resolve);
     db.close();
-    rmSync(tmpRoot, { recursive: true, force: true });
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 400 for non-ts segment names', async () => {
@@ -337,8 +337,8 @@ describe('GET /radio/:key/:segment', () => {
   it('serves segment with correct content-type when file exists', async () => {
     const key = 'segtest';
     const dir = join(tmpRoot, key);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, 'seg00001.ts'), 'fake ts data');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'seg00001.ts'), 'fake ts data');
 
     const res = await getJson(server, `/radio/${key}/seg00001.ts`);
     assert.strictEqual(res.status, 200);
@@ -357,7 +357,7 @@ describe('GET /radio/:key/player.js', () => {
   before(async () => {
     db = initTestDb();
     const tmpRoot = join(tmpdir(), `radio-player-test-${Date.now()}`);
-    mkdirSync(tmpRoot, { recursive: true });
+    fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });
 
     const app = express();

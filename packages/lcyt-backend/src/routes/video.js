@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createReadStream, existsSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { join, resolve as resolvePath, basename, sep } from 'node:path';
 import rateLimit from 'express-rate-limit';
 import { langName } from 'lcyt-rtmp/src/hls-subs-manager.js';
@@ -288,14 +288,14 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
       return res.status(400).json({ error: 'Invalid path' });
     }
 
-    if (!existsSync(file)) {
+    if (!fs.existsSync(file)) {
       return res.status(404).json({ error: 'Segment not found' });
     }
 
     setCors(res);
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=60');
-    createReadStream(file).pipe(res);
+    fs.createReadStream(file).pipe(res);
   });
 
   return router;

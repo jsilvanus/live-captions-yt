@@ -43,7 +43,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync } from 'node:fs';
+import * as fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { dirname, resolve as resolvePath } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -265,7 +265,7 @@ export class NginxManager {
     const content = this._buildConfig();
     const tmpPath = resolvePath(dir, `.lcyt-radio-${randomBytes(6).toString('hex')}.tmp`);
     fs.writeFileSync(tmpPath, content, 'utf8');
-    renameSync(tmpPath, resolvePath(this._configPath));
+    fs.renameSync(tmpPath, resolvePath(this._configPath));
   }
 
   /**
