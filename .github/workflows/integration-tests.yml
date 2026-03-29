@@ -127,6 +127,57 @@ jobs:
         env:
           NODE_ENV: test
 
+  # ── Tier 2: Build verification (after unit) ─────────────────────────
+  build:
+    name: "Build: ${{ matrix.name }}"
+    needs: unit-node
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lcyt CJS
+            cmd: npm run build -w packages/lcyt
+          - name: lcyt-web Vite
+            cmd: npm run build -w packages/lcyt-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: ${{ matrix.cmd }}
+
+  # ── Tier 1: Non-workspace package tests (parallel with unit) ───────
+  standalone-tests:
+    name: "Standalone: ${{ matrix.name }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: lcyt-orchestrator
+            dir: packages/lcyt-orchestrator
+          - name: lcyt-worker-daemon
+            dir: packages/lcyt-worker-daemon
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        working-directory: ${{ matrix.dir }}
+        run: npm install --ignore-scripts
+      - name: Run tests
+        working-directory: ${{ matrix.dir }}
+        run: npm test
+        env:
+          NODE_ENV: test
+
   # ── Tier 1: Docker & infrastructure validation (parallel with unit) ─
   docker-lint:
     name: "Docker: lint & config"
