@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { makeFifo } from '../src/ffmpeg/pipe-utils.js';
+import { makeFifo } from '../../src/ffmpeg/pipe-utils.js';
 
 test('FIFO host<->container communication (gated)', { skip: process.env.TEST_DOCKER !== '1' }, async () => {
   const { DockerFfmpegRunner } = await import('../src/ffmpeg/docker-runner.js');

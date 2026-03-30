@@ -1,7 +1,7 @@
 import { NginxManager } from './nginx-manager.js';
 import logger from 'lcyt/logger';
 
-const DEFAULT_MEDIAMTX_HLS_BASE = process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080';
+const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8080';
 
 /**
  * HLS source backend for the radio pipeline — MediaMTX mode only.
@@ -163,7 +163,7 @@ export class RadioManager {
    * @returns {string}
    */
   getInternalHlsUrl(radioKey) {
-    const base = DEFAULT_MEDIAMTX_HLS_BASE.replace(/\/$/, '');
+    const base = (process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE).replace(/\/$/, '');
     return `${base}/${encodeURIComponent(radioKey)}`;
   }
 }

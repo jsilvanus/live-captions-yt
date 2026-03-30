@@ -1,40 +1,51 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 
-// PreviewManager lives in the rtmp plugin; import dynamically to avoid hoisting
+// PreviewManager lives in the rtmp plugin
 import { PreviewManager } from '../../plugins/lcyt-rtmp/src/preview-manager.js';
 
-test('PreviewManager starts/stops using a fake ffmpeg in PATH', async () => {
-  const tmp = fs.mkdtempSync(join(tmpdir(), 'preview-test-'));
-  const fakeBinDir = fs.mkdtempSync(join(tmpdir(), 'fakebin-'));
+test('PreviewManager — isRunning returns false initially', () => {
+  const manager = new PreviewManager();
+  assert.equal(manager.isRunning('test-key'), false);
+});
 
-  // Create a fake `ffmpeg` shell script that sleeps to simulate a running process.
-  const ffPath = join(fakeBinDir, 'ffmpeg');
-  fs.writeFileSync(ffPath, '#!/bin/sh\n# fake ffmpeg for tests\nsleep 2\n', 'utf8');
-  fs.chmodSync(ffPath, 0o755);
-
-  // Prepend fake bin to PATH so child_process.spawn('ffmpeg') finds our script.
-  const oldPath = process.env.PATH;
-  process.env.PATH = `${fakeBinDir}${process.platform === 'win32' ? ';' : ':'}${oldPath}`;
-
-  const manager = new PreviewManager({ previewRoot: tmp, localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live', intervalS: 1 });
+test('PreviewManager — start/stop lifecycle', async () => {
+  const manager = new PreviewManager();
   const key = 'test-key';
 
   await manager.start(key);
-  assert(manager.isRunning(key), 'PreviewManager should report running after start');
-
-  // Directory should exist
-  const p = manager.previewPath(key);
-  assert(fs.existsSync(join(tmp, key)), 'preview directory should exist');
+  assert.equal(manager.isRunning(key), true, 'should be running after start');
 
   await manager.stop(key);
-  assert.equal(manager.isRunning(key), false);
+  assert.equal(manager.isRunning(key), false, 'should not be running after stop');
+});
 
-  // cleanup
-  process.env.PATH = oldPath;
-  try { fs.rmSync(tmp, { recursive: true, force: true }); } catch {}
-  try { fs.rmSync(fakeBinDir, { recursive: true, force: true }); } catch {}
+test('PreviewManager — stop is a no-op for non-running key', async () => {
+  const manager = new PreviewManager();
+  await assert.doesNotReject(() => manager.stop('never-started'));
+});
+
+test('PreviewManager — stopAll clears all active keys', async () => {
+  const manager = new PreviewManager();
+  await manager.start('k1');
+  await manager.start('k2');
+  assert.equal(manager.isRunning('k1'), true);
+  assert.equal(manager.isRunning('k2'), true);
+
+  await manager.stopAll();
+  assert.equal(manager.isRunning('k1'), false);
+  assert.equal(manager.isRunning('k2'), false);
+});
+
+test('PreviewManager — fetchThumbnail returns null without mediamtxClient', async () => {
+  const manager = new PreviewManager();
+  const result = await manager.fetchThumbnail('test-key');
+  assert.equal(result, null);
+});
+
+test('PreviewManager — getWebRtcUrl returns URL containing the key', () => {
+  const manager = new PreviewManager({ webrtcBase: 'http://localhost:8889' });
+  const url = manager.getWebRtcUrl('mykey');
+  assert.ok(url.includes('mykey'), `expected URL to include key, got: ${url}`);
+  assert.ok(url.startsWith('http://localhost:8889'), `expected URL to start with base, got: ${url}`);
 });

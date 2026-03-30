@@ -5,6 +5,12 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const ECHO_SERVER_PATH = path.resolve(__dirname, '../../../tools/tcp-echo-server/server.js');
+const BRIDGE_PATH = path.resolve(__dirname, '../../../lcyt-bridge/src/index.js');
 
 const TEST_TIMEOUT_MS = 30_000;
 
@@ -32,7 +38,7 @@ function getFreePort() {
 
 // Spawn the tcp echo server bundled with the repo
 function spawnEchoServer(port) {
-  const proc = spawn(process.execPath, ['packages/tools/tcp-echo-server/server.js'], {
+  const proc = spawn(process.execPath, [ECHO_SERVER_PATH], {
     env: { ...process.env, PORT: String(port) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -87,7 +93,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   }, 5000, 100);
 
   // Use the lightweight test server helper (avoids importing full backend plugins)
-  const { createTestServer } = await import('./test-server.js');
+  const { createTestServer } = await import('../test-server.js');
   const { app, db, bridgeManager: productionBridgeManager } = createTestServer();
 
   // Start test backend on ephemeral port
@@ -119,7 +125,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   assert.ok(token, 'token present in envContent');
 
   // Spawn bridge agent process pointing to our backend
-  const bridgeProc = spawn(process.execPath, ['packages/lcyt-bridge/src/index.js'], {
+  const bridgeProc = spawn(process.execPath, [BRIDGE_PATH], {
     env: { ...process.env, BACKEND_URL: baseUrl, BRIDGE_TOKEN: token },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

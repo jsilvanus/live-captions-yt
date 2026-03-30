@@ -137,7 +137,7 @@ describe('HlsManager — start()', () => {
   });
 
   it('stops any existing process before starting a new one', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
     await m.start('dupkey');
     assert.equal(m.isRunning('dupkey'), true);
     // Start again for the same key — should spawn a second ffmpeg
@@ -161,7 +161,7 @@ describe('HlsManager — start()', () => {
       return proc;
     };
 
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
     await assert.rejects(() => m.start('errkey'), /ENOENT/);
   });
 });
@@ -175,7 +175,7 @@ describe('HlsManager — stop()', () => {
   });
 
   it('kills the process and marks key as not running', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
     await m.start('stopkey');
     assert.equal(m.isRunning('stopkey'), true);
     await m.stop('stopkey');
@@ -187,7 +187,7 @@ describe('HlsManager — stopAll()', () => {
   beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
 
   it('stops all running processes', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
     await m.start('key-a');
     await m.start('key-b');
     assert.equal(m.isRunning('key-a'), true);
@@ -204,117 +204,105 @@ describe('HlsManager — stopAll()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// RadioManager — structurally identical to HlsManager
+// RadioManager — MediaMTX-based (no ffmpeg, no hlsDir)
 // ---------------------------------------------------------------------------
 
 describe('RadioManager', () => {
-  beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
-
-  it('hlsDir() returns root/key', () => {
-    const m = new RadioManager({ hlsRoot: '/tmp/radio' });
-    const p = path.normalize(m.hlsDir('rkey'));
-    assert.ok(p.includes(path.normalize('/tmp/radio')));
+  it('isRunning() returns false initially', () => {
+    const m = new RadioManager();
+    assert.equal(m.isRunning('rkey'), false);
   });
 
-  it('start() marks key as running and spawns ffmpeg', async () => {
-    const m = new RadioManager({ hlsRoot: '/tmp/radio', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
+  it('start() marks key as running', async () => {
+    const m = new RadioManager();
     await m.start('rkey');
     assert.equal(m.isRunning('rkey'), true);
-    assert.equal(spawnCalls.length, 1);
-  });
-
-  it('uses audio-only flags (-vn, aac)', async () => {
-    const m = new RadioManager({ hlsRoot: '/tmp/radio', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
-    await m.start('rkey');
-    const args = spawnCalls[0].args;
-    assert.ok(args.includes('-vn'), 'should strip video with -vn');
-    assert.ok(args.includes('aac'), 'should encode audio to aac');
   });
 
   it('stop() marks key as not running', async () => {
-    const m = new RadioManager({ hlsRoot: '/tmp/radio' });
+    const m = new RadioManager();
     await m.start('rkey');
     await m.stop('rkey');
     assert.equal(m.isRunning('rkey'), false);
   });
 
+  it('stop() is a no-op for a key that is not running', async () => {
+    const m = new RadioManager();
+    await assert.doesNotReject(() => m.stop('never-started'));
+  });
+
   it('stopAll() clears all keys', async () => {
-    const m = new RadioManager({ hlsRoot: '/tmp/radio' });
+    const m = new RadioManager();
     await m.start('r1');
     await m.start('r2');
     await m.stopAll();
     assert.equal(m.isRunning('r1'), false);
     assert.equal(m.isRunning('r2'), false);
   });
+
+  it('getInternalHlsUrl() includes the radio key', () => {
+    const m = new RadioManager();
+    const url = m.getInternalHlsUrl('rkey');
+    assert.ok(url.includes('rkey'));
+  });
+
+  it('getPublicHlsUrl() without nginx returns backend proxy URL', () => {
+    const m = new RadioManager();
+    const url = m.getPublicHlsUrl('rkey', 'https://example.com');
+    assert.ok(url.includes('rkey'));
+    assert.ok(url.includes('example.com'));
+  });
 });
 
 // ---------------------------------------------------------------------------
-// PreviewManager
+// PreviewManager — MediaMTX-based (no ffmpeg, no previewPath)
 // ---------------------------------------------------------------------------
 
 describe('PreviewManager — constructor', () => {
-  it('previewPath() returns root/key/incoming.jpg', () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev' });
-    const p = path.normalize(m.previewPath('mykey'));
-    assert.ok(p.includes(path.normalize('/tmp/prev')));
-    assert.ok(p.includes('mykey'));
-    assert.ok(p.endsWith('incoming.jpg'));
-  });
-
   it('isRunning() returns false initially', () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev' });
+    const m = new PreviewManager();
     assert.equal(m.isRunning('k'), false);
   });
+
+  it('getWebRtcUrl() returns a URL containing the key', () => {
+    const m = new PreviewManager({ webrtcBase: 'http://127.0.0.1:8889' });
+    const url = m.getWebRtcUrl('mykey');
+    assert.ok(url.includes('mykey'));
+    assert.ok(url.includes('8889'));
+  });
 });
 
-describe('PreviewManager — start()', () => {
-  beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
-
-  it('resolves and marks key as running', async () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live', intervalS: 5 });
+describe('PreviewManager — start() / stop() / stopAll()', () => {
+  it('start() marks key as running', async () => {
+    const m = new PreviewManager();
     await m.start('pkey');
     assert.equal(m.isRunning('pkey'), true);
-    assert.equal(spawnCalls.length, 1);
-  });
-
-  it('uses image2 muxer with fps filter and -update 1', async () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live', intervalS: 5 });
-    await m.start('pkey');
-    const args = spawnCalls[0].args;
-    assert.ok(args.includes('-update'), 'must pass -update');
-    assert.ok(args.includes('-f'));
-    assert.ok(args.includes('image2'));
-    assert.ok(args.some(a => String(a).includes('fps=')), 'must pass fps filter');
-  });
-
-  it('creates the preview output directory', async () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev' });
-    await m.start('pkey');
-    assert.ok(mkdirCalls.some(c => String(c.dir).includes('pkey')));
-  });
-});
-
-describe('PreviewManager — stop() / stopAll()', () => {
-  beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
-
-  it('stop() resolves when key is not running', async () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev' });
-    await assert.doesNotReject(() => m.stop('gone'));
   });
 
   it('stop() marks key as not running', async () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev' });
+    const m = new PreviewManager();
     await m.start('pk');
     await m.stop('pk');
     assert.equal(m.isRunning('pk'), false);
   });
 
+  it('stop() resolves when key is not running', async () => {
+    const m = new PreviewManager();
+    await assert.doesNotReject(() => m.stop('gone'));
+  });
+
   it('stopAll() clears all keys', async () => {
-    const m = new PreviewManager({ previewRoot: '/tmp/prev' });
+    const m = new PreviewManager();
     await m.start('p1');
     await m.start('p2');
     await m.stopAll();
     assert.equal(m.isRunning('p1'), false);
     assert.equal(m.isRunning('p2'), false);
+  });
+
+  it('fetchThumbnail() returns null when no mediamtxClient configured', async () => {
+    const m = new PreviewManager();
+    const result = await m.fetchThumbnail('pkey');
+    assert.equal(result, null);
   });
 });

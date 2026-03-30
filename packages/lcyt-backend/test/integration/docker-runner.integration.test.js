@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 test('DockerFfmpegRunner integration (gated) — writes file into mounted volume', { skip: process.env.TEST_DOCKER !== '1' }, async () => {
-  const { DockerFfmpegRunner } = await import('../src/ffmpeg/docker-runner.js');
+  const { DockerFfmpegRunner } = await import('../../src/ffmpeg/docker-runner.js');
 
   const tmp = fs.mkdtempSync(join(tmpdir(), 'docker-runner-test-'));
   const outPath = join(tmp, 'hello.txt');
