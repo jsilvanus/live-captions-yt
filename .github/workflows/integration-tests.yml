@@ -49,6 +49,7 @@ jobs:
           - packages/lcyt-bridge
           - packages/lcyt-mcp-stdio
           - packages/lcyt-mcp-sse
+          - packages/lcyt-backend
           - packages/plugins/lcyt-agent
           - packages/plugins/lcyt-cues
           - packages/plugins/lcyt-dsk
@@ -67,6 +68,8 @@ jobs:
         run: npm test -w ${{ matrix.package }}
         env:
           NODE_ENV: test
+          JWT_SECRET: test-jwt-secret
+          ADMIN_KEY: test-admin-key
 
   unit-python:
     name: "Unit: python ${{ matrix.package }}"
@@ -136,8 +139,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - name: Run backend tests
-        run: npm test -w packages/lcyt-backend
+      - name: Run backend integration tests
+        run: npm run test:integration -w packages/lcyt-backend
         env:
           NODE_ENV: test
           JWT_SECRET: test-jwt-secret

@@ -9,8 +9,8 @@ import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const ECHO_SERVER_PATH = path.resolve(__dirname, '../../tools/tcp-echo-server/server.js');
-const BRIDGE_PATH = path.resolve(__dirname, '../../lcyt-bridge/src/index.js');
+const ECHO_SERVER_PATH = path.resolve(__dirname, '../../../tools/tcp-echo-server/server.js');
+const BRIDGE_PATH = path.resolve(__dirname, '../../../lcyt-bridge/src/index.js');
 
 const TEST_TIMEOUT_MS = 30_000;
 
@@ -93,7 +93,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   }, 5000, 100);
 
   // Use the lightweight test server helper (avoids importing full backend plugins)
-  const { createTestServer } = await import('./test-server.js');
+  const { createTestServer } = await import('../test-server.js');
   const { app, db, bridgeManager: productionBridgeManager } = createTestServer();
 
   // Start test backend on ephemeral port

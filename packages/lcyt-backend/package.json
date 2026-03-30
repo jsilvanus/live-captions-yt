@@ -15,7 +15,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "test": "cross-env ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/*.test.js"
+    "test": "cross-env ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/*.test.js",
+    "test:integration": "cross-env ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/integration/*.test.js"
   },
   "dependencies": {
     "better-sqlite3": "^11.0",
