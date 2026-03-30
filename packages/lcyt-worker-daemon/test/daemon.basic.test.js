@@ -1,8 +1,8 @@
 // Simple smoke test for the worker daemon.
 // Guarded: will skip unless TEST_WORKER_DAEMON=1 is set in environment.
 
-const assert = require('assert');
-const http = require('http');
+import assert from 'assert';
+import http from 'http';
 
 if (!process.env.TEST_WORKER_DAEMON) {
   console.log('TEST_WORKER_DAEMON not set — skipping daemon.basic.test.js');
