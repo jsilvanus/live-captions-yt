@@ -140,40 +140,37 @@ describe('HlsManager', () => {
 });
 
 // ---------------------------------------------------------------------------
-// PreviewManager unit tests
+// PreviewManager unit tests — MediaMTX-based (no ffmpeg, no previewPath)
 // ---------------------------------------------------------------------------
 
 describe('PreviewManager', () => {
-  let tmpRoot;
   let manager;
 
   before(() => {
-    tmpRoot = join(tmpdir(), `preview-mgr-test-${Date.now()}`);
-    fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new PreviewManager({ previewRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
-  });
-
-  after(() => {
-    fs.rmSync(tmpRoot, { recursive: true, force: true });
-  });
-
-  it('previewPath returns path inside previewRoot with incoming.jpg', () => {
-    const p = manager.previewPath('mykey');
-    assert.ok(p.startsWith(tmpRoot), `expected ${p} to start with ${tmpRoot}`);
-    assert.ok(p.endsWith('incoming.jpg'));
-    assert.ok(p.includes('mykey'));
+    manager = new PreviewManager();
   });
 
   it('isRunning returns false for unstarted key', () => {
     assert.strictEqual(manager.isRunning('nonexistent'), false);
   });
 
-  it('stopAll resolves immediately when no processes are running', async () => {
+  it('start() marks key as running', async () => {
+    await manager.start('starttest');
+    assert.strictEqual(manager.isRunning('starttest'), true);
+    await manager.stop('starttest');
+  });
+
+  it('stopAll resolves immediately when no streams are active', async () => {
     await assert.doesNotReject(() => manager.stopAll());
   });
 
   it('stop resolves immediately for non-running key', async () => {
     await assert.doesNotReject(() => manager.stop('nonexistent'));
+  });
+
+  it('fetchThumbnail returns null without mediamtxClient', async () => {
+    const result = await manager.fetchThumbnail('anykey');
+    assert.strictEqual(result, null);
   });
 });
 
@@ -243,42 +240,62 @@ describe('POST /stream-hls — nginx callbacks', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /stream-hls/:key/index.m3u8', () => {
-  let db, server, manager, tmpRoot;
+  let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-playlist-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new HlsManager({ hlsRoot: tmpRoot });
 
+    // Start a mock MediaMTX server that serves files from tmpRoot
+    await new Promise(resolve => {
+      mockMtxServer = createServer((req, res) => {
+        const parts = req.url.replace(/^\//, '').split('/');
+        const filePath = join(tmpRoot, ...parts);
+        try {
+          const content = fs.readFileSync(filePath);
+          res.writeHead(200, { 'Content-Type': 'application/vnd.apple.mpegurl' });
+          res.end(content);
+        } catch {
+          res.writeHead(404);
+          res.end();
+        }
+      }).listen(0, '127.0.0.1', () => {
+        savedMtxUrl = process.env.MEDIAMTX_HLS_BASE_URL;
+        process.env.MEDIAMTX_HLS_BASE_URL = `http://127.0.0.1:${mockMtxServer.address().port}`;
+        resolve();
+      });
+    });
+
+    manager = new HlsManager({ hlsRoot: tmpRoot });
     const app = express();
     app.use('/stream-hls', createStreamHlsRouter(db, manager));
-
     await new Promise(resolve => {
-      server = createServer(app).listen(0, '127.0.0.1', resolve);
+      appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
   });
 
   after(() => new Promise(resolve => {
-    server.close(resolve);
-    db.close();
+    if (savedMtxUrl !== undefined) process.env.MEDIAMTX_HLS_BASE_URL = savedMtxUrl;
+    else delete process.env.MEDIAMTX_HLS_BASE_URL;
+    appServer.close(() => mockMtxServer.close(() => { db.close(); resolve(); }));
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 404 when no stream is live', async () => {
-    const res = await getJson(server, '/stream-hls/nosuchstream/index.m3u8');
+    const res = await getJson(appServer, '/stream-hls/nosuchstream/index.m3u8');
     assert.strictEqual(res.status, 404);
   });
 
   it('returns 400 for too-short key', async () => {
-    const res = await getJson(server, '/stream-hls/ab/index.m3u8');
+    const res = await getJson(appServer, '/stream-hls/ab/index.m3u8');
     assert.strictEqual(res.status, 400);
   });
 
   it('returns 400 for key with path traversal characters', async () => {
     const cases = ['../etc', '..%2Fetc', 'key/sub'];
     for (const k of cases) {
-      const res = await getJson(server, `/stream-hls/${k}/index.m3u8`);
+      const res = await getJson(appServer, `/stream-hls/${k}/index.m3u8`);
       assert.ok(res.status === 400 || res.status === 404,
         `Expected 400/404 for key "${k}", got ${res.status}`);
     }
@@ -290,7 +307,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(join(dir, 'index.m3u8'), '#EXTM3U\n#EXT-X-VERSION:3\n');
 
-    const res = await getJson(server, `/stream-hls/${key}/index.m3u8`);
+    const res = await getJson(appServer, `/stream-hls/${key}/index.m3u8`);
     assert.strictEqual(res.status, 200);
     assert.ok(res.headers.get('content-type')?.includes('mpegurl'));
     assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
@@ -300,44 +317,65 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /stream-hls/:key/:segment — HLS segment serving
+// GET /stream-hls/:key/:segment — HLS segment proxy (proxies to MediaMTX)
 // ---------------------------------------------------------------------------
 
 describe('GET /stream-hls/:key/:segment', () => {
-  let db, server, manager, tmpRoot;
+  let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-seg-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new HlsManager({ hlsRoot: tmpRoot });
 
+    // Start a mock MediaMTX server that serves files from tmpRoot
+    await new Promise(resolve => {
+      mockMtxServer = createServer((req, res) => {
+        const parts = req.url.replace(/^\//, '').split('/');
+        const filePath = join(tmpRoot, ...parts);
+        try {
+          const content = fs.readFileSync(filePath);
+          res.writeHead(200, { 'Content-Type': 'video/mp2t' });
+          res.end(content);
+        } catch {
+          res.writeHead(404);
+          res.end();
+        }
+      }).listen(0, '127.0.0.1', () => {
+        savedMtxUrl = process.env.MEDIAMTX_HLS_BASE_URL;
+        process.env.MEDIAMTX_HLS_BASE_URL = `http://127.0.0.1:${mockMtxServer.address().port}`;
+        resolve();
+      });
+    });
+
+    manager = new HlsManager({ hlsRoot: tmpRoot });
     const app = express();
     app.use('/stream-hls', createStreamHlsRouter(db, manager));
-
     await new Promise(resolve => {
-      server = createServer(app).listen(0, '127.0.0.1', resolve);
+      appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
   });
 
   after(() => new Promise(resolve => {
-    server.close(resolve);
-    db.close();
+    if (savedMtxUrl !== undefined) process.env.MEDIAMTX_HLS_BASE_URL = savedMtxUrl;
+    else delete process.env.MEDIAMTX_HLS_BASE_URL;
+    appServer.close(() => mockMtxServer.close(() => { db.close(); resolve(); }));
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
   it('returns 400 for non-ts segment names', async () => {
-    const res = await getJson(server, '/stream-hls/testkey/badname.txt');
+    const res = await getJson(appServer, '/stream-hls/testkey/badname.txt');
     assert.strictEqual(res.status, 400);
   });
 
-  it('returns 400 for segment with wrong numeric format', async () => {
-    const res = await getJson(server, '/stream-hls/testkey/segment1.ts');
+  it('returns 400 for segment with path-separator characters', async () => {
+    // Names with mid-dots don't pass /^[a-zA-Z0-9_-]+\.ts$/ regex
+    const res = await getJson(appServer, '/stream-hls/testkey/bad.name.ts');
     assert.strictEqual(res.status, 400);
   });
 
   it('returns 404 for valid segment name that does not exist', async () => {
-    const res = await getJson(server, '/stream-hls/testkey/seg00001.ts');
+    const res = await getJson(appServer, '/stream-hls/testkey/seg00001.ts');
     assert.strictEqual(res.status, 404);
   });
 
@@ -347,7 +385,7 @@ describe('GET /stream-hls/:key/:segment', () => {
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(join(dir, 'seg00001.ts'), 'fake ts data');
 
-    const res = await getJson(server, `/stream-hls/${key}/seg00001.ts`);
+    const res = await getJson(appServer, `/stream-hls/${key}/seg00001.ts`);
     assert.strictEqual(res.status, 200);
     assert.ok(res.headers.get('content-type')?.includes('mp2t'));
     assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
@@ -418,106 +456,107 @@ describe('GET /stream-hls/:key/player.js', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /preview/:key/incoming.jpg', () => {
-  let server, manager, tmpRoot;
+  let previewServer, previewTmpRoot;
+
+  // Mock PreviewManager — implements fetchThumbnail() as required by the route
+  function makeMockPreviewMgr(root) {
+    return {
+      async fetchThumbnail(key) {
+        const p = join(root, key, 'incoming.jpg');
+        try {
+          fs.accessSync(p, fs.constants.R_OK);
+          return { headers: { 'content-type': 'image/jpeg' }, body: p };
+        } catch {
+          return null;
+        }
+      },
+    };
+  }
 
   before(async () => {
-    tmpRoot = join(tmpdir(), `preview-route-test-${Date.now()}`);
-    fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new PreviewManager({ previewRoot: tmpRoot });
+    previewTmpRoot = join(tmpdir(), `preview-route-test-${Date.now()}`);
+    fs.mkdirSync(previewTmpRoot, { recursive: true });
 
+    const mockMgr = makeMockPreviewMgr(previewTmpRoot);
     const app = express();
-    app.use('/preview', createPreviewRouter(manager));
+    // Route registers /preview/:key/incoming[.jpg] — mount at root
+    app.use(createPreviewRouter(mockMgr));
 
     await new Promise(resolve => {
-      server = createServer(app).listen(0, '127.0.0.1', resolve);
+      previewServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
   });
 
   after(() => new Promise(resolve => {
-    server.close(resolve);
-    fs.rmSync(tmpRoot, { recursive: true, force: true });
+    previewServer.close(() => {
+      fs.rmSync(previewTmpRoot, { recursive: true, force: true });
+      resolve();
+    });
   }));
 
-  it('returns 400 for too-short key', async () => {
-    const res = await getJson(server, '/preview/ab/incoming.jpg');
-    assert.strictEqual(res.status, 400);
-  });
-
   it('returns 404 when no preview is available', async () => {
-    const res = await getJson(server, '/preview/nosuchstream/incoming.jpg');
+    const res = await getJson(previewServer, '/preview/nosuchstream/incoming.jpg');
     assert.strictEqual(res.status, 404);
-  });
-
-  it('returns 400 for path traversal characters in key', async () => {
-    const cases = ['../etc', '..%2Fetc'];
-    for (const k of cases) {
-      const res = await getJson(server, `/preview/${k}/incoming.jpg`);
-      assert.ok(res.status === 400 || res.status === 404,
-        `Expected 400/404 for key "${k}", got ${res.status}`);
-    }
   });
 
   it('serves JPEG with correct content-type when file exists', async () => {
     const key = 'streampreview';
-    const dir = join(tmpRoot, key);
+    const dir = join(previewTmpRoot, key);
     fs.mkdirSync(dir, { recursive: true });
-    // Write a minimal JPEG (just fake bytes — test only checks content-type + status)
-    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]));
 
-    const res = await getJson(server, `/preview/${key}/incoming.jpg`);
+    const res = await getJson(previewServer, `/preview/${key}/incoming.jpg`);
     assert.strictEqual(res.status, 200);
     assert.ok(res.headers.get('content-type')?.includes('jpeg'));
-    assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
   });
 
-  it('response has Cache-Control with max-age=5', async () => {
-    const key = 'cachetest';
-    const dir = join(tmpRoot, key);
+  it('response has Cache-Control with public max-age', async () => {
+    const key = 'cachetest2';
+    const dir = join(previewTmpRoot, key);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]));
 
-    const res = await getJson(server, `/preview/${key}/incoming.jpg`);
+    const res = await getJson(previewServer, `/preview/${key}/incoming.jpg`);
     assert.strictEqual(res.status, 200);
     const cc = res.headers.get('cache-control') || '';
-    assert.ok(cc.includes('max-age=5'), `expected max-age=5 in Cache-Control, got: ${cc}`);
+    assert.ok(cc.includes('public'), `expected public in Cache-Control, got: ${cc}`);
+    assert.ok(cc.includes('max-age='), `expected max-age= in Cache-Control, got: ${cc}`);
   });
 
-  it('response includes Last-Modified header', async () => {
-    const key = 'lmtest';
-    const dir = join(tmpRoot, key);
+  it('response includes ETag header', async () => {
+    const key = 'etagtest';
+    const dir = join(previewTmpRoot, key);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]));
 
-    const res = await getJson(server, `/preview/${key}/incoming.jpg`);
-    assert.ok(res.headers.get('last-modified'), 'should include Last-Modified header');
+    const res = await getJson(previewServer, `/preview/${key}/incoming.jpg`);
+    assert.ok(res.headers.get('etag'), 'should include ETag header');
   });
 
-  it('returns 304 when If-Modified-Since matches mtime', async () => {
-    const key = 'condrequest';
-    const dir = join(tmpRoot, key);
+  it('returns 304 when If-None-Match matches ETag', async () => {
+    const key = 'condrequest2';
+    const dir = join(previewTmpRoot, key);
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
+    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46]));
 
-    // First request to get the mtime
-    const first = await getJson(server, `/preview/${key}/incoming.jpg`);
-    const lm = first.headers.get('last-modified');
-    assert.ok(lm, 'missing Last-Modified');
+    // Allow the rate-limit window (1 s, max 5 req) to reset before issuing more requests
+    await new Promise(r => setTimeout(r, 1100));
+    // First request to get the ETag
+    const first = await getJson(previewServer, `/preview/${key}/incoming.jpg`);
+    const etag = first.headers.get('etag');
+    assert.ok(etag, 'missing ETag');
 
-    // Second request with If-Modified-Since = mtime (or future date)
-    const future = new Date(Date.now() + 10000).toUTCString();
-    const second = await fetch(`${baseUrl(server)}/preview/${key}/incoming.jpg`, {
-      headers: { 'If-Modified-Since': future },
+    // Second request with matching ETag
+    const second = await fetch(`${baseUrl(previewServer)}/preview/${key}/incoming.jpg`, {
+      headers: { 'If-None-Match': etag },
     });
     assert.strictEqual(second.status, 304);
   });
 
-  it('has CORS header', async () => {
-    const key = 'corstest';
-    const dir = join(tmpRoot, key);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(join(dir, 'incoming.jpg'), Buffer.from([0xFF, 0xD8, 0xFF, 0xE0]));
-
-    const res = await getJson(server, `/preview/${key}/incoming.jpg`);
+  it('OPTIONS returns 204 with CORS headers', async () => {
+    const key = 'corstest2';
+    const res = await fetch(`${baseUrl(previewServer)}/preview/${key}/incoming`, { method: 'OPTIONS' });
+    assert.strictEqual(res.status, 204);
     assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
   });
 });

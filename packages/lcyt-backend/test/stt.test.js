@@ -164,7 +164,7 @@ describe('/stt routes', () => {
     });
 
     it('rejects invalid audioSource', async () => {
-      const res = await post('/stt/start', { audioSource: 'rtmp' });
+      const res = await post('/stt/start', { audioSource: 'invalid_source' });
       assert.equal(res.status, 400);
     });
   });

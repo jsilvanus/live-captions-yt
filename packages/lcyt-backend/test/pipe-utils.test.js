@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { makeFifo, createFifoWriter, isFifo } from '../src/ffmpeg/pipe-utils.js';
 
@@ -63,8 +62,9 @@ test('createFifoWriter writes to regular file (fallback) and resolves true', asy
   const tmp = fs.mkdtempSync(join(process.env.TEMP || '/tmp', 'pipe-utils-'));
   try {
     const p = join(tmp, 'out.txt');
-    // On non-POSIX this acts like fallback file
-    await makeFifo(p);
+    // Use a regular file (not a FIFO) — O_NONBLOCK is ignored for regular files on POSIX,
+    // so the write succeeds and resolves true on all platforms.
+    fs.writeFileSync(p, '');
     const writer = createFifoWriter(p, { timeoutMs: 200 });
     const ok = await writer.write('hello world\n');
     assert.equal(ok, true);
