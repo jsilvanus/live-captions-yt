@@ -10,6 +10,8 @@ COPY packages/plugins/lcyt-production/package.json packages/plugins/lcyt-product
 COPY packages/plugins/lcyt-dsk/package.json packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/package.json packages/plugins/lcyt-rtmp/
 COPY packages/plugins/lcyt-files/package.json packages/plugins/lcyt-files/
+COPY packages/plugins/lcyt-cues/package.json packages/plugins/lcyt-cues/
+COPY packages/plugins/lcyt-agent/package.json packages/plugins/lcyt-agent/
 
 # Install workspace dependencies.
 RUN npm ci \
