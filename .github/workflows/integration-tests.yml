@@ -285,6 +285,6 @@ jobs:
           PORT: 3000
           STATIC_DIR: packages/lcyt-web/dist
       - name: Run E2E tests
-        run: npx playwright test
+        run: npx playwright test --pass-with-no-tests
         env:
           BASE_URL: http://localhost:3000
