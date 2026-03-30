@@ -384,6 +384,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
               advancedMode={advancedMode}
               connected={session.connected}
             />
+          )}
 
           {/* ── Targets ── */}
           {activeTab === 'targets' && (

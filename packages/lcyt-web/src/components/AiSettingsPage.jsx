@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useSessionContext } from '../contexts/ConnectionContext';
-import { useLang } from '../lib/i18n';
+import { useSessionContext } from '../contexts/SessionContext';
+import { useLang } from '../contexts/LangContext';
 
 const PROVIDERS = [
   { value: 'none',   label: 'Disabled' },
