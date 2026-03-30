@@ -8,6 +8,11 @@ import logger from 'lcyt/logger';
 const DEFAULT_RTMP_HOST       = process.env.RTMP_HOST             || 'rtmp.lcyt.fi';
 const DEFAULT_RTMP_APP        = process.env.RTMP_APP              || 'stream';
 const DEFAULT_MEDIAMTX_RTSP   = (process.env.MEDIAMTX_RTSP_BASE_URL || 'rtsp://127.0.0.1:8554').replace(/\/$/, '');
+// Base URL for ffmpeg to push processed streams back into MediaMTX (single output per key).
+// MediaMTX then fans out via runOnPublish instead of the ffmpeg tee muxer.
+const DEFAULT_MEDIAMTX_RTMP   = (process.env.MEDIAMTX_RTMP_BASE_URL || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
+// RTMP application name used by the DSK renderer when pushing overlays to MediaMTX.
+const DEFAULT_DSK_RTMP_APP    = process.env.DSK_RTMP_APP || 'dsk';
 
 /**
  * Milliseconds to shift a caption earlier when speechStart is not provided.
@@ -67,6 +72,60 @@ function sourceUrl(apiKey) {
 }
 
 /**
+ * MediaMTX path name for a processed or per-slot-transcoded stream.
+ * CEA-708 / DSK overlay → "{key}-out"
+ * Per-slot transcode slot i → "{key}-t{i}"
+ * @param {string} apiKey
+ * @param {string} [suffix]
+ * @returns {string}
+ */
+function outPathName(apiKey, suffix = 'out') {
+  return `${apiKey}-${suffix}`;
+}
+
+/**
+ * RTMP URL for the processing ffmpeg to push its single output back into MediaMTX.
+ * @param {string} apiKey
+ * @param {string} [suffix]
+ * @returns {string}
+ */
+function outRtmpUrl(apiKey, suffix = 'out') {
+  return `${DEFAULT_MEDIAMTX_RTMP}/${DEFAULT_RTMP_APP}/${outPathName(apiKey, suffix)}`;
+}
+
+/**
+ * RTSP URL MediaMTX exposes for a processed path — used inside runOnPublish commands
+ * so the fan-out ffmpeg reads directly from MediaMTX rather than via an RTMP loop.
+ * @param {string} apiKey
+ * @param {string} [suffix]
+ * @returns {string}
+ */
+function outRtspUrl(apiKey, suffix = 'out') {
+  return `${DEFAULT_MEDIAMTX_RTSP}/${outPathName(apiKey, suffix)}`;
+}
+
+/** Shared validation regexes used when building runOnPublish fan-out commands. */
+const SAFE_RTMP_RE = /^rtmps?:\/\/[A-Za-z0-9.:-]+\/[A-Za-z0-9_\-\/\.]+$/;
+const SAFE_NAME_RE = /^[A-Za-z0-9_\-]+$/;
+
+/**
+ * Build a `-f tee` target string from relay slots (no stream selectors — same stream to all).
+ * Validates each URL/name pair; throws if unsafe characters are detected.
+ * @param {Array<{ targetUrl: string, targetName?: string|null }>} relays
+ * @returns {string}  e.g. "[f=flv]rtmp://a/b/c|[f=flv]rtmp://x/y/z"
+ */
+function _buildTeeTargets(relays) {
+  return relays.map(r => {
+    const nameOk = r.targetName == null || SAFE_NAME_RE.test(r.targetName);
+    const url    = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+    if (!nameOk || !SAFE_RTMP_RE.test(url)) {
+      throw new Error(`Target URL or name unsafe for fan-out: ${String(url).slice(0, 80)}`);
+    }
+    return `[f=flv]${url}`;
+  }).join('|');
+}
+
+/**
  * Manages ffmpeg subprocesses for RTMP relay fan-out.
  *
  * One ffmpeg **process per API key** forwards the incoming nginx-rtmp stream to all configured
@@ -93,10 +152,13 @@ function sourceUrl(apiKey) {
  *   onStreamEnded(apiKey, slot, { targetUrl, targetName, captionMode, startedAt, endedAt, durationMs })
  *
  * Environment variables:
- *   RTMP_CONTROL_URL   — nginx-rtmp control base URL
- *   RTMP_APPLICATION   — application name used when dropping publishers
- *   CEA708_OFFSET_MS   — ms to shift caption earlier when speechStart absent (default: 2000)
- *   CEA708_DURATION_MS — cue display duration in ms (default: 3000)
+ *   RTMP_CONTROL_URL        — nginx-rtmp control base URL
+ *   RTMP_APPLICATION        — application name used when dropping publishers
+ *   CEA708_OFFSET_MS        — ms to shift caption earlier when speechStart absent (default: 2000)
+ *   CEA708_DURATION_MS      — cue display duration in ms (default: 3000)
+ *   MEDIAMTX_RTMP_BASE_URL  — RTMP base where ffmpeg pushes processed streams back into MediaMTX
+ *                             (default: rtmp://127.0.0.1:1935); MediaMTX then fans out via runOnPublish
+ *   DSK_RTMP_APP            — RTMP application name used by the DSK renderer (default: dsk)
  */
 export class RtmpRelayManager {
   /**
@@ -135,6 +197,14 @@ export class RtmpRelayManager {
      * @type {Map<string, { names: string[], imagePaths: string[], rtmpUrl?: string }>}
      */
     this._dskState = new Map();
+
+    /**
+     * MediaMTX output path names registered for processing modes (CEA-708, DSK overlay,
+     * per-slot transcode). Cleaned up by _stopProc() so fan-out runOnPublish hooks are
+     * removed when the relay stops.
+     * @type {Map<string, string[]>}
+     */
+    this._outputPaths = new Map();
 
     /** @type {Set<string>} API keys currently publishing in nginx-rtmp */
     this._publishing = new Set();
@@ -245,11 +315,21 @@ export class RtmpRelayManager {
         args.push('-c:s', 'eia608');
         args.push('-map', '0:v', '-map', '0:a', '-map', '1:s');
 
-        const teeTargets = relays.map(r => {
-          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
-          return `[f=flv]${url}`;
-        }).join('|');
-        args.push('-f', 'tee', teeTargets);
+        if (this._mediamtx) {
+          // Single output back into MediaMTX; MediaMTX fans out via runOnPublish.
+          args.push('-f', 'flv', outRtmpUrl(apiKey));
+          const teeTargets = _buildTeeTargets(relays);
+          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey)} -c copy -f tee "${teeTargets}"`;
+          try {
+            await this._mediamtx.addPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
+            this._outputPaths.set(apiKey, [outPathName(apiKey)]);
+          } catch (err) {
+            logger.warn(`[rtmp] MediaMTX addPath (cea708 out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
+          }
+        } else {
+          // Fallback: tee directly to targets (no MediaMTX client configured).
+          args.push('-f', 'tee', _buildTeeTargets(relays));
+        }
         stdinMode = 'pipe';
 
       } else if (hasTranscode) {
@@ -296,17 +376,51 @@ export class RtmpRelayManager {
           }
         }
 
-        const teeTargets = relays.map((r, i) => {
-          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
-          return `[f=flv:select=v:${i}+a:${i}]${url}`;
-        }).join('|');
-        args.push('-f', 'tee', teeTargets);
+        if (this._mediamtx) {
+          // Tee to per-slot MediaMTX intermediate paths; each path has its own runOnPublish
+          // copy to the final target, giving MediaMTX independent restart per slot.
+          const slotPaths = [];
+          const teeTargets = relays.map((r, i) => {
+            const suffix = `t${i}`;
+            return `[f=flv:select=v:${i}+a:${i}]${outRtmpUrl(apiKey, suffix)}`;
+          }).join('|');
+          args.push('-f', 'tee', teeTargets);
+
+          for (let i = 0; i < relays.length; i++) {
+            const r = relays[i];
+            const suffix    = `t${i}`;
+            const nameOk    = r.targetName == null || SAFE_NAME_RE.test(r.targetName);
+            const targetUrl = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+            if (!nameOk || !SAFE_RTMP_RE.test(targetUrl)) {
+              throw new Error(`Target URL or name unsafe for transcode slot ${i}: ${String(targetUrl).slice(0, 80)}`);
+            }
+            const cmd = `ffmpeg -re -i ${outRtspUrl(apiKey, suffix)} -c copy -f flv ${targetUrl}`;
+            try {
+              await this._mediamtx.addPath(outPathName(apiKey, suffix), { runOnPublish: cmd, runOnPublishRestart: true });
+              slotPaths.push(outPathName(apiKey, suffix));
+            } catch (err) {
+              logger.warn(`[rtmp] MediaMTX addPath (transcode slot ${i}) failed for ${apiKey.slice(0,8)}: ${err.message}`);
+            }
+          }
+          if (slotPaths.length > 0) this._outputPaths.set(apiKey, slotPaths);
+        } else {
+          // Fallback: tee directly to final targets (no MediaMTX client configured).
+          const teeTargets = relays.map((r, i) => {
+            const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+            return `[f=flv:select=v:${i}+a:${i}]${url}`;
+          }).join('|');
+          args.push('-f', 'tee', teeTargets);
+        }
 
       } else if (hasDsk) {
         // ── Server-side DSK overlay mode (Phase 8) ─────────────────────────
         if (dskState.rtmpUrl) {
-          // RTMP stream as DSK source (e.g. from OBS pushing to rtmp://server/dsk/<key>)
-          args = ['-re', '-i', src, '-re', '-i', dskState.rtmpUrl];
+          // DSK stream pushed by renderer to MediaMTX; read it back via RTSP to avoid an
+          // RTMP push/pull conflict on the same path when MediaMTX is the broker.
+          const dskInput = this._mediamtx
+            ? `${DEFAULT_MEDIAMTX_RTSP}/${DEFAULT_DSK_RTMP_APP}/${encodeURIComponent(apiKey)}`
+            : dskState.rtmpUrl;
+          args = ['-re', '-i', src, '-re', '-i', dskInput];
           args.push('-filter_complex', '[0:v][1:v]overlay=0:0:shortest=1[ovout]');
         } else {
           // Static image files as DSK source
@@ -334,18 +448,26 @@ export class RtmpRelayManager {
         args.push('-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency');
         args.push('-c:a', 'copy');
 
-        const teeTargets = relays.map(r => {
-          const url = r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
-          return `[f=flv]${url}`;
-        }).join('|');
-        args.push('-f', 'tee', teeTargets);
+        if (this._mediamtx) {
+          // Single output back into MediaMTX; fan-out via runOnPublish.
+          args.push('-f', 'flv', outRtmpUrl(apiKey));
+          const teeTargets = _buildTeeTargets(relays);
+          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey)} -c copy -f tee "${teeTargets}"`;
+          try {
+            await this._mediamtx.addPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
+            this._outputPaths.set(apiKey, [outPathName(apiKey)]);
+          } catch (err) {
+            logger.warn(`[rtmp] MediaMTX addPath (dsk out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
+          }
+        } else {
+          // Fallback: tee directly to targets (no MediaMTX client configured).
+          args.push('-f', 'tee', _buildTeeTargets(relays));
+        }
 
       } else if (this._mediamtx) {
         // ── Plain relay via MediaMTX runOnPublish (no local ffmpeg process) ─
-        // Validate API key and target URLs strictly to avoid shell/command injection
+        // Validate API key and target URLs strictly to avoid shell/command injection.
         const SAFE_APIKEY_RE = /^[A-Za-z0-9_-]+$/;
-        const SAFE_RTMP_RE = /^rtmp:\/\/[A-Za-z0-9.:-]+\/[A-Za-z0-9_\-\/\.]+$/;
-        const SAFE_NAME_RE = /^[A-Za-z0-9_\-]+$/;
 
         if (!SAFE_APIKEY_RE.test(apiKey)) {
           throw new Error('API key contains unsafe characters for MediaMTX runOnPublish');
@@ -900,6 +1022,16 @@ export class RtmpRelayManager {
    * @param {string} apiKey
    */
   _stopProc(apiKey) {
+    // Delete MediaMTX output paths first so the fan-out runOnPublish is removed before the
+    // processing ffmpeg exits, preventing orphaned pushes to relay targets.
+    const outputPaths = this._outputPaths.get(apiKey);
+    if (outputPaths && this._mediamtx) {
+      for (const p of outputPaths) {
+        this._mediamtx.deletePath(p).catch(() => {});
+      }
+    }
+    this._outputPaths.delete(apiKey);
+
     const proc = this._procs.get(apiKey);
     if (!proc) return;
     this._procs.delete(apiKey);
