@@ -2,11 +2,29 @@
 	"servers": {
 		"LCYT": {
 			"url": "https://mcp.lcyt.fi/sse",
-			"type": "sse",
+			"type": "http",
 			"headers": {
 				"X-Api-Key": "09102f3a-9a8e-4f11-aacf-ed3e3fa7a7c8"
 			}
 		},
+		"Codebase Semantics MCP": {
+			"type": "stdio",
+			"command": "docker",
+			"args": [
+				"run",
+				"--rm",
+				"-i",
+				"--network",
+				"mcp-net",
+				"-e",
+				"OLLAMA_BASE_URL=http://ollama:11434",
+				"-v",
+				"codebase-semantics-mcp_mcp-data:/data",
+				"-v",
+				"C:/Users/jsilv/Code:/projects:ro",
+				"codebase-semantics-mcp:latest"
+			]
+		}
 	},
 	"inputs": []
 }
