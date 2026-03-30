@@ -82,6 +82,16 @@ webrtc: no
 #   DELETE /v3/config/paths/delete/<name>
 #
 # The backend's RadioManager calls these APIs when streams start/stop.
+#
+# ── Path naming convention (rtmp-manager) ────────────────────────────────────
+# {key}          — raw RTMP ingest from the encoder/publisher
+# {key}-out      — CEA-708 or DSK overlay processed output; fan-out ffmpeg reads here
+#                  and copies to relay targets via runOnPublish
+# {key}-t{i}     — per-slot transcode output for slot i (0-based); each slot fans out
+#                  independently to its own relay target via runOnPublish
+# {key}-dsk      — DSK renderer output pushed by Playwright/ffmpeg; rtmp-manager reads
+#                  it via RTSP when compositing the overlay
+# ─────────────────────────────────────────────────────────────────────────────
 
 paths:
   # Wildcard: accept any path name that the backend creates dynamically.

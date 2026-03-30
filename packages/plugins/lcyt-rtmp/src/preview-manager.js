@@ -22,7 +22,7 @@ const DEFAULT_WEBRTC_BASE = (process.env.MEDIAMTX_WEBRTC_BASE_URL || 'http://127
  *   stop(key)            — mark key as inactive (called on publish_done)
  *   stopAll()            — clear all active keys
  *   isRunning(key)       — true if key is currently active
- *   fetchThumbnail(key)  — fetch JPEG snapshot from MediaMTX; returns Response or null
+ *   fetchThumbnail(key, { width?, height? })  — fetch JPEG snapshot from MediaMTX; returns Response or null
  *   getWebRtcUrl(key)    — return the MediaMTX WebRTC URL for the key
  *
  * Environment variables:
@@ -91,13 +91,19 @@ export class PreviewManager {
    * or null if MediaMTX returns 404 (path not found / not publishing) or if no
    * MediaMtxClient is configured.
    *
+   * Pass `width` and/or `height` to request a downscaled snapshot from MediaMTX
+   * server-side — no extra process is spawned. Useful when feeding the image to
+   * an AI vision API (e.g. 640 wide is sufficient for most models and cuts
+   * bytes-transferred by ~4–8× vs. full HD).
+   *
    * @param {string} key
+   * @param {{ width?: number, height?: number }} [opts]
    * @returns {Promise<Response | null>}
    */
-  async fetchThumbnail(key) {
+  async fetchThumbnail(key, { width, height } = {}) {
     if (!this._mediamtx) return null;
     try {
-      return await this._mediamtx.getThumbnail(key);
+      return await this._mediamtx.getThumbnail(key, { width, height });
     } catch (err) {
       logger.warn(`[preview:${key.slice(0, 8)}] thumbnail fetch error: ${err.message}`);
       return null;

@@ -138,12 +138,22 @@ export class MediaMtxClient {
    * to an HTTP response. Returns null if the path is not found or has no
    * active publisher (HTTP 404).
    *
+   * Optional `width` / `height` query params ask MediaMTX to resize the
+   * snapshot server-side before returning it. Useful for AI vision pipelines
+   * where a lower-resolution image (e.g. 640×360) reduces bytes-transferred
+   * and model token cost without spawning any additional process.
+   *
    * @param {string} name
+   * @param {{ width?: number, height?: number }} [opts]
    * @returns {Promise<Response | null>}
    * @throws {MediaMtxApiError} on non-404 errors
    */
-  async getThumbnail(name) {
-    const url = `${this._baseUrl}/v3/paths/${encodeURIComponent(name)}/thumbnail`;
+  async getThumbnail(name, { width, height } = {}) {
+    const qs = new URLSearchParams();
+    if (width)  qs.set('width',  String(width));
+    if (height) qs.set('height', String(height));
+    const query = qs.toString() ? `?${qs}` : '';
+    const url = `${this._baseUrl}/v3/paths/${encodeURIComponent(name)}/thumbnail${query}`;
     const headers = { Accept: 'image/jpeg, */*' };
     if (this._authHeader) headers.Authorization = this._authHeader;
 
