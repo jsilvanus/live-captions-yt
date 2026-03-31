@@ -53,8 +53,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_dock_ffmpeg.md](plans/plan_dock_ffmpeg.md) | FFmpeg Compute Containers → Distributed Hetzner Architecture | Phases 1–3 implemented: DockerFfmpegRunner abstraction behind `FFMPEG_RUNNER` env flag, local/docker/worker runners. Orchestrator and worker-daemon packages scaffolded. Phases 4–7 (full distributed architecture) remain. | `plan/rtmp` (execution model) |
 | [plan_admin.md](plans/plan_admin.md) | Admin Panel — Web-based User & Project Management | Feature-gated admin section in lcyt-web for managing users, projects, feature flags, and memberships. Backend admin API with search, batch operations. Phase 1 implemented; Phase 2 (audit log, export/import) planned. | |
 
-### Pending
-| [plan_help.md](plans/plan_help.md) | Help Page Screenshot Capture | Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page. | |
+| [plan_help.md](plans/plan_help.md) | Help Page Screenshot Capture | Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page. Script at `scripts/screenshots/capture.mjs`; wired into `deploy.sh` as the `screenshots` step; outputs to `docs/screenshots/` and `packages/lcyt-site/public/screenshots/`. | |
 
 ### Draft
 
