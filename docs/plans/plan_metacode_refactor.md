@@ -1,14 +1,36 @@
+---
+id: plan/metacode-refactor
+title: "Metacode Refactor — Backend & Frontend Separation"
+status: implemented
+summary: "Extract core backend metacode orchestration into packages/lcyt-backend/src/metacode.js; split frontend file parsing, runtime, active-state, and planner helpers into dedicated metacode-*.js files with compatibility re-exports. All six items implemented."
+---
+
 # Metacode Refactor Plan
 
 Scope guardrails:
 - Keep plugin metacode handling as-is, especially `packages/plugins/lcyt-dsk/src/caption-processor.js`.
 - Only clarify core backend and frontend metacode handling by moving logic into dedicated `*metacode*` files with minimal compatibility-preserving edits.
 
+## Implementation status
+
+All six items are implemented:
+
+| # | Description | Result |
+|---|---|---|
+| 1 | Backend metacode orchestration extracted from `captions.js` | `packages/lcyt-backend/src/metacode.js` — `applyMetacodeProcessors()` |
+| 2 | Helper limited to core responsibilities (injected processors, cleaned payloads) | ✅ done |
+| 3 | Frontend file parser split from `fileUtils.js` | `packages/lcyt-web/src/lib/metacode-parser.js` — `parseFileContent()` |
+| 4 | Frontend runtime split from `InputBar.jsx` | `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| 5 | Manual-state + planner helpers moved to metacode-specific files | `metacode-active.js`, `metacode-planner.js` (compatibility re-exports in `activeCodes.js`, `plannerUtils.js`) |
+| 6 | Tests updated alongside moves | `test/metacode.test.js` added to lcyt-backend |
+
+---
+
 1. Extract backend core metacode orchestration from `packages/lcyt-backend/src/routes/captions.js` into a dedicated helper such as `packages/lcyt-backend/src/caption-metacode.js`.
 Rationale: the captions route currently mixes request validation, queueing, file writing, target fan-out, and the one core metacode step that strips/processes caption text before delivery.
 
 2. Limit the backend helper to core responsibilities only: accept caption text plus codes, invoke injected processors exactly as today, and return cleaned caption payloads without changing plugin contracts.
-Rationale: this keeps plugin metacodes untouched while making the backend’s own metacode handoff explicit and easier to test in isolation.
+Rationale: this keeps plugin metacodes untouched while making the backend's own metacode handoff explicit and easier to test in isolation.
 
 3. Split frontend file parsing from generic file utilities by moving `parseFileContent()` and its regex/helpers into a dedicated parser file such as `packages/lcyt-web/src/lib/file-metacode-parser.js`, then re-export from `fileUtils.js` during the transition.
 Rationale: parser behavior is the densest metacode logic on the client, and a compatibility re-export keeps `useFileStore` and existing imports stable.

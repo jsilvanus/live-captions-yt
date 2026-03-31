@@ -2,7 +2,7 @@
 id: plan/ui
 title: "Frontend & UI Plans"
 status: in-progress
-summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard, core implemented, remaining P0/P1 items), v3 (component split, completed)."
+summary: "Four iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard, core implemented), v3 (component split, completed), v4 (two-phase login + feature-based UI, implemented). Remaining P1: guided setup (implemented as /setup wizard), empty-state guidance."
 ---
 
 # Frontend & UI Plans — `packages/lcyt-web`

@@ -1,13 +1,13 @@
 ---
 id: plan/music
 title: "Music Detection Plugin (`lcyt-music`)"
-status: draft
-summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS segments via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE."
+status: in-progress
+summary: "Detect when music is playing and estimate BPM — no song identification. Two paths: server-side HLS analysis via a new `lcyt-music` plugin; client-side browser mic analysis via Web Audio API in lcyt-web. Events feed into the caption pipeline (optional ♪ annotation) and are exposed via SSE. Phase 1 implemented: `lcyt-music` plugin (SoundCaptionProcessor, DB migrations), `subscribeSseEvent` in useSession, `useMusic`/`useMusicDetector` hooks, `MusicChip`/`MusicPanel` components, AudioPanel fftSize→2048, storageKeys update, i18n, backend + frontend tests. Phase 2 pending: `music_config` DB table, backend API routes, server-side HLS analysis, MusicPanel wiring."
 ---
 
 # Music Detection Plugin (`lcyt-music`)
 
-**Status:** Draft  
+**Status:** In progress — Phase 1 implemented; Phase 2 pending  
 **Scope:** New plugin `packages/plugins/lcyt-music`; new `/music` routes in `packages/lcyt-backend`; client-side detection in `packages/lcyt-web` using the browser microphone via Web Audio API.
 
 ---

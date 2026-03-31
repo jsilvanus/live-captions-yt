@@ -1,3 +1,10 @@
+---
+id: plan/setup-wizard
+title: "Setup Wizard"
+status: implemented
+summary: "Guided setup flow at /setup: feature selection, dependency auto-enable, config panels (targets, translation, relay, STT, embed, CEA), shared panels architecture. All components implemented: WizardShell, WizardProgress, DepNotice, StepFeatureSelection, StepReview, SetupWizardPage, useWizardState hook, wizard lib (constants, computeSteps, applyDeps, readLocalSettings, saveWizard), shared panels/, /setup route in main.jsx."
+---
+
 # Setup Wizard — Implementation Plan
 
 ## Context
