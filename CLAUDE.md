@@ -1292,6 +1292,9 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ### Legacy Python Source
 `python/` at the repo root is **legacy**. Do not add code there. All Python development goes in `python-packages/`.
 
+### Plan Versioning
+Implemented plans in `docs/plans/` are **never edited** — they are a permanent record of what was planned and built. When a feature needs significant new work, create a new versioned file (`plan_foo_v2.md`) that declares `supersedes: plan/foo` in its frontmatter. Update the `Superseded by` column in `docs/PLANS.md` to link to the new plan.
+
 ---
 
 ## Key Files Reference

@@ -12,6 +12,19 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | `draft` | Plan written; not yet formally accepted or scheduled |
 | `reference` | Supporting artifact for another plan (PR description, runbook, etc.) |
 
+## Versioning convention
+
+**Implemented plans are never edited.** They serve as a permanent record of what was planned and built.
+
+When a feature needs significant new work — an extension, a redesign, or a replacement — create a new versioned plan file:
+
+```
+plan_foo.md       ← original, stays implemented and untouched
+plan_foo_v2.md    ← new plan; references the original in its frontmatter
+```
+
+The new plan's frontmatter should include `supersedes: plan/foo` (or `extends: plan/foo`) so the relationship is explicit. The `Superseded by` column in the Implemented table below is updated to point to the new plan.
+
 ---
 
 ## Plans by status
