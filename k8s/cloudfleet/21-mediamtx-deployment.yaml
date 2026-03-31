@@ -1,0 +1,74 @@
+# ─── LCYT — MediaMTX Deployment ──────────────────────────────────────────────
+#
+# MediaMTX acts as the RTMP/HLS media broker. It receives RTMP ingest from
+# encoders/OBS and serves audio and video HLS streams.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: mediamtx
+    app.kubernetes.io/component: media-broker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mediamtx
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mediamtx
+        app.kubernetes.io/component: media-broker
+    spec:
+      containers:
+        - name: mediamtx
+          image: bluenviron/mediamtx:latest
+          imagePullPolicy: Always
+          ports:
+            - name: rtmp
+              containerPort: 1935
+              protocol: TCP
+            - name: hls
+              containerPort: 8080
+              protocol: TCP
+            - name: rest-api
+              containerPort: 9997
+              protocol: TCP
+            - name: metrics
+              containerPort: 9998
+              protocol: TCP
+          env:
+            - name: MTX_LOGLEVEL
+              value: "info"
+          volumeMounts:
+            - name: mediamtx-config
+              mountPath: /mediamtx.yml
+              subPath: mediamtx.yml
+              readOnly: true
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /v3/paths/list
+              port: rest-api
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v3/paths/list
+              port: rest-api
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: mediamtx-config
+          configMap:
+            name: mediamtx-config

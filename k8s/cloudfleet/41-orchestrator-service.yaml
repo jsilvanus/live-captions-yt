@@ -1,0 +1,22 @@
+# ─── LCYT — Orchestrator Service ─────────────────────────────────────────────
+#
+# ClusterIP service for the compute orchestrator. The lcyt-backend reaches it
+# at http://lcyt-orchestrator:4000 (set COMPUTE_ORCHESTRATOR_URL in configmap).
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: lcyt-orchestrator
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: lcyt-orchestrator
+    app.kubernetes.io/component: compute-orchestrator
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: lcyt-orchestrator
+  ports:
+    - name: http
+      port: 4000
+      targetPort: http
+      protocol: TCP
