@@ -28,6 +28,7 @@ live-captions-yt/
 │       ├── lcyt-cues/          # Cue Engine plugin (phrase/fuzzy/semantic/event cue matching)
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
 │       ├── lcyt-files/         # Caption file storage plugin (local FS + S3 + WebDAV adapters)
+│       ├── lcyt-music/         # Music detection plugin (sound/BPM metacodes, SSE events, DB log)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
 │       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
 ├── python-packages/            # Python packages
@@ -47,6 +48,7 @@ live-captions-yt/
 ├── python/                     # LEGACY — do not use; canonical source is python-packages/
 ├── scripts/                    # Shell deployment scripts + screenshot capture
 ├── docs/                       # Planning docs, API guides, todo lists
+│   ├── DEPLOY.md               # Full deployment guide (single VM, Docker, Hetzner, nginx)
 │   ├── PLANS.md                # Index of all plans with status (implemented/pending/draft/…)
 │   └── plans/                  # Individual plan files (plan_*.md)
 ├── .env.example                # Example environment variables
@@ -58,7 +60,7 @@ live-captions-yt/
 └── CLAUDE.md                   # This file
 ```
 
-> **Plugin packages** are under `packages/plugins/` and matched by the workspace glob `packages/plugins/*`. They are imported by `lcyt-backend` as named packages (`lcyt-dsk`, `lcyt-production`, `lcyt-rtmp`).
+> **Plugin packages** are under `packages/plugins/` and matched by the workspace glob `packages/plugins/*`. They are imported by `lcyt-backend` as named packages (`lcyt-dsk`, `lcyt-production`, `lcyt-rtmp`, `lcyt-music`).
 
 ---
 
@@ -396,7 +398,7 @@ POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
 - `src/db/project-members.js` — Project membership DB helpers (`project_members` table).
 - `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`).
 
-**SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`, `cue_fired`. Plugin events are forwarded generically via `session.emitter.emit('event', { type, data })`.
+**SSE events** (on `GET /events`): `connected`, `caption_result`, `caption_error`, `session_closed`, `mic_state`, `cue_fired`. Plugin events (`sound_label`, `bpm_update`, etc.) are forwarded generically via `session.emitter.emit('event', { type, data })`.
 
 **Admin CLI:** `bin/lcyt-backend-admin` — local key management + user management.
 - Key commands: `list`, `add`, `update`, `revoke`, `delete`, `renew`, `info`, `clean`
@@ -532,13 +534,13 @@ await rtmp.stop();
 
 **Source files (`src/`):**
 - `api.js` — `initRtmpControl(db, store?)` + `createRtmpRouters(db, auth, managers, opts)`. Returns all manager instances and a `stop()` function.
-- `rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup. Fires `onStreamStarted`/`onStreamEnded` callbacks for DB stat tracking.
+- `rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup. Fires `onStreamStarted`/`onStreamEnded` callbacks for DB stat tracking. CEA-708, DSK overlay, and per-slot transcode processing modes push a **single ffmpeg output** to a MediaMTX intermediate path (`{key}-out` / `{key}-t{i}`); MediaMTX then fans out via `runOnPublish` / `runOnPublishRestart` so each downstream target reconnects independently. Plain relay and no-MediaMTX fallback paths are unchanged. Helpers: `outPathName()`, `outRtmpUrl()`, `outRtspUrl()`, `_buildTeeTargets()`.
 - `hls-manager.js` — `HlsManager`: manages MediaMTX-based RTMP → video+audio HLS (no ffmpeg in hot path).
 - `radio-manager.js` — `RadioManager`: dual-mode audio-only HLS. **ffmpeg mode** (default): spawns ffmpeg RTMP → AAC HLS. **mediamtx mode**: no ffmpeg; MediaMTX serves HLS, `NginxManager` writes slug-based nginx proxy locations.
 - `nginx-manager.js` — `NginxManager`: writes nginx `location` blocks for MediaMTX radio streams. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
 - `preview-manager.js` — `PreviewManager`: manages MediaMTX API or ffmpeg for RTMP → JPEG thumbnail generation.
 - `hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.
-- `mediamtx-client.js` — `MediaMtxClient`: REST API client for MediaMTX v3 (drop publisher, list streams, etc.).
+- `mediamtx-client.js` — `MediaMtxClient`: REST API client for MediaMTX v3 (drop publisher, list streams, add/delete paths, etc.). `getThumbnail(name, { width?, height? })` accepts optional dimensions — MediaMTX resizes server-side so callers feeding images to AI vision APIs can request a smaller frame (e.g. 640 wide) without spawning any additional process.
 - `hls-segment-fetcher.js` — `HlsSegmentFetcher`: polls a MediaMTX fMP4 HLS playlist, detects new segments, emits `segment` events with `{ buffer, timestamp, duration, url, index }`. Used by `SttManager`.
 - `stt-manager.js` — `SttManager` (`EventEmitter`): manages one STT session per API key. Wires `HlsSegmentFetcher` → STT adapter → transcript → `session._sendQueue` for delivery. Supports `hls`, `rtmp`, `whep` audio sources. **Events:** `transcript`, `error`, `stopped`.
 - `stt-adapters/google-stt.js` — `GoogleSttAdapter`: posts fMP4 segments to Google Cloud Speech-to-Text REST API or streams via gRPC (`GOOGLE_STT_MODE=grpc`). Emits `normalisePunctuation`-cleaned transcripts.
@@ -694,6 +696,54 @@ app.use('/agent', createAgentRouter(db, auth, agent));
 **Backward compatibility:** `packages/lcyt-backend/src/ai/index.js` re-exports from `lcyt-agent`.
 
 **Tests:** `packages/plugins/lcyt-agent/test/*.test.js` — uses `node:test`.
+
+---
+
+### `packages/plugins/lcyt-music` — Music Detection Plugin (v0.1.0)
+
+Phase 1 of the music detection system. Extracts `<!-- sound:... -->` and `<!-- bpm:... -->` metacodes from caption text, fires `sound_label` / `bpm_update` SSE events on the session `GET /events` stream, and persists events to a `music_events` DB table. Loaded **optionally** by `lcyt-backend` via dynamic import (falls back to no-op if unavailable).
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
+
+await initMusicControl(db);
+const soundProcessor = createSoundCaptionProcessor({ store, db });
+
+// Pass to session routers alongside dskCaptionProcessor:
+app.use(createSessionRouters(db, store, jwtSecret, auth, {
+  relayManager,
+  dskCaptionProcessor: _dskCaptionProcessor,
+  soundCaptionProcessor: soundProcessor,
+  cueProcessor: _cueProcessor,
+  resolveStorage,
+}));
+```
+
+**Source files (`src/`):**
+- `api.js` — `initMusicControl(db)` (runs DB migrations). Exports `createSoundCaptionProcessor`, `runMigrations`, `insertMusicEvent`, `getRecentMusicEvents`.
+- `sound-caption-processor.js` — `createSoundCaptionProcessor({ store, db })`: strips `<!-- sound:... -->` and `<!-- bpm:... -->` metacodes, persists events to DB, fires `sound_label` / `bpm_update` events on `session.emitter`.
+- `db.js` — `runMigrations(db)`: creates `music_events` table + index. `insertMusicEvent()`, `getRecentMusicEvents()`.
+
+**Metacode syntax:**
+```
+<!-- sound:music -->     audio is music
+<!-- sound:speech -->    audio is speech
+<!-- sound:silence -->   audio is silent
+<!-- bpm:128 -->         current BPM estimate (integer)
+```
+
+**SSE events** (emitted on `GET /events`): `sound_label` — `{ label, bpm, confidence, ts }`, `bpm_update` — `{ bpm, confidence, ts }`.
+
+**DB table:** `music_events` — `(id, api_key, event_type, label, bpm, confidence, ts)`.
+
+**Notes:**
+- Phase 1 has no HTTP routes. HTTP routes and server-side HLS audio analysis (MusicManager) are planned for Phase 2.
+- `sound_label` events from this plugin are forwarded to the Cue Engine so `<!-- cue~:silence -->` and similar sound-based cue rules can fire.
+- The plugin is loaded dynamically; if `lcyt-music` is not installed the backend continues without music detection.
+
+**Tests:** `packages/plugins/lcyt-music/test/sound-caption-processor.test.js` — uses `node:test`.
 
 ---
 
@@ -1030,17 +1080,32 @@ node_modules/.bin/lcyt -i                 # Interactive line-by-line mode
 
 ## Testing
 
+### CI Pipeline (4 tiers)
+
+The CI pipeline in `.github/workflows/integration-tests.yml` runs on every push/PR to `main` in four tiers:
+
+| Tier | Jobs | Description |
+|------|------|-------------|
+| **1 — Build** | `build` | `lcyt` CJS transform + `lcyt-web` Vite build (fastest signal for broken imports) |
+| **2 — Unit** | `unit-node`, `unit-python`, `standalone-tests` | All workspace packages + standalone (`lcyt-orchestrator`, `lcyt-worker-daemon`) + Python |
+| **3 — Integration / Component / Docker** | `integration-node`, `integration-python`, `component-tests`, `docker-lint`, `docker-build`, `script-lint` | Backend integration tests, Python backend tests, Vitest component tests, Docker Compose config validation, hadolint Dockerfile linting, shellcheck |
+| **4 — E2E** | `e2e` | Playwright tests against a live backend+frontend (`BASE_URL=http://localhost:3000`) |
+
 ### Node.js
 Uses Node's built-in `node:test` — no external test framework.
 
 ```bash
-npm test                                        # all packages
+npm test                                        # all packages (unit tests)
 npm test -w packages/lcyt                       # single package
-npm test -w packages/lcyt-backend               # single package
+npm test -w packages/lcyt-backend               # single package (test/*.test.js)
+npm run test:integration -w packages/lcyt-backend  # integration tests (test/integration/*.test.js)
 npm test -w packages/plugins/lcyt-production    # plugin package
+npm test -w packages/plugins/lcyt-music         # music plugin
 ```
 
-Test files: `test/*.test.js` inside each package.
+Test files:
+- `test/*.test.js` — unit tests inside each package (run by `npm test`)
+- `test/integration/*.test.js` — integration tests in `lcyt-backend` (run by `npm run test:integration`); these tests require real processes (Docker daemon, ffmpeg, etc.) and are kept out of the Tier 2 unit job.
 
 ### React components and hooks (lcyt-web only)
 `packages/lcyt-web` uses **Vitest** (alongside `node:test`) for React hook and component tests that require a DOM environment.
@@ -1194,7 +1259,7 @@ Server-side speech-to-text transcription converts an incoming RTMP/HLS/WHEP audi
 
 ### Metacode Organization
 
-- Plugin metacode handling stays inside plugin-owned processors; the DSK `graphics` metacode remains in `packages/plugins/lcyt-dsk/src/caption-processor.js`. The `cue` metacode is handled by `packages/plugins/lcyt-cues/src/cue-processor.js`.
+- Plugin metacode handling stays inside plugin-owned processors; the DSK `graphics` metacode remains in `packages/plugins/lcyt-dsk/src/caption-processor.js`. The `cue` metacode is handled by `packages/plugins/lcyt-cues/src/cue-processor.js`. The `sound`/`bpm` metacodes are handled by `packages/plugins/lcyt-music/src/sound-caption-processor.js`.
 - Core backend metacode handoff now lives in `packages/lcyt-backend/src/metacode.js` (dedicated helper), used by the captions router and other backend consumers.
 - Frontend metacode parser, runtime, manual-state, and planner helpers live in `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/lib/metacode-active.js`, `packages/lcyt-web/src/lib/metacode-planner.js`, and `packages/lcyt-web/src/lib/metacode-runtime.js`. The parser extracts cue metacodes (`cue:`, `cue*:`, `cue**:`, `cue~:`, `cue[semantic]:`, `cue[events]:`) alongside standard metacodes.
 - For compatibility, `packages/lcyt-web/src/lib/fileUtils.js`, `packages/lcyt-web/src/lib/activeCodes.js`, and `packages/lcyt-web/src/lib/plannerUtils.js` continue to re-export or adapt the moved helpers so existing imports keep working.
@@ -1299,6 +1364,9 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/plugins/lcyt-cues/src/cue-engine.js` | CueEngine: phrase/regex/fuzzy/semantic/event cue matching + silence timer |
 | `packages/plugins/lcyt-cues/src/cue-processor.js` | Cue caption metacode processor (cue:... comments → SSE events) |
 | `packages/plugins/lcyt-agent/src/api.js` | AI Agent plugin entry: `initAgent()` + `createAgentRouter()` + `createAiRouter()` |
+| `packages/plugins/lcyt-music/src/api.js` | Music detection plugin entry: `initMusicControl()` + `createSoundCaptionProcessor()` |
+| `packages/plugins/lcyt-music/src/sound-caption-processor.js` | Sound/BPM metacode processor — strips `<!-- sound:... -->`/`<!-- bpm:... -->`, fires SSE events |
+| `packages/plugins/lcyt-music/src/db.js` | `music_events` table migrations + `insertMusicEvent()` / `getRecentMusicEvents()` |
 | `packages/plugins/lcyt-agent/src/agent-engine.js` | AgentEngine: context window, event cue LLM evaluation, embeddings |
 | `packages/plugins/lcyt-agent/src/ai-config.js` | Per-API-key AI model settings DB helpers |
 | `packages/plugins/lcyt-agent/src/embeddings.js` | OpenAI-compatible embedding API client |
@@ -1364,7 +1432,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ## Test Coverage
 
-*Last updated: 2026-03-27 (lcyt-web sidebar navigation, component split, new plugins added)*
+*Last updated: 2026-03-31 (lcyt-music plugin added; MediaMTX fan-out in rtmp-manager; 4-tier CI; lcyt-backend integration test subdirectory; admin/stt/metacode/ai test files added)*
 
 ### Coverage Summary
 
@@ -1372,8 +1440,9 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 |---------|-----------|----------|----------|----------|-----------|
 | `packages/lcyt` | 1,016 | 1,267 | Excellent | Low | `logger.js`, `config.js` (no direct tests) |
 | `packages/lcyt-cli` | 1,836 | ~900 | Moderate | Low | Blessed rendering (requires full blessed mock) |
-| `packages/lcyt-backend` | ~3,500 | ~2,750 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
-| `packages/plugins/lcyt-rtmp` | ~2,500 | ~600 | Moderate | Medium | `SttManager` audio-source switching (rtmp/whep), grpc streaming path, `NginxManager` reload |
+| `packages/lcyt-backend` | ~3,800 | ~3,200 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
+| `packages/plugins/lcyt-rtmp` | ~2,800 | ~700 | Moderate | Medium | `SttManager` audio-source switching (rtmp/whep), grpc streaming path, `NginxManager` reload |
+| `packages/plugins/lcyt-music` | ~120 | ~80 | Good | Low | Phase 2 MusicManager (not yet implemented) |
 | `packages/lcyt-orchestrator` | ~400 | ~200 | Moderate | Low | `autoscaler.js`, full burst-provisioning E2E |
 | `packages/lcyt-worker-daemon` | ~200 | ~150 | Moderate | Low | `uploader.js`, S3 upload errors |
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
@@ -1406,23 +1475,28 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 ---
 
 #### `packages/lcyt-backend` — Express Relay Backend
-**Test files:** 26 test files (608 tests total as of 2026-03-17) covering all primary routes plus newly added tests. RTMP/HLS/preview manager tests moved to `packages/plugins/lcyt-rtmp/test/`.
-**Added 2026-03-16:**
+**Test files:** 42 unit test files in `test/*.test.js` + 7 integration test files in `test/integration/*.test.js` (run separately via `npm run test:integration`). RTMP/HLS/preview manager tests live in `packages/plugins/lcyt-rtmp/test/`.
+
+**Unit tests (selected additions since 2026-03-16):**
 - `test/auth.test.js` (20 tests) — Full auth lifecycle with in-memory SQLite: register, login, `GET /me`, `POST /change-password`, disabled logins (503).
-- `test/video.test.js` (17 tests) — HLS player HTML (themes, CORS, Cache-Control), master manifest, subtitle playlist, segment serving, CORS preflight. Uses lightweight mock managers.
-- `test/preview-route.test.js` (10 tests) — JPEG thumbnail serving with real temp-dir JPEG; key validation, 404, 200, CORS, Cache-Control, If-Modified-Since, OPTIONS.
-- `test/stream.test.js` (22 tests) — RTMP relay slot CRUD with in-memory DB + mock `RtmpRelayManager`: auth, `relay_allowed` check, POST/GET/PUT/DELETE /stream, PUT /stream/active.
+- `test/video.test.js` (17 tests) — HLS player HTML (themes, CORS, Cache-Control), master manifest, subtitle playlist, segment serving, CORS preflight.
+- `test/admin.test.js` (32 tests) — Admin panel API (`/admin/*`): user/project CRUD, search, batch ops, feature flags.
+- `test/stt.test.js` — Server-side STT HTTP routes (`/stt/*`): start/stop, config CRUD, events.
+- `test/metacode.test.js` — `applyMetacodeProcessors()`: DSK, sound, and cue metacode pipeline.
+- `test/ai-config.test.js`, `test/ai-embeddings.test.js` — AI config DB helpers and embedding API client.
 
-**Added 2026-03-17:**
-- `test/cors.test.js` (19 tests) — `createCorsMiddleware`: free-tier signup, admin routes (no CORS), permissive routes (POST /live, GET /health, GET /contact, OPTIONS), dynamic origin matching via session store.
-- `test/caption-files.test.js` (21 tests) — Pure-function exports: `composeCaptionText` (all translation/showOriginal branches), `formatVttTime` (edge cases: 0ms, sub-second, multi-hour), `buildVttCue` (format, end newline).
-
-**Added 2026-03-29:**
-- `test/admin.test.js` (32 tests) — Admin panel API (`/admin/*`): auth enforcement, user CRUD with search/pagination, user detail with projects, create/update/deactivate/delete users, admin password reset, project listing with cross-entity `user:email` search, project detail with features/members, project update, feature batch update, batch user operations (activate/deactivate/delete), batch project operations (revoke/activate/delete/features).
+**Integration tests (`test/integration/`):**
+- `bridge-integration.test.js` — Bridge agent SSE + TCP command flow with a real TCP echo server.
+- `docker-runner.integration.test.js` — `DockerFfmpegRunner` with a real Docker socket.
+- `dsk-integration.test.js` — DSK renderer + caption metacode pipeline.
+- `files-integration.test.js` — Caption file storage adapters (local FS).
+- `rtmp-relay.fifo.integration.test.js` — RTMP relay via named pipe (FIFO).
+- `stt-integration.test.js` — STT manager with a real HLS source.
+- `ffmpeg.docker.smoke.test.js` — ffmpeg Docker smoke test.
 
 **Gaps (Low):**
-- **Core:** `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT), `routes/stt.js` (server-side STT routes).
-- **DB:** `db/sequences.js`, `db/helpers.js`.
+- `server.js` (Express factory), `index.js` (graceful shutdown on SIGTERM/SIGINT).
+- `db/sequences.js`, `db/helpers.js`.
 
 ---
 
@@ -1444,6 +1518,14 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 - gRPC streaming path in `GoogleSttAdapter` (requires `@google-cloud/speech` to be installed).
 - `NginxManager` nginx reload failure handling.
 - Full STT session E2E (HLS playlist → segment fetch → transcript → SSE delivery).
+
+---
+
+#### `packages/plugins/lcyt-music` — Music Detection Plugin
+**Test files:** `test/sound-caption-processor.test.js` — `createSoundCaptionProcessor`: metacode stripping, DB persistence, SSE event emission, `label_change` vs `bpm_update` event types.
+**Gaps (Low):**
+- Phase 2 `MusicManager` (server-side HLS audio classification) does not exist yet.
+- `getRecentMusicEvents()` DB helper not directly tested.
 
 ---
 
@@ -1523,7 +1605,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ### Top Priorities for Next Test Expansion
 
-Items marked ✅ were completed 2026-03-16 or 2026-03-17.
+Items marked ✅ were completed 2026-03-16 through 2026-03-31.
 
 1. ✅ **`packages/lcyt-backend` ffmpeg managers** *(Critical → Done)* — manager tests moved to `lcyt-rtmp` plugin (52+ tests).
 2. ✅ **`packages/lcyt-backend` 5 untested routes** *(High → Done)* — `auth.test.js`, `video.test.js`, `preview-route.test.js`, `stream.test.js`, `youtube.test.js` added (69 tests).
@@ -1534,7 +1616,10 @@ Items marked ✅ were completed 2026-03-16 or 2026-03-17.
 7. ✅ **`packages/lcyt-backend/src/caption-files.js`** *(Medium → Done)* — `caption-files.test.js` added (21 tests, pure functions).
 8. ✅ **`packages/lcyt-web` useSentLog + ToastContainer** *(Medium → Done)* — `useSentLog.test.jsx` (30 tests) + `useToast.test.jsx` (18 tests) added.
 9. ✅ **`packages/lcyt-mcp-sse/src/server.js` HTTP routes** *(Medium → Done)* — `server.test.js` added (6 tests).
-10. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
-11. **`packages/plugins/lcyt-rtmp` STT gRPC path** *(Medium)* — `GoogleSttAdapter` gRPC streaming (requires `@google-cloud/speech` installed) not covered by CI.
-12. **`packages/lcyt-backend/src/routes/stt.js`** *(Medium)* — server-side STT HTTP routes untested.
-13. **`packages/lcyt-orchestrator` autoscaler** *(Low)* — `autoscaler.js` not covered; burst provisioning E2E requires Hetzner mock server.
+10. ✅ **`packages/lcyt-backend/src/routes/stt.js`** *(Medium → Done)* — `stt.test.js` added (257 lines).
+11. ✅ **`packages/lcyt-backend/src/routes/admin.js`** *(Medium → Done)* — `admin.test.js` added (32 tests).
+12. ✅ **Integration test subdirectory** *(Medium → Done)* — `test/integration/` added to `lcyt-backend` with 7 integration tests; separate `npm run test:integration` script.
+13. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
+14. **`packages/plugins/lcyt-rtmp` STT gRPC path** *(Medium)* — `GoogleSttAdapter` gRPC streaming (requires `@google-cloud/speech` installed) not covered by CI.
+15. **`packages/lcyt-orchestrator` autoscaler** *(Low)* — `autoscaler.js` not covered; burst provisioning E2E requires Hetzner mock server.
+16. **`packages/plugins/lcyt-music` Phase 2** *(Low)* — `MusicManager` (server-side HLS audio classification) not yet implemented; no tests needed until Phase 2 is built.
