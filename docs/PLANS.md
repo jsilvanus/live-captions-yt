@@ -59,6 +59,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
+| [plan_cloudfleet.md](plans/plan_cloudfleet.md) | Hosting Modes & Cloudfleet Deployment | Three-tier hosting guide: Local (docker-compose), Self-managed orchestrator (docker-compose.orchestrator.yml + Hetzner VMs), and Cloudfleet managed Kubernetes. Kubernetes manifests in `k8s/cloudfleet/`. | |
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
 
 ### Reference

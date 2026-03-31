@@ -25,14 +25,18 @@ compute setup with Hetzner autoscaling.
 
 ## Deployment modes
 
-| Mode | Compose file | When to use |
-|------|-------------|-------------|
-| **Single VM** | `docker-compose.yml` | One server, all features, local ffmpeg or MediaMTX |
-| **Distributed** | `docker-compose.orchestrator.yml` | Horizontal scaling, Hetzner burst VMs, worker pool |
+| Mode | Tooling | When to use |
+|------|---------|-------------|
+| **Local (single VM)** | `docker-compose.yml` | Development, personal use, single small event |
+| **Self-managed orchestrator** | `docker-compose.orchestrator.yml` + Hetzner VMs | Production, moderate scale, full control, cost-optimised |
+| **Cloudfleet (Kubernetes)** | `k8s/cloudfleet/` manifests | Managed HA cluster, rolling deploys, minimal ops overhead |
 
-In both modes the web UI (`lcyt-web`) and the marketing site (`lcyt-site`) are
-built on the host and served by nginx as static files — they are **not** baked
-into any Docker image.
+See `docs/plans/plan_cloudfleet.md` for a full comparison of all three tiers
+and the Cloudfleet deployment guide.
+
+In the first two modes the web UI (`lcyt-web`) and the marketing site
+(`lcyt-site`) are built on the host and served by nginx as static files — they
+are **not** baked into any Docker image.
 
 ---
 

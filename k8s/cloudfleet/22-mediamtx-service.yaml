@@ -1,0 +1,67 @@
+# ─── LCYT — MediaMTX Services ────────────────────────────────────────────────
+#
+# Two services:
+#   1. mediamtx (ClusterIP)   — HLS and REST API, internal cluster access only
+#   2. mediamtx-rtmp (LoadBalancer) — RTMP port 1935, exposed externally so
+#      OBS and other encoders can push RTMP streams directly to the cluster.
+#
+# On Cloudfleet (Hetzner), the LoadBalancer service creates a Hetzner Load
+# Balancer and assigns a public IP. Use that IP in your encoder's RTMP URL:
+#   rtmp://<EXTERNAL-IP>/live/<stream-key>
+#
+# Get the external IP:
+#   kubectl -n lcyt get svc mediamtx-rtmp -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Internal service — HLS + REST API ────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: mediamtx
+    app.kubernetes.io/component: media-broker
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mediamtx
+  ports:
+    - name: hls
+      port: 8080
+      targetPort: hls
+      protocol: TCP
+    - name: rest-api
+      port: 9997
+      targetPort: rest-api
+      protocol: TCP
+    - name: metrics
+      port: 9998
+      targetPort: metrics
+      protocol: TCP
+
+---
+
+# ── External service — RTMP ingest (LoadBalancer) ────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-rtmp
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: mediamtx
+    app.kubernetes.io/component: media-broker
+  annotations:
+    # Cloudfleet / Hetzner Cloud Controller Manager annotations (optional):
+    # Restrict the load balancer to a specific location or type:
+    # load-balancer.hetzner.cloud/location: hel1
+    # load-balancer.hetzner.cloud/type: lb11
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: mediamtx
+  ports:
+    - name: rtmp
+      port: 1935
+      targetPort: rtmp
+      protocol: TCP
