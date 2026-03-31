@@ -24,7 +24,15 @@
 				"C:/Users/jsilv/Code:/projects:ro",
 				"codebase-semantics-mcp:latest"
 			]
-		}
+		},
+		"Gitsema MCP": {
+			"type": "stdio",
+			"command": "node",
+			"args": [
+				"c:\\Users\\jsilv\\Code\\gitsema\\dist\\cli\\index.js",
+				"mcp"
+			]
+		},
 	},
 	"inputs": []
-}
+}	
