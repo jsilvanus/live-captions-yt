@@ -35,6 +35,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_pyback.md](plans/plan_pyback.md) | Python Backend Scope Reduction | Python backend reduced to minimal unauthenticated CORS relay for YouTube caption sending. Removed API keys, JWT auth, admin routes, SQLite database. | |
 | [plan_cache.md](plans/plan_cache.md) | HTTP Caching Strategy — Backend, Plugins & nginx | Comprehensive caching plan: Cache-Control headers for all backend GET endpoints (6 tiers), nginx proxy_cache for HLS/media, NginxManager segment vs. playlist split, frontend `api.getCached()` layer, preview ETag support, operator deployment guide. | |
 | [plan_metacode_refactor.md](plans/plan_metacode_refactor.md) | Metacode Refactor — Backend & Frontend Separation | Backend metacode orchestration extracted to `src/metacode.js`; frontend parser, runtime, active-state, and planner moved to dedicated `metacode-*.js` files with compatibility re-exports. | |
+| [plan_backend_split.md](plans/plan_backend_split.md) | lcyt-backend Modularization & Plugin Extraction | All plugin extraction complete: lcyt-rtmp, lcyt-dsk, lcyt-production, lcyt-files, lcyt-cues, lcyt-agent, lcyt-music. Internal refactoring done (route group factories, DB module split, metacode helper). lcyt-translate remains exploratory. | |
 | [plan_setup_wizard.md](plans/plan_setup_wizard.md) | Setup Wizard | Guided setup flow at `/setup`: feature selection, dependency auto-enable, config panels (targets, translation, relay, STT, embed, CEA), shared panels architecture. All components implemented: WizardShell, WizardProgress, DepNotice, StepFeatureSelection, StepReview, SetupWizardPage, useWizardState hook, wizard lib, shared panels/. | |
 
 ### In progress
@@ -66,4 +67,3 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | File | Title | Summary |
 |---|---|---|
 | [PR_phase6-7_hetzner.md](plans/PR_phase6-7_hetzner.md) | PR: Phase 6–7 Hetzner provisioning and autoscaling scaffolding | PR artifact for `plan/dock-ffmpeg` phases 6–7: Hetzner provisioning, snapshot boot, autoscaling scaffolding, operator runbook. |
-| [plan_backend_split.md](plans/plan_backend_split.md) | lcyt-backend Modularization & Plugin Extraction Assessment | Structural analysis of lcyt-backend: plugin extraction complete (lcyt-rtmp, lcyt-dsk, lcyt-production, lcyt-files). Internal refactoring done. lcyt-translate plugin proposal remains exploratory. |

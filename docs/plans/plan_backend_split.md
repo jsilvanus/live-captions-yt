@@ -1,11 +1,11 @@
 ---
 id: plan/backend-split
 title: "lcyt-backend Modularization & Plugin Extraction Assessment"
-status: reference
-summary: "Structural analysis of lcyt-backend: plugin extraction complete (lcyt-rtmp, lcyt-dsk, lcyt-production, lcyt-files). Internal refactoring done (route group factories, DB module split). lcyt-translate plugin proposal remains exploratory."
+status: implemented
+summary: "lcyt-backend modularization complete: lcyt-rtmp, lcyt-dsk, lcyt-production, lcyt-files, lcyt-cues, lcyt-agent, lcyt-music all extracted as workspace plugins. Internal refactoring done (route group factories, DB module split, metacode helper). lcyt-translate remains exploratory (see plan_translate.md)."
 ---
 
-# lcyt-backend — Modularization Assessment
+# lcyt-backend — Modularization Plan
 
 ## Summary
 
