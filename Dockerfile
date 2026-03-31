@@ -1,4 +1,4 @@
-FROM node:20-slim AS build
+﻿FROM node:20-slim AS build
 WORKDIR /app
 
 # Copy workspace manifests (enables layer caching for npm ci)
@@ -31,12 +31,14 @@ COPY packages/plugins/lcyt-production/ packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/ packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/ packages/plugins/lcyt-rtmp/
 COPY packages/plugins/lcyt-files/ packages/plugins/lcyt-files/
+COPY packages/plugins/lcyt-cues/ packages/plugins/lcyt-cues/
+COPY packages/plugins/lcyt-agent/ packages/plugins/lcyt-agent/
 
 FROM node:20-slim
 WORKDIR /app
 COPY --from=build /app .
 
-# Optional apt mirror — set APT_MIRROR to speed up installs on hosted servers.
+# Optional apt mirror â€” set APT_MIRROR to speed up installs on hosted servers.
 # Example (Hetzner): --build-arg APT_MIRROR=http://mirror.hetzner.com/debian/packages
 ARG APT_MIRROR=
 RUN if [ -n "$APT_MIRROR" ]; then \
@@ -48,7 +50,7 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 # Only relevant when FFMPEG_RUNNER=spawn (the default). If you set
 # FFMPEG_RUNNER=docker the backend launches ephemeral lcyt-ffmpeg
 # containers instead, and FFMPEG_RUNNER=worker offloads to
-# lcyt-worker-daemon — neither requires ffmpeg in this image.
+# lcyt-worker-daemon â€” neither requires ffmpeg in this image.
 # Build with --build-arg RTMP_RELAY_ACTIVE=1 (or RADIO/HLS/PREVIEW)
 # to install ffmpeg for local-spawn mode.
 ARG RTMP_RELAY_ACTIVE=0
@@ -79,7 +81,7 @@ RUN chmod +x /entrypoint.sh \
  && mkdir -p /data \
  && chown node:node /data
 
-# Create a convenience symlink `/app/bin` → backend's bin directory
+# Create a convenience symlink `/app/bin` â†’ backend's bin directory
 # so any runtime scripts can be found at `/app/bin` inside the image.
 RUN rm -rf /app/bin \
  && ln -s /app/packages/lcyt-backend/bin /app/bin || true
@@ -90,3 +92,10 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
 	CMD node -e "const http=require('http');const req=http.get('http://127.0.0.1:3000/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));"
 CMD ["/entrypoint.sh"]
+
+
+
+
+
+
+
