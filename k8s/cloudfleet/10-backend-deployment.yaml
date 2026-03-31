@@ -1,0 +1,125 @@
+# ─── LCYT — Backend Deployment ───────────────────────────────────────────────
+#
+# Runs the lcyt-backend Express API (port 3000) and lcyt-mcp-sse server
+# (port 3001) in the same container.
+#
+# Image: lcyt-site:latest (built from the repo root Dockerfile)
+# Push to CFCR: docker push registry.<cluster>.cloudfleet.io/lcyt/lcyt-site:latest
+# Then update the image: field below.
+#
+# NOTE: replicas is set to 1 because SQLite (ReadWriteOnce PVC) cannot be
+# shared across multiple pods. To scale horizontally, migrate to PostgreSQL.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lcyt-backend
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: lcyt-backend
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate   # Required for ReadWriteOnce PVC — ensures old pod terminates before new one starts
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lcyt-backend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lcyt-backend
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+        - name: lcyt-backend
+          # Replace with your CFCR URI after pushing:
+          # registry.<cluster>.cloudfleet.io/lcyt/lcyt-site:latest
+          image: lcyt-site:latest
+          imagePullPolicy: Always
+          ports:
+            - name: api
+              containerPort: 3000
+              protocol: TCP
+            - name: mcp-sse
+              containerPort: 3001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: lcyt-config
+          env:
+            # Sensitive values from Secret
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: JWT_SECRET
+            - name: ADMIN_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: ADMIN_KEY
+            - name: BACKEND_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: BACKEND_INTERNAL_TOKEN
+                  optional: true
+            - name: MEDIAMTX_API_USER
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: MEDIAMTX_API_USER
+                  optional: true
+            - name: MEDIAMTX_API_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: MEDIAMTX_API_PASSWORD
+                  optional: true
+            - name: GOOGLE_STT_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: GOOGLE_STT_KEY
+                  optional: true
+            - name: OPENAI_STT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: OPENAI_STT_API_KEY
+                  optional: true
+            - name: EMBEDDING_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: EMBEDDING_API_KEY
+                  optional: true
+          volumeMounts:
+            - name: lcyt-db
+              mountPath: /data
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+      volumes:
+        - name: lcyt-db
+          persistentVolumeClaim:
+            claimName: lcyt-db

@@ -1,0 +1,72 @@
+# ─── LCYT — Ingress (HTTPS via cert-manager) ─────────────────────────────────
+#
+# Prerequisites:
+#   1. nginx Ingress Controller installed (via Cloudfleet Charts Marketplace
+#      or: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.11.1/deploy/static/provider/cloud/deploy.yaml)
+#   2. cert-manager installed with a ClusterIssuer named "letsencrypt-prod":
+#      kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+#      # then create a ClusterIssuer:
+#      # kubectl apply -f - <<EOF
+#      # apiVersion: cert-manager.io/v1
+#      # kind: ClusterIssuer
+#      # metadata:
+#      #   name: letsencrypt-prod
+#      # spec:
+#      #   acme:
+#      #     server: https://acme-v02.api.letsencrypt.org/directory
+#      #     email: you@example.com
+#      #     privateKeySecretRef:
+#      #       name: letsencrypt-prod-key
+#      #     solvers:
+#      #     - http01:
+#      #         ingress:
+#      #           class: nginx
+#      # EOF
+#
+# Update the host: fields below to match your actual domain before applying.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lcyt-ingress
+  namespace: lcyt
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Increase proxy timeouts for long-lived SSE connections (/events, /stt/events, etc.)
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Allow larger request bodies (for image uploads and caption file uploads)
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+spec:
+  tls:
+    - hosts:
+        - api.example.com     # ← replace with your actual domain
+      secretName: lcyt-tls
+  rules:
+    - host: api.example.com   # ← replace with your actual domain
+      http:
+        paths:
+          # Backend API (all routes including SSE, MCP, etc.)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lcyt-backend
+                port:
+                  name: api
+          # MCP SSE server (path prefix /sse and /messages)
+          - path: /sse
+            pathType: Prefix
+            backend:
+              service:
+                name: lcyt-backend
+                port:
+                  name: mcp-sse
+          - path: /messages
+            pathType: Prefix
+            backend:
+              service:
+                name: lcyt-backend
+                port:
+                  name: mcp-sse

@@ -1,0 +1,50 @@
+# ─── LCYT — MediaMTX ConfigMap ────────────────────────────────────────────────
+#
+# MediaMTX configuration mounted at /mediamtx.yml inside the container.
+# This is a copy of docker/mediamtx.yml adapted for Kubernetes (no env var
+# substitution in MediaMTX config; use literal values or pass via environment).
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mediamtx-config
+  namespace: lcyt
+data:
+  mediamtx.yml: |
+    logLevel: info
+    logDestinations: [stdout]
+
+    api: yes
+    apiAddress: :9997
+
+    metrics: yes
+    metricsAddress: :9998
+
+    rtmp: yes
+    rtmpAddress: :1935
+
+    hls: yes
+    hlsAddress: :8080
+    hlsAlwaysRemux: no
+    # ── HLS variant ─────────────────────────────────────────────────────────────
+    # 'lowLatency' — MPEG-TS segments (default); low-latency playback
+    # 'fmp4'       — fragmented MP4 segments; REQUIRED for server-side STT
+    #                (POST /stt/start uses HlsSegmentFetcher which needs fMP4 format)
+    # NOTE: fmp4 and lowLatency are mutually exclusive.
+    # Switch to fmp4 to enable server-side STT:
+    #   hlsVariant: fmp4
+    # (also remove hlsPartDuration below when using fmp4)
+    hlsVariant: lowLatency
+    hlsSegmentCount: 7
+    hlsSegmentDuration: 6s
+    hlsPartDuration: 200ms
+    hlsSegmentMaxSize: 50MB
+    hlsAllowOrigins: ["*"]
+    hlsEncryption: no
+
+    rtsp: no
+    webrtc: no
+
+    paths:
+      "~.*":
+        source: publisher

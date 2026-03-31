@@ -1,0 +1,91 @@
+# ─── LCYT — Kubernetes ConfigMap (non-sensitive env vars) ────────────────────
+#
+# Edit the values below to match your deployment before applying.
+# Sensitive values (JWT_SECRET, ADMIN_KEY, …) are in 01-secret.yaml.
+#
+# Full variable reference: .env.example and docs/DEPLOY.md
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lcyt-config
+  namespace: lcyt
+data:
+  # ── Application ─────────────────────────────────────────────────────────────
+  PORT: "3000"
+  DB_PATH: "/data/lcyt.sqlite"
+
+  # Comma-separated list of domains allowed to open sessions (CORS guard)
+  ALLOWED_DOMAINS: "app.lcyt.fi,localhost"
+
+  # Server's own public URL (used in generated .env file downloads)
+  PUBLIC_URL: "https://api.example.com"
+
+  # Free-tier API key self-registration (set to "1" to enable)
+  FREE_APIKEY_ACTIVE: "0"
+
+  # RTMP relay (set to "1" if using RTMP fan-out relay)
+  RTMP_RELAY_ACTIVE: "0"
+
+  # Graphics/DSK overlays (set to "1" to enable image upload + DSK renderer)
+  GRAPHICS_ENABLED: "0"
+
+  # Session and cleanup tuning (milliseconds)
+  SESSION_TTL: "7200000"
+  CLEANUP_INTERVAL: "300000"
+  REVOKED_KEY_TTL_DAYS: "30"
+  REVOKED_KEY_CLEANUP_INTERVAL: "86400000"
+
+  # ── Radio / HLS source ───────────────────────────────────────────────────────
+  # 'mediamtx' = MediaMTX serves HLS directly (no ffmpeg for radio) — recommended
+  # 'ffmpeg'   = spawn ffmpeg per radio stream (use when MediaMTX is not available)
+  RADIO_HLS_SOURCE: "mediamtx"
+
+  # ── MediaMTX integration ─────────────────────────────────────────────────────
+  MEDIAMTX_API_URL: "http://mediamtx:9997"
+  MEDIAMTX_HLS_BASE_URL: "http://mediamtx:8080"
+  MEDIAMTX_RTSP_BASE_URL: "rtsp://mediamtx:8554"
+  MEDIAMTX_RTMP_BASE_URL: "rtmp://mediamtx:1935"
+
+  # ── nginx radio proxy config ─────────────────────────────────────────────────
+  # Leave empty unless nginx is running inside the cluster and managed by NginxManager.
+  NGINX_RADIO_CONFIG_PATH: ""
+  NGINX_RELOAD_CMD: "nginx -s reload"
+  NGINX_TEST_CMD: "nginx -t"
+  NGINX_RADIO_PREFIX: "/r"
+
+  # ── ffmpeg runner ─────────────────────────────────────────────────────────────
+  # 'spawn'  — local ffmpeg binary (default)
+  # 'worker' — delegate to lcyt-orchestrator (distributed mode)
+  FFMPEG_RUNNER: "spawn"
+  FFMPEG_IMAGE: "lcyt-ffmpeg:latest"
+
+  # ── DSK renderer ─────────────────────────────────────────────────────────────
+  DSK_LOCAL_SERVER: "http://localhost:3000"
+  DSK_LOCAL_RTMP: "rtmp://127.0.0.1:1935"
+  DSK_RTMP_APP: "live"
+
+  # ── STT defaults ─────────────────────────────────────────────────────────────
+  STT_PROVIDER: "google"
+  STT_DEFAULT_LANGUAGE: "en-US"
+  STT_AUDIO_SOURCE: "hls"
+
+  # ── Contact information (GET /contact) ───────────────────────────────────────
+  CONTACT_NAME: ""
+  CONTACT_EMAIL: ""
+  CONTACT_PHONE: ""
+  CONTACT_WEBSITE: ""
+
+  # ── File storage ─────────────────────────────────────────────────────────────
+  FILE_STORAGE: "local"
+  FILES_DIR: "/data/files"
+
+  # ── Database backup ──────────────────────────────────────────────────────────
+  # Set BACKUP_DAYS > 0 to enable daily backups written to BACKUP_DIR.
+  BACKUP_DAYS: "0"
+  BACKUP_DIR: "/backups"
+
+  # ── MCP SSE server ───────────────────────────────────────────────────────────
+  MCP_REQUIRE_API_KEY: "0"
+  MCP_SESSION_TTL_MS: "7200000"
+  LCYT_BACKEND_URL: "http://localhost:3000"

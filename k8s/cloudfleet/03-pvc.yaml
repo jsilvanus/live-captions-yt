@@ -1,0 +1,23 @@
+# ─── LCYT — PersistentVolumeClaim (SQLite database) ─────────────────────────
+#
+# The backend stores its SQLite database at DB_PATH (/data/lcyt.sqlite).
+# This PVC provides a Hetzner CSI block volume on Cloudfleet.
+#
+# Adjust storageClassName if your cluster uses a different storage class:
+#   kubectl get storageclasses
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lcyt-db
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: lcyt-backend
+spec:
+  # Hetzner CSI StorageClass (default on Cloudfleet/Hetzner clusters)
+  storageClassName: hcloud-volumes
+  accessModes:
+    - ReadWriteOnce   # SQLite is single-writer; only one pod mounts this at a time
+  resources:
+    requests:
+      storage: 5Gi

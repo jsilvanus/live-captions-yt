@@ -1,0 +1,110 @@
+# ─── LCYT — Orchestrator Deployment (distributed compute mode) ───────────────
+#
+# The lcyt-orchestrator is needed only when FFMPEG_RUNNER=worker is set in the
+# backend ConfigMap (02-configmap.yaml). It manages a pool of worker VMs and
+# dispatches compute jobs (ffmpeg, DSK rendering) to them.
+#
+# On Cloudfleet, the orchestrator runs inside the cluster and provisions
+# external Hetzner burst VMs via the Hetzner Cloud API — identical to the
+# self-managed Tier 2 setup. The worker VMs are NOT Kubernetes pods; they are
+# plain Hetzner VMs running lcyt-worker-daemon as a systemd service.
+#
+# Required when using this deployment:
+#   - Set HETZNER_API_TOKEN, HETZNER_SNAPSHOT_ID, HETZNER_NETWORK_ID in 01-secret.yaml
+#   - Set FFMPEG_RUNNER=worker in 02-configmap.yaml
+#   - Pre-bake a worker VM snapshot (see docs/hetzner_snapshot.md)
+#
+# Optional: omit this deployment entirely and keep FFMPEG_RUNNER=spawn for
+# local ffmpeg execution inside the lcyt-backend pod.
+# ─────────────────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lcyt-orchestrator
+  namespace: lcyt
+  labels:
+    app.kubernetes.io/name: lcyt-orchestrator
+    app.kubernetes.io/component: compute-orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lcyt-orchestrator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lcyt-orchestrator
+        app.kubernetes.io/component: compute-orchestrator
+    spec:
+      containers:
+        - name: lcyt-orchestrator
+          # Replace with your CFCR URI:
+          # registry.<cluster>.cloudfleet.io/lcyt/lcyt-site:latest
+          image: lcyt-site:latest
+          command: ["node", "packages/lcyt-orchestrator/src/index.js"]
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 4000
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "4000"
+            - name: BACKEND_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: BACKEND_INTERNAL_TOKEN
+                  optional: true
+            # Hetzner Cloud API (enables burst VM autoscaling)
+            - name: HETZNER_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: lcyt-secrets
+                  key: HETZNER_API_TOKEN
+                  optional: true
+            # Hetzner configuration — adjust to your setup
+            - name: HETZNER_SNAPSHOT_ID
+              value: ""   # ← fill in your worker VM snapshot ID
+            - name: HETZNER_NETWORK_ID
+              value: ""   # ← fill in your Hetzner private network ID
+            - name: HETZNER_SERVER_TYPE_BURST
+              value: "cx31"
+            - name: HETZNER_SERVER_TYPE_WARM
+              value: "cx21"
+            - name: HETZNER_LOCATION
+              value: "hel1"
+            # Scaling parameters
+            - name: WARM_POOL_SIZE
+              value: "1"
+            - name: BURST_COOLDOWN_MS
+              value: "300000"
+            - name: BURST_QUEUE_LIMIT
+              value: "20"
+            - name: MAX_CONCURRENT_BURST_CREATES
+              value: "3"
+            - name: ORCHESTRATOR_MAX_PENDING_JOBS
+              value: "50"
+            - name: ORCHESTRATOR_BACKOFF_MS
+              value: "60000"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /compute/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /compute/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            failureThreshold: 3
