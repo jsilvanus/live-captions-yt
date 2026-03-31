@@ -1,6 +1,6 @@
 ---
-id: plan/stt
-title: "Speech-to-Text (STT) Integration"
+id: plan/stt-client
+title: "Client-side Speech-to-Text (STT)"
 status: implemented
 summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and Google Cloud STT engines, client-side VAD, translation pipeline, MCP speech sessions, and embed widget."
 ---

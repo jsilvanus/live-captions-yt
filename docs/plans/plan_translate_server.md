@@ -1,3 +1,10 @@
+---
+id: plan/translate-server
+title: "Server-Side Translation Plugin (`lcyt-translate`)"
+status: draft
+summary: "Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager."
+---
+
 # Plan: Server-Side Translation Plugin (`lcyt-translate`)
 
 **Status:** Draft / Exploratory — not yet scheduled

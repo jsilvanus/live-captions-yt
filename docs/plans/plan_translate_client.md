@@ -1,6 +1,6 @@
 ---
-id: plan/translations
-title: "Caption Translation Pipeline"
+id: plan/translate-client
+title: "Client-side Caption Translation Pipeline"
 status: implemented
 summary: "Client-side real-time translation of captions before sending: vendor abstraction, multi-target routing (YouTube captions, viewer SSE, backend files, local files), and per-language viewer display."
 ---

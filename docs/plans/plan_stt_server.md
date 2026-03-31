@@ -1,5 +1,5 @@
 ---
-id: plan/server-stt
+id: plan/stt-server
 title: "Server-side Speech-to-Text (STT)"
 status: in-progress
 summary: "Phase 1 implemented: HlsSegmentFetcher, GoogleSttAdapter, WhisperHttpAdapter, OpenAiAdapter, SttManager, /stt routes, StatusBar STT chip. Phases 2–4 (gRPC streaming, RTMP/WHEP fallback enhancements) remain."
