@@ -3,16 +3,27 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import React from 'react';
 
 // jsdom does not implement pointer-capture APIs used by TemplatePreview.
-// Stub them at the prototype level so they are no-ops.
-const _origSetPointerCapture     = HTMLElement.prototype.setPointerCapture;
-const _origReleasePointerCapture = HTMLElement.prototype.releasePointerCapture;
+// Stub them at the prototype level so they are no-ops; use Reflect.deleteProperty
+// to truly restore the prototype shape when the method was not originally present.
+let _origSetPointerCapture;
+let _origReleasePointerCapture;
 beforeEach(() => {
+  _origSetPointerCapture     = HTMLElement.prototype.setPointerCapture;
+  _origReleasePointerCapture = HTMLElement.prototype.releasePointerCapture;
   HTMLElement.prototype.setPointerCapture     = vi.fn();
   HTMLElement.prototype.releasePointerCapture = vi.fn();
 });
 afterEach(() => {
-  HTMLElement.prototype.setPointerCapture     = _origSetPointerCapture;
-  HTMLElement.prototype.releasePointerCapture = _origReleasePointerCapture;
+  if (_origSetPointerCapture === undefined) {
+    Reflect.deleteProperty(HTMLElement.prototype, 'setPointerCapture');
+  } else {
+    HTMLElement.prototype.setPointerCapture = _origSetPointerCapture;
+  }
+  if (_origReleasePointerCapture === undefined) {
+    Reflect.deleteProperty(HTMLElement.prototype, 'releasePointerCapture');
+  } else {
+    HTMLElement.prototype.releasePointerCapture = _origReleasePointerCapture;
+  }
 });
 
 // TemplatePreview is a standalone component with no external context dependencies.

@@ -1,11 +1,11 @@
 ---
 id: plan/dsk
-title: "DSK Graphics Editor — Phase 2 (Editable Shapes)"
+title: "DSK Graphics Editor — Phases 2–4 (Editable Shapes, Multi-select, Media Library)"
 status: implemented
 summary: "Phases 1–4 complete. Direct canvas manipulation (drag/resize/nudge), undo/redo, multi-selection, snap-to-grid, snap-to-edges, grouping, alignment, Media Library."
 ---
 
-# Plan: DSK Graphics Editor — Phase 2 (Editable Shapes)
+# Plan: DSK Graphics Editor — Phases 2–4 (Editable Shapes, Multi-select, Media Library)
 
 > Target branch: `claude/add-editable-shapes-yxAXO`
 

@@ -694,8 +694,10 @@ export function DskEditorPage() {
 
   function handleResizeLayer(id, rect) {
     let final = rect;
-    if (aspectLock && primaryLayer?.type === 'image' && primaryLayer.id === id) {
-      const orig = primaryLayer;
+    // Use effective dimensions for aspect-lock ratio so it works correctly per viewport
+    const effectiveLayer = effectivePrimaryLayer ?? primaryLayer;
+    if (aspectLock && effectiveLayer?.type === 'image' && effectiveLayer.id === id) {
+      const orig = effectiveLayer;
       const ratio = (orig.width || 1) / (orig.height || 1);
       if (rect.width !== (orig.width || 0)) {
         final = { ...rect, height: Math.max(4, Math.round(rect.width / ratio)) };
@@ -824,6 +826,51 @@ export function DskEditorPage() {
 
   // Group name lookup
   const groupNameById = Object.fromEntries((template.groups || []).map(g => [g.id, g.name]));
+
+  /**
+   * Viewport-effective layer for the property panel: x/y/w/h show the active
+   * viewport's values rather than the global defaults.
+   */
+  const effectivePrimaryLayer = primaryLayer
+    ? { ...primaryLayer, ...getLayerViewportPos(primaryLayer, selectedViewport) }
+    : null;
+
+  /**
+   * Property-panel change handler that is viewport-aware.
+   *
+   * - Landscape / no viewport: writes position/size to the global layer fields.
+   * - Non-landscape viewport: routes x/y/width/height into the per-viewport
+   *   override so the position is remembered when switching viewports.
+   *   Non-geometry fields (src, text, style, animation, id, …) are always
+   *   written to the global layer.
+   */
+  function handlePropertyChange(updatedEffective, prevId) {
+    const searchId = prevId ?? updatedEffective.id;
+    const rawLayer = template.layers?.find(l => l.id === searchId);
+    if (!rawLayer) { updateLayer(updatedEffective, prevId); return; }
+
+    if (!selectedViewport || selectedViewport === 'landscape') {
+      // Landscape: preserve existing viewport overrides; write positions to global.
+      updateLayer({ ...updatedEffective, viewports: rawLayer.viewports }, prevId);
+      return;
+    }
+
+    // Non-landscape viewport: store position/size in the per-viewport override.
+    const newViewports = { ...(rawLayer.viewports || {}) };
+    newViewports[selectedViewport] = {
+      ...(newViewports[selectedViewport] || {}),
+      ...(updatedEffective.x     !== undefined && { x: updatedEffective.x }),
+      ...(updatedEffective.y     !== undefined && { y: updatedEffective.y }),
+      ...(updatedEffective.width !== undefined && { width: updatedEffective.width }),
+      ...(updatedEffective.height!== undefined && { height: updatedEffective.height }),
+    };
+
+    // Strip effective-position fields so the global layer positions are unchanged;
+    // all other fields (src, text, style, animation, id, …) go to the global layer.
+    const { x: _x, y: _y, width: _w, height: _h, viewports: _vp, ...otherFields } = updatedEffective;
+    const storedLayer = { ...rawLayer, ...otherFields, viewports: newViewports };
+    updateLayer(storedLayer, prevId);
+  }
 
   // ── Guard ─────────────────────────────────────────────────────────────────
 
@@ -1082,11 +1129,11 @@ export function DskEditorPage() {
           <div style={{ width: 280, borderLeft: '1px solid #333', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
             <div style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold', marginBottom: 10 }}>Properties</div>
             <LayerPropertyEditor
-              layer={primaryLayer}
+              layer={effectivePrimaryLayer}
               selectionCount={selectedIds.size}
               aspectLock={aspectLock}
               onAspectLock={() => setAspectLock(v => !v)}
-              onChange={updateLayer}
+              onChange={handlePropertyChange}
             />
 
             {/* Viewport-specific image settings (moved from Viewports page) */}
