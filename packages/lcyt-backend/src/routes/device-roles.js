@@ -94,7 +94,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
   });
 
   // GET /keys/:key/device-roles
-  router.get('/', (req, res) => {
+  router.get('/device-roles', (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
@@ -108,7 +108,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
   });
 
   // POST /keys/:key/device-roles — create
-  router.post('/', async (req, res) => {
+  router.post('/device-roles', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
@@ -140,7 +140,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
   });
 
   // PATCH /keys/:key/device-roles/:id
-  router.patch('/:id', async (req, res) => {
+  router.patch('/device-roles/:id', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
@@ -161,7 +161,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
   });
 
   // DELETE /keys/:key/device-roles/:id
-  router.delete('/:id', (req, res) => {
+  router.delete('/device-roles/:id', (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
@@ -181,7 +181,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
   });
 
   // POST /keys/:key/device-roles/:id/reset-pin
-  router.post('/:id/reset-pin', async (req, res) => {
+  router.post('/device-roles/:id/reset-pin', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });

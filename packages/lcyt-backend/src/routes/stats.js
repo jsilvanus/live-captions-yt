@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getKey, getKeyStats, anonymizeKey, getViewerKeyStats } from '../db.js';
+import { createRequireFeature } from '../middleware/feature-gate.js';
 
 /**
  * Factory for the /stats router.
@@ -11,6 +12,8 @@ import { getKey, getKeyStats, anonymizeKey, getViewerKeyStats } from '../db.js';
  *
  * Both routes require a valid JWT Bearer token. Data is scoped to the API key in the token.
  *
+ * Feature gate: 'stats' — when FEATURE_GATE_ENFORCE=1, blocks if not enabled.
+ *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @param {import('../store.js').SessionStore} [store] - In-memory session store
@@ -18,9 +21,10 @@ import { getKey, getKeyStats, anonymizeKey, getViewerKeyStats } from '../db.js';
  */
 export function createStatsRouter(db, auth, store) {
   const router = Router();
+  const requireStats = createRequireFeature(db, 'stats');
 
   // GET /stats — Per-key usage stats (auth required)
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, requireStats, (req, res) => {
     const { apiKey } = req.session;
 
     const keyRow = getKey(db, apiKey);

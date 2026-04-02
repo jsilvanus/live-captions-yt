@@ -185,6 +185,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
 | `FREE_APIKEY_ACTIVE` | If set to `1`, enables free API key self-registration endpoint | unset |
 | `USE_USER_LOGINS` | Set to `0` to disable user registration/login (`/auth` routes) | enabled |
+| `FEATURE_GATE_ENFORCE` | If set to `1`, enables feature-gate middleware on `/captions`, `/mic`, `/stats` (Phase 2 of plan_userprojects) | unset (gates are no-ops by default) |
 | `HLS_SUBS_ROOT` | Directory for WebVTT subtitle segment files | `/tmp/hls-subs` |
 | `HLS_SUBS_SEGMENT_DURATION` | Subtitle segment length in seconds | `6` |
 | `HLS_SUBS_WINDOW_SIZE` | Number of subtitle segments to keep per language | `10` |
@@ -354,6 +355,8 @@ POST   /admin/users                  — create user (X-Admin-Key)
 PATCH  /admin/users/:id              — update user name/active (X-Admin-Key)
 POST   /admin/users/:id/set-password — admin password reset (X-Admin-Key)
 DELETE /admin/users/:id              — delete user (X-Admin-Key)
+GET    /admin/users/:id/features     — list user feature entitlements (X-Admin-Key)
+PATCH  /admin/users/:id/features     — grant/revoke user feature entitlements (X-Admin-Key)
 GET    /admin/projects               — list projects with search (X-Admin-Key)
 GET    /admin/projects/:key          — project detail + features + members (X-Admin-Key)
 PATCH  /admin/projects/:key          — update project (X-Admin-Key)
@@ -367,7 +370,8 @@ POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter()`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`.
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
-- `src/routes/admin.js` — `createAdminRouter(db)`: admin panel routes (`/admin/*`). User CRUD with search/pagination, project management with cross-entity `user:email` search, batch operations (activate/deactivate/delete users; revoke/activate/delete projects), feature flag management. All routes require `X-Admin-Key` header.
+- `src/middleware/feature-gate.js` — `createRequireFeature(db, code)` + `createRequireKeyFeature(db, code)`: opt-in feature gate middleware, no-op unless `FEATURE_GATE_ENFORCE=1`.
+- `src/routes/admin.js` — `createAdminRouter(db)`: admin panel routes (`/admin/*`). User CRUD with search/pagination, project management with cross-entity `user:email` search, batch operations (activate/deactivate/delete users; revoke/activate/delete projects), feature flag management, user feature entitlement management (`GET/PATCH /admin/users/:id/features`). All routes require `X-Admin-Key` header.
 - The RTMP/HLS/radio/preview/STT managers previously lived in `lcyt-backend`; they were extracted to `packages/plugins/lcyt-rtmp`. The backend imports them via `import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp'`.
 - The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
 - The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, and LLM-based event cue evaluation. Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings } from 'lcyt-agent'`.

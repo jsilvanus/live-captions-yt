@@ -23,8 +23,8 @@ export function createAccountRouters(db, jwtSecret, { loginEnabled = true } = {}
   router.use('/auth', createAuthRouter(db, jwtSecret, { loginEnabled }));
   router.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret }));
   // Sub-key routes — routers use mergeParams:true so :key propagates correctly
-  router.use('/keys/:key', createProjectFeaturesRouter(db, { loginEnabled, jwtSecret }));
-  router.use('/keys/:key', createProjectMembersRouter(db, { loginEnabled, jwtSecret }));
-  router.use('/keys/:key', createDeviceRolesRouter(db, { loginEnabled, jwtSecret }));
+  router.use('/keys/:key/features', createProjectFeaturesRouter(db, { loginEnabled, jwtSecret }));
+  router.use('/keys/:key/members',  createProjectMembersRouter(db, { loginEnabled, jwtSecret }));
+  router.use('/keys/:key',          createDeviceRolesRouter(db, { loginEnabled, jwtSecret }));
   return router;
 }
