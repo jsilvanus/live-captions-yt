@@ -34,6 +34,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_cea.md](plans/plan_cea.md) | CEA-708 SEI NAL Caption Embedding in RTMP Relay | CEA-708 caption embedding implemented in RtmpRelayManager via ffmpeg tee muxer with eia608 subtitle encoder and SRT stdin pipe. Per-slot captionMode and per-key cea708_delay_ms. | |
 | [plan_pyback.md](plans/plan_pyback.md) | Python Backend Scope Reduction | Python backend reduced to minimal unauthenticated CORS relay for YouTube caption sending. Removed API keys, JWT auth, admin routes, SQLite database. | |
 | [plan_cache.md](plans/plan_cache.md) | HTTP Caching Strategy — Backend, Plugins & nginx | Comprehensive caching plan: Cache-Control headers for all backend GET endpoints (6 tiers), nginx proxy_cache for HLS/media, NginxManager segment vs. playlist split, frontend `api.getCached()` layer, preview ETag support, operator deployment guide. | |
+| [plan_setup_wizard.md](plans/plan_setup_wizard.md) | Setup Wizard | Guided setup flow at `/setup`: feature selection, dependency auto-enable, config panels (targets, translation, relay, STT, embed, CEA), shared panels architecture. All components and wizard shell fully implemented. | |
 
 ### In progress
 
@@ -49,7 +50,6 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_ui.md](plans/plan_ui.md) | Frontend & UI Plans | Four iterations: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard, core implemented), v3 (component split, completed), v4 (two-phase login + feature-based UI, implemented). Remaining P1: guided setup, empty-state guidance. | |
 | [plan_server_stt.md](plans/plan_server_stt.md) | Server-side Speech-to-Text (STT) | Phase 1 implemented: HlsSegmentFetcher, GoogleSttAdapter, WhisperHttpAdapter, OpenAiAdapter, SttManager, /stt routes. Phases 2–4 (gRPC streaming, RTMP/WHEP fallback enhancements) remain. | |
 | [plan_dock_ffmpeg.md](plans/plan_dock_ffmpeg.md) | FFmpeg Compute Containers → Distributed Hetzner Architecture | Phases 1–3 implemented: DockerFfmpegRunner abstraction behind `FFMPEG_RUNNER` env flag, local/docker/worker runners. Orchestrator and worker-daemon packages scaffolded. Phases 4–7 (full distributed architecture) remain. | `plan/rtmp` (execution model) |
-| [plan_setup_wizard.md](plans/plan_setup_wizard.md) | Setup Wizard | Guided setup flow at `/setup`: feature selection, dependency auto-enable, config panels (targets, translation, relay, STT, embed, CEA), shared panels architecture. Backend feature deps and wizard shell implemented; config step panels implemented. |
 | [plan_admin.md](plans/plan_admin.md) | Admin Panel — Web-based User & Project Management | Feature-gated admin section in lcyt-web for managing users, projects, feature flags, and memberships. Backend admin API with search, batch operations. Phase 1 implemented; Phase 2 (audit log, export/import) planned. | |
 
 ### Pending
