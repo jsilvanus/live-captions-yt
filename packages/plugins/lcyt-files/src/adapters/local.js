@@ -6,7 +6,7 @@
  */
 
 import * as fs from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { promisify } from 'node:util';
 
 const unlinkAsync   = promisify(fs.unlink);
@@ -182,8 +182,8 @@ export function createLocalAdapter(baseDir) {
         } else if (entry.isFile()) {
           let stat;
           try { stat = fs.statSync(fullPath); } catch { continue; }
-          // Return path relative to the key dir (not targetDir), for use with putObject/deleteFile
-          const relToKey = fullPath.slice(dir.length + 1).replace(/\\/g, '/');
+          // Use path.relative for safe cross-platform path computation
+          const relToKey = relative(dir, fullPath).replace(/\\/g, '/');
           yield { objectKey: relToKey, storedKey: fullPath, size: stat.size, lastModified: stat.mtimeMs };
         }
       }

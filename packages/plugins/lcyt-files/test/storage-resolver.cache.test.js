@@ -84,8 +84,8 @@ describe('createStorageResolver', () => {
   });
 
   test('invalidateCache removes a cached entry so next call queries DB', async () => {
-    // Use a config that returns null twice: first call populates cache (fallback),
-    // after invalidate the second call re-queries.
+    // DB always returns null (no config), so resolveStorage returns fallback each time.
+    // After calling invalidateCache, the next resolveStorage call should re-query the DB.
     const dbCalls = { ref: null };
     const db = makeDb('nobody', null, { callCount: dbCalls });
     const { resolveStorage, invalidateCache } = createStorageResolver(db, fallback);
@@ -93,7 +93,7 @@ describe('createStorageResolver', () => {
     await resolveStorage('key1');
     const callsAfterFirst = dbCalls.ref.n;
 
-    invalidateCache('key1');                // should be a no-op for uncached keys
+    invalidateCache('key1');
     await resolveStorage('key1');
     assert.ok(dbCalls.ref.n > callsAfterFirst, 'DB should be queried again after invalidation');
   });

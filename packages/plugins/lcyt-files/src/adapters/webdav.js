@@ -143,8 +143,10 @@ export async function createWebDavAdapter({ url, prefix = 'captions', username, 
 
     const items = Array.isArray(contents) ? contents : (contents?.data ?? []);
     // Build the prefix used to strip the key dir from filenames.
-    // WebDAV filenames may have a leading slash — normalise by removing it.
-    const dirSlash = dir.replace(/^\//, '') + '/';      // 'captions/mykey/'
+    // WebDAV servers may return filenames with a leading slash (e.g. '/captions/mykey/file.vtt')
+    // while keyDir() returns a path without a leading slash (e.g. 'captions/mykey').
+    // Normalise by removing the leading slash so both sides match consistently.
+    const dirSlash = dir.replace(/^\//, '') + '/';      // e.g. 'captions/mykey/'
 
     for (const item of items) {
       if (item.type !== 'file') continue;

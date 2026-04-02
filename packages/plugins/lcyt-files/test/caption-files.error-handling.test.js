@@ -176,7 +176,8 @@ describe('closeFileHandles — error resilience', () => {
     const ctx = { apiKey: 'key1', sessionId: 'sess0001', lang: 'original', format: 'youtube', fileHandles };
 
     await writeToBackendFile(ctx, 'Hello', undefined, db, adapter, buildVttCue);
-    await closeFileHandles(fileHandles).catch(() => {});
+    // closeFileHandles should not throw (swallows individual close() errors)
+    await assert.doesNotReject(() => closeFileHandles(fileHandles));
 
     assert.equal(fileHandles.size, 0, 'map should be cleared even after close() failure');
   });
