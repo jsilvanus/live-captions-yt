@@ -1,15 +1,40 @@
 ---
 id: plan/cloudfleet
 title: "Hosting Modes & Cloudfleet Deployment"
-status: draft
-summary: "Comprehensive hosting guide covering three tiers: Local (docker-compose), Self-managed orchestrator (docker-compose.orchestrator.yml + Hetzner VMs), and Cloudfleet managed Kubernetes. Kubernetes manifests provided in k8s/cloudfleet/."
+status: implemented
+summary: "Three-tier hosting guide: Local (docker-compose), Self-managed orchestrator (docker-compose.orchestrator.yml + Hetzner VMs), and Cloudfleet managed Kubernetes. All three tiers implemented; k8s/cloudfleet/ manifests ship in the repo. Optional enhancements (Helm chart, Litestream, Postgres migration, CI CFCR push) remain future work."
 ---
 
 # Plan: Hosting Modes & Cloudfleet Deployment
 
 **Date:** 2026-03-31  
-**Status:** Draft  
+**Status:** Implemented (core tiers complete; optional enhancements pending)  
 **Related plans:** [plan/dock-ffmpeg](plan_dock_ffmpeg.md)
+
+---
+
+## Current state (as of 2026-04-02)
+
+All three hosting tiers are in place:
+
+| Tier | Status | Evidence |
+|------|--------|----------|
+| 1 — Local (docker-compose) | ✅ Implemented | `docker-compose.yml`, `docs/DEPLOY.md`, `docs/FIREWALL.md` |
+| 2 — Self-managed orchestrator | ✅ Implemented | `docker-compose.orchestrator.yml`, `packages/lcyt-orchestrator/`, `packages/lcyt-worker-daemon/`, `docs/hetzner_runbook.md`, `docs/hetzner_snapshot.md` |
+| 3 — Cloudfleet (Kubernetes) | ✅ Implemented | `k8s/cloudfleet/` (all 11 manifests + README) |
+
+All supporting documentation referenced in this plan exists in `docs/`.
+
+### Pending optional enhancements
+
+These items are not required for basic operation but would improve production hardening:
+
+- [ ] Helm chart wrapping `k8s/cloudfleet/` for easier parameterisation
+- [ ] Litestream sidecar for SQLite → S3 replication (single-replica HA)
+- [ ] Postgres migration path for true multi-replica backend (see `plan/dock-ffmpeg` Phase 8)
+- [ ] `ServiceMonitor` CRD for Prometheus Operator scraping `/metrics`
+- [ ] CI workflow step to build and push images to CFCR on `main` branch merge
+- [ ] Cloudfleet Charts Marketplace listing (post-deployment)
 
 ---
 
@@ -413,7 +438,7 @@ installed on your cluster.
 
 - [x] Tier 1: `docker-compose.yml` (implemented)
 - [x] Tier 2: `docker-compose.orchestrator.yml` + Hetzner orchestrator (implemented)
-- [x] Tier 3: Kubernetes manifests in `k8s/cloudfleet/` (this plan)
+- [x] Tier 3: Kubernetes manifests in `k8s/cloudfleet/` (implemented — all 11 manifests + README)
 - [ ] Tier 3: Helm chart wrapping `k8s/cloudfleet/` for easier parameterisation
 - [ ] Tier 3: Litestream sidecar for SQLite → S3 replication (single replica HA)
 - [ ] Tier 3: Postgres migration path for true multi-replica backend
