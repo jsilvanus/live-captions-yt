@@ -3,6 +3,10 @@
  *
  * Uses a stub DB and a lightweight in-memory fallback adapter so no S3 or WebDAV
  * connection is required.
+ *
+ * Per-key config stubs use `storage_type: 's3'` with fake credentials because
+ * `createS3Adapter` constructs an S3Client but makes no network calls at
+ * construction time — safe for unit tests without real AWS credentials.
  */
 
 import { test, describe, beforeEach } from 'node:test';
@@ -13,10 +17,24 @@ import { createStorageResolver } from '../src/storage.js';
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Create a DB stub that returns `config` for the given `matchKey`, or null otherwise.
- * Also counts how many times getKeyStorageConfig is called by tracking prepare() calls.
+ * Fake S3 per-key config that `createStorageResolver` will accept and use to
+ * build a real (but network-disconnected) S3 adapter.
  */
-function makeDb(matchKey, config, { callCount } = {}) {
+const FAKE_S3_CONFIG = {
+  storage_type: 's3',
+  bucket: 'test-bucket',
+  region: 'us-east-1',
+  prefix: 'captions',
+  endpoint: null,
+  access_key_id: 'FAKEKEY',
+  secret_access_key: 'FAKESECRET',
+};
+
+/**
+ * Create a DB stub whose getKeyStorageConfig query invokes `configFn(key)`.
+ * Optionally tracks total call count via `callCount.ref`.
+ */
+function makeDb(configFn, { callCount } = {}) {
   const counter = { n: 0 };
   if (callCount) callCount.ref = counter;
 
@@ -26,7 +44,7 @@ function makeDb(matchKey, config, { callCount } = {}) {
         return {
           get: (key) => {
             counter.n++;
-            return key === matchKey ? { ...config } : null;
+            return configFn(key);
           },
         };
       }
@@ -57,7 +75,7 @@ describe('createStorageResolver', () => {
   });
 
   test('returns global fallback when no per-key config in DB', async () => {
-    const db = makeDb('nobody', null);
+    const db = makeDb(() => null);
     const { resolveStorage } = createStorageResolver(db, fallback);
 
     const result = await resolveStorage('anyKey');
@@ -65,7 +83,7 @@ describe('createStorageResolver', () => {
   });
 
   test('returns same fallback instance on repeated calls (no config)', async () => {
-    const db = makeDb('nobody', null);
+    const db = makeDb(() => null);
     const { resolveStorage } = createStorageResolver(db, fallback);
 
     const r1 = await resolveStorage('anyKey');
@@ -75,7 +93,7 @@ describe('createStorageResolver', () => {
 
   test('queries DB each time when no config (fallback not cached)', async () => {
     const dbCalls = { ref: null };
-    const db = makeDb('nobody', null, { callCount: dbCalls });
+    const db = makeDb(() => null, { callCount: dbCalls });
     const { resolveStorage } = createStorageResolver(db, fallback);
 
     await resolveStorage('noConfig');
@@ -83,35 +101,49 @@ describe('createStorageResolver', () => {
     assert.strictEqual(dbCalls.ref.n, 2, 'DB should be queried each call (fallback not cached)');
   });
 
-  test('invalidateCache removes a cached entry so next call queries DB', async () => {
-    // DB always returns null (no config), so resolveStorage returns fallback each time.
-    // After calling invalidateCache, the next resolveStorage call should re-query the DB.
+  test('invalidateCache removes a cached entry so next call re-queries DB and falls back', async () => {
+    let currentConfig = { ...FAKE_S3_CONFIG };
     const dbCalls = { ref: null };
-    const db = makeDb('nobody', null, { callCount: dbCalls });
+    const db = makeDb(
+      (key) => (key === 'key1' && currentConfig ? { ...currentConfig } : null),
+      { callCount: dbCalls },
+    );
     const { resolveStorage, invalidateCache } = createStorageResolver(db, fallback);
 
-    await resolveStorage('key1');
+    // First call — creates and caches a per-key S3 adapter
+    const cachedAdapter = await resolveStorage('key1');
     const callsAfterFirst = dbCalls.ref.n;
+    assert.notStrictEqual(cachedAdapter, fallback, 'first call should create a per-key adapter, not return fallback');
 
+    // Remove config from DB (simulates user deleting their storage config)
+    currentConfig = null;
+
+    // Without invalidation — should return the cached adapter, NOT re-query DB
+    const stillCachedAdapter = await resolveStorage('key1');
+    assert.strictEqual(stillCachedAdapter, cachedAdapter, 'without invalidation, cached adapter should be returned');
+    assert.strictEqual(dbCalls.ref.n, callsAfterFirst, 'without invalidation, DB should not be re-queried');
+
+    // After invalidation — should re-query DB and fall back to global adapter
     invalidateCache('key1');
-    await resolveStorage('key1');
+    const fallbackAfterInvalidation = await resolveStorage('key1');
     assert.ok(dbCalls.ref.n > callsAfterFirst, 'DB should be queried again after invalidation');
+    assert.strictEqual(fallbackAfterInvalidation, fallback, 'after invalidation with no DB config, should return global fallback');
   });
 
   test('invalidateCache on unknown key is a safe no-op', () => {
-    const db = makeDb('nobody', null);
+    const db = makeDb(() => null);
     const { invalidateCache } = createStorageResolver(db, fallback);
     assert.doesNotThrow(() => invalidateCache('nonexistent-key'));
   });
 
   test('resolver is a function', () => {
-    const db = makeDb('nobody', null);
+    const db = makeDb(() => null);
     const { resolveStorage } = createStorageResolver(db, fallback);
     assert.strictEqual(typeof resolveStorage, 'function');
   });
 
   test('invalidateCache is a function', () => {
-    const db = makeDb('nobody', null);
+    const db = makeDb(() => null);
     const { invalidateCache } = createStorageResolver(db, fallback);
     assert.strictEqual(typeof invalidateCache, 'function');
   });
@@ -120,64 +152,86 @@ describe('createStorageResolver', () => {
 // ─── LRU eviction ────────────────────────────────────────────────────────────
 
 describe('LRU eviction', () => {
-  test('evicts oldest entry when cache exceeds FILES_CACHE_LIMIT', async () => {
-    // Set a small cache limit via environment variable
+  test('evicts least-recently-used entry, not oldest-inserted', async () => {
     const original = process.env.FILES_CACHE_LIMIT;
     process.env.FILES_CACHE_LIMIT = '2';
 
     try {
-      // We need keys that have a per-key config so the adapter is cached.
-      // Use a DB stub that returns a fake WebDAV config for any key.
-      const fakeConfig = {
-        storage_type: 'webdav',
-        endpoint: 'http://localhost:9999',
-        prefix: 'captions',
-        access_key_id: null,
-        secret_access_key: null,
-        bucket: '',
-        region: 'auto',
-      };
-
-      // Count DB queries per key
-      const counts = {};
-      const db = {
-        prepare: (sql) => ({
-          get: (key) => {
-            counts[key] = (counts[key] || 0) + 1;
-            return fakeConfig;
-          },
-        }),
-      };
+      const dbCalls = {};
+      const db = makeDb((key) => {
+        dbCalls[key] = (dbCalls[key] || 0) + 1;
+        return { ...FAKE_S3_CONFIG };
+      });
 
       const fallback = makeFallback();
       const { resolveStorage } = createStorageResolver(db, fallback);
 
-      // Fill cache with two keys — both succeed (webdav adapter created)
-      // We catch errors from webdav import in test environments
-      let adapterA, adapterB;
-      try {
-        adapterA = await resolveStorage('keyA');
-      } catch { adapterA = null; }
-      try {
-        adapterB = await resolveStorage('keyB');
-      } catch { adapterB = null; }
+      // Add keyA (oldest) and keyB to fill the cache (size = 2)
+      await resolveStorage('keyA');
+      await resolveStorage('keyB');
+      const callsAAfterInsert = dbCalls['keyA'];
 
-      // Adding a third key should evict the oldest (keyA)
-      let adapterC;
-      try {
-        adapterC = await resolveStorage('keyC');
-      } catch { adapterC = null; }
+      // Re-access keyA — this should move it to MRU position
+      await resolveStorage('keyA');
+      assert.strictEqual(dbCalls['keyA'], callsAAfterInsert, 'keyA should be served from cache, no DB re-query');
 
-      // keyA should have been evicted; calling it again re-queries DB
-      const countABeforeRetry = counts['keyA'] || 0;
-      try { await resolveStorage('keyA'); } catch {}
-      const countAAfterRetry = counts['keyA'] || 0;
+      // Add keyC — this should evict keyB (LRU), NOT keyA (recently accessed)
+      await resolveStorage('keyC');
 
-      // If keyA was evicted, the DB should have been queried again (count goes up)
-      assert.ok(countAAfterRetry > countABeforeRetry,
-        'keyA should be re-queried after LRU eviction (cache size was 2)');
+      // Verify keyA is still cached FIRST (before re-adding keyB, which would
+      // fill the cache again and might evict keyA)
+      const callsABeforeRetry = dbCalls['keyA'];
+      await resolveStorage('keyA');
+      assert.strictEqual(
+        dbCalls['keyA'],
+        callsABeforeRetry,
+        'keyA should still be cached (it was the MRU when keyC was added)',
+      );
+
+      // Now verify keyB was evicted — re-adding it will query the DB
+      const callsBBeforeRetry = dbCalls['keyB'];
+      await resolveStorage('keyB');
+      assert.ok(
+        (dbCalls['keyB'] || 0) > callsBBeforeRetry,
+        'keyB should have been evicted (LRU) and re-queried from DB',
+      );
     } finally {
-      // Restore original env
+      if (original === undefined) {
+        delete process.env.FILES_CACHE_LIMIT;
+      } else {
+        process.env.FILES_CACHE_LIMIT = original;
+      }
+    }
+  });
+
+  test('evicts oldest entry when no key has been re-accessed (FIFO fallback)', async () => {
+    const original = process.env.FILES_CACHE_LIMIT;
+    process.env.FILES_CACHE_LIMIT = '2';
+
+    try {
+      const dbCalls = {};
+      const db = makeDb((key) => {
+        dbCalls[key] = (dbCalls[key] || 0) + 1;
+        return { ...FAKE_S3_CONFIG };
+      });
+
+      const fallback = makeFallback();
+      const { resolveStorage } = createStorageResolver(db, fallback);
+
+      // Add keyA and keyB (no re-access)
+      await resolveStorage('keyA');
+      await resolveStorage('keyB');
+
+      // Adding keyC should evict keyA (oldest / LRU)
+      await resolveStorage('keyC');
+
+      const callsABeforeRetry = dbCalls['keyA'];
+      await resolveStorage('keyA');
+      assert.ok(
+        (dbCalls['keyA'] || 0) > callsABeforeRetry,
+        'keyA (oldest) should be evicted when no re-access happened',
+      );
+    } finally {
       if (original === undefined) {
         delete process.env.FILES_CACHE_LIMIT;
       } else {
@@ -186,4 +240,3 @@ describe('LRU eviction', () => {
     }
   });
 });
-

@@ -77,23 +77,8 @@ export function createStatsRouter(db, auth, store, { resolveStorage } = {}) {
       }
     }
 
-    // Delete physical storage objects for this key (best-effort, non-blocking)
-    if (resolveStorage) {
-      try {
-        const storage = await resolveStorage(apiKey);
-        if (typeof storage.listObjects === 'function') {
-          for await (const obj of storage.listObjects(apiKey)) {
-            await storage.deleteFile(apiKey, obj.storedKey).catch(e => {
-              logger.warn('[stats] Failed to delete storage object during GDPR erasure:', obj.storedKey, e.code ?? e.message);
-            });
-          }
-        }
-      } catch (err) {
-        logger.warn('[stats] Could not delete storage objects during GDPR erasure:', err.message);
-      }
-    }
-
-    // Delete caption file DB records
+    // Delete caption file DB records synchronously (must happen before anonymizeKey
+    // so the key still exists when we check it below)
     deleteAllCaptionFiles(db, apiKey);
 
     const found = anonymizeKey(db, apiKey);
@@ -101,10 +86,32 @@ export function createStatsRouter(db, auth, store, { resolveStorage } = {}) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
-    return res.status(200).json({
+    // Respond immediately — physical storage cleanup runs in the background.
+    // The DB erasure above is already complete and the key is anonymised.
+    res.status(200).json({
       ok: true,
       message: 'Account data erased. Email retained until key expiry for fraud prevention.',
     });
+
+    // Fire-and-forget: delete physical storage objects for this key.
+    // This may take time for large buckets or slow storage backends;
+    // running it after the response avoids request timeouts.
+    if (resolveStorage) {
+      resolveStorage(apiKey).then(async (storage) => {
+        if (typeof storage.listObjects !== 'function') return;
+        try {
+          for await (const obj of storage.listObjects(apiKey)) {
+            await storage.deleteFile(apiKey, obj.storedKey).catch(e => {
+              logger.warn('[stats] Failed to delete storage object during GDPR erasure:', obj.storedKey, e.code ?? e.message);
+            });
+          }
+        } catch (err) {
+          logger.warn('[stats] Could not enumerate storage objects during GDPR erasure:', err.message);
+        }
+      }).catch(err => {
+        logger.warn('[stats] Could not resolve storage adapter during GDPR erasure:', err.message);
+      });
+    }
   });
 
   return router;

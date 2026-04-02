@@ -217,6 +217,8 @@ export async function createS3Adapter({ bucket, prefix = 'captions', region = 'a
       }));
 
       for (const obj of (res.Contents || [])) {
+        // Guard against entries with missing or unexpectedly short keys (defensive)
+        if (!obj.Key || obj.Key.length < keyPrefix.length) continue;
         // Strip the per-key prefix to get the relative objectKey
         const objectKey = obj.Key.slice(keyPrefix.length);
         yield {
