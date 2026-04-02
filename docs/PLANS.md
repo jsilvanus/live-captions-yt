@@ -35,6 +35,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_pyback.md](plans/plan_pyback.md) | Python Backend Scope Reduction | Python backend reduced to minimal unauthenticated CORS relay for YouTube caption sending. Removed API keys, JWT auth, admin routes, SQLite database. | |
 | [plan_cache.md](plans/plan_cache.md) | HTTP Caching Strategy — Backend, Plugins & nginx | Comprehensive caching plan: Cache-Control headers for all backend GET endpoints (6 tiers), nginx proxy_cache for HLS/media, NginxManager segment vs. playlist split, frontend `api.getCached()` layer, preview ETag support, operator deployment guide. | |
 | [plan_userprojects.md](plans/plan_userprojects.md) | Richer Projects System: Feature Flags, Membership, and Device Roles | Phases 1–3 implemented. DB tables (project_features, user_features, project_members, project_member_permissions, project_device_roles), back-fill migration, DB helpers, route modules, device-login JWT, extended /keys responses, frontend components (FeaturePicker, ProjectDetailModal, DeviceLoginPage), feature-gate middleware (FEATURE_GATE_ENFORCE), admin user feature endpoints (GET/PATCH /admin/users/:id/features). Phase 4 (QR codes, tally light, time-limited sessions) remains future work. | |
+| [plan_cloudfleet.md](plans/plan_cloudfleet.md) | Hosting Modes & Cloudfleet Deployment | All three tiers implemented: Tier 1 (docker-compose.yml), Tier 2 (docker-compose.orchestrator.yml + Hetzner VMs), Tier 3 (k8s/cloudfleet/ — all 11 K8s manifests + README). Supporting docs (DEPLOY.md, FIREWALL.md, hetzner_runbook.md, hetzner_snapshot.md) in place. Optional enhancements pending: Helm chart, Litestream sidecar, Postgres migration, ServiceMonitor, CI CFCR push. | |
 
 ### In progress
 
@@ -59,7 +60,6 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
-| [plan_cloudfleet.md](plans/plan_cloudfleet.md) | Hosting Modes & Cloudfleet Deployment | Three-tier hosting guide: Local (docker-compose), Self-managed orchestrator (docker-compose.orchestrator.yml + Hetzner VMs), and Cloudfleet managed Kubernetes. Kubernetes manifests in `k8s/cloudfleet/`. | |
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
 
 ### Reference
