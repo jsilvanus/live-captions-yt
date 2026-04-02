@@ -159,6 +159,68 @@ describe('createLocalAdapter', () => {
     assert.ok(desc.includes('local'));
     assert.ok(desc.includes(baseDir));
   });
+
+  test('listObjects() returns all files under the key directory', async () => {
+    const adapter = createLocalAdapter(baseDir);
+
+    // Write two files
+    const h1 = adapter.openAppend('listKey', 'a.txt');
+    await h1.write('aaa');
+    await h1.close();
+
+    const h2 = adapter.openAppend('listKey', 'b.txt');
+    await h2.write('bb');
+    await h2.close();
+
+    const items = [];
+    for await (const item of adapter.listObjects('listKey')) {
+      items.push(item);
+    }
+
+    const names = items.map(i => i.objectKey).sort();
+    assert.deepEqual(names, ['a.txt', 'b.txt']);
+    assert.ok(items.every(i => typeof i.storedKey === 'string'));
+    assert.ok(items.every(i => i.size > 0));
+    assert.ok(items.every(i => typeof i.lastModified === 'number'));
+  });
+
+  test('listObjects() returns empty iterable when directory does not exist', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    const items = [];
+    for await (const item of adapter.listObjects('noSuchKey')) {
+      items.push(item);
+    }
+    assert.equal(items.length, 0);
+  });
+
+  test('listObjects() storedKey can be passed directly to deleteFile', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    const h = adapter.openAppend('listDeleteKey', 'todelete.txt');
+    await h.write('data');
+    await h.close();
+    assert.ok(fs.existsSync(h.storedKey));
+
+    for await (const obj of adapter.listObjects('listDeleteKey')) {
+      await adapter.deleteFile('listDeleteKey', obj.storedKey);
+    }
+
+    assert.ok(!fs.existsSync(h.storedKey), 'file should be deleted via storedKey from listObjects');
+  });
+
+  test('listObjects() respects prefix filter', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    // Write files in two subdirectories via putObject
+    await adapter.putObject('prefixKey', 'subA/file1.txt', 'aa');
+    await adapter.putObject('prefixKey', 'subB/file2.txt', 'bb');
+
+    const items = [];
+    for await (const item of adapter.listObjects('prefixKey', 'subA')) {
+      items.push(item);
+    }
+
+    assert.equal(items.length, 1);
+    assert.ok(items[0].objectKey.includes('file1.txt'));
+  });
 });
 
 // ─── writeToBackendFile ───────────────────────────────────────────────────────

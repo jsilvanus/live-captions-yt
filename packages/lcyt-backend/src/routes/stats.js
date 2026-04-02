@@ -1,6 +1,7 @@
 import { Router } from 'express';
-import { getKey, getKeyStats, anonymizeKey, getViewerKeyStats } from '../db.js';
+import { getKey, getKeyStats, anonymizeKey, getViewerKeyStats, deleteAllCaptionFiles } from '../db.js';
 import { createRequireFeature } from '../middleware/feature-gate.js';
+import logger from 'lcyt/logger';
 
 /**
  * Factory for the /stats router.
@@ -8,6 +9,8 @@ import { createRequireFeature } from '../middleware/feature-gate.js';
  * GET    /stats — Return per-key statistics for the authenticated user.
  * DELETE /stats — Erase all personal data (GDPR right to erasure). Anonymises the
  *                 API key record and deletes all associated session/error/usage data.
+ *                 When resolveStorage is provided, also deletes physical storage
+ *                 objects (local files, S3 objects, or WebDAV resources) for the key.
  *                 Retains email + expires_at for legitimate-interest fraud prevention.
  *
  * Both routes require a valid JWT Bearer token. Data is scoped to the API key in the token.
@@ -17,9 +20,10 @@ import { createRequireFeature } from '../middleware/feature-gate.js';
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @param {import('../store.js').SessionStore} [store] - In-memory session store
+ * @param {{ resolveStorage?: (apiKey: string) => Promise<object> }} [opts]
  * @returns {Router}
  */
-export function createStatsRouter(db, auth, store) {
+export function createStatsRouter(db, auth, store, { resolveStorage } = {}) {
   const router = Router();
   const requireStats = createRequireFeature(db, 'stats');
 
@@ -60,7 +64,7 @@ export function createStatsRouter(db, auth, store) {
   });
 
   // DELETE /stats — GDPR right-to-erasure: anonymise key and delete all associated data
-  router.delete('/', auth, (req, res) => {
+  router.delete('/', auth, async (req, res) => {
     const { sessionId, apiKey } = req.session;
 
     // Terminate the active in-memory session without writing a TTL stats record
@@ -72,6 +76,23 @@ export function createStatsRouter(db, auth, store) {
         session.sender?.end().catch(() => {});
       }
     }
+
+    // Delete physical storage objects for this key (best-effort, non-blocking)
+    if (resolveStorage) {
+      try {
+        const storage = await resolveStorage(apiKey);
+        if (typeof storage.listObjects === 'function') {
+          for await (const obj of storage.listObjects(apiKey)) {
+            await storage.deleteFile(apiKey, obj.storedKey).catch(() => {});
+          }
+        }
+      } catch (err) {
+        logger.warn('[stats] Could not delete storage objects during GDPR erasure:', err.message);
+      }
+    }
+
+    // Delete caption file DB records
+    deleteAllCaptionFiles(db, apiKey);
 
     const found = anonymizeKey(db, apiKey);
     if (!found) {

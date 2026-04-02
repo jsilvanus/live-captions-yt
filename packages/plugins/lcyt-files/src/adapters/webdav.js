@@ -115,10 +115,66 @@ export async function createWebDavAdapter({ url, prefix = 'captions', username, 
     return null;
   }
 
+  // ── Enumeration ─────────────────────────────────────────────────────────────
+
+  /**
+   * List all objects stored under a key's WebDAV directory.
+   *
+   * Returns an async iterable of `{ objectKey, storedKey, size, lastModified }` where:
+   *   - `objectKey`  — path relative to the key's directory (suitable for putObject)
+   *   - `storedKey`  — full WebDAV path as used by deleteFile
+   *   - `size`       — file size in bytes
+   *   - `lastModified` — Unix epoch milliseconds
+   *
+   * @param {string} apiKey
+   * @param {string} [prefix]  Optional sub-path to restrict the listing
+   * @returns {AsyncIterable<{ objectKey: string, storedKey: string, size: number, lastModified: number }>}
+   */
+  async function* listObjects(apiKey, prefix = '') {
+    const dir = keyDir(apiKey);                          // e.g. 'captions/mykey'
+    const remotePath = prefix ? `${dir}/${prefix}` : dir;
+
+    let contents;
+    try {
+      contents = await client.getDirectoryContents(remotePath, { deep: true });
+    } catch {
+      return; // Directory doesn't exist — nothing to list
+    }
+
+    const items = Array.isArray(contents) ? contents : (contents?.data ?? []);
+    // Build the prefix used to strip the key dir from filenames.
+    // WebDAV filenames may have a leading slash — normalise by removing it.
+    const dirSlash = dir.replace(/^\//, '') + '/';      // 'captions/mykey/'
+
+    for (const item of items) {
+      if (item.type !== 'file') continue;
+
+      // Normalise the filename (remove leading slash if present)
+      const normalizedFilename = item.filename.startsWith('/')
+        ? item.filename.slice(1)
+        : item.filename;
+
+      // storedKey is what deleteFile and putObject expect (no leading slash)
+      const storedKey = normalizedFilename;
+
+      // objectKey is the path relative to the key dir
+      const objectKey = normalizedFilename.startsWith(dirSlash)
+        ? normalizedFilename.slice(dirSlash.length)
+        : normalizedFilename;
+
+      yield {
+        objectKey,
+        storedKey,
+        size: item.size ?? 0,
+        lastModified: item.lastmod ? new Date(item.lastmod).getTime() : 0,
+      };
+    }
+  }
+
   function describe() {
     const auth = username ? `, user: ${username}` : '';
     return `✓ File storage: WebDAV (url: ${url}, prefix: ${prefix}${auth})`;
   }
 
-  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, describe };
+  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, listObjects, describe };
 }
