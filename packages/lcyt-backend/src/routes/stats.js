@@ -84,7 +84,7 @@ export function createStatsRouter(db, auth, store, { resolveStorage } = {}) {
         if (typeof storage.listObjects === 'function') {
           for await (const obj of storage.listObjects(apiKey)) {
             await storage.deleteFile(apiKey, obj.storedKey).catch(e => {
-              logger.warn('[stats] Failed to delete storage object during GDPR erasure:', obj.storedKey, e.message);
+              logger.warn('[stats] Failed to delete storage object during GDPR erasure:', obj.storedKey, e.code ?? e.message);
             });
           }
         }

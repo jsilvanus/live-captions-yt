@@ -26,7 +26,7 @@ function makeDb(matchKey, config, { callCount } = {}) {
         return {
           get: (key) => {
             counter.n++;
-            return key === matchKey ? config : null;
+            return key === matchKey ? { ...config } : null;
           },
         };
       }

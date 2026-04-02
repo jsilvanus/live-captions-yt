@@ -137,8 +137,14 @@ export async function createWebDavAdapter({ url, prefix = 'captions', username, 
     let contents;
     try {
       contents = await client.getDirectoryContents(remotePath, { deep: true });
-    } catch {
-      return; // Directory doesn't exist — nothing to list
+    } catch (err) {
+      // Non-fatal: directory may not exist yet (404), or a transient network error.
+      // Log so operators can distinguish "not found" from "auth/network failure".
+      if (err?.status !== 404 && err?.response?.status !== 404) {
+        // eslint-disable-next-line no-console
+        console.warn('[webdav] listObjects failed for', remotePath, err.message);
+      }
+      return;
     }
 
     const items = Array.isArray(contents) ? contents : (contents?.data ?? []);

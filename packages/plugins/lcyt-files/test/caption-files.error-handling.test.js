@@ -121,7 +121,11 @@ describe('writeToBackendFile — error handling', () => {
     const fileHandles = new Map();
     const ctx = { apiKey: 'key1', sessionId: 'sess0001', lang: 'original', format: 'youtube', fileHandles };
 
-    try { await writeToBackendFile(ctx, 'Hello', undefined, db, adapter, buildVttCue); } catch {}
+    // We expect a rejection — just swallow it so we can check fileHandles state
+    await assert.rejects(
+      () => writeToBackendFile(ctx, 'Hello', undefined, db, adapter, buildVttCue),
+      /fail/,
+    );
 
     assert.equal(fileHandles.size, 0, 'no file handle should be registered on openAppend failure');
   });

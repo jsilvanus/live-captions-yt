@@ -172,8 +172,13 @@ export function createLocalAdapter(baseDir) {
       let entries;
       try {
         entries = fs.readdirSync(currentDir, { withFileTypes: true });
-      } catch {
-        return; // Directory doesn't exist — nothing to list
+      } catch (err) {
+        if (err.code !== 'ENOENT') {
+          // Unexpected error (e.g. EACCES) — log so operators notice, then skip
+          // eslint-disable-next-line no-console
+          console.warn('[local] listObjects: could not read directory', currentDir, err.message);
+        }
+        return;
       }
       for (const entry of entries) {
         const fullPath = join(currentDir, entry.name);
