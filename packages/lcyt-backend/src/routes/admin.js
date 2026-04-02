@@ -28,6 +28,8 @@ import {
   getProjectFeatures,
   setProjectFeatures,
   applyFeatureDeps,
+  getUserFeatures,
+  setUserFeature,
 } from '../db/project-features.js';
 import { getMembers } from '../db/project-members.js';
 
@@ -213,6 +215,66 @@ export function createAdminRouter(db, jwtSecret) {
     })();
 
     res.json({ ok: true, deleted: true });
+  });
+
+  /**
+   * GET /admin/users/:id/features
+   * List user feature entitlements (user_features rows).
+   * Phase 3 of plan_userprojects.
+   */
+  router.get('/users/:id/features', (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
+
+    const user = getUserById(db, id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const rows = getUserFeatures(db, id);
+    return res.json({
+      userId: id,
+      features: rows.map(r => {
+        let config = null;
+        try { if (r.config) config = JSON.parse(r.config); } catch {}
+        return { code: r.feature_code, enabled: r.enabled === 1, config, grantedAt: r.granted_at };
+      }),
+    });
+  });
+
+  /**
+   * PATCH /admin/users/:id/features
+   * Grant or revoke user feature entitlements.
+   * Body: { features: { 'radio': true, 'stt-server': false } }
+   * Phase 3 of plan_userprojects.
+   */
+  router.patch('/users/:id/features', (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
+
+    const user = getUserById(db, id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { features } = req.body || {};
+    if (!features || typeof features !== 'object' || Array.isArray(features)) {
+      return res.status(400).json({ error: 'features must be an object mapping code → boolean' });
+    }
+
+    const tx = db.transaction(() => {
+      for (const [code, val] of Object.entries(features)) {
+        const enabled = typeof val === 'boolean' ? val : !!val;
+        setUserFeature(db, id, code, enabled, null /* grantedBy = admin action */);
+      }
+    });
+    tx();
+
+    const rows = getUserFeatures(db, id);
+    return res.json({
+      userId: id,
+      features: rows.map(r => {
+        let config = null;
+        try { if (r.config) config = JSON.parse(r.config); } catch {}
+        return { code: r.feature_code, enabled: r.enabled === 1, config, grantedAt: r.granted_at };
+      }),
+    });
   });
 
   // -----------------------------------------------------------------------

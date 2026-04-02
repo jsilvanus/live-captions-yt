@@ -1,8 +1,8 @@
 ---
 id: plan/userprojects
 title: "Richer Projects System: Feature Flags, Membership, and Device Roles"
-status: in-progress
-summary: "Normalize per-project feature flags into a dedicated table, add user entitlement tiers, project membership with access levels, per-member permission overrides, and pin-code device roles (camera/mic/mixer) for production devices. Phase 1 (data model + UI) implemented; Phase 2 (enforcement middleware) pending."
+status: implemented
+summary: "Normalize per-project feature flags into a dedicated table, add user entitlement tiers, project membership with access levels, per-member permission overrides, and pin-code device roles (camera/mic/mixer) for production devices. Phases 1–3 implemented."
 ---
 
 # Richer Projects System
@@ -371,47 +371,84 @@ POST /keys (user Bearer)
 
 ---
 
+## Current Status
+
+All three core phases (data model, enforcement middleware, and admin user feature management) are implemented. Phase 4 (future device role enhancements) remains pending.
+
+### Implemented checklist
+
+- [x] Phase 1: DB tables (`project_features`, `user_features`, `project_members`, `project_member_permissions`, `project_device_roles`) + `device_code` column on `api_keys`
+- [x] Phase 1: Idempotent back-fill migration on startup
+- [x] Phase 1: DB helpers (`project-features.js`, `project-members.js`, `device-roles.js`)
+- [x] Phase 1: Route modules mounted in `account.js` at correct paths (`/keys/:key/features`, `/keys/:key/members`, `/keys/:key/device-roles`, `/keys/:key/device-code`)
+- [x] Phase 1: `POST /auth/device-login` device JWT handler
+- [x] Phase 1: Extended `GET /keys` and `POST /keys` responses (features[], memberCount, myAccessLevel)
+- [x] Phase 1: Frontend components (FeaturePicker, ProjectDetailModal, MemberRow, InviteMemberForm, DeviceRoleRow, CreateDeviceRoleForm)
+- [x] Phase 1: `DeviceLoginPage` at `/device-login`
+- [x] Phase 1: `useProjectFeatures` hook
+- [x] Phase 2: `src/middleware/feature-gate.js` — `createRequireFeature` + `createRequireKeyFeature` + `isEnforced()`
+- [x] Phase 2: Feature-gate applied to `/captions` (`captions` feature) and `/mic` (`mic-lock` feature)
+- [x] Phase 2: Feature-gate applied to `GET /stats` (`stats` feature)
+- [x] Phase 2: `FEATURE_GATE_ENFORCE` env var (default off; set to `1` to enable enforcement)
+- [x] Phase 3: `GET /admin/users/:id/features` — list user entitlement tiers
+- [x] Phase 3: `PATCH /admin/users/:id/features` — grant/revoke user entitlements
+- [x] Tests: `packages/lcyt-backend/test/feature-gate.test.js` (28 tests)
+
+### Remaining (Phase 4 — future enhancements)
+
+- [ ] QR code generation for device PINs (scannable from web UI)
+- [ ] Tally light display on the camera device role view
+- [ ] Device role JWT verification middleware (check `active=1` on each request that uses a device token)
+- [ ] Time-limited device role sessions (optional expiry field)
+- [ ] Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands
+- [ ] Web UI for admin user feature management in admin panel
+
+---
+
 ## Phased Implementation
 
-### Phase 1 — Data model + UI (implemented, branch: `claude/auth-and-projects-79FA4`)
+### Phase 1 — Data model + UI (implemented)
 
 - All 5 new DB tables + `device_code` column
 - Back-fill migration
 - All DB helper modules (`project-features.js`, `project-members.js`, `device-roles.js`)
-- All route modules (`project-features.js`, `project-members.js`, `device-roles.js`)
+- Route modules (`project-features.js`, `project-members.js`, `device-roles.js`) mounted at `/keys/:key/features`, `/keys/:key/members`, `/keys/:key` (device-roles + device-code)
 - `POST /auth/device-login` device login handler
 - Extended `GET /keys` + `POST /keys` responses
 - All frontend components (FeaturePicker, ProjectDetailModal and its sub-components)
 - `DeviceLoginPage` at `/device-login`
 - `useProjectFeatures` hook
 
-### Phase 2 — Enforcement middleware (pending)
+### Phase 2 — Enforcement middleware (implemented)
 
-Add `requireFeature(code, db)` and `requireProjectPermission(code, db)` middleware applied at the route level. Controlled by `FEATURE_GATE_ENFORCE=1` env var (default off).
+`src/middleware/feature-gate.js` exports:
+- `createRequireFeature(db, featureCode)` — for session-based routes; reads `req.session.apiKey`
+- `createRequireKeyFeature(db, featureCode)` — for project-param routes; reads `req.params.key`
+- `isEnforced()` — returns `true` when `FEATURE_GATE_ENFORCE=1` or `FEATURE_GATE_ENFORCE=true`
 
-**Enforcement map (Phase 2):**
+Both middlewares are no-ops when `FEATURE_GATE_ENFORCE` is unset or `0`, making deployment safe.
 
-| Route | Feature | Permission |
-|---|---|---|
-| `POST /live`, `POST /captions`, `GET /events`, `POST /sync` | `captions` | `captioner` |
-| `POST /mic` | `mic-lock` | `captioner` |
-| `GET/DELETE /file`, `GET /file/:id` | `file-saving` | `file-manager` |
-| `GET/DELETE /stats` | `stats` | `stats-viewer` |
-| DSK template/renderer routes | `graphics-server` | `graphics-editor` / `graphics-broadcaster` |
-| Image upload routes | `graphics-server` | `graphics-editor` |
-| `/rtmp`, `/stream` routes | `ingest` | `stream-manager` |
-| `/stt/*` routes | `stt-server` | `stt-operator` |
-| `/production/cameras`, `/production/mixers` (mutate) | `device-control` | `device-manager` |
-| `/production/cameras/:id/preset/*`, `mixers/:id/switch` | `device-control` | `production-operator` |
-| `/production/bridge/*` | `device-control` | `device-manager` |
+**Applied gates:**
 
-**Soft-enforcement period:** deploy Phase 2 with `FEATURE_GATE_ENFORCE=0` (default), monitor, then set `=1` to enable gates. The back-fill migration ensures all existing keys already have their correct features populated before enforcement goes live.
+| Route | Feature code |
+|---|---|
+| `POST /captions` | `captions` |
+| `POST /mic` | `mic-lock` |
+| `GET /stats` | `stats` |
 
-### Phase 3 — Admin user feature management (pending)
+Additional gates (DSK, STT, RTMP, production) can be added in follow-up PRs once rollout is confirmed stable.
 
-- Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands
-- Admin HTTP endpoints `GET/PATCH /users/:id/features` for managing user entitlement tiers
-- Web UI for admin: user feature management in admin panel
+**Soft-enforcement period:** deploy with `FEATURE_GATE_ENFORCE=0` (default), monitor, then set `=1` to enable gates. The back-fill migration ensures all existing keys already have their correct features populated before enforcement goes live.
+
+### Phase 3 — Admin user feature management (implemented)
+
+Admin HTTP endpoints (require `X-Admin-Key` or admin user JWT):
+
+```
+GET  /admin/users/:id/features    — list user entitlement tiers
+PATCH /admin/users/:id/features   — grant/revoke user entitlements
+  Body: { features: { 'stt-server': true, 'radio': false } }
+```
 
 ### Phase 4 — Future device role enhancements (pending)
 
@@ -419,6 +456,8 @@ Add `requireFeature(code, db)` and `requireProjectPermission(code, db)` middlewa
 - Tally light display on the camera device role view
 - Device role JWT verification middleware (check `active=1` on each request that uses a device token)
 - Time-limited device role sessions (optional expiry field)
+- Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands
+- Web UI for admin user feature management in admin panel
 
 ---
 
