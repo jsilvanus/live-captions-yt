@@ -6,7 +6,7 @@ import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.js';
 import { KEYS } from '../../lib/storageKeys.js';
-import { readInputLang } from '../../lib/inputLang.js';
+import { readInputLang, INPUT_LANG_EVENT } from '../../lib/inputLang.js';
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 
@@ -140,12 +140,12 @@ function TopBarBadges() {
     }
     window.addEventListener('storage', refresh);
     window.addEventListener('lcyt:active-codes-changed', refresh);
-    window.addEventListener(/* INPUT_LANG_EVENT */ 'lcyt:input-lang-changed', refresh);
+    window.addEventListener(INPUT_LANG_EVENT, refresh);
     window.addEventListener('lcyt:settings-imported', refresh);
     return () => {
       window.removeEventListener('storage', refresh);
       window.removeEventListener('lcyt:active-codes-changed', refresh);
-      window.removeEventListener('lcyt:input-lang-changed', refresh);
+      window.removeEventListener(INPUT_LANG_EVENT, refresh);
       window.removeEventListener('lcyt:settings-imported', refresh);
     };
   }, []);

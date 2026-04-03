@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { formatTime } from '../lib/formatting';
 
-const ITEM_HEIGHT = 28; // px — approximate height of one sent-item row
+const ITEM_HEIGHT = 28; // px — must match the min-height of .sent-item in components.css
 const VIRTUAL_THRESHOLD = 100; // enable windowing above this many entries
 const OVERSCAN = 10; // extra rows to render above/below visible area
 

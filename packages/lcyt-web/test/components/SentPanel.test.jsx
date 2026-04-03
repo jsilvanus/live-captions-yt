@@ -177,10 +177,10 @@ describe('SentPanel', () => {
       timestamp: Date.now(),
     }));
     renderSentPanel(entries);
-    // Virtual mode should render far fewer than 600 items
+    // Virtual mode renders visible rows + overscan (≈35 rows with defaults), not all 600
     const items = document.querySelectorAll('.sent-item');
-    expect(items.length).toBeLessThan(600);
-    // But at least a few rows should be visible
+    expect(items.length).toBeLessThan(200);
+    // At least a few rows should be visible
     expect(items.length).toBeGreaterThan(0);
   });
 });
