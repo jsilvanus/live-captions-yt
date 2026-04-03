@@ -63,26 +63,28 @@
 
 ---
 
-## Phase 1b — Dashboard dockable panel grid ⬜ To Do
+## Phase 1b — Dashboard dockable panel grid ✅ Done
 
 Install `react-grid-layout` and implement the draggable/resizable dashboard widget grid.
 
 | Task | Status |
 |------|--------|
-| Install `react-grid-layout` | ⬜ To Do |
-| `DashboardCard.jsx` — card wrapper (header, collapse, remove, drag handle) | ⬜ To Do |
-| `StatusWidget.jsx` | ⬜ To Do |
-| `SentLogWidget.jsx` | ⬜ To Do |
-| `InputWidget.jsx` — mini text input + send | ⬜ To Do |
-| `FilePreviewWidget.jsx` | ⬜ To Do |
-| `AudioMeterWidget.jsx` | ⬜ To Do |
-| `ViewerWidget.jsx` — independent SSE to `/viewer/:key` | ⬜ To Do |
-| `BroadcastWidget.jsx` | ⬜ To Do |
-| `PanelPicker.jsx` — `[+ Add]` checkbox dropdown | ⬜ To Do |
-| `useDashboardConfig.js` — panels[], layouts{}, localStorage persistence | ⬜ To Do |
-| `dashboard.css` — grid + card + widget styles | ⬜ To Do |
-| Empty dashboard state (no panels configured) | ⬜ To Do |
-| Default panels: `status`, `sent-log`, `input` | ⬜ To Do |
+| Install `react-grid-layout` | ✅ Done |
+| `DashboardCard.jsx` — card wrapper (header, collapse, remove, drag handle) | ✅ Done |
+| `StatusWidget.jsx` | ✅ Done |
+| `SentLogWidget.jsx` | ✅ Done |
+| `InputWidget.jsx` — mini text input + send | ✅ Done |
+| `FileWidget.jsx` / `FilePreviewWidget.jsx` | ✅ Done |
+| `AudioWidget.jsx` / `AudioMeterWidget.jsx` | ✅ Done |
+| `ViewerWidget.jsx` — independent SSE to `/viewer/:key` | ✅ Done |
+| `BroadcastWidget.jsx` | ✅ Done |
+| `PanelPicker.jsx` — `[+ Add]` checkbox dropdown | ✅ Done |
+| `useDashboardConfig.js` — panels[], layouts{}, localStorage persistence | ✅ Done |
+| `dashboard.css` — grid + card + widget styles | ✅ Done (in `sidebar.css`) |
+| Empty dashboard state (no panels configured) | ✅ Done |
+| Default panels: `status`, `sent-log`, `input` | ✅ Done |
+
+**Evidence:** `packages/lcyt-web/src/components/DashboardPage.jsx` + `packages/lcyt-web/src/components/dashboard/` — all widgets implemented with `react-grid-layout`; `packages/lcyt-web/src/hooks/useDashboardConfig.js` handles persistence.
 
 ---
 
@@ -124,19 +126,35 @@ Replace stub pages with real implementations. Move modal content to full pages.
 
 | # | Item | Priority | Status |
 |---|------|----------|--------|
-| 2a | Guided setup wizard for first-time users | P1 | ⬜ To Do |
-| 2b | Empty-state guidance in captions view | P1 | ⬜ To Do |
-| 3b | Settings export/import (JSON) | P3 | ⬜ To Do |
-| 3c | Normalize localStorage keys (`lcyt.{category}.{key}`) | P3 | ⬜ To Do |
-| 5a | Command palette (Ctrl/Cmd+K) | P2 | ⬜ To Do |
-| 5b | Keyboard shortcuts help overlay | P2 | ⬜ To Do |
-| 5c | Status bar enrichment (target count, language badge, batch badge) | P2 | ⬜ To Do |
-| 6a | Connection health dot in topbar (latency tooltip) | P1 | ⬜ To Do |
-| 6b | Auto-reconnect with backoff on session expiry | P0 | ⬜ To Do |
-| 6c | Unsaved work protection (`beforeunload` guard) | P0 | ⬜ To Do |
-| 7a | Virtual scrolling for `SentPanel` | P3 | ⬜ To Do |
-| 7b | Context splitting (`SessionContext` → Connection/Caption/SessionApi) | P2 | ⬜ To Do |
-| 7c | Lazy-load heavy pages (`DskEditorPage`, `ProductionOperatorPage`) | P3 | ⬜ To Do |
+| 2a | Guided setup wizard for first-time users | P1 | ✅ Done |
+| 2b | Empty-state guidance in captions view | P1 | ✅ Done |
+| 3b | Settings export/import (JSON) | P3 | ✅ Done |
+| 3c | Normalize localStorage keys (`lcyt.{category}.{key}`) | P3 | ✅ Done |
+| 5a | Command palette (Ctrl/Cmd+K) | P2 | ✅ Done |
+| 5b | Keyboard shortcuts help overlay | P2 | ✅ Done |
+| 5c | Status bar enrichment (target count, language badge, batch badge) | P2 | ✅ Done |
+| 6a | Connection health dot in topbar (latency tooltip) | P1 | ✅ Done |
+| 6b | Auto-reconnect with backoff on session expiry | P0 | ✅ Done |
+| 6c | Unsaved work protection (`beforeunload` guard) | P0 | ✅ Done |
+| 7a | Virtual scrolling for `SentPanel` | P3 | ✅ Done |
+| 7b | Context splitting (`SessionContext` → Connection/Caption/SessionApi) | P2 | ✅ Done |
+| 7c | Lazy-load heavy pages (`DskEditorPage`, `ProductionOperatorPage`) | P3 | ✅ Done |
+
+### Evidence notes
+
+- **2a**: `packages/lcyt-web/src/components/setup-wizard/SetupWizardPage.jsx` — full wizard at `/setup`; lazy-loaded in `main.jsx`.
+- **2b**: `packages/lcyt-web/src/components/CaptionView.jsx` lines 223-243 — shows "No file loaded. Drop a .txt file to begin." and "No caption lines found in this file.". Also virtual rendering window (VIRTUAL_THRESHOLD/VIRTUAL_BUFFER) guides users through large files.
+- **3b**: `packages/lcyt-web/src/lib/settingsIO.js` — `exportSettings()`, `downloadSettings()`, `importSettings()` functions; integrated into `SettingsPage.jsx`.
+- **3c**: `packages/lcyt-web/src/lib/storageKeys.js` — canonical `KEYS` registry with dot-notation keys (`lcyt.{category}.{key}`); `migrateStorageKeys()` runs from `main.jsx` on every load.
+- **5a**: `packages/lcyt-web/src/components/CommandPalette.jsx` — modal palette mounted in `SidebarLayout`; Ctrl/Cmd+K opens it; filters all nav items; ArrowUp/Down/Enter/Esc navigation; does not activate while in text inputs.
+- **5b**: `packages/lcyt-web/src/components/KeyboardShortcutsHelp.jsx` — overlay mounted in `SidebarLayout`; `?` key opens it (when not in text input); `⌘` and `?` buttons in topbar also trigger it.
+- **5c**: `packages/lcyt-web/src/components/sidebar/Sidebar.jsx` — `TopBarBadges` component renders inline badges for YouTube target count, Viewer target count, active input language, and batch interval in the topbar. Responds to `storage`, `lcyt:active-codes-changed`, and `lcyt:input-lang-changed` events.
+- **6a**: `packages/lcyt-web/src/components/sidebar/Sidebar.jsx` — `HealthDot` component with latency tooltip, clicking opens `StatusPopover` (`StatusPopover.jsx`) showing full session details including targets and batch info.
+- **6b**: `packages/lcyt-web/src/hooks/useSession.js` — `_scheduleReconnect()` with exponential backoff (2 s → 4 s → 8 s → 16 s → 30 s max); triggered by `session_closed` SSE event; `reconnecting` state drives `ReconnectBanner` in `SidebarLayout.jsx`.
+- **6c**: `packages/lcyt-web/src/contexts/AppProviders.jsx` lines 113-126 — `beforeunload` listener checks `getQueuedCount()`; fires native browser dialog only when there are pending queued captions.
+- **7a**: `packages/lcyt-web/src/components/SentPanel.jsx` — windowed rendering using scroll position; renders only visible rows ± OVERSCAN (10) buffer; activates above VIRTUAL_THRESHOLD (100) entries; uses padding spacers to maintain full scroll height.
+- **7b**: `packages/lcyt-web/src/contexts/AppProviders.jsx` — `ConnectionContext`, `CaptionContext`, `SessionApiContext` each expose a focused slice of session state; consumers re-render only when their slice changes.
+- **7c**: `packages/lcyt-web/src/main.jsx` lines 15-57 — every sidebar page (`DskEditorPage`, `ProductionOperatorPage`, `DashboardPage`, etc.) is wrapped in `React.lazy()` with `<Suspense fallback={null}>`.
 
 ---
 

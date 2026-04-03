@@ -88,7 +88,10 @@ export function createStorageResolver(db, fallback) {
 
 
   async function resolveStorage(apiKey) {
-    if (cache.has(apiKey)) return cache.get(apiKey);
+    if (cache.has(apiKey)) {
+      touchCacheKey(apiKey);   // Move to MRU position so LRU eviction is accurate
+      return cache.get(apiKey);
+    }
 
     const { getKeyStorageConfig } = await import('./db.js');
     const config = getKeyStorageConfig(db, apiKey);

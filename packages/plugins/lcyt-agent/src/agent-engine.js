@@ -266,8 +266,7 @@ export class AgentEngine {
    * @param {object} cfg — raw AI config from DB
    * @returns {{ apiUrl: string, apiKey: string, model: string }}
    */
-  _resolveApiSettings(cfg) {
-    if (cfg.embeddingProvider === 'server') {
+  _resolveApiSettings(cfg) {    if (cfg.embeddingProvider === 'server') {
       return {
         apiUrl: process.env.EMBEDDING_API_URL || 'https://api.openai.com',
         apiKey: process.env.EMBEDDING_API_KEY || '',
@@ -281,19 +280,373 @@ export class AgentEngine {
     };
   }
 
+  // -------------------------------------------------------------------------
+  // Phase 5 — AI DSK Template Generation
+  // -------------------------------------------------------------------------
+
+  /**
+   * Generate a new DSK template from a natural-language prompt.
+   * Returns a template JSON compatible with the DSK editor format.
+   *
+   * @param {string} apiKey
+   * @param {string} prompt — e.g. "A lower-third with speaker name and title"
+   * @param {object} [opts]
+   * @param {number} [opts.width=1920]
+   * @param {number} [opts.height=1080]
+   * @returns {Promise<object>} — template JSON
+   */
+  async generateTemplate(apiKey, prompt, opts = {}) {
+    const w = opts.width || 1920;
+    const h = opts.height || 1080;
+    const EMPTY = { background: 'transparent', width: w, height: h, groups: [], layers: [] };
+
+    const cfg = getAiConfigRaw(this._db, apiKey);
+    if (!cfg || cfg.embeddingProvider === 'none') return EMPTY;
+
+    const apiSettings = this._resolveApiSettings(cfg);
+    if (!apiSettings.apiKey) return EMPTY;
+
+    const systemPrompt =
+      'You are a DSK (Downstream Key) graphics template designer for a live-captioning broadcast system. ' +
+      'Generate a JSON template with this exact shape:\n' +
+      '{ "background": "transparent", "width": ' + w + ', "height": ' + h + ', "groups": [], "layers": [...] }\n' +
+      'Each layer must be one of these types:\n' +
+      '  { "id": "rect-1", "type": "rect", "x": 0, "y": 880, "width": 800, "height": 200, "style": { "background": "#1a1a1a", "opacity": "0.85", "border-radius": "8px" } }\n' +
+      '  { "id": "text-1", "type": "text", "x": 40, "y": 910, "text": "{{name}}", "style": { "font-size": "48px", "font-family": "Arial, sans-serif", "color": "#ffffff", "font-weight": "bold" } }\n' +
+      '  { "id": "ellipse-1", "type": "ellipse", "x": 200, "y": 200, "width": 200, "height": 200, "style": { "background": "#336699" } }\n' +
+      '  { "id": "image-1", "type": "image", "x": 0, "y": 0, "width": 200, "height": 200, "src": "" }\n' +
+      'Rules:\n' +
+      '- All coordinates are in pixels relative to the ' + w + 'x' + h + ' canvas.\n' +
+      '- Use {{name}}, {{title}}, {{text}} etc. as variable placeholders in text layers.\n' +
+      '- Respond ONLY with the JSON object, no markdown, no explanation.';
+
+    const userPrompt = `Create a DSK template: ${prompt}`;
+
+    try {
+      const raw = await this._callChatCompletion(apiSettings, systemPrompt, userPrompt, { temperature: 0.7, maxTokens: 2000 });
+      const parsed = parseAssistantJson(raw);
+      if (!parsed || !Array.isArray(parsed.layers)) return EMPTY;
+      let counter = 0;
+      parsed.layers = parsed.layers.map(l => ({
+        ...l,
+        id: typeof l.id === 'string' && l.id ? l.id : `${l.type || 'layer'}-${++counter}`,
+      }));
+      return {
+        background: typeof parsed.background === 'string' ? parsed.background : 'transparent',
+        width: parsed.width || w,
+        height: parsed.height || h,
+        groups: Array.isArray(parsed.groups) ? parsed.groups : [],
+        layers: parsed.layers,
+      };
+    } catch (err) {
+      logger.warn('[agent] generateTemplate error: ' + err.message);
+      return EMPTY;
+    }
+  }
+
+  /**
+   * Edit an existing DSK template based on a natural-language instruction.
+   *
+   * @param {string} apiKey
+   * @param {object} template — existing template JSON
+   * @param {string} prompt — e.g. "Make the background darker"
+   * @param {object} [opts]
+   * @returns {Promise<object>} — modified template JSON
+   */
+  async editTemplate(apiKey, template, prompt, opts = {}) {
+    const cfg = getAiConfigRaw(this._db, apiKey);
+    if (!cfg || cfg.embeddingProvider === 'none') return template;
+
+    const apiSettings = this._resolveApiSettings(cfg);
+    if (!apiSettings.apiKey) return template;
+
+    const systemPrompt =
+      'You are a DSK (Downstream Key) graphics template editor for a live-captioning broadcast system. ' +
+      'You will receive an existing template JSON and an edit instruction. ' +
+      'Apply the instruction to the template and return the complete modified template JSON. ' +
+      'Preserve all layer ids and types unless the instruction explicitly says to change them. ' +
+      'Respond ONLY with the complete JSON object, no markdown, no explanation.';
+
+    const userPrompt =
+      `Existing template:\n${JSON.stringify(template, null, 2)}\n\n` +
+      `Edit instruction: ${prompt}`;
+
+    try {
+      const raw = await this._callChatCompletion(apiSettings, systemPrompt, userPrompt, { temperature: 0.7, maxTokens: 2000 });
+      const parsed = parseAssistantJson(raw);
+      if (!parsed || !Array.isArray(parsed.layers)) return template;
+      let counter = 0;
+      parsed.layers = parsed.layers.map(l => ({
+        ...l,
+        id: typeof l.id === 'string' && l.id ? l.id : `${l.type || 'layer'}-${++counter}`,
+      }));
+      return {
+        background: typeof parsed.background === 'string' ? parsed.background : (template.background || 'transparent'),
+        width: parsed.width || template.width || 1920,
+        height: parsed.height || template.height || 1080,
+        groups: Array.isArray(parsed.groups) ? parsed.groups : (template.groups || []),
+        layers: parsed.layers,
+      };
+    } catch (err) {
+      logger.warn('[agent] editTemplate error: ' + err.message);
+      return template;
+    }
+  }
+
+  /**
+   * Suggest color schemes, font pairings, and style improvements for a DSK template.
+   *
+   * @param {string} apiKey
+   * @param {object} template — existing template JSON
+   * @param {object} [opts]
+   * @returns {Promise<Array<{ name: string, description: string, changes: object }>>}
+   */
+  async suggestStyles(apiKey, template, opts = {}) {
+    const cfg = getAiConfigRaw(this._db, apiKey);
+    if (!cfg || cfg.embeddingProvider === 'none') return [];
+
+    const apiSettings = this._resolveApiSettings(cfg);
+    if (!apiSettings.apiKey) return [];
+
+    const systemPrompt =
+      'You are a broadcast graphics designer. ' +
+      'Given a DSK template JSON, suggest 3 style variations (colour schemes, font pairings, layout improvements). ' +
+      'Respond ONLY with a JSON array of suggestions in this shape:\n' +
+      '[\n' +
+      '  { "name": "Dark Corporate", "description": "Deep blue with white text", "changes": { "background": "#0a0f2c", "textColor": "#ffffff" } },\n' +
+      '  ...\n' +
+      ']\n' +
+      'No markdown, no explanation — only the JSON array.';
+
+    const userPrompt = `Template:\n${JSON.stringify(template, null, 2)}`;
+
+    try {
+      const raw = await this._callChatCompletion(apiSettings, systemPrompt, userPrompt, { temperature: 0.8, maxTokens: 1000 });
+      // The response is an array, not an object
+      let parsed;
+      try {
+        const stripped = raw.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
+        parsed = JSON.parse(stripped);
+      } catch {
+        parsed = parseAssistantJson(raw);
+      }
+      if (!Array.isArray(parsed)) return [];
+      return parsed;
+    } catch (err) {
+      logger.warn('[agent] suggestStyles error: ' + err.message);
+      return [];
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 6 — AI-Assisted Rundown Creation
+  // -------------------------------------------------------------------------
+
+  /**
+   * Metacode syntax reference injected into rundown generation prompts.
+   * @returns {string}
+   */
+  static get RUNDOWN_METACODE_REFERENCE() {
+    return (
+      'LCYT Rundown Metacode Syntax (use these HTML comment markers in the text):\n' +
+      '  <!-- section: Section Name -->    — starts a new named section\n' +
+      '  <!-- speaker: Name -->            — sets the current speaker\n' +
+      '  <!-- lang: fi-FI -->              — sets the caption language (BCP-47 tag)\n' +
+      '  <!-- cue: phrase -->              — advance on exact phrase match\n' +
+      '  <!-- cue*: phrase -->             — skip-mode cue (jumps past queued cues)\n' +
+      '  <!-- cue~: phrase -->             — fuzzy phrase match\n' +
+      '  <!-- explanation: text -->        — operator/AI context note (not displayed)\n' +
+      '  <!-- graphics: template-name --> — activate a named DSK template\n' +
+      '  <!-- graphics: -->               — clear graphics\n' +
+      '  <!-- timer: N -->                — pause N seconds\n' +
+      '\n' +
+      'Each non-empty text line (not starting with <!--) is a caption line. ' +
+      'Blank lines separate sections. ' +
+      'Headings are plain text lines that summarise what follows.'
+    );
+  }
+
+  /**
+   * Built-in rundown template library for common event types.
+   * @returns {Object.<string, string>}
+   */
+  static get RUNDOWN_TEMPLATE_LIBRARY() {
+    return {
+      church_service: [
+        '<!-- section: Welcome -->',
+        '<!-- speaker: Host -->',
+        '<!-- cue: welcome everyone -->',
+        'Welcome to the service.',
+        '',
+        '<!-- section: Opening Prayer -->',
+        '<!-- speaker: Pastor -->',
+        '<!-- explanation: Pastor leads opening prayer -->',
+        '<!-- cue: let us pray -->',
+        '',
+        '<!-- section: Readings -->',
+        '<!-- cue: reading from -->',
+        '',
+        '<!-- section: Sermon -->',
+        '<!-- speaker: Pastor -->',
+        '<!-- cue: the sermon topic today -->',
+        '',
+        '<!-- section: Offering -->',
+        '<!-- cue: time for the offering -->',
+        '',
+        '<!-- section: Closing -->',
+        '<!-- cue: thank you for joining -->',
+      ].join('\n'),
+
+      concert: [
+        '<!-- section: Introduction -->',
+        '<!-- speaker: Announcer -->',
+        '<!-- cue: welcome to tonight -->',
+        '',
+        '<!-- section: Song 1 -->',
+        '<!-- lang: en -->',
+        '<!-- cue: starts playing -->',
+        '',
+        '<!-- section: Between Songs -->',
+        '<!-- speaker: Artist -->',
+        '<!-- cue: thank you so much -->',
+        '',
+        '<!-- section: Finale -->',
+        '<!-- cue: our final song tonight -->',
+      ].join('\n'),
+
+      conference: [
+        '<!-- section: Opening Remarks -->',
+        '<!-- speaker: Chair -->',
+        '<!-- cue: good morning everyone -->',
+        '',
+        '<!-- section: Keynote -->',
+        '<!-- speaker: Speaker -->',
+        '<!-- explanation: Main keynote presentation -->',
+        '<!-- cue: thank you for that introduction -->',
+        '',
+        '<!-- section: Q&A -->',
+        '<!-- cue: now open for questions -->',
+        '',
+        '<!-- section: Closing -->',
+        '<!-- speaker: Chair -->',
+        '<!-- cue: thank you for attending -->',
+      ].join('\n'),
+
+      sports: [
+        '<!-- section: Pre-Match -->',
+        '<!-- speaker: Commentator -->',
+        "<!-- cue: welcome to today's match -->",
+        '',
+        '<!-- section: Match -->',
+        '<!-- explanation: Live match commentary -->',
+        '',
+        '<!-- section: Half-Time -->',
+        '<!-- cue: that\'s half time -->',
+        '',
+        '<!-- section: Second Half -->',
+        '',
+        '<!-- section: Full Time -->',
+        '<!-- cue: the final whistle -->',
+      ].join('\n'),
+    };
+  }
+
+  /**
+   * Generate a new rundown from a natural-language prompt.
+   *
+   * @param {string} apiKey
+   * @param {string} prompt — e.g. "A church service with opening prayer and sermon"
+   * @param {object} [opts]
+   * @param {string} [opts.templateId] — optional built-in template key to use as a base
+   * @returns {Promise<string>} — rundown text with metacodes
+   */
+  async generateRundown(apiKey, prompt, opts = {}) {
+    const cfg = getAiConfigRaw(this._db, apiKey);
+    if (!cfg || cfg.embeddingProvider === 'none') return '';
+
+    const apiSettings = this._resolveApiSettings(cfg);
+    if (!apiSettings.apiKey) return '';
+
+    const lib = AgentEngine.RUNDOWN_TEMPLATE_LIBRARY;
+    const baseTemplate = opts.templateId && lib[opts.templateId] ? lib[opts.templateId] : null;
+
+    const systemPrompt =
+      'You are an expert live-event script writer for a captioning system. ' +
+      'Generate a rundown (script) using LCYT metacode syntax for live captions.\n\n' +
+      AgentEngine.RUNDOWN_METACODE_REFERENCE + '\n\n' +
+      'Guidelines:\n' +
+      '- Start each major section with <!-- section: Name -->\n' +
+      '- Insert <!-- cue: phrase --> before key lines where the operator should advance\n' +
+      '- Use <!-- speaker: Name --> when the speaker changes\n' +
+      '- Keep captions short (1-2 sentences per line)\n' +
+      '- Return ONLY the rundown text, no explanation, no markdown fences.';
+
+    const userPrompt = baseTemplate
+      ? `Starting from this template:\n${baseTemplate}\n\nCustomise it for: ${prompt}`
+      : `Generate a complete rundown for: ${prompt}`;
+
+    try {
+      return await this._callChatCompletion(apiSettings, systemPrompt, userPrompt, { temperature: 0.8, maxTokens: 3000 });
+    } catch (err) {
+      logger.warn('[agent] generateRundown error: ' + err.message);
+      return '';
+    }
+  }
+
+  /**
+   * Edit an existing rundown based on a natural-language instruction.
+   *
+   * @param {string} apiKey
+   * @param {string} content — existing rundown text
+   * @param {string} prompt — e.g. "Add a 5-second silence cue before the sermon"
+   * @param {object} [opts]
+   * @returns {Promise<string>} — modified rundown text
+   */
+  async editRundown(apiKey, content, prompt, opts = {}) {
+    const cfg = getAiConfigRaw(this._db, apiKey);
+    if (!cfg || cfg.embeddingProvider === 'none') return content;
+
+    const apiSettings = this._resolveApiSettings(cfg);
+    if (!apiSettings.apiKey) return content;
+
+    const systemPrompt =
+      'You are an expert live-event script editor for a captioning system. ' +
+      'You will receive an existing rundown and an edit instruction. ' +
+      'Apply the instruction to the rundown, preserving all existing metacodes unless the instruction says to change them.\n\n' +
+      AgentEngine.RUNDOWN_METACODE_REFERENCE + '\n\n' +
+      'Return ONLY the complete modified rundown text, no explanation, no markdown fences.';
+
+    const userPrompt =
+      `Existing rundown:\n${content}\n\n` +
+      `Edit instruction: ${prompt}`;
+
+    try {
+      return await this._callChatCompletion(apiSettings, systemPrompt, userPrompt, { temperature: 0.8, maxTokens: 3000 });
+    } catch (err) {
+      logger.warn('[agent] editRundown error: ' + err.message);
+      return content;
+    }
+  }
+
   /**
    * Call an OpenAI-compatible chat completion endpoint.
    * @param {{ apiUrl: string, apiKey: string, model: string }} settings
    * @param {string} systemPrompt
    * @param {string} userPrompt
+   * @param {object} [opts]
+   * @param {number} [opts.temperature=0.1]
+   * @param {number} [opts.maxTokens=200]
    * @returns {Promise<string>} — the assistant's message content
    */
-  async _callChatCompletion(settings, systemPrompt, userPrompt) {
+  async _callChatCompletion(settings, systemPrompt, userPrompt, opts = {}) {
     const url = `${settings.apiUrl.replace(/\/$/, '')}/v1/chat/completions`;
     const headers = {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${settings.apiKey}`,
     };
+
+    const temperature = typeof opts.temperature === 'number' ? opts.temperature : 0.1;
+    const maxTokens = typeof opts.maxTokens === 'number' ? opts.maxTokens : 200;
 
     const body = JSON.stringify({
       model: settings.model,
@@ -301,10 +654,9 @@ export class AgentEngine {
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      // Low temperature for deterministic event detection (not creative)
-      temperature: 0.1,
-      // Short response — only need a JSON object with matched/confidence/reasoning
-      max_tokens: 200,
+      // Temperature and max tokens can be overridden by opts
+      temperature: temperature,
+      max_tokens: maxTokens,
     });
 
     // Retry on transient failures (network / 5xx / rate-limit)

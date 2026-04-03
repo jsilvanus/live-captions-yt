@@ -5,6 +5,8 @@ import { useToastContext } from '../../contexts/ToastContext';
 import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.js';
+import { KEYS } from '../../lib/storageKeys.js';
+import { readInputLang, INPUT_LANG_EVENT } from '../../lib/inputLang.js';
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 
@@ -114,9 +116,75 @@ function HealthDot() {
   );
 }
 
+// ── TopBarBadges ────────────────────────────────────────────────────────────
+// Small status indicators in the topbar: active target count, language, batch.
+
+function TopBarBadges() {
+  const { connected } = useSessionContext();
+
+  // Read live values from localStorage (refreshed each render; changes via
+  // storage events handled by useEffect below).
+  const [targets, setTargets] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(KEYS.targets.list) || '[]'); } catch { return []; }
+  });
+  const [inputLang, setInputLang] = useState(readInputLang);
+  const [batchInterval, setBatchInterval] = useState(() => {
+    try { return parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10); } catch { return 0; }
+  });
+
+  useEffect(() => {
+    function refresh() {
+      try { setTargets(JSON.parse(localStorage.getItem(KEYS.targets.list) || '[]')); } catch { setTargets([]); }
+      try { setBatchInterval(parseInt(localStorage.getItem(KEYS.captions.batchInterval) || '0', 10)); } catch { setBatchInterval(0); }
+      setInputLang(readInputLang());
+    }
+    window.addEventListener('storage', refresh);
+    window.addEventListener('lcyt:active-codes-changed', refresh);
+    window.addEventListener(INPUT_LANG_EVENT, refresh);
+    window.addEventListener('lcyt:settings-imported', refresh);
+    return () => {
+      window.removeEventListener('storage', refresh);
+      window.removeEventListener('lcyt:active-codes-changed', refresh);
+      window.removeEventListener(INPUT_LANG_EVENT, refresh);
+      window.removeEventListener('lcyt:settings-imported', refresh);
+    };
+  }, []);
+
+  if (!connected) return null;
+
+  const enabledTargets = targets.filter(t => t.enabled);
+  const ytCount = enabledTargets.filter(t => t.type === 'youtube').length;
+  const viewerCount = enabledTargets.filter(t => t.type === 'viewer').length;
+
+  return (
+    <div className="top-bar__badges" aria-label="Session status badges">
+      {ytCount > 0 && (
+        <span className="top-bar__badge top-bar__badge--yt" title={`${ytCount} YouTube target${ytCount !== 1 ? 's' : ''}`} aria-label={`${ytCount} YouTube targets`}>
+          ▶ {ytCount}
+        </span>
+      )}
+      {viewerCount > 0 && (
+        <span className="top-bar__badge top-bar__badge--viewer" title={`${viewerCount} Viewer target${viewerCount !== 1 ? 's' : ''}`} aria-label={`${viewerCount} viewer targets`}>
+          👁 {viewerCount}
+        </span>
+      )}
+      {inputLang && (
+        <span className="top-bar__badge top-bar__badge--lang" title={`Caption language: ${inputLang}`} aria-label={`Caption language: ${inputLang}`}>
+          {inputLang}
+        </span>
+      )}
+      {batchInterval > 0 && (
+        <span className="top-bar__badge top-bar__badge--batch" title={`Batch mode: ${batchInterval}ms window`} aria-label={`Batch mode: ${batchInterval}ms`}>
+          ⚡ {batchInterval}ms
+        </span>
+      )}
+    </div>
+  );
+}
+
 // ── TopBar ──────────────────────────────────────────────────────────────────
 
-export function TopBar({ expanded, onToggle }) {
+export function TopBar({ expanded, onToggle, onOpenCommandPalette, onOpenShortcuts }) {
   const [, navigate] = useLocation();
 
   return (
@@ -136,9 +204,30 @@ export function TopBar({ expanded, onToggle }) {
       >
         LCYT
       </button>
+      <TopBarBadges />
       <span className="top-bar__spacer" />
       <HealthDot />
       <QuickActionsPopover />
+      {onOpenCommandPalette && (
+        <button
+          className="top-bar__icon-btn"
+          onClick={onOpenCommandPalette}
+          title="Command palette (Ctrl+K)"
+          aria-label="Open command palette"
+        >
+          ⌘
+        </button>
+      )}
+      {onOpenShortcuts && (
+        <button
+          className="top-bar__icon-btn"
+          onClick={onOpenShortcuts}
+          title="Keyboard shortcuts (?)"
+          aria-label="Show keyboard shortcuts"
+        >
+          ?
+        </button>
+      )}
       <ConnectButton />
     </div>
   );

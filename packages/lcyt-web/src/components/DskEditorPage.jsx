@@ -181,6 +181,13 @@ export function DskEditorPage() {
   const [status, setStatus]           = useState('');
   const [loading, setLoading]         = useState(false);
 
+  // ── AI Assist (Properties panel)
+  const [aiAssistOpen, setAiAssistOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+
   // Media Library state
   const [images, setImages]               = useState([]);
   const [imgPending, setImgPending]       = useState(null);   // File awaiting shorthand
@@ -296,6 +303,62 @@ export function DskEditorPage() {
       ...opts,
       headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey, ...(opts.headers || {}) },
     });
+  }
+
+  // ── AI Assist helpers ─────────────────────────────────────────────────
+  // Agent routes require session Bearer JWT auth (not X-API-Key).
+  function agentFetch(path, body) {
+    const token = session?.getSessionToken?.();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return fetch(`${serverUrl}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+  }
+
+  async function handleAiGenerate() {
+    if (!aiPrompt.trim() || aiLoading) return;
+    setAiLoading(true); setAiError('');
+    try {
+      const res = await agentFetch('/agent/generate-template', { prompt: aiPrompt.trim(), width: template.width, height: template.height });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      if (data.template) {
+        pushHistory(template);
+        setTemplate(data.template);
+        setTemplateName(prev => prev || aiPrompt.trim().slice(0, 40));
+        isDirty.current = true;
+        setAiPrompt('');
+      }
+    } catch (err) { setAiError(err.message); }
+    finally { setAiLoading(false); }
+  }
+
+  async function handleAiEdit() {
+    if (!aiPrompt.trim() || aiLoading) return;
+    setAiLoading(true); setAiError('');
+    try {
+      const res = await agentFetch('/agent/edit-template', { template, prompt: aiPrompt.trim() });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      if (data.template) {
+        pushHistory(template);
+        setTemplate(data.template);
+        isDirty.current = true;
+        setAiPrompt('');
+      }
+    } catch (err) { setAiError(err.message); }
+    finally { setAiLoading(false); }
+  }
+
+  async function handleAiSuggestStyles() {
+    if (aiLoading) return;
+    setAiLoading(true); setAiError(''); setAiSuggestions([]);
+    try {
+      const res = await agentFetch('/agent/suggest-styles', { template });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      setAiSuggestions(data.suggestions || []);
+    } catch (err) { setAiError(err.message); }
+    finally { setAiLoading(false); }
   }
 
   const fetchTemplates = useCallback(async () => {
@@ -694,8 +757,10 @@ export function DskEditorPage() {
 
   function handleResizeLayer(id, rect) {
     let final = rect;
-    if (aspectLock && primaryLayer?.type === 'image' && primaryLayer.id === id) {
-      const orig = primaryLayer;
+    // Use effective dimensions for aspect-lock ratio so it works correctly per viewport
+    const effectiveLayer = effectivePrimaryLayer ?? primaryLayer;
+    if (aspectLock && effectiveLayer?.type === 'image' && effectiveLayer.id === id) {
+      const orig = effectiveLayer;
       const ratio = (orig.width || 1) / (orig.height || 1);
       if (rect.width !== (orig.width || 0)) {
         final = { ...rect, height: Math.max(4, Math.round(rect.width / ratio)) };
@@ -824,6 +889,51 @@ export function DskEditorPage() {
 
   // Group name lookup
   const groupNameById = Object.fromEntries((template.groups || []).map(g => [g.id, g.name]));
+
+  /**
+   * Viewport-effective layer for the property panel: x/y/w/h show the active
+   * viewport's values rather than the global defaults.
+   */
+  const effectivePrimaryLayer = primaryLayer
+    ? { ...primaryLayer, ...getLayerViewportPos(primaryLayer, selectedViewport) }
+    : null;
+
+  /**
+   * Property-panel change handler that is viewport-aware.
+   *
+   * - Landscape / no viewport: writes position/size to the global layer fields.
+   * - Non-landscape viewport: routes x/y/width/height into the per-viewport
+   *   override so the position is remembered when switching viewports.
+   *   Non-geometry fields (src, text, style, animation, id, …) are always
+   *   written to the global layer.
+   */
+  function handlePropertyChange(updatedEffective, prevId) {
+    const searchId = prevId ?? updatedEffective.id;
+    const rawLayer = template.layers?.find(l => l.id === searchId);
+    if (!rawLayer) { updateLayer(updatedEffective, prevId); return; }
+
+    if (!selectedViewport || selectedViewport === 'landscape') {
+      // Landscape: preserve existing viewport overrides; write positions to global.
+      updateLayer({ ...updatedEffective, viewports: rawLayer.viewports }, prevId);
+      return;
+    }
+
+    // Non-landscape viewport: store position/size in the per-viewport override.
+    const newViewports = { ...(rawLayer.viewports || {}) };
+    newViewports[selectedViewport] = {
+      ...(newViewports[selectedViewport] || {}),
+      ...(updatedEffective.x     !== undefined && { x: updatedEffective.x }),
+      ...(updatedEffective.y     !== undefined && { y: updatedEffective.y }),
+      ...(updatedEffective.width !== undefined && { width: updatedEffective.width }),
+      ...(updatedEffective.height!== undefined && { height: updatedEffective.height }),
+    };
+
+    // Strip effective-position fields so the global layer positions are unchanged;
+    // all other fields (src, text, style, animation, id, …) go to the global layer.
+    const { x: _x, y: _y, width: _w, height: _h, viewports: _vp, ...otherFields } = updatedEffective;
+    const storedLayer = { ...rawLayer, ...otherFields, viewports: newViewports };
+    updateLayer(storedLayer, prevId);
+  }
 
   // ── Guard ─────────────────────────────────────────────────────────────────
 
@@ -1082,11 +1192,11 @@ export function DskEditorPage() {
           <div style={{ width: 280, borderLeft: '1px solid #333', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
             <div style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold', marginBottom: 10 }}>Properties</div>
             <LayerPropertyEditor
-              layer={primaryLayer}
+              layer={effectivePrimaryLayer}
               selectionCount={selectedIds.size}
               aspectLock={aspectLock}
               onAspectLock={() => setAspectLock(v => !v)}
-              onChange={updateLayer}
+              onChange={handlePropertyChange}
             />
 
             {/* Viewport-specific image settings (moved from Viewports page) */}
@@ -1099,6 +1209,65 @@ export function DskEditorPage() {
                 saveImgVpSettings={saveImgVpSettings}
                 serverUrl={serverUrl}
               />
+            </div>
+
+            {/* ── AI Assist ── */}
+            <div style={{ marginTop: 18, borderTop: '1px solid #333', paddingTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, cursor: 'pointer' }}
+                   onClick={() => setAiAssistOpen(v => !v)}>
+                <span style={{ fontSize: 12, color: '#aaa', fontWeight: 'bold', flex: 1 }}>✨ AI Assist</span>
+                <span style={{ fontSize: 11, color: '#666' }}>{aiAssistOpen ? '▲' : '▼'}</span>
+              </div>
+              {aiAssistOpen && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <textarea
+                    rows={3}
+                    value={aiPrompt}
+                    onChange={e => setAiPrompt(e.target.value)}
+                    placeholder="Describe a template to generate, or an edit to make…"
+                    style={{ ...inputStyle, resize: 'vertical', fontSize: 12 }}
+                    disabled={aiLoading}
+                  />
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    <button
+                      onClick={handleAiGenerate}
+                      disabled={aiLoading || !aiPrompt.trim()}
+                      style={{ ...btnPrimaryStyle, fontSize: 11, flex: 1 }}
+                      title="Generate a new template from the prompt"
+                    >
+                      {aiLoading ? '…' : 'Generate'}
+                    </button>
+                    <button
+                      onClick={handleAiEdit}
+                      disabled={aiLoading || !aiPrompt.trim()}
+                      style={{ ...btnStyle, fontSize: 11, flex: 1 }}
+                      title="Edit the current template based on the prompt"
+                    >
+                      {aiLoading ? '…' : 'Edit'}
+                    </button>
+                    <button
+                      onClick={handleAiSuggestStyles}
+                      disabled={aiLoading}
+                      style={{ ...btnStyle, fontSize: 11, flex: 1 }}
+                      title="Suggest colour schemes and font pairings"
+                    >
+                      {aiLoading ? '…' : 'Styles'}
+                    </button>
+                  </div>
+                  {aiError && <span style={{ color: '#f88', fontSize: 11 }}>{aiError}</span>}
+                  {aiSuggestions.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span style={{ fontSize: 11, color: '#888' }}>Style suggestions:</span>
+                      {aiSuggestions.map((s, i) => (
+                        <div key={i} style={{ background: '#1a1a1a', borderRadius: 4, padding: '5px 8px', fontSize: 11 }}>
+                          <div style={{ color: '#ccc', fontWeight: 'bold' }}>{s.name}</div>
+                          <div style={{ color: '#888' }}>{s.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

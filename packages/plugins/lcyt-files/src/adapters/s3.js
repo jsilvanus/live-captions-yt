@@ -186,11 +186,58 @@ export async function createS3Adapter({ bucket, prefix = 'captions', region = 'a
     return `https://${bucket}.s3.${r}.amazonaws.com/${fullKey}`;
   }
 
+  // ── Enumeration ─────────────────────────────────────────────────────────────
+
+  /**
+   * Paginated listing of all S3 objects under a key's prefix.
+   *
+   * Returns an async iterable of `{ objectKey, storedKey, size, lastModified }` where:
+   *   - `objectKey`  — path relative to the key's prefix (suitable for putObject)
+   *   - `storedKey`  — full S3 object key (suitable for deleteFile)
+   *   - `size`       — object size in bytes
+   *   - `lastModified` — Unix epoch milliseconds
+   *
+   * Pagination via `ContinuationToken` is handled transparently.
+   *
+   * @param {string} apiKey
+   * @param {string} [prefix]  Optional sub-path to restrict the listing
+   * @returns {AsyncIterable<{ objectKey: string, storedKey: string, size: number, lastModified: number }>}
+   */
+  async function* listObjects(apiKey, prefix = '') {
+    const { ListObjectsV2Command } = await import('@aws-sdk/client-s3');
+    const keyPrefix = keyDir(apiKey) + '/';    // e.g. 'captions/mykey/'
+    const fullPrefix = prefix ? `${keyPrefix}${prefix}` : keyPrefix;
+
+    let continuationToken;
+    do {
+      const res = await client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: fullPrefix,
+        ...(continuationToken ? { ContinuationToken: continuationToken } : {}),
+      }));
+
+      for (const obj of (res.Contents || [])) {
+        // Guard against entries with missing or unexpectedly short keys (defensive)
+        if (!obj.Key || obj.Key.length < keyPrefix.length) continue;
+        // Strip the per-key prefix to get the relative objectKey
+        const objectKey = obj.Key.slice(keyPrefix.length);
+        yield {
+          objectKey,
+          storedKey: obj.Key,
+          size: obj.Size ?? 0,
+          lastModified: obj.LastModified?.getTime() ?? 0,
+        };
+      }
+
+      continuationToken = res.NextContinuationToken;
+    } while (continuationToken);
+  }
+
   /** Human-readable description for startup log. */
   function describe() {
     const ep = endpoint ? `, endpoint: ${endpoint}` : '';
     return `✓ File storage: S3 (bucket: ${bucket}, prefix: ${prefix}${ep})`;
   }
 
-  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, describe };
+  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, listObjects, describe };
 }

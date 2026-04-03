@@ -491,3 +491,261 @@ describe('/admin/batch', () => {
     assert.equal(status, 400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2: Advanced filtering (date ranges, status)
+// ---------------------------------------------------------------------------
+
+describe('/admin/users — advanced filters', () => {
+  beforeEach(() => {
+    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    db.prepare('DELETE FROM api_keys').run();
+    db.prepare('DELETE FROM users').run();
+  });
+
+  it('GET /admin/users?active=1 returns only active users', async () => {
+    seedUser('active@test.com');
+    const inactive = seedUser('inactive@test.com');
+    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(inactive.id);
+
+    const { body } = await adminGet('/admin/users?active=1');
+    assert.ok(body.users.every(u => u.active), 'all returned users should be active');
+    assert.equal(body.users.length, 1);
+  });
+
+  it('GET /admin/users?active=0 returns only inactive users', async () => {
+    seedUser('active2@test.com');
+    const inactive = seedUser('inactive2@test.com');
+    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(inactive.id);
+
+    const { body } = await adminGet('/admin/users?active=0');
+    assert.ok(body.users.every(u => !u.active));
+    assert.equal(body.users.length, 1);
+  });
+
+  it('GET /admin/users?from= filters by creation date', async () => {
+    seedUser('datefilter@test.com');
+
+    const past = '2000-01-01';
+    const future = '2099-01-01';
+
+    const { body: withFrom } = await adminGet(`/admin/users?from=${future}`);
+    assert.equal(withFrom.users.length, 0);
+
+    const { body: withOldFrom } = await adminGet(`/admin/users?from=${past}`);
+    assert.ok(withOldFrom.users.length >= 1);
+  });
+});
+
+describe('/admin/projects — advanced filters', () => {
+  beforeEach(() => {
+    db.prepare('DELETE FROM api_keys').run();
+    db.prepare('DELETE FROM users').run();
+  });
+
+  it('GET /admin/projects?status=active returns only active projects', async () => {
+    const p1 = seedProject('ActiveP');
+    const p2 = seedProject('RevokedP');
+    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(p2.key);
+
+    const { body } = await adminGet('/admin/projects?status=active');
+    assert.ok(body.projects.every(p => p.active));
+    assert.ok(body.projects.some(p => p.key === p1.key));
+    assert.ok(!body.projects.some(p => p.key === p2.key));
+  });
+
+  it('GET /admin/projects?status=revoked returns only revoked projects', async () => {
+    const p1 = seedProject('ActiveP2');
+    const p2 = seedProject('RevokedP2');
+    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(p2.key);
+
+    const { body } = await adminGet('/admin/projects?status=revoked');
+    assert.ok(body.projects.every(p => !p.active));
+    assert.ok(body.projects.some(p => p.key === p2.key));
+    assert.ok(!body.projects.some(p => p.key === p1.key));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2: User feature entitlements
+// ---------------------------------------------------------------------------
+
+describe('/admin/users/:id/features', () => {
+  let testUser;
+
+  beforeEach(() => {
+    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    db.prepare('DELETE FROM users').run();
+    testUser = seedUser('featuser@test.com', 'Feature User');
+  });
+
+  it('GET /admin/users/:id/features returns feature list', async () => {
+    const { status, body } = await adminGet(`/admin/users/${testUser.id}/features`);
+    assert.equal(status, 200);
+    assert.equal(body.userId, testUser.id);
+    assert.ok(Array.isArray(body.features));
+  });
+
+  it('PATCH /admin/users/:id/features grants and revokes features', async () => {
+    const { status, body } = await adminPatch(`/admin/users/${testUser.id}/features`, {
+      features: { radio: true, ingest: true, captions: false },
+    });
+    assert.equal(status, 200);
+    assert.equal(body.userId, testUser.id);
+    const radio = body.features.find(f => f.code === 'radio');
+    assert.ok(radio, 'radio feature should be present');
+    assert.equal(radio.enabled, true);
+    const captions = body.features.find(f => f.code === 'captions');
+    assert.ok(captions, 'captions feature should be present');
+    assert.equal(captions.enabled, false);
+  });
+
+  it('PATCH /admin/users/:id/features returns 400 for missing features body', async () => {
+    const { status } = await adminPatch(`/admin/users/${testUser.id}/features`, {});
+    assert.equal(status, 400);
+  });
+
+  it('PATCH /admin/users/:id/features returns 404 for missing user', async () => {
+    const { status } = await adminPatch('/admin/users/99999/features', {
+      features: { captions: true },
+    });
+    assert.equal(status, 404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2: Audit log
+// ---------------------------------------------------------------------------
+
+describe('/admin/audit-log', () => {
+  before(() => {
+    // Ensure clean audit log for this suite
+    try { db.prepare('DELETE FROM admin_audit_log').run(); } catch { /* */ }
+  });
+
+  it('GET /admin/audit-log returns entries list', async () => {
+    // Trigger an auditable action first
+    const user = seedUser('audituser@test.com');
+    await adminPost('/admin/users', { email: 'auditcreated@test.com', password: 'p' });
+
+    const { status, body } = await adminGet('/admin/audit-log');
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.entries));
+    assert.ok(typeof body.total === 'number');
+  });
+
+  it('GET /admin/audit-log?action= filters by action', async () => {
+    await adminPost('/admin/users', { email: 'foraudit@test.com', password: 'p' });
+
+    const { body } = await adminGet('/admin/audit-log?action=user.create');
+    assert.ok(body.entries.every(e => e.action === 'user.create'));
+  });
+
+  it('GET /admin/audit-log?from=9999 returns empty for future date', async () => {
+    const { body } = await adminGet('/admin/audit-log?from=9999-01-01');
+    assert.equal(body.entries.length, 0);
+  });
+
+  it('GET /admin/audit-log supports pagination', async () => {
+    const { body } = await adminGet('/admin/audit-log?limit=2&offset=0');
+    assert.ok(body.limit <= 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2: Export / Import
+// ---------------------------------------------------------------------------
+
+describe('/admin/export + /admin/import', () => {
+  beforeEach(() => {
+    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    db.prepare('DELETE FROM api_keys').run();
+    db.prepare('DELETE FROM users').run();
+  });
+
+  it('GET /admin/export/users returns users JSON', async () => {
+    seedUser('export1@test.com', 'Exported');
+
+    const { status, body } = await adminGet('/admin/export/users');
+    assert.equal(status, 200);
+    assert.ok(body.exportedAt);
+    assert.ok(Array.isArray(body.users));
+    assert.equal(body.count, body.users.length);
+    assert.ok(body.users[0].email);
+  });
+
+  it('GET /admin/export/projects returns projects JSON', async () => {
+    seedProject('ExportedProject');
+
+    const { status, body } = await adminGet('/admin/export/projects');
+    assert.equal(status, 200);
+    assert.ok(body.exportedAt);
+    assert.ok(Array.isArray(body.projects));
+    assert.equal(body.count, body.projects.length);
+  });
+
+  it('POST /admin/import/users imports new users', async () => {
+    const { status, body } = await adminPost('/admin/import/users', {
+      users: [
+        { email: 'import1@test.com', name: 'Imported One', features: [{ code: 'captions', enabled: true }] },
+        { email: 'import2@test.com' },
+      ],
+    });
+    assert.equal(status, 200);
+    assert.equal(body.imported, 2);
+    assert.equal(body.failed, 0);
+
+    const u1 = db.prepare('SELECT id FROM users WHERE email = ?').get('import1@test.com');
+    assert.ok(u1);
+  });
+
+  it('POST /admin/import/users skips existing users by default', async () => {
+    seedUser('existing@test.com');
+
+    const { body } = await adminPost('/admin/import/users', {
+      users: [{ email: 'existing@test.com' }],
+    });
+    assert.equal(body.skipped, 1);
+    assert.equal(body.imported, 0);
+  });
+
+  it('POST /admin/import/users rejects missing users array', async () => {
+    const { status } = await adminPost('/admin/import/users', {});
+    assert.equal(status, 400);
+  });
+
+  it('POST /admin/import/projects imports new projects', async () => {
+    const { status, body } = await adminPost('/admin/import/projects', {
+      projects: [
+        { key: 'importkey-abc', owner: 'ImportedProject', features: [{ code: 'captions', enabled: true }] },
+      ],
+    });
+    assert.equal(status, 200);
+    assert.equal(body.imported, 1);
+    assert.equal(body.failed, 0);
+
+    const proj = db.prepare('SELECT key FROM api_keys WHERE key = ?').get('importkey-abc');
+    assert.ok(proj);
+  });
+
+  it('POST /admin/import/projects skips existing keys by default', async () => {
+    const existing = seedProject('ExistingForImport');
+
+    const { body } = await adminPost('/admin/import/projects', {
+      projects: [{ key: existing.key, owner: 'whatever' }],
+    });
+    assert.equal(body.skipped, 1);
+    assert.equal(body.imported, 0);
+  });
+
+  it('POST /admin/import/projects rejects missing projects array', async () => {
+    const { status } = await adminPost('/admin/import/projects', {});
+    assert.equal(status, 400);
+  });
+});

@@ -1,7 +1,7 @@
 # Plan: `lcyt-files` Plugin — Storage-Adapter Caption & Stream File I/O
 
-**Status:** Implemented (core + three-mode storage + HLS adapter groundwork)
-**Date:** 2026-03-27
+**Status:** Implemented
+**Date:** 2026-04-02
 **Context:** Extracted from `plan_backend_split.md` — plugin splitting section.
 
 ---
@@ -171,34 +171,46 @@ Returns the HTTP URL where the object can be fetched by an HLS player.
 
 **CDN substitution:** `publicUrl()` always returns the storage origin URL. In production, HLS players should be pointed at a CDN URL, not directly at S3. The HLS manager layer (future `lcyt-rtmp` component) is responsible for swapping the origin for the CDN domain using a configured `CDN_URL` prefix. For R2 + Cloudflare CDN, the public custom domain differs from the R2 API endpoint stored in `key_storage_config`.
 
-### `listObjects(apiKey, prefix)` — **Pending**
+### `listObjects(apiKey, prefix)` — **Implemented**
 
-Not yet implemented. Required for:
+Implemented on all three adapters (local, S3, WebDAV). Returns:
 
-- **Rolling HLS window cleanup** — delete segments that have fallen outside the playlist window. Currently `HlsSubsManager` manages a rolling window in local memory and deletes local files directly; an S3-backed equivalent would need to list and delete S3 objects.
-- **GDPR erasure** — `DELETE /stats` currently removes DB rows but does not delete physical files or S3 objects under the key prefix. A complete erasure implementation needs `listObjects` to enumerate everything under `keyDir(apiKey)`.
-- **Session recovery** — on restart, list existing segments to reconstruct state without re-encoding.
-
-**Design notes for `listObjects`:**
 ```js
-listObjects(apiKey, prefix?)   → AsyncIterable<{ objectKey, size, lastModified }>
+listObjects(apiKey, prefix?)   → AsyncIterable<{ objectKey, storedKey, size, lastModified }>
 ```
 
-- S3: `ListObjectsV2Command` with pagination (`ContinuationToken`). The async iterable hides pagination from callers.
-- Local: `fs.readdir` (recursive for nested HLS subdirectories). Node 18.17+ supports `fs.readdir` with `recursive: true`.
-- Return value should be an async iterable so callers can process without loading all keys into memory (S3 buckets can have millions of objects).
+- `objectKey` — path relative to the key’s directory (suitable for `putObject`)
+- `storedKey` — the value to pass directly to `deleteFile(apiKey, storedKey)`
+- `size` — file size in bytes
+- `lastModified` — Unix epoch milliseconds
+
+**Per-adapter details:**
+
+- **Local:** recursive `fs.readdirSync` walk; works on all Node 18+ without the `{ recursive }` option.
+- **S3:** `ListObjectsV2Command` with `ContinuationToken` pagination; async iterable hides pagination from callers.
+- **WebDAV:** `client.getDirectoryContents(path, { deep: true })` for a single recursive listing call.
+
+### GDPR erasure for storage objects — **Implemented**
+
+`DELETE /stats` now deletes physical storage objects before anonymising the DB record:
+
+1. `resolveStorage(apiKey)` resolves the per-key (or global) adapter.
+2. `storage.listObjects(apiKey)` enumerates all objects under the key prefix.
+3. Each object is deleted via `storage.deleteFile(apiKey, obj.storedKey)` (best-effort; failures are logged but do not abort the request).
+4. `deleteAllCaptionFiles(db, apiKey)` removes all `caption_files` DB rows.
+5. `anonymizeKey(db, apiKey)` anonymises usage/stats data as before.
+
+`resolveStorage` is threaded from `createContentRouters` into `createStatsRouter` via a new `opts` parameter.
 
 ---
 
-## Pending / Future Work
+## Remaining / Future Work
 
 | Item | Priority | Notes |
 |---|---|---|
-| `listObjects(apiKey, prefix?)` | Medium | Needed for HLS rolling cleanup, GDPR erasure, recovery. Design above. |
 | Wire `putObject`/`publicUrl` into HLS manager | Medium | New `lcyt-rtmp` component; uses `resolveStorage` the same way captions do. |
 | CDN URL config field | Low | Add optional `cdn_url` to `key_storage_config` so `publicUrl()` can return the CDN URL directly. |
-| S3 adapter tests | Low | Requires mock S3 (e.g. `@smithy/util-test`, localstack, or custom http mock). |
-| GDPR erasure for S3 objects | Low | `DELETE /stats` should call `listObjects` + `deleteFile` for all objects under `keyDir(apiKey)`. |
+| S3 adapter tests | Low | Requires mock S3 (e.g. localstack or custom HTTP mock). |
 | Local FS → S3 migration script | Low | `scripts/migrate-files-to-s3.mjs` — walk `FILES_DIR`, upload each file, update DB `filename` column. |
 
 ---

@@ -36,8 +36,9 @@ export const NAV_GROUPS = [
     label: 'Admin',
     feature: 'admin',
     items: [
-      { id: 'admin-users',    label: 'Users',    path: '/admin/users' },
-      { id: 'admin-projects', label: 'Projects', path: '/admin/projects' },
+      { id: 'admin-users',     label: 'Users',     path: '/admin/users' },
+      { id: 'admin-projects',  label: 'Projects',  path: '/admin/projects' },
+      { id: 'admin-audit-log', label: 'Audit Log', path: '/admin/audit-log' },
     ],
   },
 ];
