@@ -582,9 +582,10 @@ Add route inside `<Switch>` in `SidebarApp`, after `/projects`:
 | `routes/project-features.js` — dep enforcement + autoEnabled | ✅ done |
 | `styles/components.css` — wizard CSS classes | ✅ done |
 | `SettingsModal.jsx` — backendUrl/apiKey removed | ✅ done |
-| `panels/` — all shared panel components | ⬜ pending |
-| `setup-wizard/lib/` — constants, computeSteps, applyDeps, readLocalSettings, saveWizard | ⬜ pending |
-| `setup-wizard/hooks/useWizardState.js` | ⬜ pending |
-| `setup-wizard/` — WizardShell, WizardProgress, DepNotice, StepFeatureSelection, StepReview, SetupWizardPage, index | ⬜ pending |
-| `main.jsx` — /setup route | ⬜ pending |
+| `panels/` — all shared panel components | ✅ done |
+| `setup-wizard/lib/` — constants, computeSteps, applyDeps, readLocalSettings, saveWizard | ✅ done |
+| `setup-wizard/hooks/useWizardState.js` | ✅ done |
+| `setup-wizard/` — WizardShell, WizardProgress, DepNotice, StepFeatureSelection, StepReview, SetupWizardPage, index | ✅ done |
+| `main.jsx` — /setup route | ✅ done |
+| `navConfig.js` — Setup nav item in NAV_BOTTOM | ✅ done |
 | CCModal/SettingsModal migration to use panels | ⬜ follow-on |
