@@ -735,7 +735,7 @@ export function createAdminRouter(db, jwtSecret) {
       }
       try {
         // Use a placeholder hash so the account exists but requires a password reset.
-        const passwordHash = await bcrypt.hash(`import-${Date.now()}`, 4);
+        const passwordHash = await bcrypt.hash(`import-${Date.now()}`, BCRYPT_ROUNDS);
         const created = createUser(db, { email: u.email, passwordHash, name: u.name || null });
         if (u.active === false) {
           db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(created.id);

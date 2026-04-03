@@ -156,36 +156,34 @@ function AdminAuditLogContent({ backendUrl }) {
         </thead>
         <tbody>
           {entries.map(e => (
-            <>
-              <tr key={e.id} style={{ borderBottom: '1px solid var(--color-border)', cursor: e.details ? 'pointer' : 'default' }}
-                onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
-                <td style={{ padding: '6px 4px', fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-                  {formatTimestamp(e.created_at)}
-                </td>
-                <td style={{ padding: '6px 4px', fontFamily: 'monospace', fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {e.actor}
-                </td>
-                <td style={{ padding: '6px 4px', fontWeight: 500 }}>
-                  {ACTION_LABELS[e.action] || e.action}
-                </td>
-                <td style={{ padding: '6px 4px', fontSize: 12 }}>
-                  <span style={{ color: 'var(--color-text-muted)' }}>{e.target_type}</span>
-                  {e.target_id && <> / <code style={{ fontSize: 11 }}>{e.target_id}</code></>}
-                </td>
-                <td style={{ padding: '6px 4px', fontSize: 11, color: 'var(--color-text-muted)' }}>
-                  {e.details && <span style={{ opacity: 0.7 }}>{expanded === e.id ? '▲ hide' : '▼ show'}</span>}
-                </td>
-              </tr>
-              {expanded === e.id && e.details && (
-                <tr key={`${e.id}-detail`} style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-                  <td colSpan={5} style={{ padding: '6px 12px' }}>
-                    <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--color-text-muted)' }}>
-                      {JSON.stringify(e.details, null, 2)}
-                    </pre>
-                  </td>
-                </tr>
-              )}
-            </>
+            <tr key={e.id} style={{ borderBottom: '1px solid var(--color-border)', cursor: e.details ? 'pointer' : 'default' }}
+              onClick={() => setExpanded(expanded === e.id ? null : e.id)}>
+              <td style={{ padding: '6px 4px', fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
+                {formatTimestamp(e.created_at)}
+              </td>
+              <td style={{ padding: '6px 4px', fontFamily: 'monospace', fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {e.actor}
+              </td>
+              <td style={{ padding: '6px 4px', fontWeight: 500 }}>
+                {ACTION_LABELS[e.action] || e.action}
+              </td>
+              <td style={{ padding: '6px 4px', fontSize: 12 }}>
+                <span style={{ color: 'var(--color-text-muted)' }}>{e.target_type}</span>
+                {e.target_id && <> / <code style={{ fontSize: 11 }}>{e.target_id}</code></>}
+              </td>
+              <td style={{ padding: '6px 4px', fontSize: 11, color: 'var(--color-text-muted)' }}>
+                {e.details && <span style={{ opacity: 0.7 }}>{expanded === e.id ? '▲ hide' : '▼ show'}</span>}
+              </td>
+            </tr>
+          ))}
+          {entries.filter(e => expanded === e.id && e.details).map(e => (
+            <tr key={`${e.id}-detail`} style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
+              <td colSpan={5} style={{ padding: '6px 12px' }}>
+                <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--color-text-muted)' }}>
+                  {JSON.stringify(e.details, null, 2)}
+                </pre>
+              </td>
+            </tr>
           ))}
           {entries.length === 0 && !loading && (
             <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-muted)' }}>No audit log entries</td></tr>
