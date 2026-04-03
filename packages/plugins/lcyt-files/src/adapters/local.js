@@ -6,7 +6,7 @@
  */
 
 import * as fs from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, relative } from 'node:path';
 import { promisify } from 'node:util';
 
 const unlinkAsync   = promisify(fs.unlink);
@@ -145,10 +145,62 @@ export function createLocalAdapter(baseDir) {
     return null;
   }
 
+  // ── Enumeration ─────────────────────────────────────────────────────────────
+
+  /**
+   * Recursively list all objects stored under a key's directory.
+   *
+   * Returns an async iterable of `{ objectKey, storedKey, size, lastModified }` where:
+   *   - `objectKey`  — relative path within the key's directory (suitable for putObject)
+   *   - `storedKey`  — full filesystem path (suitable for deleteFile)
+   *   - `size`       — file size in bytes
+   *   - `lastModified` — Unix epoch milliseconds of the file's mtime
+   *
+   * If `prefix` is given, only objects whose objectKey starts with that prefix are returned.
+   *
+   * @param {string} apiKey
+   * @param {string} [prefix]  Optional sub-path to restrict the listing
+   * @returns {AsyncIterable<{ objectKey: string, storedKey: string, size: number, lastModified: number }>}
+   */
+  async function* listObjects(apiKey, prefix = '') {
+    // Compute the key dir path without creating it (keyDir creates; we avoid that here)
+    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+    const dir = join(baseDir, safe);
+    const targetDir = prefix ? join(dir, prefix) : dir;
+
+    function* walkDir(currentDir) {
+      let entries;
+      try {
+        entries = fs.readdirSync(currentDir, { withFileTypes: true });
+      } catch (err) {
+        if (err.code !== 'ENOENT') {
+          // Unexpected error (e.g. EACCES) — log so operators notice, then skip
+          // eslint-disable-next-line no-console
+          console.warn('[local] listObjects: could not read directory', currentDir, err.message);
+        }
+        return;
+      }
+      for (const entry of entries) {
+        const fullPath = join(currentDir, entry.name);
+        if (entry.isDirectory()) {
+          yield* walkDir(fullPath);
+        } else if (entry.isFile()) {
+          let stat;
+          try { stat = fs.statSync(fullPath); } catch { continue; }
+          // Use path.relative for safe cross-platform path computation
+          const relToKey = relative(dir, fullPath).replace(/\\/g, '/');
+          yield { objectKey: relToKey, storedKey: fullPath, size: stat.size, lastModified: stat.mtimeMs };
+        }
+      }
+    }
+
+    yield* walkDir(targetDir);
+  }
+
   /** Human-readable description for startup log. */
   function describe() {
     return `✓ File storage: local (dir: ${baseDir})`;
   }
 
-  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, describe };
+  return { keyDir, openAppend, openRead, deleteFile, putObject, publicUrl, listObjects, describe };
 }

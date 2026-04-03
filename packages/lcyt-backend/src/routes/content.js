@@ -23,7 +23,7 @@ import { createFilesRouter } from 'lcyt-files';
  */
 export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null } = {}) {
   const router = Router();
-  router.use('/stats',           createStatsRouter(db, auth, store));
+  router.use('/stats',           createStatsRouter(db, auth, store, { resolveStorage }));
   router.use('/usage',           createUsageRouter(db));
   router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache));
   router.use('/viewer',          createViewerRouter(db));
