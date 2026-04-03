@@ -28,6 +28,10 @@ function AdminUsersContent({ backendUrl, navigate }) {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(new Set());
   const [batchAction, setBatchAction] = useState('');
+  // Advanced filters
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [activeFilter, setActiveFilter] = useState('');
 
   const limit = 50;
 
@@ -36,6 +40,9 @@ function AdminUsersContent({ backendUrl, navigate }) {
     try {
       const params = new URLSearchParams({ limit, offset });
       if (search) params.set('q', search);
+      if (fromDate) params.set('from', fromDate);
+      if (toDate) params.set('to', toDate);
+      if (activeFilter) params.set('active', activeFilter);
       const res = await adminFetch(backendUrl, `/admin/users?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -45,7 +52,7 @@ function AdminUsersContent({ backendUrl, navigate }) {
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, search, offset]);
+  }, [backendUrl, search, offset, fromDate, toDate, activeFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -79,6 +86,43 @@ function AdminUsersContent({ backendUrl, navigate }) {
     }
   }
 
+  async function handleExport() {
+    const res = await adminFetch(backendUrl, '/admin/export/users');
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lcyt-users-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const users = parsed.users || (Array.isArray(parsed) ? parsed : null);
+        if (!users) { alert('Invalid import file: expected { users: [...] }'); return; }
+        const res = await adminFetch(backendUrl, '/admin/import/users', {
+          method: 'POST',
+          body: JSON.stringify({ users }),
+        });
+        const data = await res.json();
+        alert(`Import complete: ${data.imported} imported, ${data.skipped} skipped, ${data.failed} failed`);
+        load();
+      } catch {
+        alert('Failed to parse import file');
+      }
+    };
+    reader.readAsText(file);
+    // Reset file input
+    e.target.value = '';
+  }
+
   const pageCount = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
@@ -86,7 +130,7 @@ function AdminUsersContent({ backendUrl, navigate }) {
     <div style={{ padding: 24, maxWidth: 1000 }}>
       <h2 style={{ marginBottom: 16 }}>👥 Users</h2>
 
-      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
         <input
           type="text"
           value={search}
@@ -97,6 +141,48 @@ function AdminUsersContent({ backendUrl, navigate }) {
         <button className="btn btn--ghost btn--sm" onClick={load} disabled={loading}>
           {loading ? '⏳' : '🔄'} Refresh
         </button>
+      </div>
+
+      {/* Advanced filters */}
+      <details style={{ marginBottom: 12 }}>
+        <summary style={{ fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+          🔍 Advanced filters
+        </summary>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, padding: '8px 12px', background: 'var(--color-surface)', borderRadius: 6, border: '1px solid var(--color-border)' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+            Created from
+            <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setOffset(0); }}
+              style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+            Created to
+            <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setOffset(0); }}
+              style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+            Status
+            <select value={activeFilter} onChange={e => { setActiveFilter(e.target.value); setOffset(0); }}
+              style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+              <option value="">All</option>
+              <option value="1">Active only</option>
+              <option value="0">Inactive only</option>
+            </select>
+          </label>
+          {(fromDate || toDate || activeFilter) && (
+            <button className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-end' }} onClick={() => { setFromDate(''); setToDate(''); setActiveFilter(''); setOffset(0); }}>
+              ✕ Clear filters
+            </button>
+          )}
+        </div>
+      </details>
+
+      {/* Export / Import toolbar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button className="btn btn--ghost btn--sm" onClick={handleExport}>⬇ Export JSON</button>
+        <label className="btn btn--ghost btn--sm" style={{ cursor: 'pointer' }}>
+          ⬆ Import JSON
+          <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
+        </label>
       </div>
 
       {selected.size > 0 && (

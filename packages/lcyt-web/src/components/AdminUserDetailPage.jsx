@@ -3,6 +3,32 @@ import { useRoute, useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { adminFetch } from '../lib/admin.js';
 
+const FEATURE_LABELS = {
+  captions:              'Captions',
+  'viewer-target':       'Viewer Target',
+  'mic-lock':            'Mic Lock',
+  stats:                 'Stats',
+  collaboration:         'Collaboration',
+  'file-saving':         'File Saving',
+  'files-local':         'Files (Local)',
+  'files-managed-bucket':'Files (Managed S3)',
+  'files-custom-bucket': 'Files (Custom S3)',
+  'files-webdav':        'Files (WebDAV)',
+  'files-browser-local': 'Files (Browser)',
+  translations:          'Translations',
+  'graphics-client':     'Graphics (Client)',
+  'graphics-server':     'Graphics (Server)',
+  ingest:                'RTMP Ingest',
+  radio:                 'Radio',
+  'hls-stream':          'HLS Stream',
+  preview:               'Preview',
+  restream:              'Restream',
+  'cea-captions':        'CEA Captions',
+  'stt-server':          'STT (Server)',
+  'device-control':      'Device Control',
+  embed:                 'Embed',
+};
+
 export function AdminUserDetailPage() {
   const session = useSessionContext();
   const backendUrl = session.backendUrl;
@@ -15,19 +41,34 @@ export function AdminUserDetailPage() {
   const [error, setError] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [pwMsg, setPwMsg] = useState('');
+  // Feature entitlements state
+  const [entitlements, setEntitlements] = useState({});
+  const [savingEntitlements, setSavingEntitlements] = useState(false);
+  const [entitlementMsg, setEntitlementMsg] = useState('');
 
   const load = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     setError('');
     try {
-      const res = await adminFetch(backendUrl, `/admin/users/${userId}`);
-      if (res.ok) {
-        setUser(await res.json());
-      } else if (res.status === 404) {
+      const [userRes, featRes] = await Promise.all([
+        adminFetch(backendUrl, `/admin/users/${userId}`),
+        adminFetch(backendUrl, `/admin/users/${userId}/features`),
+      ]);
+      if (userRes.ok) {
+        setUser(await userRes.json());
+      } else if (userRes.status === 404) {
         setError('User not found');
       } else {
-        setError(`Error: ${res.status}`);
+        setError(`Error: ${userRes.status}`);
+      }
+      if (featRes.ok) {
+        const featData = await featRes.json();
+        const state = {};
+        for (const f of (featData.features || [])) {
+          state[f.code] = f.enabled;
+        }
+        setEntitlements(state);
       }
     } catch {
       setError('Failed to load user');
@@ -72,6 +113,33 @@ export function AdminUserDetailPage() {
     });
     if (res.ok) {
       navigate('/admin/users');
+    }
+  }
+
+  function toggleEntitlement(code) {
+    setEntitlements(prev => ({ ...prev, [code]: !prev[code] }));
+  }
+
+  async function saveEntitlements() {
+    setSavingEntitlements(true);
+    setEntitlementMsg('');
+    try {
+      const res = await adminFetch(backendUrl, `/admin/users/${userId}/features`, {
+        method: 'PATCH',
+        body: JSON.stringify({ features: entitlements }),
+      });
+      if (res.ok) {
+        setEntitlementMsg('Entitlements saved');
+        const data = await res.json();
+        const state = {};
+        for (const f of (data.features || [])) { state[f.code] = f.enabled; }
+        setEntitlements(state);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setEntitlementMsg(data.error || 'Failed to save entitlements');
+      }
+    } finally {
+      setSavingEntitlements(false);
     }
   }
 
@@ -129,6 +197,36 @@ export function AdminUserDetailPage() {
           <button type="submit" className="btn btn--ghost btn--sm" disabled={!newPassword}>Set</button>
           {pwMsg && <span style={{ fontSize: 12, color: pwMsg.includes('updated') ? 'var(--color-success, #2a7)' : 'var(--color-error, #e55)' }}>{pwMsg}</span>}
         </form>
+      </div>
+
+      {/* Feature Entitlements */}
+      <div style={{ marginBottom: 24 }}>
+        <h3 style={{ fontSize: 15, marginBottom: 4 }}>Feature Entitlements</h3>
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginBottom: 8 }}>
+          Control which features this user may enable on their projects.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 6, marginBottom: 10 }}>
+          {Object.entries(FEATURE_LABELS).map(([code, label]) => (
+            <label key={code} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', padding: '4px 8px', borderRadius: 6, background: entitlements[code] ? 'var(--color-success-bg, #e6f9e6)' : 'transparent' }}>
+              <input
+                type="checkbox"
+                checked={!!entitlements[code]}
+                onChange={() => toggleEntitlement(code)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn btn--primary btn--sm" onClick={saveEntitlements} disabled={savingEntitlements}>
+            {savingEntitlements ? 'Saving…' : 'Save Entitlements'}
+          </button>
+          {entitlementMsg && (
+            <span style={{ fontSize: 12, color: entitlementMsg.includes('saved') ? 'var(--color-success, #2a7)' : 'var(--color-error, #e55)' }}>
+              {entitlementMsg}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Projects */}

@@ -1,6 +1,6 @@
 # Admin Panel — Web-based User & Project Management
 
-**Status:** in-progress (Phase 1)
+**Status:** implemented (Phase 1 + Phase 2)
 
 > Conflates and extends the user/projects system from `plan_userprojects.md`.
 > This plan covers the **admin dashboard** for managing users, projects (API keys),
@@ -142,12 +142,55 @@ When `features` is included alongside `action`, features are updated for all mat
 - [x] Frontend: Navigation config update
 - [x] Frontend: Route registration
 
-## Phase 2 (planned)
+## Phase 2 (implemented)
 
-- [ ] User feature entitlement management in admin UI
-- [ ] Audit log viewer (admin actions)
-- [ ] Export/import user and project data
-- [ ] Advanced filtering (date ranges, usage stats)
+### Backend additions
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET`  | `/admin/users` | Enhanced: added `?from=`, `?to=`, `?active=` filters |
+| `GET`  | `/admin/projects` | Enhanced: added `?from=`, `?to=`, `?status=` filters |
+| `GET`  | `/admin/users/:id/features` | List user feature entitlements |
+| `PATCH`| `/admin/users/:id/features` | Grant/revoke user feature entitlements |
+| `GET`  | `/admin/audit-log` | Query audit log (`?q=`, `?action=`, `?actor=`, `?from=`, `?to=`) |
+| `GET`  | `/admin/export/users` | Export all users + features as JSON |
+| `GET`  | `/admin/export/projects` | Export all projects + features as JSON |
+| `POST` | `/admin/import/users` | Import users from JSON export |
+| `POST` | `/admin/import/projects` | Import projects from JSON export |
+
+### Database additions
+
+- `admin_audit_log` table — immutable append-only log of admin mutations:
+  - `actor` — `user:email` or `api-key` label
+  - `action` — e.g. `user.create`, `project.features.update`, `export.users`
+  - `target_type` / `target_id` — what was affected
+  - `details` — JSON payload of the change
+  - `ip` — client IP address
+  - `created_at` — timestamp (indexed)
+
+### Frontend additions
+
+- `AdminUsersPage` — date range + active/inactive status filters; Export JSON / Import JSON buttons
+- `AdminProjectsPage` — date range + active/revoked status filters; Export JSON / Import JSON buttons
+- `AdminUserDetailPage` — "Feature Entitlements" section: checkbox grid for all known feature codes with save
+- `AdminAuditLogPage` (`/admin/audit-log`) — full audit log viewer with action / actor / date range filters and click-to-expand details panel
+- `navConfig.js` — "Audit Log" item added to Admin sidebar group
+
+- [x] Backend: `admin_audit_log` table schema + `db/audit-log.js` helpers
+- [x] Backend: Audit logging on all mutating admin endpoints
+- [x] Backend: `GET /admin/audit-log` (with filters)
+- [x] Backend: `GET /admin/users` enhanced (date range + active filter)
+- [x] Backend: `GET /admin/projects` enhanced (date range + status filter)
+- [x] Backend: `GET /admin/users/:id/features` + `PATCH /admin/users/:id/features`
+- [x] Backend: `GET /admin/export/users` + `GET /admin/export/projects`
+- [x] Backend: `POST /admin/import/users` + `POST /admin/import/projects`
+- [x] Backend: Tests (55 tests passing)
+- [x] Frontend: User feature entitlements editor in `AdminUserDetailPage`
+- [x] Frontend: `AdminAuditLogPage` component + route `/admin/audit-log`
+- [x] Frontend: `AdminUsersPage` — advanced filters + export/import
+- [x] Frontend: `AdminProjectsPage` — advanced filters + export/import
+- [x] Frontend: `navConfig.js` — Audit Log nav item
+- [x] Frontend: Build verified
 
 ## Phase 3 (planned)
 

@@ -33,6 +33,10 @@ function AdminProjectsContent({ backendUrl, navigate }) {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(new Set());
   const [batchAction, setBatchAction] = useState('');
+  // Advanced filters
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const limit = 50;
 
@@ -41,6 +45,9 @@ function AdminProjectsContent({ backendUrl, navigate }) {
     try {
       const params = new URLSearchParams({ limit, offset });
       if (search) params.set('q', search);
+      if (fromDate) params.set('from', fromDate);
+      if (toDate) params.set('to', toDate);
+      if (statusFilter) params.set('status', statusFilter);
       const res = await adminFetch(backendUrl, `/admin/projects?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -50,7 +57,7 @@ function AdminProjectsContent({ backendUrl, navigate }) {
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, search, offset]);
+  }, [backendUrl, search, offset, fromDate, toDate, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,6 +91,42 @@ function AdminProjectsContent({ backendUrl, navigate }) {
     }
   }
 
+  async function handleExport() {
+    const res = await adminFetch(backendUrl, '/admin/export/projects');
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lcyt-projects-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        const importProjects = parsed.projects || (Array.isArray(parsed) ? parsed : null);
+        if (!importProjects) { alert('Invalid import file: expected { projects: [...] }'); return; }
+        const res = await adminFetch(backendUrl, '/admin/import/projects', {
+          method: 'POST',
+          body: JSON.stringify({ projects: importProjects }),
+        });
+        const data = await res.json();
+        alert(`Import complete: ${data.imported} imported, ${data.skipped} skipped, ${data.failed} failed`);
+        load();
+      } catch {
+        alert('Failed to parse import file');
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  }
+
   const pageCount = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
@@ -104,9 +147,51 @@ function AdminProjectsContent({ backendUrl, navigate }) {
         </button>
       </div>
 
-      <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 12 }}>
+      <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8 }}>
         Tip: use <code>user:alice@example.com</code> to find projects by user email. Multiple <code>user:</code> filters combine results.
       </p>
+
+      {/* Advanced filters */}
+      <details style={{ marginBottom: 12 }}>
+        <summary style={{ fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer', userSelect: 'none' }}>
+          🔍 Advanced filters
+        </summary>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, padding: '8px 12px', background: 'var(--color-surface)', borderRadius: 6, border: '1px solid var(--color-border)' }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+            Created from
+            <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setOffset(0); }}
+              style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+            Created to
+            <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setOffset(0); }}
+              style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+          </label>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+            Status
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setOffset(0); }}
+              style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+              <option value="">All</option>
+              <option value="active">Active only</option>
+              <option value="revoked">Revoked only</option>
+            </select>
+          </label>
+          {(fromDate || toDate || statusFilter) && (
+            <button className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-end' }} onClick={() => { setFromDate(''); setToDate(''); setStatusFilter(''); setOffset(0); }}>
+              ✕ Clear filters
+            </button>
+          )}
+        </div>
+      </details>
+
+      {/* Export / Import toolbar */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+        <button className="btn btn--ghost btn--sm" onClick={handleExport}>⬇ Export JSON</button>
+        <label className="btn btn--ghost btn--sm" style={{ cursor: 'pointer' }}>
+          ⬆ Import JSON
+          <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
+        </label>
+      </div>
 
       {selected.size > 0 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', padding: '8px 12px', background: 'var(--color-surface)', borderRadius: 6, border: '1px solid var(--color-border)' }}>
@@ -183,3 +268,6 @@ function AdminProjectsContent({ backendUrl, navigate }) {
     </div>
   );
 }
+
+// ── Admin Projects Page ─────────────────────────────────────────────────────
+
