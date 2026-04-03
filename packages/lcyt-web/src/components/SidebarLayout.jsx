@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { KEYS } from '../lib/storageKeys.js';
 import { TopBar, Sidebar } from './sidebar/Sidebar.jsx';
+import { CommandPalette } from './CommandPalette.jsx';
+import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp.jsx';
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -56,6 +58,8 @@ function ReconnectBanner() {
 export function SidebarLayout({ children }) {
   const [expanded, setExpanded] = useState(getSidebarExpanded);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const isMobile = () => window.innerWidth < MOBILE_BREAKPOINT;
   const [, navigate] = useLocation();
 
@@ -69,6 +73,33 @@ export function SidebarLayout({ children }) {
     }
   }
 
+  // Global keyboard shortcuts: Ctrl/Cmd+K → command palette; ? → shortcuts help
+  const onGlobalKeyDown = useCallback((e) => {
+    // Ctrl/Cmd+K — open command palette (works even in text inputs)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+      e.preventDefault();
+      setCmdPaletteOpen(v => !v);
+      return;
+    }
+
+    // Skip remaining shortcuts when a text field has focus
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    const inDialog = document.activeElement?.closest('[role="dialog"]');
+    if (inDialog) return;
+
+    // '?' — open keyboard shortcuts help
+    if (e.key === '?') {
+      e.preventDefault();
+      setShortcutsOpen(v => !v);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener('keydown', onGlobalKeyDown);
+    return () => document.removeEventListener('keydown', onGlobalKeyDown);
+  }, [onGlobalKeyDown]);
+
   useEffect(() => {
     function onResize() {
       if (window.innerWidth >= MOBILE_BREAKPOINT) {
@@ -81,7 +112,12 @@ export function SidebarLayout({ children }) {
 
   return (
     <div className="sidebar-shell">
-      <TopBar expanded={expanded} onToggle={handleToggle} />
+      <TopBar
+        expanded={expanded}
+        onToggle={handleToggle}
+        onOpenCommandPalette={() => setCmdPaletteOpen(true)}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
+      />
       <ReconnectBanner />
       <div className="sidebar-body">
         <Sidebar expanded={expanded} onNavigate={path => navigate(path)} />
@@ -90,6 +126,8 @@ export function SidebarLayout({ children }) {
           {children}
         </div>
       </div>
+      <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
+      <KeyboardShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
     </div>
   );
 }

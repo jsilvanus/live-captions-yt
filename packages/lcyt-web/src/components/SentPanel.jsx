@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { formatTime } from '../lib/formatting';
+
+const ITEM_HEIGHT = 28; // px — approximate height of one sent-item row
+const VIRTUAL_THRESHOLD = 100; // enable windowing above this many entries
+const OVERSCAN = 10; // extra rows to render above/below visible area
 
 function getGlobeTitle(entry) {
   const others = Object.entries(entry.otherTranslations || {});
@@ -70,13 +74,60 @@ export function SentPanel() {
     try { return localStorage.getItem('lcyt:sent-panel-wrap') === '1'; } catch { return false; }
   });
 
+  // Virtual scrolling state
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [clientHeight, setClientHeight] = useState(400);
+
+  const useVirtual = entries.length > VIRTUAL_THRESHOLD;
+
+  const onScroll = useCallback(() => {
+    if (scrollRef.current) {
+      setScrollTop(scrollRef.current.scrollTop);
+      setClientHeight(scrollRef.current.clientHeight);
+    }
+  }, []);
+
+  // Update clientHeight on resize
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setClientHeight(el.clientHeight);
+    if (!window.ResizeObserver) return;
+    const ro = new ResizeObserver(() => setClientHeight(el.clientHeight));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Auto-scroll to top when new entries arrive (newest first) and user is near top
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && el.scrollTop < 60) el.scrollTop = 0;
+  }, [entries.length]);
+
   function toggleWordWrap(e) {
     const v = e.target.checked;
     setWordWrap(v);
     try { localStorage.setItem('lcyt:sent-panel-wrap', v ? '1' : '0'); } catch {}
   }
 
-  const visible = entries.slice(0, 500);
+  // Compute visible slice for virtual mode
+  let visibleEntries;
+  let paddingTop = 0;
+  let paddingBottom = 0;
+
+  if (useVirtual) {
+    const totalHeight = entries.length * ITEM_HEIGHT;
+    const startIndex = Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN);
+    const visibleCount = Math.ceil(clientHeight / ITEM_HEIGHT) + OVERSCAN * 2;
+    const endIndex = Math.min(entries.length, startIndex + visibleCount);
+
+    visibleEntries = entries.slice(startIndex, endIndex);
+    paddingTop = startIndex * ITEM_HEIGHT;
+    paddingBottom = Math.max(0, totalHeight - endIndex * ITEM_HEIGHT);
+  } else {
+    visibleEntries = entries;
+  }
 
   return (
     <div className="sent-panel">
@@ -93,17 +144,32 @@ export function SentPanel() {
           aria-label="Clear sent log"
         >✕ Clear</button>
       </div>
-      <ul className={`sent-list${wordWrap ? ' sent-list--wordwrap' : ''}`}>
-        {visible.length === 0 ? (
+      <ul
+        ref={scrollRef}
+        className={`sent-list${wordWrap ? ' sent-list--wordwrap' : ''}`}
+        onScroll={useVirtual ? onScroll : undefined}
+        style={useVirtual ? { overflowY: 'auto', position: 'relative' } : undefined}
+        aria-label="Sent captions list"
+      >
+        {useVirtual && paddingTop > 0 && (
+          <li aria-hidden="true" style={{ height: paddingTop, listStyle: 'none' }} />
+        )}
+        {visibleEntries.length === 0 ? (
           <li className="sent-panel__empty">No captions sent yet</li>
         ) : (
-          visible.map((entry, i) => {
-            const prev = i > 0 ? visible[i - 1] : null;
+          visibleEntries.map((entry, i) => {
+            const globalIdx = useVirtual
+              ? Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN) + i
+              : i;
+            const prev = globalIdx > 0 ? entries[globalIdx - 1] : null;
             const isBatchContinuation = !!(prev && entry.requestId && entry.requestId === prev.requestId);
             return (
-              <SentItem key={`${entry.requestId}-${i}`} entry={entry} isBatchContinuation={isBatchContinuation} />
+              <SentItem key={`${entry.requestId}-${globalIdx}`} entry={entry} isBatchContinuation={isBatchContinuation} />
             );
           })
+        )}
+        {useVirtual && paddingBottom > 0 && (
+          <li aria-hidden="true" style={{ height: paddingBottom, listStyle: 'none' }} />
         )}
       </ul>
     </div>
