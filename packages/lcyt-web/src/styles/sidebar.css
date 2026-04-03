@@ -1554,3 +1554,347 @@
 .db-metacode__actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .db-metacode__lang-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
 .db-metacode__lang-input { flex: 1; font-size: 12px; }
+
+/* ─── TopBar badges (5c status bar enrichment) ───────────────────────────── */
+
+.top-bar__badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 1;
+  overflow: hidden;
+}
+
+.top-bar__badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-dim);
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-family: var(--font-ui);
+  line-height: 1.4;
+  cursor: default;
+}
+
+.top-bar__badge--yt     { color: #f28; border-color: rgba(255, 34, 136, 0.3); }
+.top-bar__badge--viewer { color: var(--color-text-muted); }
+.top-bar__badge--lang   { color: var(--color-accent); border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.top-bar__badge--batch  { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
+
+/* Small icon button in topbar (⌘ / ?) */
+
+.top-bar__icon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.top-bar__icon-btn:hover {
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+}
+
+/* ─── Command palette (5a) ─────────────────────────────────────────────────── */
+
+.cmd-palette-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 80px;
+  padding: 80px 16px 0;
+}
+
+.cmd-palette {
+  width: 100%;
+  max-width: 560px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100vh - 120px);
+}
+
+.cmd-palette__search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.cmd-palette__search-icon {
+  font-size: 15px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.cmd-palette__input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  color: var(--color-text);
+  font-size: 15px;
+  font-family: var(--font-ui);
+  padding: 0;
+}
+
+.cmd-palette__input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.cmd-palette__esc-hint {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.cmd-palette__list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+  margin: 0;
+  list-style: none;
+}
+
+.cmd-palette__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: background 0.1s;
+  font-family: var(--font-ui);
+}
+
+.cmd-palette__item:hover,
+.cmd-palette__item--active {
+  background: var(--color-surface-elevated);
+}
+
+.cmd-palette__item--active {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+.cmd-palette__item-icon {
+  font-size: 15px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.cmd-palette__item-label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-palette__item-path {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.cmd-palette__empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  list-style: none;
+}
+
+.cmd-palette__footer {
+  display: flex;
+  gap: 16px;
+  padding: 8px 16px;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.cmd-palette__hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.cmd-palette__hint kbd {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-ui);
+  color: var(--color-text-dim);
+}
+
+/* ─── Keyboard shortcuts help (5b) ─────────────────────────────────────────── */
+
+.shortcuts-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.shortcuts-dialog {
+  width: 100%;
+  max-width: 480px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: calc(100vh - 60px);
+}
+
+.shortcuts-dialog__header {
+  display: flex;
+  align-items: center;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.shortcuts-dialog__title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.shortcuts-dialog__close {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1;
+  transition: background 0.12s, color 0.12s;
+}
+.shortcuts-dialog__close:hover {
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+}
+
+.shortcuts-dialog__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 0;
+}
+
+.shortcuts-section {
+  padding: 0 18px 12px;
+}
+
+.shortcuts-section__title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  margin: 10px 0 6px;
+}
+
+.shortcuts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.shortcuts-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.shortcuts-keys {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.shortcuts-plus {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin: 0 1px;
+}
+
+.shortcut-key {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-family: var(--font-ui);
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.shortcuts-desc {
+  font-size: 12px;
+  color: var(--color-text-dim);
+  flex: 1;
+  margin: 0;
+}
+
+.shortcuts-dialog__footer {
+  padding: 10px 18px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+.shortcuts-dialog__footer kbd {
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 3px;
+  padding: 1px 5px;
+  font-size: 10px;
+  font-family: var(--font-ui);
+  color: var(--color-text-dim);
+}
