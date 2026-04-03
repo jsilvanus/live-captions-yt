@@ -153,8 +153,8 @@ describe('SentPanel', () => {
     expect(continuations.length).toBe(1);
   });
 
-  it('limits visible entries to 500', () => {
-    const entries = Array.from({ length: 600 }, (_, i) => ({
+  it('renders all entries below virtual threshold without windowing', () => {
+    const entries = Array.from({ length: 50 }, (_, i) => ({
       requestId: `r${i}`,
       text: `Caption ${i}`,
       sequence: i,
@@ -164,6 +164,23 @@ describe('SentPanel', () => {
     }));
     renderSentPanel(entries);
     const items = document.querySelectorAll('.sent-item');
-    expect(items.length).toBe(500);
+    expect(items.length).toBe(50);
+  });
+
+  it('renders a windowed subset for large entry lists', () => {
+    const entries = Array.from({ length: 600 }, (_, i) => ({
+      requestId: `r${i}`,
+      text: `Caption ${i}`,
+      sequence: i,
+      pending: false,
+      error: false,
+      timestamp: Date.now(),
+    }));
+    renderSentPanel(entries);
+    // Virtual mode should render far fewer than 600 items
+    const items = document.querySelectorAll('.sent-item');
+    expect(items.length).toBeLessThan(600);
+    // But at least a few rows should be visible
+    expect(items.length).toBeGreaterThan(0);
   });
 });
