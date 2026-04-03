@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { useFileContext } from '../contexts/FileContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
+import { SessionContext } from '../contexts/SessionContext';
 export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 
 function makeBlock(type) {
@@ -523,6 +524,16 @@ export function PlannerPage() {
   const { showToast } = useToastContext();
   const { editorWidth, editorRef, startResize } = usePlannerResize();
 
+  const session = useContext(SessionContext);
+  const backendUrl = (session?.backendUrl || '').replace(/\/$/, '');
+  const sessionToken = session?.getSessionToken?.();
+
+  const [aiAssistOpen, setAiAssistOpen] = useState(false);
+  const [aiPrompt, setAiPrompt] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState('');
+  const [aiTemplateId, setAiTemplateId] = useState('');
+
   const [blocks, setBlocks] = useState(() => {
     try {
       const saved = localStorage.getItem(PLANNER_DRAFT_KEY);
@@ -536,6 +547,14 @@ export function PlannerPage() {
   const [editingFilename, setEditingFilename] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showNormalizeModal, setShowNormalizeModal] = useState(false);
+
+  const RUNDOWN_TEMPLATES = [
+    { id: '', label: 'Custom (no template)' },
+    { id: 'church_service', label: '⛪ Church service' },
+    { id: 'concert', label: '🎵 Concert' },
+    { id: 'conference', label: '🏛 Conference' },
+    { id: 'sports', label: '🏆 Sports event' },
+  ];
 
   const saveTimer = useRef(null);
 
@@ -655,6 +674,52 @@ export function PlannerPage() {
     setDirty(true);
   }
 
+  // ── AI Assist helpers ──
+  async function handleAiGenerate() {
+    if (!aiPrompt.trim() || aiLoading || !backendUrl || !sessionToken) return;
+    setAiLoading(true); setAiError('');
+    try {
+      const body = { prompt: aiPrompt.trim() };
+      if (aiTemplateId) body.templateId = aiTemplateId;
+      const res = await fetch(`${backendUrl}/agent/generate-rundown`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      if (typeof data.content === 'string' && data.content.trim()) {
+        if (dirty && blocks.length > 0 && !window.confirm('Replace current plan with AI-generated rundown?')) return;
+        setBlocks(deserializePlan(data.content));
+        setFilename(aiPrompt.trim().slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '') + '.md');
+        setDirty(true);
+        setAiPrompt('');
+      }
+    } catch (err) { setAiError(err.message); }
+    finally { setAiLoading(false); }
+  }
+
+  async function handleAiEdit() {
+    if (!aiPrompt.trim() || aiLoading || !backendUrl || !sessionToken) return;
+    setAiLoading(true); setAiError('');
+    try {
+      const content = serializePlan(blocks);
+      const res = await fetch(`${backendUrl}/agent/edit-rundown`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
+        body: JSON.stringify({ content, prompt: aiPrompt.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      if (typeof data.content === 'string') {
+        setBlocks(deserializePlan(data.content));
+        setDirty(true);
+        setAiPrompt('');
+      }
+    } catch (err) { setAiError(err.message); }
+    finally { setAiLoading(false); }
+  }
+
   // Line number counter (only caption + empty-send blocks get numbers)
   let lineNum = 0;
 
@@ -684,6 +749,66 @@ export function PlannerPage() {
         />
       )}
       <div className="planner-body">
+        {/* AI Assist panel */}
+        <div className="planner-ai-assist">
+          <button
+            className={`planner-ai-assist__toggle btn btn--secondary btn--sm${aiAssistOpen ? ' active' : ''}`}
+            onClick={() => setAiAssistOpen(v => !v)}
+            title="AI-assisted rundown generation"
+          >
+            ✨ AI Assist {aiAssistOpen ? '▲' : '▼'}
+          </button>
+          {aiAssistOpen && (
+            <div className="planner-ai-assist__panel">
+              {!sessionToken && (
+                <p className="planner-ai-assist__note">Connect to a backend with AI configured to use AI Assist.</p>
+              )}
+              <div className="planner-ai-assist__row">
+                <select
+                  className="planner-ai-assist__select"
+                  value={aiTemplateId}
+                  onChange={e => setAiTemplateId(e.target.value)}
+                  disabled={aiLoading || !sessionToken}
+                  aria-label="Rundown template"
+                >
+                  {RUNDOWN_TEMPLATES.map(t => (
+                    <option key={t.id} value={t.id}>{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="planner-ai-assist__row">
+                <textarea
+                  className="planner-ai-assist__input"
+                  rows={2}
+                  value={aiPrompt}
+                  onChange={e => setAiPrompt(e.target.value)}
+                  placeholder="Describe the event or the edit to make…"
+                  disabled={aiLoading || !sessionToken}
+                />
+              </div>
+              <div className="planner-ai-assist__row planner-ai-assist__row--buttons">
+                <button
+                  className="btn btn--primary btn--sm"
+                  onClick={handleAiGenerate}
+                  disabled={aiLoading || !aiPrompt.trim() || !sessionToken}
+                  title="Generate a new rundown from the prompt"
+                >
+                  {aiLoading ? '…' : 'Generate'}
+                </button>
+                <button
+                  className="btn btn--secondary btn--sm"
+                  onClick={handleAiEdit}
+                  disabled={aiLoading || !aiPrompt.trim() || !sessionToken || blocks.length === 0}
+                  title="Edit the current rundown based on the prompt"
+                >
+                  {aiLoading ? '…' : 'Edit'}
+                </button>
+              </div>
+              {aiError && <p className="planner-ai-assist__error">{aiError}</p>}
+            </div>
+          )}
+        </div>
+
         <div
           className="planner-editor"
           ref={editorRef}
