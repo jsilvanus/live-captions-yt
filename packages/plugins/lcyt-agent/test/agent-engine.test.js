@@ -257,3 +257,126 @@ describe('agent DB helpers', () => {
     assert.equal(getRecentAgentEvents(db, 'key2').length, 1);
   });
 });
+
+// Phase 5 & 6 tests
+describe('AgentEngine — Phase 5 & 6', () => {
+  async function createDb() {
+    const Database = (await import('better-sqlite3')).default;
+    const db = new Database(':memory:');
+    const { runMigrations } = await import('../src/db.js');
+    const { runAiMigrations } = await import('../src/ai-config.js');
+    runMigrations(db);
+    runAiMigrations(db);
+    return db;
+  }
+
+  test('generateTemplate returns fallback when no AI config', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const agent = new AgentEngine(db);
+    const tpl = await agent.generateTemplate('key1', 'A lower-third with speaker name');
+    assert.ok(tpl && Array.isArray(tpl.layers));
+    assert.equal(tpl.layers.length, 0);
+  });
+
+  test('generateTemplate returns fallback when provider is none', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const { setAiConfig } = await import('../src/ai-config.js');
+    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    const agent = new AgentEngine(db);
+    const tpl = await agent.generateTemplate('key1', 'Lower third');
+    assert.ok(tpl && Array.isArray(tpl.layers));
+    assert.equal(tpl.layers.length, 0);
+  });
+
+  test('editTemplate returns fallback when no AI config', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const agent = new AgentEngine(db);
+    const original = { background: 'transparent', width: 1920, height: 1080, groups: [], layers: [] };
+    const out = await agent.editTemplate('key1', original, 'Make background darker');
+    assert.deepEqual(out, original);
+  });
+
+  test('editTemplate returns fallback when provider is none', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const { setAiConfig } = await import('../src/ai-config.js');
+    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    const agent = new AgentEngine(db);
+    const original = { background: 'transparent', width: 1920, height: 1080, groups: [], layers: [] };
+    const out = await agent.editTemplate('key1', original, 'Change color');
+    assert.deepEqual(out, original);
+  });
+
+  test('suggestStyles returns empty array when no AI config', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const agent = new AgentEngine(db);
+    const out = await agent.suggestStyles('key1', { background: 'transparent', layers: [] });
+    assert.ok(Array.isArray(out));
+    assert.equal(out.length, 0);
+  });
+
+  test('generateRundown returns empty string when no AI config', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const agent = new AgentEngine(db);
+    const out = await agent.generateRundown('key1', 'A church service');
+    assert.equal(out, '');
+  });
+
+  test('generateRundown returns empty string when provider is none', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const { setAiConfig } = await import('../src/ai-config.js');
+    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    const agent = new AgentEngine(db);
+    const out = await agent.generateRundown('key1', 'Service');
+    assert.equal(out, '');
+  });
+
+  test('editRundown returns original content when no AI config', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const agent = new AgentEngine(db);
+    const content = 'Original rundown';
+    const out = await agent.editRundown('key1', content, 'Add a pause');
+    assert.equal(out, content);
+  });
+
+  test('editRundown returns original content when provider is none', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const { setAiConfig } = await import('../src/ai-config.js');
+    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    const agent = new AgentEngine(db);
+    const content = 'Original rundown';
+    const out = await agent.editRundown('key1', content, 'Add a pause');
+    assert.equal(out, content);
+  });
+
+  test('_callChatCompletion opts.maxTokens and opts.temperature are forwarded', async () => {
+    const db = await createDb();
+    const { AgentEngine } = await import('../src/agent-engine.js');
+    const agent = new AgentEngine(db);
+    let seenBody = null;
+    const origFetch = global.fetch;
+    global.fetch = async (url, { method, headers, body }) => {
+      seenBody = JSON.parse(body);
+      return {
+        ok: true,
+        json: async () => ({ choices: [ { message: { content: 'hi' } } ] }),
+      };
+    };
+    try {
+      const res = await agent._callChatCompletion({ apiUrl: 'https://api.test', apiKey: 'k', model: 'm' }, 'sys', 'usr', { temperature: 0.55, maxTokens: 1234 });
+      assert.equal(res, 'hi');
+      assert.equal(seenBody.temperature, 0.55);
+      assert.equal(seenBody.max_tokens, 1234);
+    } finally {
+      global.fetch = origFetch;
+    }
+  });
+});

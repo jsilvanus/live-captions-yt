@@ -1841,6 +1841,70 @@
   border-color: rgba(52, 199, 89, 0.4);
 }
 
+/* ── Planner AI Assist ── */
+.planner-ai-assist {
+  padding: 0 12px 6px;
+  border-bottom: 1px solid var(--color-border, #333);
+}
+
+.planner-ai-assist__toggle {
+  margin-top: 6px;
+}
+
+.planner-ai-assist__toggle.active {
+  background: var(--color-accent, #2255aa);
+  color: #fff;
+}
+
+.planner-ai-assist__panel {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.planner-ai-assist__note {
+  font-size: 12px;
+  color: var(--color-text-muted, #888);
+  margin: 0;
+}
+
+.planner-ai-assist__row {
+  display: flex;
+  gap: 6px;
+}
+
+.planner-ai-assist__row--buttons {
+  flex-wrap: wrap;
+}
+
+.planner-ai-assist__select {
+  flex: 1;
+  background: var(--color-bg-elevated, #1e1e1e);
+  border: 1px solid var(--color-border, #444);
+  color: var(--color-text, #eee);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 13px;
+}
+
+.planner-ai-assist__input {
+  flex: 1;
+  background: var(--color-bg-elevated, #1e1e1e);
+  border: 1px solid var(--color-border, #444);
+  color: var(--color-text, #eee);
+  border-radius: 3px;
+  padding: 4px 6px;
+  font-size: 13px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.planner-ai-assist__error {
+  font-size: 12px;
+  color: #f88;
+  margin: 0;
+}
 /* ── Privacy link / modal ─────────────────────────────────────────── */
 
 .privacy-btn {

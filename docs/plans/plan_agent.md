@@ -114,65 +114,88 @@ For real-time analysis, the agent could process video segments directly:
 
 ---
 
-## Phase 5 — AI SVG Graphics Creator (Planned)
+## Phase 5 — AI SVG Graphics Creator (Implemented)
 
 ### Motivation
 
-The DSK graphics editor currently requires manual creation of SVG overlays and template layers. An AI-powered creator would allow operators to describe what they want and have the AI generate or edit SVG graphics.
+The DSK graphics editor currently requires manual creation of SVG overlays and template layers. An AI-powered creator allows operators to describe what they want and have the AI generate or edit DSK graphics templates.
 
 ### Capabilities
 
-- **Create from prompt**: "Create a lower-third with the speaker's name and title" → generates SVG template layers
+- **Create from prompt**: "Create a lower-third with the speaker's name and title" → generates template JSON with `text`, `rect`, and `image` layers
 - **Edit by prompt**: "Make the background darker" or "Move the logo to the top-right" → modifies existing template JSON
 - **Style suggestions**: Given a template, suggest colour schemes, font pairings, and layout improvements
-- **Asset generation**: Generate simple SVG shapes, icons, and decorative elements on demand
+- Layer id normalisation and schema validation ensure safe, editor-compatible output
 
 ### Integration points
 
-- DSK template JSON shape (layers: text, rect, image)
+- DSK template JSON shape (layers: text, rect, ellipse, image)
 - Template CRUD routes (`/dsk/:apikey/templates`)
-- DSK editor page (`/graphics/editor`)
+- DSK editor page (`/graphics/editor`) — collapsible "✨ AI Assist" panel in the Properties sidebar
 
 ### Implementation plan
 
-- [ ] `generateTemplate(prompt, opts)` method on AgentEngine
-- [ ] `editTemplate(template, prompt, opts)` method on AgentEngine
-- [ ] REST route: `POST /agent/generate-template` → returns template JSON
-- [ ] REST route: `POST /agent/edit-template` → returns modified template JSON
-- [ ] Frontend integration in DskEditorPage — "AI Assist" button/panel
-- [ ] SVG layer generation via LLM structured output
-- [ ] Style and colour suggestion endpoint
+- [x] `generateTemplate(apiKey, prompt, opts)` method on AgentEngine
+- [x] `editTemplate(apiKey, template, prompt, opts)` method on AgentEngine
+- [x] `suggestStyles(apiKey, template, opts)` method on AgentEngine
+- [x] REST route: `POST /agent/generate-template` → returns template JSON
+- [x] REST route: `POST /agent/edit-template` → returns modified template JSON
+- [x] REST route: `POST /agent/suggest-styles` → returns style suggestion array
+- [x] Frontend integration in DskEditorPage — collapsible "✨ AI Assist" panel with Generate / Edit / Styles buttons
+- [x] DSK template layer generation via LLM structured output with schema validation
+- [x] Style and colour suggestion endpoint
+
+### Routes added
+
+```
+POST /agent/generate-template   { prompt, width?, height? }  → { ok, template }
+POST /agent/edit-template       { template, prompt }         → { ok, template }
+POST /agent/suggest-styles      { template }                 → { ok, suggestions }
+```
+
+All routes require session JWT Bearer authentication and return `503` when no AI provider is configured.
 
 ---
 
-## Phase 6 — AI-Assisted Rundown Creation (Planned)
+## Phase 6 — AI-Assisted Rundown Creation (Implemented)
 
 ### Motivation
 
-The planner page currently requires manual creation of rundown files with metacodes. An AI assistant could generate or modify rundowns from natural language instructions.
+The planner page currently requires manual creation of rundown files with metacodes. An AI assistant can generate or modify rundowns from natural language instructions.
 
 ### Capabilities
 
 - **Create rundown from prompt**: "Create a church service rundown with opening prayer, readings, sermon, and closing" → generates rundown file with sections, cues, and timers
 - **Edit by prompt**: "Add a 5-second silence cue before the sermon" or "Insert a music cue after the offering" → modifies existing rundown
-- **Smart metacode insertion**: AI understands the metacode syntax and inserts appropriate `<!-- section: -->`, `<!-- cue: -->`, `<!-- timer: -->`, `<!-- explanation: -->` markers
-- **Template library**: Pre-built rundown templates for common event types
+- **Smart metacode insertion**: AI understands the full LCYT metacode syntax and inserts appropriate `<!-- section: -->`, `<!-- cue: -->`, `<!-- explanation: -->`, `<!-- graphics: -->`, etc.
+- **Template library**: Built-in rundown templates for: church service, concert, conference, sports
 
 ### Integration points
 
 - Rundown file format (metacode-annotated text)
-- Planner page (`/planner`)
-- File store (`useFileStore` hook)
+- Planner page (`/planner`) — collapsible "✨ AI Assist" panel with template selector
+- Session Bearer JWT required for agent calls
 
 ### Implementation plan
 
-- [ ] `generateRundown(prompt, opts)` method on AgentEngine
-- [ ] `editRundown(content, prompt, opts)` method on AgentEngine
-- [ ] REST route: `POST /agent/generate-rundown` → returns rundown text
-- [ ] REST route: `POST /agent/edit-rundown` → returns modified text
-- [ ] Frontend integration in PlannerPage — "AI Assist" input
-- [ ] Metacode-aware prompt engineering (teach LLM the syntax)
-- [ ] Template library with common event structures
+- [x] `generateRundown(apiKey, prompt, opts)` method on AgentEngine
+- [x] `editRundown(apiKey, content, prompt, opts)` method on AgentEngine
+- [x] `AgentEngine.RUNDOWN_METACODE_REFERENCE` — metacode syntax reference injected into all prompts
+- [x] `AgentEngine.RUNDOWN_TEMPLATE_LIBRARY` — built-in templates (church_service, concert, conference, sports)
+- [x] REST route: `POST /agent/generate-rundown` → returns rundown text
+- [x] REST route: `POST /agent/edit-rundown` → returns modified text
+- [x] Frontend integration in PlannerPage — collapsible "✨ AI Assist" panel with template dropdown, prompt input, Generate and Edit buttons
+- [x] Metacode-aware prompt engineering (full syntax reference in every prompt)
+- [x] Template library with common event structures
+
+### Routes added
+
+```
+POST /agent/generate-rundown   { prompt, templateId? }   → { ok, content }
+POST /agent/edit-rundown       { content, prompt }        → { ok, content }
+```
+
+All routes require session JWT Bearer authentication.
 
 ---
 
@@ -241,8 +264,8 @@ Some deployments may not want to use cloud APIs for privacy or cost reasons. Loc
 | 2 | Context Window & Agent Engine | ✅ Implemented | Phase 1 |
 | 3 | Event Cue Evaluation via LLM | ✅ Implemented | Phase 2, `lcyt-cues` |
 | 4 | Video/Image Inference | 📋 Planned | Phase 2 |
-| 5 | AI SVG Graphics Creator | 📋 Planned | Phase 2, `lcyt-dsk` |
-| 6 | AI-Assisted Rundown Creation | 📋 Planned | Phase 2, Planner |
+| 5 | AI DSK Template Generation | ✅ Implemented | Phase 2, `lcyt-dsk` |
+| 6 | AI-Assisted Rundown Creation | ✅ Implemented | Phase 2, Planner |
 | 7 | Multi-Modal Scene Understanding | 📋 Planned | Phase 4, `lcyt-music` |
 | 8 | Local Model Support (Ollama) | 📋 Planned | Phase 1 |
 
@@ -263,3 +286,5 @@ Some deployments may not want to use cloud APIs for privacy or cost reasons. Loc
 - 16+ AgentEngine tests (context window, AI config, cosine similarity, event cue evaluation)
 - Agent DB helper tests (event insert/retrieve, migrations)
 - AI config DB tests
+- Phase 5 & 6 fallback tests (10 tests): `generateTemplate`, `editTemplate`, `suggestStyles`, `generateRundown`, `editRundown` — all verified to return safe defaults when no AI config or `provider: none`
+- `_callChatCompletion` opts forwarding test (temperature + maxTokens)
