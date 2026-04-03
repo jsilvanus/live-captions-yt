@@ -266,6 +266,23 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_device_roles_key ON project_device_roles(api_key)');
 
+  // ── Admin audit log ───────────────────────────────────────────────────────
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      actor       TEXT    NOT NULL,
+      action      TEXT    NOT NULL,
+      target_type TEXT    NOT NULL,
+      target_id   TEXT,
+      details     TEXT,
+      ip          TEXT,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit_log(actor)');
+
   // Back-fill project_features from legacy api_keys columns (idempotent)
   const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];
   const LEGACY_FEATURE_MAP = [
