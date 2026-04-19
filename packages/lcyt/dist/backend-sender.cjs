@@ -131,6 +131,7 @@ class BackendCaptionSender {
     this.sequence = data.sequence;
     this.syncOffset = data.syncOffset;
     this.startedAt = data.startedAt;
+    this.graphicsEnabled = data.graphicsEnabled === true;
     this.isStarted = true;
 
     return this;

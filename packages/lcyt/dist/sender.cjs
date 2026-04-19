@@ -1,4 +1,5 @@
 const http = require('http');
+const https = require('https');
 const { URL } = require('url');
 const { ConfigError, NetworkError, ValidationError } = require('./errors.cjs');
 const logger = require('./logger.cjs');
@@ -128,9 +129,12 @@ class YoutubeLiveCaptionSender {
         return;
       }
 
+      // Choose transport based on URL protocol (http vs https)
+      const transport = url.protocol === 'https:' ? https : http;
+
       const options = {
         hostname: url.hostname,
-        port: url.port || 80,
+        port: url.port ? Number(url.port) : (url.protocol === 'https:' ? 443 : 80),
         path: url.pathname + url.search,
         method: 'POST',
         headers: {
@@ -141,11 +145,12 @@ class YoutubeLiveCaptionSender {
 
       logger.debug(`POST ${options.path}`);
       logger.debug(`Host: ${options.hostname}`);
+      logger.debug(`Protocol: ${url.protocol}`);
       logger.debug(`Content-Type: ${options.headers['Content-Type']}`);
       logger.debug(`Content-Length: ${options.headers['Content-Length']}`);
       logger.debug(`\n${body}`);
 
-      const req = http.request(options, (res) => {
+      const req = transport.request(options, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
