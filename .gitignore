@@ -32,3 +32,10 @@ docs/screenshots/*.png
 
 # Tmp files
 tmp/
+
+# Gitsema
+.gitsema/
+
+# Bak files
+*.bak
+*.bak2
