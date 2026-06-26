@@ -1,6 +1,6 @@
 {
   "name": "lcyt",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "Send live captions to YouTube Live streams via HTTP POST endpoint",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -49,7 +49,7 @@
     "live-stream"
   ],
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
-  "license": "MIT",
+  "license": "EUPL-1.2",
   "files": [
     "src/",
     "dist/"

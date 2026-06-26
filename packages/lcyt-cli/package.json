@@ -1,6 +1,6 @@
 {
   "name": "lcyt-cli",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "CLI for sending live captions to YouTube Live streams",
   "type": "module",
   "bin": {
@@ -22,7 +22,7 @@
     "cli"
   ],
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
-  "license": "MIT",
+  "license": "EUPL-1.2",
   "dependencies": {
     "blessed": "^0.1.81",
     "lcyt": "^2.2.0",
