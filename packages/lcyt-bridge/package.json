@@ -11,10 +11,16 @@
     "test": "node --test test/*.test.js",
     "start": "node src/index.js",
     "build:bundle": "node scripts/build.cjs",
+    "prefetch": "node scripts/prefetch.cjs",
+    "prebuild:win": "node scripts/prefetch.cjs win",
     "build:win": "node scripts/build.cjs win",
+    "prebuild:mac": "node scripts/prefetch.cjs mac",
     "build:mac": "node scripts/build.cjs mac",
+    "prebuild:linux": "node scripts/prefetch.cjs linux",
     "build:linux": "node scripts/build.cjs linux",
+    "prebuild:linux-arm64": "node scripts/prefetch.cjs linux-arm64",
     "build:linux-arm64": "node scripts/build.cjs linux-arm64",
+    "prebuild:all": "node scripts/prefetch.cjs",
     "build:all": "node scripts/build.cjs all"
   },
   "pkg": {
