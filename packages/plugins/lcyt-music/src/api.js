@@ -71,7 +71,7 @@ export async function initMusicControl(db, store = null) {
  */
 export function createMusicRouters(db, auth, musicManager) {
   return [
-    createMusicRouter(auth, musicManager),
+    createMusicRouter(db, auth, musicManager),
     createMusicConfigRouter(db, auth),
   ];
 }

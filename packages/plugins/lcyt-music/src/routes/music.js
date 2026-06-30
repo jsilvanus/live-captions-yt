@@ -1,16 +1,18 @@
 /**
- * /music routes — server-side (HLS) audio analysis control (Phase 2).
+ * /music routes — server-side (HLS/RTMP) audio analysis control (Phase 2/3).
  *
  * Mounted at /music in the main server.
  *
  * Routes:
  *   GET  /music/status      — current analysis state for the authenticated API key
- *   POST /music/start       — start analysis { streamKey? }
+ *   POST /music/start       — start analysis { streamKey?, audioSource? ('hls'|'rtmp', default 'hls') }
  *   POST /music/stop        — stop analysis
  *   GET  /music/:key/live   — public SSE stream of label_change / bpm_update events
  *
  * SSE events on GET /music/:key/live:
  *   connected     { apiKey }
+ *   snapshot      { label, labelConfidence, labelTs, bpm, bpmConfidence, bpmTs } — most recent
+ *                   persisted state from music_events, sent once on connect (if any exists)
  *   label_change  { label, confidence, bpm, ts }
  *   bpm_update    { bpm, confidence, ts }
  *   music_error   { error }
@@ -18,6 +20,7 @@
  */
 
 import { Router } from 'express';
+import { getRecentMusicEvents } from '../db.js';
 
 /** Send an SSE event line to an Express response. */
 function sendEvent(res, eventName, data) {
@@ -25,11 +28,12 @@ function sendEvent(res, eventName, data) {
 }
 
 /**
+ * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth — session JWT Bearer auth middleware
  * @param {import('../music-manager.js').MusicManager} musicManager
  * @returns {import('express').Router}
  */
-export function createMusicRouter(auth, musicManager) {
+export function createMusicRouter(db, auth, musicManager) {
   const router = Router();
 
   // ── GET /music/status ────────────────────────────────────────────────────
@@ -43,9 +47,9 @@ export function createMusicRouter(auth, musicManager) {
 
   router.post('/start', auth, async (req, res) => {
     const { apiKey } = req.session;
-    const { streamKey = null } = req.body || {};
+    const { streamKey = null, audioSource = 'hls' } = req.body || {};
     try {
-      await musicManager.start(apiKey, { streamKey });
+      await musicManager.start(apiKey, { streamKey, audioSource });
       res.status(200).json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -73,6 +77,22 @@ export function createMusicRouter(auth, musicManager) {
     res.flushHeaders();
 
     sendEvent(res, 'connected', { apiKey });
+
+    // Seed the newly-connected client with the most recent persisted state
+    // (music_events) so it doesn't have to wait for the next live transition.
+    const recentEvents = getRecentMusicEvents(db, apiKey, 20);
+    const lastLabelEvent = recentEvents.find((e) => e.event_type === 'label_change');
+    const lastBpmEvent = recentEvents.find((e) => e.event_type === 'bpm_update');
+    if (lastLabelEvent || lastBpmEvent) {
+      sendEvent(res, 'snapshot', {
+        label: lastLabelEvent?.label ?? null,
+        labelConfidence: lastLabelEvent?.confidence ?? null,
+        labelTs: lastLabelEvent ? lastLabelEvent.ts * 1000 : null,
+        bpm: lastBpmEvent?.bpm ?? null,
+        bpmConfidence: lastBpmEvent?.confidence ?? null,
+        bpmTs: lastBpmEvent ? lastBpmEvent.ts * 1000 : null,
+      });
+    }
 
     function onLabelChange({ apiKey: k, label, confidence, bpm, ts }) {
       if (k !== apiKey) return;

@@ -1,13 +1,13 @@
 ---
 id: plan/music
 title: "Music Detection Plugin (`lcyt-music`)"
-status: implemented (Phase 1 & 2)
-summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS segments via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE."
+status: implemented (Phase 1, 2 & 3)
+summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS or RTMP via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE."
 ---
 
 # Music Detection Plugin (`lcyt-music`)
 
-**Status:** Phase 1 (client-side browser-mic detection) and Phase 2 (server-side HLS audio analysis) are both implemented and wired into `lcyt-backend`. Phases 3–4 (RTMP fallback, tuning/export) remain unimplemented — see Todo below.
+**Status:** Phase 1 (client-side browser-mic detection), Phase 2 (server-side HLS audio analysis), and Phase 3 (RTMP audio-source fallback) are all implemented and wired into `lcyt-backend`. Phase 4 (tuning/export) remains unimplemented — see Todo below.
 **Scope:** New plugin `packages/plugins/lcyt-music`; new `/music` routes in `packages/lcyt-backend`; client-side detection in `packages/lcyt-web` using the browser microphone via Web Audio API.
 
 ---
@@ -873,6 +873,13 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 - `'rtmp'` audio source option in `MusicManager` (ffmpeg PCM pipe, same approach as `SttManager` rtmp path).
 - `GET /music/:key/live` full implementation consuming `music_events` DB table.
 
+**Implementation notes:**
+- The RTMP path buffers raw ffmpeg stdout (s16le mono, 22050 Hz) into fixed 6 s windows (`RTMP_WINDOW_SECONDS`, matching the HLS segment-duration recommendation in Open Questions #3) before running them through the same `classify()`/`detectBpm()` pipeline as the HLS path. `_processSegment` (HLS) and `_processRtmpWindow` (RTMP) share a private `_analysePcm()` helper so the confirm-segments state machine and BPM delta-gating logic isn't duplicated.
+- `GET /music/:key/live` now seeds new connections with a `snapshot` SSE event derived from the most recent `label_change`/`bpm_update` rows in `music_events`, in addition to the live `label_change`/`bpm_update`/`music_error`/`music_stopped` events.
+
+**Backend tests:**
+- `test/music-manager-rtmp.test.js` — ffmpeg spawn args/URL building, process lifecycle (stop/error/non-zero exit), PCM windowing/accumulation across chunks, shared analysis pipeline reuse with the HLS path.
+
 ---
 
 ### Phase 4 — Tuning, export, and advanced classifiers
@@ -990,8 +997,8 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 ### Phase 3 — RTMP audio-source fallback
 
 **Backend**
-- [ ] `'rtmp'` audio source in MusicManager (ffmpeg PCM pipe)
-- [ ] `GET /music/:key/live` full implementation from `music_events` DB
+- [x] `'rtmp'` audio source in MusicManager (ffmpeg PCM pipe)
+- [x] `GET /music/:key/live` full implementation from `music_events` DB
 
 ---
 
