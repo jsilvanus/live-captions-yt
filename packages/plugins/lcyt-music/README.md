@@ -119,18 +119,39 @@ Unlike `SttManager`, `MusicManager` calls the sound processor directly — analy
 
 Control via `POST /music/start` / `POST /music/stop` (see [API Routes](#api-routes)). Requires `RTMP_RELAY_ACTIVE=1` and an active RTMP/HLS stream for the API key, since `MusicManager` reads from the same MediaMTX HLS output as `HlsManager`.
 
+### Server-side (RTMP) — implemented
+
+Fallback audio source for deployments without MediaMTX: `MusicManager` spawns `ffmpeg` directly against the RTMP relay's own stream (the same approach `SttManager` uses for its `rtmp` audio source) instead of polling HLS segments.
+
+```
+RTMP relay stream (rtmp://HLS_LOCAL_RTMP/HLS_RTMP_APP/streamKey)
+    ↓
+ffmpeg -i <rtmp url> -vn -ac 1 -ar 22050 -f s16le pipe:1
+    ↓
+MusicManager: accumulate raw PCM bytes, slice into fixed 6s windows
+    ↓
+classify() → detectBpm()  (same shared analysis pipeline as the HLS path)
+    ↓ (confirm-segments smoothing + BPM delta-gating)
+soundProcessor(apiKey, '<!-- sound:music --> <!-- bpm:128 -->')
+```
+
+Select it by passing `audioSource: 'rtmp'` to `POST /music/start` (default is `'hls'`). No MediaMTX or `HlsSegmentFetcher` involvement — only `HLS_LOCAL_RTMP` / `HLS_RTMP_APP` (already used by the RTMP relay) are needed.
+
 ## API Routes
 
 Mounted at `/music` only when `MUSIC_DETECTION_ACTIVE=1` and a `MusicManager` was constructed (i.e. `initMusicControl(db, store)` was called with a session store):
 
 ```
 GET  /music/status      — current analysis state for the authenticated API key (Bearer token)
-POST /music/start       — start server-side analysis { streamKey? } (Bearer token)
+POST /music/start       — start server-side analysis { streamKey?, audioSource? } (Bearer token)
+                            audioSource: 'hls' (default) | 'rtmp'
 POST /music/stop        — stop analysis (Bearer token)
-GET  /music/:key/live   — public SSE stream of label_change / bpm_update / music_error / music_stopped events
+GET  /music/:key/live   — public SSE stream of snapshot / label_change / bpm_update / music_error / music_stopped events
 GET  /music/config      — get per-key detector config (Bearer token)
 PUT  /music/config      — update per-key detector config, partial patch (Bearer token)
 ```
+
+On connect, `GET /music/:key/live` seeds the client with a `snapshot` event built from the most recent `label_change` / `bpm_update` rows in `music_events` (if any exist for the key), so a newly-opened SSE connection doesn't have to wait for the next live transition to know the current state.
 
 Phase 1 (client-side / browser mic) requires no routes — it's entirely passive:
 1. The frontend detector sends a caption containing a `<!-- sound:... -->` / `<!-- bpm:... -->` metacode.
@@ -161,7 +182,9 @@ On `GET /events`, music detection emits:
 | Variable | Purpose | Default |
 |---|---|---|
 | `MUSIC_DETECTION_ACTIVE` | Set to `1` to mount the `/music` routes and allow `MusicManager` to be started for an API key | unset |
-| `MEDIAMTX_HLS_BASE_URL` | Base URL of the MediaMTX HLS server `MusicManager` polls for fMP4 audio segments (shared with `lcyt-rtmp`'s `HlsManager`/`SttManager`) | `http://127.0.0.1:8888` |
+| `MEDIAMTX_HLS_BASE_URL` | Base URL of the MediaMTX HLS server `MusicManager` polls for fMP4 audio segments (`audioSource: 'hls'`; shared with `lcyt-rtmp`'s `HlsManager`/`SttManager`) | `http://127.0.0.1:8888` |
+| `HLS_LOCAL_RTMP` | Local nginx-rtmp base URL `MusicManager` spawns ffmpeg against (`audioSource: 'rtmp'`; shared with the RTMP relay) | `rtmp://127.0.0.1:1935` |
+| `HLS_RTMP_APP` | RTMP application name for the `rtmp` audio source (shared with the RTMP relay) | `live` |
 
 Client-side (browser-mic) detection has no environment variables — it's configured entirely client-side via `useMusicDetector` options (`enabled`, `bpmEnabled`, `intervalMs`, `confirmFrames`, `confidenceThreshold`) and persisted in `localStorage` by `useMusic` (`KEYS.audio.musicDetect`, `KEYS.audio.musicDetectBpm`).
 
@@ -266,6 +289,7 @@ npm test -w packages/plugins/lcyt-music
 - `test/spectral-detector.test.js` — `classifyFromFrequency` heuristic classifier (music/speech/silence thresholds)
 - `test/bpm-detector.test.js` — `detectBpm` beat-tracking estimator
 - `test/music-manager.test.js` — `MusicManager` start/stop lifecycle, confirm-segments smoothing, BPM delta-gating, direct `soundProcessor` invocation (bypassing `_sendQueue`)
+- `test/music-manager-rtmp.test.js` — `MusicManager` RTMP audio source: ffmpeg spawn args/URL building, process lifecycle (stop/error/non-zero exit), PCM windowing/accumulation, shared classify/confirm-segments/BPM pipeline reuse
 
 ## Client-side (lcyt-web)
 
