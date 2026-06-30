@@ -22,10 +22,12 @@ import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // container/CI images.
 let initMusicControl;
 let createSoundCaptionProcessor;
+let createMusicRouters;
 try {
   const _music = await import('lcyt-music');
   initMusicControl = _music.initMusicControl ?? _music.default?.initMusicControl ?? _music.initMusicControl;
   createSoundCaptionProcessor = _music.createSoundCaptionProcessor ?? _music.default?.createSoundCaptionProcessor ?? _music.createSoundCaptionProcessor;
+  createMusicRouters = _music.createMusicRouters ?? _music.default?.createMusicRouters ?? _music.createMusicRouters;
   console.info('✓ Optional plugin lcyt-music loaded');
 } catch (err) {
   // If lcyt-music isn't available, try the renamed package lcyt-sound.
@@ -35,17 +37,20 @@ try {
       const _sound = await import('lcyt-sound');
       initMusicControl = _sound.initMusicControl ?? _sound.default?.initMusicControl ?? _sound.initMusicControl;
       createSoundCaptionProcessor = _sound.createSoundCaptionProcessor ?? _sound.default?.createSoundCaptionProcessor ?? _sound.createSoundCaptionProcessor;
+      createMusicRouters = _sound.createMusicRouters ?? _sound.default?.createMusicRouters ?? _sound.createMusicRouters;
       console.info('✓ Optional plugin lcyt-sound loaded');
     } catch (err2) {
       console.info('ℹ Optional plugins lcyt-music and lcyt-sound not available — continuing without music detection.');
       initMusicControl = async () => ({ });
       createSoundCaptionProcessor = (_opts) => () => undefined;
+      createMusicRouters = () => [];
     }
   } else {
     // Unexpected error importing — surface info but fall back to no-op to keep server running.
     console.error('! Error while loading optional music plugin:', err);
     initMusicControl = async () => ({ });
     createSoundCaptionProcessor = (_opts) => () => undefined;
+    createMusicRouters = () => [];
   }
 }
 import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
@@ -186,10 +191,11 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
 
-// Music detection plugin — run DB migrations and create the SoundCaptionProcessor.
+// Music detection plugin — run DB migrations, create the SoundCaptionProcessor, and
+// (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
 // The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
-await initMusicControl(db);
+const { musicManager } = await initMusicControl(db, store);
 const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 
 // Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.
@@ -346,6 +352,7 @@ app.get('/health', (req, res) => {
   if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
   if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
   if (sttManager) features.push('stt');
+  if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) features.push('music');
   features.push('files', 'viewer', 'production', 'ai', 'cues', 'agent');
 
   res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
@@ -414,8 +421,14 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
   app.use('/preview',    previewRouter);
 }
 
+// Music detection (server-side HLS audio analysis) routes — only mounted when
+// MUSIC_DETECTION_ACTIVE=1 and the optional lcyt-music plugin provided a MusicManager.
+if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) {
+  app.use('/music', ...createMusicRouters(db, auth, musicManager));
+}
+
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk };
+export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };

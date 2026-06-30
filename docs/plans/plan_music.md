@@ -1,13 +1,13 @@
 ---
 id: plan/music
 title: "Music Detection Plugin (`lcyt-music`)"
-status: draft
+status: implemented (Phase 1 & 2)
 summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS segments via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE."
 ---
 
 # Music Detection Plugin (`lcyt-music`)
 
-**Status:** Draft  
+**Status:** Phase 1 (client-side browser-mic detection) and Phase 2 (server-side HLS audio analysis) are both implemented and wired into `lcyt-backend`. Phases 3–4 (RTMP fallback, tuning/export) remain unimplemented — see Todo below.
 **Scope:** New plugin `packages/plugins/lcyt-music`; new `/music` routes in `packages/lcyt-backend`; client-side detection in `packages/lcyt-web` using the browser microphone via Web Audio API.
 
 ---
@@ -892,7 +892,7 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 
 ## Open Questions
 
-1. **Shared `HlsSegmentFetcher`** (Phase 2): `SttManager` already owns one fetcher per key.  When both STT and music detection run concurrently, they would each poll the playlist independently.  Options: (a) expose the fetcher from `SttManager` and let `MusicManager` subscribe to the same segment events, or (b) accept the duplicate poll (low overhead — one extra HTTP request per segment per key).  Decision deferred to Phase 2 implementation.
+1. ~~**Shared `HlsSegmentFetcher`** (Phase 2)~~ — **Resolved:** option (b) was chosen. `lcyt-music`'s `MusicManager` constructs its own `HlsSegmentFetcher` instance (`packages/plugins/lcyt-music/src/hls-segment-fetcher.js`), independent of `SttManager`'s. When both STT and music detection run concurrently for the same key, the playlist is polled twice — accepted as low-overhead per the original analysis. (Plugins do not import each other's source directly per the project's plugin architecture convention, which also ruled out sharing a fetcher instance across plugin boundaries.)
 
 2. **ffmpeg availability** (Phase 2): `PcmExtractor` requires ffmpeg.  If `FFMPEG_RUNNER=worker`, the local ffmpeg binary may not be present.  `MusicManager.start()` should probe for ffmpeg (reuse `probeFfmpegVersion()` from `lcyt-rtmp/src/stt-manager.js`) and emit a clear error if unavailable.
 
@@ -963,27 +963,27 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 ### Phase 2 — Server-side HLS detection
 
 **Backend**
-- [ ] `packages/plugins/lcyt-music/package.json` — plugin manifest
-- [ ] `packages/plugins/lcyt-music/src/analyser/fft.js`
-- [ ] `packages/plugins/lcyt-music/src/analyser/spectral-detector.js`
-- [ ] `packages/plugins/lcyt-music/src/analyser/bpm-detector.js`
-- [ ] `packages/plugins/lcyt-music/src/pcm-extractor.js`
-- [ ] `packages/plugins/lcyt-music/src/music-manager.js`
-- [ ] `packages/plugins/lcyt-music/src/db.js` — add `music_config` table
-- [ ] `packages/plugins/lcyt-music/src/routes/music.js` — start/stop/status/live routes
-- [ ] `packages/plugins/lcyt-music/src/routes/music-config.js` — GET/PUT /music/config
-- [ ] `packages/plugins/lcyt-music/src/api.js` — initMusicControl() + createMusicRouters()
-- [ ] `packages/lcyt-backend/src/server.js` — mount /music routes when MUSIC_DETECTION_ACTIVE=1
-- [ ] `packages/plugins/lcyt-rtmp` — on_publish auto-start hook
+- [x] `packages/plugins/lcyt-music/package.json` — plugin manifest
+- [x] `packages/plugins/lcyt-music/src/analyser/fft.js`
+- [x] `packages/plugins/lcyt-music/src/analyser/spectral-detector.js`
+- [x] `packages/plugins/lcyt-music/src/analyser/bpm-detector.js`
+- [x] `packages/plugins/lcyt-music/src/pcm-extractor.js`
+- [x] `packages/plugins/lcyt-music/src/music-manager.js` — note: owns its own `HlsSegmentFetcher` instance rather than sharing `SttManager`'s (see Open Questions)
+- [x] `packages/plugins/lcyt-music/src/db.js` — add `music_config` table
+- [x] `packages/plugins/lcyt-music/src/routes/music.js` — start/stop/status/live routes
+- [x] `packages/plugins/lcyt-music/src/routes/music-config.js` — GET/PUT /music/config
+- [x] `packages/plugins/lcyt-music/src/api.js` — initMusicControl() + createMusicRouters()
+- [x] `packages/lcyt-backend/src/server.js` — mount /music routes when MUSIC_DETECTION_ACTIVE=1
+- [ ] `packages/plugins/lcyt-rtmp` — on_publish auto-start hook (deferred; `music_config.autoStart` field exists in the DB schema but is not yet consulted anywhere — `POST /music/start` must be called explicitly for now, same as `MusicManager.start()` being a manual-only entry point today)
 
 **Backend tests**
-- [ ] `packages/plugins/lcyt-music/test/fft.test.js`
-- [ ] `packages/plugins/lcyt-music/test/spectral-detector.test.js`
-- [ ] `packages/plugins/lcyt-music/test/bpm-detector.test.js`
-- [ ] `packages/plugins/lcyt-music/test/music-manager.test.js`
+- [x] `packages/plugins/lcyt-music/test/fft.test.js`
+- [x] `packages/plugins/lcyt-music/test/spectral-detector.test.js`
+- [x] `packages/plugins/lcyt-music/test/bpm-detector.test.js`
+- [x] `packages/plugins/lcyt-music/test/music-manager.test.js`
 
 **UI (lcyt-web)**
-- [ ] MusicPanel — add `'server'` option to source selector
+- [ ] MusicPanel — add `'server'` option to source selector (frontend UI work not in scope for this pass)
 
 ---
 

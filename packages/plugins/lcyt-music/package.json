@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/api.js",
   "scripts": {
-    "test": "node --test test/sound-caption-processor.test.js"
+    "test": "node --experimental-test-module-mocks --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.21",
