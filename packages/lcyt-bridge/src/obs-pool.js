@@ -1,11 +1,9 @@
 /**
- * ObsPool — manages persistent OBS WebSocket connections for the bridge agent.
+ * ObsPool — manages a pool of persistent OBS WebSocket connections for the bridge agent.
  *
- * OBS Studio 28+ exposes a WebSocket v5 interface on port 4455 (configurable).
- * The obs-websocket-js library handles the WebSocket handshake, authentication,
- * and JSON-RPC v2 request/response multiplexing. One connection is maintained
- * per OBS instance (host:port:password). The pool handles connect, reconnect
- * on drop, and scene-switch dispatch.
+ * One connection is maintained per OBS instance (host:port:password).
+ * Uses the shared OBSClient from lcyt-production for connection management.
+ * The pool handles reuse, lifecycle, and dispatch.
  *
  * Emits:
  *   'obs:connected'    (key)
@@ -14,18 +12,14 @@
  */
 
 import { EventEmitter } from 'node:events';
-import OBSWebSocket from 'obs-websocket-js';
-
-const RECONNECT_DELAY_INITIAL_MS = 5_000;
-const RECONNECT_DELAY_MAX_MS = 60_000;
-const CONNECT_TIMEOUT_MS = 3_000;
+import { OBSClient } from 'lcyt-production';
 
 export class ObsPool extends EventEmitter {
   constructor() {
     super();
     /**
      * Map keyed by "host:port:password" (safe key that includes all connection params).
-     * @type {Map<string, { obs: OBSWebSocket, connected: boolean, destroyed: boolean, _reconnectTimer: NodeJS.Timeout|null, _reconnectDelay: number }>}
+     * @type {Map<string, { client: OBSClient, key: string }>}
      */
     this._pool = new Map();
   }
@@ -46,22 +40,20 @@ export class ObsPool extends EventEmitter {
     if (!entry) {
       entry = await this._open(host, port, password, key);
     }
-    if (!entry.connected) {
+    if (!entry.client.connected) {
       throw new Error(`OBS ${host}:${port} is not connected`);
     }
-    // SetCurrentProgramScene RPC call
-    await entry.obs.call('SetCurrentProgramScene', { sceneName });
+    // SetCurrentProgramScene RPC call via shared OBSClient
+    await entry.client.call('SetCurrentProgramScene', { sceneName });
   }
 
   /**
    * Disconnect all OBS connections and clear the pool.
    */
-  destroy() {
+  async destroy() {
     for (const [key, entry] of this._pool) {
-      entry.destroyed = true;
-      if (entry._reconnectTimer) clearTimeout(entry._reconnectTimer);
       try {
-        entry.obs.disconnect();
+        await entry.client.disconnect();
       } catch {
         /* ignore */
       }
@@ -76,7 +68,7 @@ export class ObsPool extends EventEmitter {
   status() {
     return [...this._pool.entries()].map(([key, entry]) => ({
       key,
-      connected: entry.connected,
+      connected: entry.client.connected,
     }));
   }
 
@@ -96,7 +88,7 @@ export class ObsPool extends EventEmitter {
   }
 
   /**
-   * Create an entry, open the OBS WebSocket connection, and add it to the pool.
+   * Create an entry with a shared OBSClient and add it to the pool.
    * @param {string} host
    * @param {number} port
    * @param {string} password
@@ -104,67 +96,30 @@ export class ObsPool extends EventEmitter {
    * @returns {Promise<object>} entry
    */
   async _open(host, port, password, key) {
-    const entry = {
-      obs: new OBSWebSocket(),
-      connected: false,
-      destroyed: false,
-      _reconnectTimer: null,
-      _reconnectDelay: RECONNECT_DELAY_INITIAL_MS,
-    };
+    const client = new OBSClient({ host, port, password });
+    const entry = { client, key };
 
     this._pool.set(key, entry);
 
-    entry.obs.on('Connected', () => {
-      entry.connected = true;
-      entry._reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
+    client.on('connected', () => {
       console.info(`[obs-pool] Connected to ${host}:${port}`);
       this.emit('obs:connected', key);
     });
 
-    entry.obs.on('Disconnected', () => {
-      entry.connected = false;
+    client.on('disconnected', () => {
       this.emit('obs:disconnected', key);
-      if (!entry.destroyed) {
-        console.info(
-          `[obs-pool] ${host}:${port} disconnected — reconnecting in ${entry._reconnectDelay}ms`
-        );
-        entry._reconnectTimer = setTimeout(() => {
-          entry._reconnectTimer = null;
-          entry._reconnectDelay = Math.min(
-            entry._reconnectDelay * 2,
-            RECONNECT_DELAY_MAX_MS
-          );
-          this._pool.delete(key);
-          this._open(host, port, password, key);
-        }, entry._reconnectDelay);
-      }
     });
 
-    entry.obs.on('error', (err) => {
+    client.on('error', (err) => {
       console.warn(`[obs-pool] ${host}:${port} error: ${err}`);
-      this.emit(
-        'obs:error',
-        key,
-        err instanceof Error ? err : new Error(String(err))
-      );
+      this.emit('obs:error', key, err instanceof Error ? err : new Error(String(err)));
     });
 
-    // Establish connection with timeout
-    return new Promise((resolve) => {
-      entry.obs
-        .connect(
-          {
-            address: `${host}:${port}`,
-            password: password || undefined,
-          },
-          { rpcVersion: '1' }
-        )
-        .catch(() => {
-          // Connection error is ok — we'll retry on 'Disconnected' event
-        });
-
-      // Return entry after timeout (connection may still be pending)
-      setTimeout(() => resolve(entry), CONNECT_TIMEOUT_MS);
+    // Initiate connection (non-blocking; auto-reconnect handled by OBSClient)
+    await client.connect().catch(() => {
+      // Errors are emitted via events
     });
+
+    return entry;
   }
 }
