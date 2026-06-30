@@ -4,7 +4,7 @@
 id: plan/mcp
 title: "MCP Tools for lcyt"
 status: implemented
-summary: "Model Context Protocol server (stdio and HTTP SSE transports) exposing caption, production, and DSK graphics tools to AI assistants."
+summary: "Model Context Protocol server (stdio and Streamable HTTP transports) exposing caption, production, and DSK graphics tools to AI assistants."
 ---
 
 ## What is MCP?
@@ -26,7 +26,7 @@ Three tool groups:
 Both a Python and Node.js implementation are planned:
 
 - **Primary**: Python MCP server (`python-packages/lcyt-mcp/`)
-- **Secondary**: Node.js MCP servers (`packages/lcyt-mcp-stdio/`, `packages/lcyt-mcp-sse/`)
+- **Secondary**: Node.js MCP servers (`packages/lcyt-mcp-stdio/`, `packages/lcyt-mcp-http/`)
 
 ---
 
@@ -308,7 +308,7 @@ lcyt-mcp = "lcyt_mcp.server:main"
 
 ## Node.js MCP Servers
 
-Both `lcyt-mcp-stdio` and `lcyt-mcp-sse` share the same tool handler logic via `createHandlers()` in `packages/lcyt-mcp-stdio/src/server.js`. The new production and graphics tools are added to the `TOOLS` array and the `handleCallTool` switch.
+Both `lcyt-mcp-stdio` and `lcyt-mcp-http` share the same tool handler logic via `createHandlers()` in `packages/lcyt-mcp-stdio/src/server.js`. The new production and graphics tools are added to the `TOOLS` array and the `handleCallTool` switch.
 
 ### Package layout
 
@@ -318,7 +318,7 @@ packages/lcyt-mcp-stdio/
 └── src/
     └── server.js
 
-packages/lcyt-mcp-sse/
+packages/lcyt-mcp-http/
 ├── package.json
 └── src/
     └── server.js   (imports createHandlers from lcyt-mcp-stdio)
@@ -441,7 +441,7 @@ When `LCYT_BACKEND_URL` is empty:
 
 1. **Python**: Update `python-packages/lcyt-mcp/lcyt_mcp/server.py` — add `httpx` dependency, add 10 new tool definitions, add 10 new `case` branches.
 2. **Node.js stdio**: Update `packages/lcyt-mcp-stdio/src/server.js` — add backend helpers, add tools to `TOOLS` array, add cases to `handleCallTool`.
-3. **Node.js SSE**: `packages/lcyt-mcp-sse/src/server.js` imports `createHandlers` from `lcyt-mcp-stdio`, so no changes needed there unless it pins the TOOLS export separately.
+3. **Node.js Streamable HTTP**: `packages/lcyt-mcp-http/src/server.js` imports `createHandlers` from `lcyt-mcp-stdio`, so no changes needed there unless it pins the TOOLS export separately.
 4. **Tests**:
    - Node.js: extend `packages/lcyt-mcp-stdio/test/server.test.js` — mock `fetch` globally; test each new tool against a mock backend.
    - Python: extend `python-packages/lcyt-mcp/tests/test_server.py` — mock `httpx.AsyncClient`; test each new tool.
@@ -459,7 +459,7 @@ packages/lcyt-mcp-stdio/
   src/server.js               ← add backend helpers + 10 tools
   test/server.test.js         ← extend with production + graphics tool tests
 
-packages/lcyt-mcp-sse/
+packages/lcyt-mcp-http/
   src/server.js               ← verify it re-exports createHandlers correctly
                                 (no changes needed if it imports from lcyt-mcp-stdio)
 ```

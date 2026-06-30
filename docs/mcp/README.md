@@ -7,23 +7,23 @@ title: "MCP Servers — Overview"
 
 `lcyt` provides two Model Context Protocol (MCP) servers that allow AI assistants (such as Claude) to send live captions to YouTube Live.
 
-Both servers share a common set of caption tools; the SSE server adds two additional tools for privacy and GDPR data deletion. They differ in their transport mechanism.
+Both servers share a common set of caption tools; the HTTP server adds two additional tools for privacy and GDPR data deletion. They differ in their transport mechanism.
 
 | Package | Transport | Best for |
 |---|---|---|
 | [`lcyt-mcp-stdio`](#stdio) | stdio | Claude Desktop, subprocess MCP clients |
-| [`lcyt-mcp-sse`](#sse) | HTTP + SSE | Remote/web MCP clients, shared sessions |
+| [`lcyt-mcp-http`](#http) | Streamable HTTP | Remote/web MCP clients, shared sessions |
 
 ---
 
-## stdio vs SSE — Detailed Comparison
+## stdio vs Streamable HTTP — Detailed Comparison
 
-| Feature | stdio (`lcyt-mcp-stdio`) | SSE (`lcyt-mcp-sse`) |
+| Feature | stdio (`lcyt-mcp-stdio`) | Streamable HTTP (`lcyt-mcp-http`) |
 |---|---|---|
-| **Transport** | stdin/stdout pipes | HTTP + Server-Sent Events |
+| **Transport** | stdin/stdout pipes | HTTP (single `/mcp` endpoint, optional server-initiated SSE stream) |
 | **Port** | None — runs as subprocess | `PORT` env var (default `3001`) |
-| **Sessions** | One session per process | Multiple concurrent sessions shared across clients |
-| **Client support** | Claude Desktop, any MCP stdio client | Any HTTP-capable MCP client |
+| **Sessions** | One session per process | Multiple concurrent sessions shared across clients, identified by `Mcp-Session-Id` header |
+| **Client support** | Claude Desktop, any MCP stdio client | Any HTTP-capable MCP client supporting Streamable HTTP |
 | **Tools available** | `start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop` | All stdio tools + `privacy`, `privacy_deletion` |
 | **MCP Resources** | `session://<id>` resource exposed | Resources not available |
 | **Auth** | None — process-level isolation | Optional API key enforcement |
@@ -56,23 +56,24 @@ Add to your Claude Desktop config:
 }
 ```
 
-### SSE (HTTP)
+### Streamable HTTP
 
 ```bash
-PORT=3001 node packages/lcyt-mcp-sse/src/server.js
+PORT=3001 node packages/lcyt-mcp-http/src/server.js
 ```
 
-Connect your MCP client to:
-- `GET http://localhost:3001/sse` — open SSE stream
-- `POST http://localhost:3001/messages?sessionId=<id>` — send messages
+Connect your MCP client to a single endpoint:
+- `POST http://localhost:3001/mcp` — send JSON-RPC messages; an `initialize` request with no `Mcp-Session-Id` header opens a new session
+- `GET http://localhost:3001/mcp` — open the server-initiated SSE stream for an existing session (`Mcp-Session-Id` header required)
+- `DELETE http://localhost:3001/mcp` — terminate a session (`Mcp-Session-Id` header required)
 
 ---
 
 ## Configuration Examples
 
-### Managed SSE — `mcp.lcyt.fi` (easiest)
+### Managed Streamable HTTP — `mcp.lcyt.fi` (easiest)
 
-The quickest way to get started is to connect your MCP client to the hosted SSE service at **`https://mcp.lcyt.fi`**. No server setup is required — just obtain an API key and point your client at the endpoint.
+The quickest way to get started is to connect your MCP client to the hosted service at **`https://mcp.lcyt.fi`**. No server setup is required — just obtain an API key and point your client at the endpoint.
 
 **Get an API key:** contact the service administrator or sign up at [lcyt.fi](https://lcyt.fi).
 
@@ -82,8 +83,8 @@ The quickest way to get started is to connect your MCP client to the hosted SSE 
 {
   "mcpServers": {
     "lcyt": {
-      "type": "sse",
-      "url": "https://mcp.lcyt.fi/sse",
+      "type": "http",
+      "url": "https://mcp.lcyt.fi/mcp",
       "headers": {
         "X-Api-Key": "YOUR_API_KEY"
       }
@@ -138,16 +139,16 @@ After restarting Claude Desktop, the tools (`start`, `send_caption`, `send_batch
 
 > _"You will be sender of closed captions. Please start a YouTube live caption session. My stream key is rhh1-etst-bf7b-0wvm-5aem. Treat all my messages from now on as captions to be sent, and respond to my mesasges after tool use with: Sent (sequence): text."_
 
-### Claude Desktop — SSE (via reverse proxy or local port)
+### Claude Desktop — Streamable HTTP (via reverse proxy or local port)
 
-When the MCP SSE server is running locally (e.g. bound to `127.0.0.1:3001` behind nginx), you can connect to it from Claude Desktop using an HTTP-based MCP client config:
+When the MCP Streamable HTTP server is running locally (e.g. bound to `127.0.0.1:3001` behind nginx), you can connect to it from Claude Desktop using an HTTP-based MCP client config:
 
 ```json
 {
   "mcpServers": {
-    "lcyt-sse": {
-      "type": "sse",
-      "url": "http://127.0.0.1:3001/"
+    "lcyt-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp"
     }
   }
 }
@@ -158,9 +159,9 @@ With an API key (when `MCP_REQUIRE_API_KEY=1` is set on the server):
 ```json
 {
   "mcpServers": {
-    "lcyt-sse": {
-      "type": "sse",
-      "url": "http://127.0.0.1:3001/",
+    "lcyt-http": {
+      "type": "http",
+      "url": "http://127.0.0.1:3001/mcp",
       "headers": {
         "X-Api-Key": "your-api-key"
       }
@@ -169,7 +170,7 @@ With an API key (when `MCP_REQUIRE_API_KEY=1` is set on the server):
 }
 ```
 
-### Docker / production (SSE server behind nginx)
+### Docker / production (Streamable HTTP server behind nginx)
 
 The included `docker-compose.yml` binds both ports to loopback so they are not directly reachable from the public internet. Configure your host nginx to reverse-proxy from HTTPS to the local ports:
 
@@ -186,14 +187,14 @@ server {
     }
 }
 
-# MCP SSE server (port 3001)
+# MCP Streamable HTTP server (port 3001)
 server {
     listen 443 ssl;
     server_name mcp.example.com;
     location / {
         proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
-        proxy_set_header Connection '';   # required for SSE
+        proxy_set_header Connection '';   # required for the server-initiated SSE stream (GET /mcp)
         proxy_buffering off;
         proxy_cache off;
         proxy_set_header Host $host;
@@ -207,9 +208,9 @@ Then configure your MCP client to use the public HTTPS endpoint:
 ```json
 {
   "mcpServers": {
-    "lcyt-sse": {
-      "type": "sse",
-      "url": "https://mcp.example.com/sse",
+    "lcyt-http": {
+      "type": "http",
+      "url": "https://mcp.example.com/mcp",
       "headers": {
         "X-Api-Key": "your-api-key"
       }
@@ -232,13 +233,13 @@ LCYT_LOG_STDERR=1 node packages/lcyt-mcp-stdio/src/server.js
 
 ## Deployment & security
 
-- **Bind SSE to loopback when possible**: for single-host deployments bind the SSE server to `127.0.0.1` and expose it via a secure reverse proxy only when necessary.
+- **Bind the HTTP server to loopback when possible**: for single-host deployments bind it to `127.0.0.1` and expose it via a secure reverse proxy only when necessary.
 - **Set a stable `JWT_SECRET`** in production if you persist session tokens or expect tokens to survive server restarts.
 - **Ensure DB volume ownership** when using `DB_PATH` with Docker; chown the volume to the runtime UID (e.g., `1000:1000`) to avoid read-only SQLite errors.
- - **SSE DB-backed persistence**: when `DB_PATH` is configured the SSE server can persist session metadata and will rehydrate sessions on startup (this will start sender instances for persisted sessions). See `sse.md` for details and operational notes.
+- **DB-backed persistence**: when `DB_PATH` is configured the HTTP server can persist session metadata and will rehydrate sessions on startup (this will start sender instances for persisted sessions). See `http.md` for details and operational notes.
 
 ## Reference
 
-- [Tools Reference](#tools) — all tools with per-tool transport availability (stdio / SSE)
+- [Tools Reference](#tools) — all tools with per-tool transport availability (stdio / Streamable HTTP)
 - [Stdio Transport](#stdio) — configuration and integration guide
-- [SSE Transport](#sse) — configuration and integration guide
+- [Streamable HTTP Transport](#http) — configuration and integration guide

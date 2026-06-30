@@ -99,7 +99,7 @@ MCP (Model Context Protocol) documentation in [docs/mcp/](./mcp/):
 
 - [MCP overview](./mcp/README.md) — What is MCP?
 - [Stdio transport](./mcp/stdio.md) — Local process invocation
-- [SSE transport](./mcp/sse.md) — HTTP Server-Sent Events
+- [Streamable HTTP transport](./mcp/http.md) — Remote HTTP clients
 - [All tools reference](./mcp/tools.md) — Complete tool listing
 - [Individual tool docs](./mcp/tools/) — Per-tool details
   - [start.md](./mcp/tools/start.md)
@@ -112,7 +112,7 @@ MCP (Model Context Protocol) documentation in [docs/mcp/](./mcp/):
 
 **Packages:**
 - [lcyt-mcp-stdio](../packages/lcyt-mcp-stdio/README.md) — Stdio server
-- [lcyt-mcp-sse](../packages/lcyt-mcp-sse/README.md) — SSE server
+- [lcyt-mcp-http](../packages/lcyt-mcp-http/README.md) — Streamable HTTP server
 - [lcyt-mcp (Python)](../python-packages/lcyt-mcp/README.md) — Python server
 
 ## 🏗️ Architecture & Planning
@@ -173,7 +173,7 @@ All plans in [docs/plans/](./plans/) — See [PLANS.md](./PLANS.md) for full ind
 | **lcyt-orchestrator** | [packages/lcyt-orchestrator/README.md](../packages/lcyt-orchestrator/README.md) |
 | **lcyt-site** | [packages/lcyt-site/README.md](../packages/lcyt-site/README.md) |
 | **lcyt-mcp-stdio** | [packages/lcyt-mcp-stdio/README.md](../packages/lcyt-mcp-stdio/README.md) |
-| **lcyt-mcp-sse** | [packages/lcyt-mcp-sse/README.md](../packages/lcyt-mcp-sse/README.md) |
+| **lcyt-mcp-http** | [packages/lcyt-mcp-http/README.md](../packages/lcyt-mcp-http/README.md) |
 | **lcyt-worker-daemon** | [packages/lcyt-worker-daemon/README.md](../packages/lcyt-worker-daemon/README.md) |
 
 ### Plugin Packages
@@ -254,7 +254,7 @@ docs/
 │
 ├── mcp/                        ← MCP integration docs
 │   ├── README.md
-│   ├── stdio.md, sse.md
+│   ├── stdio.md, http.md
 │   ├── tools.md
 │   └── tools/                  ← Individual tool docs
 │

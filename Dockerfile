@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
-COPY packages/lcyt-mcp-sse/package.json packages/lcyt-mcp-sse/
+COPY packages/lcyt-mcp-http/package.json packages/lcyt-mcp-http/
 COPY packages/plugins/lcyt-production/package.json packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/package.json packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/package.json packages/plugins/lcyt-rtmp/
@@ -17,7 +17,7 @@ COPY packages/plugins/lcyt-agent/package.json packages/plugins/lcyt-agent/
 RUN npm ci \
   --workspace=packages/lcyt \
   --workspace=packages/lcyt-backend \
-  --workspace=packages/lcyt-mcp-sse \
+  --workspace=packages/lcyt-mcp-http \
   --workspace=packages/plugins/lcyt-production \
   --workspace=packages/plugins/lcyt-dsk \
   --workspace=packages/plugins/lcyt-rtmp \
@@ -26,7 +26,7 @@ RUN npm ci \
 # Copy source
 COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
-COPY packages/lcyt-mcp-sse/src/ packages/lcyt-mcp-sse/src/
+COPY packages/lcyt-mcp-http/src/ packages/lcyt-mcp-http/src/
 COPY packages/plugins/lcyt-production/ packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/ packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/ packages/plugins/lcyt-rtmp/

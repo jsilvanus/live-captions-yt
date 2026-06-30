@@ -1,5 +1,5 @@
 /**
- * Speech transcription session management for lcyt-mcp-sse.
+ * Speech transcription session management for lcyt-mcp-http.
  *
  * Provides three MCP tools:
  *   start_speech_session    — create session, return browser URL (non-blocking)

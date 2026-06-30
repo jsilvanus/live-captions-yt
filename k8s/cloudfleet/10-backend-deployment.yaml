@@ -1,6 +1,6 @@
 # ─── LCYT — Backend Deployment ───────────────────────────────────────────────
 #
-# Runs the lcyt-backend Express API (port 3000) and lcyt-mcp-sse server
+# Runs the lcyt-backend Express API (port 3000) and lcyt-mcp-http server
 # (port 3001) in the same container.
 #
 # Image: lcyt-site:latest (built from the repo root Dockerfile)
@@ -41,7 +41,7 @@ spec:
             - name: api
               containerPort: 3000
               protocol: TCP
-            - name: mcp-sse
+            - name: mcp-http
               containerPort: 3001
               protocol: TCP
           envFrom:

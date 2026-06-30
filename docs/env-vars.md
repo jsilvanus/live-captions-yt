@@ -16,7 +16,7 @@ This document lists environment variables found across the repository, with the 
 - `GRAPHICS_ENABLED` — Build-time flag to include Chromium/Playwright for DSK.
   - Files: Dockerfile, docker-compose.yml, packages/plugins/lcyt-dsk/src/renderer.js
 - `NODE_ENV` — Node environment for build (commonly `production`).
-  - Files: Dockerfile, packages/lcyt-mcp-sse/Dockerfile, packages/lcyt-mcp-stdio/Dockerfile
+  - Files: Dockerfile, packages/lcyt-mcp-http/Dockerfile, packages/lcyt-mcp-stdio/Dockerfile
 - `VITE_BACKUP_DAYS` — Vite build-time env used in web bundle for backup retention UI.
   - Files: packages/lcyt-web/src/components/PrivacyModal.jsx, docs/plan_client.md
 - `VITE_SITE_URL` — Vite build-time base/site URL baked into web bundle.
@@ -29,25 +29,25 @@ This document lists environment variables found across the repository, with the 
 ## Runtime variables (file locations + short context)
 
 - `PORT` — HTTP server port for backend/MCP services (default 3000/3001).
-  - Files: packages/lcyt-backend/src/index.js, packages/lcyt-mcp-sse/src/server.js, Dockerfile, docker-compose.yml, packages/tools/tcp-echo-server/server.js
+  - Files: packages/lcyt-backend/src/index.js, packages/lcyt-mcp-http/src/server.js, Dockerfile, docker-compose.yml, packages/tools/tcp-echo-server/server.js
 
 - `HOST` — Host/address binding used in some tools (e.g. tcp-echo-server).
   - Files: packages/tools/tcp-echo-server/server.js, packages/tools/tcp-echo-server/dist/bundle.cjs
 
 - `DB_PATH` — Path to the SQLite DB file used by backend/MCP.
-  - Files: packages/lcyt-mcp-sse/src/server.js, packages/lcyt-backend/src/db/index.js, docker-compose.yml
+  - Files: packages/lcyt-mcp-http/src/server.js, packages/lcyt-backend/src/db/index.js, docker-compose.yml
 
-- `MCP_REQUIRE_API_KEY` — Require API key for MCP SSE server operations.
-  - Files: packages/lcyt-mcp-sse/src/server.js, docker-compose.yml
+- `MCP_REQUIRE_API_KEY` — Require API key for MCP Streamable HTTP server operations.
+  - Files: packages/lcyt-mcp-http/src/server.js, docker-compose.yml
 
 - `LCYT_BACKEND_URL` — Base URL of the lcyt backend used by MCP and tools.
-  - Files: packages/lcyt-mcp-sse/src/server.js, packages/lcyt-mcp-stdio/src/server.js, docker-compose.yml, docs/plan_mcp.md, python-packages/lcyt-mcp/lcyt_mcp/server.py
+  - Files: packages/lcyt-mcp-http/src/server.js, packages/lcyt-mcp-stdio/src/server.js, docker-compose.yml, docs/plan_mcp.md, python-packages/lcyt-mcp/lcyt_mcp/server.py
 
 - `LCYT_API_KEY` — API key used as X-API-Key for DSK/editor tools (secret).
-  - Files: packages/lcyt-mcp-sse/src/server.js, docker-compose.yml, docs/plan_mcp.md, python-packages/lcyt-mcp/lcyt_mcp/server.py
+  - Files: packages/lcyt-mcp-http/src/server.js, docker-compose.yml, docs/plan_mcp.md, python-packages/lcyt-mcp/lcyt_mcp/server.py
 
 - `LCYT_ADMIN_KEY` — Admin key for production tools (secret).
-  - Files: packages/lcyt-mcp-sse/src/server.js, docker-compose.yml, docs/plan_mcp.md, python-packages/lcyt-mcp/lcyt_mcp/server.py
+  - Files: packages/lcyt-mcp-http/src/server.js, docker-compose.yml, docs/plan_mcp.md, python-packages/lcyt-mcp/lcyt_mcp/server.py
 
 - `ADMIN_KEY` — Admin API key for backend admin endpoints (secret).
   - Files: packages/lcyt-backend/src/server.js, packages/lcyt-backend/src/middleware/admin.js, docker-compose.yml, packages/lcyt-backend/.env.example, scripts/deploy.sh
@@ -182,16 +182,16 @@ This document lists environment variables found across the repository, with the 
   - Files: packages/plugins/lcyt-rtmp/src/routes/stream-hls.js, packages/lcyt-backend/src/routes/video.js, packages/plugins/lcyt-rtmp/src/routes/radio.js
 
 - `LCYT_WEB_URL` — Public web UI base URL used by MCP and DSK.
-  - Files: packages/lcyt-mcp-sse/src/speech.js, packages/lcyt-mcp-sse/src/server.js, docker-compose.yml
+  - Files: packages/lcyt-mcp-http/src/speech.js, packages/lcyt-mcp-http/src/server.js, docker-compose.yml
 
 - `SPEECH_PUBLIC_URL` — Public URL used by MCP speech/ASR capture endpoints.
-  - Files: packages/lcyt-mcp-sse/src/speech.js, packages/lcyt-mcp-sse/src/server.js, docker-compose.yml
+  - Files: packages/lcyt-mcp-http/src/speech.js, packages/lcyt-mcp-http/src/server.js, docker-compose.yml
 
 - `LCYT_LOG_STDERR` — If '1', route logs to stderr (used by MCP stdio).
-  - Files: packages/lcyt-mcp-stdio/Dockerfile, docs/mcp/sse.md, docs/mcp/stdio.md, packages/lcyt-cli/bin/lcyt
+  - Files: packages/lcyt-mcp-stdio/Dockerfile, docs/mcp/http.md, docs/mcp/stdio.md, packages/lcyt-cli/bin/lcyt
 
 - `MCP_SESSION_TTL_MS` — Session TTL (ms) specific to MCP sessions.
-  - Files: packages/lcyt-mcp-sse/src/server.js, docker-compose.yml
+  - Files: packages/lcyt-mcp-http/src/server.js, docker-compose.yml
 
 - `FILES_BASE_DIR` — Alias/default base dir for files operations.
   - Files: packages/lcyt-backend/src/caption-files.js, packages/lcyt-backend/src/routes/files.js, packages/lcyt-backend/test/files.test.js
@@ -206,4 +206,4 @@ This document lists environment variables found across the repository, with the 
 
 If you'd like, I can:
 - Commit these two files in a branch and open a PR.
-- Expand `docs/env-vars.md` into separate per-service env examples (`packages/lcyt-backend/.env.example`, `packages/lcyt-mcp-sse/.env.example`, etc.).
+- Expand `docs/env-vars.md` into separate per-service env examples (`packages/lcyt-backend/.env.example`, `packages/lcyt-mcp-http/.env.example`, etc.).

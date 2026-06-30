@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * MCP server for lcyt — HTTP SSE transport.
- * Exposes the same tools as lcyt-mcp-stdio over HTTP Server-Sent Events.
+ * MCP server for lcyt — Streamable HTTP transport.
+ * Exposes the same tools as lcyt-mcp-stdio over the MCP Streamable HTTP transport.
  *
- * GET  /sse       — open SSE stream (MCP client connects here)
- * POST /messages  — send messages to an active SSE session (?sessionId=...)
+ * POST   /mcp  — send a JSON-RPC message; opens a session on `initialize`
+ * GET    /mcp  — open the server-initiated SSE stream for an existing session
+ * DELETE /mcp  — terminate a session
  *
  * All HTTP connections share one session map, so caption sessions (identified
  * by session_id) survive reconnects.
@@ -14,12 +15,13 @@
 
 import express from "express";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
   ListResourcesRequestSchema,
   ReadResourceRequestSchema,
+  isInitializeRequest,
 } from "@modelcontextprotocol/sdk/types.js";
 import { YoutubeLiveCaptionSender } from "lcyt";
 import { randomBytes } from "node:crypto";
@@ -62,17 +64,17 @@ async function backendPost(path, headers, body) {
 }
 
 if (db && REQUIRE_API_KEY) {
-  console.error(`[lcyt-mcp-sse] Auth required (DB_PATH=${DB_PATH})`);
+  console.error(`[lcyt-mcp-http] Auth required (DB_PATH=${DB_PATH})`);
 } else if (db) {
-  console.error(`[lcyt-mcp-sse] DB connected (DB_PATH=${DB_PATH}), auth optional — X-Api-Key enables logging`);
+  console.error(`[lcyt-mcp-http] DB connected (DB_PATH=${DB_PATH}), auth optional — X-Api-Key enables logging`);
 } else {
-  console.error("[lcyt-mcp-sse] No DB — set DB_PATH to enable logging; MCP_REQUIRE_API_KEY=1 to enforce auth");
+  console.error("[lcyt-mcp-http] No DB — set DB_PATH to enable logging; MCP_REQUIRE_API_KEY=1 to enforce auth");
 }
 
 if (SPEECH_ENABLED) {
-  console.error("[lcyt-mcp-sse] Speech tools enabled (LCYT_WEB_URL configured)");
+  console.error("[lcyt-mcp-http] Speech tools enabled (LCYT_WEB_URL configured)");
 } else {
-  console.error("[lcyt-mcp-sse] Speech tools disabled — set LCYT_WEB_URL to enable");
+  console.error("[lcyt-mcp-http] Speech tools disabled — set LCYT_WEB_URL to enable");
 }
 
 /**
@@ -85,10 +87,10 @@ const mcpStats = new Map();
 // ── Privacy notice (returned by `privacy` tool) ───────────────────────────────
 
 const PRIVACY_NOTICE = `\
-Privacy & Data Notice — lcyt-mcp-sse
+Privacy & Data Notice — lcyt-mcp-http
 
 WHAT THIS SERVICE DOES
-lcyt-mcp-sse forwards caption text to YouTube Live via the lcyt relay backend.
+lcyt-mcp-http forwards caption text to YouTube Live via the lcyt relay backend.
 Caption text is NOT stored — it is processed in memory and sent immediately to YouTube.
 
 DATA STORED BY THE RELAY BACKEND
@@ -364,13 +366,13 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
           mcpStats.set(r.sessionId, { apiKey: r.apiKey ?? null, startedAt: Date.parse(r.startedAt) || Date.now(), captionsSent: 0, captionsFailed: 0, lastSequence: Number(r.sequence || 0) });
           rehydrated++;
         } catch (err) {
-          console.error(`[lcyt-mcp-sse] Failed to rehydrate session ${r.sessionId}: ${err.message}`);
+          console.error(`[lcyt-mcp-http] Failed to rehydrate session ${r.sessionId}: ${err.message}`);
         }
       }
-      if (rehydrated) console.error(`[lcyt-mcp-sse] Rehydrated ${rehydrated} session(s) from DB`);
-      if (pruned) console.error(`[lcyt-mcp-sse] Pruned ${pruned} stale session(s) from DB`);
+      if (rehydrated) console.error(`[lcyt-mcp-http] Rehydrated ${rehydrated} session(s) from DB`);
+      if (pruned) console.error(`[lcyt-mcp-http] Pruned ${pruned} stale session(s) from DB`);
     } catch (err) {
-      console.error(`[lcyt-mcp-sse] Failed to list persisted sessions: ${err.message}`);
+      console.error(`[lcyt-mcp-http] Failed to list persisted sessions: ${err.message}`);
     }
   }
 
@@ -428,7 +430,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
               lastActivity: startedAt,
             });
           } catch (err) {
-            console.error(`[lcyt-mcp-sse] Failed to persist session ${sid}: ${err.message}`);
+            console.error(`[lcyt-mcp-http] Failed to persist session ${sid}: ${err.message}`);
           }
         }
         return { content: [{ type: "text", text: JSON.stringify({ session_id: sid }) }] };
@@ -489,7 +491,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
         sessionMeta.delete(args.session_id);
         await sender.end();
         if (dbInstance) {
-          try { deleteSession(dbInstance, args.session_id); } catch (err) { console.error(`[lcyt-mcp-sse] Failed to delete persisted session ${args.session_id}: ${err.message}`); }
+          try { deleteSession(dbInstance, args.session_id); } catch (err) { console.error(`[lcyt-mcp-http] Failed to delete persisted session ${args.session_id}: ${err.message}`); }
         }
         return { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
       }
@@ -561,7 +563,7 @@ const { handleListTools, handleListResources, handleReadResource, handleCallTool
 
 function createMcpServer(apiKey = null) {
   const server = new Server(
-    { name: "lcyt-mcp-sse", version: "0.1.0" },
+    { name: "lcyt-mcp-http", version: "0.1.0" },
     { capabilities: { tools: {}, resources: {} } }
   );
 
@@ -594,7 +596,7 @@ function createMcpServer(apiKey = null) {
     if (db && apiKey && (name === "send_caption" || name === "send_batch")) {
       const usage = checkAndIncrementUsage(db, apiKey);
       if (!usage.allowed) {
-        console.error(`[lcyt-mcp-sse] Usage limit hit for key ${apiKey.slice(0, 8)}...: ${usage.reason}`);
+        console.error(`[lcyt-mcp-http] Usage limit hit for key ${apiKey.slice(0, 8)}...: ${usage.reason}`);
         writeAuthEvent(db, { apiKey, eventType: usage.reason, domain: "mcp" });
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: false, error: usage.reason }) }],
@@ -680,11 +682,16 @@ function createMcpServer(apiKey = null) {
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
+app.use(express.json());
 
-/** @type {Map<string, SSEServerTransport>} */
+/** @type {Map<string, StreamableHTTPServerTransport>} */
 const transports = new Map();
 
-app.get("/sse", async (req, res) => {
+/**
+ * Validates the optional X-Api-Key header for a new session.
+ * @returns {{ ok: true, apiKey: string | null } | { ok: false }}
+ */
+function authenticate(req, res) {
   let apiKey = null;
 
   const provided = db ? req.headers["x-api-key"] : null;
@@ -693,37 +700,66 @@ app.get("/sse", async (req, res) => {
     // Key voluntarily provided — validate regardless of REQUIRE_API_KEY
     const result = validateApiKey(db, provided);
     if (!result.valid) {
-      console.error(`[lcyt-mcp-sse] 403 — key ${provided.slice(0, 8)}... rejected: ${result.reason}`);
+      console.error(`[lcyt-mcp-http] 403 — key ${provided.slice(0, 8)}... rejected: ${result.reason}`);
       writeAuthEvent(db, { apiKey: provided, eventType: result.reason, domain: "mcp" });
       res.status(403).json({ error: result.reason });
-      return;
+      return { ok: false };
     }
     apiKey = provided;
-    console.error(`[lcyt-mcp-sse] Accepted key ${apiKey.slice(0, 8)}... (owner: ${result.owner})`);
+    console.error(`[lcyt-mcp-http] Accepted key ${apiKey.slice(0, 8)}... (owner: ${result.owner})`);
   } else if (REQUIRE_API_KEY) {
-    console.error("[lcyt-mcp-sse] 401 — X-Api-Key header missing");
+    console.error("[lcyt-mcp-http] 401 — X-Api-Key header missing");
     res.status(401).json({ error: "X-Api-Key header required" });
+    return { ok: false };
+  }
+
+  return { ok: true, apiKey };
+}
+
+app.post("/mcp", async (req, res) => {
+  const sessionId = req.headers["mcp-session-id"];
+  let transport;
+
+  if (sessionId && transports.has(sessionId)) {
+    transport = transports.get(sessionId);
+  } else if (!sessionId && isInitializeRequest(req.body)) {
+    const auth = authenticate(req, res);
+    if (!auth.ok) return;
+
+    transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomBytes(16).toString("hex"),
+      onsessioninitialized: (sid) => transports.set(sid, transport),
+    });
+    transport.onclose = () => {
+      if (transport.sessionId) transports.delete(transport.sessionId);
+    };
+
+    const server = createMcpServer(auth.apiKey);
+    await server.connect(transport);
+  } else {
+    res.status(400).json({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: "Bad Request: No valid session ID provided" },
+      id: null,
+    });
     return;
   }
 
-  const transport = new SSEServerTransport("/messages", res);
-  const server = createMcpServer(apiKey);
-
-  transports.set(transport.sessionId, transport);
-  res.on("close", () => transports.delete(transport.sessionId));
-
-  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
 });
 
-app.post("/messages", async (req, res) => {
-  const sessionId = req.query.sessionId;
-  const transport = transports.get(sessionId);
+async function handleSessionRequest(req, res) {
+  const sessionId = req.headers["mcp-session-id"];
+  const transport = sessionId ? transports.get(sessionId) : undefined;
   if (!transport) {
-    res.status(404).json({ error: "Session not found" });
+    res.status(400).json({ error: "Invalid or missing session ID" });
     return;
   }
-  await transport.handlePostMessage(req, res);
-});
+  await transport.handleRequest(req, res);
+}
+
+app.get("/mcp", handleSessionRequest);
+app.delete("/mcp", handleSessionRequest);
 
 // ── STT chunk ingestion routes (browser → MCP server) ────────────────────────
 // The browser's SpeechCapturePage POSTs final transcript chunks here.
@@ -743,9 +779,9 @@ app.post("/stt/:sessionId/done", handleSttDone);
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.error(`lcyt-mcp-sse listening on port ${PORT}`);
-  console.error(`[lcyt-mcp-sse] LCYT_WEB_URL     = ${process.env.LCYT_WEB_URL || "(not set)"}`);
-  console.error(`[lcyt-mcp-sse] SPEECH_PUBLIC_URL = ${process.env.SPEECH_PUBLIC_URL || "(not set)"}`);
+  console.error(`lcyt-mcp-http listening on port ${PORT}`);
+  console.error(`[lcyt-mcp-http] LCYT_WEB_URL     = ${process.env.LCYT_WEB_URL || "(not set)"}`);
+  console.error(`[lcyt-mcp-http] SPEECH_PUBLIC_URL = ${process.env.SPEECH_PUBLIC_URL || "(not set)"}`);
   const toolNames = TOOLS.map((t) => t.name);
-  console.error(`[lcyt-mcp-sse] Tools available (${toolNames.length}): ${toolNames.join(", ")}`);
+  console.error(`[lcyt-mcp-http] Tools available (${toolNames.length}): ${toolNames.join(", ")}`);
 });

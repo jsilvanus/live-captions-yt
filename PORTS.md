@@ -5,7 +5,7 @@
 | Port | Protocol | Service | Direction | Env var override |
 |------|----------|---------|-----------|-----------------|
 | **3000** | HTTP | lcyt-backend (Express) | inbound (public) | `PORT` |
-| **3001** | HTTP | lcyt-mcp-sse server | inbound (local/remote) | `PORT` |
+| **3001** | HTTP | lcyt-mcp-http server | inbound (local/remote) | `PORT` |
 | **1935** | RTMP | MediaMTX — publisher ingest | inbound (publishers) | — |
 | **8080** | HTTP | MediaMTX — HLS output | internal | `MEDIAMTX_HLS_BASE_URL` |
 | **8554** | RTSP | MediaMTX — RTSP output | internal | `MEDIAMTX_RTSP_BASE_URL` |
@@ -25,9 +25,9 @@ Express HTTP server. Receives captions, serves HLS/radio/preview routes, handles
 - **Inbound direct (dev):** yes
 - Override: `PORT=3000`
 
-### lcyt-mcp-sse — port 3001
+### lcyt-mcp-http — port 3001
 
-MCP server with HTTP SSE transport (`GET /sse`, `POST /messages`). Used by AI assistants connecting remotely.
+MCP server with Streamable HTTP transport (`POST/GET/DELETE /mcp`). Used by AI assistants connecting remotely.
 
 - **Inbound from internet:** only if remote AI access is needed; otherwise localhost only
 - Override: `PORT=3001`
