@@ -41,6 +41,13 @@ export function runMigrations(db) {
       updated_at          INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )
   `);
+
+  // Phase 4: auto-calibration opt-in. Additive column migration — default 0
+  // (off) so existing configs/sessions keep today's fixed-threshold behaviour.
+  const musicConfigCols = new Set(db.prepare("PRAGMA table_info(music_config)").all().map((c) => c.name));
+  if (!musicConfigCols.has('auto_calibrate')) {
+    db.exec('ALTER TABLE music_config ADD COLUMN auto_calibrate INTEGER NOT NULL DEFAULT 0');
+  }
 }
 
 const DEFAULT_MUSIC_CONFIG = {
@@ -52,6 +59,7 @@ const DEFAULT_MUSIC_CONFIG = {
   bpmMin: 40,
   bpmMax: 200,
   autoStart: false,
+  autoCalibrate: false,
 };
 
 /**
@@ -74,6 +82,7 @@ export function getMusicConfig(db, apiKey) {
     bpmMin: row.bpm_min,
     bpmMax: row.bpm_max,
     autoStart: !!row.auto_start,
+    autoCalibrate: !!row.auto_calibrate,
   };
 }
 
@@ -92,8 +101,8 @@ export function setMusicConfig(db, apiKey, patch = {}) {
   db.prepare(`
     INSERT INTO music_config (
       api_key, silence_threshold, flatness_threshold, zcr_threshold,
-      confirm_segments, bpm_enabled, bpm_min, bpm_max, auto_start, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
+      confirm_segments, bpm_enabled, bpm_min, bpm_max, auto_start, auto_calibrate, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
     ON CONFLICT(api_key) DO UPDATE SET
       silence_threshold = excluded.silence_threshold,
       flatness_threshold = excluded.flatness_threshold,
@@ -103,6 +112,7 @@ export function setMusicConfig(db, apiKey, patch = {}) {
       bpm_min = excluded.bpm_min,
       bpm_max = excluded.bpm_max,
       auto_start = excluded.auto_start,
+      auto_calibrate = excluded.auto_calibrate,
       updated_at = strftime('%s','now')
   `).run(
     apiKey,
@@ -114,6 +124,7 @@ export function setMusicConfig(db, apiKey, patch = {}) {
     merged.bpmMin,
     merged.bpmMax,
     merged.autoStart ? 1 : 0,
+    merged.autoCalibrate ? 1 : 0,
   );
   return merged;
 }
@@ -148,4 +159,36 @@ export function getRecentMusicEvents(db, apiKey, limit = 20) {
     ORDER BY ts DESC
     LIMIT ?
   `).all(apiKey, limit);
+}
+
+/**
+ * Retrieve a paginated page of music events for an API key, newest first.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {object} [opts]
+ * @param {number} [opts.limit=50]
+ * @param {number} [opts.offset=0]
+ * @param {'label_change'|'bpm_update'|null} [opts.eventType]
+ * @returns {{ events: Array<object>, total: number }}
+ */
+export function getMusicEventsPage(db, apiKey, { limit = 50, offset = 0, eventType = null } = {}) {
+  const where = eventType
+    ? `WHERE api_key = ? AND event_type = ?`
+    : `WHERE api_key = ?`;
+  const params = eventType ? [apiKey, eventType] : [apiKey];
+
+  const { total } = db.prepare(`
+    SELECT COUNT(*) AS total FROM music_events ${where}
+  `).get(...params);
+
+  const events = db.prepare(`
+    SELECT id, event_type, label, bpm, confidence, ts
+    FROM music_events
+    ${where}
+    ORDER BY ts DESC, id DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+
+  return { events, total };
 }

@@ -150,6 +150,13 @@ export default {
       bpmSuffix: 'BPM',
       notAvailable: 'Start microphone to enable detection',
       statusTitle: 'Music detection status',
+      historyTitle: 'Detection history',
+      historyEmpty: 'No detection events yet.',
+      historyLoadMore: 'Load more',
+      historyLoading: 'Loading…',
+      historyError: 'Failed to load detection history.',
+      historyLabelChange: 'Label change',
+      historyBpmUpdate: 'BPM update',
     },
     translation: {
       enable: 'Enable translation',

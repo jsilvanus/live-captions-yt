@@ -714,6 +714,15 @@ export function useSession({
     return api.post('/stt/stop', {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const getMusicEventsHistory = useCallback(async function getMusicEventsHistory({ limit, offset, eventType } = {}) {
+    const params = new URLSearchParams();
+    if (limit != null) params.set('limit', limit);
+    if (offset != null) params.set('offset', offset);
+    if (eventType) params.set('eventType', eventType);
+    const qs = params.toString();
+    return api.get(`/music/events/history${qs ? `?${qs}` : ''}`);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return {
     connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
@@ -731,6 +740,7 @@ export function useSession({
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
     getYouTubeConfig,
     getSttStatus, getSttConfig, updateSttConfig, startStt, stopStt,
+    getMusicEventsHistory,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
     getQueuedCount,
     /** Returns the active session JWT (for EventSource ?token= param) */

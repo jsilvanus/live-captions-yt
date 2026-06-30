@@ -29,7 +29,7 @@ export function createMusicConfigRouter(db, auth) {
     const { apiKey } = req.session;
     const {
       silenceThreshold, flatnessThreshold, zcrThreshold,
-      confirmSegments, bpmEnabled, bpmMin, bpmMax, autoStart,
+      confirmSegments, bpmEnabled, bpmMin, bpmMax, autoStart, autoCalibrate,
     } = req.body || {};
 
     for (const [name, value] of [
@@ -60,7 +60,7 @@ export function createMusicConfigRouter(db, auth) {
     const patch = {};
     for (const [key, value] of Object.entries({
       silenceThreshold, flatnessThreshold, zcrThreshold,
-      confirmSegments, bpmEnabled, bpmMin, bpmMax, autoStart,
+      confirmSegments, bpmEnabled, bpmMin, bpmMax, autoStart, autoCalibrate,
     })) {
       if (value !== undefined) patch[key] = value;
     }

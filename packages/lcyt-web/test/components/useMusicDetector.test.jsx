@@ -62,6 +62,7 @@ function makeSpeechFreqData(binCount = 1024) {
 beforeEach(() => {
   vi.useFakeTimers();
   vi.clearAllMocks();
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -119,6 +120,7 @@ describe('useMusicDetector — silence detection', () => {
         intervalMs: 100,
         confirmFrames: 2,
         confidenceThreshold: 0.1,
+        autoCalibrate: false,
       }),
     );
 
@@ -142,6 +144,7 @@ describe('useMusicDetector — music detection', () => {
         intervalMs: 100,
         confirmFrames: 3,
         confidenceThreshold: 0,
+        autoCalibrate: false,
       }),
     );
 
@@ -164,6 +167,7 @@ describe('useMusicDetector — metacode emission', () => {
         intervalMs: 100,
         confirmFrames: 2,
         confidenceThreshold: 0,
+        autoCalibrate: false,
       }),
     );
 
@@ -202,6 +206,7 @@ describe('useMusicDetector — metacode emission', () => {
         intervalMs: 100,
         confirmFrames: 2,
         confidenceThreshold: 0,
+        autoCalibrate: false,
       }),
     );
 
@@ -223,7 +228,7 @@ describe('useMusicDetector — disable / cleanup', () => {
     const analyserRef = { current: analyser };
 
     const { result, rerender } = renderHook(
-      ({ enabled }) => useMusicDetector({ analyserRef, enabled, intervalMs: 100, confirmFrames: 2 }),
+      ({ enabled }) => useMusicDetector({ analyserRef, enabled, intervalMs: 100, confirmFrames: 2, autoCalibrate: false }),
       { initialProps: { enabled: true } },
     );
 
@@ -231,5 +236,120 @@ describe('useMusicDetector — disable / cleanup', () => {
 
     rerender({ enabled: false });
     expect(result.current.running).toBe(false);
+  });
+});
+
+describe('useMusicDetector — auto-calibration', () => {
+  const STORAGE_KEY = 'lcyt.audio.musicDetectThreshold';
+  const CALIBRATION_TICKS = 50; // Math.ceil(5000ms / 100ms intervalMs)
+
+  it('skips classification while calibrating (no label, no metacode sent)', async () => {
+    const spyClassify = vi.spyOn(musicAnalysis, 'classifyFromFrequency').mockImplementation(() => ({
+      label: 'music', confidence: 1, features: { rms: 0.01 },
+    }));
+    const analyser = makeAnalyser({ freqData: makeMusicFreqData() });
+    const analyserRef = { current: analyser };
+
+    const { result } = renderHook(() =>
+      useMusicDetector({
+        analyserRef,
+        enabled: true,
+        intervalMs: 100,
+        confirmFrames: 2,
+        confidenceThreshold: 0,
+        autoCalibrate: true,
+      }),
+    );
+
+    // Advance well short of the calibration window.
+    await act(async () => { vi.advanceTimersByTime(100 * (CALIBRATION_TICKS - 5)); });
+
+    expect(result.current.label).toBeNull();
+    expect(mockSend).not.toHaveBeenCalled();
+    spyClassify.mockRestore();
+  });
+
+  it('derives and persists a calibrated threshold once the calibration window elapses', async () => {
+    const rmsValues = [0.001, 0.004, 0.002, 0.006, 0.003];
+    let i = 0;
+    const spyClassify = vi.spyOn(musicAnalysis, 'classifyFromFrequency').mockImplementation(() => ({
+      label: 'silence', confidence: 1, features: { rms: rmsValues[i++ % rmsValues.length] },
+    }));
+    const analyser = makeAnalyser();
+    const analyserRef = { current: analyser };
+
+    renderHook(() =>
+      useMusicDetector({
+        analyserRef,
+        enabled: true,
+        intervalMs: 100,
+        confirmFrames: 2,
+        confidenceThreshold: 0,
+        autoCalibrate: true,
+      }),
+    );
+
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+
+    await act(async () => { vi.advanceTimersByTime(100 * CALIBRATION_TICKS); });
+
+    const persisted = localStorage.getItem(STORAGE_KEY);
+    expect(persisted).not.toBeNull();
+    const threshold = Number(persisted);
+    expect(threshold).toBeGreaterThanOrEqual(0.002);
+    expect(threshold).toBeLessThanOrEqual(0.05);
+    spyClassify.mockRestore();
+  });
+
+  it('skips calibration and classifies immediately when a threshold is already persisted', async () => {
+    localStorage.setItem(STORAGE_KEY, '0.01');
+    const spyClassify = vi.spyOn(musicAnalysis, 'classifyFromFrequency').mockImplementation((freqData, sampleRate, opts) => {
+      expect(opts).toEqual({ silenceThreshold: 0.01 });
+      return { label: 'music', confidence: 1, features: { rms: 0.05 } };
+    });
+    const analyser = makeAnalyser({ freqData: makeMusicFreqData() });
+    const analyserRef = { current: analyser };
+
+    const { result } = renderHook(() =>
+      useMusicDetector({
+        analyserRef,
+        enabled: true,
+        intervalMs: 100,
+        confirmFrames: 2,
+        confidenceThreshold: 0,
+        autoCalibrate: true,
+      }),
+    );
+
+    // Only a few ticks needed — no calibration phase to wait through.
+    await act(async () => { vi.advanceTimersByTime(100 * 3); });
+
+    expect(result.current.label).toBe('music');
+    spyClassify.mockRestore();
+  });
+
+  it('classifies immediately with the default threshold when autoCalibrate is false, even without a persisted value', async () => {
+    const spyClassify = vi.spyOn(musicAnalysis, 'classifyFromFrequency').mockImplementation((freqData, sampleRate, opts) => {
+      expect(opts).toEqual({});
+      return { label: 'music', confidence: 1, features: { rms: 0.05 } };
+    });
+    const analyser = makeAnalyser({ freqData: makeMusicFreqData() });
+    const analyserRef = { current: analyser };
+
+    const { result } = renderHook(() =>
+      useMusicDetector({
+        analyserRef,
+        enabled: true,
+        intervalMs: 100,
+        confirmFrames: 2,
+        confidenceThreshold: 0,
+        autoCalibrate: false,
+      }),
+    );
+
+    await act(async () => { vi.advanceTimersByTime(100 * 3); });
+
+    expect(result.current.label).toBe('music');
+    spyClassify.mockRestore();
   });
 });
