@@ -73,6 +73,51 @@ describe('cors — /keys routes', () => {
 });
 
 // ---------------------------------------------------------------------------
+// /auth routes — permissive CORS (no session exists yet at login/register time)
+// ---------------------------------------------------------------------------
+
+describe('cors — /auth routes', () => {
+  it('sets CORS headers for POST /auth/login from any origin', () => {
+    const mw = createCorsMiddleware(makeStore());
+    const req = makeReq({ method: 'POST', path: '/auth/login', origin: 'https://app.lcyt.fi' });
+    const res = makeRes();
+    let nextCalled = false;
+    mw(req, res, () => { nextCalled = true; });
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.lcyt.fi');
+    assert.equal(nextCalled, true);
+  });
+
+  it('sets CORS headers for POST /auth/register', () => {
+    const mw = createCorsMiddleware(makeStore());
+    const req = makeReq({ method: 'POST', path: '/auth/register', origin: 'https://app.lcyt.fi' });
+    const res = makeRes();
+    let nextCalled = false;
+    mw(req, res, () => { nextCalled = true; });
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.lcyt.fi');
+    assert.equal(nextCalled, true);
+  });
+
+  it('sets CORS headers for GET /auth/me', () => {
+    const mw = createCorsMiddleware(makeStore());
+    const req = makeReq({ method: 'GET', path: '/auth/me', origin: 'https://app.lcyt.fi' });
+    const res = makeRes();
+    let nextCalled = false;
+    mw(req, res, () => { nextCalled = true; });
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.lcyt.fi');
+    assert.equal(nextCalled, true);
+  });
+
+  it('returns 204 for OPTIONS /auth/login with CORS headers', () => {
+    const mw = createCorsMiddleware(makeStore());
+    const req = makeReq({ method: 'OPTIONS', path: '/auth/login', origin: 'https://app.lcyt.fi' });
+    const res = makeRes();
+    mw(req, res, () => {});
+    assert.equal(res.statusCode, 204);
+    assert.equal(res.headers['Access-Control-Allow-Origin'], 'https://app.lcyt.fi');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Free-tier signup: POST /keys?freetier
 // ---------------------------------------------------------------------------
 
