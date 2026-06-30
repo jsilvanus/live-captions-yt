@@ -51,6 +51,9 @@ export function createCorsMiddleware(store) {
       (method === 'POST' && path === '/live') ||
       (method === 'GET' && path === '/health') ||
       (method === 'GET' && path === '/contact') ||
+      // /auth/*: login/register happen before any session exists, so there is no
+      // session domain to match against yet — the password/JWT is the real gate
+      path.startsWith('/auth') ||
       // DSK routes: authenticated by X-API-Key or Bearer JWT, not by session domain
       path.startsWith('/dsk') ||
       path.startsWith('/images') ||
