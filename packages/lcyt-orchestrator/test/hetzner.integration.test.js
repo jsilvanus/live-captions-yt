@@ -1,5 +1,5 @@
-const http = require('http');
-const assert = require('assert');
+import http from 'http';
+import assert from 'assert';
 
 async function run() {
   // Start mock Hetzner API server
@@ -56,9 +56,9 @@ async function run() {
   process.env.ORCHESTRATOR_HETZNER_TIMEOUT_MS = '5000';
 
   // Start orchestrator app in-process
-  const app = require('../src/index.js');
+  const { startServer } = await import('../src/index.js');
   const PORT = 4123;
-  const srv = app.listen(PORT);
+  const { stop } = startServer(PORT);
 
   // Helper to post job
   function postJob(id) {
@@ -122,7 +122,7 @@ async function run() {
   assert.ok(getCalls >= 1, 'expected at least one GET to Hetzner (includes 429)');
 
   // Cleanup
-  await new Promise(r => srv.close(r));
+  await stop();
   await new Promise(r => hetzner.close(r));
   console.log('hetzner.integration.test.js passed');
 }

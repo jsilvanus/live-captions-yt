@@ -11,6 +11,8 @@
     "packages/lcyt-mcp-http",
     "packages/lcyt-site",
     "packages/lcyt-bridge",
+    "packages/lcyt-orchestrator",
+    "packages/lcyt-worker-daemon",
     "packages/plugins/*"
   ],
   "scripts": {
