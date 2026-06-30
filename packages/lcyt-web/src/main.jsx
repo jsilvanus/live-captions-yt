@@ -14,48 +14,69 @@ import { AudioPage } from './components/AudioPage';
 
 // --- Lazy-loaded pages (heavy or path-gated) ----------------------------------
 
+// After a new deploy, a stale tab can still reference a JS chunk hash that no
+// longer exists on the server, so the dynamic import 404s. Reload once to pick
+// up the current index.html/asset manifest instead of leaving a broken page.
+function lazyImport(loader) {
+  return lazy(() =>
+    loader().catch((err) => {
+      const isChunkLoadError = /dynamically imported module|importing a module script failed/i.test(err?.message || '');
+      if (isChunkLoadError) {
+        const key = 'lcyt.chunkReloadAt';
+        const last = Number(sessionStorage.getItem(key) || 0);
+        if (Date.now() - last > 10000) {
+          sessionStorage.setItem(key, String(Date.now()));
+          window.location.reload();
+          return new Promise(() => {}); // hold rendering while the reload happens
+        }
+      }
+      throw err;
+    })
+  );
+}
+
 // Sidebar routes
-const DashboardPage          = lazy(() => import('./components/DashboardPage').then(m => ({ default: m.DashboardPage })));
-const SettingsPage           = lazy(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
-const ProjectsPage           = lazy(() => import('./components/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
-const SetupWizardPage        = lazy(() => import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage })));
-const AccountPage            = lazy(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
-const BroadcastPage          = lazy(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
-const DskEditorPage          = lazy(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
-const DskViewportsPage       = lazy(() => import('./components/DskViewportsPage').then(m => ({ default: m.DskViewportsPage })));
-const ProductionOperatorPage = lazy(() => import('./components/ProductionOperatorPage').then(m => ({ default: m.ProductionOperatorPage })));
-const ProductionCamerasPage  = lazy(() => import('./components/ProductionCamerasPage').then(m => ({ default: m.ProductionCamerasPage })));
-const ProductionMixersPage   = lazy(() => import('./components/ProductionMixersPage').then(m => ({ default: m.ProductionMixersPage })));
-const ProductionBridgesPage  = lazy(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
-const ProductionDevicesPage  = lazy(() => import('./components/ProductionDevicesPage').then(m => ({ default: m.ProductionDevicesPage })));
-const ProductionVisualPage   = lazy(() => import('./components/ProductionVisualPage').then(m => ({ default: m.ProductionVisualPage })));
-const PlannerPage            = lazy(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
-const TranslationsPage       = lazy(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
-const AiSettingsPage         = lazy(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
-const AdminUsersPage         = lazy(() => import('./components/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
-const AdminUserDetailPage    = lazy(() => import('./components/AdminUserDetailPage').then(m => ({ default: m.AdminUserDetailPage })));
-const AdminProjectsPage      = lazy(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
-const AdminProjectDetailPage = lazy(() => import('./components/AdminProjectDetailPage').then(m => ({ default: m.AdminProjectDetailPage })));
-const AdminAuditLogPage      = lazy(() => import('./components/AdminAuditLogPage').then(m => ({ default: m.AdminAuditLogPage })));
+const DashboardPage          = lazyImport(() => import('./components/DashboardPage').then(m => ({ default: m.DashboardPage })));
+const SettingsPage           = lazyImport(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
+const ProjectsPage           = lazyImport(() => import('./components/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const SetupWizardPage        = lazyImport(() => import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage })));
+const AccountPage            = lazyImport(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
+const BroadcastPage          = lazyImport(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
+const DskEditorPage          = lazyImport(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
+const DskViewportsPage       = lazyImport(() => import('./components/DskViewportsPage').then(m => ({ default: m.DskViewportsPage })));
+const ProductionOperatorPage = lazyImport(() => import('./components/ProductionOperatorPage').then(m => ({ default: m.ProductionOperatorPage })));
+const ProductionCamerasPage  = lazyImport(() => import('./components/ProductionCamerasPage').then(m => ({ default: m.ProductionCamerasPage })));
+const ProductionMixersPage   = lazyImport(() => import('./components/ProductionMixersPage').then(m => ({ default: m.ProductionMixersPage })));
+const ProductionBridgesPage  = lazyImport(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
+const ProductionDevicesPage  = lazyImport(() => import('./components/ProductionDevicesPage').then(m => ({ default: m.ProductionDevicesPage })));
+const ProductionVisualPage   = lazyImport(() => import('./components/ProductionVisualPage').then(m => ({ default: m.ProductionVisualPage })));
+const PlannerPage            = lazyImport(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
+const TranslationsPage       = lazyImport(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
+const AiSettingsPage         = lazyImport(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
+const AdminUsersPage         = lazyImport(() => import('./components/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
+const AdminUserDetailPage    = lazyImport(() => import('./components/AdminUserDetailPage').then(m => ({ default: m.AdminUserDetailPage })));
+const AdminProjectsPage      = lazyImport(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
+const AdminProjectDetailPage = lazyImport(() => import('./components/AdminProjectDetailPage').then(m => ({ default: m.AdminProjectDetailPage })));
+const AdminAuditLogPage      = lazyImport(() => import('./components/AdminAuditLogPage').then(m => ({ default: m.AdminAuditLogPage })));
 
 // Standalone / path-gated pages
-const SpeechCapturePage      = lazy(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
-const DskPage                = lazy(() => import('./components/DskPage').then(m => ({ default: m.DskPage })));
-const DskControlPage         = lazy(() => import('./components/DskControlPage').then(m => ({ default: m.DskControlPage })));
-const ViewerPage             = lazy(() => import('./components/ViewerPage').then(m => ({ default: m.ViewerPage })));
-const LoginPage              = lazy(() => import('./components/LoginPage').then(m => ({ default: m.LoginPage })));
-const RegisterPage           = lazy(() => import('./components/RegisterPage').then(m => ({ default: m.RegisterPage })));
-const DeviceLoginPage        = lazy(() => import('./components/DeviceLoginPage').then(m => ({ default: m.DeviceLoginPage })));
-const CameraStreamPage       = lazy(() => import('./components/CameraStreamPage').then(m => ({ default: m.CameraStreamPage })));
-const LcytMixerPage          = lazy(() => import('./components/LcytMixerPage').then(m => ({ default: m.LcytMixerPage })));
-const EmbedAudioPage         = lazy(() => import('./components/EmbedAudioPage').then(m => ({ default: m.EmbedAudioPage })));
-const EmbedInputPage         = lazy(() => import('./components/EmbedInputPage').then(m => ({ default: m.EmbedInputPage })));
-const EmbedSentLogPage       = lazy(() => import('./components/EmbedSentLogPage').then(m => ({ default: m.EmbedSentLogPage })));
-const EmbedFileDropPage      = lazy(() => import('./components/EmbedFileDropPage').then(m => ({ default: m.EmbedFileDropPage })));
-const EmbedFilesPage         = lazy(() => import('./components/EmbedFilesPage').then(m => ({ default: m.EmbedFilesPage })));
-const EmbedSettingsPage      = lazy(() => import('./components/EmbedSettingsPage').then(m => ({ default: m.EmbedSettingsPage })));
-const EmbedRtmpPage          = lazy(() => import('./components/EmbedRtmpPage').then(m => ({ default: m.EmbedRtmpPage })));
-const EmbedViewerPage        = lazy(() => import('./components/EmbedViewerPage').then(m => ({ default: m.EmbedViewerPage })));
+const SpeechCapturePage      = lazyImport(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
+const DskPage                = lazyImport(() => import('./components/DskPage').then(m => ({ default: m.DskPage })));
+const DskControlPage         = lazyImport(() => import('./components/DskControlPage').then(m => ({ default: m.DskControlPage })));
+const ViewerPage             = lazyImport(() => import('./components/ViewerPage').then(m => ({ default: m.ViewerPage })));
+const LoginPage              = lazyImport(() => import('./components/LoginPage').then(m => ({ default: m.LoginPage })));
+const RegisterPage           = lazyImport(() => import('./components/RegisterPage').then(m => ({ default: m.RegisterPage })));
+const DeviceLoginPage        = lazyImport(() => import('./components/DeviceLoginPage').then(m => ({ default: m.DeviceLoginPage })));
+const CameraStreamPage       = lazyImport(() => import('./components/CameraStreamPage').then(m => ({ default: m.CameraStreamPage })));
+const LcytMixerPage          = lazyImport(() => import('./components/LcytMixerPage').then(m => ({ default: m.LcytMixerPage })));
+const EmbedAudioPage         = lazyImport(() => import('./components/EmbedAudioPage').then(m => ({ default: m.EmbedAudioPage })));
+const EmbedInputPage         = lazyImport(() => import('./components/EmbedInputPage').then(m => ({ default: m.EmbedInputPage })));
+const EmbedSentLogPage       = lazyImport(() => import('./components/EmbedSentLogPage').then(m => ({ default: m.EmbedSentLogPage })));
+const EmbedFileDropPage      = lazyImport(() => import('./components/EmbedFileDropPage').then(m => ({ default: m.EmbedFileDropPage })));
+const EmbedFilesPage         = lazyImport(() => import('./components/EmbedFilesPage').then(m => ({ default: m.EmbedFilesPage })));
+const EmbedSettingsPage      = lazyImport(() => import('./components/EmbedSettingsPage').then(m => ({ default: m.EmbedSettingsPage })));
+const EmbedRtmpPage          = lazyImport(() => import('./components/EmbedRtmpPage').then(m => ({ default: m.EmbedRtmpPage })));
+const EmbedViewerPage        = lazyImport(() => import('./components/EmbedViewerPage').then(m => ({ default: m.EmbedViewerPage })));
 
 const path = window.location.pathname;
 
