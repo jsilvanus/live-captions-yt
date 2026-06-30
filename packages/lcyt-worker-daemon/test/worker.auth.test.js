@@ -1,6 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { startServer } from '../src/index.js';
+
+process.env.NODE_ENV = 'test';
+
+const { startServer } = await import('../src/index.js');
 
 test('worker auth: endpoints require x-worker-auth when token set', async (t) => {
   process.env.WORKER_AUTH_TOKEN = 'secret-token';

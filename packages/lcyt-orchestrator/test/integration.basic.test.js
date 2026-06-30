@@ -1,6 +1,6 @@
 // Guarded integration test for orchestrator. Set TEST_ORCHESTRATOR=1 to run.
-const http = require('http');
-const assert = require('assert');
+import http from 'http';
+import assert from 'assert';
 
 if (!process.env.TEST_ORCHESTRATOR) {
   console.log('TEST_ORCHESTRATOR not set — skipping orchestrator integration test');
@@ -9,13 +9,31 @@ if (!process.env.TEST_ORCHESTRATOR) {
 
 (async () => {
   try {
-    const app = require('../src/index.js');
-    const server = app.listen(4010);
+    // Fake worker daemon that accepts POST /jobs
+    const worker = http.createServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/jobs') {
+        let body = '';
+        req.on('data', c => body += c.toString());
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true }));
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end('not found');
+    });
+    await new Promise(r => worker.listen(0, '127.0.0.1', r));
+    const workerPort = worker.address().port;
+
+    const { startServer } = await import('../src/index.js');
+    const PORT = 4010;
+    const { stop } = startServer(PORT);
 
     // register a worker
-    const reg = JSON.stringify({ id: 'w1', privateIp: '127.0.0.1', maxJobs: 1 });
+    const reg = JSON.stringify({ id: 'w1', privateIp: '127.0.0.1', port: workerPort, maxJobs: 1 });
     const regResp = await new Promise((resolve, reject) => {
-      const req = http.request({ hostname: '127.0.0.1', port: 4010, path: '/compute/workers/register', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(reg) } }, res => {
+      const req = http.request({ hostname: '127.0.0.1', port: PORT, path: '/compute/workers/register', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(reg) } }, res => {
         let body = '';
         res.on('data', d => body += d);
         res.on('end', () => resolve({ statusCode: res.statusCode, body }));
@@ -29,7 +47,7 @@ if (!process.env.TEST_ORCHESTRATOR) {
     // post a job
     const job = JSON.stringify({ id: 'job1', type: 'hls' });
     const jobResp = await new Promise((resolve, reject) => {
-      const req = http.request({ hostname: '127.0.0.1', port: 4010, path: '/compute/jobs', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(job) } }, res => {
+      const req = http.request({ hostname: '127.0.0.1', port: PORT, path: '/compute/jobs', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(job) } }, res => {
         let body = '';
         res.on('data', d => body += d);
         res.on('end', () => resolve({ statusCode: res.statusCode, body }));
@@ -46,7 +64,7 @@ if (!process.env.TEST_ORCHESTRATOR) {
     // second job should be rejected (maxJobs=1)
     const job2 = JSON.stringify({ id: 'job2', type: 'hls' });
     const job2Resp = await new Promise((resolve, reject) => {
-      const req = http.request({ hostname: '127.0.0.1', port: 4010, path: '/compute/jobs', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(job2) } }, res => {
+      const req = http.request({ hostname: '127.0.0.1', port: PORT, path: '/compute/jobs', method: 'POST', headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(job2) } }, res => {
         let body = '';
         res.on('data', d => body += d);
         res.on('end', () => resolve({ statusCode: res.statusCode, body }));
@@ -58,7 +76,8 @@ if (!process.env.TEST_ORCHESTRATOR) {
 
     assert.strictEqual(job2Resp.statusCode, 503, 'expected 503 when no capacity');
 
-    await new Promise(r => server.close(r));
+    await stop();
+    await new Promise(r => worker.close(r));
     console.log('orchestrator integration test passed');
     process.exit(0);
   } catch (err) {

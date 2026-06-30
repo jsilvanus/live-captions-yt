@@ -1,6 +1,6 @@
 // Simple unit tests for Hetzner burst flow using a fake Hetzner HTTP server
-const http = require('http');
-const assert = require('assert');
+import http from 'http';
+import assert from 'assert';
 
 async function run() {
   // Start fake Hetzner API server
@@ -43,8 +43,8 @@ async function run() {
   process.env.MAX_CONCURRENT_BURST_CREATES = '1';
   process.env.ORCHESTRATOR_MAX_PENDING_JOBS = '5';
 
-  const app = require('../src/index.js');
-  const srv = app.listen(4111);
+  const { startServer } = await import('../src/index.js');
+  const { stop } = startServer(4111);
 
   // Post a job when no workers: should enqueue and trigger create
   const job = JSON.stringify({ id: 'job-1', type: 'hls' });
@@ -94,7 +94,7 @@ async function run() {
   assert.strictEqual(burst.jobCount, 1, 'pending job should have been assigned to new worker');
 
   // Cleanup
-  await new Promise(r => srv.close(r));
+  await stop();
   await new Promise(r => hetzner.close(r));
   console.log('hetzner.mock.test.js passed');
 }

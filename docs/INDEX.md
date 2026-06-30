@@ -39,6 +39,7 @@ Welcome to the LCYT documentation. This is your navigation hub for all guides, A
 - [**TODO.md**](../TODO.md) — Outstanding work items
 - [**env-vars.md**](./env-vars.md) — Complete environment variable reference
 - [**docker-compose setup**](./compose_orchestrator.md) — Orchestrator deployment
+- [**Distributed compute architecture**](./distributed-compute.md) — Backend → orchestrator → worker-daemon tiers, runner selection, Hetzner autoscaling
 
 ### Platform-Specific
 - [Hetzner snapshot setup](./hetzner_snapshot.md) — VM image preparation
@@ -150,7 +151,7 @@ All plans in [docs/plans/](./plans/) — See [PLANS.md](./PLANS.md) for full ind
 - [plan_backend_split.md](./plans/plan_backend_split.md) — Microservices split
 - [plan_cache.md](./plans/plan_cache.md) — Caching strategy
 - [plan_cloudfleet.md](./plans/plan_cloudfleet.md) — Kubernetes deployment
-- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) — Docker ffmpeg runner
+- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) — Docker ffmpeg runner → distributed Hetzner compute (implemented; see [distributed-compute.md](./distributed-compute.md))
 - [plan_mediamtx.md](./plans/plan_mediamtx.md) — MediaMTX integration
 - [plan_metacode_refactor.md](./plans/plan_metacode_refactor.md) — Metacode system refactor
 
@@ -219,6 +220,7 @@ docs/
 ├── env-vars.md                 ← Environment variables
 ├── ffmpeg-docker-usage.md      ← Docker ffmpeg
 ├── compose_orchestrator.md     ← Orchestrator compose
+├── distributed-compute.md      ← Distributed ffmpeg compute architecture
 ├── hetzner_snapshot.md         ← VM preparation
 ├── hetzner_runbook.md          ← Operations runbook
 │

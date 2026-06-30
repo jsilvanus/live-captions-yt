@@ -1,49 +1,39 @@
-import { createServer } from './hetzner.js';
+// Periodic safety-net autoscaler: triggers burst VM provisioning when the
+// pending job queue shows sustained pressure, independent of the immediate
+// per-request trigger in index.js. Delegates actual provisioning to the
+// caller-supplied createBurstServer callback so there is a single code path
+// for talking to Hetzner.
 
-// Simple autoscaler: given references to the orchestrator's worker and job maps,
-// provision a burst VM when no capacity remains and queuedJobs exceed threshold.
-
-export function startAutoscaler({ workersMap, jobsMap, intervalMs = 15000, burstQueueLimit = 5, maxCreates = 2 } = {}) {
-  let creating = 0;
+export function startAutoscaler({ pendingJobsRef, createBurstServer, intervalMs = 15000, burstQueueLimit = 5 } = {}) {
   let stopped = false;
+  let timer = null;
 
-  async function tick() {
+  function tick() {
     if (stopped) return;
     try {
-      // compute total capacity
-      let totalCapacity = 0;
-      for (const w of workersMap.values()) {
-        totalCapacity += (w.maxJobs || 0) - (w.jobCount || 0);
-      }
-      const queued = Math.max(0, jobsMap.size - totalCapacity);
-      if (queued > 0 && queued >= burstQueueLimit && creating < maxCreates && !!process.env.HETZNER_API_TOKEN) {
-        creating += 1;
-        try {
-          const name = `lcyt-burst-${Date.now().toString(36)}`;
-          const server = await createServer({ name, server_type: process.env.HETZNER_SERVER_TYPE_BURST || 'cx31', image: process.env.HETZNER_SNAPSHOT_ID });
-          // After creation, the worker will self-register; we just log the server info here.
-          // In the real system, orchestrator would poll server status and wait for worker registration.
-          // eslint-disable-next-line no-console
-          console.log('autoscaler: created mock server', server.id);
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.error('autoscaler: createServer failed', err.message || err);
-        } finally {
-          creating = Math.max(0, creating - 1);
-        }
+      const pending = typeof pendingJobsRef === 'function' ? pendingJobsRef() : 0;
+      if (pending >= burstQueueLimit && typeof createBurstServer === 'function') {
+        console.log(`autoscaler: pending queue (${pending}) >= burstQueueLimit (${burstQueueLimit}), triggering burst provision`);
+        createBurstServer();
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('autoscaler tick error', err);
+      console.error('autoscaler tick error', err && err.message);
     } finally {
-      if (!stopped) setTimeout(tick, intervalMs);
+      if (!stopped) {
+        timer = setTimeout(tick, intervalMs);
+        if (typeof timer.unref === 'function') timer.unref();
+      }
     }
   }
 
-  setTimeout(tick, intervalMs);
+  timer = setTimeout(tick, intervalMs);
+  if (typeof timer.unref === 'function') timer.unref();
 
   return {
-    stop: () => { stopped = true; }
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    }
   };
 }
 

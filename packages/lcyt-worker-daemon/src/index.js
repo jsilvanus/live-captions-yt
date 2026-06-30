@@ -1,12 +1,149 @@
+import os from 'os';
 import express from 'express';
-import { spawn } from 'child_process';
+import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
+import { makeFifo, createFifoWriter } from 'lcyt-backend/ffmpeg/pipe-utils';
 
-import path from 'path';
 import createUploader from './uploader.js';
 import { createS3UploadFn } from './s3-uploader.js';
 
 const DEFAULT_PORT = process.env.PORT || 5000;
 const WORKER_ID = process.env.WORKER_ID || 'worker-0';
+// Default execution backend for real (non-test) jobs. The worker daemon is the
+// component that owns the Docker socket, so 'docker' is the sane default;
+// 'local' is mainly useful for bare-metal workers or local dev without Docker.
+const WORKER_FFMPEG_RUNNER = process.env.WORKER_FFMPEG_RUNNER || 'docker';
+
+// Self-registration with the orchestrator. Unset by default — workers run
+// standalone (or are addressed directly via WORKER_DAEMON_URL) unless an
+// orchestrator is configured.
+const ORCHESTRATOR_URL = process.env.ORCHESTRATOR_URL || null;
+const ORCHESTRATOR_INTERNAL_TOKEN = process.env.ORCHESTRATOR_INTERNAL_TOKEN || process.env.BACKEND_INTERNAL_TOKEN || null;
+const WORKER_MAX_JOBS = parseInt(process.env.WORKER_MAX_JOBS || '4', 10);
+const WORKER_TYPE = process.env.WORKER_TYPE || 'warm';
+const WORKER_PRIVATE_IP = process.env.WORKER_PRIVATE_IP || null;
+const WORKER_REGISTER_INTERVAL_MS = parseInt(process.env.WORKER_REGISTER_INTERVAL_MS || '60000', 10);
+const WORKER_REGISTER_MAX_BACKOFF_MS = parseInt(process.env.WORKER_REGISTER_MAX_BACKOFF_MS || '30000', 10);
+
+// Translate a job plan (as forwarded by the orchestrator's POST /compute/jobs,
+// or sent directly by a WorkerFfmpegRunner client) into createFfmpegRunner() opts.
+// Plan fields are a superset of LocalFfmpegRunner/DockerFfmpegRunner constructor
+// options so the same plan shape works regardless of which backend runs it.
+function buildRunnerOpts(plan, jobId) {
+  const runnerType = plan.runner === 'local' || plan.runner === 'spawn' ? 'local' : WORKER_FFMPEG_RUNNER;
+  const args = Array.isArray(plan.args) ? plan.args : [];
+  const opts = {
+    runner: runnerType,
+    args,
+    name: plan.name || `lcyt-job-${jobId}`
+  };
+  if (runnerType === 'docker') {
+    if (plan.image) opts.image = plan.image;
+    if (plan.env) opts.env = plan.env;
+    if (plan.volumes) opts.volumes = plan.volumes;
+    if (plan.network) opts.network = plan.network;
+    if (plan.cpus) opts.cpus = plan.cpus;
+    if (plan.memory) opts.memory = plan.memory;
+    if (plan.entrypoint) opts.entrypoint = plan.entrypoint;
+    opts.pipeStdin = plan.stdin === 'pipe';
+  } else {
+    opts.cmd = plan.cmd || 'ffmpeg';
+    opts.stdin = plan.stdin || 'ignore';
+    if (plan.env) opts.env = plan.env;
+  }
+  return opts;
+}
+
+// Mirrors packages/plugins/lcyt-rtmp/src/rtmp-manager.js's SRT cue formatting so
+// captions injected via the worker's FIFO use byte-identical timing/format to the
+// in-process (non-worker) caption path.
+function srtTime(ms) {
+  if (!Number.isFinite(ms)) return '00:00:00,000';
+  const clampedMs = Math.max(0, Math.round(ms));
+  const hh = String(Math.floor(clampedMs / 3_600_000)).padStart(2, '0');
+  const mm = String(Math.floor((clampedMs % 3_600_000) / 60_000)).padStart(2, '0');
+  const ss = String(Math.floor((clampedMs % 60_000) / 1000)).padStart(2, '0');
+  const ms3 = String(clampedMs % 1000).padStart(3, '0');
+  return `${hh}:${mm}:${ss},${ms3}`;
+}
+
+function buildSrtCue(seq, startMs, durationMs, text) {
+  const endMs = startMs + durationMs;
+  return `${seq}\n${srtTime(startMs)} --> ${srtTime(endMs)}\n${text}\n\n`;
+}
+
+function detectPrivateIp() {
+  if (WORKER_PRIVATE_IP) return WORKER_PRIVATE_IP;
+  const ifaces = os.networkInterfaces();
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) return iface.address;
+    }
+  }
+  return '127.0.0.1';
+}
+
+async function registerWithOrchestrator(port) {
+  const payload = {
+    id: WORKER_ID,
+    privateIp: detectPrivateIp(),
+    maxJobs: WORKER_MAX_JOBS,
+    port,
+    type: WORKER_TYPE,
+    version: process.env.npm_package_version || null
+  };
+  const headers = { 'Content-Type': 'application/json' };
+  if (ORCHESTRATOR_INTERNAL_TOKEN) headers['X-Internal-Auth'] = ORCHESTRATOR_INTERNAL_TOKEN;
+  const res = await fetch(`${ORCHESTRATOR_URL}/compute/workers/register`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`register failed: ${res.status} ${text}`);
+  }
+}
+
+// Registers this worker with the orchestrator on startup (retrying with
+// exponential backoff until it succeeds), then re-registers periodically so
+// the worker re-joins automatically if the orchestrator restarts and loses
+// its in-memory registry. No-op when ORCHESTRATOR_URL isn't set.
+function startOrchestratorRegistration(port) {
+  if (!ORCHESTRATOR_URL) return { stop: () => {} };
+
+  let stopped = false;
+  let timer = null;
+  let backoffMs = 1000;
+
+  async function attempt() {
+    if (stopped) return;
+    try {
+      await registerWithOrchestrator(port);
+      console.log(`registered with orchestrator ${ORCHESTRATOR_URL} as ${WORKER_ID}`);
+      backoffMs = 1000;
+      if (!stopped) {
+        timer = setTimeout(attempt, WORKER_REGISTER_INTERVAL_MS);
+        if (typeof timer.unref === 'function') timer.unref();
+      }
+    } catch (err) {
+      console.error(`orchestrator registration failed, retrying in ${backoffMs}ms:`, err && err.message);
+      if (!stopped) {
+        timer = setTimeout(attempt, backoffMs);
+        if (typeof timer.unref === 'function') timer.unref();
+        backoffMs = Math.min(backoffMs * 2, WORKER_REGISTER_MAX_BACKOFF_MS);
+      }
+    }
+  }
+
+  attempt();
+
+  return {
+    stop: () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    }
+  };
+}
 
 export function createApp() {
   const app = express();
@@ -30,40 +167,64 @@ export function createApp() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
   }
 
-  app.post('/jobs', requireWorkerAuth, (req, res) => {
+  app.post('/jobs', requireWorkerAuth, async (req, res) => {
     const plan = req.body || {};
-    const jobId = makeJobId();
+    // Reuse the caller-supplied id (the orchestrator always forwards its own job id
+    // as plan.id) so that subsequent DELETE /jobs/:id and POST /jobs/:id/caption
+    // calls from the orchestrator address the same record. Fall back to a generated
+    // id for direct callers that don't supply one.
+    const jobId = plan.id || makeJobId();
+    const existing = jobs.get(jobId);
+    if (existing && existing.status === 'running') {
+      return res.status(409).json({ error: 'job already exists' });
+    }
+
     const record = {
       id: jobId,
       plan,
       status: 'starting',
       createdAt: Date.now(),
-      captions: []
+      captions: [],
+      workerId: WORKER_ID
     };
+    jobs.set(jobId, record);
 
     // If in test mode, don't spawn a real process
     if (process.env.NODE_ENV === 'test') {
       record.status = 'running';
-      record.workerId = WORKER_ID;
-      jobs.set(jobId, record);
-    return res.json({ jobId, workerId: WORKER_ID });
+      return res.json({ jobId, workerId: WORKER_ID });
     }
 
-    // Spawn a placeholder long-running process. Prefer 'sleep' on unix-like, otherwise fallback to a node infinite loop.
-    let proc;
-    if (process.platform !== 'win32') {
-      // 'sleep' with a very long time (3600s) is a simple placeholder; process may be killed by delete.
-      proc = spawn('sleep', ['3600'], { stdio: 'ignore', detached: true });
-    } else {
-      // Windows: spawn a node child that never exits
-      proc = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore', detached: true });
+    try {
+      if (plan.fifoPath) {
+        await makeFifo(plan.fifoPath);
+        record._fifoWriter = createFifoWriter(plan.fifoPath, { timeoutMs: plan.fifoTimeoutMs || 250 });
+      }
+
+      const runner = createFfmpegRunner(buildRunnerOpts(plan, jobId));
+      const handle = await runner.start();
+      record.runner = runner;
+      record.handle = handle;
+      record.pid = handle && handle.proc ? handle.proc.pid : null;
+      record.status = 'running';
+
+      runner.on('error', (err) => {
+        record.status = 'error';
+        record.error = err && err.message;
+        console.error(`job ${jobId} ffmpeg error:`, err && err.message);
+      });
+      runner.on('close', (info) => {
+        record.status = 'stopped';
+        record.exitInfo = info;
+      });
+    } catch (err) {
+      record.status = 'error';
+      record.error = err && err.message;
+      jobs.delete(jobId);
+      console.error(`job ${jobId} failed to start:`, err && err.message);
+      return res.status(502).json({ error: 'failed to start job', message: err && err.message });
     }
 
-    record.proc = proc;
-    record.pid = proc.pid;
-    record.status = 'running';
-    record.workerId = WORKER_ID;
-    jobs.set(jobId, record);
     // Start uploader if job requests HLS/preview output
     try {
       const out = plan.hlsOutputPath || plan.previewOutputPath || null;
@@ -74,23 +235,22 @@ export function createApp() {
       }
     } catch (e) { console.error('uploader wiring error', e); }
 
-
-
-    // Detach so it continues if parent exits unexpectedly; keep a handle so we can kill it later
-    try { proc.unref(); } catch (_) {}
-
-    res.json({ jobId, workerId: WORKER_ID });
+    return res.json({ jobId, workerId: WORKER_ID });
   });
 
-  app.delete('/jobs/:id', requireWorkerAuth, (req, res) => {
+  app.delete('/jobs/:id', requireWorkerAuth, async (req, res) => {
     const id = req.params.id;
     const record = jobs.get(id);
     if (!record) return res.status(404).json({ error: 'not found' });
 
-    if (record.proc && !record.proc.killed) {
+    if (record.runner && typeof record.runner.stop === 'function') {
       try {
-        record.proc.kill();
-      } catch (e) {}
+        await record.runner.stop();
+      } catch (e) { console.error(`failed to stop job ${id}:`, e && e.message); }
+    }
+
+    if (record._fifoWriter && typeof record._fifoWriter.close === 'function') {
+      try { await record._fifoWriter.close(); } catch (e) {}
     }
 
     if (record._uploader && typeof record._uploader.stop === "function") { try { record._uploader.stop(); } catch (e) {} }
@@ -99,11 +259,26 @@ export function createApp() {
     return res.json({ ok: true });
   });
 
-  app.post('/jobs/:id/caption', requireWorkerAuth, (req, res) => {
+  app.post('/jobs/:id/caption', requireWorkerAuth, async (req, res) => {
     const id = req.params.id;
     const record = jobs.get(id);
     if (!record) return res.status(404).json({ error: 'not found' });
     const caption = req.body || {};
+
+    if (record._fifoWriter) {
+      const seq = (record._srtSeq = (record._srtSeq || 0) + 1);
+      const startMs = typeof caption.startMs === 'number' ? caption.startMs : Date.now() - record.createdAt;
+      const durationMs = typeof caption.durationMs === 'number' ? caption.durationMs : (record.plan.cea708DelayMs || 4000);
+      const cue = typeof caption.cue === 'string' ? caption.cue : buildSrtCue(seq, startMs, durationMs, String(caption.text || ''));
+      try {
+        const ok = await record._fifoWriter.write(cue);
+        return res.json({ ok });
+      } catch (e) {
+        console.error(`caption write failed for job ${id}:`, e && e.message);
+        return res.status(502).json({ error: 'caption write failed' });
+      }
+    }
+
     record.captions.push({ ts: Date.now(), caption });
     return res.json({ ok: true });
   });
@@ -131,15 +306,21 @@ export function createApp() {
 
 export function startServer(port = DEFAULT_PORT) {
   const app = createApp();
+  let registration = { stop: () => {} };
   const server = app.listen(port, () => {
+    const boundPort = server.address().port;
     // eslint-disable-next-line no-console
-    console.log(`lcyt-worker-daemon listening on ${port}`);
+    console.log(`lcyt-worker-daemon listening on ${boundPort}`);
+    registration = startOrchestratorRegistration(boundPort);
   });
 
   return {
     app,
     server,
-    stop: () => new Promise((resolve, reject) => server.close(err => err ? reject(err) : resolve()))
+    stop: () => new Promise((resolve, reject) => {
+      registration.stop();
+      server.close(err => err ? reject(err) : resolve());
+    })
   };
 }
 

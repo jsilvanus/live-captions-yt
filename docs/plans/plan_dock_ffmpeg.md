@@ -1,17 +1,17 @@
 ---
 id: plan/dock-ffmpeg
 title: "FFmpeg Compute Containers → Distributed Hetzner Architecture"
-status: in-progress
-summary: "Phases 1–3 implemented: DockerFfmpegRunner abstraction behind FFMPEG_RUNNER env flag, local-runner/docker-runner/worker-runner selection, pipe-utils. Orchestrator and worker-daemon packages scaffolded. Phases 4–7 (full Hetzner distributed architecture) remain."
+status: implemented
+summary: "All phases implemented: DockerFfmpegRunner abstraction behind FFMPEG_RUNNER env flag (local/docker/worker runners), pipe-utils for CEA-708. lcyt-orchestrator (worker registry, job routing, Hetzner autoscaling) and lcyt-worker-daemon (job execution, FIFO caption injection, S3 upload, self-registration) fully wired, with WorkerFfmpegRunner falling back to spawn/docker when the orchestrator is unreachable. See docs/distributed-compute.md for an operator-facing summary."
 supersedes: "plan/rtmp (partially: execution model — replaces bare spawn() with Docker containers)"
 ---
 
 # Plan: FFmpeg Compute Containers → Distributed Hetzner Architecture
 
-**Date:** 2026-03-19 (revised 2026-03-20)  
+**Date:** 2026-03-19 (revised 2026-03-20, completed 2026-06-30)  
 **Version:** v3 — self-sufficient phases, distributed architecture
-**Status:** In progress.
-**Progress:** Phases 1–3 implemented (DockerFfmpegRunner, local-runner, worker-runner). Orchestrator and worker-daemon packages scaffolded. Phases 4–7 not yet deployed.
+**Status:** Implemented.
+**Progress:** All phases implemented. Phases 1–3 (DockerFfmpegRunner, local-runner, worker-runner, CEA-708 named pipe) and Phases 4–7 (orchestrator + worker-daemon distributed compute, S3 storage hooks, Hetzner autoscaling, production hardening) are complete and covered by the full test suite. See [docs/distributed-compute.md](../distributed-compute.md) for the architecture summary.
 
 **Note:** Consolidated PR materials and platform artifacts prepared in branch `director/phase6-7-hetzner`. See [PR description](PR_phase6-7_hetzner.md) for validation and rollback instructions.
 
