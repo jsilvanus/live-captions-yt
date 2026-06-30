@@ -12,6 +12,7 @@ import { runMigrations } from './db.js';
 import { DeviceRegistry } from './registry.js';
 import { BridgeManager } from './bridge-manager.js';
 import { MediaMtxClient } from './mediamtx-client.js';
+import { OBSClient } from './obs-client.js';
 import { createCamerasRouter } from './routes/cameras.js';
 import { createMixersRouter } from './routes/mixers.js';
 import { createBridgeRouter } from './routes/bridge.js';
@@ -65,3 +66,6 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
 
   return router;
 }
+
+// Re-export OBSClient for use by bridge and adapters
+export { OBSClient };

@@ -375,6 +375,11 @@ function buildSwitchCommand(mixer, inputNumber) {
   if (mixer.type === 'atem') {
     return atemGetSwitchCommand(mixer.connectionConfig, inputNumber);
   }
+  if (mixer.type === 'obs') {
+    // Import the OBS adapter to delegate getSwitchCommand
+    const obsAdapter = require('../../adapters/mixer/obs.js');
+    return obsAdapter.getSwitchCommand(mixer.connectionConfig, inputNumber);
+  }
   if (mixer.type === 'monarch_hdx') {
     return monarchHdxGetSwitchCommand(mixer.connectionConfig, inputNumber);
   }
