@@ -9,6 +9,7 @@
 import { EventEmitter } from 'node:events';
 import { TcpPool } from './tcp-pool.js';
 import { AtemPool } from './atem-pool.js';
+import { ObsPool } from './obs-pool.js';
 
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_DELAY_MAX_MS = 60_000;
@@ -23,6 +24,7 @@ export class Bridge extends EventEmitter {
     this._token = token;
     this._tcpPool = new TcpPool();
     this._atemPool = new AtemPool();
+    this._obsPool = new ObsPool();
     this._es = null;
     this._destroyed = false;
     this._reconnectDelay = RECONNECT_DELAY_MS;
@@ -37,6 +39,11 @@ export class Bridge extends EventEmitter {
     this._atemPool.on('atem:connected',    (host) => { this.emit('atem:connected', host); });
     this._atemPool.on('atem:disconnected', (host) => { this.emit('atem:disconnected', host); });
     this._atemPool.on('atem:error',        (host, err) => { this.emit('atem:error', host, err); });
+
+    // Forward OBS pool events
+    this._obsPool.on('obs:connected',    (key) => { this.emit('obs:connected', key); });
+    this._obsPool.on('obs:disconnected', (key) => { this.emit('obs:disconnected', key); });
+    this._obsPool.on('obs:error',        (key, err) => { this.emit('obs:error', key, err); });
   }
 
   /** Start the SSE connection. */
@@ -58,14 +65,16 @@ export class Bridge extends EventEmitter {
     if (this._es) { try { this._es.close(); } catch { /* ignore */ } }
     this._tcpPool.destroy();
     this._atemPool.destroy();
+    this._obsPool.destroy();
   }
 
-  /** @returns {{ sse: boolean, tcp: Array<{ key: string, connected: boolean }>, atem: Array<{ host: string, connected: boolean }> }} */
+  /** @returns {{ sse: boolean, tcp: Array<{ key: string, connected: boolean }>, atem: Array<{ host: string, connected: boolean }>, obs: Array<{ key: string, connected: boolean }> }} */
   status() {
     return {
       sse:  this._es?.readyState === 1 /* OPEN */,
       tcp:  this._tcpPool.status(),
       atem: this._atemPool.status(),
+      obs:  this._obsPool.status(),
     };
   }
 
@@ -164,6 +173,16 @@ export class Bridge extends EventEmitter {
       } catch (err) {
         await this._postStatus({ requestId, ok: false, error: err.message });
         this.emit('command:error', { type: 'http_request', url, error: err.message });
+      }
+    } else if (cmd.type === 'obs_switch') {
+      const { requestId, host, port, password, sceneName } = cmd;
+      try {
+        await this._obsPool.switch(host, Number(port), password, sceneName);
+        await this._postStatus({ requestId, ok: true });
+        this.emit('command:ok', { host, port, type: 'obs_switch', sceneName });
+      } catch (err) {
+        await this._postStatus({ requestId, ok: false, error: err.message });
+        this.emit('command:error', { host, port, type: 'obs_switch', error: err.message });
       }
     } else {
       this.emit('error', new Error(`Unknown command type: ${cmd.type}`));

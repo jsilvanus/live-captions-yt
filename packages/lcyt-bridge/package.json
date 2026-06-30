@@ -30,7 +30,8 @@
   "dependencies": {
     "atem-connection": "^2.5.0",
     "dotenv": "^16.0.0",
-    "eventsource": "^2.0.2"
+    "eventsource": "^2.0.2",
+    "obs-websocket-js": "^5.0.0"
   },
   "devDependencies": {
     "@yao-pkg/pkg": "^5.13.0",
