@@ -54,7 +54,7 @@ All three tiers use the same images:
 
 | Image | Purpose |
 |-------|---------|
-| `lcyt-site:latest` | Backend API + MCP SSE server |
+| `lcyt-site:latest` | Backend API + MCP Streamable HTTP server |
 | `bluenviron/mediamtx:latest` | RTMP/HLS media broker |
 | `lcyt-worker-daemon:latest` | ffmpeg worker daemon (Tier 2 & 3 distributed mode) |
 | `lcyt-ffmpeg:latest` | Ephemeral ffmpeg compute container |
@@ -71,7 +71,7 @@ All three tiers use the same images:
 │                                                                        │
 │  nginx (reverse proxy)                                                 │
 │    └── lcyt-backend  :3000   ← Docker Compose service "lcyt-site"     │
-│    └── lcyt-mcp-sse  :3001   ← same container, secondary port         │
+│    └── lcyt-mcp-http  :3001   ← same container, secondary port         │
 │  mediamtx            :1936   ← RTMP ingest                            │
 │                      :8080   ← HLS + metrics                          │
 │                      :9997   ← REST API (internal)                    │
@@ -347,7 +347,7 @@ kubectl -n lcyt get svc mediamtx-rtmp -o jsonpath='{.status.loadBalancer.ingress
 automatically. The `30-ingress.yaml` manifest routes:
 
 - `https://api.example.com`  →  `lcyt-backend:3000`
-- `https://api.example.com/sse` → `lcyt-backend:3001` (MCP SSE)
+- `https://api.example.com/mcp` → `lcyt-backend:3001` (MCP Streamable HTTP)
 
 Update the `host:` fields to match your actual domain.
 

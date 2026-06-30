@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # deploy.sh — Clone or pull the repo, build the web UI, and start the lcyt-site container.
 #
-# The container runs lcyt-backend (port 3000) and lcyt-mcp-sse (port 3001).
+# The container runs lcyt-backend (port 3000) and lcyt-mcp-http (port 3001).
 # lcyt-web is built on the host and served by nginx via a symlink to
 # packages/lcyt-web/dist/ — it is NOT included in the Docker image.
 #
@@ -309,7 +309,7 @@ echo ""
 echo "Deploy complete."
 echo "  Main site: in packages/lcyt-site/dist, served by host nginx; see nginx symlink in this script"
 echo "  Backend:   http://localhost:3000/health"
-echo "  MCP SSE:   http://localhost:3001/sse"
+echo "  MCP HTTP:  http://localhost:3001/mcp"
 echo "  Web UI:    in lcyt-web/dist, served by host nginx; see nginx symlink in this script"
 echo "  Bridge:    executables at /downloads/bridge/ (served via lcyt-site dist) — win/mac/linux/linux-arm64"
 echo ""

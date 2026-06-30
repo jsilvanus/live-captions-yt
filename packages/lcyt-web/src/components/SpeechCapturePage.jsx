@@ -2,7 +2,7 @@
  * SpeechCapturePage — standalone speech capture page for MCP speech sessions.
  *
  * Rendered when lcyt-web is opened at /mcp/:sessionId
- * All session config arrives as URL search params (injected by lcyt-mcp-sse):
+ * All session config arrives as URL search params (injected by lcyt-mcp-http):
  *   ?server=http://localhost:3002   MCP speech server base URL
  *   &lang=fi-FI                     recognition.lang
  *   &label=...                      optional label (display only)

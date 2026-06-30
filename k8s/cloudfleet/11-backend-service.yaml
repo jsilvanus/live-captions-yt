@@ -1,6 +1,6 @@
 # ─── LCYT — Backend Service ───────────────────────────────────────────────────
 #
-# ClusterIP service exposing the lcyt-backend API and MCP SSE ports to other
+# ClusterIP service exposing the lcyt-backend API and MCP Streamable HTTP ports to other
 # pods in the cluster. External access is handled by the Ingress (30-ingress.yaml).
 # ─────────────────────────────────────────────────────────────────────────────
 apiVersion: v1
@@ -20,7 +20,7 @@ spec:
       port: 3000
       targetPort: api
       protocol: TCP
-    - name: mcp-sse
+    - name: mcp-http
       port: 3001
-      targetPort: mcp-sse
+      targetPort: mcp-http
       protocol: TCP

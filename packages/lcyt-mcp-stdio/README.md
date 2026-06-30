@@ -4,7 +4,7 @@ MCP (Model Context Protocol) server for sending live captions to YouTube Live st
 
 Enables AI assistants such as Claude to send captions by exposing the `lcyt` caption sender as MCP tools over standard input/output.
 
-> For the HTTP SSE variant, see [`lcyt-mcp-sse`](../lcyt-mcp-sse/).
+> For the Streamable HTTP variant, see [`lcyt-mcp-http`](../lcyt-mcp-http/).
 
 ## Usage
 

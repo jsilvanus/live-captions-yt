@@ -8,7 +8,7 @@
     "packages/lcyt-backend",
     "packages/lcyt-web",
     "packages/lcyt-mcp-stdio",
-    "packages/lcyt-mcp-sse",
+    "packages/lcyt-mcp-http",
     "packages/lcyt-site",
     "packages/lcyt-bridge",
     "packages/plugins/*"

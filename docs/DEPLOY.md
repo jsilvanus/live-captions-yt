@@ -121,7 +121,7 @@ bash scripts/deploy.sh --only screenshots
 
 ```bash
 curl http://localhost:3000/health    # backend
-curl http://localhost:3001/sse       # MCP SSE (text/event-stream)
+curl http://localhost:3001/mcp       # MCP Streamable HTTP
 ```
 
 ---
@@ -133,7 +133,7 @@ directory.
 
 | Image | Build context | Purpose |
 |-------|--------------|---------|
-| `lcyt-site:latest` | `.` (repo root) | Backend API + MCP SSE server |
+| `lcyt-site:latest` | `.` (repo root) | Backend API + MCP Streamable HTTP server |
 | `lcyt-worker-daemon:latest` | `packages/lcyt-worker-daemon/` | ffmpeg worker daemon (distributed mode) |
 | `lcyt-ffmpeg:latest` | `docker/lcyt-ffmpeg/` | Ephemeral ffmpeg runner (`FFMPEG_RUNNER=docker`) |
 | `lcyt-dsk-renderer:latest` | `docker/lcyt-dsk-renderer/` | Playwright + ffmpeg DSK graphics renderer |
@@ -352,11 +352,11 @@ directly from the Node.js backend.
 |----------|---------|-------------|
 | `YOUTUBE_CLIENT_ID` | _(unset)_ | Google OAuth 2.0 Web client ID returned by `GET /youtube/config` |
 
-### MCP SSE server
+### MCP Streamable HTTP server
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MCP_REQUIRE_API_KEY` | _(unset)_ | Set to `1` to require `X-Api-Key` on MCP SSE connections |
+| `MCP_REQUIRE_API_KEY` | _(unset)_ | Set to `1` to require `X-Api-Key` on MCP Streamable HTTP connections |
 | `MCP_SESSION_TTL_MS` | `7200000` | MCP session idle timeout (ms) |
 | `LCYT_BACKEND_URL` | `http://localhost:3000` | Backend URL the MCP server connects to |
 | `LCYT_API_KEY` | _(unset)_ | API key the MCP server uses for DSK/editor tool calls |
@@ -537,7 +537,7 @@ and automatically re-executes the updated version before continuing.
 
 See `docs/FIREWALL.md` for:
 - The full port reference (public vs. internal-only)
-- nginx reverse proxy config (API, SSE streams, MCP SSE, radio HLS)
+- nginx reverse proxy config (API, SSE streams, MCP Streamable HTTP, radio HLS)
 - UFW firewall rules
 - RTMP ingest configuration (nginx-rtmp vs. MediaMTX)
 
@@ -548,7 +548,7 @@ See `docs/FIREWALL.md` for:
 | 80 / 443 | nginx | Yes |
 | 1935 | RTMP ingest | Yes (if streaming is in use) |
 | 3000 | lcyt-backend API | No — via nginx only |
-| 3001 | lcyt-mcp-sse | No — via nginx if needed |
+| 3001 | lcyt-mcp-http | No — via nginx if needed |
 | 4000 | lcyt-orchestrator | No — internal |
 | 5000 | lcyt-worker-daemon | No — internal |
 | 8080 | MediaMTX HLS | No — via nginx proxy |

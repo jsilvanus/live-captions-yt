@@ -48,7 +48,7 @@ jobs:
           - packages/lcyt-web
           - packages/lcyt-bridge
           - packages/lcyt-mcp-stdio
-          - packages/lcyt-mcp-sse
+          - packages/lcyt-mcp-http
           - packages/lcyt-backend
           - packages/plugins/lcyt-agent
           - packages/plugins/lcyt-cues
@@ -205,7 +205,7 @@ jobs:
             Dockerfile \
             docker/lcyt-ffmpeg/Dockerfile \
             docker/lcyt-dsk-renderer/Dockerfile \
-            packages/lcyt-mcp-sse/Dockerfile \
+            packages/lcyt-mcp-http/Dockerfile \
             packages/lcyt-mcp-stdio/Dockerfile
 
   docker-build:
@@ -223,9 +223,9 @@ jobs:
           - image: lcyt-ffmpeg
             context: docker/lcyt-ffmpeg
             file: docker/lcyt-ffmpeg/Dockerfile
-          - image: lcyt-mcp-sse
+          - image: lcyt-mcp-http
             context: .
-            file: packages/lcyt-mcp-sse/Dockerfile
+            file: packages/lcyt-mcp-http/Dockerfile
           - image: lcyt-mcp-stdio
             context: .
             file: packages/lcyt-mcp-stdio/Dockerfile

@@ -12,7 +12,7 @@ This document lists every port used by LCYT services, whether it needs to be pub
 | 443 | TCP | nginx (HTTPS / WSS) | **Yes** | — |
 | 1935 | TCP | RTMP ingest (nginx-rtmp or MediaMTX) | **Yes** (RTMP clients) | No — direct |
 | 3000 | TCP | lcyt-backend API | No — loopback only | **Yes** (nginx) |
-| 3001 | TCP | lcyt-mcp-sse | No — loopback only | **Yes** (nginx, if exposed) |
+| 3001 | TCP | lcyt-mcp-http | No — loopback only | **Yes** (nginx, if exposed) |
 | 4000 | TCP | lcyt-orchestrator | No — loopback only | No (internal) |
 | 5000 | TCP | lcyt-worker-daemon | No — loopback only | No (internal) |
 | 8080 | TCP | MediaMTX HLS / metrics HTTP | No — loopback only | **Yes** (nginx proxy_pass for `/r/`) |
@@ -48,10 +48,10 @@ All of the following are bound to `127.0.0.1` in `docker-compose.yml` and must *
 - Configured by: `PORT` env var (default `3000`).
 - nginx proxy target: `http://127.0.0.1:3000`
 
-### Port 3001 — lcyt-mcp-sse
-- HTTP SSE transport for the Model Context Protocol server.
+### Port 3001 — lcyt-mcp-http
+- Streamable HTTP transport for the Model Context Protocol server.
 - Only expose publicly if AI assistant MCP integration is needed.
-- Configured by: `PORT` env var in the MCP SSE process (default `3001`).
+- Configured by: `PORT` env var in the MCP Streamable HTTP process (default `3001`).
 - nginx proxy target: `http://127.0.0.1:3001`
 
 ### Port 4000 — lcyt-orchestrator
@@ -113,8 +113,8 @@ server {
     # NginxManager writes slug-based location blocks here automatically.
     # include /etc/nginx/conf.d/lcyt-radio.conf;
 
-    # ── MCP SSE server (optional) ────────────────────────────────────────────
-    location /mcp-sse/ {
+    # ── MCP Streamable HTTP server (optional) ──────────────────────────────────
+    location /mcp-http/ {
         proxy_pass         http://127.0.0.1:3001/;
         proxy_http_version 1.1;
         proxy_set_header   Connection        "";

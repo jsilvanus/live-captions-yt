@@ -100,7 +100,7 @@ Everything else (the bulk of matches) is test-mock terminology and not indicativ
 | `packages/lcyt-web` | 1.0.0 | Stable |
 | `packages/lcyt-bridge` | 0.3.0 | Functional but pre-1.0 |
 | `packages/lcyt-mcp-stdio` | 0.1.0 | Stable but early |
-| `packages/lcyt-mcp-sse` | 0.1.0 | Stable but early |
+| `packages/lcyt-mcp-http` | 0.1.0 | Stable but early |
 | `packages/lcyt-site` | 0.1.0 | Early (marketing site) |
 | `packages/lcyt-orchestrator` | 0.0.1 (private) | Scaffolded, not production-hardened |
 | `packages/lcyt-worker-daemon` | 0.0.0 (private) | Scaffolded, not production-hardened |

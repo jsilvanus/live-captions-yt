@@ -55,18 +55,11 @@ spec:
                 name: lcyt-backend
                 port:
                   name: api
-          # MCP SSE server (path prefix /sse and /messages)
-          - path: /sse
+          # MCP Streamable HTTP server (path prefix /mcp)
+          - path: /mcp
             pathType: Prefix
             backend:
               service:
                 name: lcyt-backend
                 port:
-                  name: mcp-sse
-          - path: /messages
-            pathType: Prefix
-            backend:
-              service:
-                name: lcyt-backend
-                port:
-                  name: mcp-sse
+                  name: mcp-http

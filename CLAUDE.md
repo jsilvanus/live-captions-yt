@@ -16,7 +16,7 @@ live-captions-yt/
 │   ├── lcyt-backend/           # Express.js HTTP relay backend
 │   ├── lcyt-bridge/            # Production control bridge agent (TCP relay to AMX/Roland)
 │   ├── lcyt-mcp-stdio/         # MCP server (stdio transport)
-│   ├── lcyt-mcp-sse/           # MCP server (HTTP SSE transport)
+│   ├── lcyt-mcp-http/          # MCP server (Streamable HTTP transport)
 │   ├── lcyt-site/              # Marketing/docs website (Astro)
 │   ├── lcyt-web/               # Browser-based web UI (Vite + React + wouter)
 │   ├── lcyt-orchestrator/      # Compute orchestrator — worker registration, job dispatch, Hetzner autoscaling
@@ -870,16 +870,16 @@ Model Context Protocol server enabling AI assistants (e.g. Claude) to send live 
 
 ---
 
-### `packages/lcyt-mcp-sse` — MCP Server, HTTP SSE transport (v0.1.0)
+### `packages/lcyt-mcp-http` — MCP Server, Streamable HTTP transport (v0.1.0)
 
-Same tools as `lcyt-mcp-stdio`, but exposed over HTTP Server-Sent Events for remote AI client connections.
+Same tools as `lcyt-mcp-stdio` plus `privacy`/`privacy_deletion`, exposed over the MCP Streamable HTTP transport for remote AI client connections.
 
 **Entry:** `src/server.js`
-**Transport:** HTTP SSE — `GET /sse` opens the stream, `POST /messages?sessionId=...` sends messages.
+**Transport:** MCP Streamable HTTP — single `/mcp` endpoint supporting `POST` (JSON-RPC messages), `GET` (server-initiated SSE stream), and `DELETE` (session termination), identified by the `Mcp-Session-Id` header.
 **Port:** `process.env.PORT` (default 3001)
-**Tools exposed:** `start`, `send_caption`, `send_batch`, `sync_clock`, `status`
+**Tools exposed:** `start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop`, `privacy`, `privacy_deletion`
 
-**Run:** `node packages/lcyt-mcp-sse/src/server.js`
+**Run:** `node packages/lcyt-mcp-http/src/server.js`
 
 ---
 
@@ -1285,7 +1285,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 | File | Purpose |
 |---|---|
-| `package.json` | Root workspace (workspaces: `packages/lcyt`, `packages/lcyt-cli`, `packages/lcyt-backend`, `packages/lcyt-web`, `packages/lcyt-mcp-stdio`, `packages/lcyt-mcp-sse`, `packages/lcyt-site`, `packages/lcyt-bridge`, `packages/plugins/*`) |
+| `package.json` | Root workspace (workspaces: `packages/lcyt`, `packages/lcyt-cli`, `packages/lcyt-backend`, `packages/lcyt-web`, `packages/lcyt-mcp-stdio`, `packages/lcyt-mcp-http`, `packages/lcyt-site`, `packages/lcyt-bridge`, `packages/plugins/*`) |
 | `packages/lcyt/src/sender.js` | Core caption sender (Node.js) |
 | `packages/lcyt/src/errors.js` | Error classes (Node.js) |
 | `packages/lcyt/scripts/build-cjs.js` | ESM→CJS build transformer |
@@ -1338,7 +1338,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-backend/src/middleware/user-auth.js` | User JWT Bearer verification |
 | `packages/lcyt-backend/bin/lcyt-backend-admin` | Admin CLI for key + user management |
 | `packages/lcyt-mcp-stdio/src/server.js` | MCP server — stdio transport |
-| `packages/lcyt-mcp-sse/src/server.js` | MCP server — HTTP SSE transport |
+| `packages/lcyt-mcp-http/src/server.js` | MCP server — Streamable HTTP transport |
 | `packages/plugins/lcyt-production/src/api.js` | Production control router + init function |
 | `packages/plugins/lcyt-production/src/registry.js` | DeviceRegistry: camera + mixer adapter management |
 | `packages/plugins/lcyt-production/src/bridge-manager.js` | BridgeManager: SSE command dispatch to bridge agents |
@@ -1430,7 +1430,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 | `packages/lcyt-worker-daemon` | ~200 | ~150 | Moderate | Low | `uploader.js`, S3 upload errors |
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
-| `packages/lcyt-mcp-sse` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via SSE (requires MCP client harness) |
+| `packages/lcyt-mcp-http` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via Streamable HTTP (requires MCP client harness) |
 | `packages/lcyt-web` | 5,000+ | ~1,000 | Good | Low | React components (sidebar, dashboard, pages, panels), embed pages, production pages |
 | `python-packages/lcyt` | 1,053 | 1,200 | Excellent | Low | None identified |
 | `python-packages/lcyt-backend` | 1,135 | 800 | Good | Low | `middleware/cors.py`, incomplete feature parity with Node.js backend |
@@ -1514,12 +1514,12 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ---
 
-#### `packages/lcyt-mcp-sse` — MCP Server (HTTP SSE)
+#### `packages/lcyt-mcp-http` — MCP Server (Streamable HTTP)
 **Test files:** `test/speech.test.js` (20 tests), `test/server.test.js` (6 tests, added 2026-03-17).
 **Added 2026-03-17:**
-- `test/server.test.js` (6 tests) — HTTP route logic: `POST /messages` returns 404 for unknown/missing sessionId, delegates to `transport.handlePostMessage` for known session; `GET /sse` returns 200 with `text/event-stream` when auth not required, 401 when `REQUIRE_API_KEY` is set; transport session isolation.
+- `test/server.test.js` (6 tests) — HTTP route logic: `POST /mcp` returns 400 for unknown/missing `Mcp-Session-Id` on non-initialize requests, delegates to the transport for known sessions; `GET /mcp` returns 200 with `text/event-stream` when auth not required, 401 when `REQUIRE_API_KEY` is set; transport session isolation.
 **Gaps (Low):**
-- Full MCP tool-call flow (start → send_caption → stop) via SSE requires a real MCP client harness and is better covered by E2E tests.
+- Full MCP tool-call flow (start → send_caption → stop) via Streamable HTTP requires a real MCP client harness and is better covered by E2E tests.
 
 ---
 
@@ -1585,7 +1585,7 @@ Items marked ✅ were completed 2026-03-16 or 2026-03-17.
 6. ✅ **`packages/lcyt-backend/src/middleware/cors.js`** *(Medium → Done)* — `cors.test.js` added (19 tests).
 7. ✅ **`packages/lcyt-backend/src/caption-files.js`** *(Medium → Done)* — `caption-files.test.js` added (21 tests, pure functions).
 8. ✅ **`packages/lcyt-web` useSentLog + ToastContainer** *(Medium → Done)* — `useSentLog.test.jsx` (30 tests) + `useToast.test.jsx` (18 tests) added.
-9. ✅ **`packages/lcyt-mcp-sse/src/server.js` HTTP routes** *(Medium → Done)* — `server.test.js` added (6 tests).
+9. ✅ **`packages/lcyt-mcp-http/src/server.js` HTTP routes** *(Medium → Done)* — `server.test.js` added (6 tests).
 10. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
 11. **`packages/plugins/lcyt-rtmp` STT gRPC path** *(Medium)* — `GoogleSttAdapter` gRPC streaming (requires `@google-cloud/speech` installed) not covered by CI.
 12. **`packages/lcyt-backend/src/routes/stt.js`** *(Medium)* — server-side STT HTTP routes untested.

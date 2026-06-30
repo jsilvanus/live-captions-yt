@@ -132,7 +132,7 @@ The CLI uses `YoutubeLiveCaptionSender` directly (not via the relay backend).
 
 ### 2.5 MCP Tools
 
-`packages/lcyt-mcp-stdio/src/server.js` and `packages/lcyt-mcp-sse/src/server.js`
+`packages/lcyt-mcp-stdio/src/server.js` and `packages/lcyt-mcp-http/src/server.js`
 
 AI assistants call the `send_caption` or `send_batch` MCP tools. These create a `BackendCaptionSender` session internally and call `sender.send()`.
 
@@ -463,6 +463,6 @@ sender.send('Caption text')
 | `packages/lcyt-cli/src/interactive-ui.js` | Full-screen blessed terminal UI |
 | `packages/plugins/lcyt-dsk/src/caption-processor.js` | Graphics metacode extractor |
 | `packages/lcyt-mcp-stdio/src/server.js` | MCP stdio server |
-| `packages/lcyt-mcp-sse/src/server.js` | MCP SSE server |
+| `packages/lcyt-mcp-http/src/server.js` | MCP Streamable HTTP server |
 | `python-packages/lcyt/lcyt/sender.py` | Python sender |
 | `python-packages/lcyt/lcyt/backend_sender.py` | Python relay sender |

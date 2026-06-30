@@ -22,7 +22,7 @@ This is a monorepo containing the following packages:
 | [`lcyt-cli`](packages/lcyt-cli/) | npm | `npm install -g lcyt-cli` | CLI tool |
 | [`lcyt-backend`](packages/lcyt-backend/) | — | — | Node.js Express backend relay |
 | [`lcyt-mcp-stdio`](packages/lcyt-mcp-stdio/) | — | `node packages/lcyt-mcp-stdio/src/server.js` | MCP server (stdio transport) |
-| [`lcyt-mcp-sse`](packages/lcyt-mcp-sse/) | — | `node packages/lcyt-mcp-sse/src/server.js` | MCP server (HTTP SSE transport) |
+| [`lcyt-mcp-http`](packages/lcyt-mcp-http/) | — | `node packages/lcyt-mcp-http/src/server.js` | MCP server (Streamable HTTP transport) |
 | [`lcyt`](python-packages/lcyt/) | PyPI | `pip install lcyt` | Core Python library |
 | [`lcyt-backend`](python-packages/lcyt-backend/) | pip | `pip install lcyt-backend` | Python/Flask backend relay (cPanel/Passenger) |
 

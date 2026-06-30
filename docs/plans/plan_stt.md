@@ -7,7 +7,7 @@ summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and 
 
 # Speech-to-Text (STT) Integration
 
-**Scope:** `packages/lcyt-web` — `AudioPanel`, `SpeechCapturePage`, `EmbedAudioPage`; `packages/lcyt-mcp-sse` — speech session routes.
+**Scope:** `packages/lcyt-web` — `AudioPanel`, `SpeechCapturePage`, `EmbedAudioPage`; `packages/lcyt-mcp-http` — speech session routes.
 
 ---
 
@@ -36,7 +36,7 @@ Engine choice and all STT settings persist in `localStorage`.
 | `src/contexts/AudioContext.jsx` | Shared audio state + imperative handles (toggle, utteranceEndClick) |
 | `src/components/SpeechCapturePage.jsx` | Standalone MCP speech session page (`/mcp/:sessionId`) |
 | `src/components/EmbedAudioPage.jsx` | Embeddable mic widget (`/embed/audio`) |
-| `packages/lcyt-mcp-sse/src/speech.js` | Server-side STT chunk receiver for MCP sessions |
+| `packages/lcyt-mcp-http/src/speech.js` | Server-side STT chunk receiver for MCP sessions |
 
 ---
 
@@ -176,7 +176,7 @@ pushFinalTranscript(text, utteranceStart)
 
 Route: `/mcp/:sessionId`
 
-A self-contained page (no SessionContext, no relay backend) used by the `lcyt-mcp-sse` server to open a browser-based STT session from an AI assistant.
+A self-contained page (no SessionContext, no relay backend) used by the `lcyt-mcp-http` server to open a browser-based STT session from an AI assistant.
 
 ### URL parameters
 
@@ -197,7 +197,7 @@ A self-contained page (no SessionContext, no relay backend) used by the `lcyt-mc
 6. User clicks **Stop** or silence timeout fires → `POST {server}/stt/{sessionId}/done`.
 7. AI tool call `get_speech_transcript` unblocks and returns full transcript.
 
-### Server-side routes (`lcyt-mcp-sse/src/speech.js`)
+### Server-side routes (`lcyt-mcp-http/src/speech.js`)
 
 | Route | Handler |
 |---|---|

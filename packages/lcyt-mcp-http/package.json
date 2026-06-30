@@ -1,11 +1,11 @@
 {
-  "name": "lcyt-mcp-sse",
+  "name": "lcyt-mcp-http",
   "version": "0.1.0",
-  "description": "MCP server for sending live captions to YouTube Live streams (HTTP SSE transport)",
+  "description": "MCP server for sending live captions to YouTube Live streams (Streamable HTTP transport)",
   "type": "module",
   "main": "src/server.js",
   "bin": {
-    "lcyt-mcp-sse": "src/server.js"
+    "lcyt-mcp-http": "src/server.js"
   },
   "scripts": {
     "start": "node src/server.js",
@@ -17,7 +17,7 @@
     "captions",
     "mcp",
     "model-context-protocol",
-    "sse"
+    "streamable-http"
   ],
   "author": "jsilvanus",
   "license": "MIT",
@@ -37,7 +37,7 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/jsilvanus/live-captions-yt.git",
-    "directory": "packages/lcyt-mcp-sse"
+    "directory": "packages/lcyt-mcp-http"
   },
   "bugs": {
     "url": "https://github.com/jsilvanus/live-captions-yt/issues"
