@@ -4,23 +4,27 @@
  * Mounted at /music in the main server.
  *
  * Routes:
- *   GET  /music/status      — current analysis state for the authenticated API key
- *   POST /music/start       — start analysis { streamKey?, audioSource? ('hls'|'rtmp', default 'hls') }
- *   POST /music/stop        — stop analysis
- *   GET  /music/:key/live   — public SSE stream of label_change / bpm_update events
+ *   GET  /music/status         — current analysis state for the authenticated API key
+ *   POST /music/start          — start analysis { streamKey?, audioSource? ('hls'|'rtmp', default 'hls') }
+ *   POST /music/stop           — stop analysis
+ *   GET  /music/events/history — paginated music_events history { limit?, offset?, eventType? } (Phase 4)
+ *   GET  /music/:key/live      — public SSE stream of label_change / bpm_update events
  *
  * SSE events on GET /music/:key/live:
- *   connected     { apiKey }
- *   snapshot      { label, labelConfidence, labelTs, bpm, bpmConfidence, bpmTs } — most recent
- *                   persisted state from music_events, sent once on connect (if any exists)
- *   label_change  { label, confidence, bpm, ts }
- *   bpm_update    { bpm, confidence, ts }
- *   music_error   { error }
- *   music_stopped { apiKey }
+ *   connected        { apiKey }
+ *   snapshot         { label, labelConfidence, labelTs, bpm, bpmConfidence, bpmTs } — most recent
+ *                      persisted state from music_events, sent once on connect (if any exists)
+ *   label_change     { label, confidence, bpm, ts }
+ *   bpm_update       { bpm, confidence, ts }
+ *   music_calibrated { silenceThreshold, ts } — auto-calibration finished (Phase 4)
+ *   music_error      { error }
+ *   music_stopped    { apiKey }
  */
 
 import { Router } from 'express';
-import { getRecentMusicEvents } from '../db.js';
+import { getRecentMusicEvents, getMusicEventsPage } from '../db.js';
+
+const VALID_EVENT_TYPES = new Set(['label_change', 'bpm_update']);
 
 /** Send an SSE event line to an Express response. */
 function sendEvent(res, eventName, data) {
@@ -62,6 +66,27 @@ export function createMusicRouter(db, auth, musicManager) {
     const { apiKey } = req.session;
     await musicManager.stop(apiKey);
     res.json({ ok: true });
+  });
+
+  // ── GET /music/events/history ────────────────────────────────────────────
+
+  router.get('/events/history', auth, (req, res) => {
+    const { apiKey } = req.session;
+    const { eventType = null } = req.query;
+
+    if (eventType !== null && !VALID_EVENT_TYPES.has(eventType)) {
+      return res.status(400).json({ error: `eventType must be one of: ${[...VALID_EVENT_TYPES].join(', ')}` });
+    }
+
+    let limit = parseInt(req.query.limit, 10);
+    if (!Number.isInteger(limit)) limit = 50;
+    limit = Math.max(1, Math.min(200, limit));
+
+    let offset = parseInt(req.query.offset, 10);
+    if (!Number.isInteger(offset) || offset < 0) offset = 0;
+
+    const { events, total } = getMusicEventsPage(db, apiKey, { limit, offset, eventType });
+    res.json({ events, total, limit, offset });
   });
 
   // ── GET /music/:key/live (public SSE) ────────────────────────────────────
@@ -110,11 +135,16 @@ export function createMusicRouter(db, auth, musicManager) {
       if (k !== apiKey) return;
       sendEvent(res, 'music_stopped', { apiKey });
     }
+    function onCalibrated({ apiKey: k, silenceThreshold, ts }) {
+      if (k !== apiKey) return;
+      sendEvent(res, 'music_calibrated', { silenceThreshold, ts });
+    }
 
     musicManager.on('label_change', onLabelChange);
     musicManager.on('bpm_update', onBpmUpdate);
     musicManager.on('error', onError);
     musicManager.on('stopped', onStopped);
+    musicManager.on('calibrated', onCalibrated);
 
     const heartbeat = setInterval(() => {
       if (!res.writableEnded) res.write(': heartbeat\n\n');
@@ -126,6 +156,7 @@ export function createMusicRouter(db, auth, musicManager) {
       musicManager.off('bpm_update', onBpmUpdate);
       musicManager.off('error', onError);
       musicManager.off('stopped', onStopped);
+      musicManager.off('calibrated', onCalibrated);
     });
   });
 

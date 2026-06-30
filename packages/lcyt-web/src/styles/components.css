@@ -1092,6 +1092,42 @@
   accent-color: var(--color-accent);
 }
 
+/* ─── Music detection history ───────────────────────────────── */
+
+.music-history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.music-history-list__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.music-history-list__time {
+  color: var(--color-text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.music-history-list__label {
+  flex: 1;
+  color: var(--color-text);
+}
+
+.music-history-list__confidence {
+  color: var(--color-text-dim);
+}
+
 /* ─── Toast notifications ───────────────────────────────── */
 
 #toast-container {

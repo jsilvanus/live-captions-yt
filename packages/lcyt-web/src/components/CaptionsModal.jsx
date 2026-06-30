@@ -18,6 +18,7 @@ import {
 import { applyTextSize } from '../lib/settings';
 import { VadPanel } from './panels/VadPanel.jsx';
 import { MusicPanel } from './panels/MusicPanel.jsx';
+import { MusicHistoryPanel } from './panels/MusicHistoryPanel.jsx';
 import { useAudioContext } from '../contexts/AudioContext';
 
 export function CaptionsModal({ isOpen, onClose }) {
@@ -547,6 +548,7 @@ export function CaptionsModal({ isOpen, onClose }) {
                 available={music.available}
                 running={music.running}
               />
+              <MusicHistoryPanel />
             </div>
           )}
 

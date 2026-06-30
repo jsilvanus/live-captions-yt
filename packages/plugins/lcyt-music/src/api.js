@@ -35,7 +35,7 @@ import { createMusicConfigRouter } from './routes/music-config.js';
 
 export { createSoundCaptionProcessor } from './sound-caption-processor.js';
 export {
-  runMigrations, insertMusicEvent, getRecentMusicEvents,
+  runMigrations, insertMusicEvent, getRecentMusicEvents, getMusicEventsPage,
   getMusicConfig, setMusicConfig,
 } from './db.js';
 export { MusicManager } from './music-manager.js';

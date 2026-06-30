@@ -43,6 +43,7 @@ import { spawn } from 'node:child_process';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { extractPcm, probeFfmpegVersion } from './pcm-extractor.js';
 import { classify } from './analyser/spectral-detector.js';
+import { classifyExternal } from './analyser/external-classifier.js';
 import { detectBpm, createBpmSmoother } from './analyser/bpm-detector.js';
 import { getMusicConfig } from './db.js';
 
@@ -54,6 +55,21 @@ const BPM_CHANGE_THRESHOLD = 2;
 // Open Questions #3) — a comfortable 3-4 beat window at most tempos.
 const RTMP_WINDOW_SECONDS = 6;
 const RTMP_WINDOW_BYTES = SAMPLE_RATE * RTMP_WINDOW_SECONDS * 2; // s16le mono
+
+// Phase 4: auto-calibration. Sample RMS energy for the first ~5s of audio
+// (instead of classifying) and derive a silenceThreshold from the observed
+// range, clamped to a sane band so a near-silent or very loud room can't
+// produce a degenerate threshold.
+const CALIBRATION_SECONDS = 5;
+const CALIBRATION_MIN_THRESHOLD = 0.002;
+const CALIBRATION_MAX_THRESHOLD = 0.05;
+const CALIBRATION_FACTOR = 0.5; // midpoint between observed min/max RMS
+
+function computeRms(pcm) {
+  let sum = 0;
+  for (let i = 0; i < pcm.length; i++) sum += pcm[i] * pcm[i];
+  return Math.sqrt(sum / pcm.length);
+}
 
 /**
  * @typedef {object} MusicSession
@@ -71,6 +87,11 @@ const RTMP_WINDOW_BYTES = SAMPLE_RATE * RTMP_WINDOW_SECONDS * 2; // s16le mono
  * @property {number|null} lastEmittedBpm
  * @property {ReturnType<typeof createBpmSmoother>} bpmSmoother
  * @property {object} config
+ * @property {boolean} calibrating
+ * @property {number[]} calibrationSamples   RMS values observed during the calibration window
+ * @property {number} calibrationSampleCount total raw PCM samples observed during calibration
+ * @property {number|null} calibratedSilenceThreshold
+ * @property {Promise<void>|null} processingQueue   serialises RTMP window analysis when MUSIC_CLASSIFIER_URL is set
  */
 
 export class MusicManager extends EventEmitter {
@@ -130,6 +151,11 @@ export class MusicManager extends EventEmitter {
       lastEmittedBpm: null,
       bpmSmoother: createBpmSmoother(),
       config,
+      calibrating: config.autoCalibrate === true,
+      calibrationSamples: [],
+      calibrationSampleCount: 0,
+      calibratedSilenceThreshold: null,
+      processingQueue: null,
     };
 
     this._sessions.set(apiKey, session);
@@ -264,6 +290,8 @@ export class MusicManager extends EventEmitter {
       label: session.lastEmittedLabel,
       bpm: session.lastEmittedBpm,
       ffmpegVersion: this.ffmpegVersion ?? null,
+      calibrating: session.calibrating,
+      calibratedSilenceThreshold: session.calibratedSilenceThreshold,
     };
   }
 
@@ -282,7 +310,7 @@ export class MusicManager extends EventEmitter {
     const pcm = await extractPcm(segmentBuffer, { sampleRate: SAMPLE_RATE });
     if (pcm.length === 0) return;
 
-    this._analysePcm(apiKey, session, pcm);
+    await this._analysePcm(apiKey, session, pcm);
   }
 
   /**
@@ -306,7 +334,22 @@ export class MusicManager extends EventEmitter {
     }
     if (pcm.length === 0) return;
 
-    this._analysePcm(apiKey, session, pcm);
+    // Default path (no MUSIC_CLASSIFIER_URL): call _analysePcm directly
+    // rather than via .then() chaining. Its body runs synchronously to
+    // completion in that case (no await is reached), which several RTMP
+    // tests rely on — they emit('data', ...) and assert state immediately
+    // afterward with no await. When MUSIC_CLASSIFIER_URL is set, route
+    // through session.processingQueue so windows arriving in the same
+    // chunk are classified (and their events emitted) in strict order.
+    if (process.env.MUSIC_CLASSIFIER_URL) {
+      session.processingQueue = (session.processingQueue ?? Promise.resolve())
+        .then(() => this._analysePcm(apiKey, session, pcm))
+        .catch((err) => { this.emit('error', { apiKey, error: err }); });
+    } else {
+      this._analysePcm(apiKey, session, pcm).catch((err) => {
+        this.emit('error', { apiKey, error: err });
+      });
+    }
   }
 
   /**
@@ -314,19 +357,42 @@ export class MusicManager extends EventEmitter {
    * metacode emission pipeline, used by both the HLS (_processSegment) and
    * RTMP (_processRtmpWindow) audio sources.
    *
+   * When MUSIC_CLASSIFIER_URL is set, delegates to the external classifier
+   * hook and falls back to the local heuristic on error/timeout. That path
+   * is the only one that actually awaits anything — the default (no env
+   * var) path below stays fully synchronous so existing callers/tests that
+   * assert state immediately after triggering analysis are unaffected.
+   *
    * @param {string} apiKey
    * @param {MusicSession} session
    * @param {Float32Array} pcm
    */
-  _analysePcm(apiKey, session, pcm) {
+  async _analysePcm(apiKey, session, pcm) {
     const { config } = session;
 
-    const { label: rawLabel, confidence } = classify(pcm, {
+    if (session.calibrating) {
+      this._accumulateCalibration(apiKey, session, pcm);
+      return;
+    }
+
+    const effectiveSilenceThreshold = session.calibratedSilenceThreshold ?? config.silenceThreshold;
+    const classifyOpts = {
       sampleRate: SAMPLE_RATE,
-      silenceThreshold: config.silenceThreshold,
+      silenceThreshold: effectiveSilenceThreshold,
       flatnessThreshold: config.flatnessThreshold,
       zcrThreshold: config.zcrThreshold,
-    });
+    };
+
+    let rawLabel, confidence;
+    if (process.env.MUSIC_CLASSIFIER_URL) {
+      try {
+        ({ label: rawLabel, confidence } = await classifyExternal(pcm, { sampleRate: SAMPLE_RATE }));
+      } catch {
+        ({ label: rawLabel, confidence } = classify(pcm, classifyOpts));
+      }
+    } else {
+      ({ label: rawLabel, confidence } = classify(pcm, classifyOpts));
+    }
 
     // Confirm-segments state machine: require N consecutive identical raw
     // labels before treating it as a real transition (smooths flicker).
@@ -372,5 +438,33 @@ export class MusicManager extends EventEmitter {
     if (parts.length > 0) {
       this._soundProcessor(apiKey, parts.join(' '));
     }
+  }
+
+  /**
+   * Accumulate RMS energy samples during the calibration window. Once enough
+   * audio has been observed, derive calibratedSilenceThreshold from the
+   * observed min/max RMS range, end calibration, and emit 'calibrated'.
+   * Classification is skipped entirely for windows spent calibrating.
+   *
+   * @param {string} apiKey
+   * @param {MusicSession} session
+   * @param {Float32Array} pcm
+   */
+  _accumulateCalibration(apiKey, session, pcm) {
+    session.calibrationSamples.push(computeRms(pcm));
+    session.calibrationSampleCount += pcm.length;
+
+    if (session.calibrationSampleCount < SAMPLE_RATE * CALIBRATION_SECONDS) return;
+
+    const sorted = [...session.calibrationSamples].sort((a, b) => a - b);
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const raw = min + (max - min) * CALIBRATION_FACTOR;
+    const threshold = Math.max(CALIBRATION_MIN_THRESHOLD, Math.min(CALIBRATION_MAX_THRESHOLD, raw));
+
+    session.calibratedSilenceThreshold = threshold;
+    session.calibrating = false;
+
+    this.emit('calibrated', { apiKey, silenceThreshold: threshold, ts: Date.now() });
   }
 }
