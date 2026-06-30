@@ -27,7 +27,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { OBSClient } from '../obs-client.js';
+import { OBSClient } from '../../obs-client.js';
 
 const CONNECT_TIMEOUT_MS = 3_000;
 
