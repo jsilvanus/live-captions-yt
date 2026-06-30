@@ -11,10 +11,16 @@
  * Analogous to createDskCaptionProcessor in lcyt-dsk.
  *
  * Metacode syntax:
- *   <!-- sound:music -->      audio is music
- *   <!-- sound:speech -->     audio is speech
- *   <!-- sound:silence -->    audio is silent
- *   <!-- bpm:128 -->          current BPM estimate (integer)
+ *   <!-- sound:music -->          audio is music
+ *   <!-- sound:speech -->         audio is speech
+ *   <!-- sound:silence -->        audio is silent
+ *   <!-- sound:music:0.92 -->     audio is music, with an optional confidence value (0-1)
+ *   <!-- bpm:128 -->              current BPM estimate (integer)
+ *
+ * If a caption contains more than one sound/bpm metacode (which should not
+ * normally happen, but is not rejected), the last occurrence of each type wins
+ * — this mirrors "most recent state in this caption" rather than silently
+ * ignoring everything after the first match.
  *
  * Usage:
  *   const soundProcessor = createSoundCaptionProcessor({ store, db });
@@ -24,8 +30,8 @@
 
 import { insertMusicEvent } from './db.js';
 
-const SOUND_RE = /<!--\s*sound\s*:\s*(music|speech|silence)\s*-->/gi;
-const BPM_RE   = /<!--\s*bpm\s*:\s*(\d+)\s*-->/gi;
+const SOUND_PATTERN = /<!--\s*sound\s*:\s*(music|speech|silence)\s*(?::\s*([01](?:\.\d+)?)\s*)?-->/gi;
+const BPM_PATTERN    = /<!--\s*bpm\s*:\s*(\d+)\s*-->/gi;
 
 /**
  * @param {{ store: import('../../lcyt-backend/src/store.js').SessionStore|null, db: import('better-sqlite3').Database }} opts
@@ -35,38 +41,38 @@ export function createSoundCaptionProcessor({ store, db }) {
   return function processSoundCaption(apiKey, text) {
     if (!text) return text;
 
-    // Reset lastIndex for global regexes before each call
-    SOUND_RE.lastIndex = 0;
-    BPM_RE.lastIndex   = 0;
+    // matchAll() on a 'g' regex never mutates a shared lastIndex, so a fresh
+    // matcher per call is unnecessary here — but we still take the LAST match
+    // of each type as authoritative, in case a caption somehow carries more
+    // than one of the same metacode.
+    const soundMatches = [...text.matchAll(SOUND_PATTERN)];
+    const bpmMatches    = [...text.matchAll(BPM_PATTERN)];
+    const soundMatch = soundMatches.at(-1) ?? null;
+    const bpmMatch   = bpmMatches.at(-1) ?? null;
 
-    const soundMatch = SOUND_RE.exec(text);
-    SOUND_RE.lastIndex = 0;
-    const bpmMatch   = BPM_RE.exec(text);
-    BPM_RE.lastIndex   = 0;
-
-    // Strip metacodes — always, even if there's no match (idempotent)
-    const cleanText = text
-      .replace(/<!--\s*sound\s*:\s*(music|speech|silence)\s*-->/gi, '')
-      .replace(/<!--\s*bpm\s*:\s*\d+\s*-->/gi, '')
-      .trim();
+    const cleanText = text.replace(SOUND_PATTERN, '').replace(BPM_PATTERN, '').trim();
 
     if (!soundMatch && !bpmMatch) return cleanText;
 
-    const label = soundMatch ? soundMatch[1].toLowerCase() : null;
-    const bpm   = bpmMatch ? parseInt(bpmMatch[1], 10) : null;
-    const ts    = Date.now();
+    const label      = soundMatch ? soundMatch[1].toLowerCase() : null;
+    const confidence = soundMatch && soundMatch[2] != null ? Number(soundMatch[2]) : null;
+    const bpm        = bpmMatch ? parseInt(bpmMatch[1], 10) : null;
+    const ts         = Date.now();
 
-    // Persist to DB
+    // Persist to DB. Write a separate row per event type so the DB log mirrors
+    // the SSE events emitted below 1:1 (a caption carrying both a label and a
+    // bpm value produces two rows, not one combined row).
     if (db && label) {
       try {
-        insertMusicEvent(db, apiKey, { event_type: 'label_change', label, bpm: bpm ?? null });
+        insertMusicEvent(db, apiKey, { event_type: 'label_change', label, bpm: bpm ?? null, confidence });
       } catch (err) {
         // Non-fatal — DB write failure should not block caption delivery
         console.warn('[music] Failed to insert music_event:', err?.message);
       }
-    } else if (db && bpm != null) {
+    }
+    if (db && bpm != null) {
       try {
-        insertMusicEvent(db, apiKey, { event_type: 'bpm_update', label: null, bpm });
+        insertMusicEvent(db, apiKey, { event_type: 'bpm_update', label: null, bpm, confidence });
       } catch (err) {
         console.warn('[music] Failed to insert music_event (bpm):', err?.message);
       }
@@ -78,13 +84,13 @@ export function createSoundCaptionProcessor({ store, db }) {
       if (label) {
         session.emitter.emit('event', {
           type: 'sound_label',
-          data: { label, bpm: bpm ?? null, confidence: null, ts },
+          data: { label, bpm: bpm ?? null, confidence, ts },
         });
       }
       if (bpm != null) {
         session.emitter.emit('event', {
           type: 'bpm_update',
-          data: { bpm, confidence: null, ts },
+          data: { bpm, confidence, ts },
         });
       }
     }
