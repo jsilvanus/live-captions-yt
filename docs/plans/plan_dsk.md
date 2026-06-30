@@ -1,11 +1,11 @@
 ---
 id: plan/dsk
-title: "DSK Graphics Editor — Phases 2–4 (Editable Shapes, Multi-select, Media Library)"
+title: "DSK Graphics Editor — Phases 2–5 (Editable Shapes, Multi-select, Media Library, Animations)"
 status: implemented
-summary: "Phases 1–4 complete. Direct canvas manipulation (drag/resize/nudge), undo/redo, multi-selection, snap-to-grid, snap-to-edges, grouping, alignment, Media Library."
+summary: "Phases 1–5 complete. Direct canvas manipulation (drag/resize/nudge), undo/redo, multi-selection, snap-to-grid, snap-to-edges, grouping, alignment, Media Library, entry/exit CSS animations for DSK graphic images."
 ---
 
-# Plan: DSK Graphics Editor — Phases 2–4 (Editable Shapes, Multi-select, Media Library)
+# Plan: DSK Graphics Editor — Phases 2–5 (Editable Shapes, Multi-select, Media Library, Animations)
 
 > Target branch: `claude/add-editable-shapes-yxAXO`
 
@@ -123,9 +123,55 @@ All Phase 3 features (previously listed as "excluded from Phase 2") are implemen
 
 ---
 
-## Phase 5 — Animations (future)
+## Phase 5 — Animations — Status: Complete ✓
 
-Preset picker, per-layer CSS animation shorthand, live preview. LCYT keyframe
-CSS is already injected in `DskEditorPage.jsx`; the `AnimationEditor` component
-and `ANIM_PRESETS` list are in place. Full animation editing UI is a future phase.
+### Goal
+
+Entry animations (CSS `animation` shorthand, e.g. `lcyt-fadeIn 0.5s`) already played
+correctly when a DSK image or template layer first mounted, on all three rendering
+paths (browser overlay page, editor preview, Playwright renderer). What was missing:
+images had no editor UI to set per-viewport animations beyond a raw text input, and
+nothing played a matching *exit* animation before an image left the DOM — it just
+vanished instantly the moment a `<!-- graphics:... -->` metacode dropped it from the
+active set. Phase 5 closes both gaps for the public `/dsk/:key` overlay page (the
+path OBS browser sources and viewer pages actually render).
+
+### Implemented
+
+| Feature | File | Status |
+|---|---|---|
+| Exit-animation derivation (reverses entry preset, falls back to fade) | `packages/lcyt-web/src/lib/dskExitAnimation.js` | ✓ Done |
+| Animation total-duration helper (duration + delay, ms) | `packages/lcyt-web/src/lib/dskExitAnimation.js` | ✓ Done |
+| `DskPage.jsx` keeps a removed image mounted for its exit-animation duration, then unmounts it | `packages/lcyt-web/src/components/DskPage.jsx` | ✓ Done |
+| Images with no configured animation are removed instantly (legacy behaviour preserved) | `packages/lcyt-web/src/components/DskPage.jsx` | ✓ Done |
+| Fixed: LCYT `@keyframes` were only injected into the page when a template was active, silently breaking image-only animations | `packages/lcyt-web/src/components/DskPage.jsx` | ✓ Done |
+| `AnimationEditor` preset picker wired into the per-viewport image settings table (was a raw text input) | `packages/lcyt-web/src/components/dsk-viewports/ImageSettingsTable.jsx` | ✓ Done |
+| Unit tests for `dskExitAnimation.js` | `packages/lcyt-web/test/dskExitAnimation.test.js` | ✓ Done |
+| Component tests for `DskPage.jsx` exit-animation lifecycle | `packages/lcyt-web/test/components/DskPage.test.jsx` | ✓ Done |
+
+### Scope notes
+
+- Out of scope: the ffmpeg-filter-based overlay compositing used by
+  `relayManager.setDskOverlay()` (`packages/plugins/lcyt-rtmp/src/rtmp-manager.js`)
+  has no DOM/CSS engine and restarts the whole relay ffmpeg process on every overlay
+  change — it cannot play CSS animations and is architecturally incompatible with
+  them. The RTMP "DSK overlay" path for the landscape stream remains an instant cut.
+- Out of scope: cross-fading between two different *templates* in the Playwright
+  renderer (`packages/plugins/lcyt-dsk/src/renderer.js`) — template swaps still do a
+  full-page reload. Per-layer entry/exit animations *within* a single rendered
+  template already worked before this phase via the page's own CSS `animation`.
+- Per-layer exit animations in the `TemplatePreview.jsx` editor canvas were left as
+  an instant hide on visibility toggle — there's no live-broadcast trigger event for
+  single-layer visibility changes without a full template reload, so there was
+  nothing to animate against.
+
+### Files changed in Phase 5
+
+| File | Change |
+|---|---|
+| `packages/lcyt-web/src/lib/dskExitAnimation.js` | New — `deriveExitAnimation()` + `getAnimationTotalMs()` pure helpers |
+| `packages/lcyt-web/src/components/DskPage.jsx` | Added `exitingNames` state machine; merged active+exiting images into the render list; fixed always-on `@keyframes` injection |
+| `packages/lcyt-web/src/components/dsk-viewports/ImageSettingsTable.jsx` | Replaced raw animation text input with `AnimationEditor` preset picker |
+| `packages/lcyt-web/test/dskExitAnimation.test.js` | New — unit tests (node:test) |
+| `packages/lcyt-web/test/components/DskPage.test.jsx` | New — component tests (Vitest) for the exit-animation lifecycle |
 

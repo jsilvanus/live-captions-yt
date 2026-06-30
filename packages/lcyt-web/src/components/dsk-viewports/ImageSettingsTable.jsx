@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { dark, btnPrimary, btnDanger, btnSmall, inputStyle, labelStyle } from './styles.js';
+import AnimationEditor from '../dsk-editor/AnimationEditor.jsx';
 
 function ImageRow({ img, settings, isExpanded, onToggleExpand, onSave, serverUrl }) {
   const visible = settings.visible !== false;
@@ -84,13 +85,11 @@ function ImageRow({ img, settings, isExpanded, onToggleExpand, onSave, serverUrl
                 />
               </div>
             ))}
-            <div style={{ flex: '1 1 200px' }}>
+            <div style={{ flex: '1 1 260px' }}>
               <label style={labelStyle}>Animation</label>
-              <input
-                style={{ ...inputStyle, width: '100%' }}
-                placeholder="e.g. lcyt-fadeIn 0.5s"
+              <AnimationEditor
                 value={draft.animation}
-                onChange={e => setDraft(d => ({ ...d, animation: e.target.value }))}
+                onChange={v => setDraft(d => ({ ...d, animation: v || '' }))}
               />
             </div>
           </div>

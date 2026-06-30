@@ -31,7 +31,7 @@ This is a point-in-time snapshot, not a maintained changelog. The repo has no `C
 | plan_setup_wizard | Setup Wizard | `/setup` guided flow, fully implemented |
 | plan_userprojects | Feature Flags, Membership, Device Roles | Phases 1-3 done; Phase 4 (QR codes, tally light, time-limited sessions) future work |
 | plan_cloudfleet | Hosting Modes & Cloudfleet Deployment | All 3 tiers done; optional Helm/Litestream/Postgres/ServiceMonitor pending |
-| plan_dsk | DSK Graphics Editor (Phases 2-4) | Canvas editing, multi-select, media library; Phase 5 (Animations) remains |
+| plan_dsk | DSK Graphics Editor (Phases 2-5) | Canvas editing, multi-select, media library, entry/exit animations — all complete |
 | plan_files3 | lcyt-files Storage Adapters | local/S3/WebDAV done; CDN URL field, S3 mock tests, migration script remain low-priority |
 | plan_admin | Admin Panel | Phases 1-2 done: CRUD, audit log, import/export |
 | plan_ui | Frontend & UI Plans | All backlog items done (command palette, shortcuts, reconnect, etc.) |
@@ -117,7 +117,7 @@ The orchestrator and worker-daemon's `0.0.x` versions are now a lag indicator, n
 4. **AI Agent vision/image inference** (plan_agent Phase 4) — replace the `analyseImage()` stub with a real vision-capable LLM call.
 5. **Write the two skipped integration tests** (`dsk-integration.test.js`, `stt-integration.test.js`) once Playwright/Chromium and HLS/ffmpeg/MediaMTX test infra is available — currently `test.skip`.
 6. **Prove out Hetzner burst autoscaling end-to-end** — the orchestrator/worker-daemon path is wired (job dispatch, caption forwarding, S3 upload) but real-world burst-provisioning under load remains unproven; bump `lcyt-orchestrator`/`lcyt-worker-daemon` package versions once it is.
-7. Lower priority / polish: plan_help (screenshot capture for the help page), plan_dsk Phase 5 (animations), plan_userprojects Phase 4 (QR codes, tally light, time-limited sessions), plan_cloudfleet optional enhancements (Helm chart, Litestream, Postgres, ServiceMonitor, CI CFCR push).
+7. Lower priority / polish: plan_help (screenshot capture for the help page), plan_userprojects Phase 4 (QR codes, tally light, time-limited sessions), plan_cloudfleet optional enhancements (Helm chart, Litestream, Postgres, ServiceMonitor, CI CFCR push).
 8. **plan_translate** remains in draft — worth a decision on whether to formally schedule it (closes the gap where STT/CLI captions can't be server-side translated) or shelve it.
 
 **Recommended starting point:** item 1 (OBS mixer dispatch) — smallest, most concretely scoped, no dependencies.

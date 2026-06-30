@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { KEYS } from '../lib/storageKeys.js';
+import { deriveExitAnimation, getAnimationTotalMs } from '../lib/dskExitAnimation.js';
 
 /**
  * DSK (downstream keyer) display page.
@@ -62,6 +63,9 @@ export function DskPage() {
   // ── State ───────────────────────────────────────────────
   const [images, setImages]           = useState([]); // [{ id, shorthand, mimeType, url, settingsJson }]
   const [activeNames, setActiveNames] = useState([]); // string[]
+  // Images that were just dropped from activeNames but are still playing their exit
+  // animation — kept mounted until their animation duration elapses (see effect below).
+  const [exitingNames, setExitingNames] = useState([]); // string[]
   const [ccText, setCcText]           = useState('');
   const [status, setStatus]           = useState('connecting');
   // viewport dimensions (null = use 100vw/100vh)
@@ -82,6 +86,8 @@ export function DskPage() {
   const retryDelay  = useRef(1000);
   const retryTimer  = useRef(null);
   const mounted     = useRef(true);
+  const prevActiveRef = useRef([]);
+  const exitTimersRef = useRef(new Map()); // name -> timeoutId
 
   // ── Image pre-loading ───────────────────────────────────
   async function fetchImages() {
@@ -231,8 +237,45 @@ export function DskPage() {
       mounted.current = false;
       esRef.current?.close();
       if (retryTimer.current) clearTimeout(retryTimer.current);
+      for (const t of exitTimersRef.current.values()) clearTimeout(t);
+      exitTimersRef.current.clear();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When activeNames changes, any name that just dropped out keeps playing its exit
+  // animation for one more render pass instead of disappearing instantly. Images with no
+  // configured animation are removed immediately (unchanged legacy behaviour).
+  useEffect(() => {
+    const prevActive = prevActiveRef.current;
+    prevActiveRef.current = activeNames;
+
+    const removed = prevActive.filter(n => !activeNames.includes(n));
+    if (removed.length === 0) return;
+
+    // A name that re-appeared in this same update cancels any pending exit timer.
+    for (const name of activeNames) {
+      const t = exitTimersRef.current.get(name);
+      if (t) { clearTimeout(t); exitTimersRef.current.delete(name); }
+    }
+
+    const toExit = [];
+    for (const name of removed) {
+      const img = images.find(i => i.shorthand === name);
+      const vpSettings = img ? getViewportSettings(img.settingsJson, viewportName) : {};
+      if (!vpSettings.animation) continue; // no entry animation configured → vanish instantly
+      toExit.push(name);
+      const ms = getAnimationTotalMs(vpSettings.animation);
+      const timer = setTimeout(() => {
+        exitTimersRef.current.delete(name);
+        if (!mounted.current) return;
+        setExitingNames(prev => prev.filter(n => n !== name));
+      }, ms);
+      exitTimersRef.current.set(name, timer);
+    }
+    if (toExit.length > 0) {
+      setExitingNames(prev => [...prev.filter(n => !activeNames.includes(n)), ...toExit]);
+    }
+  }, [activeNames, images, viewportName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Container sizing ────────────────────────────────────
   // When a viewport with specific dimensions is set, scale the fixed-size container to fit
@@ -254,8 +297,9 @@ export function DskPage() {
 
   return (
     <div style={containerStyle}>
-      {/* CSS keyframes for template layer animations */}
-      {activeTemplates.length > 0 && <style>{LCYT_KEYFRAMES}</style>}
+      {/* CSS keyframes for DSK image and template layer animations — always injected so
+          named animations resolve regardless of whether a template or only images are active. */}
+      <style>{LCYT_KEYFRAMES}</style>
 
       {/* All images pre-loaded (hidden) for zero-latency visibility toggle */}
       {images.map(img => (
@@ -268,14 +312,22 @@ export function DskPage() {
         />
       ))}
 
-      {/* Active images rendered in metacode order: first name = lowest z-index (bottom layer), last = highest */}
-      {activeNames.map((name, layerIdx) => {
+      {/* Active images rendered in metacode order: first name = lowest z-index (bottom layer), last = highest.
+          Exiting images (recently removed from activeNames but still playing their exit animation) are
+          appended after active ones so they stay mounted until their animation completes. */}
+      {[...activeNames, ...exitingNames.filter(name => !activeNames.includes(name))].map((name, layerIdx) => {
         const img = images.find(i => i.shorthand === name);
         if (!img) return null;
 
+        const isExiting = !activeNames.includes(name) && exitingNames.includes(name);
+
         // Per-viewport settings
         const vpSettings = getViewportSettings(img.settingsJson, viewportName);
-        if (vpSettings.visible === false) return null;
+        if (vpSettings.visible === false && !isExiting) return null;
+
+        const effectiveSettings = isExiting
+          ? { ...vpSettings, animation: deriveExitAnimation(vpSettings.animation) }
+          : vpSettings;
 
         return (
           <img
@@ -283,7 +335,7 @@ export function DskPage() {
             src={`${serverUrl}/images/${img.id}`}
             alt=""
             aria-hidden="true"
-            style={buildImageStyle(layerIdx, vpSettings, vpDimensions)}
+            style={buildImageStyle(layerIdx, effectiveSettings, vpDimensions)}
             crossOrigin="anonymous"
           />
         );

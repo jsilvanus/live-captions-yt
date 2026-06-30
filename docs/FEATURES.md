@@ -174,8 +174,8 @@ Honest gap list — what's solid today vs. what still needs engineering work bef
 | **D. Metacode automation** | ✅ Fully implemented | None blocking; `plan_metacode_refactor` is an internal code-organization cleanup, not a feature gap. |
 | **E. Camera control** | ✅ Fully implemented | All four adapters (AMX, VISCA-IP, browser, none) are wired with no open stubs. |
 | **F. Video switcher control** | ⚠️ One real gap | The `obs` mixer adapter (`adapters/mixer/obs.js`) builds a correct `obs_switch` command object, but **`lcyt-bridge` does not yet dispatch it** — OBS switching is configured but inert today. Roland/AMX/ATEM/LCYT/Monarch HDX all work. This is the most concretely scoped piece of missing code in the whole feature set. |
-| **G. Graphics (DSK)** | ✅ Core fully implemented | Phase 5 (animated transitions between graphic states) is still on the roadmap; static/instant show-hide works today. |
-| **H. Multi-screen graphics** | ✅ Fully implemented | Viewport targeting and independent rendering both work today; the only related gap is the same animation Phase 5 noted above. |
+| **G. Graphics (DSK)** | ✅ Fully implemented | Phase 5 (entry/exit CSS animations) is done for the `/dsk/:key` overlay page. The ffmpeg-filter RTMP overlay compositing path (`relayManager.setDskOverlay()`) has no DOM/CSS engine and remains an instant cut — architecturally out of scope for CSS animation. |
+| **H. Multi-screen graphics** | ✅ Fully implemented | Viewport targeting and independent rendering both work today, including per-viewport animations. |
 | **I. Music detection** | ⚠️ Functional, polish remaining | Detection, BPM estimation, and both audio paths (server + client) work. Phase 4 (tuning, export, pluggable external classifier) is unstarted, and the `on_publish` auto-start hook for `music_config.autoStart` isn't wired — autostart-on-stream-begin doesn't happen automatically yet, has to be triggered manually via `/music/start`. |
 
 **Single most actionable fix:** wiring `obs_switch` dispatch into `lcyt-bridge` (Pipeline F) — the adapter-side contract already exists, it's a bridge-agent-only change with no architectural ambiguity.
