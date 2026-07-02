@@ -3,7 +3,7 @@
 Comprehensive plugin for RTMP relay streams, HLS video/audio output, audio-only radio streams, RTMP → JPEG preview, and server-side speech-to-text transcription.
 
 **Version:** 0.1.0  
-**License:** MIT
+**License:** (none right now)
 
 ## Overview
 

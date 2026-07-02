@@ -3,7 +3,7 @@
 Stateless Express HTTP service that manages a pool of worker VMs and dispatches compute jobs (e.g., ffmpeg transcoding). Supports on-demand burst provisioning via the Hetzner Cloud API and optional Prometheus metrics exposition.
 
 **Version:** 0.0.1 (private)  
-**License:** MIT  
+**License:** (none right now)  
 **Author:** Juha Itäleino <jsilvanus@gmail.com>
 
 ## Overview

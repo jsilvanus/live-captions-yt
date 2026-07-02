@@ -3,7 +3,7 @@
 Central AI service for LCYT. Owns AI configuration (per-key embedding/LLM provider settings), embedding computation, context window management, and LLM-based event cue evaluation. Other plugins delegate AI calls to the agent.
 
 **Version:** 0.1.0  
-**License:** MIT
+**License:** (none right now)
 
 ## Overview
 

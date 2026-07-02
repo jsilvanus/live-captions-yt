@@ -3,7 +3,7 @@
 Metacode-based audio classification signaling for LCYT. Detects when music is playing — via the browser microphone, or server-side from a stream's own HLS audio — and feeds `music / speech / silence` + BPM signals into the existing caption pipeline as metacodes, which the backend converts into SSE events and a DB event log.
 
 **Version:** 0.1.0
-**License:** MIT
+**License:** (none right now)
 **Status:** Phases 1-4 are all implemented — client-side browser-mic detection, server-side HLS/RTMP audio analysis, paginated event history, auto-calibration (client + server), and an optional external/ML classifier hook.
 
 ## Overview

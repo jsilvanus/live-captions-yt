@@ -3,7 +3,7 @@
 Standalone agent that connects to the LCYT backend via SSE and relays commands to physical AV hardware (AMX controllers, Roland mixers) over TCP. Designed to run on-site where the hardware is located.
 
 **Version:** 0.3.0  
-**License:** MIT  
+**License:** (none right now)  
 **Author:** Juha Itäleino <jsilvanus@gmail.com>
 
 ## Overview

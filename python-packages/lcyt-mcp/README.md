@@ -3,7 +3,7 @@
 Python implementation of the Model Context Protocol (MCP) server for LCYT. Allows AI assistants (Claude, etc.) to send captions and control production systems via MCP.
 
 **Version:** 0.1.0 (alpha)  
-**License:** MIT  
+**License:** (none right now)  
 **Python:** 3.10+
 
 ## Overview

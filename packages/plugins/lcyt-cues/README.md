@@ -3,7 +3,7 @@
 Cue engine for detecting spoken phrases, sounds, and AI-analyzed events to auto-advance rundown files. Supports inline cue metacodes in caption files with multiple matching strategies.
 
 **Version:** 0.1.0  
-**License:** MIT
+**License:** (none right now)
 
 ## Overview
 

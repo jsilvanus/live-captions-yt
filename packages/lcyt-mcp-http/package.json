@@ -20,7 +20,7 @@
     "streamable-http"
   ],
   "author": "jsilvanus",
-  "license": "MIT",
+  "license": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "better-sqlite3": "^11.0",

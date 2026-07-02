@@ -3,7 +3,7 @@
 Static documentation and marketing website built with **Astro**. Combines marketing content with comprehensive user guides, API documentation, and deployment guides.
 
 **Version:** 0.1.0 (private)  
-**License:** MIT  
+**License:** (none right now)  
 **Author:** Juha Itäleino <jsilvanus@gmail.com>
 
 ## Overview

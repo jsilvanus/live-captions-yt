@@ -3,7 +3,7 @@
 Storage-adapter-backed caption file I/O for lcyt-backend. Provides local filesystem (default), S3-compatible object storage, and WebDAV backends behind a common interface.
 
 **Version:** 0.1.0  
-**License:** MIT
+**License:** (none right now)
 
 ## Overview
 

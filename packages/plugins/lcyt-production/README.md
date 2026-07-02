@@ -3,7 +3,7 @@
 Production control library for camera PTZ presets and video mixer source switching. Manages connections to physical AV hardware and provides a device registry system for on-site control.
 
 **Version:** 0.1.0  
-**License:** MIT
+**License:** (none right now)
 
 ## Overview
 

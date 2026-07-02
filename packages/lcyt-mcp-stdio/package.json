@@ -19,7 +19,7 @@
     "model-context-protocol"
   ],
   "author": "jsilvanus",
-  "license": "MIT",
+  "license": "",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
     "lcyt": "*"

@@ -28,7 +28,7 @@
     "screenshots": "node scripts/screenshots/capture.mjs"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
-  "license": "MIT",
+  "license": "",
   "engines": {
     "node": ">=18.0.0"
   },
