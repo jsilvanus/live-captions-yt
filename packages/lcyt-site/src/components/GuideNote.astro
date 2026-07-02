@@ -1,0 +1,118 @@
+---
+/* Reusable note/tip/warning component for guides */
+export interface Props {
+  type?: 'note' | 'tip' | 'warning' | 'info';
+  title?: string;
+  class?: string;
+}
+
+const { type = 'note', title, class: className } = Astro.props;
+
+const typeConfig = {
+  note: {
+    icon: 'ℹ️',
+    color: 'note',
+    defaultTitle: 'Note',
+  },
+  tip: {
+    icon: '💡',
+    color: 'tip',
+    defaultTitle: 'Tip',
+  },
+  warning: {
+    icon: '⚠️',
+    color: 'warning',
+    defaultTitle: 'Warning',
+  },
+  info: {
+    icon: 'ℹ️',
+    color: 'info',
+    defaultTitle: 'Info',
+  },
+};
+
+const config = typeConfig[type];
+---
+
+<div class={`guide-note guide-note--${type} ${className || ''}`}>
+  <div class="guide-note__header">
+    <span class="guide-note__icon" aria-hidden="true">{config.icon}</span>
+    <strong class="guide-note__title">{title || config.defaultTitle}</strong>
+  </div>
+  <div class="guide-note__content">
+    <slot />
+  </div>
+</div>
+
+<style>
+  .guide-note {
+    border-radius: var(--radius-lg);
+    padding: 1rem 1.25rem;
+    margin: 1.5em 0;
+    border-left: 4px solid;
+  }
+
+  .guide-note--note {
+    background: #f0f7ff;
+    border-left-color: var(--color-primary);
+  }
+
+  .guide-note--tip {
+    background: #fffbeb;
+    border-left-color: #fcd34d;
+  }
+
+  .guide-note--warning {
+    background: #fef2f2;
+    border-left-color: #fca5a5;
+  }
+
+  .guide-note--info {
+    background: #f0f9ff;
+    border-left-color: #0ea5e9;
+  }
+
+  .guide-note__header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .guide-note__icon {
+    font-size: 1.25rem;
+    line-height: 1;
+  }
+
+  .guide-note__title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text);
+  }
+
+  .guide-note__content {
+    margin-left: 2rem;
+    font-size: 0.95em;
+    line-height: var(--line-height-relaxed);
+  }
+
+  .guide-note__content :global(p) {
+    margin-bottom: 0.75em;
+  }
+
+  .guide-note__content :global(ul),
+  .guide-note__content :global(ol) {
+    margin: 0.5em 0 0.75em 1.5em;
+  }
+
+  .guide-note__content :global(li) {
+    margin-bottom: 0.35em;
+  }
+
+  .guide-note__content :global(code) {
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.05em 0.25em;
+    border-radius: 2px;
+    font-size: 0.9em;
+  }
+</style>

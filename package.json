@@ -3,6 +3,7 @@
   "private": true,
   "description": "Monorepo for LCYT - Live Captions for YouTube",
   "workspaces": [
+    "packages/shared-styles",
     "packages/lcyt",
     "packages/lcyt-cli",
     "packages/lcyt-backend",

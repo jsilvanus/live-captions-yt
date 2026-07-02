@@ -1,0 +1,102 @@
+---
+/* Reusable guide section component with optional metadata and table of contents */
+export interface Props {
+  title?: string;
+  id?: string;
+  class?: string;
+}
+
+const { title, id, class: className } = Astro.props;
+---
+
+<section class={`guide-section ${className || ''}`} {id}>
+  {title && <h2>{title}</h2>}
+  <div class="guide-section__content">
+    <slot />
+  </div>
+</section>
+
+<style>
+  .guide-section {
+    scroll-margin-top: calc(var(--nav-height) + 1rem);
+  }
+
+  .guide-section h2 {
+    font-size: 1.4rem;
+    color: var(--color-primary);
+    margin-bottom: 1rem;
+    margin-top: 2rem;
+  }
+
+  .guide-section:first-child h2 {
+    margin-top: 0;
+  }
+
+  .guide-section__content {
+    line-height: var(--line-height-relaxed);
+  }
+
+  .guide-section__content :global(p) {
+    margin-bottom: 1em;
+  }
+
+  .guide-section__content :global(ul),
+  .guide-section__content :global(ol) {
+    margin: 0.75em 0 1em 1.5em;
+  }
+
+  .guide-section__content :global(li) {
+    margin-bottom: 0.5em;
+  }
+
+  .guide-section__content :global(code) {
+    background: var(--color-bg-tertiary);
+    padding: 0.1em 0.35em;
+    border-radius: var(--radius-sm);
+    font-size: 0.88em;
+  }
+
+  .guide-section__content :global(pre) {
+    background: var(--color-bg-tertiary);
+    border-radius: var(--radius-lg);
+    padding: 1rem;
+    overflow-x: auto;
+    margin: 1em 0;
+  }
+
+  .guide-section__content :global(blockquote) {
+    border-left: 4px solid var(--color-primary);
+    margin: 1em 0;
+    padding: 0.5em 1em;
+    color: var(--color-text-secondary);
+    font-style: italic;
+    background: var(--color-bg-secondary);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+
+  .guide-section__content :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: var(--radius-lg);
+    margin: 1.5em 0;
+  }
+
+  .guide-section__content :global(table) {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 1.5em 0;
+    font-size: 0.95em;
+  }
+
+  .guide-section__content :global(th),
+  .guide-section__content :global(td) {
+    border: 1px solid var(--color-border);
+    padding: 0.75rem;
+    text-align: left;
+  }
+
+  .guide-section__content :global(th) {
+    background: var(--color-bg-tertiary);
+    font-weight: 600;
+  }
+</style>

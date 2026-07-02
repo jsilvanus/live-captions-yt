@@ -1,0 +1,11 @@
+{
+  "name": "shared-styles",
+  "version": "1.0.0",
+  "description": "Shared design tokens and base styles for LCYT site and web app",
+  "private": true,
+  "files": ["tokens.css"],
+  "exports": {
+    ".": "./tokens.css",
+    "./tokens": "./tokens.css"
+  }
+}
