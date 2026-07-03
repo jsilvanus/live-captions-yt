@@ -1,10 +1,12 @@
 ---
+import tokens from 'shared-styles/tokens.css?raw';
 import globalStyles from '../styles/global.css?raw';
 
 export interface Props {
   title: string;
 }
 const { title } = Astro.props;
+const combinedStyles = tokens + '\n' + globalStyles;
 ---
 <!DOCTYPE html>
 <html lang="en">
@@ -12,7 +14,7 @@ const { title } = Astro.props;
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>{title} — LCYT</title>
-    <style is:global set:html={globalStyles}></style>
+    <style is:global set:html={combinedStyles}></style>
   </head>
   <body>
     <nav class="site-nav">

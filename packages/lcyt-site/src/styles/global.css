@@ -1,6 +1,3 @@
-/* Import shared design tokens from the monorepo shared-styles package */
-@import '../../../shared-styles/tokens.css';
-
 /* Navigation */
 .site-nav {
   position: fixed;
