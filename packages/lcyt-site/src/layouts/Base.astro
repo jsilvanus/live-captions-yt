@@ -20,17 +20,19 @@ const combinedStyles = tokens + '\n' + globalStyles;
     <style is:global set:html={combinedStyles}></style>
   </head>
   <body>
-    <nav class="site-nav">
-      <a class="brand" href="/">LCYT</a>
-      <ul class="nav-links">
-        <li><a href="/lib">Library</a></li>
-        <li><a href="/api">API</a></li>
-        <li><a href="/mcp">MCP</a></li>
-        <li><a href="/guide">Guide</a></li>
-        <li><a href="/blog">Blog</a></li>
-        <li><a href="/app">App</a></li>
-      </ul>
-    </nav>
+    <!-- ── NAV ──────────────────────────────────────────────────────────── -->
+    <header class="landing-nav">
+      <a href="/" class="landing-brand">LCYT</a>
+      <nav class="landing-nav-links">
+        <a href="/guide">Guide</a>
+        <a href="/lib">Library</a>
+        <a href="/api">API</a>
+        <a href="/mcp">MCP</a>
+        <a href="/blog">Blog</a>
+        <a href="/app" class="landing-nav-cta">Launch app →</a>
+      </nav>
+    </header>
+    <!-- ── CONTENT ──────────────────────────────────────────────────────── -->
     <div class="page-content">
       <slot />
     </div>
