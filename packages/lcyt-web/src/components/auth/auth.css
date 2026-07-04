@@ -586,6 +586,71 @@
   line-height: 1.65;
 }
 
+/* Sign-up page additions */
+.auth-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--auth-accent);
+  margin-bottom: 0.6rem;
+}
+
+.auth-field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.auth-field-row .auth-field {
+  margin-bottom: 0;
+}
+
+.auth-hint {
+  font-size: 0.75rem;
+  color: var(--auth-muted);
+  font-weight: 300;
+  margin-top: 0.35rem;
+  line-height: 1.5;
+}
+
+.auth-link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.auth-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin: 1.25rem 0 1rem;
+}
+
+.auth-checkbox-row input[type="checkbox"] {
+  margin-top: 0.2rem;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--auth-accent);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.auth-checkbox-label {
+  font-size: 0.8rem;
+  color: var(--auth-muted);
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.auth-checkbox-label strong {
+  color: var(--auth-text);
+  font-weight: 500;
+}
+
 /* Footer text */
 .auth-footer-text {
   font-size: 0.72rem;

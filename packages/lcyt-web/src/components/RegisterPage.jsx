@@ -17,22 +17,27 @@ function getBackendUrl() {
 
 export function RegisterPage() {
   const { register } = useUserAuth();
+  const [step, setStep] = useState('form'); // 'form' | 'success'
+
   const [backendUrl, setBackendUrl] = useState(getBackendUrl);
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [org, setOrg] = useState('');
+  const [agreed, setAgreed] = useState(false);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  const canSubmit = Boolean(
+    firstName.trim() && lastName.trim() && email.trim() && password && agreed && backendUrl.trim() && !loading
+  );
+
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!backendUrl.trim() || !email.trim() || !password) return;
+    if (!canSubmit) return;
     try { new URL(backendUrl.trim()); } catch { setError('Please enter a valid server URL (e.g. https://api.lcyt.fi)'); return; }
-    if (password !== confirm) {
-      setError('Passwords do not match');
-      return;
-    }
     if (password.length < 8) {
       setError('Password must be at least 8 characters');
       return;
@@ -40,13 +45,46 @@ export function RegisterPage() {
     setError(null);
     setLoading(true);
     try {
-      await register(backendUrl.trim(), email.trim(), password, name.trim() || undefined);
-      window.location.href = '/projects';
+      const name = `${firstName.trim()} ${lastName.trim()}`.trim();
+      // `org` is intentionally never sent to /auth/register — the backend's `users`
+      // table has no organization/workspace column yet, so it only seeds the
+      // success-step copy below and stays purely client-side for now.
+      await register(backendUrl.trim(), email.trim(), password, name);
+      setStep('success');
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  if (step === 'success') {
+    const trimmedOrg = org.trim();
+    return (
+      <AuthLayout>
+        <div className="auth-success">
+          <div className="auth-success-icon">✓</div>
+          <h2 className="auth-success-headline">Account created.</h2>
+          <p className="auth-success-text">
+            Welcome, <span className="auth-success-email">{firstName.trim()}</span>.
+          </p>
+          <p className="auth-success-text">
+            {trimmedOrg ? (
+              <>Your workspace <span className="auth-success-email">&quot;{trimmedOrg}&quot;</span> is ready.</>
+            ) : (
+              'Your workspace is ready.'
+            )}
+          </p>
+          <button
+            className="auth-btn-primary"
+            onClick={() => { window.location.href = '/projects'; }}
+            style={{ marginTop: '2rem' }}
+          >
+            Open the app →
+          </button>
+        </div>
+      </AuthLayout>
+    );
   }
 
   return (
@@ -55,10 +93,41 @@ export function RegisterPage() {
       cornerLinkLabel="Sign in →"
       cornerLinkHref={`/login${backendUrl ? `?server=${encodeURIComponent(backendUrl)}` : ''}`}
     >
-      <h1 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '1.5rem', color: 'var(--auth-text)', fontFamily: 'var(--auth-ff-serif)' }}>
-        Create account
+      <div className="auth-eyebrow">Get started</div>
+      <h1 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '0.5rem', color: 'var(--auth-text)', fontFamily: 'var(--auth-ff-serif)' }}>
+        Create your account
       </h1>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+      <p className="auth-explanation" style={{ marginBottom: '1.5rem' }}>
+        Free to start — no credit card required.
+      </p>
+
+      {/* OAuth buttons (disabled — no signup endpoint server-side yet) */}
+      <button
+        className="auth-btn-oauth"
+        disabled
+        title="Coming soon"
+        style={{ marginBottom: '0.5rem' }}
+      >
+        <span>🔵</span> Continue with Google
+        <span style={{ fontSize: '0.65rem', color: 'var(--auth-muted)' }}>Coming soon</span>
+      </button>
+      <button
+        className="auth-btn-oauth"
+        disabled
+        title="Coming soon"
+        style={{ marginBottom: '0.5rem' }}
+      >
+        <span>⬛</span> Continue with GitHub
+        <span style={{ fontSize: '0.65rem', color: 'var(--auth-muted)' }}>Coming soon</span>
+      </button>
+
+      <div className="auth-divider">
+        <div className="auth-divider-line"></div>
+        <div className="auth-divider-text">or sign up with email</div>
+        <div className="auth-divider-line"></div>
+      </div>
+
+      <form onSubmit={handleSubmit}>
         <div className="auth-field">
           <label className="auth-label" htmlFor="reg-backend-url">Server URL</label>
           <input
@@ -73,19 +142,37 @@ export function RegisterPage() {
             autoComplete="url"
           />
         </div>
-        <div className="auth-field">
-          <label className="auth-label" htmlFor="reg-name">Name (optional)</label>
-          <input
-            id="reg-name"
-            className="auth-input"
-            type="text"
-            value={name}
-            onChange={e => setName(e.target.value)}
-            placeholder="Your name"
-            autoComplete="name"
-            autoFocus
-          />
+
+        <div className="auth-field-row">
+          <div className="auth-field">
+            <label className="auth-label" htmlFor="reg-first-name">First name</label>
+            <input
+              id="reg-first-name"
+              className="auth-input"
+              type="text"
+              value={firstName}
+              onChange={e => setFirstName(e.target.value)}
+              placeholder="Ada"
+              required
+              autoComplete="given-name"
+              autoFocus
+            />
+          </div>
+          <div className="auth-field">
+            <label className="auth-label" htmlFor="reg-last-name">Last name</label>
+            <input
+              id="reg-last-name"
+              className="auth-input"
+              type="text"
+              value={lastName}
+              onChange={e => setLastName(e.target.value)}
+              placeholder="Lovelace"
+              required
+              autoComplete="family-name"
+            />
+          </div>
         </div>
+
         <div className="auth-field">
           <label className="auth-label" htmlFor="reg-email">Email</label>
           <input
@@ -99,12 +186,13 @@ export function RegisterPage() {
             autoComplete="email"
           />
         </div>
+
         <div className="auth-field">
           <label className="auth-label" htmlFor="reg-password">Password</label>
           <input
             id="reg-password"
             className="auth-input"
-            type="password"
+            type={showPassword ? 'text' : 'password'}
             value={password}
             onChange={e => setPassword(e.target.value)}
             placeholder="At least 8 characters"
@@ -112,30 +200,53 @@ export function RegisterPage() {
             autoComplete="new-password"
             minLength={8}
           />
+          <div style={{ marginTop: '0.3rem', textAlign: 'right' }}>
+            <button
+              type="button"
+              className="auth-link auth-link-button"
+              onClick={() => setShowPassword(v => !v)}
+            >
+              {showPassword ? 'Hide password' : 'Show password'}
+            </button>
+          </div>
         </div>
+
         <div className="auth-field">
-          <label className="auth-label" htmlFor="reg-confirm">Confirm password</label>
+          <label className="auth-label" htmlFor="reg-org">Organization (optional)</label>
           <input
-            id="reg-confirm"
+            id="reg-org"
             className="auth-input"
-            type="password"
-            value={confirm}
-            onChange={e => setConfirm(e.target.value)}
-            placeholder="Repeat password"
-            required
-            autoComplete="new-password"
+            type="text"
+            value={org}
+            onChange={e => setOrg(e.target.value)}
+            placeholder="Acme Broadcasting"
+            autoComplete="organization"
           />
+          <p className="auth-hint">Used to set up team access — you can add this later.</p>
         </div>
+
+        <div className="auth-checkbox-row">
+          <input
+            id="reg-terms"
+            type="checkbox"
+            checked={agreed}
+            onChange={e => setAgreed(e.target.checked)}
+          />
+          <label className="auth-checkbox-label" htmlFor="reg-terms">
+            I agree to the <strong>Terms</strong> and <strong>Privacy Policy</strong>.
+          </label>
+        </div>
+
         {error && (
           <div className="auth-error">{error}</div>
         )}
+
         <button
           className="auth-btn-primary"
           type="submit"
-          disabled={loading}
-          style={{ marginTop: '1.5rem' }}
+          disabled={!canSubmit}
         >
-          {loading ? 'Creating account…' : 'Create Account'}
+          {loading ? 'Creating account…' : 'Create account'}
         </button>
       </form>
     </AuthLayout>
