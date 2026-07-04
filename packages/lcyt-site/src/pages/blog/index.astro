@@ -1,24 +1,36 @@
 ---
 import { getCollection, render } from 'astro:content';
-import DocsLayout from '../../layouts/DocsLayout.astro';
+import GuideLayout from '../../layouts/GuideLayout.astro';
 
 const allPosts = await getCollection('blog');
 const posts = [...allPosts].sort((a, b) => b.data.date.localeCompare(a.data.date));
-const sidebarItems = posts.map(p => ({
-  id: p.id,
-  label: p.data.title,
-}));
 
 const rendered = await Promise.all(posts.map(post => render(post)));
 ---
-<DocsLayout title="Blog" sidebarItems={sidebarItems} sidebarHeading="Posts">
+<GuideLayout
+  title="Blog"
+  description="Updates, tutorials, and insights from the LCYT team."
+>
+  <Fragment slot="sidebar">
+    <div style="padding-left: 0.5rem;">
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;">Posts</p>
+      <ul style="list-style: none;">
+        {posts.map(post => (
+          <li><a href={`#${post.id}`} style="display: block; padding: 0.3rem 0.5rem; font-size: 0.84rem; color: var(--muted); border-radius: 6px; transition: all 0.12s; text-decoration: none;">{post.data.title}</a></li>
+        ))}
+      </ul>
+    </div>
+  </Fragment>
+
   {posts.map((post, i) => {
     const { Content } = rendered[i];
     return (
-      <section id={post.id.replace(/\//g, '-')} class="doc-section blog-post">
-        <div class="meta">{post.data.date}{post.data.author ? ` — by ${post.data.author}` : ''}</div>
+      <section id={post.id.replace(/\//g, '-')}>
+        <div style="margin-bottom: 1.5rem;">
+          <p style="font-size: 0.875rem; color: var(--muted); margin: 0;">{post.data.date}{post.data.author ? ` — by ${post.data.author}` : ''}</p>
+        </div>
         <Content />
       </section>
     );
   })}
-</DocsLayout>
+</GuideLayout>

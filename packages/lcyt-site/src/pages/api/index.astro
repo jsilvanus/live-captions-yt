@@ -1,6 +1,6 @@
 ---
 import { getCollection, render } from 'astro:content';
-import DocsLayout from '../../layouts/DocsLayout.astro';
+import GuideLayout from '../../layouts/GuideLayout.astro';
 
 const ENDPOINTS_ORDER = [
   'sessions', 'sync', 'captions', 'events',
@@ -25,25 +25,40 @@ const docs = [
   ...endpointDocs,
 ];
 
-const sidebarSections = [
-  {
-    items: readme ? [{ id: readme.id, label: 'Overview' }] : [],
-  },
-  {
-    heading: 'Endpoints',
-    items: endpointDocs.map(d => ({ id: d.id, label: docLabel(d.id, d.data.title) })),
-  },
-];
-
 const rendered = await Promise.all(docs.map(doc => render(doc)));
 ---
-<DocsLayout title="API Reference" sidebarSections={sidebarSections} sidebarHeading="API">
+<GuideLayout
+  title="API Reference"
+  description="HTTP API reference for the LCYT relay backend — sessions, captions, keys, stats, and more."
+>
+  <Fragment slot="sidebar">
+    <div style="padding-left: 0.5rem;">
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;">API</p>
+
+      {readme && (
+        <>
+          <ul style="list-style: none; margin-bottom: 1rem;">
+            <li><a href={`#${readme.id}`} style="display: block; padding: 0.3rem 0.5rem; font-size: 0.84rem; color: var(--muted); border-radius: 6px; transition: all 0.12s; text-decoration: none;">Overview</a></li>
+          </ul>
+          <div style="height: 1px; background: var(--border); margin-bottom: 1rem;"></div>
+        </>
+      )}
+
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem;">Endpoints</p>
+      <ul style="list-style: none;">
+        {endpointDocs.map(doc => (
+          <li><a href={`#${doc.id}`} style="display: block; padding: 0.3rem 0.5rem; font-size: 0.84rem; color: var(--muted); border-radius: 6px; transition: all 0.12s; text-decoration: none;">{docLabel(doc.id, doc.data.title)}</a></li>
+        ))}
+      </ul>
+    </div>
+  </Fragment>
+
   {docs.map((doc, i) => {
     const { Content } = rendered[i];
     return (
-      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+      <section id={doc.id.replace(/\//g, '-')}>
         <Content />
       </section>
     );
   })}
-</DocsLayout>
+</GuideLayout>

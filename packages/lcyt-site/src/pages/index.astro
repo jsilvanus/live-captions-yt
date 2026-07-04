@@ -1,169 +1,938 @@
 ---
 import Base from '../layouts/Base.astro';
 ---
-<Base title="LCYT — Live Captions for YouTube">
+<Base title="Live Captions for YouTube">
   <div class="landing-page">
-    <section class="hero">
-      <h1>LCYT</h1>
-      <p>Live Captions for YouTube — send real-time captions to your live streams via Google's HTTP POST caption ingestion API.</p>
-    </section>
+    <!-- ── NAV ──────────────────────────────────────────────────────────── -->
+    <header class="landing-nav">
+      <a href="/" class="landing-brand">LCYT</a>
+      <nav class="landing-nav-links">
+        <a href="/guide">Guide</a>
+        <a href="/lib">Library</a>
+        <a href="/api">API</a>
+        <a href="/mcp">MCP</a>
+        <a href="/blog">Blog</a>
+        <a href="/app" class="landing-nav-cta">Launch app →</a>
+      </nav>
+    </header>
 
-    <!-- Speech bubble: graphical depiction + bilingual vertical divider -->
-    <div class="speech-bubble-wrap">
-      <div class="speech-bubble">
-        <div class="caption-bars" aria-hidden="true">
-          <div class="caption-bar caption-bar--wide"></div>
-          <div class="caption-bar caption-bar--medium"></div>
-          <div class="caption-bar caption-bar--narrow"></div>
+    <!-- ── HERO ───────────────────────────────────────────────────────── -->
+    <section class="landing-hero">
+      <div class="landing-hero-grid">
+        <div class="landing-hero-content">
+          <p class="landing-hero-tag">Live Captions for YouTube</p>
+          <h1 class="landing-hero-title">Real-time captions.<br/>And all your<br/>streaming needs.</h1>
+          <p class="landing-hero-desc">Live captions, translation, re-stream, lower third graphics, and camera control — built for accessible, global live broadcasting.</p>
+          <div class="landing-hero-ctas">
+            <a href="/app" class="landing-btn landing-btn-primary">Get started free</a>
+            <a href="/blog" class="landing-link">Read the blog →</a>
+          </div>
         </div>
-        <!-- Split view: English left | draggable bar | Finnish right -->
-        <div class="sb-split" role="group" aria-label="Language comparison — drag the handle to reveal more of either language">
+
+        <!-- Person + REC visual -->
+        <div class="landing-hero-visual">
+          <div class="landing-video-frame">
+            <svg class="landing-grain" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <filter id="grain"><feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/></filter>
+              <rect width="100" height="100" filter="url(#grain)"/>
+            </svg>
+            <!-- Person silhouette -->
+            <div class="landing-person">
+              <div class="landing-person-head"></div>
+              <div class="landing-person-body"></div>
+            </div>
+            <!-- vignette -->
+            <div class="landing-vignette"></div>
+            <!-- REC badge -->
+            <div class="landing-rec">
+              <div class="landing-rec-dot"></div>
+              <span>REC</span>
+            </div>
+            <!-- Caption overlay -->
+            <div class="landing-caption-box">
+              <p>Captions appearing in real time…</p>
+            </div>
+            <!-- Control bar -->
+            <div class="landing-controls">
+              <div class="landing-play-btn">
+                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M0.5 1L7 4L0.5 7V1Z" fill="rgba(255,255,255,0.4)"/>
+                </svg>
+              </div>
+              <div class="landing-record-btn"></div>
+              <div class="landing-volume-btn">
+                <svg width="6" height="10" viewBox="0 0 6 10" xmlns="http://www.w3.org/2000/svg">
+                  <rect x="0.5" y="2" width="1.5" height="6" fill="rgba(255,255,255,0.4)" rx="0.5"/>
+                  <rect x="3" y="2" width="1.5" height="6" fill="rgba(255,255,255,0.4)" rx="0.5"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Bilingual drag-compare slider -->
+      <div class="landing-compare-section">
+        <p class="landing-compare-label">Multilingual captions — drag to compare</p>
+        <div id="sb-split" class="sb-split" role="group" aria-label="Language comparison">
           <div class="sb-panel sb-panel--en" aria-label="English">
             <div class="sb-panel__content">
-              <span class="sb-lang-tag">EN&nbsp;🇬🇧</span>
+              <span class="sb-lang-tag">EN · English</span>
               <p>LCYT makes live broadcasts accessible to everyone — send real-time captions in any language to your YouTube stream, breaking the language barrier for global audiences.</p>
             </div>
           </div>
-          <div class="sb-divider" role="separator" tabindex="0"
-               aria-label="Drag left or right to compare languages"
-               aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-valuetext="50% English, 50% Finnish">
+          <div id="sb-divider" class="sb-divider" tabindex="0" role="separator" aria-label="Drag to compare languages" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100">
             <div class="sb-divider__line" aria-hidden="true"></div>
             <div class="sb-divider__handle" aria-hidden="true">
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M4 7H1M1 7L3 5M1 7L3 9" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-                <path d="M10 7H13M13 7L11 5M13 7L11 9" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                <path d="M3 6H1M1 6L3 4M1 6L3 8M9 6H11M11 6L9 4M11 6L9 8" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
             </div>
           </div>
           <div class="sb-panel sb-panel--fi" aria-label="Finnish">
             <div class="sb-panel__content">
-              <span class="sb-lang-tag">🇫🇮&nbsp;FI</span>
+              <span class="sb-lang-tag">FI · Suomi</span>
               <p>LCYT mahdollistaa suoralähetysten tekstityksen — elävät tekstitykset tekevät sisältösi saavutettavaksi kaikille katsojille ympäri maailmaa.</p>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div class="cards-grid">
-      <a class="card" href="/lib">
-        <span class="card__emoji" aria-hidden="true">📦</span>
-        <div class="card__body">
-          <h2>Library</h2>
-          <p>JavaScript &amp; Python SDKs for sending captions directly or via the relay backend.</p>
+    <!-- ── DIVIDER ─────────────────────────────────────────────────────── -->
+    <div class="landing-divider"></div>
+
+    <!-- ── FEATURE MATRIX ─────────────────────────────────────────────── -->
+    <section class="landing-features">
+      <div class="landing-features-header">
+        <p class="landing-features-tag">What's included</p>
+        <h2 class="landing-features-title">Every tool. Every interface.</h2>
+      </div>
+
+      <div class="landing-matrix">
+        <!-- Header row -->
+        <div class="landing-matrix-head">
+          <div class="landing-matrix-feature"></div>
+          <div class="landing-matrix-col">
+            <p class="landing-matrix-col-label">Web App</p>
+            <a href="/app" class="landing-matrix-col-link">Launch →</a>
+          </div>
+          <div class="landing-matrix-col">
+            <p class="landing-matrix-col-label">CLI</p>
+            <a href="/guide" class="landing-matrix-col-link">Docs →</a>
+          </div>
+          <div class="landing-matrix-col">
+            <p class="landing-matrix-col-label">Library</p>
+            <a href="/lib" class="landing-matrix-col-link">JS & Python →</a>
+          </div>
         </div>
-      </a>
-      <a class="card" href="/api">
-        <span class="card__emoji" aria-hidden="true">🔌</span>
-        <div class="card__body">
-          <h2>API</h2>
-          <p>HTTP relay backend API reference — sessions, captions, keys, stats, and more.</p>
+
+        <!-- Matrix rows -->
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">Live captions</p>
+            <p class="landing-matrix-feature-desc">Real-time captions to YouTube via HTTP POST</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
         </div>
-      </a>
-      <a class="card" href="/mcp">
-        <span class="card__emoji" aria-hidden="true">🤖</span>
-        <div class="card__body">
-          <h2>MCP</h2>
-          <p>Model Context Protocol server — integrate LCYT with AI assistants like Claude.</p>
+
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">Translation</p>
+            <p class="landing-matrix-feature-desc">Translate captions into any target language live</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
         </div>
-      </a>
-      <a class="card" href="/guide">
-        <span class="card__emoji" aria-hidden="true">📖</span>
-        <div class="card__body">
-          <h2>Guide</h2>
-          <p>Step-by-step guide for the web app — setup, captions, translation, and shortcuts.</p>
+
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">Re-stream</p>
+            <p class="landing-matrix-feature-desc">Relay your stream to multiple destinations</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
         </div>
-      </a>
-      <a class="card" href="/blog">
-        <span class="card__emoji" aria-hidden="true">📝</span>
-        <div class="card__body">
-          <h2>Blog</h2>
-          <p>Updates, tutorials, and tips from the LCYT team.</p>
+
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">Lower third graphics</p>
+            <p class="landing-matrix-feature-desc">Customisable on-screen overlays and lower thirds</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
         </div>
-      </a>
-      <a class="card" href="/app">
-        <span class="card__emoji" aria-hidden="true">🚀</span>
-        <div class="card__body">
-          <h2>App</h2>
-          <p>Get an API key and launch the browser-based captioning app.</p>
+
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">Camera control</p>
+            <p class="landing-matrix-feature-desc">PTZ and camera management from the dashboard</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
         </div>
-      </a>
-      <a class="card card--repo" href="https://github.com/jsilvanus/live-captions-yt" target="_blank" rel="noopener noreferrer">
-        <span class="card__emoji" aria-hidden="true">⭐</span>
-        <div class="card__body">
-          <h2>GitHub</h2>
-          <p>View the source code, open issues, and contribute on GitHub.</p>
+
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">AI assistant (MCP)</p>
+            <p class="landing-matrix-feature-desc">Integrate with Claude and other AI assistants</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
         </div>
-      </a>
-    </div>
+
+        <div class="landing-matrix-row">
+          <div class="landing-matrix-feature">
+            <p class="landing-matrix-feature-name">Embeddable widget</p>
+            <p class="landing-matrix-feature-desc">Embed the caption view on any web page</p>
+          </div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-no"></div></div>
+          <div class="landing-matrix-cell"><div class="dot-yes"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── CTA STRIP ──────────────────────────────────────────────────── -->
+    <section class="landing-cta-strip">
+      <div class="landing-cta-content">
+        <div>
+          <h2 class="landing-cta-title">Caption your next stream.</h2>
+          <p class="landing-cta-desc">Free to start. No credit card needed.</p>
+        </div>
+        <a href="/app" class="landing-btn landing-btn-primary">Sign up free →</a>
+      </div>
+    </section>
+
+    <!-- ── FOOTER ─────────────────────────────────────────────────────── -->
+    <footer class="landing-footer">
+      <span class="landing-footer-brand">LCYT</span>
+      <nav class="landing-footer-nav">
+        <a href="/guide">Guide</a>
+        <a href="/lib">Library</a>
+        <a href="/api">API</a>
+        <a href="/mcp">MCP</a>
+        <a href="https://github.com/jsilvanus/live-captions-yt" target="_blank" rel="noopener noreferrer">GitHub ↗</a>
+      </nav>
+      <span class="landing-footer-license">MIT License</span>
+    </footer>
   </div>
 </Base>
 
+<style>
+  .landing-page {
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  /* Navigation */
+  .landing-nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(247, 244, 240, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 0 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 56px;
+  }
+
+  .landing-brand {
+    font-family: var(--ff-serif);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text);
+    text-decoration: none;
+  }
+
+  .landing-nav-links {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+  }
+
+  .landing-nav-links a {
+    font-size: 0.875rem;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .landing-nav-links a:hover {
+    color: var(--text);
+  }
+
+  .landing-nav-cta {
+    font-weight: 500;
+    background: var(--text);
+    color: var(--bg);
+    padding: 0.4rem 1.1rem;
+    border-radius: 100px;
+  }
+
+  .landing-nav-cta:hover {
+    opacity: 0.82;
+  }
+
+  /* Hero Section */
+  .landing-hero {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 6rem 3rem 4rem;
+  }
+
+  .landing-hero-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4rem;
+    align-items: center;
+    margin-bottom: 3.5rem;
+  }
+
+  .landing-hero-tag {
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+  }
+
+  .landing-hero-title {
+    font-family: var(--ff-serif);
+    font-size: clamp(2.6rem, 4.5vw, 4rem);
+    font-weight: 700;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+    color: var(--text);
+    margin-bottom: 1.5rem;
+  }
+
+  .landing-hero-desc {
+    font-size: 1.05rem;
+    font-weight: 300;
+    color: var(--muted);
+    max-width: 420px;
+    margin-bottom: 2.5rem;
+    line-height: 1.75;
+  }
+
+  .landing-hero-ctas {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .landing-btn {
+    display: inline-block;
+    padding: 0.75rem 1.75rem;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+
+  .landing-btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .landing-btn-primary:hover {
+    opacity: 0.88;
+  }
+
+  .landing-link {
+    color: var(--muted);
+    font-size: 0.95rem;
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .landing-link:hover {
+    color: var(--text);
+  }
+
+  /* Hero Visual */
+  .landing-hero-visual {
+    position: relative;
+  }
+
+  .landing-video-frame {
+    background: #17161a;
+    border-radius: 16px;
+    overflow: hidden;
+    aspect-ratio: 4/3;
+    position: relative;
+    box-shadow: 0 32px 80px rgba(20, 18, 16, 0.22), 0 2px 8px rgba(20, 18, 16, 0.1);
+  }
+
+  .landing-grain {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.04;
+    pointer-events: none;
+  }
+
+  .landing-person {
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .landing-person-head {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(160deg, #4a3f36, #2d2520);
+    margin: 0 auto -10px;
+  }
+
+  .landing-person-body {
+    width: 200px;
+    height: 140px;
+    background: linear-gradient(180deg, #332b24 0%, #221c18 100%);
+    border-radius: 100px 100px 0 0;
+  }
+
+  .landing-vignette {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 70%;
+    background: linear-gradient(to top, rgba(16, 14, 18, 0.8) 0%, transparent 100%);
+    pointer-events: none;
+  }
+
+  .landing-rec {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(16, 14, 18, 0.65);
+    backdrop-filter: blur(8px);
+    padding: 5px 11px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .landing-rec-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ef4444;
+  }
+
+  .landing-rec span {
+    font-family: var(--ff-mono);
+    font-size: 0.6rem;
+    font-weight: 500;
+    color: #fff;
+    letter-spacing: 0.12em;
+  }
+
+  .landing-caption-box {
+    position: absolute;
+    bottom: 50px;
+    left: 14px;
+    right: 14px;
+    background: rgba(16, 14, 18, 0.72);
+    backdrop-filter: blur(8px);
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .landing-caption-box p {
+    font-family: var(--ff-sans);
+    font-size: 0.73rem;
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 300;
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .landing-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    align-items: center;
+    background: rgba(16, 14, 18, 0.85);
+  }
+
+  .landing-play-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .landing-record-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #ef4444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.2);
+    position: relative;
+  }
+
+  .landing-record-btn::before {
+    content: '';
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    background: #fff;
+    position: absolute;
+  }
+
+  .landing-volume-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    border: 1.5px solid rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Compare Section */
+  .landing-compare-section {
+    margin-top: 3.5rem;
+  }
+
+  .landing-compare-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  /* Split panel */
+  .sb-split {
+    display: grid;
+    grid-template-columns: 1fr;
+    position: relative;
+    overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid rgba(46, 95, 163, 0.2);
+    user-select: none;
+    min-height: 96px;
+  }
+
+  .sb-panel {
+    grid-column: 1;
+    grid-row: 1;
+    overflow: hidden;
+    padding: 1.1rem 1.4rem;
+  }
+
+  .sb-panel--en {
+    background: rgba(46, 95, 163, 0.06);
+  }
+
+  .sb-panel--fi {
+    background: rgba(46, 95, 163, 0.02);
+  }
+
+  .sb-panel__content {
+    overflow: hidden;
+  }
+
+  .sb-lang-tag {
+    display: block;
+    font-family: var(--ff-mono);
+    font-size: 0.62rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.4rem;
+  }
+
+  .sb-panel p {
+    font-size: 0.9rem;
+    color: var(--text);
+    line-height: 1.7;
+    font-weight: 300;
+    margin: 0;
+  }
+
+  .sb-divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: col-resize;
+    touch-action: none;
+    z-index: 5;
+  }
+
+  .sb-divider__line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 1px;
+    background: var(--accent);
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
+  .sb-divider__handle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    box-shadow: 0 2px 8px rgba(46, 95, 163, 0.35);
+    transition: transform 0.15s;
+  }
+
+  .sb-divider:hover .sb-divider__handle,
+  .sb-divider:focus .sb-divider__handle {
+    transform: scale(1.1);
+  }
+
+  .sb-divider:focus {
+    outline: none;
+  }
+
+  .sb-divider:focus .sb-divider__handle {
+    box-shadow: 0 0 0 3px rgba(46, 95, 163, 0.2), 0 2px 8px rgba(46, 95, 163, 0.35);
+  }
+
+  /* Divider */
+  .landing-divider {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 3rem;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Features Section */
+  .landing-features {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 5rem 3rem;
+  }
+
+  .landing-features-header {
+    margin-bottom: 3rem;
+  }
+
+  .landing-features-tag {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 0.75rem;
+    display: block;
+  }
+
+  .landing-features-title {
+    font-family: var(--ff-serif);
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    color: var(--text);
+  }
+
+  /* Matrix */
+  .landing-matrix {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .landing-matrix-head {
+    display: grid;
+    grid-template-columns: 1fr repeat(3, 140px);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .landing-matrix-col {
+    padding: 1rem;
+    border-left: 1px solid var(--border);
+    text-align: center;
+  }
+
+  .landing-matrix-col-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 0.3rem;
+  }
+
+  .landing-matrix-col-link {
+    font-size: 0.75rem;
+    color: var(--accent);
+    font-weight: 500;
+    text-decoration: none;
+    transition: opacity 0.15s;
+  }
+
+  .landing-matrix-col-link:hover {
+    opacity: 0.75;
+  }
+
+  .landing-matrix-row {
+    display: grid;
+    grid-template-columns: 1fr repeat(3, 140px);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+  }
+
+  .landing-matrix-row:hover {
+    background: var(--accent-lt);
+  }
+
+  .landing-matrix-feature {
+    padding: 1rem 1.5rem;
+  }
+
+  .landing-matrix-feature-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text);
+    margin: 0;
+  }
+
+  .landing-matrix-feature-desc {
+    font-size: 0.76rem;
+    color: var(--muted);
+    margin-top: 0.15rem;
+    margin: 0;
+  }
+
+  .landing-matrix-cell {
+    border-left: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dot-yes {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+
+  .dot-no {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--border);
+  }
+
+  /* CTA Strip */
+  .landing-cta-strip {
+    background: var(--text);
+    padding: 5rem 3rem;
+  }
+
+  .landing-cta-content {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 3rem;
+    flex-wrap: wrap;
+  }
+
+  .landing-cta-title {
+    font-family: var(--ff-serif);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--bg);
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+  }
+
+  .landing-cta-desc {
+    font-size: 0.95rem;
+    color: #7a7670;
+    font-weight: 300;
+  }
+
+  /* Footer */
+  .landing-footer {
+    padding: 2.5rem 3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+
+  .landing-footer-brand {
+    font-family: var(--ff-serif);
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .landing-footer-nav {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+  }
+
+  .landing-footer-nav a {
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+
+  .landing-footer-nav a:hover {
+    color: var(--text);
+  }
+
+  .landing-footer-license {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .landing-hero-grid {
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+
+    .landing-nav {
+      padding: 0 1.5rem;
+    }
+
+    .landing-hero {
+      padding: 3rem 1.5rem 2rem;
+    }
+
+    .landing-features {
+      padding: 3rem 1.5rem;
+    }
+
+    .landing-cta-content {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+
 <script>
-  const container = document.querySelector<HTMLElement>('.sb-split');
-  const divider   = document.querySelector<HTMLElement>('.sb-divider');
-  const panelEn   = document.querySelector<HTMLElement>('.sb-panel--en');
-  const panelFi   = document.querySelector<HTMLElement>('.sb-panel--fi');
+  const container = document.querySelector<HTMLElement>('#sb-split');
+  const divider = document.querySelector<HTMLElement>('#sb-divider');
 
-  if (container && divider && panelEn && panelFi) {
-    // Initial 50 / 50 split — panels keep their full size; only visibility changes
-    let pct = 50;
+  if (container && divider) {
+    const panelEn = container.querySelector<HTMLElement>('.sb-panel--en');
+    const panelFi = container.querySelector<HTMLElement>('.sb-panel--fi');
 
-    function applyPct(p: number) {
-      pct = Math.max(0, Math.min(100, p));
-      // Clip each panel so EN is visible on the left, FI on the right
-      panelEn.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
-      panelFi.style.clipPath = `inset(0 0 0 ${pct}%)`;
-      // Move the divider handle to match the clip boundary
-      divider.style.left = `${pct}%`;
-      const enPct = Math.round(pct);
-      divider.setAttribute('aria-valuenow', String(enPct));
-      divider.setAttribute('aria-valuetext', `${enPct}% English, ${100 - enPct}% Finnish`);
+    if (panelEn && panelFi) {
+      let pct = 50;
+      let dragging = false;
+
+      function applyPct(p: number) {
+        pct = Math.max(0, Math.min(100, p));
+        panelEn.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+        panelFi.style.clipPath = `inset(0 0 0 ${pct}%)`;
+        divider.style.left = `${pct}%`;
+        divider.setAttribute('aria-valuenow', String(Math.round(pct)));
+      }
+
+      applyPct(50);
+
+      function getClientX(e: MouseEvent | TouchEvent): number {
+        const touches = (e as TouchEvent).touches;
+        return touches ? touches[0].clientX : (e as MouseEvent).clientX;
+      }
+
+      function onMove(e: MouseEvent | TouchEvent) {
+        if (!dragging) return;
+        e.preventDefault();
+        const rect = container.getBoundingClientRect();
+        applyPct(((getClientX(e) - rect.left) / rect.width) * 100);
+      }
+
+      function stopDrag() {
+        dragging = false;
+        document.removeEventListener('mousemove', onMove as EventListener);
+        document.removeEventListener('mouseup', stopDrag);
+        document.removeEventListener('touchmove', onMove as EventListener);
+        document.removeEventListener('touchend', stopDrag);
+      }
+
+      divider.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        dragging = true;
+        document.addEventListener('mousemove', onMove as EventListener);
+        document.addEventListener('mouseup', stopDrag);
+      });
+
+      divider.addEventListener('touchstart', () => {
+        dragging = true;
+        document.addEventListener('touchmove', onMove as EventListener, { passive: false });
+        document.addEventListener('touchend', stopDrag);
+      }, { passive: true });
+
+      divider.addEventListener('keydown', (e) => {
+        const step = e.shiftKey ? 10 : 5;
+        if (e.key === 'ArrowLeft') {
+          applyPct(pct - step);
+          e.preventDefault();
+        }
+        if (e.key === 'ArrowRight') {
+          applyPct(pct + step);
+          e.preventDefault();
+        }
+      });
     }
-
-    applyPct(50);
-
-    let dragging = false;
-
-    function getClientX(e: MouseEvent | TouchEvent): number {
-      const touches = (e as TouchEvent).touches;
-      return touches ? touches[0].clientX : (e as MouseEvent).clientX;
-    }
-
-    function onMove(e: MouseEvent | TouchEvent) {
-      if (!dragging) return;
-      e.preventDefault();
-      const rect = container.getBoundingClientRect();
-      const x = getClientX(e) - rect.left;
-      applyPct((x / rect.width) * 100);
-    }
-
-    function stopDrag() {
-      dragging = false;
-      document.removeEventListener('mousemove', onMove as EventListener);
-      document.removeEventListener('mouseup', stopDrag);
-      document.removeEventListener('touchmove', onMove as EventListener);
-      document.removeEventListener('touchend', stopDrag);
-    }
-
-    divider.addEventListener('mousedown', (e) => {
-      e.preventDefault();
-      dragging = true;
-      document.addEventListener('mousemove', onMove as EventListener);
-      document.addEventListener('mouseup', stopDrag);
-    });
-
-    divider.addEventListener('touchstart', (e) => {
-      dragging = true;
-      document.addEventListener('touchmove', onMove as EventListener, { passive: false });
-      document.addEventListener('touchend', stopDrag);
-    }, { passive: true });
-
-    // Keyboard support: arrow keys nudge the divider (Shift for 10% jumps)
-    divider.addEventListener('keydown', (e) => {
-      const step = e.shiftKey ? 10 : 5;
-      if (e.key === 'ArrowLeft')  { applyPct(pct - step); e.preventDefault(); }
-      if (e.key === 'ArrowRight') { applyPct(pct + step); e.preventDefault(); }
-    });
   }
 </script>

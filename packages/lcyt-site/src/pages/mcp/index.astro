@@ -1,82 +1,33 @@
 ---
 import { getCollection, render } from 'astro:content';
-import DocsLayout from '../../layouts/DocsLayout.astro';
+import GuideLayout from '../../layouts/GuideLayout.astro';
 
-const TOOLS_ORDER = [
-  'tools/start', 'tools/send-caption', 'tools/send-batch',
-  'tools/sync-clock', 'tools/get-status', 'tools/stop',
-  'tools/privacy', 'tools/privacy-deletion', 'tools/session-resources',
-];
-
-function docLabel(id: string, title?: string): string {
-  if (title) return title;
-  if (id === 'README') return 'Overview';
-  const name = id.includes('/') ? id.split('/').pop()! : id;
-  return name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-}
-
-// Use only the `mcp` collection here — other pages should use their own collections.
 const allDocs = await getCollection('mcp');
-
-function matchTarget(doc: any, target: string) {
-  const last = target.split('/').pop()!.toLowerCase();
-  const id = (doc.id || '').toString().toLowerCase();
-  const slug = (doc.slug || '').toString().toLowerCase();
-  const title = ((doc.data && doc.data.title) || '').toString().toLowerCase();
-  const t = target.toLowerCase();
-  if (id === t || slug === t) return true;
-  if (id.endsWith('/' + t) || slug.endsWith('/' + t)) return true;
-  if (id.includes(last) || slug.includes(last) || title.includes(last.replace(/-/g, ' '))) return true;
-  return false;
-}
-
-// Separate docs by category (use flexible matching to handle collection prefixes)
-const readme = allDocs.find(d => matchTarget(d, 'readme') || matchTarget(d, 'mcp/readme') || (d.data && d.data.title && d.data.title.toLowerCase().includes('overview'))) || allDocs[0];
-const toolsIndex = allDocs.find(d => matchTarget(d, 'tools') || matchTarget(d, 'mcp/tools'));
-const stdioDoc = allDocs.find(d => matchTarget(d, 'stdio') || matchTarget(d, 'mcp/stdio'));
-const httpDoc = allDocs.find(d => matchTarget(d, 'http') || matchTarget(d, 'mcp/http'));
-const toolDocs = TOOLS_ORDER
-  .map(id => allDocs.find(d => matchTarget(d, id) || matchTarget(d, 'mcp/' + id)))
-  .filter(Boolean) as typeof allDocs;
-
-// Ordered list for rendering
-const docs = [
-  ...(readme ? [readme] : []),
-  ...(toolsIndex ? [toolsIndex] : []),
-  ...(stdioDoc ? [stdioDoc] : []),
-  ...(httpDoc ? [httpDoc] : []),
-  ...toolDocs,
-];
-
-const sidebarSections = [
-  {
-    items: [
-      ...(readme ? [{ id: readme.id, label: 'Overview' }] : []),
-      ...(toolsIndex ? [{ id: toolsIndex.id, label: 'Tools Overview' }] : []),
-    ],
-  },
-  {
-    heading: 'Transport',
-    items: [
-      ...(httpDoc ? [{ id: httpDoc.id, label: 'Streamable HTTP' }] : []),
-      ...(stdioDoc ? [{ id: stdioDoc.id, label: 'stdio (local)' }] : []),
-    ],
-  },
-  {
-    heading: 'Tools',
-    items: toolDocs.map(d => ({ id: d.id, label: docLabel(d.id, d.data.title) })),
-  },
-];
+const docs = [...allDocs].sort((a, b) => (a.data.order ?? 99) - (b.data.order ?? 99));
 
 const rendered = await Promise.all(docs.map(doc => render(doc)));
 ---
-<DocsLayout title="MCP Server" sidebarSections={sidebarSections} sidebarHeading="MCP">
+<GuideLayout
+  title="MCP"
+  description="Model Context Protocol server — integrate LCYT with AI assistants like Claude."
+>
+  <Fragment slot="sidebar">
+    <div style="padding-left: 0.5rem;">
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;">MCP</p>
+      <ul style="list-style: none;">
+        {docs.map(doc => (
+          <li><a href={`#${doc.id}`} style="display: block; padding: 0.3rem 0.5rem; font-size: 0.84rem; color: var(--muted); border-radius: 6px; transition: all 0.12s; text-decoration: none;">{doc.data.title || doc.id}</a></li>
+        ))}
+      </ul>
+    </div>
+  </Fragment>
+
   {docs.map((doc, i) => {
     const { Content } = rendered[i];
     return (
-      <section id={doc.id.replace(/\//g, '-')} class="doc-section">
+      <section id={doc.id.replace(/\//g, '-')}>
         <Content />
       </section>
     );
   })}
-</DocsLayout>
+</GuideLayout>

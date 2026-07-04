@@ -1,7 +1,6 @@
 ---
 import { getCollection, render } from 'astro:content';
-import DocsLayout from '../../layouts/DocsLayout.astro';
-import GuideHeader from '../../components/GuideHeader.astro';
+import GuideLayout from '../../layouts/GuideLayout.astro';
 
 const CLI_ORDER = ['full-screen', 'interactive', 'single-caption'];
 
@@ -39,69 +38,50 @@ function toLabel(doc: { id: string; data: { title?: string } }) {
 const cliDocs = sortDocs(await getCollection('guide-cli'), CLI_ORDER);
 const webDocs = sortDocs(await getCollection('guide-web'), WEB_ORDER);
 
-const allSections = [
-  ...cliDocs.map(d => ({ id: `cli-${d.id}`, label: toLabel(d) })),
-  ...webDocs.map(d => ({ id: `web-${d.id}`, label: toLabel(d) })),
-];
-
-const sidebarSections = [
-  {
-    heading: 'CLI Guide',
-    items: cliDocs.map(d => ({ id: `cli-${d.id}`, label: toLabel(d) })),
-  },
-  {
-    heading: 'Web App Guide',
-    items: webDocs.map(d => ({ id: `web-${d.id}`, label: toLabel(d) })),
-  },
-];
-
 const cliRendered = await Promise.all(cliDocs.map(doc => render(doc)));
 const webRendered = await Promise.all(webDocs.map(doc => render(doc)));
 ---
-<DocsLayout title="Guide" sidebarSections={sidebarSections} sidebarHeading="Guide">
-  <GuideHeader
-    title="Complete LCYT Guide"
-    subtitle="Learn how to use LCYT with both the command-line tool and the web app. Start with the overview to understand the basics, then explore the sections that match your use case."
-    estimatedTime="15 min read"
-    sections={allSections}
-  />
+<GuideLayout
+  title="Guide"
+  description="Complete documentation for the LCYT web app and CLI — setup, captions, translation, shortcuts, and more."
+>
+  <Fragment slot="sidebar">
+    <div style="padding-left: 0.5rem;">
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 1rem;">Guide</p>
 
-  <section class="guide-section-group">
-    <h2 class="section-group-title">CLI Guide</h2>
-    {cliDocs.map((doc, i) => {
-      const { Content } = cliRendered[i];
-      return (
-        <section id={`cli-${doc.id.replace(/\//g, '-')}`} class="doc-section">
-          <Content />
-        </section>
-      );
-    })}
-  </section>
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; margin-top: 0.5rem;">CLI</p>
+      <ul style="list-style: none; margin-bottom: 1rem;">
+        {cliDocs.map(doc => (
+          <li><a href={`#cli-${doc.id}`} style="display: block; padding: 0.3rem 0.5rem; font-size: 0.84rem; color: var(--muted); border-radius: 6px; transition: all 0.12s; text-decoration: none;">{toLabel(doc)}</a></li>
+        ))}
+      </ul>
 
-  <section class="guide-section-group">
-    <h2 class="section-group-title">Web App Guide</h2>
-    {webDocs.map((doc, i) => {
-      const { Content } = webRendered[i];
-      return (
-        <section id={`web-${doc.id.replace(/\//g, '-')}`} class="doc-section">
-          <Content />
-        </section>
-      );
-    })}
-  </section>
-</DocsLayout>
+      <div style="height: 1px; background: var(--border); margin-bottom: 1rem;"></div>
 
-<style>
-  .section-group-title {
-    font-size: 1.8rem;
-    color: var(--color-primary);
-    margin-top: 3rem;
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 2px solid var(--color-border);
-  }
+      <p style="font-size: 0.7rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem;">Web App</p>
+      <ul style="list-style: none;">
+        {webDocs.map(doc => (
+          <li><a href={`#web-${doc.id}`} style="display: block; padding: 0.3rem 0.5rem; font-size: 0.84rem; color: var(--muted); border-radius: 6px; transition: all 0.12s; text-decoration: none;">{toLabel(doc)}</a></li>
+        ))}
+      </ul>
+    </div>
+  </Fragment>
 
-  .section-group-title:first-child {
-    margin-top: 2rem;
-  }
-</style>
+  {cliDocs.map((doc, i) => {
+    const { Content } = cliRendered[i];
+    return (
+      <section id={`cli-${doc.id}`}>
+        <Content />
+      </section>
+    );
+  })}
+
+  {webDocs.map((doc, i) => {
+    const { Content } = webRendered[i];
+    return (
+      <section id={`web-${doc.id}`}>
+        <Content />
+      </section>
+    );
+  })}
+</GuideLayout>

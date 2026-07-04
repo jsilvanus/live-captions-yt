@@ -4,11 +4,20 @@
  */
 
 :root {
-  /* Color Palette */
-  --color-primary: #4daae6;
-  --color-primary-dark: #3a96d4;
-  --color-primary-light: #7ec5f0;
-  --color-primary-bg: rgba(77, 170, 230, 0.06);
+  /* Color Palette — design system from Figma */
+  --bg:        #f7f4f0;
+  --surface:   #ede9e3;
+  --border:    #ddd8d0;
+  --text:      #1a1916;
+  --muted:     #7a7670;
+  --accent:    #2e5fa3;
+  --accent-lt: #e8eef8;
+
+  /* Legacy aliases for backward compatibility */
+  --color-primary: var(--accent);
+  --color-primary-dark: #254080;
+  --color-primary-light: #5a7fbd;
+  --color-primary-bg: rgba(46, 95, 163, 0.06);
 
   --color-accent: #cb0000;
   --color-accent-dark: #a00000;
@@ -27,23 +36,23 @@
   --color-warning-border: #fcd34d;
 
   /* Neutral Colors */
-  --color-bg: #ffffff;
-  --color-bg-secondary: #f8f9fa;
-  --color-bg-tertiary: #f3f4f6;
+  --color-bg: var(--bg);
+  --color-bg-secondary: var(--surface);
+  --color-bg-tertiary: #ede9e3;
 
-  --color-text: #1a1a1a;
-  --color-text-secondary: #555555;
-  --color-text-muted: #888888;
+  --color-text: var(--text);
+  --color-text-secondary: var(--muted);
+  --color-text-muted: var(--muted);
 
-  --color-border: #e0e0e0;
-  --color-border-light: #f0f0f0;
-  --color-divider: #e8e8e8;
+  --color-border: var(--border);
+  --color-border-light: #e8e8e8;
+  --color-divider: var(--border);
 
   /* Semantic color aliases */
-  --color-muted: var(--color-text-secondary);
+  --color-muted: var(--muted);
 
   /* Layout */
-  --sidebar-width: 240px;
+  --sidebar-width: 232px;
   --nav-height: 56px;
   --max-content-width: 900px;
 
@@ -57,9 +66,13 @@
   --spacing-3xl: 3rem;
   --spacing-4xl: 4rem;
 
-  /* Typography */
-  --font-family-base: system-ui, -apple-system, sans-serif;
-  --font-family-mono: 'SFMono-Regular', Consolas, monospace;
+  /* Typography — from design system */
+  --ff-serif:  'Playfair Display', Georgia, serif;
+  --ff-sans:   'DM Sans', system-ui, sans-serif;
+  --ff-mono:   'JetBrains Mono', Consolas, monospace;
+
+  --font-family-base: var(--ff-sans);
+  --font-family-mono: var(--ff-mono);
 
   --font-size-xs: 0.72rem;
   --font-size-sm: 0.9rem;
@@ -78,9 +91,9 @@
   /* Shadows */
   --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.15);
   --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.12);
-  --shadow-lg: 0 6px 28px rgba(77, 170, 230, 0.16);
-  --shadow-primary: 0 2px 8px rgba(77, 170, 230, 0.45);
-  --shadow-primary-lg: 0 3px 12px rgba(77, 170, 230, 0.6);
+  --shadow-lg: 0 6px 28px rgba(46, 95, 163, 0.16);
+  --shadow-primary: 0 2px 8px rgba(46, 95, 163, 0.35);
+  --shadow-primary-lg: 0 3px 12px rgba(46, 95, 163, 0.45);
 
   /* Border Radius */
   --radius-sm: 3px;
