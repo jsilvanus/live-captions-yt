@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
+import { AuthLayout } from './auth/AuthLayout';
+import { StepDots } from './auth/StepDots';
+import { BackendCard } from './auth/BackendCard';
 
 // ---------------------------------------------------------------------------
 // Backend presets — user-selectable in phase 1
@@ -53,11 +56,14 @@ export function getBackendFeatures() {
 export function LoginPage() {
   const { login } = useUserAuth();
 
+  // Step state (1 = backend selection, 2 = auth, 3 = success)
+  const [step, setStep] = useState(1);
+
   // Phase 1: backend selection
   const [preset, setPreset] = useState(getInitialPreset);
   const [customUrl, setCustomUrl] = useState('');
   const [probing, setProbing] = useState(false);
-  const [features, setFeatures] = useState(() => getBackendFeatures() || ['login']);    // null = not probed yet
+  const [features, setFeatures] = useState(() => getBackendFeatures() || null);    // null = not probed yet
   const [probeError, setProbeError] = useState(null);
 
   // Phase 2: authentication (depends on features)
@@ -102,6 +108,7 @@ export function LoginPage() {
       setFeatures(data.features);
       saveBackendFeatures(data.features);
       try { localStorage.setItem(KEYS.backend.preset, preset); } catch { /* ignore */ }
+      setStep(2);
     } catch (err) {
       clearTimeout(timer);
       setProbeError(err.name === 'AbortError' ? 'Connection timed out' : (err.message || 'Could not reach server'));
@@ -120,7 +127,7 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(backendUrl, email.trim(), password);
-      window.location.href = '/projects';
+      setStep(3);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -139,200 +146,245 @@ export function LoginPage() {
       // Mark minimal mode — AuthGate checks this
       localStorage.setItem(KEYS.backend.features, JSON.stringify(features));
     } catch { /* ignore */ }
-    window.location.href = '/';
+    setStep(3);
   }
 
   // ─── Render ─────────────────────────────────────────────
 
-  const boxStyle = {
-    minHeight: '100vh',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: 'var(--color-bg)',
-    padding: 24,
-  };
-
   return (
-    <div style={boxStyle}>
-      <div style={{ width: '100%', maxWidth: 420 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, marginBottom: 8, color: 'var(--color-text)' }}>
-          LCYT
-        </h1>
-        <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 24 }}>
-          Live Captions for YouTube
-        </p>
+    <AuthLayout
+      cornerPrompt={step <= 2 ? "No account?" : ""}
+      cornerLinkLabel={step <= 2 ? "Sign up →" : ""}
+      cornerLinkHref={step <= 2 ? `/register${backendUrl ? `?server=${encodeURIComponent(backendUrl)}` : ''}` : '#'}
+    >
+      {/* ── STEP 1: Backend Selection ────────────────────────── */}
+      {step === 1 && (
+        <div>
+          <StepDots step={1} total={2} />
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '1.5rem', color: 'var(--auth-text)', fontFamily: 'var(--auth-ff-serif)' }}>
+            Choose your backend
+          </h2>
+          <p className="auth-explanation">
+            Select where your captions will be delivered from. You can change this later.
+          </p>
 
-        {/* ── Phase 1: Backend selection ───────────────────── */}
-        <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
-          <div className="settings-field">
-            <label className="settings-field__label" htmlFor="login-preset">Backend</label>
-            <select
-              id="login-preset"
-              className="settings-field__input"
-              value={preset}
-              onChange={e => { setPreset(e.target.value); }}
-            >
-              {PRESETS.map(p => (
-                <option key={p.id} value={p.id}>{p.label}{p.url ? ` (${p.url})` : ''}</option>
-              ))}
-            </select>
-          </div>
+          {/* Cloud preset */}
+          <BackendCard
+            selected={preset === 'normal'}
+            onClick={() => { setPreset('normal'); setCustomUrl(''); }}
+            title="LCYT Cloud"
+            subtitle={PRESETS[0].url}
+            description="Managed, always up-to-date"
+          />
 
-          {preset === 'custom' && (
-            <div className="settings-field" style={{ marginTop: 8 }}>
-              <label className="settings-field__label" htmlFor="login-custom-url">Server URL</label>
+          {/* Minimal preset */}
+          <BackendCard
+            selected={preset === 'minimal'}
+            onClick={() => { setPreset('minimal'); setCustomUrl(''); }}
+            title="Minimal"
+            subtitle={PRESETS[1].url}
+            description="Captions only, lightweight"
+          />
+
+          {/* Custom preset */}
+          <BackendCard
+            selected={preset === 'custom'}
+            onClick={() => setPreset('custom')}
+            title="Self-hosted"
+            description={preset === 'custom' ? undefined : "Run your own instance"}
+          >
+            {preset === 'custom' && (
               <input
-                id="login-custom-url"
-                className="settings-field__input"
                 type="text"
+                className="auth-card__input"
                 inputMode="url"
                 value={customUrl}
                 onChange={e => setCustomUrl(e.target.value)}
                 placeholder="https://your-server.example.com"
                 autoComplete="url"
               />
-            </div>
-          )}
+            )}
+          </BackendCard>
 
-          {!features && (
+          {probeError && <div className="auth-error">{probeError}</div>}
+
+          <button
+            className="auth-btn-primary"
+            onClick={handleProbe}
+            disabled={probing || !backendUrl}
+            style={{ marginTop: '1.5rem' }}
+          >
+            {probing ? 'Connecting…' : 'Continue →'}
+          </button>
+        </div>
+      )}
+
+      {/* ── STEP 2: Authentication ─────────────────────────── */}
+      {step === 2 && features && (
+        <div>
+          <div className="auth-steps">
+            <StepDots step={2} total={2} />
             <button
-              className="btn btn--primary"
-              style={{ marginTop: 12, width: '100%' }}
-              onClick={handleProbe}
-              disabled={probing || !backendUrl}
+              className="auth-back-button"
+              onClick={() => { setFeatures(null); setError(null); setStep(1); }}
             >
-              {probing ? 'Connecting…' : 'Connect'}
+              ← Back
             </button>
-          )}
-
-          {probeError && (
-            <div style={{ color: 'var(--color-error)', fontSize: 13, marginTop: 8 }}>{probeError}</div>
-          )}
-        </fieldset>
-
-        {/* ── Feature badge row ──────────────────────────── */}
-        {features && (
-          <div style={{ marginTop: 16, marginBottom: 16 }}>
-            <div style={{
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 6,
-              fontSize: 11,
-            }}>
-              {features.map(f => (
-                <span
-                  key={f}
-                  style={{
-                    background: 'var(--color-bg-alt, #2a2a2a)',
-                    color: 'var(--color-text-muted)',
-                    padding: '2px 8px',
-                    borderRadius: 4,
-                  }}
-                >
-                  {f}
-                </span>
-              ))}
-            </div>
           </div>
-        )}
 
-        {/* ── Phase 2A: User login (has login feature) ──── */}
-        {features && hasLogin && (
-          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-            <div className="settings-field">
-              <label className="settings-field__label" htmlFor="login-email">Email</label>
-              <input
-                id="login-email"
-                className="settings-field__input"
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-                autoComplete="email"
-                autoFocus
-              />
-            </div>
-            <div className="settings-field">
-              <label className="settings-field__label" htmlFor="login-password">Password</label>
-              <input
-                id="login-password"
-                className="settings-field__input"
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-                autoComplete="current-password"
-              />
-            </div>
-            {error && (
-              <div style={{ color: 'var(--color-error)', fontSize: 13 }}>{error}</div>
+          <h2 style={{ fontSize: '1.8rem', fontWeight: 700, marginBottom: '1.5rem', color: 'var(--auth-text)', fontFamily: 'var(--auth-ff-serif)' }}>
+            Sign in
+          </h2>
+
+          {/* Feature pills */}
+          <div className="auth-pills">
+            {features.map(f => (
+              <span key={f} className={f === 'login' ? undefined : 'auth-pill'}>
+                {f}
+              </span>
+            ))}
+            {hasLogin && (
+              <span className="auth-pill auth-pill--success">Free sign up</span>
             )}
-            <button
-              className="btn btn--primary"
-              type="submit"
-              disabled={loading}
-            >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)', textAlign: 'center' }}>
-              Don&rsquo;t have an account?{' '}
-              <a
-                href={`/register${backendUrl ? `?server=${encodeURIComponent(backendUrl)}` : ''}`}
-                style={{ color: 'var(--color-accent)' }}
+          </div>
+
+          {/* Login mode */}
+          {hasLogin && (
+            <>
+              {/* OAuth buttons (disabled) */}
+              <button
+                className="auth-btn-oauth"
+                disabled
+                title="Coming soon"
+                style={{ marginBottom: '0.5rem' }}
               >
-                Register
-              </a>
-            </p>
-          </form>
-        )}
+                <span>🔵</span> Continue with Google
+                <span style={{ fontSize: '0.65rem', color: 'var(--auth-muted)' }}>Coming soon</span>
+              </button>
+              <button
+                className="auth-btn-oauth"
+                disabled
+                title="Coming soon"
+                style={{ marginBottom: '0.5rem' }}
+              >
+                <span>⬛</span> Continue with GitHub
+                <span style={{ fontSize: '0.65rem', color: 'var(--auth-muted)' }}>Coming soon</span>
+              </button>
 
-        {/* ── Phase 2B: Minimal mode (no login) ────────── */}
-        {features && !hasLogin && (
-          <form onSubmit={handleMinimalContinue} style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 8 }}>
-            <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-              This backend does not require a user account. Enter an API key (or leave blank for default) and continue.
-            </p>
-            <div className="settings-field">
-              <label className="settings-field__label" htmlFor="login-apikey">API Key</label>
-              <input
-                id="login-apikey"
-                className="settings-field__input"
-                type="text"
-                value={apiKey}
-                onChange={e => setApiKey(e.target.value)}
-                placeholder="(optional — defaults to 'default')"
-                autoComplete="off"
-                autoFocus
-              />
-            </div>
-            {error && (
-              <div style={{ color: 'var(--color-error)', fontSize: 13 }}>{error}</div>
+              {/* Divider */}
+              <div className="auth-divider">
+                <div className="auth-divider-line"></div>
+                <div className="auth-divider-text">or</div>
+                <div className="auth-divider-line"></div>
+              </div>
+
+              {/* Email/password form */}
+              <form onSubmit={handleLogin}>
+                <div className="auth-field">
+                  <label className="auth-label" htmlFor="login-email">Email</label>
+                  <input
+                    id="login-email"
+                    className="auth-input"
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    required
+                    autoComplete="email"
+                    autoFocus
+                  />
+                </div>
+                <div className="auth-field">
+                  <label className="auth-label" htmlFor="login-password">Password</label>
+                  <input
+                    id="login-password"
+                    className="auth-input"
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    required
+                    autoComplete="current-password"
+                  />
+                  <div style={{ marginTop: '0.3rem', textAlign: 'right' }}>
+                    <span
+                      className="auth-link auth-link-disabled"
+                      title="Coming soon"
+                    >
+                      Forgot password?
+                    </span>
+                  </div>
+                </div>
+                {error && <div className="auth-error">{error}</div>}
+                <button
+                  className="auth-btn-primary"
+                  type="submit"
+                  disabled={loading}
+                  style={{ marginTop: '1.25rem' }}
+                >
+                  {loading ? 'Signing in…' : 'Sign In'}
+                </button>
+              </form>
+            </>
+          )}
+
+          {/* Minimal mode */}
+          {!hasLogin && (
+            <form onSubmit={handleMinimalContinue}>
+              <p className="auth-explanation">
+                This backend does not require a user account. Enter an API key (or leave blank for default) and continue.
+              </p>
+              <div className="auth-field">
+                <label className="auth-label" htmlFor="login-apikey">API Key</label>
+                <input
+                  id="login-apikey"
+                  className="auth-input"
+                  type="text"
+                  value={apiKey}
+                  onChange={e => setApiKey(e.target.value)}
+                  placeholder="(optional — defaults to 'default')"
+                  autoComplete="off"
+                  autoFocus
+                />
+              </div>
+              {error && <div className="auth-error">{error}</div>}
+              <button
+                className="auth-btn-primary"
+                type="submit"
+                style={{ marginTop: '1.25rem' }}
+              >
+                Continue →
+              </button>
+            </form>
+          )}
+        </div>
+      )}
+
+      {/* ── STEP 3: Success ─────────────────────────────── */}
+      {step === 3 && (
+        <div className="auth-success">
+          <div className="auth-success-icon">✓</div>
+          <h2 className="auth-success-headline">You&rsquo;re in.</h2>
+          <p className="auth-success-text">
+            {hasLogin ? (
+              <>
+                Signed in as <span className="auth-success-email">{email}</span>
+              </>
+            ) : (
+              <>
+                Connected to <span className="auth-success-url">{backendUrl}</span>
+              </>
             )}
-            <button
-              className="btn btn--primary"
-              type="submit"
-            >
-              Continue
-            </button>
-          </form>
-        )}
-
-        {/* ── Change backend link (after probe) ──────────── */}
-        {features && (
-          <p style={{ marginTop: 12, fontSize: 12, color: 'var(--color-text-muted)', textAlign: 'center' }}>
-            <button
-              type="button"
-              onClick={() => { setFeatures(null); setError(null); }}
-              style={{ background: 'none', border: 'none', color: 'var(--color-accent)', cursor: 'pointer', fontSize: 12, padding: 0 }}
-            >
-              ← Change backend
-            </button>
           </p>
-        )}
-      </div>
-    </div>
+          <button
+            className="auth-btn-primary"
+            onClick={() => window.location.href = hasLogin ? '/projects' : '/'}
+            style={{ marginTop: '2rem' }}
+          >
+            Open the app →
+          </button>
+        </div>
+      )}
+    </AuthLayout>
   );
 }

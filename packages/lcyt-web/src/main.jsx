@@ -2,6 +2,7 @@ import { StrictMode, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Router, Route, Switch, Redirect } from 'wouter';
 import { migrateStorageKeys } from './lib/storageKeys.js';
+import 'shared-styles';
 import './styles/reset.css';
 import './styles/layout.css';
 import './styles/sidebar.css';

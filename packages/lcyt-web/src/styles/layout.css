@@ -1,22 +1,6 @@
-/* CSS custom properties — dark theme (default) */
+/* CSS custom properties — layout and typography (color tokens now from shared-styles/tokens.css) */
 :root {
   --mobile-bar-height: 52px;
-  --color-bg: #0f1117;
-  --color-surface: #1a1d27;
-  --color-surface-elevated: #22263a;
-  --color-border: #2e3250;
-  --color-accent: #4f8ef7;
-  --color-accent-dim: #2d5ab0;
-  --color-success: #3fb950;
-  --color-warning: #e3b341;
-  --color-error: #f85149;
-  --color-text: #e6edf3;
-  --color-text-dim: #7d8590;
-  --color-text-muted: #484f58;
-  --color-active-line: #1f3a5f;
-  --color-active-line-border: #4f8ef7;
-  --color-sent-flash: #1a3a1f;
-
   --header-height: 44px;
   --footer-height: 52px;
   --tab-height: 36px;
@@ -25,28 +9,7 @@
   --caption-text-size: 13px;
 }
 
-/* Light theme override */
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --color-bg: #ffffff;
-    --color-surface: #f6f8fa;
-    --color-surface-elevated: #ffffff;
-    --color-border: #d0d7de;
-    --color-accent: #0969da;
-    --color-accent-dim: #218bff;
-    --color-success: #1a7f37;
-    --color-warning: #9a6700;
-    --color-error: #cf222e;
-    --color-text: #1f2328;
-    --color-text-dim: #57606a;
-    --color-text-muted: #8c959f;
-    --color-active-line: #dbeafe;
-    --color-active-line-border: #0969da;
-    --color-sent-flash: #dcfce7;
-  }
-}
-
-/* Manual light theme */
+/* Manual light theme — lcyt-web's preferred light palette (overrides shared-styles defaults) */
 :root[data-theme="light"] {
   --color-bg: #ffffff;
   --color-surface: #f6f8fa;
@@ -63,6 +26,7 @@
   --color-active-line: #dbeafe;
   --color-active-line-border: #0969da;
   --color-sent-flash: #dcfce7;
+  --color-panel: #f6f8fa;
 }
 
 /* ─── App shell ─────────────────────────────────────────── */

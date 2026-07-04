@@ -116,21 +116,110 @@
   --z-tooltip: 1001;
 }
 
-/* Dark mode support */
+/* Dark mode support — uses lcyt-web's real dark palette */
 @media (prefers-color-scheme: dark) {
   :root {
-    --color-bg: #1a1a1a;
-    --color-bg-secondary: #2d2d2d;
-    --color-bg-tertiary: #3f3f3f;
+    /* Backgrounds */
+    --color-bg: #0f1117;
+    --color-bg-secondary: #1a1d27;
+    --color-bg-tertiary: #22263a;
 
-    --color-text: #f0f0f0;
-    --color-text-secondary: #b0b0b0;
-    --color-text-muted: #808080;
+    /* Text */
+    --color-text: #e6edf3;
+    --color-text-secondary: #7d8590;
+    --color-text-muted: #484f58;
 
-    --color-border: #444444;
-    --color-border-light: #333333;
-    --color-divider: #2a2a2a;
+    /* Borders */
+    --color-border: #2e3250;
+    --color-border-light: #2e3250;
+    --color-divider: #2e3250;
+
+    /* Accent colors */
+    --color-accent: #4f8ef7;
+    --color-accent-dim: #2d5ab0;
+
+    /* Status colors */
+    --color-success: #3fb950;
+    --color-error: #f85149;
+    --color-warning: #e3b341;
+
+    /* Surface variants (lcyt-web specific) */
+    --color-surface: #1a1d27;
+    --color-surface-elevated: #22263a;
+    --color-text-dim: #7d8590;
+    --color-active-line: #1f3a5f;
+    --color-active-line-border: #4f8ef7;
+    --color-sent-flash: #1a3a1f;
+    --color-panel: #1a1d27;
   }
+}
+
+/* Explicit manual dark mode override — when user toggles dark */
+:root[data-theme="dark"] {
+  /* Backgrounds */
+  --color-bg: #0f1117;
+  --color-bg-secondary: #1a1d27;
+  --color-bg-tertiary: #22263a;
+
+  /* Text */
+  --color-text: #e6edf3;
+  --color-text-secondary: #7d8590;
+  --color-text-muted: #484f58;
+
+  /* Borders */
+  --color-border: #2e3250;
+  --color-border-light: #2e3250;
+  --color-divider: #2e3250;
+
+  /* Accent colors */
+  --color-accent: #4f8ef7;
+  --color-accent-dim: #2d5ab0;
+
+  /* Status colors */
+  --color-success: #3fb950;
+  --color-error: #f85149;
+  --color-warning: #e3b341;
+
+  /* Surface variants (lcyt-web specific) */
+  --color-surface: #1a1d27;
+  --color-surface-elevated: #22263a;
+  --color-text-dim: #7d8590;
+  --color-active-line: #1f3a5f;
+  --color-active-line-border: #4f8ef7;
+  --color-sent-flash: #1a3a1f;
+  --color-panel: #1a1d27;
+}
+
+/* Explicit manual light mode override — when user toggles light (lcyt-web-specific palette) */
+:root[data-theme="light"] {
+  /* lcyt-web's preferred light palette (differs from shared-styles defaults) */
+  --color-bg: #ffffff;
+  --color-bg-secondary: #f6f8fa;
+  --color-bg-tertiary: #ffffff;
+
+  --color-text: #1f2328;
+  --color-text-secondary: #57606a;
+  --color-text-muted: #8c959f;
+
+  --color-border: #d0d7de;
+  --color-border-light: #d0d7de;
+  --color-divider: #d0d7de;
+
+  --color-accent: #0969da;
+  --color-accent-dim: #218bff;
+
+  --color-success: #1a7f37;
+  --color-error: #cf222e;
+  --color-warning: #9a6700;
+
+  /* Surface variants */
+  --color-surface: #f6f8fa;
+  --color-surface-elevated: #ffffff;
+  --color-text-dim: #57606a;
+  --color-active-line: #dbeafe;
+  --color-active-line-border: #0969da;
+  --color-sent-flash: #dcfce7;
+  --color-panel: #f6f8fa;
 }
 
 /* Reset base styles */
