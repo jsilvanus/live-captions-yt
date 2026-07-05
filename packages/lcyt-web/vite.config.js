@@ -23,6 +23,11 @@ export default defineConfig({
       { find: 'lcyt/config',  replacement: resolve(__dirname, '../lcyt/src/config.js') },
       { find: 'lcyt/logger',  replacement: resolve(__dirname, '../lcyt/src/logger.js') },
       { find: 'lcyt',         replacement: resolve(__dirname, '../lcyt/src/sender.js') },
+      // Resolve the shim directly to its cjs build so Vite can pre-bundle.
+      // Provide both the package root and the explicit index.js path because
+      // some packages import 'use-sync-external-store/shim/index.js'.
+      { find: 'use-sync-external-store/shim/index.js', replacement: resolve(__dirname, '../../node_modules/use-sync-external-store/cjs/use-sync-external-store-shim.development.js') },
+      { find: 'use-sync-external-store/shim', replacement: resolve(__dirname, '../../node_modules/use-sync-external-store/cjs/use-sync-external-store-shim.development.js') },
     ]
   },
   server: {
@@ -30,12 +35,6 @@ export default defineConfig({
       'Permissions-Policy': 'on-device-speech-recognition=*',
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
     },
-    proxy: {
-      '/live': 'http://localhost:3000',
-      '/captions': 'http://localhost:3000',
-      '/sync': 'http://localhost:3000',
-    }
-    ,
     fs: {
       // Allow Vite to access the monorepo root so symlinked packages resolve correctly.
       allow: [__dirname, resolve(__dirname, '..', '..')]
