@@ -8,6 +8,7 @@ import { BridgesManager } from '../ProductionBridgesPage.jsx';
 export function BridgeSection() {
   return (
     <SetupCard
+      id="bridges"
       icon="🌉"
       title="Bridges"
       description="On-site agents that relay production commands to physical AV hardware over TCP."

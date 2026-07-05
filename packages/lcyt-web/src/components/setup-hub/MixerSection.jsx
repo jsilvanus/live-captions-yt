@@ -8,6 +8,7 @@ import { MixersManager } from '../ProductionMixersPage.jsx';
 export function MixerSection() {
   return (
     <SetupCard
+      id="mixers"
       icon="🎚️"
       title="Mixers"
       description="Video mixer source switching: Roland, AMX, ATEM, OBS, LCYT, Monarch HDX."

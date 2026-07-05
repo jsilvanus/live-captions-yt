@@ -214,6 +214,7 @@ function SidebarApp() {
             <Route path="/team" component={TeamPage} />
             <Route path="/setup" component={SetupHubPage} />
             <Route path="/setup/wizard" component={SetupWizardPage} />
+            <Route path="/setup/:card" component={SetupHubPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
             {/* Legacy URL aliases */}

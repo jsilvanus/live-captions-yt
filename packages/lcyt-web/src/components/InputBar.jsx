@@ -11,6 +11,8 @@ import { getActiveCodes } from '../lib/metacode-active.js';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 import { parseFileContent } from '../lib/metacode-parser.js';
 import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, checkCueMatch } from '../lib/metacode-runtime.js';
+import { interpolateVariables } from '../lib/metacode-variables.js';
+import { useVariables } from '../hooks/useVariables.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -19,11 +21,22 @@ const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
 // and backend SSE event arriving for the same phrase.
 const CUE_DEDUP_MS = 3000;
 
+// Prefetch-tier defaults (plan_api_connectors_variables.md §1.2, §4) — the
+// frontend doesn't know a request's configured prefetch_interval_ms/timeout_ms
+// without an extra round-trip, so it uses the plan's stated defaults.
+const API_PREFETCH_INTERVAL_MS = 3000;
+const API_PREFETCH_TIMEOUT_MS = 200;
+
 export const InputBar = forwardRef(function InputBar(_props, ref) {
   const session = useSessionContext();
   const fileStore = useFileContext();
   const sentLog = useSentLogContext();
   const { showToast } = useToastContext();
+  const variables = useVariables({
+    backendUrl: session.backendUrl,
+    connected: session.connected,
+    getToken: session.getSessionToken,
+  });
 
   const [inputValue, setInputValue] = useState('');
   const [errorFlash, setErrorFlash] = useState(false);
@@ -90,6 +103,43 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   // Per-language local file handles: Map<lang, { writable, seqIdx, format }>
   const localFileHandlesRef = useRef(new Map());
   const localFileSeqRef = useRef({});
+
+  // API connector triggers (plan_api_connectors_variables.md §1.2, §4): when the
+  // pointer lands on a line carrying <!-- !api: --> / <!-- api!: --> metacodes,
+  // fire the pointer tier once and (re)start the prefetch tier's background
+  // refresh loop; both are cancelled the moment the pointer moves off the line.
+  const prefetchIntervalRef = useRef(null);
+  useEffect(() => {
+    if (prefetchIntervalRef.current) {
+      clearInterval(prefetchIntervalRef.current);
+      prefetchIntervalRef.current = null;
+    }
+    const file = fileStore.activeFile;
+    if (!file) return;
+    const triggers = file.lineCodes?.[file.pointer]?.apiTriggers;
+    if (!triggers || triggers.length === 0) return;
+
+    // Pointer and prefetch tiers both fire once immediately on arrival — the
+    // prefetch tier additionally gets a repeating loop below.
+    for (const { connectorSlug, requestSlug, tier } of triggers) {
+      if (tier === 'pointer' || tier === 'prefetch') variables.refresh(connectorSlug, requestSlug);
+    }
+    const prefetchTriggers = triggers.filter(t => t.tier === 'prefetch');
+    if (prefetchTriggers.length > 0) {
+      prefetchIntervalRef.current = setInterval(() => {
+        for (const { connectorSlug, requestSlug } of prefetchTriggers) {
+          variables.refresh(connectorSlug, requestSlug);
+        }
+      }, API_PREFETCH_INTERVAL_MS);
+    }
+
+    return () => {
+      if (prefetchIntervalRef.current) {
+        clearInterval(prefetchIntervalRef.current);
+        prefetchIntervalRef.current = null;
+      }
+    };
+  }, [fileStore.activeFile?.id, fileStore.activeFile?.pointer]);
 
   useImperativeHandle(ref, () => ({
     focus: () => inputRef.current?.focus(),
@@ -161,10 +211,30 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   async function doSend(text, lineCodes = {}) {
     if (!text?.trim()) return;
 
-    // Merge manual active codes (from ActionsPanel) with per-line codes from file.
-    // Per-line codes take priority; lang is derived from lineCodes.lang or inputLang.
+    // Fire this line's API connector triggers (plan §1.2, §6): send tier fires
+    // fire-and-forget at the instant of send; a prefetch-tier trigger also gets
+    // one waitMs-bearing call here for a freshness attempt right before codes
+    // are assembled (the background loop from the pointer effect keeps it warm
+    // in the common case — this is only the last-moment top-up).
+    const triggers = lineCodes.apiTriggers;
+    if (triggers && triggers.length > 0) {
+      for (const { connectorSlug, requestSlug, tier } of triggers) {
+        if (tier === 'send') variables.refresh(connectorSlug, requestSlug);
+        else if (tier === 'prefetch') await variables.refresh(connectorSlug, requestSlug, API_PREFETCH_TIMEOUT_MS);
+      }
+    }
+
+    // Resolve {{name}} insertions using the current variable snapshot — a pure
+    // read, never triggers a fetch (plan §1.1).
+    const resolvedText = interpolateVariables(text, variables.snapshot());
+
+    // Merge resolved variables (lowest priority), manual active codes (from
+    // ActionsPanel), and per-line codes from the file, in that order — codes
+    // and variables are the same unified concept (plan §5); per-line codes
+    // still win over everything.
     const manualCodes = getActiveCodes();
-    const mergedCodes = { ...manualCodes, ...lineCodes };
+    const mergedCodes = { ...variables.snapshot(), ...manualCodes, ...lineCodes };
+    delete mergedCodes.apiTriggers; // consumed above — not a code to forward
     const effectiveLang = mergedCodes.lang || inputLang || null;
     if (effectiveLang) mergedCodes.lang = effectiveLang;
     else delete mergedCodes.lang;
@@ -179,7 +249,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     let translationsMap = {};
     let captionLang = null;
     if (enabledTranslations.length > 0) {
-      const result = await translateAll(text, effectiveLang || 'en-US', enabledTranslations);
+      const result = await translateAll(resolvedText, effectiveLang || 'en-US', enabledTranslations);
       translationsMap = result.translationsMap;
       captionLang = result.captionLang;
       if (result.localFileEntries.length > 0) {
@@ -200,14 +270,14 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
 
     const intervalMs = getBatchIntervalMs();
     if (intervalMs > 0) {
-      await session.construct(text, undefined, finalOpts);
+      await session.construct(resolvedText, undefined, finalOpts);
       // Update badge from session queue length
       try { setBatchCount(session.getQueuedCount()); } catch {}
       flashSuccess();
       return;
     }
 
-    await session.send(text, undefined, finalOpts);
+    await session.send(resolvedText, undefined, finalOpts);
     flashSuccess();
   }
 

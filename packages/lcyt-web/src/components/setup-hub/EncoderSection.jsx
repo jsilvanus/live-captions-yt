@@ -8,6 +8,7 @@ import { EncodersManager } from '../ProductionEncodersPage.jsx';
 export function EncoderSection() {
   return (
     <SetupCard
+      id="encoders"
       icon="🎛️"
       title="Encoders"
       description="Hardware/software encoder management for outbound streams."

@@ -1,8 +1,8 @@
 ---
 id: plan/team_org_backend
 title: "Team/Org Data Model — Backend Design"
-status: draft
-summary: "Design for a real multi-project Team/Org data model (organizations, org_members, api_keys.org_id) to replace the /team 'Coming soon' placeholder. Resolves the org-vs-project access precedence question with a baseline-plus-override model. Not yet scheduled — largest single backend item in the current gap analysis."
+status: in-progress
+summary: "Design for a real multi-project Team/Org data model (organizations, org_members, api_keys.org_id) to replace the /team 'Coming soon' placeholder. Resolves the org-vs-project access precedence question with a baseline-plus-override model. Schema implemented (`organizations`, `org_members`, `api_keys.org_id`) as the foundation for `plan_site_feature_policies.md`'s org-level feature overrides; org CRUD/membership routes, general org-vs-project access-precedence resolution (beyond the feature-policy-specific resolver in the sibling plan), and the `/team` frontend page itself remain unimplemented."
 ---
 
 # Team/Org Data Model — Backend Design

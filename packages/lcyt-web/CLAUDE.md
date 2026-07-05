@@ -10,9 +10,9 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 - `App.jsx` — legacy two-panel caption layout (mounted at `/legacy` and `/captions`)
 - `components/` — React JSX components (see routing table below). Key subdirectories: `sidebar/` (Sidebar, TopBar, StatusPopover, QuickActionsPopover), `dashboard/` (DashboardCard, StatusWidget, SentLogWidget, etc.), `broadcast/` (EncoderTab, StreamTab, YouTubeTab), `dsk-editor/` (TemplatePreview, AnimationEditor, LayerPropertyEditor), `dsk-viewports/` (TextLayersEditor, ImageSettingsTable), `panels/` (TargetsPanel, TranslationPanel, RelayPanel, ServicePanel, DetailsPanel, CeaCaptionsPanel, EmbedPanel, SttPanel, VadPanel, ReviewSummary), `production/` (ConnectionDot), `audio/` (AudioLevelMeter)
 - `contexts/` — React context providers: AppProviders, AudioContext, CaptionContext, ConnectionContext, FileContext, LangContext, SentLogContext, SessionApiContext, SessionContext, ToastContext. Notably: `ConnectionContext` (connection state, health, connect/disconnect), `CaptionContext` (send, sendBatch, sequence, syncOffset), `AudioContext` (audio/STT state and controls), `LangContext` (i18n language provider).
-- `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useWebSpeech, useWindowEvent. Notably: `useSession` (`BackendCaptionSender` session lifecycle hook; `onConnected` payload includes `token`), `useDashboardConfig` (dashboard panel/layout CRUD, localStorage persistence), `useWebSpeech` (WebSpeech recognition state machine: start, stop, error recovery), `useProjectFeatures` (project feature flag hook), `useUserAuth` (user authentication hook).
+- `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useVariables, useWebSpeech, useWindowEvent. Notably: `useSession` (`BackendCaptionSender` session lifecycle hook; `onConnected` payload includes `token`), `useDashboardConfig` (dashboard panel/layout CRUD, localStorage persistence), `useWebSpeech` (WebSpeech recognition state machine: start, stop, error recovery), `useProjectFeatures` (project feature flag hook), `useUserAuth` (user authentication hook), `useVariables` (`{{ }}` variable snapshot: `GET /variables` + `GET /variables/events` SSE + `POST /variables/refresh`, from `lcyt-connectors`).
 - `lib/` — Utilities: activeCodes.js, api.js, device.js, dskEditorAnimation.js, dskEditorGeometry.js, dskEditorPresets.js, fileUtils.js, formatting.js, googleCredential.js, i18n.js, inputLang.js, normalizeLines.js, plannerUtils.js, relayConfig.js, settings.js, settingsIO.js, storageKeys.js, sttConfig.js, targetConfig.js, translate.js, translationConfig.js, viewerUtils.js, youtubeApi.js, youtubeAuth.js. Notably: `storageKeys.js` (normalized localStorage key registry, `lcyt.{category}.{key}` convention), `settingsIO.js` (settings export/import: `downloadSettings`, `importSettings`), `i18n.js` (i18n framework: locale loading, `useLang` hook).
-- `lib/metacode-*` — Metacode helpers: metacode-parser.js, metacode-active.js, metacode-planner.js, metacode-runtime.js (frontend metacode logic; `fileUtils.js`, `activeCodes.js`, and `plannerUtils.js` keep compatibility re-exports)
+- `lib/metacode-*` — Metacode helpers: metacode-parser.js, metacode-active.js, metacode-planner.js, metacode-runtime.js, metacode-variables.js (frontend metacode logic; `fileUtils.js`, `activeCodes.js`, and `plannerUtils.js` keep compatibility re-exports). `metacode-parser.js` also parses the `!api:`/`api:`/`api!:` connector-trigger metacodes into `lineCodes[i].apiTriggers`; `metacode-variables.js` provides `interpolateVariables()` for client-side `{{name}}` insertion. See `packages/plugins/lcyt-connectors/CLAUDE.md`.
 - `locales/` — i18n translation files: en.js, fi.js, sv.js
 - `styles/` — reset.css, layout.css, components.css, dashboard.css
 
@@ -37,7 +37,9 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/planner` | `PlannerPage` | Event/service planner |
 | `/translations` | `TranslationsPage` | Translation management |
 | `/projects` | `ProjectsPage` | User project (API key) management |
-| `/setup` | `SetupWizardPage` | Guided setup wizard |
+| `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable |
+| `/setup/wizard` | `SetupWizardPage` | Guided one-time setup wizard (superseded by the hub as the default `/setup` destination, still reachable) |
+| `/setup/:card` | `SetupHubPage` | Deep link — same page as `/setup`, with the card whose `id` matches `:card` (e.g. `connectors`, `cameras`, `stt`, `storage`) pre-expanded and scrolled into view |
 | `/account` | `AccountPage` | Login/register or user profile |
 | `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
 | `/ai` | `AiSettingsPage` | AI/embedding provider config (feature-gated: `ai`) |
@@ -124,10 +126,10 @@ Embed pages that own a session (`/embed/audio`, `/embed/input`, `/embed/file-dro
 ## Test Coverage
 
 **Test commands:**
-- `npm test -w packages/lcyt-web` → `node --test test/*.test.js` — pure utility functions (59 tests)
-- `npm run test:components -w packages/lcyt-web` → `vitest run` — React hooks/components (75 tests via jsdom)
+- `npm test -w packages/lcyt-web` → `node --test test/*.test.js` — pure utility functions (325 tests)
+- `npm run test:components -w packages/lcyt-web` → `vitest run` — React hooks/components (336 tests via jsdom)
 
-**Test files (node:test):** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js` (~30 tests), `test/fileUtils.test.js` (27 tests, added 2026-03-16), `test/i18n.test.js` (11 tests, added 2026-03-16).
+**Test files (node:test):** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js`, `test/fileUtils.test.js` (includes `describe('parseFileContent() — API connector triggers')`, added alongside `lcyt-connectors`), `test/i18n.test.js`, `test/metacode-variables.test.js` (added alongside `lcyt-connectors` — `interpolateVariables()`).
 **Test files (Vitest):** `test/components/useSession.test.jsx` (25 tests), `test/components/useFileStore.test.jsx` (35 tests), `test/components/AppProviders.test.jsx` (15 tests) — all added 2026-03-16.
 
 **Vitest setup (added 2026-03-16):**

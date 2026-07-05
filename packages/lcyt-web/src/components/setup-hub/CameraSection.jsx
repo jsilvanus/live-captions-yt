@@ -9,6 +9,7 @@ import { CamerasManager } from '../ProductionCamerasPage.jsx';
 export function CameraSection() {
   return (
     <SetupCard
+      id="cameras"
       icon="📷"
       title="Cameras"
       description="PTZ camera control: AMX, VISCA-IP, or browser-based cameras."

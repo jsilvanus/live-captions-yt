@@ -29,3 +29,33 @@ export function createAuthMiddleware(jwtSecret) {
     }
   };
 }
+
+/**
+ * Extract a bearer token from either the Authorization header or a `?token=`
+ * query param — for SSE endpoints, since EventSource can't set custom headers.
+ * @param {import('express').Request} req
+ * @returns {string|null}
+ */
+export function extractSseToken(req) {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.slice(7);
+  return req.query.token || null;
+}
+
+/**
+ * Verify a session JWT and return its decoded payload, or null if missing/
+ * invalid/expired. Real signature verification — not a raw base64 decode of
+ * the payload segment, which would let anyone forge a token claiming any
+ * apiKey/sessionId.
+ * @param {string|null} token
+ * @param {string} jwtSecret
+ * @returns {object|null}
+ */
+export function verifySessionToken(token, jwtSecret) {
+  if (!token) return null;
+  try {
+    return jwt.verify(token, jwtSecret);
+  } catch {
+    return null;
+  }
+}

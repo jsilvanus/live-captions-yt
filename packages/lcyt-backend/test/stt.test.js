@@ -65,7 +65,7 @@ before(() => new Promise((resolve) => {
   app.use(express.json());
 
   const auth = createAuthMiddleware(JWT_SECRET);
-  app.use('/stt', createSttRouter(auth, sttManager, db));
+  app.use('/stt', createSttRouter(auth, sttManager, db, JWT_SECRET));
 
   // Sign a session JWT so we can use auth-protected endpoints
   token = jwt.sign({ sessionId: 'test-session-id', apiKey: API_KEY }, JWT_SECRET);
@@ -251,6 +251,20 @@ describe('/stt routes', () => {
 
     it('returns 401 for missing token', async () => {
       const res = await fetch(`${baseUrl}/stt/events`);
+      assert.equal(res.status, 401);
+    });
+
+    it('rejects a forged token (valid JWT shape, wrong signature)', async () => {
+      const forged = jwt.sign({ apiKey: API_KEY }, 'wrong-secret');
+      const res = await fetch(`${baseUrl}/stt/events?token=${encodeURIComponent(forged)}`);
+      assert.equal(res.status, 401);
+    });
+
+    it('rejects a hand-crafted unsigned "token" (base64-decodable but not a real JWT)', async () => {
+      const fakeHeader = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+      const fakePayload = Buffer.from(JSON.stringify({ apiKey: API_KEY })).toString('base64url');
+      const forged = `${fakeHeader}.${fakePayload}.`;
+      const res = await fetch(`${baseUrl}/stt/events?token=${encodeURIComponent(forged)}`);
       assert.equal(res.status, 401);
     });
   });
