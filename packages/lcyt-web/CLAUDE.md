@@ -41,7 +41,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/account` | `AccountPage` | Login/register or user profile |
 | `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
 | `/ai` | `AiSettingsPage` | AI/embedding provider config (feature-gated: `ai`) |
-| `/connectors` | `ConnectorsPage` | API Connector/Request/response-mapping CRUD + manual variable management (`lcyt-connectors`), reached from Setup Hub's "API connectors" card |
+| `/setup/connectors` | `SetupHubPage` | Deep link — same page as `/setup`, with the "API connectors" card pre-expanded and scrolled into view (`ConnectorsSection`, see below) |
 | `/admin/users` | `AdminUsersPage` | User list, search, batch actions (feature-gated: `admin`) |
 | `/admin/users/:id` | `AdminUserDetailPage` | User detail, projects, password reset (feature-gated: `admin`) |
 | `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |

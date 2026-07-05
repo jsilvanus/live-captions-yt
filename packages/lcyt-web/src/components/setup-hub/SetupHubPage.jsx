@@ -1,4 +1,4 @@
-import { Link } from 'wouter';
+import { Link, useRoute } from 'wouter';
 import { SetupCard } from './SetupCard.jsx';
 import { CameraSection } from './CameraSection.jsx';
 import { MixerSection } from './MixerSection.jsx';
@@ -16,8 +16,15 @@ import { ConnectorsSection } from './ConnectorsSection.jsx';
  *
  * See docs/plans/plan_dashboard_console_redesign.md for the full gap matrix
  * behind each card's status.
+ *
+ * Deep links: `/setup/:card` (e.g. `/setup/connectors`) renders this same
+ * page with that card pre-expanded and scrolled into view, so other pages
+ * can link straight to a specific card's settings without duplicating its
+ * UI on a standalone route.
  */
 export function SetupHubPage() {
+  const [matchConnectors] = useRoute('/setup/connectors');
+
   return (
     <div className="setup-hub-page">
       <div className="setup-hub-page__header">
@@ -107,7 +114,7 @@ export function SetupHubPage() {
       <div className="setup-hub-page__section-title">AI &amp; integrations</div>
       <div className="setup-hub-page__grid">
         <AiModelsSection />
-        <ConnectorsSection />
+        <ConnectorsSection autoExpand={matchConnectors} />
         <SetupCard
           icon="🧩"
           title="Workflows"
