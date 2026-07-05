@@ -198,6 +198,14 @@ POST /agent/context       — add a context entry manually (Bearer token)
 DELETE /agent/context     — clear context window (Bearer token)
 GET  /agent/events        — recent agent events (Bearer token)
 
+GET/POST/PUT/DELETE /connectors                              — API Connector CRUD, auth_config masked (Bearer token)
+GET/POST/PUT/DELETE /connectors/:connectorSlug/requests       — nested Request CRUD (Bearer token)
+GET/POST/PUT/DELETE /connectors/:connectorSlug/requests/:requestSlug/mappings — response mapping CRUD (Bearer token)
+GET    /variables         — { [name]: { value, source, defaultValue, resolvedAt } } snapshot (Bearer token)
+GET    /variables/events  — SSE: variable_updated (Bearer token or ?token=)
+POST/PUT/DELETE /variables[/:name] — manual variable CRUD (Bearer token)
+POST   /variables/refresh — fire a connector request; { connectorSlug, requestSlug, waitMs? } (Bearer token)
+
 GET    /admin/users                  — list users with search (X-Admin-Key)
 GET    /admin/users/:id              — user detail with projects (X-Admin-Key)
 POST   /admin/users                  — create user (X-Admin-Key)
@@ -212,10 +220,15 @@ PATCH  /admin/projects/:key          — update project (X-Admin-Key)
 PUT    /admin/projects/:key/features — batch update features (X-Admin-Key)
 POST   /admin/batch/users            — batch user operations (X-Admin-Key)
 POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
+GET    /admin/feature-policies                    — list tri-state site feature policies (available/self_service/denied) (X-Admin-Key)
+PUT    /admin/feature-policies/:code              — set a site-wide feature policy mode (X-Admin-Key)
+GET    /admin/orgs/:id/feature-overrides           — list an org's per-feature policy overrides (X-Admin-Key)
+PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override; { mode: null } clears it (X-Admin-Key)
 ```
 
 **Key internals:**
-- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK), `caption_usage`, `session_stats`, `caption_errors`, `sessions`. Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
+- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK), `caption_usage`, `session_stats`, `caption_errors`, `sessions`. Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
+- `src/db/schema.js` — also defines `organizations` and `org_members` (schema-only so far, from `plan_team_org_backend.md` — no org CRUD/membership routes yet, `/team` is still a "Coming soon" placeholder) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter()`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`.
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
@@ -225,6 +238,7 @@ POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
 - The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
 - The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, and LLM-based event cue evaluation. Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings } from 'lcyt-agent'`.
 - `src/ai/index.js` — Backward-compatible re-exports from `lcyt-agent` so existing imports from `lcyt-backend/src/ai/` continue to work.
+- API Connectors & Variables (`lcyt-connectors`) owns the `{{ }}` variable system and outbound API connector CRUD/resolution engine. Imported via `import { initConnectors, createConnectorsRouter, createVariablesRouter } from 'lcyt-connectors'`; `initConnectors(db, { filesControl: { resolveStorage } })` runs its own migrations and returns `{ bus, engine }`.
 - `src/middleware/user-auth.js` — JWT Bearer verification for user tokens (`{ type: 'user', userId, email }`).
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.

@@ -58,6 +58,7 @@ import {
   initAgent, createAgentRouter, createAiRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
+import { initConnectors, createConnectorsRouter, createVariablesRouter } from 'lcyt-connectors';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -212,6 +213,13 @@ createSoundCueListener({ store, engine: _cueEngine });
 // context window management, and future vision/LLM features.
 // Also runs AI config DB migrations (ai_config table).
 const { agent: _agent } = await initAgent(db);
+
+// API Connectors & Variables plugin — {{ }} variable bindings backed by
+// user-defined outbound API connectors. Runs its own DB migrations
+// (api_connectors, api_requests, api_response_mappings, variables tables).
+const { bus: _connectorsBus, engine: _connectorsEngine } = initConnectors(db, {
+  filesControl: { resolveStorage },
+});
 
 // Wire the agent's embedding capabilities into the CueEngine for
 // fuzzy semantic matching via cue[semantic]:phrase metacodes.
@@ -405,6 +413,8 @@ app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsMa
 app.use('/cues', createCueRouter(db, auth, _cueEngine));
 app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));
+app.use('/connectors', createConnectorsRouter(db, auth));
+app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

@@ -32,7 +32,8 @@
     "lcyt-rtmp": "*",
     "lcyt-music": "*",
     "lcyt-cues": "*",
-    "lcyt-agent": "*"
+    "lcyt-agent": "*",
+    "lcyt-connectors": "*"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "",

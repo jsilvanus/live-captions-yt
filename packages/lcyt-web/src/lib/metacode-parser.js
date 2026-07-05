@@ -24,6 +24,15 @@ const EMPTY_SEND_RE = /^_(?:\s+(.+))?$/;
 // Supports bracket modifier: cue[semantic]: (embedding-based), cue[events]: (AI event)
 const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)(\[(?:semantic|events)\])?\s*:\s*([\s\S]*?)\s*-->/gi;
 
+// API Connector trigger metacodes — three tiers (see docs/plans/plan_api_connectors_variables.md §1.2):
+//   <!-- !api:slug.slug -->   pointer tier  (fires on pointer arrival, fire-and-forget)
+//   <!-- api:slug.slug -->    send tier     (fires at send, async, non-blocking)
+//   <!-- api!:slug.slug -->   prefetch tier (background refresh while pointer is on the line,
+//                                            small blocking fallback at send)
+// Multiple triggers on one line are comma-separated, e.g. <!-- api!:weather.current,login.token -->.
+// A dedicated regex is used (like cue) so a plain "api:" key isn't also picked up by MULTI_META_RE.
+const API_TRIGGER_RE = /<!--\s*(!)?api(!)?\s*:\s*([\s\S]*?)\s*-->/gi;
+
 /**
  * Strip ALL HTML comment metacodes from a raw line and return the remaining
  * text content.  A generic pass that removes every `<!-- ... -->` block.
@@ -68,7 +77,23 @@ export function parseFileContent(rawText) {
       }
       return '';
     }).trim();
-    const lineRaw = cuePhrase != null ? afterCueStrip : raw;
+    // --- Extract API connector triggers (dedicated regex, one-shot per line) ---
+    API_TRIGGER_RE.lastIndex = 0;
+    let apiTriggers = null;
+    const afterApiStrip = afterCueStrip.replace(API_TRIGGER_RE, (_, pointerMark, prefetchMark, val) => {
+      const tier = pointerMark === '!' ? 'pointer' : prefetchMark === '!' ? 'prefetch' : 'send';
+      const entries = val.split(',').map((s) => s.trim()).filter(Boolean);
+      for (const entry of entries) {
+        const dot = entry.indexOf('.');
+        if (dot <= 0 || dot === entry.length - 1) continue;
+        const connectorSlug = entry.slice(0, dot);
+        const requestSlug = entry.slice(dot + 1);
+        if (!apiTriggers) apiTriggers = [];
+        apiTriggers.push({ connectorSlug, requestSlug, tier });
+      }
+      return '';
+    }).trim();
+    const lineRaw = (cuePhrase != null || apiTriggers != null) ? afterApiStrip : raw;
 
     if (STANZA_OPEN_RE.test(lineRaw)) {
       const stanzaLines = [];
@@ -92,6 +117,7 @@ export function parseFileContent(rawText) {
       const label = emptySendMatch[1]?.trim() || null;
       const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
       if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; }
+      if (apiTriggers) codes.apiTriggers = apiTriggers;
       lines.push('');
       lineCodes.push(codes);
       lineNumbers.push(i + 1);
@@ -110,7 +136,7 @@ export function parseFileContent(rawText) {
     for (const m of lineRaw.matchAll(MULTI_META_RE)) {
       const key = m[1].toLowerCase();
       const value = m[2].trim();
-      if (key === 'cue') continue; // already handled above
+      if (key === 'cue' || key === 'api') continue; // already handled above
       if (key === 'audio' && (value === 'start' || value === 'stop')) {
         audioAction = value;
       } else if (key === 'timer') {
@@ -145,9 +171,10 @@ export function parseFileContent(rawText) {
     if (fileSwitchAction !== null) codes.fileSwitch = fileSwitchAction;
     if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
     if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; }
+    if (apiTriggers) codes.apiTriggers = apiTriggers;
 
     // Did the line contain any metacode markers that were stripped?
-    const hadMetacodes = contentText !== lineRaw || cuePhrase != null;
+    const hadMetacodes = contentText !== lineRaw || cuePhrase != null || apiTriggers != null;
 
     // Always emit the line — content lines, metadata-only lines, and lines
     // whose comments were stripped all produce entries in the output.

@@ -1,0 +1,23 @@
+{
+  "name": "lcyt-connectors",
+  "version": "0.1.0",
+  "description": "API Connectors & Variables plugin for LCYT — project-scoped {{ }} variable bindings backed by user-defined outbound API connectors",
+  "type": "module",
+  "main": "src/api.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.21"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-connectors"
+  }
+}
