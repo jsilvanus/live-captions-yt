@@ -62,6 +62,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 |---|---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
 | [plan_team_org_backend.md](plans/plan_team_org_backend.md) | Team/Org Data Model — Backend Design | Design for a real multi-project Team/Org data model (`organizations`, `org_members`, `api_keys.org_id`) to replace the `/team` "Coming soon" placeholder; resolves org-vs-project access precedence with a baseline-plus-override resolver. Includes prioritized appendix of other known backend gaps. | |
+| [plan_selfservice_config_backend.md](plans/plan_selfservice_config_backend.md) | Self-Service Config Backend: Caption Targets/Translation, Ingestion, and Web Radio | Design for promoting three client-only/admin-only config surfaces to server-persisted entities with real CRUD: `caption_targets`/`translation_vendor_config`/`translation_targets` tables (replacing localStorage) with an explicit `POST /live` override-vs-saved-default resolution; `api_keys.ingest_stream_key` for rotatable RTMP ingestion credentials decoupled from the api_key; `radio_config` table for Web Radio metadata (title/description/cover/autoplay). | |
 
 ### Reference
 
