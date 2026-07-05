@@ -214,6 +214,98 @@ describe('GET /auth/me', () => {
 });
 
 // ---------------------------------------------------------------------------
+// PATCH /auth/me
+// ---------------------------------------------------------------------------
+
+describe('PATCH /auth/me', () => {
+  let userToken;
+
+  before(async () => {
+    const { body } = await register('patch-me-test@example.com', 'password123', 'Original Name');
+    userToken = body.token;
+  });
+
+  it('returns 401 without token', async () => {
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Name' }),
+    });
+    assert.equal(res.status, 401);
+  });
+
+  it('returns 400 when name is missing', async () => {
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({}),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.ok(body.error);
+  });
+
+  it('returns 400 when name is not a string', async () => {
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ name: 12345 }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.ok(body.error);
+  });
+
+  it('returns 400 when name is empty after trimming', async () => {
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ name: '   ' }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.ok(body.error);
+  });
+
+  it('updates the name successfully and returns the /auth/me response shape', async () => {
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ name: '  Updated Name  ' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.name, 'Updated Name', 'name should be trimmed');
+    assert.equal(body.email, 'patch-me-test@example.com');
+    assert.ok(body.userId);
+    assert.ok(body.createdAt);
+    assert.equal(typeof body.isAdmin, 'boolean');
+    assert.equal(body.password_hash, undefined, 'must not expose password hash');
+  });
+
+  it('GET /auth/me reflects the updated name afterward', async () => {
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.name, 'Updated Name');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // POST /auth/change-password
 // ---------------------------------------------------------------------------
 
