@@ -4,6 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { adminFetch } from '../lib/admin.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
+import { AdminTabShell } from './AdminTabShell.jsx';
 
 // ── Admin Users Page ────────────────────────────────────────────────────────
 
@@ -15,7 +16,9 @@ export function AdminUsersPage() {
 
   return (
     <AdminKeyGate backendUrl={backendUrl} userIsAdmin={!!user?.isAdmin}>
-      <AdminUsersContent backendUrl={backendUrl} navigate={navigate} />
+      <AdminTabShell active="users">
+        <AdminUsersContent backendUrl={backendUrl} navigate={navigate} />
+      </AdminTabShell>
     </AdminKeyGate>
   );
 }

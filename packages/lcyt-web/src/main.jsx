@@ -63,6 +63,8 @@ const AdminUserDetailPage    = lazyImport(() => import('./components/AdminUserDe
 const AdminProjectsPage      = lazyImport(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
 const AdminProjectDetailPage = lazyImport(() => import('./components/AdminProjectDetailPage').then(m => ({ default: m.AdminProjectDetailPage })));
 const AdminAuditLogPage      = lazyImport(() => import('./components/AdminAuditLogPage').then(m => ({ default: m.AdminAuditLogPage })));
+const AdminSiteFeaturesPage  = lazyImport(() => import('./components/AdminSiteFeaturesPage').then(m => ({ default: m.AdminSiteFeaturesPage })));
+const AdminTeamsPage         = lazyImport(() => import('./components/AdminTeamsPage').then(m => ({ default: m.AdminTeamsPage })));
 
 // Standalone / path-gated pages
 const SpeechCapturePage      = lazyImport(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
@@ -204,6 +206,8 @@ function SidebarApp() {
             <Route path="/admin/projects/:key" component={AdminProjectDetailPage} />
             <Route path="/admin/projects" component={AdminProjectsPage} />
             <Route path="/admin/audit-log" component={AdminAuditLogPage} />
+            <Route path="/admin/site-features" component={AdminSiteFeaturesPage} />
+            <Route path="/admin/teams" component={AdminTeamsPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/projects/:key" component={ProjectSettingsPage} />
             <Route path="/assets" component={AssetsPage} />

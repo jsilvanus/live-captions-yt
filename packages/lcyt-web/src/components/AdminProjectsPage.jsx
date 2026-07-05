@@ -4,6 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { adminFetch } from '../lib/admin.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
+import { AdminTabShell } from './AdminTabShell.jsx';
 
 // ── Admin Projects Page ─────────────────────────────────────────────────────
 
@@ -15,7 +16,9 @@ export function AdminProjectsPage() {
 
   return (
     <AdminKeyGate backendUrl={backendUrl} userIsAdmin={!!user?.isAdmin}>
-      <AdminProjectsContent backendUrl={backendUrl} navigate={navigate} />
+      <AdminTabShell active="projects">
+        <AdminProjectsContent backendUrl={backendUrl} navigate={navigate} />
+      </AdminTabShell>
     </AdminKeyGate>
   );
 }

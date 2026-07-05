@@ -12,6 +12,8 @@ export const KEYS = {
   },
   ui: {
     theme: 'lcyt.ui.theme',
+    editorTheme: 'lcyt.ui.editorTheme',
+    plannerTheme: 'lcyt.ui.plannerTheme',
     textSize: 'lcyt.ui.textSize',
     sentPanelWidth: 'lcyt.ui.sentPanelWidth',
     sentPanelWrap: 'lcyt.ui.sentPanelWrap',

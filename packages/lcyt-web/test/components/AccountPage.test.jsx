@@ -272,3 +272,54 @@ describe('AccountPage — change password', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Appearance (theme pickers)
+// ---------------------------------------------------------------------------
+
+describe('AccountPage — appearance', () => {
+  it('renders General / Editor / Planner theme selects', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    expect(screen.getByLabelText(/general theme/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/graphics editor theme/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/planner theme/i)).toBeInTheDocument();
+  });
+
+  it('persists the editor theme to its own storage key without touching the general theme', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    fireEvent.change(screen.getByLabelText(/graphics editor theme/i), { target: { value: 'dark' } });
+    expect(localStorage.getItem('lcyt.ui.editorTheme')).toBe('dark');
+    expect(localStorage.getItem('lcyt.ui.theme')).not.toBe('dark');
+  });
+
+  it('applies the general theme immediately via the data-theme attribute', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    fireEvent.change(screen.getByLabelText(/general theme/i), { target: { value: 'dark' } });
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(localStorage.getItem('lcyt.ui.theme')).toBe('dark');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Danger zone (disabled stubs — no backend endpoints exist yet)
+// ---------------------------------------------------------------------------
+
+describe('AccountPage — danger zone', () => {
+  it('shows disabled Export/Remove/Delete actions labeled "Coming soon"', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    expect(screen.getByRole('button', { name: /export my data/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /remove my data/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /delete account/i })).toBeDisabled();
+    expect(screen.getAllByText('Coming soon').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('shows a disabled "Edit name" action in the Profile section', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    expect(screen.getByRole('button', { name: /edit name/i })).toBeDisabled();
+  });
+});

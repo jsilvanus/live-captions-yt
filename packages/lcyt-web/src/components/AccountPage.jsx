@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'wouter';
 import { useUserAuth } from '../hooks/useUserAuth';
+import { KEYS } from '../lib/storageKeys.js';
+import { applyTheme } from '../lib/settings.js';
 
 // ─── Anonymous state ──────────────────────────────────────────────────────────
 
@@ -112,6 +114,108 @@ function ChangePasswordForm({ changePassword }) {
   );
 }
 
+// ─── Appearance (theme pickers) ───────────────────────────────────────────────
+
+const THEME_OPTIONS = [
+  { value: 'auto',  label: 'Auto (system)' },
+  { value: 'dark',  label: 'Dark' },
+  { value: 'light', label: 'Light' },
+];
+
+function getStoredTheme(key, fallback = 'auto') {
+  try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
+}
+
+/**
+ * AppearancePanel — General/Editor/Planner theme pickers. General is wired
+ * to the same global `applyTheme()` mechanism used elsewhere in the app (it
+ * takes effect immediately, everywhere). Editor and Planner are per-page
+ * overrides (see usePageThemeOverride) that only apply while you're on the
+ * Graphics → Editor / Planner page respectively — client-only, no backend.
+ */
+function AppearancePanel() {
+  const [general, setGeneral] = useState(() => getStoredTheme(KEYS.ui.theme));
+  const [editor, setEditor]   = useState(() => getStoredTheme(KEYS.ui.editorTheme));
+  const [planner, setPlanner] = useState(() => getStoredTheme(KEYS.ui.plannerTheme));
+
+  function handleGeneralChange(value) {
+    setGeneral(value);
+    applyTheme(value);
+  }
+
+  function handlePageThemeChange(key, value, setter) {
+    setter(value);
+    try { localStorage.setItem(key, value); } catch { /* ignore */ }
+  }
+
+  return (
+    <div className="account-page__section">
+      <h3 className="account-page__section-title">Appearance</h3>
+      <div className="settings-field">
+        <label className="settings-field__label" htmlFor="acct-theme-general">General theme</label>
+        <select
+          id="acct-theme-general"
+          className="settings-field__input"
+          value={general}
+          onChange={e => handleGeneralChange(e.target.value)}
+        >
+          {THEME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      </div>
+      <div className="settings-field">
+        <label className="settings-field__label" htmlFor="acct-theme-editor">Graphics editor theme</label>
+        <select
+          id="acct-theme-editor"
+          className="settings-field__input"
+          value={editor}
+          onChange={e => handlePageThemeChange(KEYS.ui.editorTheme, e.target.value, setEditor)}
+        >
+          {THEME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <p className="account-page__section-desc">Applies only while you're on the Graphics → Editor page.</p>
+      </div>
+      <div className="settings-field">
+        <label className="settings-field__label" htmlFor="acct-theme-planner">Planner theme</label>
+        <select
+          id="acct-theme-planner"
+          className="settings-field__input"
+          value={planner}
+          onChange={e => handlePageThemeChange(KEYS.ui.plannerTheme, e.target.value, setPlanner)}
+        >
+          {THEME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <p className="account-page__section-desc">Applies only while you're on the Planner page.</p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Danger zone (stub — no backend endpoints exist yet) ─────────────────────
+
+function DangerZonePanel() {
+  return (
+    <div className="account-page__section">
+      <h3 className="account-page__section-title">Danger zone</h3>
+      <p className="account-page__section-desc">
+        These actions require backend endpoints that don't exist yet — shown
+        here so the plan is visible, not hidden.
+      </p>
+      <div className="account-page__row-disabled">
+        <button className="btn btn--ghost" disabled title="Coming soon">Export my data</button>
+        <span className="account-page__soon-badge">Coming soon</span>
+      </div>
+      <div className="account-page__row-disabled">
+        <button className="btn btn--ghost" disabled title="Coming soon">Remove my data</button>
+        <span className="account-page__soon-badge">Coming soon</span>
+      </div>
+      <div className="account-page__row-disabled">
+        <button className="btn btn--danger" disabled title="Coming soon">Delete account</button>
+        <span className="account-page__soon-badge">Coming soon</span>
+      </div>
+    </div>
+  );
+}
+
 // ─── Logged-in profile view ───────────────────────────────────────────────────
 
 function ProfilePanel({ user, backendUrl, logout, changePassword }) {
@@ -136,6 +240,10 @@ function ProfilePanel({ user, backendUrl, logout, changePassword }) {
             <span className="account-page__info-value account-page__info-value--muted">{backendUrl}</span>
           </div>
         )}
+        <div className="account-page__row-disabled">
+          <button className="btn btn--ghost btn--sm" disabled title="Coming soon">Edit name</button>
+          <span className="account-page__soon-badge">Coming soon</span>
+        </div>
       </div>
 
       {/* Projects quick link */}
@@ -149,8 +257,14 @@ function ProfilePanel({ user, backendUrl, logout, changePassword }) {
         </Link>
       </div>
 
+      {/* Appearance */}
+      <AppearancePanel />
+
       {/* Change password */}
       <ChangePasswordForm changePassword={changePassword} />
+
+      {/* Danger zone */}
+      <DangerZonePanel />
 
       {/* Sign out */}
       <div className="account-page__section">
