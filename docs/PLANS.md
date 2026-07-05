@@ -20,6 +20,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary | Superseded by |
 |---|---|---|---|
+| [plan_dashboard_console_redesign.md](plans/plan_dashboard_console_redesign.md) | Dashboard / Console Redesign | Restructures lcyt-web IA: Broadcast becomes the operate surface (Live widget grid + Settings config tabs), root route `/` becomes a contextual project summary, `/setup` becomes a persistent device/service catalog (`SetupHubPage`), plus new `/team` and `/assets` pages and extended Account/Admin. Frontend-only, zero backend changes; gaps shown as disabled "Coming soon" UI. | |
 | [plan_sync.md](plans/plan_sync.md) | YouTube Heartbeat Sync (syncOffset) | NTP-style clock synchronization for `YoutubeLiveCaptionSender` using YouTube's heartbeat server timestamp. | |
 | [plan_backend.md](plans/plan_backend.md) | lcyt-backend Express Relay Backend | CORS relay backend for YouTube Live caption ingestion: JWT auth, SQLite key management, multi-user sessions, admin CLI. | |
 | [plan_client.md](plans/plan_client.md) | Web GUI Client (lcyt-web) | Browser-based React SPA connecting to lcyt-backend: file management, session lifecycle, STT integration, embed widgets. | |

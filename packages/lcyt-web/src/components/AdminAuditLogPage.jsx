@@ -3,6 +3,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { adminFetch } from '../lib/admin.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
+import { AdminTabShell } from './AdminTabShell.jsx';
 
 // ── Admin Audit Log Page ────────────────────────────────────────────────────
 
@@ -13,7 +14,9 @@ export function AdminAuditLogPage() {
 
   return (
     <AdminKeyGate backendUrl={backendUrl} userIsAdmin={!!user?.isAdmin}>
-      <AdminAuditLogContent backendUrl={backendUrl} />
+      <AdminTabShell active="audit-log">
+        <AdminAuditLogContent backendUrl={backendUrl} />
+      </AdminTabShell>
     </AdminKeyGate>
   );
 }

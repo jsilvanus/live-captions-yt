@@ -2,19 +2,54 @@ import { useState } from 'react';
 import { Responsive, useContainerWidth } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { useDashboardConfig, WIDGET_REGISTRY } from '../hooks/useDashboardConfig';
-import { DashboardCard } from './dashboard/DashboardCard';
-import { StatusWidget } from './dashboard/StatusWidget';
-import { SentLogWidget } from './dashboard/SentLogWidget';
-import { AudioWidget } from './dashboard/AudioWidget';
-import { InputWidget } from './dashboard/InputWidget';
-import { FileWidget } from './dashboard/FileWidget';
-import { BroadcastWidget } from './dashboard/BroadcastWidget';
-import { ViewerWidget } from './dashboard/ViewerWidget';
-import { ViewportsWidget } from './dashboard/ViewportsWidget';
-import { PanelPicker } from './dashboard/PanelPicker';
+import { useDashboardConfig, WIDGET_REGISTRY } from '../../hooks/useDashboardConfig';
+import { DashboardCard } from '../dashboard/DashboardCard';
+import { StatusWidget } from '../dashboard/StatusWidget';
+import { SentLogWidget } from '../dashboard/SentLogWidget';
+import { AudioWidget } from '../dashboard/AudioWidget';
+import { InputWidget } from '../dashboard/InputWidget';
+import { FileWidget } from '../dashboard/FileWidget';
+import { BroadcastWidget } from '../dashboard/BroadcastWidget';
+import { ViewerWidget } from '../dashboard/ViewerWidget';
+import { ViewportsWidget } from '../dashboard/ViewportsWidget';
+import { PanelPicker } from '../dashboard/PanelPicker';
+import { MetacodeWidget } from '../dashboard/MetacodeWidget';
 
-import { MetacodeWidget } from './dashboard/MetacodeWidget';
+// ─── Standard layout presets — sit on top of the fully-customizable
+//     drag/resize engine (useDashboardConfig). Each preset is just a named
+//     panel set; useDashboardConfig.setPanels() computes default positions
+//     for any panel not already laid out. ────────────────────────────────
+export const BROADCAST_PRESETS = [
+  {
+    id: 'captioner',
+    label: 'Captioner',
+    description: 'Status, quick send, and the sent-caption log — a focused view for captioning.',
+    panels: ['status', 'input', 'sent-log'],
+  },
+  {
+    id: 'full-operate',
+    label: 'Full operate',
+    description: 'Every available widget — status, audio, files, viewer, viewports, metacodes.',
+    panels: WIDGET_REGISTRY.map(w => w.id),
+  },
+];
+
+const ROW_HEIGHT_UNITS = 4;
+const SM_MAX_COLS = 6;
+
+function buildPresetLayouts(panels) {
+  let x = 0, y = 0;
+  const items = [];
+  for (const id of panels) {
+    const def = WIDGET_REGISTRY.find(w => w.id === id);
+    if (!def) continue;
+    const { w, h, minW, minH } = def.defaultLayout;
+    if (x + w > 12) { x = 0; y += ROW_HEIGHT_UNITS; }
+    items.push({ i: id, x, y, w, h, minW, minH });
+    x += w;
+  }
+  return { lg: items, md: items, sm: items.map(item => ({ ...item, w: Math.min(item.w, SM_MAX_COLS), x: 0 })) };
+}
 
 function WidgetContent({ id, size, minimized }) {
   if (id.startsWith('file')) return <FileWidget id={id} size={size} minimized={minimized} />;
@@ -31,7 +66,35 @@ function WidgetContent({ id, size, minimized }) {
   }
 }
 
-export function DashboardPage() {
+function PresetPicker({ panels, onApply }) {
+  return (
+    <div className="db-presets">
+      <span className="db-presets__label">Presets:</span>
+      {BROADCAST_PRESETS.map(preset => {
+        const active = panels.length === preset.panels.length && panels.every(p => preset.panels.includes(p));
+        return (
+          <button
+            key={preset.id}
+            type="button"
+            className={`btn btn--sm ${active ? 'btn--primary' : 'btn--ghost'}`}
+            title={preset.description}
+            onClick={() => onApply(preset)}
+          >
+            {preset.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * LiveTab — the widget-grid operator console. Previously `DashboardPage` at
+ * `/`; now lives as the default tab of `/broadcast`. Same engine
+ * (useDashboardConfig / react-grid-layout / WIDGET_REGISTRY / PanelPicker /
+ * DashboardCard / dashboard/* widgets) as before, plus a thin preset layer.
+ */
+export function LiveTab() {
   const { config, setPanels, updateLayouts, removePanel } = useDashboardConfig();
   const [sizes, setSizes] = useState({});
   const [collapsed, setCollapsed] = useState({});
@@ -42,6 +105,11 @@ export function DashboardPage() {
   function setSize(id, sz) { setSizes(prev => ({ ...prev, [id]: sz })); }
   function toggleCollapsed(id) { setCollapsed(prev => ({ ...prev, [id]: !prev[id] })); }
 
+  function applyPreset(preset) {
+    setPanels(preset.panels);
+    updateLayouts(buildPresetLayouts(preset.panels));
+  }
+
   const panels = config.panels || [];
   const layouts = config.layouts || {};
 
@@ -49,13 +117,14 @@ export function DashboardPage() {
     return (
       <div className="dashboard-page">
         <div className="dashboard-page__header">
-          <h1 className="dashboard-page__title">Dashboard</h1>
+          <h1 className="dashboard-page__title">Live</h1>
+          <PresetPicker panels={panels} onApply={applyPreset} />
           <PanelPicker activePanels={panels} onChange={setPanels} />
         </div>
         <div className="db-empty-state">
           <div className="db-empty-state__icon">📊</div>
-          <div className="db-empty-state__title">Your dashboard is empty</div>
-          <div className="db-empty-state__desc">Add widgets using the button above to monitor your broadcast.</div>
+          <div className="db-empty-state__title">Your broadcast console is empty</div>
+          <div className="db-empty-state__desc">Pick a preset or add widgets using the buttons above to monitor your broadcast.</div>
         </div>
       </div>
     );
@@ -64,7 +133,8 @@ export function DashboardPage() {
   return (
     <div className="dashboard-page">
       <div className="dashboard-page__header">
-        <h1 className="dashboard-page__title">Dashboard</h1>
+        <h1 className="dashboard-page__title">Live</h1>
+        <PresetPicker panels={panels} onApply={applyPreset} />
         <button
           className={`btn btn--sm ${editMode ? 'btn--primary' : 'btn--secondary'} db-edit-btn`}
           onClick={() => setEditMode(v => !v)}

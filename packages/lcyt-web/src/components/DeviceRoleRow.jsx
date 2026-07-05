@@ -1,5 +1,5 @@
 /**
- * DeviceRoleRow — one row in the Device Roles tab of ProjectDetailModal.
+ * DeviceRoleRow — one row in the Device Roles tab of ProjectSettingsPage.
  */
 import { useState } from 'react';
 

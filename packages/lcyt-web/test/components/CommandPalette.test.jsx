@@ -66,8 +66,8 @@ describe('CommandPalette', () => {
 
   it('displays navigation items', () => {
     renderPalette(true);
-    // Dashboard and Settings are always visible (no feature gate)
-    expect(screen.getByText(/Dashboard/)).toBeInTheDocument();
+    // Captions and Settings are always visible (no feature gate)
+    expect(screen.getByText(/Captions/)).toBeInTheDocument();
     expect(screen.getByText(/Settings/)).toBeInTheDocument();
   });
 
@@ -78,7 +78,7 @@ describe('CommandPalette', () => {
     const labels = document.querySelectorAll('.cmd-palette__item-label');
     const texts = Array.from(labels).map(el => el.textContent);
     expect(texts.some(t => /audio/i.test(t))).toBe(true);
-    expect(texts.every(t => !/dashboard/i.test(t))).toBe(true);
+    expect(texts.every(t => !/^captions$/i.test(t))).toBe(true);
   });
 
   it('closes on Escape key', () => {
@@ -137,15 +137,15 @@ describe('CommandPalette', () => {
   it('filters out feature-gated items when feature is absent', () => {
     const session = mockSession({ backendFeatures: ['captions'] });
     renderPalette(true, vi.fn(), session);
-    // 'rtmp' feature gates Broadcast; should not appear
-    expect(screen.queryByText(/Broadcast/)).not.toBeInTheDocument();
+    // 'ai' feature gates the AI settings item; should not appear
+    expect(screen.queryByText(/^AI$/)).not.toBeInTheDocument();
   });
 
   it('shows feature-gated items when feature is present', () => {
-    const session = mockSession({ backendFeatures: ['captions', 'rtmp'] });
+    const session = mockSession({ backendFeatures: ['captions', 'ai'] });
     renderPalette(true, vi.fn(), session);
     const labels = document.querySelectorAll('.cmd-palette__item-label');
     const texts = Array.from(labels).map(el => el.textContent);
-    expect(texts.some(t => /broadcast/i.test(t))).toBe(true);
+    expect(texts.some(t => /^AI$/.test(t))).toBe(true);
   });
 });

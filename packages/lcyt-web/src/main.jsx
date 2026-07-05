@@ -12,6 +12,7 @@ import { AppProviders } from './contexts/AppProviders';
 import { AudioProvider } from './contexts/AudioContext';
 import { SidebarLayout } from './components/SidebarLayout';
 import { AudioPage } from './components/AudioPage';
+import { RootRoute } from './components/RootRoute.jsx';
 
 // --- Lazy-loaded pages (heavy or path-gated) ----------------------------------
 
@@ -37,10 +38,13 @@ function lazyImport(loader) {
 }
 
 // Sidebar routes
-const DashboardPage          = lazyImport(() => import('./components/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const SettingsPage           = lazyImport(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ProjectsPage           = lazyImport(() => import('./components/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const ProjectSettingsPage    = lazyImport(() => import('./components/ProjectSettingsPage').then(m => ({ default: m.ProjectSettingsPage })));
 const SetupWizardPage        = lazyImport(() => import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage })));
+const SetupHubPage           = lazyImport(() => import('./components/setup-hub/SetupHubPage.jsx').then(m => ({ default: m.SetupHubPage })));
+const TeamPage                = lazyImport(() => import('./components/TeamPage').then(m => ({ default: m.TeamPage })));
+const AssetsPage              = lazyImport(() => import('./components/AssetsPage').then(m => ({ default: m.AssetsPage })));
 const AccountPage            = lazyImport(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
 const BroadcastPage          = lazyImport(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
 const DskEditorPage          = lazyImport(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
@@ -59,6 +63,8 @@ const AdminUserDetailPage    = lazyImport(() => import('./components/AdminUserDe
 const AdminProjectsPage      = lazyImport(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
 const AdminProjectDetailPage = lazyImport(() => import('./components/AdminProjectDetailPage').then(m => ({ default: m.AdminProjectDetailPage })));
 const AdminAuditLogPage      = lazyImport(() => import('./components/AdminAuditLogPage').then(m => ({ default: m.AdminAuditLogPage })));
+const AdminSiteFeaturesPage  = lazyImport(() => import('./components/AdminSiteFeaturesPage').then(m => ({ default: m.AdminSiteFeaturesPage })));
+const AdminTeamsPage         = lazyImport(() => import('./components/AdminTeamsPage').then(m => ({ default: m.AdminTeamsPage })));
 
 // Standalone / path-gated pages
 const SpeechCapturePage      = lazyImport(() => import('./components/SpeechCapturePage').then(m => ({ default: m.SpeechCapturePage })));
@@ -179,7 +185,7 @@ function SidebarApp() {
         <SidebarLayout>
           <Suspense fallback={null}>
           <Switch>
-            <Route path="/" component={DashboardPage} />
+            <Route path="/" component={RootRoute} />
             <Route path="/captions">{() => <AppLayout standalone={false} />}</Route>
             <Route path="/audio" component={AudioPage} />
             <Route path="/broadcast" component={BroadcastPage} />
@@ -200,8 +206,14 @@ function SidebarApp() {
             <Route path="/admin/projects/:key" component={AdminProjectDetailPage} />
             <Route path="/admin/projects" component={AdminProjectsPage} />
             <Route path="/admin/audit-log" component={AdminAuditLogPage} />
+            <Route path="/admin/site-features" component={AdminSiteFeaturesPage} />
+            <Route path="/admin/teams" component={AdminTeamsPage} />
             <Route path="/projects" component={ProjectsPage} />
-            <Route path="/setup" component={SetupWizardPage} />
+            <Route path="/projects/:key" component={ProjectSettingsPage} />
+            <Route path="/assets" component={AssetsPage} />
+            <Route path="/team" component={TeamPage} />
+            <Route path="/setup" component={SetupHubPage} />
+            <Route path="/setup/wizard" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
             {/* Legacy URL aliases */}

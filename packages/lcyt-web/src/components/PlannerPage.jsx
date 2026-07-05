@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { useFileContext } from '../contexts/FileContext';
 import { useToastContext } from '../contexts/ToastContext';
+import { usePageThemeOverride } from '../hooks/usePageThemeOverride.js';
+import { KEYS } from '../lib/storageKeys.js';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
 import { SessionContext } from '../contexts/SessionContext';
@@ -520,6 +522,7 @@ function usePlannerResize() {
 }
 
 export function PlannerPage() {
+  usePageThemeOverride(KEYS.ui.plannerTheme);
   const fileStore = useFileContext();
   const { showToast } = useToastContext();
   const { editorWidth, editorRef, startResize } = usePlannerResize();

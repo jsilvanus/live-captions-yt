@@ -1,15 +1,39 @@
-import { BroadcastModal } from './BroadcastModal';
+import { useState } from 'react';
+import { LiveTab } from './broadcast/LiveTab.jsx';
+import { SettingsTab } from './broadcast/SettingsTab.jsx';
+
+const TABS = [
+  { id: 'live',     label: 'Live' },
+  { id: 'settings', label: 'Settings' },
+];
 
 /**
  * BroadcastPage — full-page Broadcast view at /broadcast.
  *
- * Renders the BroadcastModal content inline (no modal chrome, no backdrop).
- * Tabs: Encoder, YouTube, Stream (RTMP relay).
+ * Tab shell: **Live** (default) hosts the widget-grid operator console
+ * (formerly the `/` Dashboard); **Settings** hosts the Encoder/YouTube/Stream
+ * config (formerly `BroadcastModal`).
  */
 export function BroadcastPage() {
+  const [activeTab, setActiveTab] = useState('live');
+
   return (
-    <div className="settings-page">
-      <BroadcastModal inline isOpen />
+    <div className="settings-page broadcast-page">
+      <div className="settings-modal__tabs broadcast-page__tabs">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            className={`settings-tab${activeTab === t.id ? ' settings-tab--active' : ''}`}
+            onClick={() => setActiveTab(t.id)}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div className="broadcast-page__body">
+        {activeTab === 'live'     && <LiveTab />}
+        {activeTab === 'settings' && <SettingsTab />}
+      </div>
     </div>
   );
 }

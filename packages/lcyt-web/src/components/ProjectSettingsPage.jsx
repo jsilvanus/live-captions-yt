@@ -1,8 +1,19 @@
 /**
- * ProjectDetailModal — project management modal with tabs:
- *   Settings | Members | Device Roles | Danger Zone
+ * ProjectSettingsPage — routed project management screen with tabs:
+ *   Summary | Features | Team | Device roles | Danger zone
+ *
+ * This is `ProjectDetailModal.jsx` un-nested into a full page. It's mounted
+ * at two routes:
+ *   - `/` (no :key param) — implicit key from the active session (the
+ *     project summary view for whichever project is currently connected).
+ *   - `/projects/:key` (explicit key) — reached from ProjectsPage's "Manage"
+ *     button, to view/manage *any* of the user's projects, not just the
+ *     active one.
  */
 import { useState, useEffect, useCallback } from 'react';
+import { useRoute, Link } from 'wouter';
+import { useUserAuth } from '../hooks/useUserAuth';
+import { useSessionContext } from '../contexts/SessionContext';
 import { FeaturePicker } from './FeaturePicker';
 import { MemberRow } from './MemberRow';
 import { InviteMemberForm } from './InviteMemberForm';
@@ -10,92 +21,86 @@ import { DeviceRoleRow } from './DeviceRoleRow';
 import { CreateDeviceRoleForm } from './CreateDeviceRoleForm';
 import { useProjectFeatures } from '../hooks/useProjectFeatures';
 
-const TABS = ['Settings', 'Members', 'Device roles', 'Danger zone'];
+const TABS = ['Summary', 'Features', 'Team', 'Device roles', 'Danger zone'];
 
-export function ProjectDetailModal({ project, backendUrl, token, onClose, onDeleted }) {
-  const [tab, setTab] = useState('Settings');
+function maskKey(key) {
+  if (!key || key.length < 8) return key;
+  return key.slice(0, 8) + '••••••••••••••••••••••••••••';
+}
+
+// ── Summary tab ─────────────────────────────────────────────────────────────
+
+function SummaryTab({ project, isActiveSession }) {
+  const [showKey, setShowKey] = useState(false);
 
   return (
-    <div
-      style={{
-        position: 'fixed', inset: 0, zIndex: 1000,
-        background: 'rgba(0,0,0,0.5)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 16,
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose?.(); }}
-    >
-      <div style={{
-        background: 'var(--color-bg)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 10,
-        width: '100%',
-        maxWidth: 680,
-        maxHeight: '90vh',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-      }}>
-        {/* Header */}
-        <div style={{ padding: '16px 20px 0', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <h2 style={{ flex: 1, fontSize: 16, fontWeight: 600, color: 'var(--color-text)', margin: 0 }}>
-            {project.owner}
-          </h2>
-          <button className="btn btn--ghost btn--sm" onClick={onClose}>✕</button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {isActiveSession && (
+        <div style={{
+          fontSize: 12, padding: '6px 10px', borderRadius: 6,
+          background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)',
+          color: 'var(--color-accent)',
+        }}>
+          This is your currently active project.
         </div>
+      )}
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)', padding: '0 20px', marginTop: 12 }}>
-          {TABS.map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                background: 'none',
-                border: 'none',
-                borderBottom: tab === t ? '2px solid var(--color-primary)' : '2px solid transparent',
-                padding: '8px 12px',
-                fontSize: 13,
-                cursor: 'pointer',
-                color: tab === t ? 'var(--color-primary)' : 'var(--color-text-muted)',
-                fontWeight: tab === t ? 600 : 400,
-                marginBottom: -1,
-              }}
-            >
-              {t}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="account-page__info-row">
+          <span className="account-page__info-label">API key</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <code style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
+              {showKey ? project.key : maskKey(project.key)}
+            </code>
+            <button className="btn btn--ghost btn--sm" onClick={() => setShowKey(v => !v)}>
+              {showKey ? 'Hide' : 'Show'}
             </button>
-          ))}
+          </span>
         </div>
+        <div className="account-page__info-row">
+          <span className="account-page__info-label">Access level</span>
+          <span className="account-page__info-value">{project.myAccessLevel || 'owner'}</span>
+        </div>
+        <div className="account-page__info-row">
+          <span className="account-page__info-label">Created</span>
+          <span className="account-page__info-value">{new Date(project.createdAt).toLocaleDateString()}</span>
+        </div>
+        {project.expires && (
+          <div className="account-page__info-row">
+            <span className="account-page__info-label">Expires</span>
+            <span className="account-page__info-value">{new Date(project.expires).toLocaleDateString()}</span>
+          </div>
+        )}
+        {project.memberCount > 1 && (
+          <div className="account-page__info-row">
+            <span className="account-page__info-label">Members</span>
+            <span className="account-page__info-value">{project.memberCount}</span>
+          </div>
+        )}
+      </div>
 
-        {/* Tab content */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
-          {tab === 'Settings' && (
-            <SettingsTab project={project} backendUrl={backendUrl} token={token} />
-          )}
-          {tab === 'Members' && (
-            <MembersTab project={project} backendUrl={backendUrl} token={token} />
-          )}
-          {tab === 'Device roles' && (
-            <DeviceRolesTab project={project} backendUrl={backendUrl} token={token} />
-          )}
-          {tab === 'Danger zone' && (
-            <DangerZoneTab project={project} backendUrl={backendUrl} token={token} onDeleted={onDeleted} onClose={onClose} />
-          )}
+      <div>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Quick links</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <Link href="/setup"><a className="btn btn--ghost btn--sm">🧙 Setup</a></Link>
+          <Link href="/assets"><a className="btn btn--ghost btn--sm">🗂 Assets</a></Link>
+          <Link href="/broadcast"><a className="btn btn--ghost btn--sm">📡 Broadcast</a></Link>
+          <Link href="/graphics/editor"><a className="btn btn--ghost btn--sm">🖼️ Graphics</a></Link>
+          <Link href="/team"><a className="btn btn--ghost btn--sm">👥 Team</a></Link>
         </div>
       </div>
     </div>
   );
 }
 
-// ── Settings tab ─────────────────────────────────────────────────────────────
+// ── Features tab (formerly "Settings") ───────────────────────────────────────
 
-function SettingsTab({ project, backendUrl, token }) {
+function FeaturesTab({ project, backendUrl, token }) {
   const { features, featureSet, loading, error, updateFeature } = useProjectFeatures(backendUrl, token, project.key);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [localSet, setLocalSet] = useState(null);
 
-  // Initialise localSet once features load
   useEffect(() => {
     if (features.length > 0 && localSet === null) {
       setLocalSet(new Set(features.filter(f => f.enabled).map(f => f.code)));
@@ -109,7 +114,6 @@ function SettingsTab({ project, backendUrl, token }) {
     setSaving(true);
     setSaveError(null);
     try {
-      // Build delta: what changed vs server state
       const featureMap = {};
       const allCodes = new Set([...featureSet, ...localSet]);
       for (const code of allCodes) {
@@ -120,10 +124,7 @@ function SettingsTab({ project, backendUrl, token }) {
       if (Object.keys(featureMap).length > 0) {
         const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/features`, {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ features: featureMap }),
         });
         const data = await r.json();
@@ -149,11 +150,7 @@ function SettingsTab({ project, backendUrl, token }) {
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
         {saveError && <span style={{ fontSize: 12, color: 'var(--color-error)' }}>{saveError}</span>}
-        <button
-          className="btn btn--primary btn--sm"
-          onClick={handleSave}
-          disabled={saving || !localSet}
-        >
+        <button className="btn btn--primary btn--sm" onClick={handleSave} disabled={saving || !localSet}>
           {saving ? 'Saving…' : 'Save changes'}
         </button>
       </div>
@@ -161,9 +158,9 @@ function SettingsTab({ project, backendUrl, token }) {
   );
 }
 
-// ── Members tab ───────────────────────────────────────────────────────────────
+// ── Team tab (formerly "Members") ────────────────────────────────────────────
 
-function MembersTab({ project, backendUrl, token }) {
+function TeamTab({ project, backendUrl, token }) {
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -186,7 +183,6 @@ function MembersTab({ project, backendUrl, token }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const myMember = members.find(m => m.email === /* injected later */ null);
   const myLevel = project.myAccessLevel || 'member';
 
   async function handleRemove(userId) {
@@ -211,12 +207,7 @@ function MembersTab({ project, backendUrl, token }) {
       {error && <div style={{ color: 'var(--color-error)', fontSize: 12 }}>{error}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {members.map(m => (
-          <MemberRow
-            key={m.userId}
-            member={m}
-            currentUserAccessLevel={myLevel}
-            onRemove={handleRemove}
-          />
+          <MemberRow key={m.userId} member={m} currentUserAccessLevel={myLevel} onRemove={handleRemove} />
         ))}
         {members.length === 0 && (
           <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No members yet.</div>
@@ -227,14 +218,13 @@ function MembersTab({ project, backendUrl, token }) {
           <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 8 }}>
             Invite by email
           </div>
-          <InviteMemberForm
-            backendUrl={backendUrl}
-            token={token}
-            apiKey={project.key}
-            onInvited={() => load()}
-          />
+          <InviteMemberForm backendUrl={backendUrl} token={token} apiKey={project.key} onInvited={() => load()} />
         </div>
       )}
+      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
+        Looking for organization-wide team management across multiple projects?{' '}
+        <Link href="/team"><a>See the Team page</a></Link>.
+      </p>
     </div>
   );
 }
@@ -296,13 +286,7 @@ function DeviceRolesTab({ project, backendUrl, token }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {error && <div style={{ color: 'var(--color-error)', fontSize: 12 }}>{error}</div>}
 
-      {/* Project device code */}
-      <div style={{
-        background: 'var(--color-surface)',
-        border: '1px solid var(--color-border)',
-        borderRadius: 8,
-        padding: '12px 16px',
-      }}>
+      <div style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)', borderRadius: 8, padding: '12px 16px' }}>
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 6 }}>
           Project device code
         </div>
@@ -318,32 +302,20 @@ function DeviceRolesTab({ project, backendUrl, token }) {
           ) : (
             <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Not set</span>
           )}
-          <button
-            className="btn btn--ghost btn--sm"
-            onClick={handleGenerateCode}
-            disabled={generatingCode}
-            style={{ fontSize: 11 }}
-          >
+          <button className="btn btn--ghost btn--sm" onClick={handleGenerateCode} disabled={generatingCode} style={{ fontSize: 11 }}>
             {generatingCode ? '…' : deviceCode ? 'Regenerate' : 'Generate'}
           </button>
         </div>
       </div>
 
-      {/* Device role list */}
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-text)', marginBottom: 10 }}>
           Device roles
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
           {roles.filter(r => r.active).map(role => (
-            <DeviceRoleRow
-              key={role.id}
-              role={role}
-              backendUrl={backendUrl}
-              token={token}
-              apiKey={project.key}
-              onDeleted={id => setRoles(prev => prev.filter(r => r.id !== id))}
-            />
+            <DeviceRoleRow key={role.id} role={role} backendUrl={backendUrl} token={token} apiKey={project.key}
+              onDeleted={id => setRoles(prev => prev.filter(r => r.id !== id))} />
           ))}
           {roles.filter(r => r.active).length === 0 && (
             <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No device roles yet.</div>
@@ -352,12 +324,8 @@ function DeviceRolesTab({ project, backendUrl, token }) {
         <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-text)', marginBottom: 8 }}>
           Add device role
         </div>
-        <CreateDeviceRoleForm
-          backendUrl={backendUrl}
-          token={token}
-          apiKey={project.key}
-          onCreated={role => setRoles(prev => [...prev, role])}
-        />
+        <CreateDeviceRoleForm backendUrl={backendUrl} token={token} apiKey={project.key}
+          onCreated={role => setRoles(prev => [...prev, role])} />
       </div>
     </div>
   );
@@ -365,7 +333,7 @@ function DeviceRolesTab({ project, backendUrl, token }) {
 
 // ── Danger zone tab ───────────────────────────────────────────────────────────
 
-function DangerZoneTab({ project, backendUrl, token, onDeleted, onClose }) {
+function DangerZoneTab({ project, backendUrl, token, onDeleted }) {
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState(null);
 
@@ -381,7 +349,6 @@ function DangerZoneTab({ project, backendUrl, token, onDeleted, onClose }) {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       onDeleted?.(project.key);
-      onClose?.();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -391,14 +358,7 @@ function DangerZoneTab({ project, backendUrl, token, onDeleted, onClose }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{
-        border: '1px solid var(--color-error)',
-        borderRadius: 8,
-        padding: '14px 16px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 8,
-      }}>
+      <div style={{ border: '1px solid var(--color-error)', borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--color-error)' }}>Delete project</div>
         <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
           Revokes the API key and removes all associated data. This cannot be undone.
@@ -412,6 +372,114 @@ function DangerZoneTab({ project, backendUrl, token, onDeleted, onClose }) {
         >
           {deleting ? 'Deleting…' : 'Delete project'}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Page shell ────────────────────────────────────────────────────────────────
+
+/**
+ * @param {{ implicitKey?: boolean }} props - when true, always use the active
+ *   session's apiKey rather than a route :key param (used when mounted at `/`).
+ */
+export function ProjectSettingsPage({ implicitKey = false } = {}) {
+  const [, routeParams] = useRoute('/projects/:key');
+  const { user, token, backendUrl, loading: authLoading } = useUserAuth();
+  const session = useSessionContext();
+
+  const effectiveKey = implicitKey ? session?.apiKey : (routeParams?.key || session?.apiKey);
+  const isActiveSession = !!session?.connected && session?.apiKey === effectiveKey;
+
+  const [tab, setTab] = useState('Summary');
+  const [projects, setProjects] = useState(null);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!token || !backendUrl) {
+      setLoadingProjects(false);
+      return;
+    }
+    setLoadingProjects(true);
+    setError(null);
+    try {
+      const r = await fetch(`${backendUrl}/keys`, { headers: { Authorization: `Bearer ${token}` } });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      setProjects(data.keys || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoadingProjects(false);
+    }
+  }, [token, backendUrl]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (authLoading || loadingProjects) {
+    return <div className="settings-page" style={{ padding: 24, color: 'var(--color-text-muted)' }}>Loading…</div>;
+  }
+
+  if (!user) {
+    return (
+      <div className="stub-page">
+        <div className="stub-page__icon">📁</div>
+        <div className="stub-page__title">Sign in to manage projects</div>
+        <p className="stub-page__desc">
+          Project settings require a user account. <Link href="/login"><a>Sign in</a></Link>.
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <div style={{ padding: 24, color: 'var(--color-error)' }}>{error}</div>;
+  }
+
+  const project = (projects || []).find(p => p.key === effectiveKey);
+
+  if (!effectiveKey || !project) {
+    return (
+      <div className="stub-page">
+        <div className="stub-page__icon">📁</div>
+        <div className="stub-page__title">No project selected</div>
+        <p className="stub-page__desc">
+          Connect to a project, or pick one from <Link href="/projects"><a>Projects</a></Link>.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="settings-page project-settings-page">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px 0' }}>
+        <h1 style={{ flex: 1, fontSize: 18, fontWeight: 600, margin: 0 }}>{project.owner}</h1>
+      </div>
+      <div className="settings-modal__tabs" style={{ padding: '0 20px', marginTop: 12 }}>
+        {TABS.map(t => (
+          <button
+            key={t}
+            className={`settings-tab${tab === t ? ' settings-tab--active' : ''}`}
+            onClick={() => setTab(t)}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+        {tab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} />}
+        {tab === 'Features'     && <FeaturesTab project={project} backendUrl={backendUrl} token={token} />}
+        {tab === 'Team'         && <TeamTab project={project} backendUrl={backendUrl} token={token} />}
+        {tab === 'Device roles' && <DeviceRolesTab project={project} backendUrl={backendUrl} token={token} />}
+        {tab === 'Danger zone'  && (
+          <DangerZoneTab
+            project={project}
+            backendUrl={backendUrl}
+            token={token}
+            onDeleted={() => { setProjects(prev => prev.filter(p => p.key !== project.key)); window.location.href = '/projects'; }}
+          />
+        )}
       </div>
     </div>
   );

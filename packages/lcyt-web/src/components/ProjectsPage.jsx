@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'wouter';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
-import { ProjectDetailModal } from './ProjectDetailModal';
 import { FeaturePicker } from './FeaturePicker';
 
 function copyToClipboard(text) {
@@ -184,11 +184,11 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
 
 export function ProjectsPage() {
   const { user, token, backendUrl, loading: authLoading, logout } = useUserAuth();
+  const [, navigate] = useLocation();
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [error, setError] = useState(null);
   const [creating, setCreating] = useState(false);
-  const [managingProject, setManagingProject] = useState(null);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -220,7 +220,7 @@ export function ProjectsPage() {
   }, [fetchProjects]);
 
   function handleManageProject(project) {
-    setManagingProject(project);
+    navigate(`/projects/${project.key}`);
   }
 
   function handleUseProject(project) {
@@ -235,10 +235,6 @@ export function ProjectsPage() {
       localStorage.setItem(KEYS.session.config, JSON.stringify({ backendUrl, apiKey: project.key }));
     }
     window.location.href = '/';
-  }
-
-  function handleProjectDeleted(key) {
-    setProjects(prev => prev.filter(p => p.key !== key));
   }
 
   if (authLoading) {
@@ -313,16 +309,6 @@ export function ProjectsPage() {
             />
           ))}
         </div>
-      )}
-
-      {managingProject && (
-        <ProjectDetailModal
-          project={managingProject}
-          backendUrl={backendUrl}
-          token={token}
-          onClose={() => setManagingProject(null)}
-          onDeleted={handleProjectDeleted}
-        />
       )}
 
       <p style={{ marginTop: 32, fontSize: 13, color: 'var(--color-text-muted)' }}>

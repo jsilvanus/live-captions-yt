@@ -320,7 +320,7 @@ function DeleteConfirmModal({ bridge, cameras, mixers, onConfirm, onCancel }) {
   );
 }
 
-export function ProductionBridgesPage() {
+export function BridgesManager() {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -485,4 +485,9 @@ export function ProductionBridgesPage() {
       )}
     </div>
   );
+}
+
+/** ProductionBridgesPage — standalone route wrapper around BridgesManager. */
+export function ProductionBridgesPage() {
+  return <BridgesManager />;
 }

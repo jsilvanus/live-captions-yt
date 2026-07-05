@@ -348,7 +348,7 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
   );
 }
 
-export function ProductionCamerasPage() {
+export function CamerasManager() {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -467,4 +467,9 @@ export function ProductionCamerasPage() {
       )}
     </div>
   );
+}
+
+/** ProductionCamerasPage — standalone route wrapper around CamerasManager. */
+export function ProductionCamerasPage() {
+  return <CamerasManager />;
 }

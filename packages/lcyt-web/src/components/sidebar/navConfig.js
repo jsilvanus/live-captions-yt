@@ -1,9 +1,8 @@
 export const NAV_ITEMS = [
-  { id: 'dashboard',    icon: '🏠', label: 'Dashboard',    path: '/',              exact: true },
   { id: 'captions',     icon: '✏️',  label: 'Captions',     path: '/captions' },
   { id: 'audio',        icon: '🎤', label: 'Audio',         path: '/audio' },
   { id: 'translations', icon: '🌐', label: 'Translations',  path: '/translations' },
-  { id: 'broadcast',    icon: '📡', label: 'Broadcast',     path: '/broadcast',     feature: 'rtmp' },
+  { id: 'broadcast',    icon: '📡', label: 'Broadcast',     path: '/broadcast' },
   { id: 'planner',      icon: '📋', label: 'Planner',       path: '/planner' },
 ];
 
@@ -46,6 +45,8 @@ export const NAV_GROUPS = [
 export const NAV_BOTTOM = [
   { id: 'ai',       icon: '🤖', label: 'AI',       path: '/ai',       feature: 'ai' },
   { id: 'projects', icon: '📁', label: 'Projects', path: '/projects', feature: 'login' },
+  { id: 'assets',   icon: '🗂️', label: 'Assets',   path: '/assets',   feature: 'login' },
+  { id: 'team',     icon: '👥', label: 'Team',     path: '/team',     feature: 'login' },
   { id: 'account',  icon: '👤', label: 'Account',  path: '/account',  feature: 'login' },
   { id: 'setup',    icon: '🧙', label: 'Setup',    path: '/setup' },
   { id: 'settings', icon: '⚙️',  label: 'Settings', path: '/settings' },
