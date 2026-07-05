@@ -49,9 +49,25 @@ CREATE INDEX IF NOT EXISTS idx_org_members_org  ON org_members(org_id);
 -- by a user via api_keys.user_id, exactly as today). This is purely additive:
 -- every existing project stays personal until explicitly moved into an org.
 ALTER TABLE api_keys ADD COLUMN org_id INTEGER REFERENCES organizations(id);
+
+-- Per-org override of the site-wide feature availability policy (site admin only).
+-- Full design, resolution order, and rationale: see plan_site_feature_policies.md.
+-- Listed here because of its FK dependency on organizations(id); this table cannot
+-- ship before the org schema above exists.
+CREATE TABLE IF NOT EXISTS org_feature_overrides (
+  org_id       INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  feature_code TEXT    NOT NULL,
+  mode         TEXT    NOT NULL,                    -- 'available' | 'self_service' | 'denied'
+  set_by       INTEGER REFERENCES users(id),
+  set_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (org_id, feature_code)
+);
+CREATE INDEX IF NOT EXISTS idx_org_feature_overrides_org ON org_feature_overrides(org_id);
 ```
 
 `organizations.owner_user_id` denormalizes the single-owner invariant the same way `project_members.access_level = 'owner'` does today — one row per org must have `role = 'owner'` in `org_members`, and that user_id must match `organizations.owner_user_id`. Keeping both is deliberate: `owner_user_id` gives O(1) "who owns this org" lookups (e.g. for billing, deletion confirmation) without a join, mirroring the existing `api_keys.owner`/`api_keys.user_id` pattern of keeping a denormalized pointer alongside the membership table.
+
+**Cross-reference:** `org_feature_overrides` is consumed by the site-wide feature-policy resolver designed in `plan_site_feature_policies.md` — that document owns the full tri-state (`available`/`self_service`/`denied`) model, the companion `site_feature_policies` table, the resolution order (`org_feature_overrides` > `site_feature_policies` > `'denied'`), and how it composes with `getEffectiveProjectAccessLevel()` below. It is listed here only because of the schema's FK dependency on `organizations`.
 
 `org_members.role` intentionally reuses the exact `owner`/`admin`/`member` vocabulary from `project_members.access_level` (see `packages/lcyt-backend/src/db/project-members.js`) rather than inventing new terms — same mental model for users, and it lets the combined access resolver (below) treat both role sources uniformly.
 
@@ -277,7 +293,7 @@ Recorded here so the reasoning isn't lost, even though none of these are being b
 
 3. **Web Radio config CRUD** (low-medium effort). New `radio_config` table (title/description/cover art/autoplay) plus a self-service enable toggle (currently admin-only via `radio_enabled`).
 
-4. **Site Features (admin global flags)** (low effort, but blocked on a product decision first): does flipping a global flag set the *default* for new users/projects going forward, or does it *hard-override* every existing user/project immediately? The schema and code are trivial either way; the behavior needs deciding before either is built.
+4. **Site Features (admin global flags)** — **resolved and fully designed in `plan_site_feature_policies.md`**: a tri-state policy per feature code (`available` / `self_service` / `denied`), a site-wide default (`site_feature_policies`) plus the per-org override (`org_feature_overrides`, schema listed above) that can tighten or loosen it, an explicit binary-only-vs-tri-state-capable classification of every current feature code, and a worked example (custom storage). No longer an open product question — small-to-medium effort, ready to schedule once (or alongside) the org schema work it depends on.
 
 5. **Quick win: `PATCH /auth/me` name edit** (trivial — a few lines in `packages/lcyt-backend/src/routes/auth.js` + `packages/lcyt-backend/src/db/users.js`; no schema change, `users.name` already exists).
 

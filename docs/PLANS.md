@@ -62,6 +62,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 |---|---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
 | [plan_team_org_backend.md](plans/plan_team_org_backend.md) | Team/Org Data Model — Backend Design | Design for a real multi-project Team/Org data model (`organizations`, `org_members`, `api_keys.org_id`) to replace the `/team` "Coming soon" placeholder; resolves org-vs-project access precedence with a baseline-plus-override resolver. Includes prioritized appendix of other known backend gaps. | |
+| [plan_site_feature_policies.md](plans/plan_site_feature_policies.md) | Site Feature Policies — Tri-State Availability Model | Design for a site-wide feature availability policy (`available`/`self_service`/`denied` per feature code) with per-org overrides (`site_feature_policies`, `org_feature_overrides`), closing the gap where the self-service feature-toggle route has no per-feature policy check today. Binary-only vs. tri-state-capable classification of every current feature code; worked example: custom storage. | |
 
 ### Reference
 
