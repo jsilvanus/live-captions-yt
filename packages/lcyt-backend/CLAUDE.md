@@ -205,6 +205,8 @@ GET    /variables         — { [name]: { value, source, defaultValue, resolvedA
 GET    /variables/events  — SSE: variable_updated (Bearer token or ?token=)
 POST/PUT/DELETE /variables[/:name] — manual variable CRUD (Bearer token)
 POST   /variables/refresh — fire a connector request; { connectorSlug, requestSlug, waitMs? } (Bearer token)
+GET/POST/DELETE /admin/connector-network-rules[/:id] — global outbound-connector SSRF allow/deny rules (X-Admin-Key or is_admin user)
+GET/POST/DELETE /orgs/:orgId/connector-network-rules[/:id] — per-org SSRF allow/deny rules, enforced (user Bearer token; GET for any org member, write for owner/admin)
 
 GET    /admin/users                  — list users with search (X-Admin-Key)
 GET    /admin/users/:id              — user detail with projects (X-Admin-Key)

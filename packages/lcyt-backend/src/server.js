@@ -58,7 +58,12 @@ import {
   initAgent, createAgentRouter, createAiRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
-import { initConnectors, createConnectorsRouter, createVariablesRouter } from 'lcyt-connectors';
+import {
+  initConnectors, createConnectorsRouter, createVariablesRouter,
+  createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
+} from 'lcyt-connectors';
+import { createAdminMiddleware } from './middleware/admin.js';
+import { createUserAuthMiddleware } from './middleware/user-auth.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -414,7 +419,9 @@ app.use('/cues', createCueRouter(db, auth, _cueEngine));
 app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/connectors', createConnectorsRouter(db, auth));
-app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine));
+app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine, jwtSecret));
+app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
+app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,

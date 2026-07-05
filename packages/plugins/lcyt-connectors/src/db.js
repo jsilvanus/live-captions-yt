@@ -73,6 +73,20 @@ export function runMigrations(db) {
       PRIMARY KEY (api_key, name)
     )
   `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS connector_network_rules (
+      id          TEXT    PRIMARY KEY,
+      scope       TEXT    NOT NULL,    -- 'global' | 'org'
+      org_id      INTEGER,             -- NULL for global; organizations.id for org scope
+      rule_type   TEXT    NOT NULL,    -- 'allow' | 'deny'
+      pattern     TEXT    NOT NULL,    -- see network-guard.js for pattern syntax
+      description TEXT,
+      created_by  INTEGER,             -- users.id, nullable (legacy X-Admin-Key has no user)
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_connector_network_rules_scope ON connector_network_rules(scope, org_id)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -322,4 +336,61 @@ export function resolveVariableValue(row) {
   if (row.current_value !== null && row.current_value !== undefined) return row.current_value;
   if (row.default_value !== null && row.default_value !== undefined) return row.default_value;
   return '';
+}
+
+// ---------------------------------------------------------------------------
+// Outbound network policy (SSRF guard rules) — see network-guard.js
+// ---------------------------------------------------------------------------
+
+export function listNetworkRules(db, { scope, orgId } = {}) {
+  if (scope === 'global') {
+    return db.prepare("SELECT * FROM connector_network_rules WHERE scope = 'global' ORDER BY created_at").all();
+  }
+  if (scope === 'org') {
+    return db.prepare("SELECT * FROM connector_network_rules WHERE scope = 'org' AND org_id = ? ORDER BY created_at").all(orgId);
+  }
+  return db.prepare('SELECT * FROM connector_network_rules ORDER BY created_at').all();
+}
+
+export function getNetworkRule(db, id) {
+  return db.prepare('SELECT * FROM connector_network_rules WHERE id = ?').get(id);
+}
+
+export function createNetworkRule(db, { id, scope, orgId = null, ruleType, pattern, description = null, createdBy = null }) {
+  db.prepare(`
+    INSERT INTO connector_network_rules (id, scope, org_id, rule_type, pattern, description, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, scope, orgId, ruleType, pattern, description, createdBy);
+  return getNetworkRule(db, id);
+}
+
+export function deleteNetworkRule(db, id) {
+  return db.prepare('DELETE FROM connector_network_rules WHERE id = ?').run(id).changes > 0;
+}
+
+/** api_keys.org_id lookup — api_keys is a core lcyt-backend table, not owned by this plugin. */
+export function getApiKeyOrgId(db, apiKey) {
+  try {
+    const row = db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get(apiKey);
+    return row?.org_id ?? null;
+  } catch {
+    // api_keys is a core lcyt-backend table; if it's absent (e.g. an isolated
+    // test DB with only this plugin's own migrations run), fall back to "no
+    // org" rather than failing the whole request — network rules just won't
+    // have an org-scoped tier to check in that case.
+    return null;
+  }
+}
+
+/**
+ * A user's role in an organization: 'owner' (organizations.owner_user_id),
+ * their org_members.role, or null if they're not a member at all.
+ * organizations/org_members are core lcyt-backend tables, not owned by this plugin.
+ */
+export function getOrgRole(db, userId, orgId) {
+  const org = db.prepare('SELECT owner_user_id FROM organizations WHERE id = ?').get(orgId);
+  if (!org) return null;
+  if (org.owner_user_id === userId) return 'owner';
+  const member = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(orgId, userId);
+  return member?.role ?? null;
 }

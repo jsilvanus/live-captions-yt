@@ -1,18 +1,21 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-let Database, express;
+let Database, express, jwt;
 try {
   Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
+  jwt = (await import('jsonwebtoken')).default;
 } catch {
-  console.log('# better-sqlite3/express not available — skipping lcyt-connectors route tests');
+  console.log('# better-sqlite3/express/jsonwebtoken not available — skipping lcyt-connectors route tests');
   process.exit(0);
 }
 
 const { initConnectors } = await import('../src/api.js');
 const { createConnectorsRouter } = await import('../src/routes/connectors.js');
 const { createVariablesRouter } = await import('../src/routes/variables.js');
+
+const JWT_SECRET = 'test-secret';
 
 // No JWT verification needed here — auth just needs to set req.session.apiKey.
 function fakeAuth(req, res, next) {
@@ -29,7 +32,7 @@ describe('lcyt-connectors routes', () => {
     const app = express();
     app.use(express.json());
     app.use('/connectors', createConnectorsRouter(db, fakeAuth));
-    app.use('/variables', createVariablesRouter(db, fakeAuth, bus, engine));
+    app.use('/variables', createVariablesRouter(db, fakeAuth, bus, engine, JWT_SECRET));
     await new Promise((resolve) => {
       server = app.listen(0, () => resolve());
     });
@@ -142,5 +145,33 @@ describe('lcyt-connectors routes', () => {
     });
     const res = await json('/variables'); // key1
     assert.equal(res.body.variables.onlyMine, undefined);
+  });
+
+  describe('GET /variables/events (SSE auth)', () => {
+    test('rejects a forged token (valid JWT shape, wrong signature)', async () => {
+      const forged = jwt.sign({ apiKey: 'someone-elses-key' }, 'wrong-secret');
+      const res = await fetch(`${baseUrl}/variables/events?token=${encodeURIComponent(forged)}`);
+      assert.equal(res.status, 401);
+    });
+
+    test('rejects a hand-crafted unsigned "token" (base64-decodable but not a real JWT)', async () => {
+      const fakeHeader = Buffer.from(JSON.stringify({ alg: 'none' })).toString('base64url');
+      const fakePayload = Buffer.from(JSON.stringify({ apiKey: 'key1' })).toString('base64url');
+      const forged = `${fakeHeader}.${fakePayload}.`;
+      const res = await fetch(`${baseUrl}/variables/events?token=${encodeURIComponent(forged)}`);
+      assert.equal(res.status, 401);
+    });
+
+    test('accepts a properly signed token and streams the connected event', async () => {
+      const token = jwt.sign({ apiKey: 'key1' }, JWT_SECRET);
+      const res = await fetch(`${baseUrl}/variables/events?token=${encodeURIComponent(token)}`);
+      assert.equal(res.status, 200);
+      const reader = res.body.getReader();
+      const { value } = await reader.read();
+      const text = Buffer.from(value).toString();
+      assert.match(text, /event: connected/);
+      assert.match(text, /"apiKey":"key1"/);
+      await reader.cancel();
+    });
   });
 });

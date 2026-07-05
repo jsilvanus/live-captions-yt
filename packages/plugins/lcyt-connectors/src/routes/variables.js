@@ -10,15 +10,22 @@
  *   POST   /variables/refresh        — { connectorSlug, requestSlug, waitMs? }
  */
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import { listVariables, getVariable, upsertManualVariable, deleteVariable, resolveVariableValue } from '../db.js';
 
 function sendEvent(res, eventName, data) {
   res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-function decodeApiKeyFromToken(token) {
+/**
+ * Verify a session JWT and extract its apiKey. Unlike a raw base64 decode of
+ * the payload segment, this actually checks the signature — an unverified
+ * decode would let anyone hand-craft a token claiming any apiKey and
+ * subscribe to that project's variable_updated stream.
+ */
+function verifyApiKeyFromToken(token, jwtSecret) {
   try {
-    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+    const payload = jwt.verify(token, jwtSecret);
     return payload.apiKey || null;
   } catch {
     return null;
@@ -30,8 +37,9 @@ function decodeApiKeyFromToken(token) {
  * @param {import('express').RequestHandler} auth
  * @param {import('../variables-bus.js').VariablesBus} bus
  * @param {ReturnType<import('../resolution-engine.js').createResolutionEngine>} engine
+ * @param {string} jwtSecret — for verifying the SSE ?token= / Bearer session JWT
  */
-export function createVariablesRouter(db, auth, bus, engine) {
+export function createVariablesRouter(db, auth, bus, engine, jwtSecret) {
   const router = Router();
 
   function requireApiKey(req, res) {
@@ -64,13 +72,13 @@ export function createVariablesRouter(db, auth, bus, engine) {
     let apiKey;
     const tokenParam = req.query.token;
     if (tokenParam) {
-      apiKey = decodeApiKeyFromToken(tokenParam);
+      apiKey = verifyApiKeyFromToken(tokenParam, jwtSecret);
     } else {
       const authHeader = req.headers.authorization || '';
       if (!authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing Bearer token' });
-      apiKey = decodeApiKeyFromToken(authHeader.slice(7));
+      apiKey = verifyApiKeyFromToken(authHeader.slice(7), jwtSecret);
     }
-    if (!apiKey) return res.status(401).json({ error: 'Invalid token' });
+    if (!apiKey) return res.status(401).json({ error: 'Invalid or expired token' });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

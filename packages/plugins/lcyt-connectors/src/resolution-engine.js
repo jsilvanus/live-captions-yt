@@ -7,10 +7,11 @@
  */
 import {
   getConnectorBySlug, getRequestBySlug, listMappings,
-  listVariables, setConnectorVariable,
+  listVariables, setConnectorVariable, getApiKeyOrgId,
 } from './db.js';
 import { interpolate, interpolatePairs } from './interpolate.js';
 import { evaluateJsonPath } from './json-path.js';
+import { checkUrlAllowed } from './network-guard.js';
 
 /**
  * @param {object} deps
@@ -127,6 +128,13 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
 
     const snapshot = snapshotVariables(apiKey);
     const url = buildUrl(connector, request, snapshot);
+
+    const orgId = getApiKeyOrgId(db, apiKey);
+    const guard = await checkUrlAllowed(db, url, orgId);
+    if (!guard.allowed) {
+      return { ok: false, variables: [], error: guard.reason };
+    }
+
     const headers = {
       ...Object.fromEntries(interpolatePairs(JSON.parse(connector.headers || '[]'), snapshot).map(({ key, value }) => [key, value])),
       ...buildAuthHeaders(connector),
