@@ -171,8 +171,12 @@ jobs:
             )
           fi
 
-          # Convert array to JSON
-          JSON_ARRAY=$(printf '%s\n' "${PACKAGES[@]}" | jq -R . | jq -s .)
+          # Convert array to JSON (handle empty array case)
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            JSON_ARRAY="[]"
+          else
+            JSON_ARRAY=$(printf '%s\n' "${PACKAGES[@]}" | jq -R . | jq -s .)
+          fi
           echo "packages=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
   unit-node:
