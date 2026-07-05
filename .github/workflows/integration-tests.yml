@@ -151,7 +151,7 @@ jobs:
             PACKAGES+=("packages/lcyt-backend")
           fi
 
-          # On main, test everything (full CI)
+          # On main or workflow changes, test everything (full CI)
           if [[ "$IS_MAIN" == "true" ]]; then
             PACKAGES=(
               "packages/lcyt"
