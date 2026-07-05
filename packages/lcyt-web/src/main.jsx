@@ -12,6 +12,7 @@ import { AppProviders } from './contexts/AppProviders';
 import { AudioProvider } from './contexts/AudioContext';
 import { SidebarLayout } from './components/SidebarLayout';
 import { AudioPage } from './components/AudioPage';
+import { RootRoute } from './components/RootRoute.jsx';
 
 // --- Lazy-loaded pages (heavy or path-gated) ----------------------------------
 
@@ -37,9 +38,9 @@ function lazyImport(loader) {
 }
 
 // Sidebar routes
-const DashboardPage          = lazyImport(() => import('./components/DashboardPage').then(m => ({ default: m.DashboardPage })));
 const SettingsPage           = lazyImport(() => import('./components/SettingsPage').then(m => ({ default: m.SettingsPage })));
 const ProjectsPage           = lazyImport(() => import('./components/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
+const ProjectSettingsPage    = lazyImport(() => import('./components/ProjectSettingsPage').then(m => ({ default: m.ProjectSettingsPage })));
 const SetupWizardPage        = lazyImport(() => import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage })));
 const AccountPage            = lazyImport(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
 const BroadcastPage          = lazyImport(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
@@ -179,7 +180,7 @@ function SidebarApp() {
         <SidebarLayout>
           <Suspense fallback={null}>
           <Switch>
-            <Route path="/" component={DashboardPage} />
+            <Route path="/" component={RootRoute} />
             <Route path="/captions">{() => <AppLayout standalone={false} />}</Route>
             <Route path="/audio" component={AudioPage} />
             <Route path="/broadcast" component={BroadcastPage} />
@@ -201,6 +202,7 @@ function SidebarApp() {
             <Route path="/admin/projects" component={AdminProjectsPage} />
             <Route path="/admin/audit-log" component={AdminAuditLogPage} />
             <Route path="/projects" component={ProjectsPage} />
+            <Route path="/projects/:key" component={ProjectSettingsPage} />
             <Route path="/setup" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />

@@ -200,7 +200,7 @@ export function TopBar({ expanded, onToggle, onOpenCommandPalette, onOpenShortcu
       <button
         className="top-bar__brand"
         onClick={() => navigate('/')}
-        aria-label="Go to Dashboard"
+        aria-label="Go to home"
       >
         LCYT
       </button>
