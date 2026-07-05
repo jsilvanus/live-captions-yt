@@ -1,0 +1,95 @@
+# `packages/plugins/lcyt-rtmp` — RTMP Relay Plugin (v0.1.0)
+
+RTMP relay, HLS streaming, audio-only radio, stream preview, caption injection, and server-side speech-to-text transcription. Extracted from `lcyt-backend` into its own plugin for modularity. Imported by `lcyt-backend` as `lcyt-rtmp`.
+
+**Main entry:** `src/api.js`
+**Usage in lcyt-backend:**
+```js
+import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
+
+const rtmp = await initRtmpControl(db, store);
+const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
+
+// Wire hlsSubsManager into the video route for subtitle sidecar support:
+setHlsSubsManager(rtmp.hlsSubsManager);
+
+if (process.env.RTMP_RELAY_ACTIVE === '1') {
+  const routers = createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains });
+  app.use('/rtmp',       routers.rtmpRouter);
+  app.use('/stream',     routers.streamRouter);
+  app.use('/stream-hls', routers.streamHlsRouter);
+  app.use('/radio',      routers.radioRouter);
+  app.use('/preview',    routers.previewRouter);
+}
+
+// In graceful shutdown:
+await rtmp.stop();
+```
+
+**Source files (`src/`):**
+- `api.js` — `initRtmpControl(db, store?)` + `createRtmpRouters(db, auth, managers, opts)`. Returns all manager instances and a `stop()` function.
+- `rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup. Fires `onStreamStarted`/`onStreamEnded` callbacks for DB stat tracking.
+- `hls-manager.js` — `HlsManager`: manages MediaMTX-based RTMP → video+audio HLS (no ffmpeg in hot path).
+- `radio-manager.js` — `RadioManager`: dual-mode audio-only HLS. **ffmpeg mode** (default): spawns ffmpeg RTMP → AAC HLS. **mediamtx mode**: no ffmpeg; MediaMTX serves HLS, `NginxManager` writes slug-based nginx proxy locations.
+- `nginx-manager.js` — `NginxManager`: writes nginx `location` blocks for MediaMTX radio streams. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
+- `preview-manager.js` — `PreviewManager`: manages MediaMTX API or ffmpeg for RTMP → JPEG thumbnail generation.
+- `hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.
+- `mediamtx-client.js` — `MediaMtxClient`: REST API client for MediaMTX v3 (drop publisher, list streams, etc.).
+- `hls-segment-fetcher.js` — `HlsSegmentFetcher`: polls a MediaMTX fMP4 HLS playlist, detects new segments, emits `segment` events with `{ buffer, timestamp, duration, url, index }`. Used by `SttManager`.
+- `stt-manager.js` — `SttManager` (`EventEmitter`): manages one STT session per API key. Wires `HlsSegmentFetcher` → STT adapter → transcript → `session._sendQueue` for delivery. Supports `hls`, `rtmp`, `whep` audio sources. **Events:** `transcript`, `error`, `stopped`.
+- `stt-adapters/google-stt.js` — `GoogleSttAdapter`: posts fMP4 segments to Google Cloud Speech-to-Text REST API or streams via gRPC (`GOOGLE_STT_MODE=grpc`). Emits `normalisePunctuation`-cleaned transcripts.
+- `stt-adapters/whisper-http.js` — `WhisperHttpAdapter`: sends audio to a Whisper-compatible HTTP STT server.
+- `stt-adapters/openai.js` — `OpenAiAdapter`: sends audio to OpenAI-compatible STT endpoint.
+- `stt-adapters/pcm-buffer.js` — `PcmSilenceBuffer`: accumulates PCM frames and detects silence; `buildWav()` helper constructs WAV from raw PCM bytes.
+- `db/relay.js` — RTMP relay DB helpers: `isRelayAllowed()`, `isRadioEnabled()`, per-key relay config CRUD.
+- `routes/rtmp.js` — `GET/POST/PUT/DELETE /rtmp` — RTMP relay slot management.
+- `routes/stream.js` — `GET/POST /stream` — RTMP relay stream control (domain allowlist enforced).
+- `routes/stream-hls.js` — `GET /stream-hls/:key/*` — HLS video+audio proxy (public, rate-limited).
+- `routes/radio.js` — `GET /radio/:key/*` — audio-only HLS proxy (public, rate-limited).
+- `routes/preview.js` — `GET /preview/:key/incoming.jpg` — RTMP → JPEG thumbnail serving (public).
+
+**Tests:** `packages/plugins/lcyt-rtmp/test/*.test.js` — uses `node:test` with `--experimental-test-module-mocks`.
+
+## Server-side STT Architecture
+
+Server-side speech-to-text transcription converts an incoming RTMP/HLS/WHEP audio stream into captions without requiring a browser microphone. Transcripts are injected directly into the session's `_sendQueue` and delivered to YouTube just like manually typed captions.
+
+**Audio sources:**
+| Source | How it works |
+|---|---|
+| `hls` | `HlsSegmentFetcher` polls MediaMTX fMP4 HLS playlist; segments sent to STT adapter |
+| `rtmp` | ffmpeg reads RTMP stream and writes PCM/WAV frames to the adapter's stdin |
+| `whep` | ffmpeg reads WHEP (WebRTC-HTTP Egress Protocol) stream and writes PCM frames |
+
+**Providers:**
+| Provider | Class | Notes |
+|---|---|---|
+| `google` | `GoogleSttAdapter` | REST (default) or gRPC (`GOOGLE_STT_MODE=grpc`); service account or API key auth |
+| `whisper_http` | `WhisperHttpAdapter` | Any Whisper-compatible HTTP endpoint |
+| `openai` | `OpenAiAdapter` | OpenAI `/audio/transcriptions`-compatible endpoint |
+
+**Confidence filtering:** Each `POST /stt/start` request accepts an optional `confidenceThreshold` (0–1). Transcripts below the threshold are silently dropped.
+
+**Per-key config persistence:** `GET/PUT /stt/config` stores preferred provider, language, audioSource, and confidenceThreshold in the DB (`getSttConfig`/`setSttConfig` in this plugin).
+
+The HTTP routes for STT (`/stt/*`) live in `packages/lcyt-backend/src/routes/stt.js` and delegate to `SttManager` here — see `packages/lcyt-backend/CLAUDE.md`.
+
+## Test Coverage
+
+**Test files (node:test with `--experimental-test-module-mocks`):**
+- `test/rtmp-manager.test.js` — `RtmpRelayManager`, `probeFfmpeg`: state queries, `start()`/`stop()`/`stopAll()`, `dropPublisher()`.
+- `test/rtmp-manager.unit.test.js` — additional unit tests for relay manager edge cases.
+- `test/nginx-manager.test.js` — `NginxManager`: config write, slug computation, reload, no-op mode.
+- `test/hls-segment-fetcher.test.js` — `HlsSegmentFetcher`: playlist parsing, segment emission, poll interval.
+- `test/pcm-buffer.test.js` — `PcmSilenceBuffer`: silence detection, `buildWav()`.
+- `test/google-stt.test.js` — `GoogleSttAdapter`: REST flow, punctuation normalisation, segment skip on small buffers.
+- `test/whisper-http.test.js` — `WhisperHttpAdapter`: HTTP POST, transcript emission.
+- `test/openai-stt.test.js` — `OpenAiAdapter`: OpenAI-compatible endpoint, model param.
+- `test/stt-manager.test.js` — `SttManager`: session lifecycle (start/stop), transcript routing to session send queue.
+- `test/stt-manager-rtmp.test.js` — `SttManager` RTMP/WHEP audio source paths (ffmpeg-based).
+- `test/hetzner.integration.test.js` — Hetzner client integration test (uses mock HTTP server).
+
+**Gaps (Medium):**
+- gRPC streaming path in `GoogleSttAdapter` (requires `@google-cloud/speech` to be installed).
+- `NginxManager` nginx reload failure handling.
+- Full STT session E2E (HLS playlist → segment fetch → transcript → SSE delivery).
