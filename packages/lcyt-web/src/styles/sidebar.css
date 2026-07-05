@@ -409,6 +409,19 @@
 
 .db-edit-btn { flex-shrink: 0; }
 
+.db-presets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.db-presets__label {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-right: 2px;
+}
+
 .dashboard-page__title {
   font-size: 18px;
   font-weight: 700;
@@ -1044,6 +1057,25 @@
 
 .react-grid-item > div {
   height: 100%;
+}
+
+/* ─── Broadcast page (Live / Settings tab shell) ─────────────── */
+
+.broadcast-page__tabs { flex-shrink: 0; }
+
+.broadcast-page__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.broadcast-settings-tab {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
 }
 
 /* ─── Settings page ──────────────────────────────────────────── */
