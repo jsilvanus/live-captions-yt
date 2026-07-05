@@ -82,11 +82,11 @@ function SummaryTab({ project, isActiveSession }) {
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Quick links</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          <Link href="/setup"><a className="btn btn--ghost btn--sm">🧙 Setup</a></Link>
-          <Link href="/assets"><a className="btn btn--ghost btn--sm">🗂 Assets</a></Link>
-          <Link href="/broadcast"><a className="btn btn--ghost btn--sm">📡 Broadcast</a></Link>
-          <Link href="/graphics/editor"><a className="btn btn--ghost btn--sm">🖼️ Graphics</a></Link>
-          <Link href="/team"><a className="btn btn--ghost btn--sm">👥 Team</a></Link>
+          <Link href="/setup"><a className="btn btn--ghost btn--sm">Setup</a></Link>
+          <Link href="/assets"><a className="btn btn--ghost btn--sm">Assets</a></Link>
+          <Link href="/broadcast"><a className="btn btn--ghost btn--sm">Broadcast</a></Link>
+          <Link href="/graphics/editor"><a className="btn btn--ghost btn--sm">Graphics</a></Link>
+          <Link href="/team"><a className="btn btn--ghost btn--sm">Team</a></Link>
         </div>
       </div>
     </div>

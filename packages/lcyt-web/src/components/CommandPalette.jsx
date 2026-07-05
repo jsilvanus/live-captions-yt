@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './sidebar/navConfig.js';
+import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './sidebar/navConfig.jsx';
 import { useSessionContext } from '../contexts/SessionContext';
 
 // Flatten all nav items into a single searchable list

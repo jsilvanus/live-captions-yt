@@ -96,16 +96,15 @@ After selection, the frontend probes `GET /health` to discover the backend's fea
 - If `login` is in the features list → show email/password login form (user account mode)
 - If `login` is NOT in the features list → show API key entry only (minimal mode, no user account needed)
 
-**Feature-based UI gating:** Backend features from `GET /health` are stored in `localStorage` (`lcyt.backend.features`) and exposed via `ConnectionContext.backendFeatures`. Sidebar navigation items and groups have an optional `feature` property in `navConfig.js` that controls visibility:
+**Feature-based UI gating:** Backend features from `GET /health` are stored in `localStorage` (`lcyt.backend.features`) and exposed via `ConnectionContext.backendFeatures`. Sidebar navigation items have an optional `feature` property in `navConfig.jsx` that controls visibility:
 
 | Feature | Controls | Hidden when missing |
 |---------|----------|-------------------|
-| `rtmp` | Broadcast page | Sidebar "Broadcast" item |
-| `graphics` | Graphics group | Sidebar "Graphics" group (Editor, Control, Viewports) |
-| `production` | Production group | Sidebar "Production" group (Operator, Devices) |
-| `login` | User account pages | Sidebar "Projects" and "Account" items |
-| `ai` | AI settings page | Sidebar "AI" item |
-| `admin` | Admin panel | Sidebar "Admin" group (Users, Projects) |
+| `graphics` | DSK Editor | Sidebar "Graphics" item |
+| `login` | User account pages | Sidebar "Assets", "Projects", "Team", "Account" items |
+| `admin` | Admin panel | Sidebar "Admin" item |
+
+The sidebar is now a flat list (`NAV_ITEMS` + `NAV_BOTTOM`, no groups — `NAV_GROUPS` is empty) matching the icon set and ordering of the Claude Design mockup (project `9919ac53`, `Sidebar.dc.html`/`Dashboard.dc.html`). Pages with no counterpart in that mockup (Captions, Audio, Translations, Planner, AI, Settings, the Production group, DSK Control/Viewports, Admin Audit Log) were removed from the sidebar nav — their routes and components are untouched, so they're still reachable by direct URL. See `HIDDEN.md` at the repo root for the full list and how to bring each one back.
 
 **AuthGate** (`main.jsx`) supports two modes:
 1. **User login mode** — checks `lcyt-user` localStorage for `{ token, backendUrl }`

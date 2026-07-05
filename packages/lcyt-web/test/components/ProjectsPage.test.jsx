@@ -137,29 +137,6 @@ describe('ProjectsPage', () => {
     expect(screen.getByRole('button', { name: /create project/i })).toBeInTheDocument();
   });
 
-  it('masks API key by default and toggles visibility', async () => {
-    setupAuth();
-    global.fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ keys: MOCK_PROJECTS }),
-    });
-
-    render(<ProjectsPage />);
-
-    await waitFor(() => {
-      expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
-    });
-
-    // Key should be masked (first 8 chars + dots)
-    const maskedKey = screen.getAllByText(/key-abc-/)[0];
-    expect(maskedKey.textContent).toContain('••••');
-
-    // Click show to reveal
-    const showButtons = screen.getAllByText('Show');
-    fireEvent.click(showButtons[0]);
-    expect(screen.getByText('key-abc-1234567890ab')).toBeInTheDocument();
-  });
-
   it('calls logout on sign out click', async () => {
     setupAuth();
     global.fetch.mockResolvedValueOnce({
@@ -177,7 +154,7 @@ describe('ProjectsPage', () => {
     expect(mockAuth.logout).toHaveBeenCalled();
   });
 
-  it('navigates to /projects/:key when Manage is clicked', async () => {
+  it('navigates to /projects/:key when a project row is clicked', async () => {
     setupAuth();
     global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: MOCK_PROJECTS }) });
 
@@ -187,12 +164,32 @@ describe('ProjectsPage', () => {
       expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
     });
 
-    const manageButtons = screen.getAllByText('Manage');
-    expect(manageButtons.length).toBeGreaterThan(0);
-    fireEvent.click(manageButtons[0]);
+    const rows = screen.getAllByRole('button', { name: /sunday service/i });
+    expect(rows.length).toBeGreaterThan(0);
+    fireEvent.click(rows[0]);
 
     await waitFor(() => {
       expect(window.location.pathname).toBe(`/projects/${MOCK_PROJECTS[0].key}`);
+    });
+  });
+
+  it('navigates to / (via handleUseProject) when Enter is clicked', async () => {
+    setupAuth();
+    global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: MOCK_PROJECTS }) });
+
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getAllByText('Sunday service').length).toBeGreaterThan(0);
+    });
+
+    const enterButtons = screen.getAllByText(/^Enter$/);
+    expect(enterButtons.length).toBeGreaterThan(0);
+    fireEvent.click(enterButtons[0]);
+
+    expect(JSON.parse(localStorage.getItem('lcyt.session.config'))).toMatchObject({
+      backendUrl: 'https://api.test',
+      apiKey: MOCK_PROJECTS[0].key,
     });
   });
 });

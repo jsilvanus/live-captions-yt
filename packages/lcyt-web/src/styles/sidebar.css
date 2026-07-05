@@ -185,7 +185,10 @@
 .sidebar__item-icon {
   font-size: 16px;
   width: 20px;
-  text-align: center;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   line-height: 1;
 }
@@ -1758,7 +1761,10 @@
 .cmd-palette__item-icon {
   font-size: 15px;
   width: 20px;
-  text-align: center;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   line-height: 1;
 }
@@ -2084,4 +2090,187 @@
   background: var(--color-border);
   color: var(--color-text-muted);
   vertical-align: middle;
+}
+
+/* ─── Projects page ───────────────────────────────────────────── */
+
+.projects-page {
+  min-height: 100%;
+  background: var(--color-bg);
+  padding: 32px 24px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.projects-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  gap: 16px;
+}
+
+.projects-page__title {
+  font-family: var(--ff-serif, var(--font-family-base));
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: -0.01em;
+}
+
+.projects-page__subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 300;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.projects-page__dot { color: var(--color-border); }
+.projects-page__user { color: var(--color-accent); }
+
+.projects-page__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.project-row:hover {
+  border-color: var(--color-accent);
+}
+
+.project-row__thumb {
+  width: 56px;
+  height: 36px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #2a2420 0%, #17161a 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.project-row__main {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.project-row__name-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.project-row__name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-row__pill {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.project-row__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.project-row__badge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.project-row__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.project-row__meta-dim {
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+
+.project-row__actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.project-row__enter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  border: none;
+  border-radius: 6px;
+  padding: 0.35rem 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.project-row__enter:hover { opacity: 0.75; }
+
+/* ─── Project settings — slide-in from the right ─────────────────
+   Matches the Claude Design mockup's transition into the project detail
+   screen; the panel itself still fills the content area (not an overlay),
+   it just animates in from the right edge on mount. */
+
+.project-settings-page {
+  animation: project-settings-slide-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes project-settings-slide-in {
+  from { transform: translateX(24px); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-settings-page { animation: none; }
 }

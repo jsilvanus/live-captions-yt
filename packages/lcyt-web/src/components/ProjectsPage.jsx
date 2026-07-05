@@ -4,15 +4,6 @@ import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
 import { FeaturePicker } from './FeaturePicker';
 
-function copyToClipboard(text) {
-  navigator.clipboard?.writeText(text).catch(() => {});
-}
-
-function maskKey(key) {
-  if (!key || key.length < 8) return key;
-  return key.slice(0, 8) + '••••••••••••••••••••••••••••';
-}
-
 const FEATURE_BADGE_LABELS = {
   captions:          'Captions',
   'viewer-target':   'Viewer',
@@ -27,85 +18,62 @@ const FEATURE_BADGE_LABELS = {
   embed:             'Embed',
 };
 
-function ProjectCard({ project, onUse, onManage }) {
-  const [showKey, setShowKey] = useState(false);
+// Placeholder thumbnail — matches the Claude Design mockup's project-row
+// treatment (dark gradient tile + faint camera glyph). There's no real
+// per-project preview image in the API yet, so this stays decorative/static.
+function ProjectThumbnail() {
+  return (
+    <div className="project-row__thumb">
+      <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
+        <path d="M2 5C2 4.17 2.67 3.5 3.5 3.5H9.5C10.33 3.5 11 4.17 11 5V11C11 11.83 10.33 12.5 9.5 12.5H3.5C2.67 12.5 2 11.83 2 11V5Z" stroke="white" strokeWidth="1.2" />
+        <path d="M11 6.5L14 5V11L11 9.5" stroke="white" strokeWidth="1.2" strokeLinejoin="round" />
+      </svg>
+    </div>
+  );
+}
 
+function ProjectRow({ project, onUse, onManage }) {
   const badgeCodes = (project.features || []).filter(c => FEATURE_BADGE_LABELS[c]);
 
   return (
-    <div style={{
-      border: '1px solid var(--color-border)',
-      borderRadius: 8,
-      padding: '16px 20px',
-      background: 'var(--color-surface)',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 10,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontWeight: 600, fontSize: 15, flex: 1, color: 'var(--color-text)' }}>
-          {project.owner}
-        </span>
-        {project.myAccessLevel && (
-          <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 8, background: 'var(--color-border)', color: 'var(--color-text-muted)' }}>
-            {project.myAccessLevel}
-          </span>
-        )}
-        <button className="btn btn--ghost btn--sm" onClick={() => onManage(project)} title="Manage project">
-          Manage
-        </button>
-      </div>
+    <div className="project-row" onClick={() => onManage(project)} role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter') onManage(project); }}>
+      <ProjectThumbnail />
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <code style={{
-          fontSize: 12,
-          fontFamily: 'monospace',
-          color: 'var(--color-text-muted)',
-          flex: 1,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {showKey ? project.key : maskKey(project.key)}
-        </code>
-        <button className="btn btn--ghost btn--sm" onClick={() => setShowKey(v => !v)} title={showKey ? 'Hide key' : 'Show key'}>
-          {showKey ? 'Hide' : 'Show'}
-        </button>
-        <button className="btn btn--ghost btn--sm" onClick={() => copyToClipboard(project.key)} title="Copy API key">
-          Copy
-        </button>
-      </div>
-
-      {badgeCodes.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-          {badgeCodes.map(code => (
-            <span key={code} style={{
-              fontSize: 10,
-              padding: '1px 6px',
-              borderRadius: 8,
-              background: 'var(--color-bg)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text-muted)',
-            }}>
-              {FEATURE_BADGE_LABELS[code]}
-            </span>
-          ))}
+      <div className="project-row__main">
+        <div className="project-row__name-line">
+          <span className="project-row__name">{project.owner}</span>
+          {project.myAccessLevel && (
+            <span className="project-row__pill">{project.myAccessLevel}</span>
+          )}
         </div>
-      )}
-
-      <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-        Created {new Date(project.createdAt).toLocaleDateString()}
-        {project.expires && ` · Expires ${new Date(project.expires).toLocaleDateString()}`}
-        {project.memberCount > 1 && ` · ${project.memberCount} members`}
+        {badgeCodes.length > 0 && (
+          <div className="project-row__badges">
+            {badgeCodes.map(code => (
+              <span key={code} className="project-row__badge">{FEATURE_BADGE_LABELS[code]}</span>
+            ))}
+          </div>
+        )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+      <div className="project-row__meta">
+        {project.memberCount > 1 && <span>{project.memberCount} members</span>}
+      </div>
+
+      <div className="project-row__meta">
+        <span>Created {new Date(project.createdAt).toLocaleDateString()}</span>
+        {project.expires && <span className="project-row__meta-dim">Expires {new Date(project.expires).toLocaleDateString()}</span>}
+      </div>
+
+      <div className="project-row__actions" onClick={e => e.stopPropagation()}>
         <button
-          className="btn btn--primary btn--sm"
+          className="project-row__enter"
           onClick={() => onUse(project)}
-          style={{ flex: 1 }}
         >
-          Use this project
+          Enter
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+            <path d="M5 3.5L8 6.5L5 9.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
     </div>
@@ -248,29 +216,32 @@ export function ProjectsPage() {
   if (!user) return null; // redirecting
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'var(--color-bg)',
-      padding: '32px 24px',
-      maxWidth: 600,
-      margin: '0 auto',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, color: 'var(--color-text)' }}>Projects</h1>
+    <div className="projects-page">
+      <div className="projects-page__header">
+        <div>
+          <h1 className="projects-page__title">Projects</h1>
+          <p className="projects-page__subtitle">
+            {projects.length} project{projects.length === 1 ? '' : 's'}
+            <span className="projects-page__dot">·</span>
+            <span className="projects-page__user">{user.email}</span>
+          </p>
+        </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{user.email}</span>
           <button className="btn btn--ghost btn--sm" onClick={() => { logout(); window.location.href = '/login'; }}>Sign out</button>
+          <button className="btn btn--primary btn--sm" onClick={() => setCreating(true)}>
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ marginRight: 6 }}>
+              <path d="M5.5 1V10M1 5.5H10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+            New project
+          </button>
         </div>
       </div>
-      <p style={{ fontSize: 13, color: 'var(--color-text-muted)', marginBottom: 24 }}>
-        Each project has its own API key. Select a project to use it in the app.
-      </p>
 
       {error && (
         <div style={{ color: 'var(--color-error)', fontSize: 13, marginBottom: 16 }}>{error}</div>
       )}
 
-      {creating ? (
+      {creating && (
         <div style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '16px 20px', background: 'var(--color-surface)', marginBottom: 16 }}>
           <CreateProjectForm
             backendUrl={backendUrl}
@@ -282,14 +253,6 @@ export function ProjectsPage() {
             onCancel={() => setCreating(false)}
           />
         </div>
-      ) : (
-        <button
-          className="btn btn--primary"
-          onClick={() => setCreating(true)}
-          style={{ marginBottom: 16 }}
-        >
-          + New project
-        </button>
       )}
 
       {loadingProjects ? (
@@ -299,9 +262,9 @@ export function ProjectsPage() {
           No projects yet. Create one to get started.
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="projects-page__list">
           {projects.map(p => (
-            <ProjectCard
+            <ProjectRow
               key={p.key}
               project={p}
               onUse={handleUseProject}

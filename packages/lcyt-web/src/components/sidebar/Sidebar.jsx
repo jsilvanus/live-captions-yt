@@ -4,7 +4,7 @@ import { useSessionContext } from '../../contexts/SessionContext';
 import { useToastContext } from '../../contexts/ToastContext';
 import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
-import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.js';
+import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.jsx';
 import { KEYS } from '../../lib/storageKeys.js';
 import { readInputLang, INPUT_LANG_EVENT } from '../../lib/inputLang.js';
 

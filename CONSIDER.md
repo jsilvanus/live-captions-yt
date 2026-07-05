@@ -11,6 +11,48 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
+## DSK Editor / DSK Control chrome ignores the site's light/dark theme
+
+**Where:** `packages/lcyt-web/src/components/DskEditorPage.jsx`,
+`packages/lcyt-web/src/components/DskControlPage.jsx`
+
+**Finding:** Both pages hardcode their entire UI chrome to a fixed dark
+palette via raw hex literals (`#111`/`#0d0d0d` page background, `#1e1e1e`
+inputs, `#2a2a2a`/`#1e1e1e` buttons, etc.) — dozens to ~60 occurrences per
+file, scattered through individual inline `style={{...}}` props in addition
+to the ~7 shared style-constant objects (`btnStyle`, `inputStyle`, etc.) each
+file defines at module scope. Neither page reads `--color-*` from
+`shared-styles/tokens.css`, so they stay dark regardless of the user's
+light/dark theme setting, unlike the rest of the app (Setup Hub sections,
+Planner, Broadcast, sidebar — all already theme-aware).
+
+**Why skipped:** Converting just the shared style-constant objects would
+leave the many one-off inline hex colors (borders, labels, thumbnail/preview
+backgrounds) still hardcoded dark, producing a half-themed page that could
+look worse than the current consistent dark aesthetic — e.g. light-colored
+buttons floating on a canvas that's still hard-coded dark, or vice versa. A
+correct fix needs its own pass auditing every inline style in both files
+(one is ~2000 lines), not a few minutes bolted onto an unrelated redesign
+task. Also worth deciding deliberately: some graphics/creative tools keep a
+fixed dark chrome by design (regardless of app theme) — confirm that's not
+the intent here before retheming.
+
+**Fixed in the same pass:** the root cause of why *most* pages already work
+was actually broken for one common case — `--color-surface`,
+`--color-surface-elevated`, `--color-text-dim`, `--color-active-line`,
+`--color-active-line-border`, `--color-sent-flash`, `--color-panel`, and
+`--color-accent-dim` were only ever defined inside the
+`@media (prefers-color-scheme: dark)` block and the explicit
+`[data-theme="dark"]`/`[data-theme="light"]` overrides — never in the
+unconditional base `:root`. A user on "system" theme (the default) with
+their OS in **light** mode got none of the three blocks and so got these
+vars undefined. Added light-mode defaults for all eight to the base `:root`
+in `packages/shared-styles/tokens.css`.
+
+(Found during: sidebar icon/redesign + theme pass, 2026-07-05.)
+
+---
+
 ## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic
 
 **Where:** `packages/plugins/lcyt-connectors/src/variables-bus.js` vs.

@@ -66,19 +66,19 @@ describe('CommandPalette', () => {
 
   it('displays navigation items', () => {
     renderPalette(true);
-    // Captions and Settings are always visible (no feature gate)
-    expect(screen.getByText(/Captions/)).toBeInTheDocument();
-    expect(screen.getByText(/Settings/)).toBeInTheDocument();
+    // Setup and Broadcast are always visible (no feature gate)
+    expect(screen.getByText(/Setup/)).toBeInTheDocument();
+    expect(screen.getByText(/Broadcast/)).toBeInTheDocument();
   });
 
   it('filters items by query', () => {
     renderPalette(true);
     const input = screen.getByRole('combobox');
-    fireEvent.change(input, { target: { value: 'audio' } });
+    fireEvent.change(input, { target: { value: 'assets' } });
     const labels = document.querySelectorAll('.cmd-palette__item-label');
     const texts = Array.from(labels).map(el => el.textContent);
-    expect(texts.some(t => /audio/i.test(t))).toBe(true);
-    expect(texts.every(t => !/^captions$/i.test(t))).toBe(true);
+    expect(texts.some(t => /assets/i.test(t))).toBe(true);
+    expect(texts.every(t => !/^setup$/i.test(t))).toBe(true);
   });
 
   it('closes on Escape key', () => {
@@ -137,15 +137,15 @@ describe('CommandPalette', () => {
   it('filters out feature-gated items when feature is absent', () => {
     const session = mockSession({ backendFeatures: ['captions'] });
     renderPalette(true, vi.fn(), session);
-    // 'ai' feature gates the AI settings item; should not appear
-    expect(screen.queryByText(/^AI$/)).not.toBeInTheDocument();
+    // 'graphics' feature gates the Graphics item; should not appear
+    expect(screen.queryByText(/^Graphics$/)).not.toBeInTheDocument();
   });
 
   it('shows feature-gated items when feature is present', () => {
-    const session = mockSession({ backendFeatures: ['captions', 'ai'] });
+    const session = mockSession({ backendFeatures: ['captions', 'graphics'] });
     renderPalette(true, vi.fn(), session);
     const labels = document.querySelectorAll('.cmd-palette__item-label');
     const texts = Array.from(labels).map(el => el.textContent);
-    expect(texts.some(t => /^AI$/.test(t))).toBe(true);
+    expect(texts.some(t => /^Graphics$/.test(t))).toBe(true);
   });
 });

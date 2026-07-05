@@ -1,8 +1,9 @@
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const shim = require('use-sync-external-store/cjs/use-sync-external-store-shim.development.js');
+// `use-sync-external-store/shim` only exists to polyfill this hook for React
+// <18; this repo requires React ^18.3 (see package.json), which ships the
+// hook natively, so re-export straight from `react`. This also avoids
+// `createRequire`, which resolves to a Node builtin and breaks when this
+// file is bundled for the browser instead of pre-optimized by esbuild.
+import { useSyncExternalStore } from 'react';
 
-// Re-export the named export as ESM so consumers importing the shim path
-// receive an ESM-compatible module during Vite optimization.
-export const useSyncExternalStore = shim.useSyncExternalStore;
-export default shim.useSyncExternalStore;
+export { useSyncExternalStore };
+export default useSyncExternalStore;

@@ -51,6 +51,22 @@
   /* Semantic color aliases */
   --color-muted: var(--muted);
 
+  /* lcyt-web surface/accent variants — light-mode defaults. These have no
+     unconditional fallback anywhere else: they're only redefined inside the
+     `@media (prefers-color-scheme: dark)` query and the `[data-theme]`
+     overrides below, so without a base value here a light-mode user who
+     hasn't explicitly picked a theme (system default, OS in light mode)
+     would get an undefined var() with no fallback wherever these are used —
+     e.g. sidebar hover backgrounds via --color-surface-elevated. */
+  --color-accent-dim: #218bff;
+  --color-surface: #f6f8fa;
+  --color-surface-elevated: #ffffff;
+  --color-text-dim: #57606a;
+  --color-active-line: #dbeafe;
+  --color-active-line-border: #0969da;
+  --color-sent-flash: #dcfce7;
+  --color-panel: #f6f8fa;
+
   /* Layout */
   --sidebar-width: 232px;
   --nav-height: 56px;
