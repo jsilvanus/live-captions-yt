@@ -134,7 +134,7 @@ jobs:
           # Always test CLI if changed
           [[ -n "$CLI" ]] && PACKAGES+=("packages/lcyt-cli")
 
-          # Test frontend if changed (and also backend for smoke test)
+          # Test frontend if changed
           if [[ -n "$FRONTEND" ]]; then
             PACKAGES+=("packages/lcyt-web")
           fi
@@ -171,12 +171,16 @@ jobs:
             )
           fi
 
-          # Convert array to JSON (handle empty array case)
-          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
-            JSON_ARRAY="[]"
-          else
-            JSON_ARRAY=$(printf '%s\n' "${PACKAGES[@]}" | jq -R . | jq -s .)
-          fi
+          # Convert array to JSON using pure bash (no jq dependency)
+          JSON_ARRAY="["
+          for i in "${!PACKAGES[@]}"; do
+            if [[ $i -gt 0 ]]; then
+              JSON_ARRAY="$JSON_ARRAY,"
+            fi
+            JSON_ARRAY="$JSON_ARRAY\"${PACKAGES[$i]}\""
+          done
+          JSON_ARRAY="$JSON_ARRAY]"
+
           echo "packages=$JSON_ARRAY" >> $GITHUB_OUTPUT
 
   unit-node:
