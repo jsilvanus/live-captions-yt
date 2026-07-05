@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
 import { SetupCard } from './SetupCard.jsx';
 
@@ -344,11 +344,10 @@ function VariablesPanel({ api }) {
  * See docs/plans/plan_api_connectors_variables.md and
  * packages/plugins/lcyt-connectors/CLAUDE.md.
  */
-export function ConnectorsSection({ autoExpand = false }) {
+export function ConnectorsSection() {
   const session = useSessionContext();
   const api = useApi(session);
   const [connectors, setConnectors] = useState([]);
-  const containerRef = useRef(null);
 
   const load = useCallback(async () => {
     if (!session?.connected) return;
@@ -360,20 +359,14 @@ export function ConnectorsSection({ autoExpand = false }) {
 
   useEffect(() => { load(); }, [load]);
 
-  // Deep-linked from /setup/connectors: scroll the card into view once mounted
-  // pre-expanded (see SetupHubPage's useRoute('/setup/connectors')).
-  useEffect(() => {
-    if (autoExpand) containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [autoExpand]);
-
   async function deleteConnector(slug) {
     await api(`/connectors/${slug}`, { method: 'DELETE' });
     load();
   }
 
   return (
-    <div ref={containerRef}>
     <SetupCard
+      id="connectors"
       icon="🔌"
       title="API connectors"
       description={
@@ -382,7 +375,6 @@ export function ConnectorsSection({ autoExpand = false }) {
           : 'Connect third-party services (calendars, ChMS, lighting consoles, etc.) and expose their responses as {{name}} variables.'
       }
       status="ready"
-      defaultExpanded={autoExpand}
     >
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 0.8rem' }}>
         Trigger a refresh from a file line with <code>{'<!-- !api:slug.slug -->'}</code> (on
@@ -399,6 +391,5 @@ export function ConnectorsSection({ autoExpand = false }) {
 
       <VariablesPanel api={api} />
     </SetupCard>
-    </div>
   );
 }

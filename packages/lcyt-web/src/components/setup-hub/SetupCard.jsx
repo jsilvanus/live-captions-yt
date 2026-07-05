@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useRoute } from 'wouter';
 
 /**
  * SetupCard — generic catalog card used throughout SetupHubPage.
@@ -16,6 +17,11 @@ import { useState } from 'react';
  *                  rendered when the card is expanded (click the header to
  *                  toggle) and `disabled` is false.
  *   defaultExpanded boolean
+ *   id           string   — stable slug for this card (e.g. "connectors").
+ *                            When set, navigating to `/setup/:id` pre-expands
+ *                            this card and scrolls it into view — every card
+ *                            with an `id` is deep-linkable this way, no extra
+ *                            wiring needed per card. See SetupHubPage.
  */
 const STATUS_LABELS = {
   ready:        'Ready',
@@ -26,13 +32,25 @@ const STATUS_LABELS = {
 
 export function SetupCard({
   icon, title, description, status, statusLabel, disabled = false,
-  action, children, defaultExpanded = false,
+  action, children, defaultExpanded = false, id,
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
   const hasBody = !disabled && !!children;
+  const [expanded, setExpanded] = useState(defaultExpanded);
+  const containerRef = useRef(null);
+
+  const [deepLinked] = useRoute(id ? `/setup/${id}` : '/__setup-card-no-id__');
+
+  useEffect(() => {
+    if (!deepLinked) return;
+    if (hasBody) setExpanded(true);
+    containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Only react to the deep-link itself arriving/changing — not to hasBody,
+    // which is stable per card and shouldn't re-trigger the scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinked]);
 
   return (
-    <div className={`setup-card${disabled ? ' setup-card--disabled' : ''}`}>
+    <div ref={containerRef} className={`setup-card${disabled ? ' setup-card--disabled' : ''}`}>
       <div
         className={`setup-card__header${hasBody ? ' setup-card__header--clickable' : ''}`}
         onClick={hasBody ? () => setExpanded(v => !v) : undefined}

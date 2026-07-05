@@ -37,11 +37,12 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/planner` | `PlannerPage` | Event/service planner |
 | `/translations` | `TranslationsPage` | Translation management |
 | `/projects` | `ProjectsPage` | User project (API key) management |
-| `/setup` | `SetupWizardPage` | Guided setup wizard |
+| `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable |
+| `/setup/wizard` | `SetupWizardPage` | Guided one-time setup wizard (superseded by the hub as the default `/setup` destination, still reachable) |
+| `/setup/:card` | `SetupHubPage` | Deep link — same page as `/setup`, with the card whose `id` matches `:card` (e.g. `connectors`, `cameras`, `stt`, `storage`) pre-expanded and scrolled into view |
 | `/account` | `AccountPage` | Login/register or user profile |
 | `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
 | `/ai` | `AiSettingsPage` | AI/embedding provider config (feature-gated: `ai`) |
-| `/setup/connectors` | `SetupHubPage` | Deep link — same page as `/setup`, with the "API connectors" card pre-expanded and scrolled into view (`ConnectorsSection`, see below) |
 | `/admin/users` | `AdminUsersPage` | User list, search, batch actions (feature-gated: `admin`) |
 | `/admin/users/:id` | `AdminUserDetailPage` | User detail, projects, password reset (feature-gated: `admin`) |
 | `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |

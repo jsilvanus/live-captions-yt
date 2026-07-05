@@ -64,6 +64,7 @@ export function SttSection() {
 
   return (
     <SetupCard
+      id="stt"
       icon="🗣️"
       title="Speech-to-text service"
       description="Server-side transcription (Google Cloud, Whisper HTTP, or OpenAI) from your RTMP/HLS/WHEP audio."

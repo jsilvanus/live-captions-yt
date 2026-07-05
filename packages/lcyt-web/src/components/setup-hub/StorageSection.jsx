@@ -94,6 +94,7 @@ export function StorageSection() {
 
   return (
     <SetupCard
+      id="storage"
       icon="🪣"
       title="Storage override"
       description="Per-project S3-compatible or WebDAV storage for saved caption files (default falls back to the server-wide bucket)."
