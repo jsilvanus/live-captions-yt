@@ -32,6 +32,7 @@ export function AiModelsSection() {
 
   return (
     <SetupCard
+      id="ai-models"
       icon="🤖"
       title="AI models"
       description={

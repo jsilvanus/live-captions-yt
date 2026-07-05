@@ -1,8 +1,8 @@
 ---
 id: plan/api_connectors_variables
 title: "API Connectors & Variables — {{ }} Bindings and Metacode-Triggered Refresh"
-status: draft
-summary: "Design for a project-scoped variable system (`{{name}}` insertion, timing-agnostic, usable anywhere) backed by user-defined API Connectors (base URL, auth, headers) with nested Requests (method/path/query/body/response mapping). Refresh is triggered by a metacode, not by the insertion syntax itself, across three tiers: `<!-- !api:slug.slug -->` (on pointer arrival), `<!-- api:slug.slug -->` (async, fired at send), `<!-- api!:slug.slug -->` (prefetch, blocks briefly at send for freshness). Unifies the existing localStorage-only 'active codes' concept into the same variable model. Documentation only — no implementation."
+status: in-progress
+summary: "Project-scoped variable system (`{{name}}` insertion, timing-agnostic, usable anywhere) backed by user-defined API Connectors (base URL, auth, headers) with nested Requests (method/path/query/body/response mapping). Refresh is triggered by a metacode, not by the insertion syntax itself, across three tiers: `<!-- !api:slug.slug -->` (on pointer arrival), `<!-- api:slug.slug -->` (async, fired at send), `<!-- api!:slug.slug -->` (prefetch, blocks briefly at send for freshness). Unifies the existing localStorage-only 'active codes' concept into the same variable model. Backend plugin (`lcyt-connectors`: schema, CRUD, resolution engine, SSE), metacode parser (`!api:`/`api:`/`api!:` + `{{ }}` insertion), and InputBar wiring implemented; standalone Connector/Request/Variable management UI remains follow-on work (see §9)."
 related: plan/team_org_backend, plan/selfservice_config_backend, plan/ai_roles_framework, plan/cues, plan/dsk
 ---
 

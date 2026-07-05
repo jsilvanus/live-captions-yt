@@ -856,3 +856,68 @@ describe('parseFileContent() — cue[events]:', () => {
     assert.equal(lineCodes[0].cueEvents, true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// API connector triggers — !api:/api:/api!: (see docs/plans/plan_api_connectors_variables.md §1.2)
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — API connector triggers', () => {
+  it('!api: is parsed as pointer tier, metadata-only line', () => {
+    const raw = '<!-- !api:weather.current -->';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], '');
+    assert.deepEqual(lineCodes[0].apiTriggers, [{ connectorSlug: 'weather', requestSlug: 'current', tier: 'pointer' }]);
+  });
+
+  it('api: is parsed as send tier', () => {
+    const raw = '<!-- api:weather.current -->Text';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Text');
+    assert.deepEqual(lineCodes[0].apiTriggers, [{ connectorSlug: 'weather', requestSlug: 'current', tier: 'send' }]);
+  });
+
+  it('api!: is parsed as prefetch tier', () => {
+    const raw = '<!-- api!:live.viewercount -->Welcome!';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Welcome!');
+    assert.deepEqual(lineCodes[0].apiTriggers, [{ connectorSlug: 'live', requestSlug: 'viewercount', tier: 'prefetch' }]);
+  });
+
+  it('supports comma-separated multiple triggers on one line', () => {
+    const raw = '<!-- api!:weather.current,login.token -->Text';
+    const { lineCodes } = parseFileContent(raw);
+    assert.deepEqual(lineCodes[0].apiTriggers, [
+      { connectorSlug: 'weather', requestSlug: 'current', tier: 'prefetch' },
+      { connectorSlug: 'login', requestSlug: 'token', tier: 'prefetch' },
+    ]);
+  });
+
+  it('coexists with other metacodes and {{ }} insertion on the same line', () => {
+    const raw = '<!-- section: Worship --><!-- api:weather.current -->It is {{temp}} degrees';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'It is {{temp}} degrees');
+    assert.equal(lineCodes[0].section, 'Worship');
+    assert.deepEqual(lineCodes[0].apiTriggers, [{ connectorSlug: 'weather', requestSlug: 'current', tier: 'send' }]);
+  });
+
+  it('malformed trigger (no dot) is ignored, no apiTriggers set', () => {
+    const raw = '<!-- api:invalid -->Text';
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'Text');
+    assert.equal(lineCodes[0].apiTriggers, undefined);
+  });
+
+  it('a plain "api:" key (no bang) without a valid trigger does not leak into codes', () => {
+    const raw = '<!-- api: -->Text';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].api, undefined);
+    assert.equal(lineCodes[0].apiTriggers, undefined);
+  });
+
+  it('apiTriggers is line-scoped, not persistent across lines', () => {
+    const raw = '<!-- api:weather.current -->Line 1\nLine 2';
+    const { lineCodes } = parseFileContent(raw);
+    assert.ok(lineCodes[0].apiTriggers);
+    assert.equal(lineCodes[1].apiTriggers, undefined);
+  });
+});

@@ -7,6 +7,7 @@ import { BridgeSection } from './BridgeSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { AiModelsSection } from './AiModelsSection.jsx';
+import { ConnectorsSection } from './ConnectorsSection.jsx';
 
 /**
  * SetupHubPage — `/setup`. Persistent device/service catalog superseding the
@@ -15,6 +16,13 @@ import { AiModelsSection } from './AiModelsSection.jsx';
  *
  * See docs/plans/plan_dashboard_console_redesign.md for the full gap matrix
  * behind each card's status.
+ *
+ * Deep links: `/setup/:card` (e.g. `/setup/connectors`) renders this same
+ * page with the card whose `id` matches `:card` pre-expanded and scrolled
+ * into view, so other pages can link straight to a specific card's settings
+ * without duplicating its UI on a standalone route. Every card below has an
+ * `id` for this reason — see SetupCard's own doc comment for how the
+ * matching works.
  */
 export function SetupHubPage() {
   return (
@@ -40,6 +48,7 @@ export function SetupHubPage() {
       <div className="setup-hub-page__section-title">Streaming &amp; graphics</div>
       <div className="setup-hub-page__grid">
         <SetupCard
+          id="egress"
           icon="📡"
           title="Egress (stream targets)"
           description="YouTube / generic RTMP relay targets — 4-slot configuration."
@@ -47,6 +56,7 @@ export function SetupHubPage() {
           action={{ label: 'Manage in Broadcast → Settings', href: '/broadcast' }}
         />
         <SetupCard
+          id="ingestion"
           icon="🎬"
           title="Ingestion"
           description="Incoming RTMP status. No dedicated ingestion entity exists yet — this reflects the ingest feature flag only."
@@ -54,6 +64,7 @@ export function SetupHubPage() {
           statusLabel="Status only"
         />
         <SetupCard
+          id="radio"
           icon="📻"
           title="Web radio"
           description="Audio-only HLS output. Read-only status today; there's no config UI for it yet."
@@ -61,6 +72,7 @@ export function SetupHubPage() {
           statusLabel="Status only"
         />
         <SetupCard
+          id="viewports"
           icon="🖼️"
           title="Viewports"
           description="Named DSK display regions (e.g. vertical-left, landscape)."
@@ -72,6 +84,7 @@ export function SetupHubPage() {
       <div className="setup-hub-page__section-title">Captions &amp; language</div>
       <div className="setup-hub-page__grid">
         <SetupCard
+          id="caption-targets"
           icon="🎯"
           title="Caption targets"
           description="YouTube / viewer / generic delivery targets for sent captions."
@@ -84,6 +97,7 @@ export function SetupHubPage() {
           </p>
         </SetupCard>
         <SetupCard
+          id="translations"
           icon="🌐"
           title="Languages &amp; translation"
           description="Real-time translation vendor and per-language routing."
@@ -106,14 +120,9 @@ export function SetupHubPage() {
       <div className="setup-hub-page__section-title">AI &amp; integrations</div>
       <div className="setup-hub-page__grid">
         <AiModelsSection />
+        <ConnectorsSection />
         <SetupCard
-          icon="🔌"
-          title="API connectors"
-          description="Connect third-party services (calendars, ChMS, lighting consoles, etc.)."
-          status="soon"
-          disabled
-        />
-        <SetupCard
+          id="workflows"
           icon="🧩"
           title="Workflows"
           description="Automated multi-step actions triggered by events."

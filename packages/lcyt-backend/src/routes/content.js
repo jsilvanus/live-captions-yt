@@ -29,7 +29,7 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/youtube',         createYouTubeRouter(auth));
-  router.use('/stt',             createSttRouter(auth, sttManager, db));
+  router.use('/stt',             createSttRouter(auth, sttManager, db, jwtSecret));
   router.use('/bridge-download', createBridgeDownloadRouter());
   return router;
 }

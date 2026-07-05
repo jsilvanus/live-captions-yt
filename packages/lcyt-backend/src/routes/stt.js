@@ -26,6 +26,7 @@
 
 import { Router } from 'express';
 import { getSttConfig, setSttConfig } from 'lcyt-rtmp';
+import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
 const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
@@ -39,8 +40,9 @@ function sendEvent(res, eventName, data) {
  * @param {import('express').RequestHandler} auth
  * @param {import('../../plugins/lcyt-rtmp/src/stt-manager.js').SttManager} sttManager
  * @param {import('better-sqlite3').Database} db
+ * @param {string} jwtSecret — for verifying the SSE ?token= / Bearer session JWT
  */
-export function createSttRouter(auth, sttManager, db) {
+export function createSttRouter(auth, sttManager, db, jwtSecret) {
   const router = Router();
 
   // ── GET /stt/status ────────────────────────────────────────────────────────
@@ -90,33 +92,11 @@ export function createSttRouter(auth, sttManager, db) {
 
   router.get('/events', (req, res) => {
     // Support both Bearer and ?token= for SSE (EventSource can't set headers)
-    let apiKey;
-    const tokenParam = req.query.token;
-    if (tokenParam) {
-      // Minimal JWT decode — we need the apiKey without full verification here
-      // because EventSource can't send Authorization headers.
-      // Use the same approach as /events route in events.js.
-      try {
-        const payload = JSON.parse(Buffer.from(tokenParam.split('.')[1], 'base64url').toString());
-        apiKey = payload.apiKey;
-      } catch {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-    } else {
-      // Parse from Authorization: Bearer header via req.session set by auth middleware
-      const authHeader = req.headers.authorization || '';
-      if (!authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Missing Bearer token' });
-      }
-      try {
-        const payload = JSON.parse(Buffer.from(authHeader.slice(7).split('.')[1], 'base64url').toString());
-        apiKey = payload.apiKey;
-      } catch {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
-    }
+    const token = extractSseToken(req);
+    if (!token) return res.status(401).json({ error: 'Missing Bearer token' });
 
-    if (!apiKey) return res.status(401).json({ error: 'Missing apiKey' });
+    const apiKey = verifySessionToken(token, jwtSecret)?.apiKey ?? null;
+    if (!apiKey) return res.status(401).json({ error: 'Invalid or expired token' });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

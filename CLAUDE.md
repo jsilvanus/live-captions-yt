@@ -26,6 +26,7 @@ live-captions-yt/
 │   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
 │   └── plugins/                # Plugin packages (npm workspaces glob: packages/plugins/*)
 │       ├── lcyt-agent/         # AI Agent plugin (AI config, embeddings, LLM event evaluation)
+│       ├── lcyt-connectors/    # API Connectors & Variables plugin ({{ }} bindings, metacode-triggered refresh)
 │       ├── lcyt-cues/          # Cue Engine plugin (phrase/fuzzy/semantic/event cue matching)
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
 │       ├── lcyt-files/         # Caption file storage plugin (local FS + S3 + WebDAV adapters)
@@ -57,6 +58,7 @@ live-captions-yt/
 ├── docker-compose.orchestrator.yml # Compose stack with orchestrator + worker daemon
 ├── PORTS.md                    # Port assignment reference
 ├── TODO.md                     # Outstanding work items
+├── CONSIDER.md                 # Skipped code-review/simplify findings, logged for a future pass
 ├── package.json                # Root workspace manifest
 └── CLAUDE.md                   # This file
 ```
@@ -123,6 +125,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | Cue engine plugin | `packages/plugins/lcyt-cues/CLAUDE.md` |
 | Music detection plugin | `packages/plugins/lcyt-music/CLAUDE.md` |
 | AI agent plugin | `packages/plugins/lcyt-agent/CLAUDE.md` |
+| API Connectors & Variables plugin | `packages/plugins/lcyt-connectors/CLAUDE.md` |
 | Core library (Python) | `python-packages/lcyt/CLAUDE.md` |
 | Flask backend (Python) | `python-packages/lcyt-backend/CLAUDE.md` |
 | MCP server (Python) | `python-packages/lcyt-mcp/CLAUDE.md` |
@@ -156,6 +159,9 @@ See each package's own `CLAUDE.md` for its test file layout and current coverage
 
 ### Error Hierarchy
 All packages define a typed exception hierarchy: `LCYTError` (base) → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`). Always raise/throw the most specific type.
+
+### Skipped Review Findings
+When a `/code-review` or `/simplify` pass surfaces a real finding that is deliberately **not** fixed (too invasive for the current diff, out of scope, requires a wider API change, or the "fix" wouldn't actually be simpler), log it in `CONSIDER.md` at the repo root instead of letting it evaporate at the end of the turn — what was found, why it was skipped, and where. Don't silently drop skipped findings from a review summary; either fix them or write them down.
 
 ### Timestamp Handling
 | Platform | Numeric value | ISO string |
@@ -196,6 +202,7 @@ See each plugin's own `CLAUDE.md` (`packages/plugins/*/CLAUDE.md`) for its speci
 ### Metacode Organization
 
 - Plugin metacode handling stays inside plugin-owned processors: the DSK `graphics` metacode in `packages/plugins/lcyt-dsk/src/caption-processor.js`, the `cue` metacode in `packages/plugins/lcyt-cues/src/cue-processor.js`.
+- The `!api:`/`api:`/`api!:` trigger metacodes (and `{{name}}` insertion) are handled differently from the others: parsing lives in `packages/lcyt-web/src/lib/metacode-parser.js` as usual, but the trigger side effect (firing a connector request) is invoked directly by the frontend (`InputBar.jsx`'s pointer effect and `doSend()`) calling `POST /variables/refresh` — there is no backend caption-processor stage for it, since a connector call isn't a per-caption text transform. See `packages/plugins/lcyt-connectors/CLAUDE.md`.
 - Core backend metacode handoff lives in `packages/lcyt-backend/src/metacode.js`.
 - Frontend metacode parser/runtime/planner helpers live in `packages/lcyt-web/src/lib/metacode-*.js` — see `packages/lcyt-web/CLAUDE.md`.
 - See `docs/METACODE.md` and `docs/plans/plan_metacode_refactor.md` for the current scoped refactor plan.

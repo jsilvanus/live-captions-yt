@@ -1,8 +1,8 @@
 ---
 id: plan/site_feature_policies
 title: "Site Feature Policies — Tri-State Availability Model"
-status: draft
-summary: "Design for a site-wide feature availability policy (available / self_service / denied per feature code), with per-org overrides, sitting alongside the existing user_features (per-user entitlement) and project_features (actual per-project toggle state) tables. Resolves the 'Site Features (admin global flags)' open question from plan_team_org_backend.md's appendix with a concrete recommendation. Worked example: custom storage (files-custom-bucket / files-webdav)."
+status: in-progress
+summary: "Site-wide feature availability policy (available / self_service / denied per feature code), with per-org overrides, sitting alongside the existing user_features (per-user entitlement) and project_features (actual per-project toggle state) tables. Resolves the 'Site Features (admin global flags)' open question from plan_team_org_backend.md's appendix with a concrete recommendation. Worked example: custom storage (files-custom-bucket / files-webdav). Implemented: `site_feature_policies`/`org_feature_overrides` schema, `resolveFeaturePolicy()` baseline-plus-override resolver wired into the self-service project-features route, `GET/PUT /admin/feature-policies` + `GET/PUT /admin/orgs/:id/feature-overrides` admin routes. Remaining: admin frontend UI for managing policies/overrides (no page yet — API-only today)."
 ---
 
 # Site Feature Policies — Tri-State Availability Model
