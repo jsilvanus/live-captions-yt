@@ -62,6 +62,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 |---|---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
 | [plan_team_org_backend.md](plans/plan_team_org_backend.md) | Team/Org Data Model — Backend Design | Design for a real multi-project Team/Org data model (`organizations`, `org_members`, `api_keys.org_id`) to replace the `/team` "Coming soon" placeholder; resolves org-vs-project access precedence with a baseline-plus-override resolver. Includes prioritized appendix of other known backend gaps. | |
+| [plan_ai_roles_framework.md](plans/plan_ai_roles_framework.md) | AI Roles Framework — Model + Harness Selection | Extensible AI "role" registry (`ai_roles` catalog + `project_ai_role_configs`) for Tracker (vision object tracking), Describer (scene description), Assistant (event-driven camera/mixer decisions with a suggest-only vs. autonomous safety gate), and Planner (rundown-writing assist, formalizing the existing `generateRundown`/`editRundown`). Supersedes the "AI Models" gap noted in `plan_team_org_backend.md`'s appendix. | `plan_team_org_backend.md` (appendix item 7) |
 
 ### Reference
 
