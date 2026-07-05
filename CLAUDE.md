@@ -58,6 +58,7 @@ live-captions-yt/
 ├── docker-compose.orchestrator.yml # Compose stack with orchestrator + worker daemon
 ├── PORTS.md                    # Port assignment reference
 ├── TODO.md                     # Outstanding work items
+├── CONSIDER.md                 # Skipped code-review/simplify findings, logged for a future pass
 ├── package.json                # Root workspace manifest
 └── CLAUDE.md                   # This file
 ```
@@ -158,6 +159,9 @@ See each package's own `CLAUDE.md` for its test file layout and current coverage
 
 ### Error Hierarchy
 All packages define a typed exception hierarchy: `LCYTError` (base) → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`). Always raise/throw the most specific type.
+
+### Skipped Review Findings
+When a `/code-review` or `/simplify` pass surfaces a real finding that is deliberately **not** fixed (too invasive for the current diff, out of scope, requires a wider API change, or the "fix" wouldn't actually be simpler), log it in `CONSIDER.md` at the repo root instead of letting it evaporate at the end of the turn — what was found, why it was skipped, and where. Don't silently drop skipped findings from a review summary; either fix them or write them down.
 
 ### Timestamp Handling
 | Platform | Numeric value | ISO string |
