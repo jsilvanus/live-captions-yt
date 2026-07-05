@@ -25,6 +25,7 @@
  */
 
 import { Router } from 'express';
+import jwt from 'jsonwebtoken';
 import { getSttConfig, setSttConfig } from 'lcyt-rtmp';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
@@ -36,11 +37,26 @@ function sendEvent(res, eventName, data) {
 }
 
 /**
+ * Verify a session JWT and extract its apiKey. Unlike a raw base64 decode of
+ * the payload segment, this checks the signature — an unverified decode
+ * would let anyone hand-craft a token claiming any apiKey and subscribe to
+ * that project's transcript stream.
+ */
+function verifyApiKeyFromToken(token, jwtSecret) {
+  try {
+    return jwt.verify(token, jwtSecret).apiKey ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * @param {import('express').RequestHandler} auth
  * @param {import('../../plugins/lcyt-rtmp/src/stt-manager.js').SttManager} sttManager
  * @param {import('better-sqlite3').Database} db
+ * @param {string} jwtSecret — for verifying the SSE ?token= / Bearer session JWT
  */
-export function createSttRouter(auth, sttManager, db) {
+export function createSttRouter(auth, sttManager, db, jwtSecret) {
   const router = Router();
 
   // ── GET /stt/status ────────────────────────────────────────────────────────
@@ -93,30 +109,16 @@ export function createSttRouter(auth, sttManager, db) {
     let apiKey;
     const tokenParam = req.query.token;
     if (tokenParam) {
-      // Minimal JWT decode — we need the apiKey without full verification here
-      // because EventSource can't send Authorization headers.
-      // Use the same approach as /events route in events.js.
-      try {
-        const payload = JSON.parse(Buffer.from(tokenParam.split('.')[1], 'base64url').toString());
-        apiKey = payload.apiKey;
-      } catch {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
+      apiKey = verifyApiKeyFromToken(tokenParam, jwtSecret);
     } else {
-      // Parse from Authorization: Bearer header via req.session set by auth middleware
       const authHeader = req.headers.authorization || '';
       if (!authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ error: 'Missing Bearer token' });
       }
-      try {
-        const payload = JSON.parse(Buffer.from(authHeader.slice(7).split('.')[1], 'base64url').toString());
-        apiKey = payload.apiKey;
-      } catch {
-        return res.status(401).json({ error: 'Invalid token' });
-      }
+      apiKey = verifyApiKeyFromToken(authHeader.slice(7), jwtSecret);
     }
 
-    if (!apiKey) return res.status(401).json({ error: 'Missing apiKey' });
+    if (!apiKey) return res.status(401).json({ error: 'Invalid or expired token' });
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

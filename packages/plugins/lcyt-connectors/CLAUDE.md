@@ -57,7 +57,7 @@ A connector's `base_url` + a request's `path`/`query_params` are entirely user-c
 
 ## SSE authentication
 
-`GET /variables/events` accepts a `?token=` query param (since `EventSource` can't set headers) and verifies it with `jwt.verify(token, jwtSecret)` — a real signature check, not a raw base64 decode of the JWT payload segment. (An earlier version of this route — copied from `lcyt-backend/src/routes/stt.js`'s same pattern — only base64-decoded the payload and read `apiKey` out of it without verifying anything, despite a comment claiming it matched `routes/events.js`'s approach; `events.js` actually does call `jwt.verify()`. That gap meant anyone could hand-craft a `header.payload.signature`-shaped string with any `apiKey` claim and subscribe to that project's `variable_updated` stream. `routes/stt.js` itself still has this gap — out of scope for this plugin to fix.)
+`GET /variables/events` accepts a `?token=` query param (since `EventSource` can't set headers) and verifies it with `jwt.verify(token, jwtSecret)` — a real signature check, not a raw base64 decode of the JWT payload segment. (An earlier version of this route — copied from `lcyt-backend/src/routes/stt.js`'s same pattern — only base64-decoded the payload and read `apiKey` out of it without verifying anything, despite a comment claiming it matched `routes/events.js`'s approach; `events.js` actually does call `jwt.verify()`. That gap meant anyone could hand-craft a `header.payload.signature`-shaped string with any `apiKey` claim and subscribe to that project's `variable_updated` stream. `routes/stt.js` had the same gap and has since been fixed the same way — see `lcyt-backend/CLAUDE.md`.)
 
 ## Frontend integration (packages/lcyt-web)
 
