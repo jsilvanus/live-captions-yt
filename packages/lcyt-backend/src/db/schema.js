@@ -62,6 +62,63 @@ export function initDb(dbPath) {
       UNIQUE (org_id, user_id)
     )
   `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS site_feature_policies (
+      feature_code TEXT    PRIMARY KEY,
+      mode         TEXT    NOT NULL DEFAULT 'denied',
+      updated_by   INTEGER REFERENCES users(id),
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS org_feature_overrides (
+      org_id       INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      feature_code TEXT    NOT NULL,
+      mode         TEXT    NOT NULL,
+      set_by       INTEGER REFERENCES users(id),
+      set_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (org_id, feature_code)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_org_feature_overrides_org ON org_feature_overrides(org_id)');
+
+  // Seed the initial deployment-wide feature policies; these defaults can be overridden
+  // through the admin routes and only apply when a policy row does not already exist.
+  const seedFeaturePolicies = [
+    ['captions', 'available'],
+    ['viewer-target', 'available'],
+    ['mic-lock', 'available'],
+    ['stats', 'available'],
+    ['translations', 'available'],
+    ['embed', 'available'],
+    ['files-local', 'available'],
+    ['files-browser-local', 'available'],
+    ['collaboration', 'self_service'],
+    ['file-saving', 'self_service'],
+    ['files-managed-bucket', 'self_service'],
+    ['files-custom-bucket', 'self_service'],
+    ['files-webdav', 'self_service'],
+    ['graphics-client', 'self_service'],
+    ['restream', 'self_service'],
+    ['ingest', 'denied'],
+    ['radio', 'denied'],
+    ['hls-stream', 'denied'],
+    ['preview', 'denied'],
+    ['stt-server', 'denied'],
+    ['device-control', 'denied'],
+    ['graphics-server', 'denied'],
+    ['cea-captions', 'denied'],
+  ];
+  const insertPolicyStmt = db.prepare(`
+    INSERT INTO site_feature_policies (feature_code, mode)
+    VALUES (?, ?)
+    ON CONFLICT(feature_code) DO NOTHING
+  `);
+  db.transaction(() => {
+    for (const [featureCode, mode] of seedFeaturePolicies) {
+      insertPolicyStmt.run(featureCode, mode);
+    }
+  })();
 
   // Additive migrations for databases created before the org index additions
   const existingOrgMemberIndexes = new Set(

@@ -17,7 +17,7 @@ import { createAccountRouters } from '../src/routes/account.js';
 import { createRequireFeature, createRequireKeyFeature, isEnforced } from '../src/middleware/feature-gate.js';
 import { createUser } from '../src/db/users.js';
 import { createKey } from '../src/db/keys.js';
-import { setProjectFeature, provisionDefaultProjectFeatures } from '../src/db/project-features.js';
+import { setProjectFeature, provisionDefaultProjectFeatures, setUserFeature, setSiteFeaturePolicy } from '../src/db/project-features.js';
 
 const ADMIN_KEY  = 'test-admin-key-fg';
 const JWT_SECRET = 'test-jwt-secret-fg';
@@ -330,6 +330,30 @@ describe('GET /keys/:key/features — user auth', () => {
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body.features));
     assert.ok(body.features.length > 0, 'should have provisioned features');
+  });
+});
+
+describe('PATCH /keys/:key/features/:code — policy gating', () => {
+  it('rejects enabling a denied feature even when the user is entitled', async () => {
+    const hash = bcrypt.hashSync('pass1234', 1);
+    const user = createUser(db, { email: 'policy-denied@test.com', passwordHash: hash });
+    const key = createKey(db, { owner: 'policy-proj', user_id: user.id });
+    setUserFeature(db, user.id, 'files-custom-bucket', true);
+    setSiteFeaturePolicy(db, 'files-custom-bucket', 'denied');
+
+    const token = makeUserToken(user.id, user.email);
+    const res = await fetch(`${baseUrl}/keys/${key.key}/features/files-custom-bucket`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: 'Bearer ' + token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ enabled: true }),
+    });
+    const body = await res.json();
+    assert.equal(res.status, 403);
+    assert.equal(body.feature, 'files-custom-bucket');
+    assert.equal(body.policyMode, 'denied');
   });
 });
 
