@@ -25,8 +25,8 @@
  */
 
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { getSttConfig, setSttConfig } from 'lcyt-rtmp';
+import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
 const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
@@ -34,20 +34,6 @@ const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
 /** Send an SSE event line to an Express response. */
 function sendEvent(res, eventName, data) {
   res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
-}
-
-/**
- * Verify a session JWT and extract its apiKey. Unlike a raw base64 decode of
- * the payload segment, this checks the signature — an unverified decode
- * would let anyone hand-craft a token claiming any apiKey and subscribe to
- * that project's transcript stream.
- */
-function verifyApiKeyFromToken(token, jwtSecret) {
-  try {
-    return jwt.verify(token, jwtSecret).apiKey ?? null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -106,18 +92,10 @@ export function createSttRouter(auth, sttManager, db, jwtSecret) {
 
   router.get('/events', (req, res) => {
     // Support both Bearer and ?token= for SSE (EventSource can't set headers)
-    let apiKey;
-    const tokenParam = req.query.token;
-    if (tokenParam) {
-      apiKey = verifyApiKeyFromToken(tokenParam, jwtSecret);
-    } else {
-      const authHeader = req.headers.authorization || '';
-      if (!authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Missing Bearer token' });
-      }
-      apiKey = verifyApiKeyFromToken(authHeader.slice(7), jwtSecret);
-    }
+    const token = extractSseToken(req);
+    if (!token) return res.status(401).json({ error: 'Missing Bearer token' });
 
+    const apiKey = verifySessionToken(token, jwtSecret)?.apiKey ?? null;
     if (!apiKey) return res.status(401).json({ error: 'Invalid or expired token' });
 
     res.setHeader('Content-Type', 'text/event-stream');

@@ -10,26 +10,22 @@
  *   POST   /variables/refresh        — { connectorSlug, requestSlug, waitMs? }
  */
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { listVariables, getVariable, upsertManualVariable, deleteVariable, resolveVariableValue } from '../db.js';
+import { requireApiKey, extractSseToken, verifyApiKeyFromToken } from './helpers.js';
 
 function sendEvent(res, eventName, data) {
   res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
 }
 
-/**
- * Verify a session JWT and extract its apiKey. Unlike a raw base64 decode of
- * the payload segment, this actually checks the signature — an unverified
- * decode would let anyone hand-craft a token claiming any apiKey and
- * subscribe to that project's variable_updated stream.
- */
-function verifyApiKeyFromToken(token, jwtSecret) {
-  try {
-    const payload = jwt.verify(token, jwtSecret);
-    return payload.apiKey || null;
-  } catch {
-    return null;
-  }
+/** Shape a variable row for a JSON response — used by GET/POST/PUT alike. */
+function serializeVariable(name, row) {
+  return {
+    name,
+    value: resolveVariableValue(row),
+    source: row.source,
+    defaultValue: row.default_value,
+    resolvedAt: row.resolved_at,
+  };
 }
 
 /**
@@ -42,42 +38,20 @@ function verifyApiKeyFromToken(token, jwtSecret) {
 export function createVariablesRouter(db, auth, bus, engine, jwtSecret) {
   const router = Router();
 
-  function requireApiKey(req, res) {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) {
-      res.status(401).json({ error: 'Not authenticated' });
-      return null;
-    }
-    return apiKey;
-  }
-
   router.get('/', auth, (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const rows = listVariables(db, apiKey);
     const snapshot = {};
-    for (const row of rows) {
-      snapshot[row.name] = {
-        value: resolveVariableValue(row),
-        source: row.source,
-        defaultValue: row.default_value,
-        resolvedAt: row.resolved_at,
-      };
+    for (const row of listVariables(db, apiKey)) {
+      const { name, ...rest } = serializeVariable(row.name, row);
+      snapshot[name] = rest;
     }
     res.json({ variables: snapshot });
   });
 
   // GET /variables/events (SSE) — EventSource can't set headers, so accept ?token= or Bearer.
   router.get('/events', (req, res) => {
-    let apiKey;
-    const tokenParam = req.query.token;
-    if (tokenParam) {
-      apiKey = verifyApiKeyFromToken(tokenParam, jwtSecret);
-    } else {
-      const authHeader = req.headers.authorization || '';
-      if (!authHeader.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing Bearer token' });
-      apiKey = verifyApiKeyFromToken(authHeader.slice(7), jwtSecret);
-    }
+    const apiKey = verifyApiKeyFromToken(extractSseToken(req), jwtSecret);
     if (!apiKey) return res.status(401).json({ error: 'Invalid or expired token' });
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -111,8 +85,8 @@ export function createVariablesRouter(db, auth, bus, engine, jwtSecret) {
     if (getVariable(db, apiKey, name)) return res.status(409).json({ error: `Variable already exists: ${name}` });
 
     const row = upsertManualVariable(db, apiKey, name, { value, defaultValue });
-    bus.emitVariableUpdated(apiKey, { name, value: resolveVariableValue(row), source: row.source, resolvedAt: row.resolved_at });
-    res.status(201).json({ variable: { name, value: resolveVariableValue(row), source: row.source, defaultValue: row.default_value, resolvedAt: row.resolved_at } });
+    bus.emitVariableUpdated(apiKey, serializeVariable(name, row));
+    res.status(201).json({ variable: serializeVariable(name, row) });
   });
 
   router.put('/:name', auth, (req, res) => {
@@ -122,8 +96,8 @@ export function createVariablesRouter(db, auth, bus, engine, jwtSecret) {
     if (name.startsWith('_')) return res.status(400).json({ error: 'variable names starting with "_" are reserved' });
     const { value, defaultValue } = req.body || {};
     const row = upsertManualVariable(db, apiKey, name, { value, defaultValue });
-    bus.emitVariableUpdated(apiKey, { name, value: resolveVariableValue(row), source: row.source, resolvedAt: row.resolved_at });
-    res.json({ variable: { name, value: resolveVariableValue(row), source: row.source, defaultValue: row.default_value, resolvedAt: row.resolved_at } });
+    bus.emitVariableUpdated(apiKey, serializeVariable(name, row));
+    res.json({ variable: serializeVariable(name, row) });
   });
 
   router.delete('/:name', auth, (req, res) => {

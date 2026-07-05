@@ -84,6 +84,11 @@ export function useSession({
     };
   }, []);
 
+  // Stable identity (only reads a ref) so consumers can safely depend on it
+  // in their own effect/useCallback deps without those re-running every
+  // render just because useSession() returned a new object this time.
+  const getSessionToken = useCallback(() => senderRef.current?._token ?? null, []);
+
   // Close EventSource + cancel reconnect on unmount
   useEffect(() => () => {
     esRef.current?.close();
@@ -744,7 +749,7 @@ export function useSession({
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,
     getQueuedCount,
     /** Returns the active session JWT (for EventSource ?token= param) */
-    getSessionToken: () => senderRef.current?._token ?? null,
+    getSessionToken,
     subscribeSseEvent,
   };
 }

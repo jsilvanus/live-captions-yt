@@ -119,12 +119,10 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     const triggers = file.lineCodes?.[file.pointer]?.apiTriggers;
     if (!triggers || triggers.length === 0) return;
 
+    // Pointer and prefetch tiers both fire once immediately on arrival — the
+    // prefetch tier additionally gets a repeating loop below.
     for (const { connectorSlug, requestSlug, tier } of triggers) {
-      if (tier === 'pointer') {
-        variables.refresh(connectorSlug, requestSlug);
-      } else if (tier === 'prefetch') {
-        variables.refresh(connectorSlug, requestSlug);
-      }
+      if (tier === 'pointer' || tier === 'prefetch') variables.refresh(connectorSlug, requestSlug);
     }
     const prefetchTriggers = triggers.filter(t => t.tier === 'prefetch');
     if (prefetchTriggers.length > 0) {

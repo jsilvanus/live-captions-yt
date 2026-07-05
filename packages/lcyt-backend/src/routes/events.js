@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
+import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 
 /**
  * Factory for the /events SSE router.
@@ -23,24 +23,13 @@ export function createEventsRouter(store, jwtSecret) {
   const router = Router();
 
   router.get('/', (req, res) => {
-    // Accept token via Authorization header or ?token= query param
-    // (EventSource doesn't support custom headers)
-    let token = null;
-    const authHeader = req.headers['authorization'];
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    } else if (req.query.token) {
-      token = req.query.token;
-    }
-
+    const token = extractSseToken(req);
     if (!token) {
       return res.status(401).json({ error: 'Authorization required' });
     }
 
-    let payload;
-    try {
-      payload = jwt.verify(token, jwtSecret);
-    } catch {
+    const payload = verifySessionToken(token, jwtSecret);
+    if (!payload) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
 

@@ -11,11 +11,16 @@ const labelStyle = { fontSize: '0.8em', fontWeight: 600, opacity: 0.8, display: 
 const fieldStyle = { marginBottom: '0.6rem' };
 
 function useApi(session) {
+  // Depend on the specific fields read, not the whole session object — a
+  // fresh useSession() return value on every render would otherwise give
+  // this a new identity each time too, re-triggering every effect that
+  // depends on it (re-fetching connectors/requests/mappings on every render).
+  const { backendUrl, getSessionToken } = session;
   const call = useCallback(async (path, { method = 'GET', body } = {}) => {
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const res = await fetch(`${session.backendUrl}${path}`, {
+    const res = await fetch(`${backendUrl}${path}`, {
       method,
       headers,
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -23,8 +28,31 @@ function useApi(session) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
-  }, [session]);
+  }, [backendUrl, getSessionToken]);
   return call;
+}
+
+/**
+ * Shared "new X" form idiom used by every create form below: validate,
+ * submit via the given API call, reset on success, surface errors.
+ */
+function useCreateForm(initialForm) {
+  const [form, setForm] = useState(initialForm);
+  const [error, setError] = useState('');
+
+  const submit = useCallback(async (validate, apiCall, onSuccess) => {
+    setError('');
+    const validationError = validate(form);
+    if (validationError) { setError(validationError); return; }
+    try {
+      await apiCall(form);
+      setForm(initialForm);
+      onSuccess?.();
+    } catch (e) { setError(e.message); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
+
+  return { form, setForm, error, submit };
 }
 
 /** Editable list of { key, value } pairs (headers / query params). */
@@ -55,8 +83,7 @@ function PairList({ pairs, onChange, keyPlaceholder = 'Key', valuePlaceholder = 
 
 function MappingsEditor({ api, connectorSlug, requestSlug }) {
   const [mappings, setMappings] = useState([]);
-  const [form, setForm] = useState({ jsonPath: '$', variableName: '' });
-  const [error, setError] = useState('');
+  const { form, setForm, error, submit } = useCreateForm({ jsonPath: '$', variableName: '' });
 
   const load = useCallback(async () => {
     try {
@@ -67,15 +94,11 @@ function MappingsEditor({ api, connectorSlug, requestSlug }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function create() {
-    setError('');
-    if (!form.variableName) { setError('variableName is required'); return; }
-    try {
-      await api(`/connectors/${connectorSlug}/requests/${requestSlug}/mappings`, { method: 'POST', body: form });
-      setForm({ jsonPath: '$', variableName: '' });
-      load();
-    } catch (e) { setError(e.message); }
-  }
+  const create = () => submit(
+    (f) => (!f.variableName ? 'variableName is required' : null),
+    (f) => api(`/connectors/${connectorSlug}/requests/${requestSlug}/mappings`, { method: 'POST', body: f }),
+    load,
+  );
 
   async function remove(id) {
     await api(`/connectors/${connectorSlug}/requests/${requestSlug}/mappings/${id}`, { method: 'DELETE' });
@@ -122,21 +145,16 @@ function RequestRow({ api, connectorSlug, request, onDeleted }) {
 }
 
 function NewRequestForm({ api, connectorSlug, onCreated }) {
-  const [form, setForm] = useState({
+  const { form, setForm, error, submit } = useCreateForm({
     name: '', slug: '', method: 'GET', path: '/', responseType: 'json',
     queryParams: [], bodyType: 'raw', bodyContent: '',
   });
-  const [error, setError] = useState('');
 
-  async function create() {
-    setError('');
-    if (!form.name || !form.slug || !form.path) { setError('name, slug, and path are required'); return; }
-    try {
-      await api(`/connectors/${connectorSlug}/requests`, { method: 'POST', body: form });
-      setForm({ name: '', slug: '', method: 'GET', path: '/', responseType: 'json', queryParams: [], bodyType: 'raw', bodyContent: '' });
-      onCreated();
-    } catch (e) { setError(e.message); }
-  }
+  const create = () => submit(
+    (f) => (!f.name || !f.slug || !f.path ? 'name, slug, and path are required' : null),
+    (f) => api(`/connectors/${connectorSlug}/requests`, { method: 'POST', body: f }),
+    onCreated,
+  );
 
   return (
     <div style={{ border: '1px dashed var(--border, #ccc)', borderRadius: 8, padding: '0.6rem 0.8rem' }}>
@@ -229,18 +247,13 @@ function ConnectorCard({ api, connector, onDeleted }) {
 }
 
 function NewConnectorForm({ api, onCreated }) {
-  const [form, setForm] = useState({ name: '', slug: '', baseUrl: '', authType: 'none', authConfig: {}, headers: [] });
-  const [error, setError] = useState('');
+  const { form, setForm, error, submit } = useCreateForm({ name: '', slug: '', baseUrl: '', authType: 'none', authConfig: {}, headers: [] });
 
-  async function create() {
-    setError('');
-    if (!form.name || !form.slug || !form.baseUrl) { setError('name, slug, and baseUrl are required'); return; }
-    try {
-      await api('/connectors', { method: 'POST', body: form });
-      setForm({ name: '', slug: '', baseUrl: '', authType: 'none', authConfig: {}, headers: [] });
-      onCreated();
-    } catch (e) { setError(e.message); }
-  }
+  const create = () => submit(
+    (f) => (!f.name || !f.slug || !f.baseUrl ? 'name, slug, and baseUrl are required' : null),
+    (f) => api('/connectors', { method: 'POST', body: f }),
+    onCreated,
+  );
 
   return (
     <div style={{ border: '1px dashed var(--border, #ccc)', borderRadius: 10, padding: '0.8rem 1rem', marginBottom: '1.5rem' }}>
@@ -283,8 +296,7 @@ function NewConnectorForm({ api, onCreated }) {
 
 function VariablesPanel({ api }) {
   const [variables, setVariables] = useState({});
-  const [form, setForm] = useState({ name: '', value: '', defaultValue: '' });
-  const [error, setError] = useState('');
+  const { form, setForm, error, submit } = useCreateForm({ name: '', value: '', defaultValue: '' });
 
   const load = useCallback(async () => {
     try {
@@ -295,15 +307,11 @@ function VariablesPanel({ api }) {
 
   useEffect(() => { load(); }, [load]);
 
-  async function create() {
-    setError('');
-    if (!form.name) { setError('name is required'); return; }
-    try {
-      await api('/variables', { method: 'POST', body: form });
-      setForm({ name: '', value: '', defaultValue: '' });
-      load();
-    } catch (e) { setError(e.message); }
-  }
+  const create = () => submit(
+    (f) => (!f.name ? 'name is required' : null),
+    (f) => api('/variables', { method: 'POST', body: f }),
+    load,
+  );
 
   async function remove(name) {
     await api(`/variables/${encodeURIComponent(name)}`, { method: 'DELETE' });
