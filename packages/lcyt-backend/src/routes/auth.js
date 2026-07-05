@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { createUser, getUserByEmail, getUserById, updateUserPassword } from '../db/users.js';
+import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { deviceLoginHandler } from './device-roles.js';
@@ -101,6 +101,30 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     const user = getUserById(db, req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
+  });
+
+  // PATCH /auth/me — update own profile (name); requires user token
+  router.patch('/me', userAuth, (req, res) => {
+    const { name } = req.body || {};
+    if (name === undefined) {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    if (typeof name !== 'string') {
+      return res.status(400).json({ error: 'name must be a string' });
+    }
+    const trimmed = name.trim();
+    if (trimmed === '') {
+      return res.status(400).json({ error: 'name cannot be empty' });
+    }
+    try {
+      updateUser(db, req.user.userId, { name: trimmed });
+      const user = getUserById(db, req.user.userId);
+      if (!user) return res.status(404).json({ error: 'User not found' });
+      res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
+    } catch (err) {
+      console.error('[auth] update-me error:', err.message);
+      res.status(500).json({ error: 'Profile update failed' });
+    }
   });
 
   // POST /auth/change-password — requires user token
