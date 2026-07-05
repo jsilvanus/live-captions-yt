@@ -1,7 +1,7 @@
 ---
 id: plan/dashboard-console-redesign
 title: "Dashboard / Console Redesign"
-status: in-progress
+status: implemented
 summary: "Restructures lcyt-web's information architecture around a Claude Design mockup: Broadcast becomes the operate surface (Live + Settings tabs), root route becomes a contextual project summary, /setup becomes a persistent device/service catalog, plus new Team/Assets pages and extended Account/Admin. Frontend-only — zero backend changes; every real gap is a visible, disabled 'Coming soon' element."
 ---
 
