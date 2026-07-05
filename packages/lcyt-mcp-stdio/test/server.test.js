@@ -39,6 +39,7 @@ class FakeSender {
   }
 
   async sync() {
+    this.syncOffset = 42;
     return { syncOffset: 42, roundTripTime: 10, serverTimestamp: null, statusCode: 200 };
   }
 
@@ -102,11 +103,31 @@ describe("lcyt-mcp server", () => {
   it("send_caption: returns ok and sequence", async () => {
     const { content: [{ text: startText }] } = await handlers.handleCallTool("start", { stream_key: "k" });
     const { session_id } = JSON.parse(startText);
-
+ 
     const result = await handlers.handleCallTool("send_caption", { session_id, text: "Hello, world!" });
     const payload = JSON.parse(result.content[0].text);
     assert.equal(payload.ok, true);
     assert.ok("sequence" in payload);
+  });
+
+  it("send_caption: accepts a time offset", async () => {
+    const { content: [{ text: startText }] } = await handlers.handleCallTool("start", { stream_key: "k" });
+    const { session_id } = JSON.parse(startText);
+
+    const result = await handlers.handleCallTool("send_caption", { session_id, text: "Offset", time: -1000 });
+    const payload = JSON.parse(result.content[0].text);
+    assert.equal(payload.ok, true);
+    assert.ok("sequence" in payload);
+  });
+
+  it("send_caption: rejects both timestamp and time", async () => {
+    const { content: [{ text: startText }] } = await handlers.handleCallTool("start", { stream_key: "k" });
+    const { session_id } = JSON.parse(startText);
+
+    await assert.rejects(
+      () => handlers.handleCallTool("send_caption", { session_id, text: "Bad", timestamp: "2025-01-01T00:00:00Z", time: -1000 }),
+      /Provide either timestamp or time, not both/
+    );
   });
 
   // -- send_batch ------------------------------------------------------------
@@ -136,14 +157,16 @@ describe("lcyt-mcp server", () => {
 
   // -- get_status ------------------------------------------------------------
 
-  it("get_status: returns sequence and syncOffset", async () => {
+  it("get_status: returns sequence, syncOffset, and roundTripTime", async () => {
     const { content: [{ text: startText }] } = await handlers.handleCallTool("start", { stream_key: "k" });
     const { session_id } = JSON.parse(startText);
-
+ 
     const result = await handlers.handleCallTool("get_status", { session_id });
     const payload = JSON.parse(result.content[0].text);
     assert.ok("sequence" in payload);
     assert.ok("syncOffset" in payload);
+    assert.equal(payload.syncOffset, 42);
+    assert.ok("roundTripTime" in payload);
   });
 
   // -- stop ------------------------------------------------------------------

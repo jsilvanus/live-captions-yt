@@ -1,20 +1,31 @@
 ---
 id: plan/ai_roles_framework
-title: "AI Roles Framework — Model + Harness Selection for Tracker, Describer, Assistant, Planner (and beyond)"
+title: "AI Roles Framework — Model + Harness Selection for Video Tracker, Video Describer, Planner Assistant, Production Assistant (and beyond)"
 status: draft
-summary: "Design for an extensible AI 'role' registry (ai_roles catalog + project_ai_role_configs) that replaces ad-hoc single-purpose AI config with a generic model+harness selection mechanism. Specs Tracker (vision object tracking), Describer (scene description), Assistant (event-driven camera/mixer decision-making with a suggest-only vs. autonomous safety gate), and Planner (rundown-writing assist, formalizing the existing generateRundown/editRundown). Supersedes the 'AI Models — tracker/describer/assistant multi-role' gap noted in plan_team_org_backend.md's appendix."
+summary: "Design for an extensible AI 'role' registry (ai_roles catalog + project_ai_role_configs) that replaces ad-hoc single-purpose AI config with a generic model+harness selection mechanism. Specifies the initial roles of Video Tracker (vision object tracking), Video Describer (scene description), Planner Assistant (rundown-writing assist), and Production Assistant (event-driven camera/mixer decision-making with a suggest-only vs. autonomous safety gate), with room for more roles later. Supersedes the 'AI Models — tracker/describer/assistant multi-role' gap noted in plan_team_org_backend.md's appendix."
 related: plan/agent, plan/cues, plan/team_org_backend
 ---
 
-# AI Roles Framework — Model + Harness Selection for Tracker, Describer, Assistant, Planner (and beyond)
+# AI Roles Framework — Model + Harness Selection for Video Tracker, Video Describer, Planner Assistant, Production Assistant (and beyond)
 
 ## Context
 
 LCYT already has one piece of AI infrastructure that looks like it should generalize but doesn't: `packages/plugins/lcyt-agent/src/ai-config.js` defines a single `ai_config` table — one row per API key — with columns for `embedding_provider`, `embedding_model`, `embedding_api_key`, `embedding_api_url`, and `fuzzy_threshold`. It was built for exactly one job: computing text embeddings for `lcyt-cues`'s semantic cue matching. But `AgentEngine` (`packages/plugins/lcyt-agent/src/agent-engine.js`) has since grown four more LLM-driven capabilities — `evaluateEventCue()` (Phase 3, event cues), `generateTemplate()`/`editTemplate()`/`suggestStyles()` (Phase 5, DSK graphics), and `generateRundown()`/`editRundown()` (Phase 6, planner assist) — and every one of them resolves its model/API settings by reading the *same* `ai_config` row through `_resolveApiSettings()`, which reuses `embedding_api_key`/`embedding_model`/`embedding_api_url` as if they were general chat-completion settings (see `agent-engine.js` lines 264–281). There is no way today to give the event-cue evaluator a different model, provider, or system prompt than the DSK generator, because they are not actually separate configurations — they are one embedding config wearing four hats. `analyseImage()` is a stub that returns `{ description: '', confidence: 0 }` — Phase 4 (video/image inference) was scoped in `docs/plans/plan_agent.md` but never built, precisely because "what these roles actually do behaviorally has never been specified" (per `plan_team_org_backend.md`'s appendix, item 7).
 
-This plan is that specification, and it fixes the underlying structural problem at the same time: the request was never "add three or four more config rows next to `ai_config`" — it was explicitly, by the user's own framing, **a model + harness selection framework**: an extensible registry of AI "roles," where a role is a named capability (Tracker, Describer, Assistant, Planner, and — explicitly — more to come) and a project's configuration for that role is "which model, which harness/prompt/tool-scaffolding." The number-one design constraint is that adding role #5 next year must not require a schema migration.
+This plan is that specification, and it fixes the underlying structural problem at the same time: the request was never "add three or four more config rows next to `ai_config`" — it was explicitly, by the user's own framing, **a model + harness selection framework**: an extensible registry of AI "roles," where a role is a named capability (Video Tracker, Video Describer, Planner Assistant, Production Assistant, and — explicitly — more to come) and a project's configuration for that role is "which model, which harness/prompt/tool-scaffolding." The number-one design constraint is that adding role #5 next year must not require a schema migration.
 
 **No backward-compatibility burden.** LCYT has no released users. This plan freely deprecates and replaces existing routes and DB usage (`ai_config`'s incidental chat-completion reuse, `/agent/generate-rundown`, `/agent/edit-rundown`) rather than keeping them alongside the new framework "just in case."
+
+## Initial role set
+
+The first version of this framework should support four roles explicitly:
+
+- **Video Tracker** — a vision role that tracks a person or object across video frames and emits structured tracking output.
+- **Video Describer** — a vision role that describes the scene from frames or short clips, either as free text or structured JSON.
+- **Planner Assistant** — a request/response role that helps a human author a rundown or show plan from natural-language goals.
+- **Production Assistant** — an event-driven role that proposes or executes production actions such as camera presets or mixer switches, with a suggest-only default and an explicit autonomy gate.
+
+This plan uses a role catalog that can grow beyond those four without changing the schema; future roles can reuse the same runtime patterns or introduce a new runtime kind if needed.
 
 ### What already exists that this plan builds on
 
