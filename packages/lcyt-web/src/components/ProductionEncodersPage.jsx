@@ -267,7 +267,7 @@ function EncoderRow({ encoder, bridges, onEdit, onDelete }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-export function ProductionEncodersPage() {
+export function EncodersManager() {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -388,6 +388,11 @@ export function ProductionEncodersPage() {
       )}
     </div>
   );
+}
+
+/** ProductionEncodersPage — standalone route wrapper around EncodersManager. */
+export function ProductionEncodersPage() {
+  return <EncodersManager />;
 }
 
 // Export the ConnectionSourceSelect for reuse in cameras/mixers pages

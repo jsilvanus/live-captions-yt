@@ -387,7 +387,7 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
   );
 }
 
-export function ProductionMixersPage() {
+export function MixersManager() {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -508,4 +508,9 @@ export function ProductionMixersPage() {
       )}
     </div>
   );
+}
+
+/** ProductionMixersPage — standalone route wrapper around MixersManager. */
+export function ProductionMixersPage() {
+  return <MixersManager />;
 }

@@ -1930,3 +1930,120 @@
   font-family: var(--font-ui);
   color: var(--color-text-dim);
 }
+
+/* ─── Setup hub ───────────────────────────────────────────────── */
+
+.setup-hub-page {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.setup-hub-page__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.setup-hub-page__title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text);
+  flex: 1;
+  margin: 0;
+}
+
+.setup-hub-page__desc {
+  font-size: 13px;
+  color: var(--color-text-muted);
+  margin: 0 0 20px;
+}
+
+.setup-hub-page__section-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-dim);
+  margin: 24px 0 10px;
+}
+
+.setup-hub-page__section-title:first-of-type { margin-top: 0; }
+
+.setup-hub-page__grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setup-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.setup-card--disabled { opacity: 0.6; }
+
+.setup-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.setup-card__header--clickable { cursor: pointer; }
+
+.setup-card__icon { font-size: 20px; line-height: 1.4; flex-shrink: 0; }
+
+.setup-card__title-block { flex: 1; min-width: 0; }
+
+.setup-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.setup-card__title { font-size: 14px; font-weight: 600; color: var(--color-text); }
+
+.setup-card__desc {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 4px 0 0;
+}
+
+.setup-card__pill {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.setup-card__pill--ready       { background: color-mix(in srgb, var(--color-success, #2e9e5b) 15%, transparent); color: var(--color-success, #2e9e5b); }
+.setup-card__pill--client-only { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
+.setup-card__pill--partial     { background: color-mix(in srgb, orange 15%, transparent); color: #b5750a; }
+.setup-card__pill--soon        { background: var(--color-border); color: var(--color-text-muted); }
+
+.setup-card__chevron {
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.setup-card__actions {
+  padding: 0 14px 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.setup-card__body {
+  border-top: 1px solid var(--color-border);
+  padding: 14px;
+  background: var(--color-bg);
+}
