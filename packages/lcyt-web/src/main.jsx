@@ -43,6 +43,8 @@ const ProjectsPage           = lazyImport(() => import('./components/ProjectsPag
 const ProjectSettingsPage    = lazyImport(() => import('./components/ProjectSettingsPage').then(m => ({ default: m.ProjectSettingsPage })));
 const SetupWizardPage        = lazyImport(() => import('./components/setup-wizard/index.js').then(m => ({ default: m.SetupWizardPage })));
 const SetupHubPage           = lazyImport(() => import('./components/setup-hub/SetupHubPage.jsx').then(m => ({ default: m.SetupHubPage })));
+const TeamPage                = lazyImport(() => import('./components/TeamPage').then(m => ({ default: m.TeamPage })));
+const AssetsPage              = lazyImport(() => import('./components/AssetsPage').then(m => ({ default: m.AssetsPage })));
 const AccountPage            = lazyImport(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
 const BroadcastPage          = lazyImport(() => import('./components/BroadcastPage').then(m => ({ default: m.BroadcastPage })));
 const DskEditorPage          = lazyImport(() => import('./components/DskEditorPage').then(m => ({ default: m.DskEditorPage })));
@@ -204,6 +206,8 @@ function SidebarApp() {
             <Route path="/admin/audit-log" component={AdminAuditLogPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/projects/:key" component={ProjectSettingsPage} />
+            <Route path="/assets" component={AssetsPage} />
+            <Route path="/team" component={TeamPage} />
             <Route path="/setup" component={SetupHubPage} />
             <Route path="/setup/wizard" component={SetupWizardPage} />
             <Route path="/account" component={AccountPage} />
