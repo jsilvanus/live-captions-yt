@@ -120,6 +120,16 @@ describe("lcyt-mcp server", () => {
     assert.ok("sequence" in payload);
   });
 
+  it("send_caption: rejects both timestamp and time", async () => {
+    const { content: [{ text: startText }] } = await handlers.handleCallTool("start", { stream_key: "k" });
+    const { session_id } = JSON.parse(startText);
+
+    await assert.rejects(
+      () => handlers.handleCallTool("send_caption", { session_id, text: "Bad", timestamp: "2025-01-01T00:00:00Z", time: -1000 }),
+      /Provide either timestamp or time, not both/
+    );
+  });
+
   // -- send_batch ------------------------------------------------------------
 
   it("send_batch: returns ok, sequence, and count", async () => {

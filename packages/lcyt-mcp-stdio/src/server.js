@@ -276,7 +276,19 @@ export function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
     });
   }
 
+  /**
+   * Resolve a caption timestamp from an explicit timestamp, a relative time offset,
+   * or the current clock. Relative offsets are applied on top of the sender sync offset.
+   *
+   * @param {string|undefined} tsArg - Explicit ISO timestamp to use.
+   * @param {number|undefined} timeArg - Relative offset in milliseconds to apply.
+   * @param {number|undefined} syncOffset - Sender sync offset in milliseconds.
+   * @returns {string|undefined} ISO timestamp string for the caption.
+   */
   function resolveTimestamp(tsArg, timeArg, syncOffset) {
+   if (tsArg !== undefined && timeArg !== undefined) {
+     throw new Error("Provide either timestamp or time, not both");
+   }
    if (tsArg !== undefined) return tsArg;
    if (timeArg !== undefined) return new Date(Date.now() + (syncOffset ?? 0) + timeArg).toISOString();
    return undefined;
