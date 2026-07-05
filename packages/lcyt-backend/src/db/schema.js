@@ -42,6 +42,95 @@ export function initDb(dbPath) {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS organizations (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT    NOT NULL,
+      slug          TEXT    NOT NULL UNIQUE,
+      owner_user_id INTEGER NOT NULL REFERENCES users(id),
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS org_members (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      org_id      INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role        TEXT    NOT NULL DEFAULT 'member',
+      invited_by  INTEGER REFERENCES users(id),
+      joined_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (org_id, user_id)
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS site_feature_policies (
+      feature_code TEXT    PRIMARY KEY,
+      mode         TEXT    NOT NULL DEFAULT 'denied',
+      updated_by   INTEGER REFERENCES users(id),
+      updated_at   TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS org_feature_overrides (
+      org_id       INTEGER NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+      feature_code TEXT    NOT NULL,
+      mode         TEXT    NOT NULL,
+      set_by       INTEGER REFERENCES users(id),
+      set_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (org_id, feature_code)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_org_feature_overrides_org ON org_feature_overrides(org_id)');
+
+  // Seed the initial deployment-wide feature policies; these defaults can be overridden
+  // through the admin routes and only apply when a policy row does not already exist.
+  const seedFeaturePolicies = [
+    ['captions', 'available'],
+    ['viewer-target', 'available'],
+    ['mic-lock', 'available'],
+    ['stats', 'available'],
+    ['translations', 'available'],
+    ['embed', 'available'],
+    ['files-local', 'available'],
+    ['files-browser-local', 'available'],
+    ['collaboration', 'self_service'],
+    ['file-saving', 'self_service'],
+    ['files-managed-bucket', 'self_service'],
+    ['files-custom-bucket', 'self_service'],
+    ['files-webdav', 'self_service'],
+    ['graphics-client', 'self_service'],
+    ['restream', 'self_service'],
+    ['ingest', 'denied'],
+    ['radio', 'denied'],
+    ['hls-stream', 'denied'],
+    ['preview', 'denied'],
+    ['stt-server', 'denied'],
+    ['device-control', 'denied'],
+    ['graphics-server', 'denied'],
+    ['cea-captions', 'denied'],
+  ];
+  const insertPolicyStmt = db.prepare(`
+    INSERT INTO site_feature_policies (feature_code, mode)
+    VALUES (?, ?)
+    ON CONFLICT(feature_code) DO NOTHING
+  `);
+  db.transaction(() => {
+    for (const [featureCode, mode] of seedFeaturePolicies) {
+      insertPolicyStmt.run(featureCode, mode);
+    }
+  })();
+
+  // Additive migrations for databases created before the org index additions
+  const existingOrgMemberIndexes = new Set(
+    db.prepare('PRAGMA index_list(org_members)').all().map(index => index.name)
+  );
+  if (!existingOrgMemberIndexes.has('idx_org_members_user')) {
+    db.exec('CREATE INDEX idx_org_members_user ON org_members(user_id)');
+  }
+  if (!existingOrgMemberIndexes.has('idx_org_members_org')) {
+    db.exec('CREATE INDEX idx_org_members_org ON org_members(org_id)');
+  }
+
   // Additive migrations for databases created before limit/email columns were added
   const existingCols = new Set(
     db.prepare('PRAGMA table_info(api_keys)').all().map(c => c.name)
@@ -61,6 +150,7 @@ export function initDb(dbPath) {
   // 0 = graphics upload disabled (default), 1 = enabled (allows image upload via /images)
   if (!existingCols.has('graphics_enabled'))  db.exec('ALTER TABLE api_keys ADD COLUMN graphics_enabled INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('user_id'))           db.exec('ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id)');
+  if (!existingCols.has('org_id'))            db.exec('ALTER TABLE api_keys ADD COLUMN org_id INTEGER REFERENCES organizations(id)');
   // RTMP/relay extension columns (used by lcyt-rtmp plugin; kept here so createKey always works)
   if (!existingCols.has('relay_allowed'))     db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
@@ -69,6 +159,13 @@ export function initDb(dbPath) {
   if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
   if (!existingCols.has('device_code'))       db.exec('ALTER TABLE api_keys ADD COLUMN device_code TEXT');
+
+  const existingApiKeyIndexes = new Set(
+    db.prepare('PRAGMA index_list(api_keys)').all().map(index => index.name)
+  );
+  if (!existingApiKeyIndexes.has('idx_api_keys_org')) {
+    db.exec('CREATE INDEX idx_api_keys_org ON api_keys(org_id)');
+  }
 
   // Additive migrations for users table
   const existingUserCols = new Set(

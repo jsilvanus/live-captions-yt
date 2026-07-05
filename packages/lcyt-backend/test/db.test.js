@@ -46,6 +46,30 @@ describe('db.js', () => {
     it('should be idempotent — calling again does not throw', () => {
       assert.doesNotThrow(() => initDb(':memory:'));
     });
+
+    it('should create organization tables and api_keys.org_id column', () => {
+      const tableNames = db.prepare(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('organizations', 'org_members')"
+      ).all().map(row => row.name).sort();
+      assert.deepStrictEqual(tableNames, ['org_members', 'organizations']);
+
+      const columns = db.prepare('PRAGMA table_info(api_keys)').all().map(column => column.name);
+      assert.ok(columns.includes('org_id'));
+
+      const orgMemberIndexes = db.prepare('PRAGMA index_list(org_members)').all().map(index => index.name);
+      assert.ok(orgMemberIndexes.includes('idx_org_members_user'));
+      assert.ok(orgMemberIndexes.includes('idx_org_members_org'));
+
+      const apiKeyIndexes = db.prepare('PRAGMA index_list(api_keys)').all().map(index => index.name);
+      assert.ok(apiKeyIndexes.includes('idx_api_keys_org'));
+
+      const organizationForeignKeys = db.prepare('PRAGMA foreign_key_list(organizations)').all().map(row => row.table);
+      assert.ok(organizationForeignKeys.includes('users'));
+
+      const orgMemberForeignKeys = db.prepare('PRAGMA foreign_key_list(org_members)').all().map(row => row.table);
+      assert.ok(orgMemberForeignKeys.includes('organizations'));
+      assert.ok(orgMemberForeignKeys.includes('users'));
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -9,6 +9,7 @@
  */
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import rateLimit from 'express-rate-limit';
 import { createAdminMiddleware } from '../middleware/admin.js';
 import {
   getUserById,
@@ -31,11 +32,26 @@ import {
   applyFeatureDeps,
   getUserFeatures,
   setUserFeature,
+  KNOWN_FEATURE_CODES,
+  BINARY_ONLY_FEATURES,
+  getSiteFeaturePolicies,
+  getSiteFeaturePolicy,
+  setSiteFeaturePolicy,
+  getOrgFeatureOverrides,
+  getOrgFeatureOverride,
+  setOrgFeatureOverride,
+  clearOrgFeatureOverride,
 } from '../db/project-features.js';
 import { getMembers } from '../db/project-members.js';
 import { writeAuditLog, queryAuditLog } from '../db/audit-log.js';
 
 const BCRYPT_ROUNDS = 12;
+const featurePolicyRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 /** Return the actor label for audit log entries based on the request. */
 function resolveActor(req) {
@@ -306,6 +322,74 @@ export function createAdminRouter(db, jwtSecret) {
         return { code: r.feature_code, enabled: r.enabled === 1, config, grantedAt: r.granted_at };
       }),
     });
+  });
+
+  // -----------------------------------------------------------------------
+  // Feature policies
+  // -----------------------------------------------------------------------
+
+  router.get('/feature-policies', featurePolicyRateLimit, (req, res) => {
+    const rows = getSiteFeaturePolicies(db);
+    const byCode = new Map(rows.map(r => [r.feature_code, r]));
+    const policies = [...KNOWN_FEATURE_CODES].sort().map(code => ({
+      code,
+      mode: byCode.get(code)?.mode ?? 'denied',
+      binaryOnly: BINARY_ONLY_FEATURES.has(code),
+      updatedBy: byCode.get(code)?.updated_by ?? null,
+      updatedAt: byCode.get(code)?.updated_at ?? null,
+    }));
+    return res.json({ policies });
+  });
+
+  router.put('/feature-policies/:code', featurePolicyRateLimit, (req, res) => {
+    const code = req.params.code;
+    if (!KNOWN_FEATURE_CODES.has(code)) {
+      return res.status(404).json({ error: 'Feature policy not found' });
+    }
+    const { mode } = req.body || {};
+    if (!['available', 'self_service', 'denied'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be available, self_service, or denied' });
+    }
+    if (BINARY_ONLY_FEATURES.has(code) && mode === 'self_service') {
+      return res.status(400).json({ error: 'This feature does not support self_service mode' });
+    }
+    setSiteFeaturePolicy(db, code, mode, req.adminUser?.id ?? null);
+    const row = getSiteFeaturePolicy(db, code);
+    return res.json({ code, mode: row.mode, updatedAt: row.updated_at });
+  });
+
+  router.get('/orgs/:id/feature-overrides', featurePolicyRateLimit, (req, res) => {
+    const orgId = Number(req.params.id);
+    if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org ID' });
+    const orgRow = db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId);
+    if (!orgRow) return res.status(404).json({ error: 'Organization not found' });
+    const overrides = getOrgFeatureOverrides(db, orgId);
+    return res.json({ overrides: overrides.map(r => ({ code: r.feature_code, mode: r.mode, setBy: r.set_by, setAt: r.set_at })) });
+  });
+
+  router.put('/orgs/:id/feature-overrides/:code', featurePolicyRateLimit, (req, res) => {
+    const orgId = Number(req.params.id);
+    const code = req.params.code;
+    if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org ID' });
+    if (!KNOWN_FEATURE_CODES.has(code)) {
+      return res.status(404).json({ error: 'Feature policy not found' });
+    }
+    const orgRow = db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId);
+    if (!orgRow) return res.status(404).json({ error: 'Organization not found' });
+    const { mode } = req.body || {};
+    if (mode === null) {
+      clearOrgFeatureOverride(db, orgId, code);
+      return res.json({ code, mode: null });
+    }
+    if (!['available', 'self_service', 'denied'].includes(mode)) {
+      return res.status(400).json({ error: 'mode must be available, self_service, denied, or null' });
+    }
+    if (BINARY_ONLY_FEATURES.has(code) && mode === 'self_service') {
+      return res.status(400).json({ error: 'This feature does not support self_service mode' });
+    }
+    setOrgFeatureOverride(db, orgId, code, mode, req.adminUser?.id ?? null);
+    const override = getOrgFeatureOverride(db, orgId, code);
+    return res.json({ code, mode: override.mode });
   });
 
   // -----------------------------------------------------------------------

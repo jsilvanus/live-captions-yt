@@ -10,6 +10,43 @@
  * Required dependencies between feature codes.
  * Enabling a key automatically enables all values.
  */
+export const KNOWN_FEATURE_CODES = new Set([
+  'captions',
+  'viewer-target',
+  'mic-lock',
+  'stats',
+  'collaboration',
+  'translations',
+  'embed',
+  'file-saving',
+  'files-local',
+  'files-managed-bucket',
+  'files-custom-bucket',
+  'files-webdav',
+  'files-browser-local',
+  'graphics-client',
+  'restream',
+  'ingest',
+  'radio',
+  'hls-stream',
+  'preview',
+  'stt-server',
+  'device-control',
+  'graphics-server',
+  'cea-captions',
+]);
+
+export const BINARY_ONLY_FEATURES = new Set([
+  'ingest',
+  'radio',
+  'hls-stream',
+  'preview',
+  'stt-server',
+  'device-control',
+  'graphics-server',
+  'cea-captions',
+]);
+
 export const FEATURE_DEPS = {
   'graphics-server':       ['graphics-client', 'ingest'],
   'stt-server':            ['ingest'],
@@ -152,6 +189,119 @@ export function getUserFeatureSet(db, userId) {
 }
 
 /**
+ * Get the site-wide feature policy row for a feature code.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} featureCode
+ * @returns {{ feature_code: string, mode: string, updated_by: number|null, updated_at: string }|null}
+ */
+export function getSiteFeaturePolicy(db, featureCode) {
+  return db.prepare(
+    'SELECT feature_code, mode, updated_by, updated_at FROM site_feature_policies WHERE feature_code = ?'
+  ).get(featureCode);
+}
+
+/**
+ * Get all site-wide feature policy rows.
+ * @param {import('better-sqlite3').Database} db
+ * @returns {Array<{ feature_code: string, mode: string, updated_by: number|null, updated_at: string }>}
+ */
+export function getSiteFeaturePolicies(db) {
+  return db.prepare(
+    'SELECT feature_code, mode, updated_by, updated_at FROM site_feature_policies ORDER BY feature_code'
+  ).all();
+}
+
+/**
+ * Upsert a site-wide feature policy row.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} featureCode
+ * @param {'available'|'self_service'|'denied'} mode
+ * @param {number|null} [updatedBy]
+ */
+export function setSiteFeaturePolicy(db, featureCode, mode, updatedBy = null) {
+  db.prepare(`
+    INSERT INTO site_feature_policies (feature_code, mode, updated_by, updated_at)
+    VALUES (?, ?, ?, datetime('now'))
+    ON CONFLICT(feature_code) DO UPDATE SET
+      mode = excluded.mode,
+      updated_by = excluded.updated_by,
+      updated_at = datetime('now')
+  `).run(featureCode, mode, updatedBy ?? null);
+}
+
+/**
+ * Get an org override row for a feature code.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} orgId
+ * @param {string} featureCode
+ * @returns {{ org_id: number, feature_code: string, mode: string, set_by: number|null, set_at: string }|null}
+ */
+export function getOrgFeatureOverride(db, orgId, featureCode) {
+  return db.prepare(
+    'SELECT org_id, feature_code, mode, set_by, set_at FROM org_feature_overrides WHERE org_id = ? AND feature_code = ?'
+  ).get(orgId, featureCode);
+}
+
+/**
+ * Get all org feature override rows for an org.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} orgId
+ * @returns {Array<{ org_id: number, feature_code: string, mode: string, set_by: number|null, set_at: string }>}
+ */
+export function getOrgFeatureOverrides(db, orgId) {
+  return db.prepare(
+    'SELECT org_id, feature_code, mode, set_by, set_at FROM org_feature_overrides WHERE org_id = ? ORDER BY feature_code'
+  ).all(orgId);
+}
+
+/**
+ * Upsert an org feature override row.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} orgId
+ * @param {string} featureCode
+ * @param {'available'|'self_service'|'denied'} mode
+ * @param {number|null} [setBy]
+ */
+export function setOrgFeatureOverride(db, orgId, featureCode, mode, setBy = null) {
+  db.prepare(`
+    INSERT INTO org_feature_overrides (org_id, feature_code, mode, set_by, set_at)
+    VALUES (?, ?, ?, ?, datetime('now'))
+    ON CONFLICT(org_id, feature_code) DO UPDATE SET
+      mode = excluded.mode,
+      set_by = excluded.set_by,
+      set_at = datetime('now')
+  `).run(orgId, featureCode, mode, setBy ?? null);
+}
+
+/**
+ * Remove an org feature override row.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} orgId
+ * @param {string} featureCode
+ */
+export function clearOrgFeatureOverride(db, orgId, featureCode) {
+  db.prepare('DELETE FROM org_feature_overrides WHERE org_id = ? AND feature_code = ?').run(orgId, featureCode);
+}
+
+/**
+ * Resolve the effective policy mode for a feature for a project.
+ * Org override wins over site-wide default; personal projects use site default.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} featureCode
+ * @returns {'available'|'self_service'|'denied'}
+ */
+export function resolveFeaturePolicy(db, apiKey, featureCode) {
+  const projectRow = db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get(apiKey);
+  if (projectRow?.org_id != null) {
+    const override = getOrgFeatureOverride(db, projectRow.org_id, featureCode);
+    if (override) return override.mode;
+  }
+  const policy = getSiteFeaturePolicy(db, featureCode);
+  return policy?.mode ?? 'denied';
+}
+
+/**
  * Get all user_features rows for a user.
  * @param {import('better-sqlite3').Database} db
  * @param {number} userId
@@ -209,12 +359,28 @@ export function provisionDefaultUserFeatures(db, userId) {
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {string[]} [extra] - Additional feature codes beyond defaults
+ * @param {number|null} [orgId]
  */
-export function provisionDefaultProjectFeatures(db, apiKey, extra = []) {
-  // file-saving + files-local are included so new projects can save caption files
-  // to the server's local filesystem out of the box.
-  const defaults = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed', 'file-saving', 'files-local'];
-  const codes = [...new Set([...defaults, ...extra])];
+export function provisionDefaultProjectFeatures(db, apiKey, extra = [], orgId = null) {
+  const defaults = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed'];
+  const codes = new Set([...defaults, ...extra]);
+
+  const availablePolicies = db.prepare(
+    'SELECT feature_code FROM site_feature_policies WHERE mode = ?'
+  ).all('available');
+  for (const policy of availablePolicies) {
+    codes.add(policy.feature_code);
+  }
+
+  if (orgId != null) {
+    const overrides = getOrgFeatureOverrides(db, orgId);
+    for (const override of overrides) {
+      if (override.mode === 'available') {
+        codes.add(override.feature_code);
+      }
+    }
+  }
+
   const stmt = db.prepare(`
     INSERT INTO project_features (api_key, feature_code, enabled)
     VALUES (?, ?, 1)
