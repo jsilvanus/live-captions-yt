@@ -66,13 +66,17 @@ export const TOOLS = [
           type: "string",
           description: "ISO-8601 timestamp. Omit to use the current time.",
         },
+        time: {
+          type: "number",
+          description: "ms offset from current time (negative = past). Applied with syncOffset. Alternative to timestamp.",
+        },
       },
       required: ["session_id", "text"],
     },
   },
   {
     name: "send_batch",
-    description: "Send multiple captions atomically.",
+    description: "Send multiple captions atomically. Each item takes {text, timestamp?} or {text, time?} (ms offset).",
     inputSchema: {
       type: "object",
       properties: {
@@ -84,6 +88,10 @@ export const TOOLS = [
             properties: {
               text: { type: "string" },
               timestamp: { type: "string" },
+              time: {
+                type: "number",
+                description: "ms offset from current time. Alternative to timestamp.",
+              },
             },
             required: ["text"],
           },
@@ -107,7 +115,7 @@ export const TOOLS = [
   },
   {
     name: "get_status",
-    description: "Return current sequence number and sync offset for the session.",
+    description: "Sync the clock then return the current sequence number, syncOffset, and roundTripTime. Runs a heartbeat automatically — no need to call sync_clock separately.",
     inputSchema: {
       type: "object",
       properties: {
@@ -268,8 +276,14 @@ export function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
     });
   }
 
+  function resolveTimestamp(tsArg, timeArg, syncOffset) {
+   if (tsArg !== undefined) return tsArg;
+   if (timeArg !== undefined) return new Date(Date.now() + (syncOffset ?? 0) + timeArg).toISOString();
+   return undefined;
+  }
+
   async function handleCallTool(name, args) {
-    switch (name) {
+   switch (name) {
       case "start": {
         const sender = new SenderClass({ streamKey: args.stream_key });
         await sender.start();
@@ -281,23 +295,28 @@ export function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
 
       case "send_caption": {
         const sender = getSession(args.session_id);
-        const result = await sender.send(args.text, args.timestamp);
-        return {
-          content: [{ type: "text", text: JSON.stringify({ ok: true, sequence: result.sequence }) }],
-        };
+       const timestamp = resolveTimestamp(args.timestamp, args.time, sender.syncOffset);
+       const result = await sender.send(args.text, timestamp);
+       return {
+         content: [{ type: "text", text: JSON.stringify({ ok: true, sequence: result.sequence }) }],
+       };
       }
 
       case "send_batch": {
-        const sender = getSession(args.session_id);
-        const result = await sender.sendBatch(args.captions);
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({ ok: true, sequence: result.sequence, count: result.count }),
-            },
-          ],
-        };
+       const sender = getSession(args.session_id);
+       const captions = args.captions.map((caption) => ({
+         text: caption.text,
+         timestamp: resolveTimestamp(caption.timestamp, caption.time, sender.syncOffset),
+       }));
+       const result = await sender.sendBatch(captions);
+       return {
+         content: [
+           {
+             type: "text",
+             text: JSON.stringify({ ok: true, sequence: result.sequence, count: result.count }),
+           },
+         ],
+       };
       }
 
       case "sync_clock": {
@@ -310,11 +329,16 @@ export function createHandlers(SenderClass = YoutubeLiveCaptionSender) {
 
       case "get_status": {
         const sender = getSession(args.session_id);
+        const syncResult = await sender.sync();
         return {
           content: [
             {
               type: "text",
-              text: JSON.stringify({ sequence: sender.sequence, syncOffset: sender.syncOffset }),
+              text: JSON.stringify({
+                sequence: sender.sequence,
+                syncOffset: syncResult.syncOffset ?? sender.syncOffset,
+                roundTripTime: syncResult.roundTripTime,
+              }),
             },
           ],
         };

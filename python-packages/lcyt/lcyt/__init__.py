@@ -14,6 +14,7 @@ Example:
 from .sender import YoutubeLiveCaptionSender, Caption, SendResult
 from .backend_sender import BackendCaptionSender
 from .errors import LCYTError, ConfigError, NetworkError, ValidationError
+from .logger import set_use_stderr, set_silent
 from .config import (
     LCYTConfig,
     load_config,
@@ -37,6 +38,8 @@ __all__ = [
     "ConfigError",
     "NetworkError",
     "ValidationError",
+    "set_use_stderr",
+    "set_silent",
     # Config utilities
     "load_config",
     "save_config",
