@@ -1,5 +1,5 @@
 /**
- * MemberRow — one row in the Members tab of ProjectDetailModal.
+ * MemberRow — one row in the Team tab of ProjectSettingsPage.
  * Shows: email, name, access-level badge, permission chips, remove button.
  */
 
