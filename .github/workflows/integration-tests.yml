@@ -9,10 +9,84 @@ on:
 permissions:
   contents: read
 
-# ── Tier 1: Build verification (fastest signal — broken imports) ────
+# ── Detect changed paths (for PR test partitioning) ──────────────────
 jobs:
+  detect-changes:
+    name: "Detect changed paths"
+    runs-on: ubuntu-latest
+    outputs:
+      plugins: ${{ steps.paths.outputs.plugins }}
+      backend: ${{ steps.paths.outputs.backend }}
+      frontend: ${{ steps.paths.outputs.frontend }}
+      core: ${{ steps.paths.outputs.core }}
+      is-main: ${{ steps.paths.outputs.is-main }}
+      cli: ${{ steps.paths.outputs.cli }}
+      has-workflow-changes: ${{ steps.paths.outputs.has-workflow-changes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect paths
+        id: paths
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            # On main: run everything
+            echo "is-main=true" >> $GITHUB_OUTPUT
+            echo "plugins=lcyt-agent,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
+            echo "backend=lcyt-backend" >> $GITHUB_OUTPUT
+            echo "frontend=lcyt-web" >> $GITHUB_OUTPUT
+            echo "core=lcyt" >> $GITHUB_OUTPUT
+            echo "cli=lcyt-cli" >> $GITHUB_OUTPUT
+            echo "has-workflow-changes=false" >> $GITHUB_OUTPUT
+          else
+            # PR mode: compare against base
+            BASE="${{ github.base_ref }}"
+            CHANGED=$(git diff --name-only origin/$BASE...HEAD || echo "")
+
+            # Check for workflow changes (force full suite)
+            if echo "$CHANGED" | grep -q "^\.github/workflows/"; then
+              echo "has-workflow-changes=true" >> $GITHUB_OUTPUT
+              echo "is-main=true" >> $GITHUB_OUTPUT
+              echo "plugins=lcyt-agent,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
+              echo "backend=lcyt-backend" >> $GITHUB_OUTPUT
+              echo "frontend=lcyt-web" >> $GITHUB_OUTPUT
+              echo "core=lcyt" >> $GITHUB_OUTPUT
+              echo "cli=lcyt-cli" >> $GITHUB_OUTPUT
+            else
+              echo "has-workflow-changes=false" >> $GITHUB_OUTPUT
+              echo "is-main=false" >> $GITHUB_OUTPUT
+
+              # Parse which packages changed
+              PLUGINS=""
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-agent" && PLUGINS="$PLUGINS,lcyt-agent"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-cues" && PLUGINS="$PLUGINS,lcyt-cues"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-dsk" && PLUGINS="$PLUGINS,lcyt-dsk"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-files" && PLUGINS="$PLUGINS,lcyt-files"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-music" && PLUGINS="$PLUGINS,lcyt-music"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-production" && PLUGINS="$PLUGINS,lcyt-production"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-rtmp" && PLUGINS="$PLUGINS,lcyt-rtmp"
+              PLUGINS=${PLUGINS#,}  # Remove leading comma
+              echo "plugins=$PLUGINS" >> $GITHUB_OUTPUT
+
+              # Check backend, frontend, core, cli
+              echo "$CHANGED" | grep -q "^packages/lcyt-backend" && BACKEND="lcyt-backend" || BACKEND=""
+              echo "backend=$BACKEND" >> $GITHUB_OUTPUT
+
+              echo "$CHANGED" | grep -q "^packages/lcyt-web" && FRONTEND="lcyt-web" || FRONTEND=""
+              echo "frontend=$FRONTEND" >> $GITHUB_OUTPUT
+
+              echo "$CHANGED" | grep -q "^packages/lcyt/" && CORE="lcyt" || CORE=""
+              echo "core=$CORE" >> $GITHUB_OUTPUT
+
+              echo "$CHANGED" | grep -q "^packages/lcyt-cli" && CLI="lcyt-cli" || CLI=""
+              echo "cli=$CLI" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+# ── Tier 1: Build verification (fastest signal — broken imports) ────
   build:
     name: "Build: ${{ matrix.name }}"
+    needs: detect-changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -34,29 +108,82 @@ jobs:
         run: ${{ matrix.cmd }}
 
   # ── Tier 2: Unit tests (after build passes) ─────────────────────────
+  # Build dynamic package matrix based on detected changes
+  build-unit-matrix:
+    name: "Prepare unit test matrix"
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.packages }}
+    steps:
+      - name: Build package matrix
+        id: matrix
+        run: |
+          IS_MAIN="${{ needs.detect-changes.outputs.is-main }}"
+          PLUGINS="${{ needs.detect-changes.outputs.plugins }}"
+          BACKEND="${{ needs.detect-changes.outputs.backend }}"
+          FRONTEND="${{ needs.detect-changes.outputs.frontend }}"
+          CORE="${{ needs.detect-changes.outputs.core }}"
+          CLI="${{ needs.detect-changes.outputs.cli }}"
+
+          PACKAGES=()
+
+          # Always test core if changed
+          [[ -n "$CORE" ]] && PACKAGES+=("packages/lcyt")
+
+          # Always test CLI if changed
+          [[ -n "$CLI" ]] && PACKAGES+=("packages/lcyt-cli")
+
+          # Test frontend if changed (and also backend for smoke test)
+          if [[ -n "$FRONTEND" ]]; then
+            PACKAGES+=("packages/lcyt-web")
+          fi
+
+          # If any plugin changed, test backend + all changed plugins
+          if [[ -n "$PLUGINS" ]]; then
+            PACKAGES+=("packages/lcyt-backend")
+            IFS=',' read -ra PLUGIN_ARRAY <<< "$PLUGINS"
+            for plugin in "${PLUGIN_ARRAY[@]}"; do
+              PACKAGES+=("packages/plugins/$plugin")
+            done
+          elif [[ -n "$BACKEND" ]]; then
+            # If backend itself changed, test it
+            PACKAGES+=("packages/lcyt-backend")
+          fi
+
+          # On main, test everything (full CI)
+          if [[ "$IS_MAIN" == "true" ]]; then
+            PACKAGES=(
+              "packages/lcyt"
+              "packages/lcyt-cli"
+              "packages/lcyt-web"
+              "packages/lcyt-bridge"
+              "packages/lcyt-mcp-stdio"
+              "packages/lcyt-mcp-http"
+              "packages/lcyt-backend"
+              "packages/plugins/lcyt-agent"
+              "packages/plugins/lcyt-cues"
+              "packages/plugins/lcyt-dsk"
+              "packages/plugins/lcyt-files"
+              "packages/plugins/lcyt-music"
+              "packages/plugins/lcyt-production"
+              "packages/plugins/lcyt-rtmp"
+            )
+          fi
+
+          # Convert array to JSON
+          JSON_ARRAY=$(printf '%s\n' "${PACKAGES[@]}" | jq -R . | jq -s .)
+          echo "packages=$JSON_ARRAY" >> $GITHUB_OUTPUT
+
   unit-node:
     name: "Unit: ${{ matrix.package }}"
-    needs: build
+    needs: [build, build-unit-matrix]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        package:
-          - packages/lcyt
-          - packages/lcyt-cli
-          - packages/lcyt-web
-          - packages/lcyt-bridge
-          - packages/lcyt-mcp-stdio
-          - packages/lcyt-mcp-http
-          - packages/lcyt-backend
-          - packages/plugins/lcyt-agent
-          - packages/plugins/lcyt-cues
-          - packages/plugins/lcyt-dsk
-          - packages/plugins/lcyt-files
-          - packages/plugins/lcyt-music
-          - packages/plugins/lcyt-production
-          - packages/plugins/lcyt-rtmp
+        package: ${{ fromJSON(needs.build-unit-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -129,7 +256,11 @@ jobs:
   # ── Tier 3: Integration, component, Docker (after unit passes) ──────
   integration-node:
     name: "Integration: lcyt-backend"
-    needs: [unit-node, unit-python, standalone-tests]
+    needs: [unit-node, unit-python, standalone-tests, detect-changes]
+    if: |
+      ${{ needs.detect-changes.outputs.is-main == 'true' ||
+          needs.detect-changes.outputs.backend != '' ||
+          needs.detect-changes.outputs.plugins != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -166,7 +297,10 @@ jobs:
 
   component-tests:
     name: "Component: lcyt-web (Vitest)"
-    needs: [unit-node, standalone-tests]
+    needs: [unit-node, standalone-tests, detect-changes]
+    if: |
+      ${{ needs.detect-changes.outputs.is-main == 'true' ||
+          needs.detect-changes.outputs.frontend != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -210,7 +344,8 @@ jobs:
 
   docker-build:
     name: "Docker: build ${{ matrix.image }}"
-    needs: [docker-lint, unit-node, unit-python, standalone-tests]
+    needs: [docker-lint, unit-node, unit-python, standalone-tests, detect-changes]
+    if: ${{ needs.detect-changes.outputs.is-main == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -266,7 +401,12 @@ jobs:
   # ── Tier 4: E2E tests (after integration passes) ───────────────────
   e2e:
     name: "E2E: Playwright"
-    needs: [integration-node, component-tests]
+    needs: [integration-node, component-tests, detect-changes]
+    if: |
+      ${{ needs.detect-changes.outputs.is-main == 'true' ||
+          needs.detect-changes.outputs.backend != '' ||
+          needs.detect-changes.outputs.frontend != '' ||
+          needs.detect-changes.outputs.plugins != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
