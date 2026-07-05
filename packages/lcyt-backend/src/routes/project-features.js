@@ -18,6 +18,7 @@ import {
   setProjectFeatures,
   getUserFeatureSet,
   applyFeatureDeps,
+  resolveFeaturePolicy,
 } from '../db/project-features.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
@@ -38,6 +39,29 @@ function formatFeatures(rows) {
     try { if (r.config) config = JSON.parse(r.config); } catch {}
     return { code: r.feature_code, enabled: r.enabled === 1, config, grantedAt: r.granted_at };
   });
+}
+
+function getFeaturePolicyError(db, projectKey, featureCode, user) {
+  if (!user) return null;
+  const entitled = getUserFeatureSet(db, user.userId);
+  if (!entitled.has(featureCode)) {
+    return {
+      status: 403,
+      body: { error: `You are not entitled to enable feature '${featureCode}'` },
+    };
+  }
+  const policyMode = resolveFeaturePolicy(db, projectKey, featureCode);
+  if (policyMode === 'denied') {
+    return {
+      status: 403,
+      body: {
+        error: `Feature '${featureCode}' is not available on this deployment`,
+        feature: featureCode,
+        policyMode,
+      },
+    };
+  }
+  return null;
 }
 
 /**
@@ -126,13 +150,12 @@ function _batchUpdateFeatures(db, user, req, res) {
 
   // If acting as user, validate against entitlements
   if (user) {
-    const entitled = getUserFeatureSet(db, user.userId);
     for (const code of Object.keys(features)) {
       const val = features[code];
       const enabling = typeof val === 'boolean' ? val : val?.enabled;
-      if (enabling && !entitled.has(code)) {
-        return res.status(403).json({ error: `You are not entitled to enable feature '${code}'` });
-      }
+      if (!enabling) continue;
+      const policyError = getFeaturePolicyError(db, req.params.key, code, user);
+      if (policyError) return res.status(policyError.status).json(policyError.body);
     }
   }
 
@@ -151,10 +174,8 @@ function _patchFeature(db, user, req, res) {
 
   // If acting as user, check entitlement when enabling
   if (user && body.enabled) {
-    const entitled = getUserFeatureSet(db, user.userId);
-    if (!entitled.has(code)) {
-      return res.status(403).json({ error: `You are not entitled to enable feature '${code}'` });
-    }
+    const policyError = getFeaturePolicyError(db, req.params.key, code, user);
+    if (policyError) return res.status(policyError.status).json(policyError.body);
   }
 
   // Apply deps: if enabling a feature that requires others, auto-enable them too
