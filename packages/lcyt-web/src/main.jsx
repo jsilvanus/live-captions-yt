@@ -58,6 +58,7 @@ const ProductionVisualPage   = lazyImport(() => import('./components/ProductionV
 const PlannerPage            = lazyImport(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
 const TranslationsPage       = lazyImport(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
 const AiSettingsPage         = lazyImport(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
+const ConnectorsPage         = lazyImport(() => import('./components/ConnectorsPage').then(m => ({ default: m.ConnectorsPage })));
 const AdminUsersPage         = lazyImport(() => import('./components/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
 const AdminUserDetailPage    = lazyImport(() => import('./components/AdminUserDetailPage').then(m => ({ default: m.AdminUserDetailPage })));
 const AdminProjectsPage      = lazyImport(() => import('./components/AdminProjectsPage').then(m => ({ default: m.AdminProjectsPage })));
@@ -201,6 +202,7 @@ function SidebarApp() {
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />
             <Route path="/ai" component={AiSettingsPage} />
+            <Route path="/connectors" component={ConnectorsPage} />
             <Route path="/admin/users/:id" component={AdminUserDetailPage} />
             <Route path="/admin/users" component={AdminUsersPage} />
             <Route path="/admin/projects/:key" component={AdminProjectDetailPage} />

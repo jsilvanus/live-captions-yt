@@ -60,7 +60,7 @@ Viewports (`lcyt-dsk`), STT config, per-key Storage override — these needed
 | Setup: STT service | Fully implemented (`GET/PUT /stt/config`) | Embeds existing `SttPanel` wired to the real per-key config endpoint |
 | Setup: Storage (S3/WebDAV) | Real endpoint (`GET/PUT /file/storage-config`), feature-gated, no prior frontend | New minimal panel wired to the real endpoint |
 | Setup: AI Models (tracker/describer/assistant) | Partial — one embedding slot only (`/ai/config`) | Current slot shown; 3-role split marked "Coming soon" |
-| Setup: API Connectors | No backend at all | Visible, disabled, "Coming soon" |
+| Setup: API Connectors | Implemented (`lcyt-connectors` plugin, see `plan_api_connectors_variables.md`) | Live card linking to `/connectors` management page |
 | Setup: Workflows | No backend; mockup itself stubs this | Visible, disabled, "Coming soon" |
 | Assets (captions/rundowns/graphics/translations/broadcasts/thumbnails) | No counting backend except Graphics (`GET /dsk/:key/templates`) | New `AssetsPage`; real count for Graphics, "not tracked yet" elsewhere (no fabricated 0s) |
 | Broadcast | Mockup is a stub; real Encoder/YouTube/Stream tabs already exist | Home of the Live widget grid (default) + Settings (existing config tabs) |
@@ -106,7 +106,6 @@ this pass (every corresponding UI element is visibly marked "Coming soon"):
   implicit flags/read-only status only).
 - Multi-role AI Models (tracker/describer/assistant) — only a single
   embedding-provider slot exists today (`ai_config` table / `/ai/config`).
-- API Connectors backend (no entity exists at all).
 - Real org/Team data model spanning multiple projects with shared roles and
   org-wide defaults — the single biggest structural gap identified; `/team`
   and the Admin "Teams" tab are placeholders pending this work.

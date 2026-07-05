@@ -7,6 +7,7 @@ import { BridgeSection } from './BridgeSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { AiModelsSection } from './AiModelsSection.jsx';
+import { ConnectorsSection } from './ConnectorsSection.jsx';
 
 /**
  * SetupHubPage — `/setup`. Persistent device/service catalog superseding the
@@ -106,13 +107,7 @@ export function SetupHubPage() {
       <div className="setup-hub-page__section-title">AI &amp; integrations</div>
       <div className="setup-hub-page__grid">
         <AiModelsSection />
-        <SetupCard
-          icon="🔌"
-          title="API connectors"
-          description="Connect third-party services (calendars, ChMS, lighting consoles, etc.)."
-          status="soon"
-          disabled
-        />
+        <ConnectorsSection />
         <SetupCard
           icon="🧩"
           title="Workflows"
