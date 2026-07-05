@@ -23,11 +23,11 @@ export default defineConfig({
       { find: 'lcyt/config',  replacement: resolve(__dirname, '../lcyt/src/config.js') },
       { find: 'lcyt/logger',  replacement: resolve(__dirname, '../lcyt/src/logger.js') },
       { find: 'lcyt',         replacement: resolve(__dirname, '../lcyt/src/sender.js') },
-      // Resolve the shim directly to its cjs build so Vite can pre-bundle.
-      // Provide both the package root and the explicit index.js path because
-      // some packages import 'use-sync-external-store/shim/index.js'.
-      { find: 'use-sync-external-store/shim/index.js', replacement: resolve(__dirname, '../../node_modules/use-sync-external-store/cjs/use-sync-external-store-shim.development.js') },
-      { find: 'use-sync-external-store/shim', replacement: resolve(__dirname, '../../node_modules/use-sync-external-store/cjs/use-sync-external-store-shim.development.js') },
+      // Point imports of the shim to a small ESM wrapper inside the repo.
+      // This avoids aliasing directly to a CJS file which can confuse
+      // Vite/esbuild during dependency optimization on Windows.
+      { find: 'use-sync-external-store/shim/index.js', replacement: resolve(__dirname, 'vite-compat/use-sync-external-store-shim.mjs') },
+      { find: 'use-sync-external-store/shim', replacement: resolve(__dirname, 'vite-compat/use-sync-external-store-shim.mjs') },
     ]
   },
   server: {
