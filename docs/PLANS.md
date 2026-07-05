@@ -61,6 +61,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | File | Title | Summary | Supersedes |
 |---|---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory plan for server-side translation to close the STT and CLI translation gap: vendor adapters (MyMemory, Google, DeepL, LibreTranslate), per-key DB config, injection into captions.js and SttManager. | |
+| [plan_team_org_backend.md](plans/plan_team_org_backend.md) | Team/Org Data Model — Backend Design | Design for a real multi-project Team/Org data model (`organizations`, `org_members`, `api_keys.org_id`) to replace the `/team` "Coming soon" placeholder; resolves org-vs-project access precedence with a baseline-plus-override resolver. Includes prioritized appendix of other known backend gaps. | |
 
 ### Reference
 
