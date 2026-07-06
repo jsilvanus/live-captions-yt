@@ -137,23 +137,23 @@ const STYLE_FIELDS_BORDER = [
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const inputStyle = {
-  background: '#1e1e1e', border: '1px solid #444', color: '#eee',
+  background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', color: 'var(--color-text)',
   borderRadius: 3, padding: '3px 6px', fontSize: 13,
   flex: 1, minWidth: 0, boxSizing: 'border-box',
 };
 const fieldRowStyle    = { display: 'flex', alignItems: 'center', gap: 8 };
-const labelStyle       = { color: '#999', fontSize: 12, width: 90, flexShrink: 0, textAlign: 'right' };
+const labelStyle       = { color: 'var(--color-text-muted)', fontSize: 12, width: 90, flexShrink: 0, textAlign: 'right' };
 const sectionLabelStyle = {
-  borderTop: '1px solid #333', paddingTop: 6, marginTop: 2,
-  color: '#777', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1,
+  borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2,
+  color: 'var(--color-text-muted)', fontSize: 11, textTransform: 'uppercase', letterSpacing: 1,
 };
 const btnStyle = {
-  background: '#2a2a2a', border: '1px solid #555', color: '#ddd',
+  background: 'var(--color-surface-elevated)', border: '1px solid var(--color-text-muted)', color: 'var(--color-text)',
   borderRadius: 4, padding: '4px 10px', fontSize: 13, cursor: 'pointer',
 };
-const btnPrimaryStyle = { ...btnStyle, background: '#2255aa', border: '1px solid #4488dd', color: '#fff' };
-const btnDangerStyle  = { ...btnStyle, background: '#550000', border: '1px solid #882222', color: '#ffaaaa' };
-const btnActiveStyle  = { ...btnStyle, background: '#1a3a1a', border: '1px solid #44aa44', color: '#88ee88' };
+const btnPrimaryStyle = { ...btnStyle, background: 'var(--color-accent)', border: '1px solid var(--color-accent)', color: '#fff' };
+const btnDangerStyle  = { ...btnStyle, background: 'color-mix(in srgb, var(--color-error) 25%, var(--color-surface-elevated))', border: '1px solid var(--color-error)', color: 'var(--color-error)' };
+const btnActiveStyle  = { ...btnStyle, background: 'color-mix(in srgb, var(--color-success) 25%, var(--color-surface-elevated))', border: '1px solid var(--color-success)', color: 'var(--color-success)' };
 
 // ── Counters ──────────────────────────────────────────────────────────────────
 
@@ -183,6 +183,33 @@ export function DskEditorPage() {
   const [aspectLock, setAspectLock]   = useState(true);
   const [status, setStatus]           = useState('');
   const [loading, setLoading]         = useState(false);
+
+  // ── Responsive layout ──────────────────────────────────────────────────────
+  // Below this width the three-column layout (templates | canvas | properties)
+  // no longer has room to breathe, so it stacks into a single scrolling column.
+  const NARROW_BREAKPOINT = 860;
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < NARROW_BREAKPOINT);
+  useEffect(() => {
+    function onResize() { setIsNarrow(window.innerWidth < NARROW_BREAKPOINT); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  // Canvas preview scales to whatever width its container actually has,
+  // instead of a hardcoded pixel size that could overflow the viewport.
+  const canvasAreaRef = useRef(null);
+  const [canvasAreaWidth, setCanvasAreaWidth] = useState(960);
+  useEffect(() => {
+    const el = canvasAreaRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect?.width;
+      if (w) setCanvasAreaWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const previewTargetWidth = Math.max(240, Math.min(960, canvasAreaWidth - 24));
 
   // ── AI Assist (Properties panel)
   const [aiAssistOpen, setAiAssistOpen] = useState(false);
@@ -942,7 +969,7 @@ export function DskEditorPage() {
 
   if (!serverUrl || !apiKey) {
     return (
-      <div style={{ padding: 32, color: 'var(--color-text-muted, #888)', fontFamily: 'sans-serif', fontSize: 16 }}>
+      <div style={{ padding: 32, color: 'var(--color-text-muted, var(--color-text-muted))', fontFamily: 'sans-serif', fontSize: 16 }}>
         {session
           ? 'Connect to a backend first (click Connect in the top bar).'
           : 'Missing ?server= and ?apikey= URL parameters.'}
@@ -953,28 +980,38 @@ export function DskEditorPage() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#111', color: '#ddd', fontFamily: 'sans-serif', overflow: 'hidden' }}>
+    <div style={{
+      display: 'flex', flexDirection: isNarrow ? 'column' : 'row',
+      height: '100vh', background: 'var(--color-bg)', color: 'var(--color-text)', fontFamily: 'sans-serif',
+      overflow: isNarrow ? 'auto' : 'hidden',
+    }}>
 
       {/* ── Left: template list ── */}
-      <div style={{ width: 220, borderRight: '1px solid #333', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid #333', fontWeight: 'bold', fontSize: 14, color: '#bbb' }}>Templates</div>
-        <div style={{ padding: '8px 10px', borderBottom: '1px solid #333', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 11, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>New from preset</div>
+      <div style={{
+        width: isNarrow ? '100%' : 220,
+        maxHeight: isNarrow ? 220 : undefined,
+        borderRight: isNarrow ? 'none' : '1px solid var(--color-border)',
+        borderBottom: isNarrow ? '1px solid var(--color-border)' : 'none',
+        display: 'flex', flexDirection: 'column', flexShrink: 0,
+      }}>
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--color-border)', fontWeight: 'bold', fontSize: 14, color: 'var(--color-text)' }}>Templates</div>
+        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>New from preset</div>
           {Object.keys(PRESETS).map(name => (
             <button key={name} onClick={() => newFromPreset(name)} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>{name}</button>
           ))}
           <button onClick={newBlank} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>Blank</button>
         </div>
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {templates.length === 0 && <div style={{ padding: 12, color: '#555', fontSize: 13 }}>No templates yet.</div>}
+          {templates.length === 0 && <div style={{ padding: 12, color: 'var(--color-text-muted)', fontSize: 13 }}>No templates yet.</div>}
           {templates.map(t => (
             <div key={t.id} style={{
               display: 'flex', alignItems: 'center', padding: '8px 10px', cursor: 'pointer',
-              background: t.id === selectedId ? '#1e3a5f' : 'transparent', borderBottom: '1px solid #222',
+              background: t.id === selectedId ? 'color-mix(in srgb, var(--color-accent) 22%, transparent)' : 'transparent', borderBottom: '1px solid var(--color-surface-elevated)',
             }} onClick={() => loadTemplate(t.id)}>
               <span style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
                 <div style={{ fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</div>
-                <div style={{ fontSize: 10, color: '#556', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{templateSlug(t.name)}</div>
+                <div style={{ fontSize: 10, color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{templateSlug(t.name)}</div>
               </span>
               <button onClick={e => { e.stopPropagation(); deleteTemplateById(t.id, t.name); }}
                       title="Delete" style={{ ...btnDangerStyle, padding: '2px 6px', fontSize: 11, marginLeft: 4 }}>✕</button>
@@ -987,35 +1024,35 @@ export function DskEditorPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
         {/* Toolbar */}
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid #333', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
           <input type="text" value={templateName}
             onChange={e => { setTemplateName(e.target.value); isDirty.current = true; }}
-            placeholder="Template name" style={{ ...inputStyle, width: 160 }} />
+            placeholder="Template name" style={{ ...inputStyle, flex: '0 0 160px', width: 160 }} />
           {templateName && (
-            <span style={{ fontSize: 11, color: '#556', fontFamily: 'monospace' }}
+            <span style={{ fontSize: 11, color: 'var(--color-text-muted)', fontFamily: 'monospace' }}
                   title="Template slug — use in metacodes: &lt;!-- template:slug --&gt;">
               {templateSlug(templateName)}
             </span>
           )}
 
           {/* Viewport selector: affects preview size */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <select value={selectedViewport} onChange={e => setSelectedViewport(e.target.value)} style={{ ...inputStyle, width: 140 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <select value={selectedViewport} onChange={e => setSelectedViewport(e.target.value)} style={{ ...inputStyle, flex: '0 0 140px', width: 140 }}>
               {([{ name: 'landscape', label: 'Landscape', width: 1920, height: 1080 }]).concat(viewportsList).map(vp => (
                 <option key={vp.name} value={vp.name}>{vp.label || vp.name} — {vp.width}×{vp.height}</option>
               ))}
             </select>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <span style={{ fontSize: 12, color: '#888' }}>BG:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>BG:</span>
             <input type="color"
               value={template.background && template.background !== 'transparent' ? template.background.slice(0, 7) : '#000000'}
               onChange={e => { setTemplate(t => ({ ...t, background: e.target.value })); isDirty.current = true; }}
-              style={{ width: 28, height: 22, padding: 0, border: 'none', cursor: 'pointer' }} />
+              style={{ width: 28, height: 22, padding: 0, border: 'none', cursor: 'pointer', flexShrink: 0 }} />
             <input type="text" value={template.background || 'transparent'}
               onChange={e => { setTemplate(t => ({ ...t, background: e.target.value })); isDirty.current = true; }}
-              style={{ ...inputStyle, width: 110 }} />
+              style={{ ...inputStyle, flex: '0 0 110px', width: 110 }} />
           </div>
 
           {/* Undo / Redo */}
@@ -1035,22 +1072,23 @@ export function DskEditorPage() {
           </button>
 
           <span style={{ flex: 1 }} />
-          {status && <span style={{ fontSize: 12, color: status.startsWith('Error') || status.startsWith('Save error') ? '#f88' : '#8d8' }}>{status}</span>}
+          {status && <span style={{ fontSize: 12, color: status.startsWith('Error') || status.startsWith('Save error') ? 'var(--color-error)' : 'var(--color-success)' }}>{status}</span>}
           <button onClick={duplicateTemplate} disabled={loading} style={btnStyle} title="Save as a new copy with a different name">Duplicate</button>
           <button onClick={saveTemplate} disabled={loading} style={btnPrimaryStyle}>{loading ? 'Saving…' : 'Save'}</button>
         </div>
 
         {/* Content area */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: isNarrow ? 'column' : 'row', overflow: isNarrow ? 'visible' : 'hidden' }}>
 
           {/* Preview + layer list */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 12, gap: 10, overflow: 'auto' }}>
+          <div ref={canvasAreaRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: 12, gap: 10, overflow: 'auto', minWidth: 0 }}>
 
             <TemplatePreview
               template={template}
               selectedIds={selectedIds}
               primaryId={primaryId}
               selectedViewport={selectedViewport}
+              previewTargetWidth={previewTargetWidth}
               onSelect={handleCanvasSelect}
               onDragStart={handleDragStart}
               onMoveSelected={handleMoveSelected}
@@ -1063,7 +1101,7 @@ export function DskEditorPage() {
 
             {/* Layer list header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold' }}>Layers</span>
+              <span style={{ fontSize: 13, color: 'var(--color-text)', fontWeight: 'bold' }}>Layers</span>
               <span style={{ flex: 1 }} />
               <button onClick={() => addLayer('ellipse')} style={{ ...btnStyle, fontSize: 12 }}>+ Ellipse</button>
               <button onClick={() => addLayer('rect')}    style={{ ...btnStyle, fontSize: 12 }}>+ Rect</button>
@@ -1075,7 +1113,7 @@ export function DskEditorPage() {
             {/* Alignment tools — shown when ≥2 layers selected */}
             {selectedIds.size >= 2 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 11, color: '#666', marginRight: 2 }}>Align:</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)', marginRight: 2 }}>Align:</span>
                 <button onClick={() => alignLayers('x', 'min')}    title="Align left"            style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>⬅L</button>
                 <button onClick={() => alignLayers('x', 'center')} title="Align center (H)"      style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>⬛C</button>
                 <button onClick={() => alignLayers('x', 'max')}    title="Align right"           style={{ ...btnStyle, padding: '2px 7px', fontSize: 12 }}>R➡</button>
@@ -1087,7 +1125,7 @@ export function DskEditorPage() {
             )}
 
             {(template.layers || []).length === 0 && (
-              <div style={{ color: '#555', fontSize: 13 }}>No layers yet.</div>
+              <div style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>No layers yet.</div>
             )}
 
             {[...(template.layers || [])].reverse().map((layer) => {
@@ -1098,8 +1136,8 @@ export function DskEditorPage() {
               return (
                 <div key={layer.id} style={{
                   display: 'flex', alignItems: 'center', padding: '4px 8px', marginBottom: 2,
-                  background: isInSel ? '#1e3a5f' : '#1a1a1a', borderRadius: 3, cursor: 'pointer',
-                  border: isPrimary ? '1px solid #4488dd' : isInSel ? '1px solid #336' : '1px solid transparent',
+                  background: isInSel ? 'color-mix(in srgb, var(--color-accent) 22%, transparent)' : 'var(--color-surface-elevated)', borderRadius: 3, cursor: 'pointer',
+                  border: isPrimary ? '1px solid var(--color-accent)' : isInSel ? '1px solid color-mix(in srgb, var(--color-accent) 45%, var(--color-border))' : '1px solid transparent',
                   opacity: isHidden ? 0.4 : 1,
                 }} onClick={e => selectLayerFromList(layer.id, e)}>
                   <button onClick={e => { e.stopPropagation(); toggleLayerVisibility(layer.id); }}
@@ -1107,17 +1145,17 @@ export function DskEditorPage() {
                           style={{ ...btnStyle, padding: '1px 5px', fontSize: 11, marginRight: 4, flexShrink: 0 }}>
                     {isHidden ? '○' : '●'}
                   </button>
-                  <span style={{ fontSize: 11, color: '#666', width: 44, flexShrink: 0 }}>{layer.type}</span>
+                  <span style={{ fontSize: 11, color: 'var(--color-text-muted)', width: 44, flexShrink: 0 }}>{layer.type}</span>
                   <span style={{ flex: 1, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {layer.id}
                     {layer.type === 'text' && layer.binding
-                      ? <span style={{ color: '#44bb88', marginLeft: 6 }}>⟳{layer.binding}</span>
+                      ? <span style={{ color: 'var(--color-success)', marginLeft: 6 }}>⟳{layer.binding}</span>
                       : layer.type === 'text' && layer.text
-                        ? <span style={{ color: '#777', marginLeft: 6 }}>"{layer.text}"</span>
+                        ? <span style={{ color: 'var(--color-text-muted)', marginLeft: 6 }}>"{layer.text}"</span>
                         : null}
                   </span>
                   {gName && (
-                    <span style={{ fontSize: 10, color: '#6af', background: '#1a2a3a', borderRadius: 3,
+                    <span style={{ fontSize: 10, color: 'var(--color-accent)', background: 'color-mix(in srgb, var(--color-accent) 15%, transparent)', borderRadius: 3,
                                    padding: '1px 5px', marginRight: 4, flexShrink: 0, maxWidth: 80,
                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                           title={gName}>
@@ -1133,9 +1171,9 @@ export function DskEditorPage() {
             })}
 
             {/* ── Media Library ── */}
-            <div style={{ borderTop: '1px solid #333', marginTop: 4, paddingTop: 4 }}>
+            <div style={{ borderTop: '1px solid var(--color-border)', marginTop: 4, paddingTop: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                <span style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold', flex: 1 }}>Media Library</span>
+                <span style={{ fontSize: 13, color: 'var(--color-text)', fontWeight: 'bold', flex: 1 }}>Media Library</span>
                 <button onClick={() => imgInputRef.current?.click()} style={{ ...btnStyle, fontSize: 12 }}>Upload</button>
                 <button onClick={() => setImgLibOpen(v => !v)} style={{ ...btnStyle, fontSize: 12, padding: '4px 8px' }}>
                   {imgLibOpen ? '▲' : '▼'}
@@ -1149,7 +1187,7 @@ export function DskEditorPage() {
                 <>
                   {imgPending && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0 6px', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 12, color: '#aaa' }}>{imgPending.name}</span>
+                      <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>{imgPending.name}</span>
                       <input type="text" value={shorthandInput}
                              onChange={e => setShorthandInput(e.target.value)}
                              placeholder="shorthand" style={{ ...inputStyle, width: 120 }} />
@@ -1160,24 +1198,24 @@ export function DskEditorPage() {
                       </button>
                       <button onClick={() => { setImgPending(null); setShorthandInput(''); setImgUploadErr(''); }}
                               style={{ ...btnStyle, fontSize: 12 }}>Cancel</button>
-                      {imgUploadErr && <span style={{ color: '#f88', fontSize: 12 }}>{imgUploadErr}</span>}
+                      {imgUploadErr && <span style={{ color: 'var(--color-error)', fontSize: 12 }}>{imgUploadErr}</span>}
                     </div>
                   )}
 
                   {images.length === 0 && !imgPending && (
-                    <div style={{ color: '#555', fontSize: 13, paddingBottom: 4 }}>No images yet. Click Upload to add one.</div>
+                    <div style={{ color: 'var(--color-text-muted)', fontSize: 13, paddingBottom: 4 }}>No images yet. Click Upload to add one.</div>
                   )}
 
                   {images.map(img => (
                     <div key={img.id} style={{
                       display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
-                      borderBottom: '1px solid #1e1e1e',
+                      borderBottom: '1px solid var(--color-surface-elevated)',
                     }}>
                       <img src={`${serverUrl}/images/${img.id}`} alt={img.shorthand}
-                           style={{ width: 40, height: 40, objectFit: 'contain', background: '#222', borderRadius: 3, flexShrink: 0 }} />
+                           style={{ width: 40, height: 40, objectFit: 'contain', background: 'var(--color-surface-elevated)', borderRadius: 3, flexShrink: 0 }} />
                       <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                             title={img.shorthand}>{img.shorthand}</span>
-                      <span style={{ fontSize: 11, color: '#666', flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)', flexShrink: 0 }}>
                         {img.mimeType?.split('/')[1]?.toUpperCase()}
                       </span>
                       <button onClick={() => useImageFromLibrary(img)} title="Insert into canvas"
@@ -1192,8 +1230,14 @@ export function DskEditorPage() {
           </div>
 
           {/* Properties panel */}
-          <div style={{ width: 280, borderLeft: '1px solid #333', padding: 12, overflowY: 'auto', flexShrink: 0 }}>
-            <div style={{ fontSize: 13, color: '#bbb', fontWeight: 'bold', marginBottom: 10 }}>Properties</div>
+          <div style={{
+            width: isNarrow ? '100%' : 280,
+            maxHeight: isNarrow ? '60vh' : undefined,
+            borderLeft: isNarrow ? 'none' : '1px solid var(--color-border)',
+            borderTop: isNarrow ? '1px solid var(--color-border)' : 'none',
+            padding: 12, overflowY: 'auto', flexShrink: 0,
+          }}>
+            <div style={{ fontSize: 13, color: 'var(--color-text)', fontWeight: 'bold', marginBottom: 10 }}>Properties</div>
             <LayerPropertyEditor
               layer={effectivePrimaryLayer}
               selectionCount={selectedIds.size}
@@ -1204,7 +1248,7 @@ export function DskEditorPage() {
 
             {/* Viewport-specific image settings (moved from Viewports page) */}
             <div style={{ marginTop: 18 }}>
-              <div style={{ fontSize: 12, color: '#aaa', fontWeight: 'bold', marginBottom: 8 }}>Viewport Image Settings</div>
+              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 'bold', marginBottom: 8 }}>Viewport Image Settings</div>
               <ImageSettingsTable
                 images={images}
                 viewportName={selectedViewport}
@@ -1215,11 +1259,11 @@ export function DskEditorPage() {
             </div>
 
             {/* ── AI Assist ── */}
-            <div style={{ marginTop: 18, borderTop: '1px solid #333', paddingTop: 10 }}>
+            <div style={{ marginTop: 18, borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, cursor: 'pointer' }}
                    onClick={() => setAiAssistOpen(v => !v)}>
-                <span style={{ fontSize: 12, color: '#aaa', fontWeight: 'bold', flex: 1 }}>✨ AI Assist</span>
-                <span style={{ fontSize: 11, color: '#666' }}>{aiAssistOpen ? '▲' : '▼'}</span>
+                <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 'bold', flex: 1 }}>✨ AI Assist</span>
+                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{aiAssistOpen ? '▲' : '▼'}</span>
               </div>
               {aiAssistOpen && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1257,14 +1301,14 @@ export function DskEditorPage() {
                       {aiLoading ? '…' : 'Styles'}
                     </button>
                   </div>
-                  {aiError && <span style={{ color: '#f88', fontSize: 11 }}>{aiError}</span>}
+                  {aiError && <span style={{ color: 'var(--color-error)', fontSize: 11 }}>{aiError}</span>}
                   {aiSuggestions.length > 0 && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <span style={{ fontSize: 11, color: '#888' }}>Style suggestions:</span>
+                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Style suggestions:</span>
                       {aiSuggestions.map((s, i) => (
-                        <div key={i} style={{ background: '#1a1a1a', borderRadius: 4, padding: '5px 8px', fontSize: 11 }}>
-                          <div style={{ color: '#ccc', fontWeight: 'bold' }}>{s.name}</div>
-                          <div style={{ color: '#888' }}>{s.description}</div>
+                        <div key={i} style={{ background: 'var(--color-surface-elevated)', borderRadius: 4, padding: '5px 8px', fontSize: 11 }}>
+                          <div style={{ color: 'var(--color-text)', fontWeight: 'bold' }}>{s.name}</div>
+                          <div style={{ color: 'var(--color-text-muted)' }}>{s.description}</div>
                         </div>
                       ))}
                     </div>

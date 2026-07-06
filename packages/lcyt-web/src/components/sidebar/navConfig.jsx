@@ -18,6 +18,12 @@ const AssetsIcon = () => (
   </svg>
 );
 
+const PlannerIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+    <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+  </svg>
+);
+
 const GraphicsIcon = () => (
   <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
     <path d="M8 2L14 5L8 8L2 5L8 2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
@@ -69,11 +75,13 @@ const ProjectsIcon = () => (
 );
 
 // Order mirrors the Claude Design mockup's project nav (Setup, Assets,
-// Graphics, Broadcast) — see HIDDEN.md at the repo root for pages that were
-// dropped from this list because they have no design counterpart yet.
+// Planner, Graphics, Broadcast) — see HIDDEN.md at the repo root for pages
+// that were dropped from this list because they have no design counterpart
+// yet.
 export const NAV_ITEMS = [
   { id: 'setup',     icon: <SetupIcon />,     label: 'Setup',     path: '/setup' },
   { id: 'assets',    icon: <AssetsIcon />,    label: 'Assets',    path: '/assets',         feature: 'login' },
+  { id: 'planner',   icon: <PlannerIcon />,   label: 'Planner',   path: '/planner' },
   { id: 'graphics',  icon: <GraphicsIcon />,  label: 'Graphics',  path: '/graphics/editor', feature: 'graphics' },
   { id: 'broadcast', icon: <BroadcastIcon />, label: 'Broadcast', path: '/broadcast' },
 ];

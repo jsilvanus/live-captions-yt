@@ -4,7 +4,9 @@ Pages/nav items removed from the `lcyt-web` sidebar (`packages/lcyt-web/src/comp
 
 **"Hidden" means nav-only.** The route, component, and backend behavior are all untouched — each page still works if you type its URL directly. Removed only from `NAV_ITEMS` / `NAV_GROUPS` / `NAV_BOTTOM` (and therefore from the Command Palette, which is built from the same config). To bring one back: re-add its entry to `navConfig.jsx` with a fitting icon, in whatever position makes sense once it has a design.
 
-The mockup's sidebar order (Setup → Assets → Graphics → Broadcast, then Projects → Team → Admin → Account) is what the current nav follows. Everything below was in the old nav but isn't in the mockup yet.
+The mockup's sidebar order (Setup → Assets → Planner → Graphics → Broadcast, then Projects → Team → Admin → Account) is what the current nav follows. Everything below was in the old nav but isn't in the mockup yet.
+
+**Update (2026-07-06):** Planner is back in the nav (between Assets and Graphics) — the mockup's `Planner Page.dc.html` was fully ported (structure/outline sidebar, file-include block type, theme-aware CSS). See `packages/lcyt-web/src/components/PlannerPage.jsx`.
 
 ## Removed nav items
 
@@ -13,7 +15,6 @@ The mockup's sidebar order (Setup → Assets → Graphics → Broadcast, then Pr
 | Captions | `/captions` | Top nav item | Classic two-panel caption UI — core feature, just not in the mockup yet. |
 | Audio | `/audio` | Top nav item | Full-page audio/STT controls. |
 | Translations | `/translations` | Top nav item | The mockup's Assets screen has a static `AssetTranslationsCard` — worth wiring a real link there once that card gets an `onClick`. |
-| Planner | `/planner` | Top nav item | The mockup *does* have a full `Planner Page.dc.html`, reachable from the Assets screen's "Run planner" card (`AssetRunPlannerCard.dc.html`) — not from the sidebar directly. Consider linking `AssetsPage`'s planner card to `/planner` instead of re-adding a sidebar entry. |
 | AI | `/ai` | Bottom nav item | AI/embedding provider settings. |
 | Settings | `/settings` | Bottom nav item | General/CC/IO preferences. Note: the mockup's Org screen has its own "Setup" tab, but that's team-defaults config (which device/service configs a team pushes into projects), not this page — genuinely no equivalent yet. |
 | DSK Control | `/graphics/control` | Sub-item of the old "Graphics" group | The mockup's Graphics icon opens the Editor directly, no sub-menu. |
