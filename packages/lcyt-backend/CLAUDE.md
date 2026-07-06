@@ -130,6 +130,8 @@ GET  /video/:key/subs/:lang/:seg.vtt      — WebVTT subtitle segment file (publ
 GET  /viewer/:key         — public SSE broadcast stream (no auth, CORS *); viewer targets subscribe here
 GET  /stream-hls/:key/*   — HLS video+audio segments and playlist (public, rate-limited)
 GET  /radio/:key/*        — audio-only HLS segments and playlist (public, rate-limited)
+GET  /radio/config        — Web Radio self-service metadata: { title, description, coverImageUrl, autoplay, enabled, live } (Bearer token)
+PUT  /radio/config        — update title/description/coverImageUrl/autoplay (Bearer token)
 GET  /preview/:key/incoming.jpg — latest RTMP → JPEG thumbnail (public)
 
 GET  /dsk/:apikey/images           — list DSK overlay images for an API key (public)
@@ -150,6 +152,9 @@ GET/POST/PUT/DELETE /images/:id — image upload/management for DSK overlays (JW
 GET  /youtube/config      — return YOUTUBE_CLIENT_ID for client-side OAuth (Bearer token)
 GET/POST/PUT/DELETE /rtmp — RTMP relay slot management (Bearer token)
 GET/POST /stream          — RTMP relay stream control (Bearer token + domain allowlist)
+GET  /ingestion/config    — RTMP ingest status: { video: {enabled,active,streamKey,ingestUrl,rotatable,live}, dsk: {enabled,ingestUrl,live} } (Bearer token; mounted only when RTMP_RELAY_ACTIVE=1)
+PATCH /ingestion/config   — { video?: {enabled?}, dsk?: {enabled?} } — video flips relay_allowed (self-service, feature-gated on `ingest`); dsk is 501 (no real gate exists yet)
+POST /ingestion/config/rotate — rotate the video ingest stream key, decoupling it from the api_key (Bearer token)
 
 GET  /production/cameras  — list cameras (admin key)
 POST /production/cameras  — create camera
@@ -184,6 +189,18 @@ POST /stt/stop            — stop STT session (Bearer token)
 GET  /stt/events          — SSE stream of transcript events (Bearer token or ?token=)
 GET  /stt/config          — get per-key STT config from DB (Bearer token)
 PUT  /stt/config          — update per-key STT config (Bearer token)
+
+GET    /targets           — list server-persisted caption delivery targets for the API key (Bearer token)
+POST   /targets           — create a target { type, streamKey?/url?/headers?/viewerKey?, enabled?, noBatch? } (Bearer token)
+PUT    /targets/:id       — update a target (Bearer token)
+DELETE /targets/:id       — delete a target (Bearer token)
+PUT    /targets/reorder   — persist a new sort order in one call, body { order: string[] } (Bearer token)
+
+GET    /translation/config              — combined read: { vendor, targets } (Bearer token)
+PUT    /translation/config/vendor       — update vendor + credentials (Bearer token)
+POST   /translation/config/targets      — create a language/destination translation target (Bearer token)
+PUT    /translation/config/targets/:id  — update a translation target (Bearer token)
+DELETE /translation/config/targets/:id  — delete a translation target (Bearer token)
 
 GET/POST/PUT/DELETE /cues/rules — cue rule CRUD (Bearer token)
 GET  /cues/events         — list recent cue events (Bearer token)
@@ -229,7 +246,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 ```
 
 **Key internals:**
-- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK), `caption_usage`, `session_stats`, `caption_errors`, `sessions`. Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
+- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK, plus a rotatable `ingest_stream_key` — `plan_selfservice_config_backend.md` §2), `caption_usage`, `session_stats`, `caption_errors`, `sessions`, `caption_targets`/`translation_vendor_config`/`translation_targets` (server-persisted target/translation config — §1). Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
 - `src/db/schema.js` — also defines `organizations` and `org_members` (schema-only so far, from `plan_team_org_backend.md` — no org CRUD/membership routes yet, `/team` is still a "Coming soon" placeholder) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter(auth, sttManager, db, jwtSecret)`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`. The `?token=`/Bearer SSE auth verifies with `jwt.verify(token, jwtSecret)` (previously an unverified base64 decode of the payload — same class of bug fixed in `lcyt-connectors`' `/variables/events`, see that plugin's `CLAUDE.md`).
@@ -269,7 +286,10 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/keys.js` — API key CRUD (admin + user project management).
 - `src/routes/events.js` — SSE delivery-result stream (authenticated, session owner).
 - `src/routes/viewer.js` — Public SSE broadcast stream `GET /viewer/:key` — no auth, CORS `*`.
-- `src/routes/radio.js` — Audio-only HLS streaming (public, rate-limited).
+- `src/routes/targets.js` — Server-persisted caption delivery target CRUD (`caption_targets` table; `/targets/*`).
+- `src/routes/translation.js` — Server-persisted translation vendor + language config CRUD (`translation_vendor_config`/`translation_targets` tables; `/translation/config*`).
+- `src/db/caption-targets.js` — Caption target DB helpers (`caption_targets` table).
+- `src/db/translation-config.js` — Translation vendor + target DB helpers (`translation_vendor_config`/`translation_targets` tables).
 - `src/routes/stream-hls.js` — Video+audio HLS streaming (public, rate-limited).
 - `src/routes/preview.js` — RTMP → JPEG thumbnail serving (public).
 - `src/routes/youtube.js` — YouTube OAuth client ID endpoint.

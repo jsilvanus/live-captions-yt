@@ -18,6 +18,8 @@ export * from './viewer.js';
 export * from './project-features.js';
 export * from './project-members.js';
 export * from './device-roles.js';
+export * from './caption-targets.js';
+export * from './translation-config.js';
 
 // Re-export DSK image helpers needed by lcyt-backend routes (keys.js delete cascade)
 export { deleteAllImages } from 'lcyt-dsk';

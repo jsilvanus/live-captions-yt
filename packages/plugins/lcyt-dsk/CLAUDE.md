@@ -36,7 +36,7 @@ await stopDsk();
 - `routes/dsk-templates.js` — Authenticated template CRUD + renderer start/stop + broadcast.
 - `routes/dsk-viewports.js` — Authenticated viewport CRUD.
 - `routes/images.js` — Image upload (POST), list (GET), update (PUT), serve (GET public), delete (DELETE).
-- `routes/dsk-rtmp.js` — nginx-rtmp `on_publish` / `on_publish_done` callbacks.
+- `routes/dsk-rtmp.js` — `createDskRtmpRouter(db, relayManager)`: nginx-rtmp `on_publish` / `on_publish_done` callbacks. Resolves the incoming stream name through a local `resolveApiKeyFromIngestStreamKey()` (mirrors the one in `lcyt-rtmp`'s `db/relay.js`, duplicated rather than imported since this plugin has no dependency on `lcyt-rtmp`) before treating it as an api_key — see `plan_selfservice_config_backend.md` §2.
 - `middleware/editor-auth.js` — `createEditorAuth(db)`: accepts `X-API-Key` header (no live session needed). `editorAuthOrBearer(jwtAuth, editorAuth)`: tries X-API-Key first, falls through to JWT Bearer.
 
 **DSK caption metacode syntax:**

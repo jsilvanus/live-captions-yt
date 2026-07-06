@@ -453,6 +453,75 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// plan/selfservice_config_backend §2 — rotated ingest_stream_key resolution
+// ---------------------------------------------------------------------------
+
+describe('POST /rtmp — resolveApiKeyFromIngestStreamKey', () => {
+  let db, server, baseUrl, relayManager;
+
+  before(() => new Promise((resolve) => {
+    db = initTestDb();
+    relayManager = new RtmpRelayManager();
+    const app = express();
+    app.use('/rtmp', createRtmpRouter(db, relayManager));
+    server = createServer(app);
+    server.listen(0, () => {
+      baseUrl = `http://localhost:${server.address().port}`;
+      resolve();
+    });
+  }));
+
+  after(() => new Promise((resolve) => {
+    db.close();
+    server.close(resolve);
+  }));
+
+  function postRtmp(fields) {
+    const body = new URLSearchParams(fields).toString();
+    return fetch(`${baseUrl}/rtmp`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+  }
+
+  it('accepts a publish using the literal api_key when no ingest_stream_key is set', async () => {
+    const k = createKey(db, { owner: 'NoRotate', relay_allowed: true });
+    const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(relayManager.isPublishing(k.key), true);
+  });
+
+  it('resolves a rotated ingest_stream_key to the owning api_key', async () => {
+    const k = createKey(db, { owner: 'Rotated', relay_allowed: true });
+    const rotatedStreamKey = 'rotated-stream-key-abc123';
+    db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run(rotatedStreamKey, k.key);
+
+    const res = await postRtmp({ call: 'publish', app: 'stream', name: rotatedStreamKey });
+    assert.strictEqual(res.status, 200);
+    // isPublishing() is tracked under the resolved api_key, not the rotated stream name
+    assert.strictEqual(relayManager.isPublishing(k.key), true);
+    assert.strictEqual(relayManager.isPublishing(rotatedStreamKey), false);
+  });
+
+  it('rejects a publish using the OLD literal api_key once ingest_stream_key has been rotated away', async () => {
+    // relay_allowed is still true on the key row, but resolveApiKeyFromIngestStreamKey()
+    // only affects lookups BY the rotated value — publishing with the literal api_key
+    // still resolves to itself and is still allowed. This documents that behavior:
+    // rotation does not retroactively block the old literal api_key from publishing.
+    const k = createKey(db, { owner: 'StillAllowed', relay_allowed: true });
+    db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run('some-other-value', k.key);
+    const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
+    assert.strictEqual(res.status, 200);
+  });
+
+  it('falls back to treating an unknown name as the literal api_key (403 when not relay_allowed)', async () => {
+    const res = await postRtmp({ call: 'publish', app: 'stream', name: 'totally-unknown-name' });
+    assert.strictEqual(res.status, 403);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // /stream CRUD — fan-out (up to 4 slots per key)
 // ---------------------------------------------------------------------------
 

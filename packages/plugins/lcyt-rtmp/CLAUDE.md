@@ -16,6 +16,7 @@ setHlsSubsManager(rtmp.hlsSubsManager);
 if (process.env.RTMP_RELAY_ACTIVE === '1') {
   const routers = createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains });
   app.use('/rtmp',       routers.rtmpRouter);
+  app.use('/ingestion',  routers.ingestionRouter);
   app.use('/stream',     routers.streamRouter);
   app.use('/stream-hls', routers.streamHlsRouter);
   app.use('/radio',      routers.radioRouter);
@@ -41,11 +42,13 @@ await rtmp.stop();
 - `stt-adapters/whisper-http.js` — `WhisperHttpAdapter`: sends audio to a Whisper-compatible HTTP STT server.
 - `stt-adapters/openai.js` — `OpenAiAdapter`: sends audio to OpenAI-compatible STT endpoint.
 - `stt-adapters/pcm-buffer.js` — `PcmSilenceBuffer`: accumulates PCM frames and detects silence; `buildWav()` helper constructs WAV from raw PCM bytes.
-- `db/relay.js` — RTMP relay DB helpers: `isRelayAllowed()`, `isRadioEnabled()`, per-key relay config CRUD.
-- `routes/rtmp.js` — `GET/POST/PUT/DELETE /rtmp` — RTMP relay slot management.
-- `routes/stream.js` — `GET/POST /stream` — RTMP relay stream control (domain allowlist enforced).
+- `db/relay.js` — RTMP relay DB helpers: `isRelayAllowed()`, `isRadioEnabled()`, `resolveApiKeyFromIngestStreamKey()` (resolves a rotated ingest stream key back to its owning api_key, falling back to treating the name as the literal api_key — `plan_selfservice_config_backend.md` §2), per-key relay config CRUD.
+- `db/radio.js` — `runRadioMigrations()` + `getRadioConfig()`/`setRadioConfig()`: Web Radio metadata (`radio_config` table — title/description/coverImageUrl/autoplay, plus `radio_enabled` surfaced read-only as `enabled`) — §3.
+- `routes/rtmp.js` — `POST /rtmp` — nginx-rtmp `on_publish`/`on_publish_done` callback for the primary video app. Resolves the incoming stream name through `resolveApiKeyFromIngestStreamKey()` before treating it as an api_key.
+- `routes/ingestion.js` — `GET/PATCH /ingestion/config`, `POST /ingestion/config/rotate` — self-service ingest status/enable/rotate (session Bearer). Nested `{ video, dsk }` shape: `video.enabled` flips `relay_allowed` (feature-gated on `ingest` when `FEATURE_GATE_ENFORCE=1`); `dsk.enabled` is read-only (`graphics_enabled`) and `PATCH .../dsk` is `501` until a real DSK-ingest gate exists (§2/§2a).
+- `routes/stream.js` — `GET/POST/PUT/DELETE /stream` — RTMP relay egress slot management (domain allowlist enforced).
 - `routes/stream-hls.js` — `GET /stream-hls/:key/*` — HLS video+audio proxy (public, rate-limited).
-- `routes/radio.js` — `GET /radio/:key/*` — audio-only HLS proxy (public, rate-limited).
+- `routes/radio.js` — `GET /radio/:key/*` — audio-only HLS proxy (public, rate-limited); `GET/PUT /radio/config` — self-service Web Radio metadata (session Bearer, §3/§3a); resolves nginx-rtmp callback stream names through `resolveApiKeyFromIngestStreamKey()`.
 - `routes/preview.js` — `GET /preview/:key/incoming.jpg` — RTMP → JPEG thumbnail serving (public).
 
 **Tests:** `packages/plugins/lcyt-rtmp/test/*.test.js` — uses `node:test` with `--experimental-test-module-mocks`.

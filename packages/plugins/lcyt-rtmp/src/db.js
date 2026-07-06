@@ -6,7 +6,10 @@
  *
  * @param {import('better-sqlite3').Database} db
  */
+import { runRadioMigrations } from './db/radio.js';
+
 export function runMigrations(db) {
+  runRadioMigrations(db);
   // ── api_keys additive columns ──────────────────────────────────────────────
   const existingCols = new Set(
     db.prepare('PRAGMA table_info(api_keys)').all().map(c => c.name)
@@ -208,3 +211,4 @@ export function setSttConfig(db, apiKey, { provider, language, audioSource, stre
 }
 
 export * from './db/relay.js';
+export * from './db/radio.js';

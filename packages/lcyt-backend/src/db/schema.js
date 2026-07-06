@@ -159,12 +159,22 @@ export function initDb(dbPath) {
   if (!existingCols.has('cea708_delay_ms'))   db.exec('ALTER TABLE api_keys ADD COLUMN cea708_delay_ms INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('embed_cors'))        db.exec("ALTER TABLE api_keys ADD COLUMN embed_cors TEXT NOT NULL DEFAULT '*'");
   if (!existingCols.has('device_code'))       db.exec('ALTER TABLE api_keys ADD COLUMN device_code TEXT');
+  // Rotatable RTMP ingest credential, decoupled from the api_key itself.
+  // NULL = the RTMP stream key is the api_key (today's behavior, unchanged).
+  if (!existingCols.has('ingest_stream_key')) db.exec('ALTER TABLE api_keys ADD COLUMN ingest_stream_key TEXT');
 
   const existingApiKeyIndexes = new Set(
     db.prepare('PRAGMA index_list(api_keys)').all().map(index => index.name)
   );
   if (!existingApiKeyIndexes.has('idx_api_keys_org')) {
     db.exec('CREATE INDEX idx_api_keys_org ON api_keys(org_id)');
+  }
+  // SQLite ALTER TABLE ADD COLUMN cannot carry a UNIQUE constraint, so the
+  // uniqueness of ingest_stream_key is enforced via a separate index instead.
+  // NULLs are treated as distinct by SQLite's UNIQUE index, so any number of
+  // keys may leave it unset.
+  if (!existingApiKeyIndexes.has('idx_api_keys_ingest_stream_key')) {
+    db.exec('CREATE UNIQUE INDEX idx_api_keys_ingest_stream_key ON api_keys(ingest_stream_key)');
   }
 
   // Additive migrations for users table
@@ -295,6 +305,55 @@ export function initDb(dbPath) {
       views INTEGER NOT NULL DEFAULT 0
     )
   `);
+
+  // ── Self-service config: caption targets + translation config ────────────
+  // (plan/selfservice_config_backend §1 — promotes lcyt-web's localStorage-only
+  // targetConfig.js/translationConfig.js into server-persisted, self-service CRUD.)
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS caption_targets (
+      id          TEXT    PRIMARY KEY,
+      api_key     TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      type        TEXT    NOT NULL,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      stream_key  TEXT,
+      url         TEXT,
+      headers     TEXT,
+      viewer_key  TEXT,
+      no_batch    INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_caption_targets_api_key ON caption_targets(api_key)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS translation_vendor_config (
+      api_key        TEXT PRIMARY KEY REFERENCES api_keys(key) ON DELETE CASCADE,
+      vendor         TEXT NOT NULL DEFAULT 'mymemory',
+      vendor_api_key TEXT,
+      libre_url      TEXT,
+      libre_key      TEXT,
+      show_original  INTEGER NOT NULL DEFAULT 0,
+      updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS translation_targets (
+      id          TEXT    PRIMARY KEY,
+      api_key     TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      enabled     INTEGER NOT NULL DEFAULT 1,
+      lang        TEXT    NOT NULL,
+      target      TEXT    NOT NULL,
+      format      TEXT,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at  TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_translation_targets_api_key ON translation_targets(api_key)');
 
   // ── Richer projects: feature flags, membership, device roles ─────────────
 

@@ -75,6 +75,6 @@ export function createDskRouters(db, dskBus, auth, relayManager) {
     /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */
     imagesRouter: createImagesRouter(db, editorAuthOrBearer(auth, editorAuth)),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */
-    dskRtmpRouter: createDskRtmpRouter(relayManager),
+    dskRtmpRouter: createDskRtmpRouter(db, relayManager),
   };
 }

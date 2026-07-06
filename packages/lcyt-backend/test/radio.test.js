@@ -5,13 +5,17 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
+import jwt from 'jsonwebtoken';
 import { initDb, createKey, updateKey } from '../src/db.js';
 import { runMigrations } from 'lcyt-rtmp/src/db.js';
+import { createAuthMiddleware } from '../src/middleware/auth.js';
 
 function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
-import { isRadioEnabled } from 'lcyt-rtmp/src/db.js';
+import { isRadioEnabled, getRadioConfig, setRadioConfig } from 'lcyt-rtmp/src/db.js';
 import { createRadioRouter } from 'lcyt-rtmp/src/routes/radio.js';
 import { RadioManager } from 'lcyt-rtmp/src/radio-manager.js';
+
+const JWT_SECRET = 'test-radio-secret';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -440,5 +444,188 @@ describe('GET /radio/:key/player.js', () => {
   it('has CORS header', async () => {
     const res = await getJson(server, '/radio/myevent/player.js');
     assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
+  });
+
+  it('snippet includes title and cover image when configured', async () => {
+    const k = 'metaevent12345';
+    setRadioConfig(db, k, { title: 'Sunday Service', coverImageUrl: 'https://example.com/cover.png' });
+    const res = await getJson(server, `/radio/${k}/player.js`);
+    const body = await res.text();
+    assert.ok(body.includes('Sunday Service'));
+    assert.ok(body.includes('https://example.com/cover.png'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /radio/:key/info — public stream info + metadata
+// (plan/selfservice_config_backend §3 — surfaces title/description/coverImageUrl/autoplay)
+// ---------------------------------------------------------------------------
+
+describe('GET /radio/:key/info', () => {
+  let db, server, manager;
+
+  before(async () => {
+    db = initTestDb();
+    manager = new RadioManager();
+    const app = express();
+    app.use('/radio', createRadioRouter(db, manager));
+    await new Promise(resolve => {
+      server = createServer(app).listen(0, '127.0.0.1', resolve);
+    });
+  });
+
+  after(() => new Promise(resolve => {
+    server.close(resolve);
+    db.close();
+  }));
+
+  it('returns live/hlsUrl plus null metadata fields when unconfigured', async () => {
+    const res = await getJson(server, '/radio/unconfiguredkey/info');
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.live, false);
+    assert.strictEqual(body.title, null);
+    assert.strictEqual(body.description, null);
+    assert.strictEqual(body.coverImageUrl, null);
+    assert.strictEqual(body.autoplay, false);
+  });
+
+  it('surfaces configured title/description/coverImageUrl/autoplay', async () => {
+    const k = 'infoconfigured1';
+    setRadioConfig(db, k, { title: 'Live Show', description: 'Weekly stream', coverImageUrl: 'https://x.example/c.png', autoplay: true });
+    const res = await getJson(server, `/radio/${k}/info`);
+    const body = await res.json();
+    assert.strictEqual(body.title, 'Live Show');
+    assert.strictEqual(body.description, 'Weekly stream');
+    assert.strictEqual(body.coverImageUrl, 'https://x.example/c.png');
+    assert.strictEqual(body.autoplay, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET/PUT /radio/config — self-service Web Radio metadata
+// (plan/selfservice_config_backend §3/§3a — session Bearer)
+// ---------------------------------------------------------------------------
+
+describe('GET/PUT /radio/config', () => {
+  let db, server, manager, apiKey, token;
+
+  before(async () => {
+    db = initTestDb();
+    manager = new RadioManager();
+    const auth = createAuthMiddleware(JWT_SECRET);
+    const app = express();
+    app.use(express.json());
+    app.use('/radio', createRadioRouter(db, manager, null, auth));
+
+    const k = createKey(db, { owner: 'RadioConfigUser', radio_enabled: true });
+    apiKey = k.key;
+    token = jwt.sign({ sessionId: 'radio-config-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
+
+    await new Promise(resolve => {
+      server = createServer(app).listen(0, '127.0.0.1', resolve);
+    });
+  });
+
+  after(() => new Promise(resolve => {
+    server.close(resolve);
+    db.close();
+  }));
+
+  function bearer(tok = token) {
+    return { Authorization: `Bearer ${tok}` };
+  }
+
+  it('GET /radio/config returns defaults + enabled + live for a fresh key', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`, { headers: bearer() });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.title, null);
+    assert.strictEqual(body.autoplay, false);
+    assert.strictEqual(body.enabled, true); // radio_enabled=true on this test key
+    assert.strictEqual(body.live, false);
+  });
+
+  it('GET /radio/config rejects missing auth', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`);
+    assert.strictEqual(res.status, 401);
+  });
+
+  it('PUT /radio/config creates/updates metadata and returns the full config directly', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`, {
+      method: 'PUT',
+      headers: { ...bearer(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Sunday Service Audio', description: 'Live audio feed', coverImageUrl: 'https://x.example/cover.png', autoplay: true }),
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.title, 'Sunday Service Audio');
+    assert.strictEqual(body.description, 'Live audio feed');
+    assert.strictEqual(body.coverImageUrl, 'https://x.example/cover.png');
+    assert.strictEqual(body.autoplay, true);
+    assert.strictEqual(body.enabled, true);
+    assert.strictEqual(body.live, false);
+  });
+
+  it('PUT /radio/config supports partial updates (autoplay toggle only)', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`, {
+      method: 'PUT',
+      headers: { ...bearer(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ autoplay: false }),
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.autoplay, false);
+    // Title from the previous PUT should be preserved
+    assert.strictEqual(body.title, 'Sunday Service Audio');
+  });
+
+  it('GET /radio/config reflects persisted config on a later read', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`, { headers: bearer() });
+    const body = await res.json();
+    assert.strictEqual(body.title, 'Sunday Service Audio');
+    assert.strictEqual(body.autoplay, false);
+  });
+
+  it('GET /radio/config reflects live status from radioManager.isRunning()', async () => {
+    await manager.start(apiKey);
+    const res = await fetch(`${baseUrl(server)}/radio/config`, { headers: bearer() });
+    const body = await res.json();
+    assert.strictEqual(body.live, true);
+    await manager.stop(apiKey);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET/PUT /radio/config — 501 when auth is not wired up (createRadioRouter without auth)
+// ---------------------------------------------------------------------------
+
+describe('GET/PUT /radio/config without auth configured', () => {
+  let db, server, manager;
+
+  before(async () => {
+    db = initTestDb();
+    manager = new RadioManager();
+    const app = express();
+    app.use(express.json());
+    app.use('/radio', createRadioRouter(db, manager)); // no auth passed
+    await new Promise(resolve => {
+      server = createServer(app).listen(0, '127.0.0.1', resolve);
+    });
+  });
+
+  after(() => new Promise(resolve => {
+    server.close(resolve);
+    db.close();
+  }));
+
+  it('returns 501 for GET /radio/config', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`);
+    assert.strictEqual(res.status, 501);
+  });
+
+  it('returns 501 for PUT /radio/config', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`, { method: 'PUT', body: JSON.stringify({}) , headers: { 'Content-Type': 'application/json' } });
+    assert.strictEqual(res.status, 501);
   });
 });

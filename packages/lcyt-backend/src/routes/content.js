@@ -1,7 +1,8 @@
 /**
  * Content router group — analytics, files, media, and auxiliary endpoints.
  *
- * Mounts: /stats, /usage, /file, /viewer, /video, /youtube, /stt, /bridge-download
+ * Mounts: /stats, /usage, /file, /viewer, /video, /youtube, /stt, /targets,
+ *         /translation, /bridge-download
  */
 import { Router } from 'express';
 import { createStatsRouter } from './stats.js';
@@ -10,6 +11,8 @@ import { createViewerRouter } from './viewer.js';
 import { createVideoRouter } from './video.js';
 import { createYouTubeRouter } from './youtube.js';
 import { createSttRouter } from './stt.js';
+import { createTargetsRouter } from './targets.js';
+import { createTranslationRouter } from './translation.js';
 import { createBridgeDownloadRouter } from './bridge-download.js';
 import { createFilesRouter } from 'lcyt-files';
 
@@ -30,6 +33,8 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/youtube',         createYouTubeRouter(auth));
   router.use('/stt',             createSttRouter(auth, sttManager, db, jwtSecret));
+  router.use('/targets',         createTargetsRouter(auth, db));
+  router.use('/translation',     createTranslationRouter(auth, db));
   router.use('/bridge-download', createBridgeDownloadRouter());
   return router;
 }

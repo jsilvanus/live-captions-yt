@@ -1,7 +1,7 @@
 ---
 id: plan/selfservice_config_backend
 title: "Self-Service Config Backend: Caption Targets/Translation, Ingestion, and Web Radio"
-status: draft
+status: implemented
 summary: "Design for promoting three client-only or admin-only config surfaces into proper backend-persisted entities with real CRUD: (1) caption targets + translation config, currently 100% localStorage; (2) RTMP ingestion, currently two boolean flags on api_keys with no rotatable stream key; (3) Web Radio, currently a single admin-toggled boolean with no metadata. Companion to plan_team_org_backend.md's appendix items 1-3."
 ---
 
@@ -12,6 +12,8 @@ summary: "Design for promoting three client-only or admin-only config surfaces i
 These three items were flagged as a prioritized backlog in `plan_team_org_backend.md`'s "Other Backend Gaps" appendix (items 1-3). All three share the same shape: something that today lives entirely client-side (`localStorage`) or as a bare admin-only boolean column gets promoted to a real per-project, server-persisted, self-service-CRUD entity. They are grouped in one document rather than split three ways because they were commissioned together as one gap-analysis batch and are individually small enough that separate files would mostly repeat the same "current state → schema → routes" skeleton — but each section below is self-contained and could be lifted into its own plan file later if one of them grows into a multi-day project (the Caption Targets section is the closest to that; see its own effort note).
 
 **No backward-compatibility burden.** LCYT has no released users yet. None of the schema below hedges for existing production rows, gradual rollout, or zero-downtime migration — additive/nullable columns are used because that is simply good schema design (a project genuinely can have zero configured targets, or no ingestion rotated yet), not because of any compat requirement.
+
+**Implementation status (added 2026-07-06):** the Setup Hub's Ingestion and Web Radio cards (`packages/lcyt-web/src/components/setup-hub/IngestionSection.jsx`, `WebRadioSection.jsx`) are built against sections 2 and 3 below, extended with a `live` status field each (§2a, §3a) — frontend done, backend (this whole plan) still not implemented. The frontend fails soft (try/catch, shows nothing) against routes that don't exist yet, same as every other Setup Hub section. Section 1 (Caption Targets/Translation) has no frontend consumer yet — Setup Hub's "Caption targets"/"Languages & translation" cards are still the pre-existing plain link-out cards pointing at `/captions` and `/translations`.
 
 ---
 
@@ -198,6 +200,26 @@ POST  /ingestion/config/rotate
 
 `ingestUrl`'s host/app portion is derived the same way `routes/radio.js`'s `buildPlayerSnippet()` already derives `backendOrigin` (`process.env.BACKEND_URL || req.protocol://req.get('host')`), combined with `process.env.RTMP_APPLICATION`/`RTMP_HOST` — no new env vars needed, just a route that composes what operators already configure.
 
+### 2a. DSK ingest slot + live status (added 2026-07-06, for the Setup Hub card)
+
+The mockup's `IngestionCard.dc.html` shows **two** item rows — "one Video, one DSK" per the Setup Hub description — not just the one slot §2 designed. Extend the shape above rather than adding a parallel route:
+
+```
+GET   /ingestion/config
+  Response: {
+    video: { enabled, active, streamKey, ingestUrl, rotatable: true, live: boolean },
+    dsk:   { enabled, ingestUrl, live: boolean|null }   // see caveats below
+  }
+
+PATCH /ingestion/config
+  Body: { video?: { enabled? }, dsk?: { enabled? } }
+  Response: same shape as GET
+```
+
+- `video.live` ← `relayManager.isPublishing(apiKey)` (`packages/plugins/lcyt-rtmp/src/rtmp-manager.js:964`) — already tracked, just never returned over HTTP. Cheap and synchronous; safe to call on every `GET`.
+- `dsk.enabled` — this plan's own §2 note already flags that `graphics_enabled` gates the DSK RTMP app in parallel to `relay_allowed` gating the video one, but scoped that out as "out of scope for the schema change." Confirmed while implementing: `packages/plugins/lcyt-dsk/src/routes/dsk-rtmp.js`'s `on_publish` handler does **not** check `graphics_enabled` (or anything else) today — it only validates the stream-name regex, with no gate at all. So `dsk.enabled` in the response is `graphics_enabled` surfaced read-only (an existing broader feature entitlement, not an ingest-specific gate), and `PATCH .../dsk` is a `501` until a real DSK-ingest gate is designed and wired into that handler — flipping a flag that doesn't gate anything would be actively misleading.
+- `dsk.live` — **no equivalent to `isPublishing()` exists in `lcyt-dsk`.** Returns `null` (unknown) rather than guessing `false` — the frontend already renders `null` as a dim/neutral status dot, not a false "offline." Wiring real DSK-publish tracking (likely: the DSK RTMP app's `on_publish`/`on_publish_done` needs the same kind of `Set<apiKey>` `RtmpRelayManager._publishing` already uses) is a self-contained fast-follow, not a blocker for shipping `video`'s real status.
+
 ---
 
 ## 3. Web Radio Config CRUD
@@ -252,6 +274,19 @@ Mounted on the existing `/radio` router (`createRadioRouter`) as a session-Beare
 
 - **Short term (ships with this plan):** keep `radio_enabled` admin-only, exactly as today. `GET/PUT /radio/config` (metadata) ship as self-service immediately — there is no reason title/description/cover-art editing needs admin gatekeeping, only the raw "can this key accept an RTMP publish for radio at all" switch does, for the same nascent-abuse-surface reason as ingestion in section 2.
 - **Once a site-feature-policy system exists:** register something like a `radio-enable` feature code with a `self_service` capability tier, so a project owner can flip `radio_enabled` themselves once the platform has a general mechanism for "which admin-gated toggles are safe to hand to users," rather than this plan inventing a one-off bespoke policy just for radio. Until that system exists, `radio_enabled` stays `denied`/admin-only — a simple, uncontroversial default that this plan does not need to unblock.
+
+### 3a. Live status + Setup Hub card mapping (added 2026-07-06)
+
+The mockup's `WebRadioCard.dc.html` shows one item row once configured: name, a meta line, a toggle switch, and a settings icon. Mapping onto this plan's already-designed fields, with one addition:
+
+```
+GET /radio/config
+  Response: { title, description, coverImageUrl, autoplay, enabled, live: boolean }
+```
+
+- `live` ← `radioManager.isRunning(apiKey)` (`packages/plugins/lcyt-rtmp/src/radio-manager.js:128`) — already tracked, just never returned over HTTP. This is the status dot; distinct from `enabled` (the admin entitlement, read-only per §3 above).
+- **The item row's toggle is `autoplay`, not `enabled`.** `enabled`/`radio_enabled` stays admin-gated per this section's own recommendation above — the Setup Hub card does not add a second way to flip it. `autoplay` is already a genuine self-service field in this plan's schema (`PUT /radio/config` body), and mapping the mock's single toggle switch onto it means the card needs zero new capability beyond what §3 already specced — it was just a question of which existing field the toggle affordance should drive.
+- The card's "Configure" dialog (shown via the settings icon, or the header button when `!title` i.e. never configured) is the `title`/`description`/`coverImageUrl`/`autoplay` form from `PUT /radio/config`, unchanged from §3. `PUT /radio/config` returns the updated config object directly (same shape as `GET`), matching how `WebRadioSection.jsx` consumes the response (`setConfig(await r.json())`).
 
 ---
 
