@@ -3319,6 +3319,41 @@
   border-color: var(--color-accent);
 }
 
+/* ─── Narrow layout ───────────────────────────────────────────────────────
+   Below this width the outline sidebar + resizable editor column no longer
+   have room to breathe, so everything stacks into one scrolling column.
+   PlannerPage.jsx skips the manual editorWidth inline style and the resize
+   handle at this breakpoint so this can take over cleanly. */
+@media (max-width: 860px) {
+  .planner-page {
+    flex-direction: column;
+    height: auto;
+    min-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  .planner-outline {
+    width: 100%;
+    max-height: 220px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+  .planner-main {
+    overflow: visible;
+  }
+  .planner-body {
+    flex-direction: column;
+    overflow: visible;
+  }
+  .planner-editor {
+    min-width: 0;
+    width: 100%;
+  }
+  .planner-quick-add {
+    max-width: none;
+  }
+}
+
 /* Row */
 .planner-row {
   display: flex;

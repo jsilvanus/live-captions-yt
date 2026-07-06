@@ -632,11 +632,26 @@ function usePlannerResize() {
   return { editorWidth, editorRef, startResize };
 }
 
+// Below this width the outline sidebar + resizable editor column no longer
+// have room to breathe — same breakpoint and reasoning as DskEditorPage.
+const NARROW_BREAKPOINT = 860;
+
+function useIsNarrow() {
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < NARROW_BREAKPOINT);
+  useEffect(() => {
+    function onResize() { setIsNarrow(window.innerWidth < NARROW_BREAKPOINT); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return isNarrow;
+}
+
 export function PlannerPage() {
   usePageThemeOverride(KEYS.ui.plannerTheme);
   const fileStore = useFileContext();
   const { showToast } = useToastContext();
   const { editorWidth, editorRef, startResize } = usePlannerResize();
+  const isNarrow = useIsNarrow();
 
   const session = useContext(SessionContext);
   const backendUrl = (session?.backendUrl || '').replace(/\/$/, '');
@@ -977,7 +992,7 @@ export function PlannerPage() {
         <div
           className="planner-editor"
           ref={editorRef}
-          style={editorWidth ? { width: editorWidth, flexShrink: 0 } : {}}
+          style={editorWidth && !isNarrow ? { width: editorWidth, flexShrink: 0 } : {}}
         >
           {blocks.length === 0 && (
             <div className="planner-empty-state">
@@ -1005,11 +1020,13 @@ export function PlannerPage() {
           })}
           <PlannerQuickAdd onAdd={handleQuickAdd} />
         </div>
-        <div
-          className="planner-resize-handle"
-          onPointerDown={startResize}
-          title="Drag to resize editor width"
-        />
+        {!isNarrow && (
+          <div
+            className="planner-resize-handle"
+            onPointerDown={startResize}
+            title="Drag to resize editor width"
+          />
+        )}
       </div>
       </div>
     </div>
