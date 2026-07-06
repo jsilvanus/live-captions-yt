@@ -2,7 +2,7 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; Phase 8 (multi-modal), 8.5 (inline/backend sync gap), and 9 (composite & named conditions, incl. a track: leaf for a planned fps30 video tracker) planned."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; Phase 8 (multi-modal), 8.5 (inline/backend sync gap), 9 (composite & named conditions, incl. a track: leaf for a planned fps30 video tracker), and 10 (Assets-page Cue Rules editor UI) planned."
 related: plan/agent, plan/ai_roles_framework
 ---
 
@@ -645,6 +645,54 @@ or:
 
 ---
 
+## Phase 10 — Assets Card: Cue Rules Editor (Planned)
+
+### Motivation
+
+There is currently **no frontend UI at all** for cue rules — `packages/plugins/lcyt-cues/src/routes/cues.js` has had a full `/cues/rules` CRUD API since Phase 1, but nothing in `lcyt-web` calls it. The only way to create a persistent cue rule today is a raw HTTP request. This was tolerable while rules were simple (phrase/regex/section/fuzzy), but Phase 9's composite trees and reusable named conditions are materially harder to author by hand as raw JSON — a named condition library that can't be browsed or edited defeats its own DRY purpose. This phase adds the missing editor, surfaced from the existing Assets library page rather than as a new sidebar section.
+
+### Where it lives
+
+`AssetsPage` (`packages/lcyt-web/src/components/AssetsPage.jsx`) is exactly this kind of "library view" already — a `TILES` array of `{ id, icon, title, href, tracked, key }` rendered as `SetupCard`s (`./setup-hub/SetupCard.jsx`), the same component the `/setup` hub uses. Cue rules are a natural seventh tile, not a new page pattern:
+
+```js
+const TILES = [
+  { id: 'captions',      icon: '💬', title: 'Captions',     href: '/captions',    tracked: false },
+  { id: 'rundowns',      icon: '📋', title: 'Rundowns',      href: '/planner',     tracked: false },
+  { id: 'graphics',      icon: '🖼️', title: 'Graphics',      href: '/graphics/editor', tracked: true, key: 'graphics' },
+  { id: 'translations',  icon: '🌐', title: 'Translations',  href: '/translations',tracked: false },
+  { id: 'broadcasts',    icon: '📡', title: 'Broadcasts',    href: '/broadcast',   tracked: true, key: 'broadcasts' },
+  { id: 'thumbnails',    icon: '🖼️', title: 'Thumbnails',    href: '/broadcast',   tracked: false },
+  { id: 'cues',          icon: '🎯', title: 'Cue Rules',     href: '/cues',        tracked: true, key: 'cues' },  // new
+];
+```
+
+`load()` gains a third fetch alongside the existing Graphics/Broadcasts ones: `GET /cues/rules` (already returns the full rule list — `list.length` is the count, same pattern as the Graphics tile's `/dsk/:key/templates` count) plus, once Phase 9's `/cues/defs` ships, a second count merged into the same tile description (e.g. `"12 rules · 4 named conditions"`) rather than a second tile — named conditions are a detail of the cue system, not a separate asset category a user thinks about independently.
+
+### The `/cues` page itself (new)
+
+A new route and component, `CuesPage` (`packages/lcyt-web/src/components/CuesPage.jsx`), added to the routing table in `main.jsx` alongside the other sidebar-adjacent-but-not-in-the-Claude-Design-mockup pages (same treatment as `/planner`, `/translations` — reachable via its Assets tile and direct URL, not a top-level sidebar item; see `HIDDEN.md`'s existing convention). Two sections:
+
+1. **Rules** — CRUD list/editor over `cue_rules` (`GET/POST/PUT/DELETE /cues/rules`, unchanged endpoints). Form fields per `match_type`: `phrase`/`regex`/`section`/`fuzzy` get today's simple pattern+threshold inputs; `composite` (Phase 9) gets a small recursive tree builder — add-leaf buttons per leaf type (`exact`/`fuzzy`/`semantic`/`section`/`track`/`event`/`ref`), group nodes (`and`/`or`/`not`) as collapsible containers, and a `ref` leaf renders as a dropdown populated from the named-conditions list rather than free-text (so an author can't typo a name that silently never resolves).
+2. **Named Conditions** — CRUD list/editor over `cue_named_conditions` (Phase 9's `GET/POST/PUT/DELETE /cues/defs`), same tree builder as the composite rule editor (it's the same `ConditionTreeEditor` component either way — a named condition's `condition_tree` and a composite rule's `condition_tree` are the identical shape). Each row shows a compact one-line rendering of its tree (e.g. `Amen OR ~~end of the prayer OR @other-condition`) plus a `source` badge (`inline` vs `api`).
+
+### Inline/UI ownership caveat
+
+Phase 9 lets a `cue-def:` block in a rundown file upsert into the same `cue_named_conditions` table this UI edits (`source: 'inline'`). Editing an inline-sourced definition through `/cues` is allowed, but the edit is **not durable** against that source file: the next time the file loads (or its `cue-def:` block changes) the inline sync overwrites the row again, silently discarding the UI edit. The editor must surface this rather than let it be a surprise — an inline-sourced row's edit form shows a persistent notice ("Defined by `<file>` — edits here will be overwritten next time that file syncs") with a **"Detach"** action that flips `source` to `api` (keeping the current tree, severing the link so the file's `cue-def:` block no longer overwrites it). Without this, a user who tweaks a named condition in the UI and then reopens the rundown file that originally defined it will watch their edit silently vanish.
+
+### Implementation checklist
+
+- [ ] `AssetsPage.jsx`: add the `cues` tile, extend `load()` with a `/cues/rules` (+ `/cues/defs`, once available) count fetch
+- [ ] `CuesPage.jsx` (new) + route registration in `main.jsx`
+- [ ] `ConditionTreeEditor` component (shared by composite-rule and named-condition editing)
+- [ ] Rules list/editor wired to existing `/cues/rules` CRUD, extended for `match_type: 'composite'`
+- [ ] Named Conditions list/editor wired to Phase 9's `/cues/defs` CRUD
+- [ ] `ref` leaf renders as a validated dropdown, not free text
+- [ ] Inline-sourced row: read-only-with-notice + "Detach" action
+- [ ] Tests: `CuesPage`/`ConditionTreeEditor` component tests (Vitest, following the `useSession`/`useFileStore` component-test pattern already established in `lcyt-web`), `AssetsPage` tile count test
+
+---
+
 ## Phase Summary
 
 | Phase | Description | Status | Dependencies |
@@ -659,5 +707,6 @@ or:
 | 8 | Multi-modal scene understanding | 📋 Planned | Phase 6, Phase 7 |
 | 8.5 | Close inline↔backend cue sync gap (semantic/event inline cues are currently inert) | 📋 Planned | Phase 5, Phase 7 |
 | 9 | Composite & named conditions (`and`/`or`/`not` trees, `@name` reuse) | 📋 Planned | Phase 8.5 |
+| 10 | Assets card: Cue Rules editor UI (`/cues` page, `ConditionTreeEditor`) | 📋 Planned | Phase 9 |
 
 > **See also:** [AI Agent Plan](plan_agent.md) for additional agent phases including SVG graphics AI (Phase 5) and AI-assisted rundown creation (Phase 6).
