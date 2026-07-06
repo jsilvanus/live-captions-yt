@@ -244,8 +244,7 @@ function EncoderRow({ encoder, bridges, onEdit, onDelete }) {
   return (
     <SetupItemRow
       name={encoder.name}
-      meta={[cfg.host, connLabel].filter(Boolean).join(' · ')}
-      badge={typeLabel}
+      meta={[typeLabel, cfg.host, connLabel].filter(Boolean).join(' · ')}
       onSettings={() => onEdit(encoder)}
       onDelete={() => onDelete(encoder)}
     />

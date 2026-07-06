@@ -27,7 +27,11 @@ app.post('/live', (_req, res) => {
 
 // ── Setup Hub card faces — empty-list/default stubs so the hub renders
 // clean empty states instead of 404s during screenshot/demo sessions. ──────
-app.get('/production/cameras', (_req, res) => res.json([]));
+// One browser camera so IngestionSection's camera-phantom row has something
+// to show (mirrors the mockup's `ingestionCamPhantoms`).
+app.get('/production/cameras', (_req, res) => res.json([
+  { id: 'cam-1', name: 'Lobby phone cam', controlType: 'mobile', cameraKey: 'demo-lobby' },
+]));
 app.get('/production/mixers', (_req, res) => res.json([]));
 app.get('/production/encoders', (_req, res) => res.json([]));
 app.get('/production/bridge/instances', (_req, res) => res.json([]));
@@ -36,6 +40,28 @@ app.get('/variables', (_req, res) => res.json({ variables: {} }));
 app.get('/ai/config', (_req, res) => res.json({ config: { embeddingProvider: 'none' } }));
 app.get('/stt/config', (_req, res) => res.json({ config: {} }));
 app.get('/file/storage-config', (_req, res) => res.json({ storageMode: 'default', config: null }));
+
+// ── Ingestion + Web Radio — in-memory stand-ins for
+// docs/plans/plan_selfservice_config_backend.md §2/§2a and §3/§3a, not
+// implemented on the real backend yet. ──────────────────────────────────────
+let ingestionConfig = {
+  video: { enabled: true, active: true, streamKey: 'lc_demo_key', ingestUrl: 'rtmp://ingest.example.com/live/lc_demo_key', rotatable: true, live: true },
+  dsk:   { enabled: true, ingestUrl: 'rtmp://ingest.example.com/dsk/lc_demo_key', live: null },
+};
+app.get('/ingestion/config', (_req, res) => res.json(ingestionConfig));
+app.patch('/ingestion/config', (req, res) => {
+  const { video, dsk } = req.body || {};
+  if (video) ingestionConfig.video = { ...ingestionConfig.video, ...video };
+  if (dsk) ingestionConfig.dsk = { ...ingestionConfig.dsk, ...dsk };
+  res.json(ingestionConfig);
+});
+
+let radioConfig = { title: '', description: '', coverImageUrl: '', autoplay: false, enabled: true, live: false };
+app.get('/radio/config', (_req, res) => res.json(radioConfig));
+app.put('/radio/config', (req, res) => {
+  radioConfig = { ...radioConfig, ...(req.body || {}) };
+  res.json(radioConfig);
+});
 
 app.get('/events', (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
@@ -87,6 +113,44 @@ app.get('/dsk/:apikey/images', (_req, res) => res.json({ images: [] }));
 // a second viewport to actually test against.
 app.get('/dsk/:apikey/viewports/public', (_req, res) => {
   res.json({ viewports: [{ name: 'vertical', label: 'Vertical', width: 1080, height: 1920 }] });
+});
+
+// ── DSK viewports (project-scoped CRUD) — real in-memory store, same shape
+// the Setup Hub's Viewports card and DskViewportsPage both use. ────────────
+const viewports = new Map(); // name -> { name, label, viewportType, width, height, textLayers }
+
+app.get('/dsk/:apikey/viewports', (_req, res) => {
+  res.json({ viewports: [...viewports.values()] });
+});
+
+app.post('/dsk/:apikey/viewports', (req, res) => {
+  const { name, label, viewportType, width, height } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  if (viewports.has(name)) return res.status(409).json({ error: 'A viewport with that name already exists' });
+  viewports.set(name, { name, label: label || '', viewportType: viewportType || 'vertical', width: width || 1080, height: height || 1920, textLayers: [] });
+  res.json({ ok: true });
+});
+
+app.put('/dsk/:apikey/viewports/:name', (req, res) => {
+  const row = viewports.get(req.params.name);
+  if (!row) return res.status(404).json({ error: 'Not found' });
+  Object.assign(row, req.body || {});
+  res.json({ ok: true });
+});
+
+app.delete('/dsk/:apikey/viewports/:name', (req, res) => {
+  viewports.delete(req.params.name);
+  res.json({ ok: true });
+});
+
+// ── RTMP relay status (Egress card's "Relay status" toggle) ────────────────
+let relayActive = false;
+app.get('/stream', (_req, res) => {
+  res.json({ active: relayActive, relays: [], runningSlots: [] });
+});
+app.put('/stream/active', (req, res) => {
+  relayActive = !!(req.body || {}).active;
+  res.json({ ok: true, active: relayActive });
 });
 
 app.listen(PORT, () => console.log(`[screenshot-mock-backend] listening on http://localhost:${PORT}`));

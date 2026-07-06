@@ -20,7 +20,7 @@ export function EncoderSection() {
       description="Hardware/software encoder management for outbound streams."
       status="ready"
       headerAction={{ label: 'Add', onClick: () => managerRef.current?.openAdd() }}
-      footerLink={{ label: 'Open standalone page', href: '/production/devices' }}
+      footerLink={{ label: 'Open standalone page', href: '/setup/encoders/page' }}
     >
       <EncodersManager embedded ref={managerRef} />
     </SetupCard>

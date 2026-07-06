@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRoute } from 'wouter';
 import { CATEGORY_COLORS, PencilIcon, PlusIcon, TrashIcon } from './icons.jsx';
+
+const HIGHLIGHT_MS = 10_000;
 
 /**
  * SetupCard — catalog card used throughout SetupHubPage, styled after the
@@ -25,8 +27,8 @@ import { CATEGORY_COLORS, PencilIcon, PlusIcon, TrashIcon } from './icons.jsx';
  *   footerLink   { label, href } — optional link below the item list
  *                (e.g. "Open standalone page").
  *   id           string    — stable slug for this card (e.g. "connectors").
- *                            When set, navigating to `/setup/:id` scrolls
- *                            this card into view.
+ *                            When set, navigating to `/setup/:id` scrolls this
+ *                            card into view and highlights it for 10 seconds.
  */
 export function SetupCard({
   id, icon: Icon, color = 'accent', title, description,
@@ -35,17 +37,21 @@ export function SetupCard({
 }) {
   const containerRef = useRef(null);
   const [deepLinked] = useRoute(id ? `/setup/${id}` : '/__setup-card-no-id__');
+  const [highlighted, setHighlighted] = useState(false);
 
   useEffect(() => {
     if (!deepLinked) return;
     containerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setHighlighted(true);
+    const t = setTimeout(() => setHighlighted(false), HIGHLIGHT_MS);
+    return () => clearTimeout(t);
   }, [deepLinked]);
 
   const cat = CATEGORY_COLORS[color] || CATEGORY_COLORS.accent;
   const hasBody = !placeholder && (children || emptyText);
 
   return (
-    <div ref={containerRef} className={`setup-card${placeholder ? ' setup-card--placeholder' : ''}`}>
+    <div ref={containerRef} className={`setup-card${placeholder ? ' setup-card--placeholder' : ''}${highlighted ? ' setup-card--highlighted' : ''}`}>
       <div className={`setup-card__header${hasBody ? ' setup-card__header--bordered' : ''}`}>
         {Icon && (
           <div className="setup-card__icon-box" style={{ background: cat.bg, color: cat.fg }}>

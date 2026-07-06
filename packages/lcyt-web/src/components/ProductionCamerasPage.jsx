@@ -301,7 +301,7 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
   // Progressive disclosure: show bridge name only when 2+ bridges exist
   const bridge       = bridges.length >= 2 ? bridges.find(b => b.id === camera.bridgeInstanceId) : null;
 
-  const metaParts = [];
+  const metaParts = [typeBadge];
   if (camera.mixerInput != null) metaParts.push(`Input ${camera.mixerInput}`);
   if (isBrowser && camera.cameraKey) metaParts.push(camera.cameraKey);
   if (!isBrowser && camera.controlType !== 'none') metaParts.push(`${presetCount} preset${presetCount !== 1 ? 's' : ''}`);
@@ -311,7 +311,6 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
     <SetupItemRow
       name={camera.name}
       meta={metaParts.join(' · ')}
-      badge={typeBadge}
       extra={isBrowser && (
         <a
           href={`/production/camera/${camera.id}`}

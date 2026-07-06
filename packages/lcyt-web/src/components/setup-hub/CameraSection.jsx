@@ -21,7 +21,7 @@ export function CameraSection() {
       description="PTZ camera control: AMX, VISCA-IP, or browser-based cameras."
       status="ready"
       headerAction={{ label: 'Add', onClick: () => managerRef.current?.openAdd() }}
-      footerLink={{ label: 'Open standalone page', href: '/production/cameras' }}
+      footerLink={{ label: 'Open standalone page', href: '/setup/cameras/page' }}
     >
       <CamerasManager embedded ref={managerRef} />
     </SetupCard>

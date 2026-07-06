@@ -20,7 +20,7 @@ export function BridgeSection() {
       description="On-site agents that relay production commands to physical AV hardware over TCP."
       status="ready"
       headerAction={{ label: 'Add', onClick: () => managerRef.current?.openAdd() }}
-      footerLink={{ label: 'Open standalone page', href: '/production/bridges' }}
+      footerLink={{ label: 'Open standalone page', href: '/setup/bridges/page' }}
     >
       <BridgesManager embedded ref={managerRef} />
     </SetupCard>

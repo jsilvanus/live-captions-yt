@@ -1961,10 +1961,25 @@
   border: 1.5px solid var(--color-border);
   border-radius: 12px;
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.6s ease;
+}
+
+.setup-card--highlighted {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 .setup-card:hover { border-color: var(--color-accent); }
+
+.setup-parity-banner {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  border-bottom: 1px solid var(--color-border);
+}
+.setup-parity-banner a { color: var(--color-accent); font-weight: 500; }
 
 .setup-card--placeholder {
   border-style: dashed;
