@@ -200,3 +200,18 @@ export function TrashIcon() {
     </svg>
   );
 }
+
+/** Favorite star, ported 1:1 from the mockup's per-card favorite button path. */
+export function StarIcon({ filled = false }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+      <path
+        d="M6.5 1.5L8.1 4.8H12.5L9.2 7.1L10.3 11L6.5 8.7L2.7 11L3.8 7.1L0.5 4.8H4.9L6.5 1.5Z"
+        stroke={filled ? 'var(--color-accent)' : 'currentColor'}
+        strokeWidth="1.15"
+        strokeLinejoin="round"
+        fill={filled ? 'var(--color-accent)' : 'none'}
+      />
+    </svg>
+  );
+}
