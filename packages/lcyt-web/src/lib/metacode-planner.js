@@ -27,6 +27,8 @@ export function serializePlan(blocks) {
         return `<!-- stanza\n${(b.lines ?? []).join('\n')}\n-->`;
       case 'empty-send':
         return b.label ? `_ ${b.label}` : '_';
+      case 'file-include':
+        return `<!-- include: ${b.src ?? ''} -->`;
       default: return '';
     }
   }).filter(s => s !== '').join('\n');
@@ -70,6 +72,12 @@ export function deserializePlan(rawText) {
     const gfxMatch = raw.match(/^<!--\s*graphics\s*:\s*(.*?)\s*-->$/i);
     if (gfxMatch) {
       blocks.push({ id: uid(), type: 'graphics', value: gfxMatch[1].trim() });
+      continue;
+    }
+
+    const incMatch = raw.match(/^<!--\s*include\s*:\s*(.*?)\s*-->$/i);
+    if (incMatch) {
+      blocks.push({ id: uid(), type: 'file-include', src: incMatch[1].trim() });
       continue;
     }
 

@@ -1,24 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
-import { KEYS } from '../lib/storageKeys.js';
 import { TopBar, Sidebar } from './sidebar/Sidebar.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp.jsx';
 
 const MOBILE_BREAKPOINT = 768;
-
-function getSidebarExpanded() {
-  try {
-    const v = localStorage.getItem(KEYS.ui.sidebarExpanded);
-    if (v !== null) return v === 'true';
-  } catch { /* ignore */ }
-  return window.innerWidth > 1024;
-}
-
-function setSidebarExpanded(val) {
-  try { localStorage.setItem(KEYS.ui.sidebarExpanded, String(val)); } catch { /* ignore */ }
-}
 
 function MobileDrawer({ open, onClose }) {
   const [, navigate] = useLocation();
@@ -37,7 +24,7 @@ function MobileDrawer({ open, onClose }) {
         className={['mobile-drawer', open ? 'mobile-drawer--open' : ''].filter(Boolean).join(' ')}
         aria-hidden={!open}
       >
-        <Sidebar expanded={true} onNavigate={handleNavigate} />
+        <Sidebar onNavigate={handleNavigate} />
       </div>
     </>
   );
@@ -56,21 +43,16 @@ function ReconnectBanner() {
 }
 
 export function SidebarLayout({ children }) {
-  const [expanded, setExpanded] = useState(getSidebarExpanded);
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const isMobile = () => window.innerWidth < MOBILE_BREAKPOINT;
   const [, navigate] = useLocation();
 
+  // The persistent desktop sidebar is icon-only at a fixed width, so there's
+  // nothing to toggle there — the hamburger only opens the mobile drawer
+  // (hidden via CSS above the mobile breakpoint).
   function handleToggle() {
-    if (isMobile()) {
-      setMobileDrawerOpen(v => !v);
-    } else {
-      const next = !expanded;
-      setExpanded(next);
-      setSidebarExpanded(next);
-    }
+    setMobileDrawerOpen(v => !v);
   }
 
   // Global keyboard shortcuts: Ctrl/Cmd+K → command palette; ? → shortcuts help
@@ -113,14 +95,13 @@ export function SidebarLayout({ children }) {
   return (
     <div className="sidebar-shell">
       <TopBar
-        expanded={expanded}
         onToggle={handleToggle}
         onOpenCommandPalette={() => setCmdPaletteOpen(true)}
         onOpenShortcuts={() => setShortcutsOpen(true)}
       />
       <ReconnectBanner />
       <div className="sidebar-body">
-        <Sidebar expanded={expanded} onNavigate={path => navigate(path)} />
+        <Sidebar onNavigate={path => navigate(path)} />
         <MobileDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)} />
         <div className="sidebar-content">
           {children}

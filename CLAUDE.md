@@ -163,6 +163,9 @@ All packages define a typed exception hierarchy: `LCYTError` (base) → `ConfigE
 ### Skipped Review Findings
 When a `/code-review` or `/simplify` pass surfaces a real finding that is deliberately **not** fixed (too invasive for the current diff, out of scope, requires a wider API change, or the "fix" wouldn't actually be simpler), log it in `CONSIDER.md` at the repo root instead of letting it evaporate at the end of the turn — what was found, why it was skipped, and where. Don't silently drop skipped findings from a review summary; either fix them or write them down.
 
+### Artifacts
+Whenever a Claude Artifact is published from work in this repo (screenshots, reports, demos), add a row to `Artifacts.md` at the repo root — link, which plan/project it documents, and a short description. Don't let a published link exist only in chat history.
+
 ### Timestamp Handling
 | Platform | Numeric value | ISO string |
 |---|---|---|

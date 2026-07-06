@@ -1,8 +1,6 @@
 /* ─── Sidebar shell ──────────────────────────────────────── */
 
 :root {
-  --sidebar-width-expanded: 200px;
-  --sidebar-width-collapsed: 48px;
   --top-bar-height: 48px;
 }
 
@@ -51,6 +49,13 @@
   flex-shrink: 0;
   transition: background 0.15s, color 0.15s;
 }
+/* Desktop sidebar is a fixed-width icon rail with nothing to expand — the
+   hamburger only ever opens the mobile drawer, so hide it above that
+   breakpoint instead of leaving a button that does nothing visible. */
+@media (min-width: 769px) {
+  .top-bar__hamburger { display: none; }
+}
+
 .top-bar__hamburger:hover {
   background: var(--color-surface-elevated);
   color: var(--color-text);
@@ -125,15 +130,12 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+  width: 48px;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
   overflow: hidden;
   flex-shrink: 0;
-  transition: width 0.2s ease;
 }
-
-.sidebar--expanded  { width: 200px; }
-.sidebar--collapsed { width: 48px; }
 
 .sidebar__main {
   flex: 1;
@@ -159,17 +161,13 @@
 .sidebar__item {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
+  justify-content: center;
+  padding: 9px 0;
   color: var(--color-text-dim);
   text-decoration: none;
-  font-size: 13px;
-  font-family: var(--font-ui);
   border-left: 3px solid transparent;
   transition: background 0.12s, color 0.12s, border-color 0.12s;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
 }
 .sidebar__item:hover {
   background: var(--color-surface-elevated);
@@ -179,7 +177,6 @@
   color: var(--color-accent);
   border-left-color: var(--color-accent);
   background: var(--color-active-line);
-  font-weight: 600;
 }
 
 .sidebar__item-icon {
@@ -193,43 +190,28 @@
   line-height: 1;
 }
 
-.sidebar__item-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 /* button variant of sidebar item (no default button styles) */
 .sidebar__item--btn {
   width: 100%;
   background: none;
   border: none;
-  text-align: left;
-}
-
-.sidebar__item-label--dim {
-  color: var(--color-text-muted);
-  font-size: 11px;
 }
 
 /* ─── Sidebar group ──────────────────────────────────────── */
+/* Currently unused — NAV_GROUPS is empty, see navConfig.jsx. Kept icon-only
+   and structurally identical to .sidebar__item for when it's next used. */
 
 .sidebar__group-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 12px;
+  justify-content: center;
+  padding: 9px 0;
   width: 100%;
   background: none;
   border: none;
   border-left: 3px solid transparent;
   color: var(--color-text-dim);
-  font-size: 13px;
-  font-family: var(--font-ui);
   cursor: pointer;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
   transition: background 0.12s, color 0.12s;
 }
 .sidebar__group-header:hover {
@@ -238,26 +220,6 @@
 }
 .sidebar__group--active > .sidebar__group-header {
   color: var(--color-text);
-}
-
-.sidebar__group-chevron {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--color-text-muted);
-}
-
-.sidebar__sub-items {
-  padding-left: 12px;
-}
-
-.sidebar__sub-items .sidebar__item {
-  font-size: 12px;
-  padding: 5px 8px 5px 10px;
-}
-
-.sidebar__sub-items .sidebar__item-icon {
-  font-size: 12px;
-  color: var(--color-text-muted);
 }
 
 /* ─── Page content area ──────────────────────────────────── */

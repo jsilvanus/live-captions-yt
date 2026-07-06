@@ -73,6 +73,11 @@ describe('serializePlan()', () => {
     assert.equal(serializePlan(blocks), '_ hook');
   });
 
+  it('serializes a file-include block', () => {
+    const blocks = [{ id: '1', type: 'file-include', src: 'sermon-notes.md' }];
+    assert.equal(serializePlan(blocks), '<!-- include: sermon-notes.md -->');
+  });
+
   it('joins multiple blocks with newlines', () => {
     const blocks = [
       { id: '1', type: 'codes',      codes: { section: 'Intro' } },
@@ -162,6 +167,13 @@ describe('deserializePlan()', () => {
     assert.equal(blocks[0].label, 'hook');
   });
 
+  it('deserializes <!-- include: sermon-notes.md -->', () => {
+    const blocks = deserializePlan('<!-- include: sermon-notes.md -->');
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].type, 'file-include');
+    assert.equal(blocks[0].src, 'sermon-notes.md');
+  });
+
   it('skips blank lines', () => {
     const blocks = deserializePlan('Line 1\n\n\nLine 2');
     assert.equal(blocks.length, 2);
@@ -220,7 +232,8 @@ describe('serialize → deserialize round-trip', () => {
       { id: 'f', type: 'graphics',    value: 'logo' },
       { id: 'g', type: 'stanza',      lines: ['Verse 1', 'Verse 2'] },
       { id: 'h', type: 'empty-send',  label: 'hook' },
-      { id: 'i', type: 'caption',     text: 'Thank you' },
+      { id: 'i', type: 'file-include', src: 'notes.md' },
+      { id: 'j', type: 'caption',     text: 'Thank you' },
     ];
 
     const serialized = serializePlan(original);
@@ -240,6 +253,7 @@ describe('serialize → deserialize round-trip', () => {
     assert.equal(restored[5].value, 'logo');
     assert.deepEqual(restored[6].lines, ['Verse 1', 'Verse 2']);
     assert.equal(restored[7].label, 'hook');
-    assert.equal(restored[8].text, 'Thank you');
+    assert.equal(restored[8].src, 'notes.md');
+    assert.equal(restored[9].text, 'Thank you');
   });
 });

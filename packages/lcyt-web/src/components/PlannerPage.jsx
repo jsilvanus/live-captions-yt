@@ -10,29 +10,31 @@ export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 
 function makeBlock(type) {
   switch (type) {
-    case 'caption':     return { id: uid(), type: 'caption',    text: '' };
-    case 'heading':     return { id: uid(), type: 'heading',    text: '' };
-    case 'audio-start': return { id: uid(), type: 'audio-start' };
-    case 'audio-stop':  return { id: uid(), type: 'audio-stop' };
-    case 'graphics':    return { id: uid(), type: 'graphics',   value: '' };
-    case 'codes':       return { id: uid(), type: 'codes',      codes: {} };
-    case 'stanza':      return { id: uid(), type: 'stanza',     lines: [''] };
-    case 'empty-send':  return { id: uid(), type: 'empty-send', label: '' };
-    default:            return { id: uid(), type: 'caption',    text: '' };
+    case 'caption':      return { id: uid(), type: 'caption',    text: '' };
+    case 'heading':      return { id: uid(), type: 'heading',    text: '' };
+    case 'audio-start':  return { id: uid(), type: 'audio-start' };
+    case 'audio-stop':   return { id: uid(), type: 'audio-stop' };
+    case 'graphics':     return { id: uid(), type: 'graphics',   value: '' };
+    case 'codes':        return { id: uid(), type: 'codes',      codes: {} };
+    case 'stanza':       return { id: uid(), type: 'stanza',     lines: [''] };
+    case 'empty-send':   return { id: uid(), type: 'empty-send', label: '' };
+    case 'file-include': return { id: uid(), type: 'file-include', src: '' };
+    default:             return { id: uid(), type: 'caption',    text: '' };
   }
 }
 
 // ─── Block type metadata ──────────────────────────────────────────────────────
 
 const BLOCK_TYPES = [
-  { type: 'caption',     icon: '✏️', label: 'Caption' },
-  { type: 'heading',     icon: '#',  label: 'Heading' },
-  { type: 'audio-start', icon: '🎙', label: 'Audio On' },
-  { type: 'audio-stop',  icon: '⏹', label: 'Audio Off' },
-  { type: 'graphics',    icon: '🎨', label: 'Graphics' },
-  { type: 'codes',       icon: '🏷', label: 'Codes row' },
-  { type: 'stanza',      icon: '♪',  label: 'Stanza' },
-  { type: 'empty-send',  icon: '—',  label: 'Empty send' },
+  { type: 'caption',      icon: '✏️', label: 'Caption' },
+  { type: 'heading',      icon: '#',  label: 'Heading' },
+  { type: 'audio-start',  icon: '🎙', label: 'Audio On' },
+  { type: 'audio-stop',   icon: '⏹', label: 'Audio Off' },
+  { type: 'graphics',     icon: '🎨', label: 'Graphics' },
+  { type: 'codes',        icon: '🏷', label: 'Codes row' },
+  { type: 'stanza',       icon: '♪',  label: 'Stanza' },
+  { type: 'empty-send',   icon: '—',  label: 'Empty send' },
+  { type: 'file-include', icon: '📎', label: 'Include file' },
 ];
 
 const CODE_CHIP_CLASS = { section: 'planner-chip--section', speaker: 'planner-chip--speaker', lang: 'planner-chip--lang', stanza: 'planner-chip--stanza' };
@@ -307,16 +309,83 @@ function EmptySendBlock({ block, onUpdate, onDelete }) {
   );
 }
 
-function BlockContent({ block, onUpdate, onDelete }) {
+// Render each nested block of an included file as a single read-only preview
+// line — mirrors how the block would look serialized, without exposing a
+// full nested editor (the include is a reference, not an embedded copy).
+function includePreviewLines(includedBlocks) {
+  let n = 0;
+  return includedBlocks.map(b => {
+    const isText = b.type === 'caption' || b.type === 'empty-send';
+    const lnum = isText ? String(++n) : (b.type === 'heading' ? '#' : '·');
+    let text = '';
+    switch (b.type) {
+      case 'caption':      text = b.text; break;
+      case 'heading':      text = b.text; break;
+      case 'audio-start':  text = '🎙 Audio On'; break;
+      case 'audio-stop':   text = '⏹ Audio Off'; break;
+      case 'graphics':     text = `🎨 Graphics: ${b.value}`; break;
+      case 'codes':        text = Object.entries(b.codes ?? {}).map(([k, v]) => `${k}: ${v}`).join('  ·  '); break;
+      case 'stanza':       text = `♪ Stanza (${(b.lines ?? []).length} lines)`; break;
+      case 'empty-send':   text = b.label ? `— ${b.label}` : '— (empty send)'; break;
+      case 'file-include': text = `📎 include: ${b.src}`; break;
+      default:             text = '';
+    }
+    return { key: `${b.id}`, lnum, text, isHeading: b.type === 'heading', isMeta: b.type !== 'caption' && b.type !== 'heading' };
+  });
+}
+
+function FileIncludeBlock({ block, onUpdate, onDelete, includedBlocks, onLoad }) {
+  const hasContent = !!includedBlocks;
+  const lines = hasContent ? includePreviewLines(includedBlocks) : [];
+  const lineCount = lines.filter(l => /^\d+$/.test(l.lnum)).length;
+
+  return (
+    <div className="planner-include">
+      <div className="planner-include__header">
+        <span aria-hidden="true">📎</span>
+        <input
+          className="planner-include__src"
+          type="text"
+          value={block.src ?? ''}
+          onChange={e => onUpdate({ src: e.target.value })}
+          placeholder="filename.md"
+          title="Source file path"
+        />
+        {hasContent && (
+          <span className="planner-include__count">{lineCount} line{lineCount !== 1 ? 's' : ''}</span>
+        )}
+        <button className="btn btn--secondary btn--sm" onClick={onLoad}>Load</button>
+        <button className="planner-chip__delete" onClick={onDelete} title="Remove" aria-label="Remove">×</button>
+      </div>
+      {hasContent ? (
+        <div className="planner-include__body">
+          {lines.map(l => (
+            <div key={l.key} className="planner-include__line">
+              <span className="planner-include__linenum">{l.lnum}</span>
+              <span className={`planner-include__text${l.isHeading ? ' planner-include__text--heading' : l.isMeta ? ' planner-include__text--meta' : ''}`}>
+                {l.text}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="planner-include__empty">Click Load to import file contents inline</div>
+      )}
+    </div>
+  );
+}
+
+function BlockContent({ block, onUpdate, onDelete, includedBlocks, onLoadInclude }) {
   switch (block.type) {
-    case 'caption':     return <CaptionBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'heading':     return <HeadingBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'audio-start': return <AudioBlock      type="start"  onDelete={onDelete} />;
-    case 'audio-stop':  return <AudioBlock      type="stop"   onDelete={onDelete} />;
-    case 'graphics':    return <GraphicsBlock   block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'codes':       return <CodesBlock      block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'stanza':      return <StanzaBlock     block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'empty-send':  return <EmptySendBlock  block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'caption':      return <CaptionBlock     block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'heading':      return <HeadingBlock     block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'audio-start':  return <AudioBlock       type="start"  onDelete={onDelete} />;
+    case 'audio-stop':   return <AudioBlock       type="stop"   onDelete={onDelete} />;
+    case 'graphics':     return <GraphicsBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'codes':        return <CodesBlock       block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'stanza':       return <StanzaBlock      block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'empty-send':   return <EmptySendBlock   block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'file-include': return <FileIncludeBlock block={block} onUpdate={onUpdate} onDelete={onDelete} includedBlocks={includedBlocks} onLoad={onLoadInclude} />;
     default: return null;
   }
 }
@@ -357,7 +426,7 @@ function InsertMenu({ onSelect, onClose }) {
 
 // ─── Planner row ──────────────────────────────────────────────────────────────
 
-function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragStart, onDrop }) {
+function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragStart, onDrop, includedBlocks, onLoadInclude }) {
   const [showInsertMenu, setShowInsertMenu] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -372,6 +441,7 @@ function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragS
 
   return (
     <div
+      id={`planner-block-${block.id}`}
       className={rowCls}
       draggable
       onDragStart={onDragStart}
@@ -384,7 +454,7 @@ function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragS
         {lineNum ?? ''}
       </span>
       <div className="planner-row__content">
-        <BlockContent block={block} onUpdate={onUpdate} onDelete={onDelete} />
+        <BlockContent block={block} onUpdate={onUpdate} onDelete={onDelete} includedBlocks={includedBlocks} onLoadInclude={onLoadInclude} />
       </div>
       <div className="planner-row__insert-wrap">
         <button
@@ -436,9 +506,53 @@ function PlannerQuickAdd({ onAdd }) {
   );
 }
 
+// ─── Structure/outline sidebar ────────────────────────────────────────────────
+
+function PlannerOutline({ filename, totalLines, dirty, outline, onJumpTo, onNew, onImport, onExport }) {
+  return (
+    <aside className="planner-outline">
+      <div className="planner-outline__header">
+        <div className="planner-outline__brand">
+          <span className="planner-outline__brand-icon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="planner-outline__brand-label">Planner</span>
+        </div>
+        <div className="planner-outline__filename" title={filename}>{filename}</div>
+        <div className="planner-outline__meta">
+          <span>{totalLines} line{totalLines !== 1 ? 's' : ''}</span>
+          {dirty && <span className="planner-outline__dirty">unsaved</span>}
+        </div>
+      </div>
+
+      <div className="planner-outline__list">
+        <div className="planner-outline__label">Structure</div>
+        {outline.length === 0 ? (
+          <div className="planner-outline__empty">No headings yet</div>
+        ) : (
+          outline.map(item => (
+            <button key={item.id} className="planner-outline__item" onClick={() => onJumpTo(item.id)}>
+              <span className="planner-outline__item-hash" aria-hidden="true">#</span>
+              <span className="planner-outline__item-label">{item.label}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      <div className="planner-outline__actions">
+        <button className="planner-outline__action" onClick={onImport}>⬆ Import .md</button>
+        <button className="planner-outline__action" onClick={onExport}>⬇ Export .md</button>
+        <button className="planner-outline__action" onClick={onNew}>＋ New plan</button>
+      </div>
+    </aside>
+  );
+}
+
 // ─── Toolbar ──────────────────────────────────────────────────────────────────
 
-function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNew, onImport, onNormalize, onExport, onToDashboard, onInsert }) {
+function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNormalize, onToDashboard, onInsert }) {
   return (
     <div className="planner-toolbar">
       <div className="planner-toolbar__top">
@@ -465,10 +579,7 @@ function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, on
           )}
         </div>
         <div className="planner-toolbar__actions">
-          <button className="btn btn--secondary btn--sm" onClick={onNew}>New</button>
-          <button className="btn btn--secondary btn--sm" onClick={onImport}>Import</button>
           <button className="btn btn--secondary btn--sm" onClick={onNormalize}>Normalize</button>
-          <button className="btn btn--secondary btn--sm" onClick={onExport}>Export .md</button>
           <button className="btn btn--primary btn--sm" onClick={onToDashboard}>→ Dashboard</button>
         </div>
       </div>
@@ -550,6 +661,8 @@ export function PlannerPage() {
   const [editingFilename, setEditingFilename] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showNormalizeModal, setShowNormalizeModal] = useState(false);
+  // blockId → parsed blocks from an included file (session-only, not persisted/exported)
+  const [includeContents, setIncludeContents] = useState({});
 
   const RUNDOWN_TEMPLATES = [
     { id: '', label: 'Custom (no template)' },
@@ -581,6 +694,31 @@ export function PlannerPage() {
   function deleteBlock(id) {
     setBlocks(prev => prev.filter(b => b.id !== id));
     setDirty(true);
+    setIncludeContents(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function loadInclude(blockId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.md,.txt,text/plain,text/markdown';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const src = /\.(md|txt)$/i.test(file.name) ? file.name : file.name + '.md';
+        updateBlock(blockId, { src });
+        setIncludeContents(prev => ({ ...prev, [blockId]: deserializePlan(text) }));
+      } catch {
+        showToast('Failed to read file', 'error');
+      }
+    };
+    input.click();
   }
 
   function insertBlock(afterId, newBlock) {
@@ -725,19 +863,43 @@ export function PlannerPage() {
 
   // Line number counter (only caption + empty-send blocks get numbers)
   let lineNum = 0;
+  let totalLines = 0;
+  for (const b of blocks) {
+    if (b.type === 'caption' || b.type === 'empty-send') totalLines++;
+  }
+
+  const outline = blocks
+    .filter(b => b.type === 'heading')
+    .map(b => ({ id: b.id, label: b.text || '(untitled)' }));
+
+  function jumpToHeading(blockId) {
+    const container = editorRef.current;
+    const el = document.getElementById(`planner-block-${blockId}`);
+    if (container && el) {
+      container.scrollTo({ top: el.offsetTop - container.offsetTop - 20 + container.scrollTop, behavior: 'smooth' });
+    }
+  }
 
   return (
     <div className="planner-page">
+      <PlannerOutline
+        filename={filename}
+        totalLines={totalLines}
+        dirty={dirty}
+        outline={outline}
+        onJumpTo={jumpToHeading}
+        onNew={handleNew}
+        onImport={handleImport}
+        onExport={handleExport}
+      />
+      <div className="planner-main">
       <PlannerToolbar
         filename={filename}
         editingFilename={editingFilename}
         dirty={dirty}
         onFilenameChange={setFilename}
         onEditingFilename={setEditingFilename}
-        onNew={handleNew}
-        onImport={handleImport}
         onNormalize={() => setShowNormalizeModal(true)}
-        onExport={handleExport}
         onToDashboard={handleToDashboard}
         onInsert={type => {
           insertBlock(null, makeBlock(type));
@@ -836,6 +998,8 @@ export function PlannerPage() {
                 onInsertAfter={type => insertBlock(block.id, makeBlock(type))}
                 onDragStart={() => onDragStart(block.id)}
                 onDrop={() => onDrop(block.id)}
+                includedBlocks={includeContents[block.id]}
+                onLoadInclude={() => loadInclude(block.id)}
               />
             );
           })}
@@ -846,6 +1010,7 @@ export function PlannerPage() {
           onPointerDown={startResize}
           title="Drag to resize editor width"
         />
+      </div>
       </div>
     </div>
   );

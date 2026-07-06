@@ -11,31 +11,31 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
-## DSK Editor / DSK Control chrome ignores the site's light/dark theme
+## DSK Control chrome still ignores the site's light/dark theme
 
-**Where:** `packages/lcyt-web/src/components/DskEditorPage.jsx`,
-`packages/lcyt-web/src/components/DskControlPage.jsx`
+**Where:** `packages/lcyt-web/src/components/DskControlPage.jsx`
 
-**Finding:** Both pages hardcode their entire UI chrome to a fixed dark
-palette via raw hex literals (`#111`/`#0d0d0d` page background, `#1e1e1e`
-inputs, `#2a2a2a`/`#1e1e1e` buttons, etc.) — dozens to ~60 occurrences per
-file, scattered through individual inline `style={{...}}` props in addition
-to the ~7 shared style-constant objects (`btnStyle`, `inputStyle`, etc.) each
-file defines at module scope. Neither page reads `--color-*` from
-`shared-styles/tokens.css`, so they stay dark regardless of the user's
-light/dark theme setting, unlike the rest of the app (Setup Hub sections,
-Planner, Broadcast, sidebar — all already theme-aware).
+**Finding:** Hardcodes its entire UI chrome to a fixed dark palette via raw
+hex literals (`#0d0d0d` page background, `#1e1e1e` inputs, button variants,
+etc.) — ~60 occurrences, both in the ~7 shared style-constant objects
+(`btnStyle`, `inputStyle`, etc.) and scattered one-off inline `style={{...}}`
+props. Doesn't read `--color-*` from `shared-styles/tokens.css`, so it stays
+dark regardless of the user's theme setting, unlike the rest of the app.
 
-**Why skipped:** Converting just the shared style-constant objects would
-leave the many one-off inline hex colors (borders, labels, thumbnail/preview
-backgrounds) still hardcoded dark, producing a half-themed page that could
-look worse than the current consistent dark aesthetic — e.g. light-colored
-buttons floating on a canvas that's still hard-coded dark, or vice versa. A
-correct fix needs its own pass auditing every inline style in both files
-(one is ~2000 lines), not a few minutes bolted onto an unrelated redesign
-task. Also worth deciding deliberately: some graphics/creative tools keep a
-fixed dark chrome by design (regardless of app theme) — confirm that's not
-the intent here before retheming.
+**Update (2026-07-06):** `DskEditorPage.jsx` (the Graphics Editor — same
+pattern, same author) has been fully converted to theme tokens: all chrome
+(shared style constants + inline styles) now uses `var(--color-*)`, leaving
+only the actual template-content default colors (a newly-created rect's
+default fill, etc. — real overlay-graphic properties, not UI) and a couple of
+input placeholder-text hints untouched, since those aren't chrome. Verified
+in both themes via screenshots. `DskControlPage.jsx` (the broadcast control
+panel) has **not** been converted yet — same fix, same shared-style-constant
+pattern, not done in this pass. Do it as a follow-up using the same approach
+(map each repeated hex to the semantically-closest `--color-*` token, leaving
+any genuine content-color defaults alone).
+
+**Why skipped (DskControlPage only):** out of scope for the pass that fixed
+the Editor — no reason it can't follow the exact same recipe next time.
 
 **Fixed in the same pass:** the root cause of why *most* pages already work
 was actually broken for one common case — `--color-surface`,
