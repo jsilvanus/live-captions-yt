@@ -24,11 +24,15 @@ shape incl. `live`/`501` DSK semantics, `GET/PUT /radio/config`'s
 `{ title, description, coverImageUrl, autoplay, enabled, live }`, and
 `GET/POST/PUT/DELETE /targets`'s target shape (`type`/`enabled`/`streamKey`/
 `url`/`headers`/`viewerKey`/`noBatch`) all matched exactly with no changes
-needed on either side. Only §1's Translation half has no frontend consumer
-yet — "Languages & translation" is still the pre-existing plain link-out
-card pointing at `/translations`. `scripts/dev/screenshot-mock-backend.mjs`
-keeps in-memory stubs for all three routes for local frontend dev without a
-full `lcyt-backend` instance running.
+needed on either side. §1's Translation half now has a real Setup Hub card
+(`LanguagesSection.jsx`/`LanguagesPage.jsx`, replacing the old plain link-out
+card) — but as built (2026-07-06) it's wired to the localStorage
+`lib/translationConfig.js` instead of the already-implemented
+`GET/PUT /translation/config*` routes documented above, a bug to fix
+independently (tracked in `plan_server_stt.md`'s Phase 5 todo, since that
+phase's UI work depends on the fix either way). `scripts/dev/
+screenshot-mock-backend.mjs` keeps in-memory stubs for all three routes for
+local frontend dev without a full `lcyt-backend` instance running.
 
 ---
 

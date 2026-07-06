@@ -12,6 +12,7 @@ vi.mock('../../src/components/setup-hub/IngestionSection.jsx', () => ({ Ingestio
 vi.mock('../../src/components/setup-hub/WebRadioSection.jsx', () => ({ WebRadioSection: () => <div data-testid="webradio-section" /> }));
 vi.mock('../../src/components/setup-hub/ViewportsSection.jsx', () => ({ ViewportsSection: () => <div data-testid="viewports-section" /> }));
 vi.mock('../../src/components/setup-hub/CaptionTargetsSection.jsx', () => ({ CaptionTargetsSection: () => <div data-testid="caption-targets-section" /> }));
+vi.mock('../../src/components/setup-hub/LanguagesSection.jsx', () => ({ LanguagesSection: () => <div data-testid="languages-section" /> }));
 vi.mock('../../src/components/setup-hub/SttSection.jsx', () => ({ SttSection: () => <div data-testid="stt-section" /> }));
 vi.mock('../../src/components/setup-hub/StorageSection.jsx', () => ({ StorageSection: () => <div data-testid="storage-section" /> }));
 vi.mock('../../src/components/setup-hub/AiModelsSection.jsx', () => ({ AiModelsSection: () => <div data-testid="ai-models-section" /> }));
@@ -46,6 +47,7 @@ describe('SetupHubPage', () => {
     expect(screen.getByTestId('storage-section')).toBeInTheDocument();
     expect(screen.getByTestId('ai-models-section')).toBeInTheDocument();
     expect(screen.getByTestId('connectors-section')).toBeInTheDocument();
+    expect(screen.getByTestId('languages-section')).toBeInTheDocument();
   });
 
   it('links to the setup wizard as a secondary entry point', () => {
@@ -60,16 +62,15 @@ describe('SetupHubPage', () => {
     expect(placeholderCards.length).toBeGreaterThanOrEqual(1);
   });
 
-  it('flags client-only categories with a client-only status pill', () => {
-    renderAt();
-    expect(screen.getByText(/languages/i)).toBeInTheDocument();
-    expect(screen.getAllByText('Client-only').length).toBeGreaterThanOrEqual(1);
-  });
-
   it('scrolls the deep-linked card into view', () => {
+    // Workflows is the only remaining un-mocked inline SetupCard (a real
+    // `id`-bearing instance, needed since the highlight/scroll behavior is
+    // per-SetupCard via its own useRoute() check) — every other section is
+    // mocked to a trivial div above, so a deep link to one of those wouldn't
+    // exercise this at all.
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
-    renderAt('/setup/translations');
+    renderAt('/setup/workflows');
     expect(scrollIntoView).toHaveBeenCalled();
   });
 });

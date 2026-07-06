@@ -7,8 +7,12 @@ import {
 /**
  * TranslationRow — single translation entry editor.
  * Data shape: { id, enabled, lang, target: 'captions'|'file'|'backend-file', format? }
+ *
+ * hideRemove: hides the inline ✕ button (for callers with their own delete
+ * flow, e.g. a confirm dialog, instead of this row removing itself from a
+ * live list) — same convention as `panels/TargetRow.jsx`'s `hideRemove`.
  */
-function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t }) {
+export function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t, hideRemove = false }) {
   const disableCaptions = entry.target !== 'captions' && hasExistingCaptionTarget;
 
   return (
@@ -62,8 +66,90 @@ function TranslationRow({ entry, onChange, onRemove, hasExistingCaptionTarget, t
         </div>
       )}
 
-      <button type="button" className="btn btn--secondary btn--sm" onClick={onRemove} title={t('settings.translation.removeTranslation')} style={{ flexShrink: 0 }}>✕</button>
+      {!hideRemove && (
+        <button type="button" className="btn btn--secondary btn--sm" onClick={onRemove} title={t('settings.translation.removeTranslation')} style={{ flexShrink: 0 }}>✕</button>
+      )}
     </div>
+  );
+}
+
+/**
+ * TranslationVendorSettings — the translation vendor picker + conditional
+ * per-vendor key/URL fields. Extracted out of `TranslationPanel` so it can be
+ * reused standalone (e.g. in a "Provider" dialog) without the per-language
+ * row list.
+ */
+export function TranslationVendorSettings({
+  vendor = 'mymemory',
+  onVendorChange,
+  vendorKey = '',
+  onVendorKeyChange,
+  libreUrl = '',
+  onLibreUrlChange,
+  libreKey = '',
+  onLibreKeyChange,
+}) {
+  const { t } = useLang();
+  return (
+    <>
+      <div className="settings-field">
+        <label className="settings-field__label">{t('settings.translation.vendor')}</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {TRANSLATION_VENDORS.map(v => (
+            <button
+              key={v.value}
+              type="button"
+              className={`lang-btn${vendor === v.value ? ' lang-btn--active' : ''}`}
+              onClick={() => onVendorChange(v.value)}
+            >
+              {t(v.labelKey)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {(vendor === 'google' || vendor === 'deepl') && (
+        <div className="settings-field">
+          <label className="settings-field__label">{t('settings.translation.vendorKey')}</label>
+          <input
+            className="settings-field__input"
+            type="password"
+            autoComplete="off"
+            value={vendorKey}
+            onChange={e => onVendorKeyChange(e.target.value)}
+          />
+          <span className="settings-field__hint">{t('settings.translation.vendorKeyHint')}</span>
+        </div>
+      )}
+
+      {vendor === 'libretranslate' && (
+        <>
+          <div className="settings-field">
+            <label className="settings-field__label">{t('settings.translation.libreUrl')}</label>
+            <input
+              className="settings-field__input"
+              type="url"
+              placeholder={t('settings.translation.libreUrlPlaceholder')}
+              autoComplete="off"
+              value={libreUrl}
+              onChange={e => onLibreUrlChange(e.target.value)}
+            />
+            <span className="settings-field__hint">{t('settings.translation.libreUrlHint')}</span>
+          </div>
+          <div className="settings-field">
+            <label className="settings-field__label">{t('settings.translation.libreKey')}</label>
+            <input
+              className="settings-field__input"
+              type="password"
+              autoComplete="off"
+              value={libreKey}
+              onChange={e => onLibreKeyChange(e.target.value)}
+            />
+            <span className="settings-field__hint">{t('settings.translation.libreKeyHint')}</span>
+          </div>
+        </>
+      )}
+    </>
   );
 }
 
@@ -157,63 +243,16 @@ export function TranslationPanel({
         </div>
       )}
 
-      <div className="settings-field">
-        <label className="settings-field__label">{t('settings.translation.vendor')}</label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-          {TRANSLATION_VENDORS.map(v => (
-            <button
-              key={v.value}
-              type="button"
-              className={`lang-btn${vendor === v.value ? ' lang-btn--active' : ''}`}
-              onClick={() => onVendorChange(v.value)}
-            >
-              {t(v.labelKey)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {(vendor === 'google' || vendor === 'deepl') && (
-        <div className="settings-field">
-          <label className="settings-field__label">{t('settings.translation.vendorKey')}</label>
-          <input
-            className="settings-field__input"
-            type="password"
-            autoComplete="off"
-            value={vendorKey}
-            onChange={e => onVendorKeyChange(e.target.value)}
-          />
-          <span className="settings-field__hint">{t('settings.translation.vendorKeyHint')}</span>
-        </div>
-      )}
-
-      {vendor === 'libretranslate' && (
-        <>
-          <div className="settings-field">
-            <label className="settings-field__label">{t('settings.translation.libreUrl')}</label>
-            <input
-              className="settings-field__input"
-              type="url"
-              placeholder={t('settings.translation.libreUrlPlaceholder')}
-              autoComplete="off"
-              value={libreUrl}
-              onChange={e => onLibreUrlChange(e.target.value)}
-            />
-            <span className="settings-field__hint">{t('settings.translation.libreUrlHint')}</span>
-          </div>
-          <div className="settings-field">
-            <label className="settings-field__label">{t('settings.translation.libreKey')}</label>
-            <input
-              className="settings-field__input"
-              type="password"
-              autoComplete="off"
-              value={libreKey}
-              onChange={e => onLibreKeyChange(e.target.value)}
-            />
-            <span className="settings-field__hint">{t('settings.translation.libreKeyHint')}</span>
-          </div>
-        </>
-      )}
+      <TranslationVendorSettings
+        vendor={vendor}
+        onVendorChange={onVendorChange}
+        vendorKey={vendorKey}
+        onVendorKeyChange={onVendorKeyChange}
+        libreUrl={libreUrl}
+        onLibreUrlChange={onLibreUrlChange}
+        libreKey={libreKey}
+        onLibreKeyChange={onLibreKeyChange}
+      />
     </>
   );
 }
