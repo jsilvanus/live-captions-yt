@@ -13,7 +13,22 @@ These three items were flagged as a prioritized backlog in `plan_team_org_backen
 
 **No backward-compatibility burden.** LCYT has no released users yet. None of the schema below hedges for existing production rows, gradual rollout, or zero-downtime migration — additive/nullable columns are used because that is simply good schema design (a project genuinely can have zero configured targets, or no ingestion rotated yet), not because of any compat requirement.
 
-**Implementation status:** backend implemented in PR #239 (merged to `main`). Setup Hub's Ingestion, Web Radio, and Caption Targets cards (`packages/lcyt-web/src/components/setup-hub/IngestionSection.jsx`, `WebRadioSection.jsx`, `CaptionTargetsSection.jsx`) are built against §1/§2/§3 below (Ingestion/Radio extended with a `live` status field each, §2a/§3a) and were verified field-for-field compatible against PR #239's actual route code before it merged. Only §1's Translation half has no frontend consumer yet — "Languages & translation" is still the pre-existing plain link-out card pointing at `/translations`.
+**Implementation status:** backend implemented in PR #239 (merged to `main`).
+Setup Hub's Ingestion, Web Radio, and Caption Targets cards
+(`packages/lcyt-web/src/components/setup-hub/IngestionSection.jsx`,
+`WebRadioSection.jsx`, `CaptionTargetsSection.jsx`) are built against §1/§2/§3
+below (Ingestion/Radio extended with a `live` status field each, §2a/§3a) and
+were verified field-for-field compatible against PR #239's actual route code
+before it merged: `GET/PATCH /ingestion/config`'s nested `{ video, dsk }`
+shape incl. `live`/`501` DSK semantics, `GET/PUT /radio/config`'s
+`{ title, description, coverImageUrl, autoplay, enabled, live }`, and
+`GET/POST/PUT/DELETE /targets`'s target shape (`type`/`enabled`/`streamKey`/
+`url`/`headers`/`viewerKey`/`noBatch`) all matched exactly with no changes
+needed on either side. Only §1's Translation half has no frontend consumer
+yet — "Languages & translation" is still the pre-existing plain link-out
+card pointing at `/translations`. `scripts/dev/screenshot-mock-backend.mjs`
+keeps in-memory stubs for all three routes for local frontend dev without a
+full `lcyt-backend` instance running.
 
 ---
 

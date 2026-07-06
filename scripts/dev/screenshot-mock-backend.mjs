@@ -63,6 +63,29 @@ app.put('/radio/config', (req, res) => {
   res.json(radioConfig);
 });
 
+// ── Caption targets — in-memory stand-in for
+// docs/plans/plan_selfservice_config_backend.md §1 (PR #239). ──────────────
+const targets = new Map(); // id -> target
+app.get('/targets', (_req, res) => res.json({ targets: [...targets.values()] }));
+app.post('/targets', (req, res) => {
+  const id = crypto.randomUUID();
+  const { type, streamKey, url, viewerKey, noBatch } = req.body || {};
+  const target = { id, type, enabled: true, sortOrder: targets.size, streamKey: streamKey || null, url: url || null, headers: null, viewerKey: viewerKey || null, noBatch: !!noBatch };
+  targets.set(id, target);
+  res.status(201).json({ ok: true, target });
+});
+app.put('/targets/:id', (req, res) => {
+  const row = targets.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Target not found' });
+  Object.assign(row, req.body || {});
+  res.json({ ok: true, target: row });
+});
+app.delete('/targets/:id', (req, res) => {
+  const existed = targets.delete(req.params.id);
+  if (!existed) return res.status(404).json({ error: 'Target not found' });
+  res.json({ ok: true });
+});
+
 app.get('/events', (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
   res.flushHeaders?.();

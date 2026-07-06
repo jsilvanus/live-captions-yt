@@ -1,6 +1,6 @@
 import { Link } from 'wouter';
 import { SetupCard } from './SetupCard.jsx';
-import { CaptionTargetsIcon, LanguagesIcon, WorkflowsIcon } from './icons.jsx';
+import { LanguagesIcon, WorkflowsIcon } from './icons.jsx';
 import { CameraSection } from './CameraSection.jsx';
 import { MixerSection } from './MixerSection.jsx';
 import { EncoderSection } from './EncoderSection.jsx';
@@ -9,6 +9,7 @@ import { EgressSection } from './EgressSection.jsx';
 import { IngestionSection } from './IngestionSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
+import { CaptionTargetsSection } from './CaptionTargetsSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { AiModelsSection } from './AiModelsSection.jsx';
@@ -58,15 +59,7 @@ export function SetupHubPage() {
         <ViewportsSection />
 
         {/* ── Captions & language ── */}
-        <SetupCard
-          id="caption-targets"
-          icon={CaptionTargetsIcon}
-          color="accent"
-          title="Caption targets"
-          description="YouTube / viewer / generic delivery targets for sent captions."
-          status="client-only"
-          footerLink={{ label: 'Open in Captions (CC → Targets)', href: '/captions' }}
-        />
+        <CaptionTargetsSection />
         <SetupCard
           id="translations"
           icon={LanguagesIcon}

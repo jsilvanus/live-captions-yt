@@ -11,6 +11,7 @@ vi.mock('../../src/components/setup-hub/EgressSection.jsx', () => ({ EgressSecti
 vi.mock('../../src/components/setup-hub/IngestionSection.jsx', () => ({ IngestionSection: () => <div data-testid="ingestion-section" /> }));
 vi.mock('../../src/components/setup-hub/WebRadioSection.jsx', () => ({ WebRadioSection: () => <div data-testid="webradio-section" /> }));
 vi.mock('../../src/components/setup-hub/ViewportsSection.jsx', () => ({ ViewportsSection: () => <div data-testid="viewports-section" /> }));
+vi.mock('../../src/components/setup-hub/CaptionTargetsSection.jsx', () => ({ CaptionTargetsSection: () => <div data-testid="caption-targets-section" /> }));
 vi.mock('../../src/components/setup-hub/SttSection.jsx', () => ({ SttSection: () => <div data-testid="stt-section" /> }));
 vi.mock('../../src/components/setup-hub/StorageSection.jsx', () => ({ StorageSection: () => <div data-testid="storage-section" /> }));
 vi.mock('../../src/components/setup-hub/AiModelsSection.jsx', () => ({ AiModelsSection: () => <div data-testid="ai-models-section" /> }));
@@ -40,6 +41,7 @@ describe('SetupHubPage', () => {
     expect(screen.getByTestId('ingestion-section')).toBeInTheDocument();
     expect(screen.getByTestId('webradio-section')).toBeInTheDocument();
     expect(screen.getByTestId('viewports-section')).toBeInTheDocument();
+    expect(screen.getByTestId('caption-targets-section')).toBeInTheDocument();
     expect(screen.getByTestId('stt-section')).toBeInTheDocument();
     expect(screen.getByTestId('storage-section')).toBeInTheDocument();
     expect(screen.getByTestId('ai-models-section')).toBeInTheDocument();
@@ -60,15 +62,14 @@ describe('SetupHubPage', () => {
 
   it('flags client-only categories with a client-only status pill', () => {
     renderAt();
-    expect(screen.getByText('Caption targets')).toBeInTheDocument();
     expect(screen.getByText(/languages/i)).toBeInTheDocument();
-    expect(screen.getAllByText('Client-only').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Client-only').length).toBeGreaterThanOrEqual(1);
   });
 
   it('scrolls the deep-linked card into view', () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
-    renderAt('/setup/caption-targets');
+    renderAt('/setup/translations');
     expect(scrollIntoView).toHaveBeenCalled();
   });
 });
