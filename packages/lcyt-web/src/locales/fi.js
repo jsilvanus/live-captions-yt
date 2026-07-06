@@ -179,6 +179,7 @@ export default {
       noTargets: 'Ei kohteita. Lisää kohde klikkaamalla "+ Lisää kohde".',
       addTarget: 'Lisää kohde',
       removeTarget: 'Poista',
+      typeLockedHint: 'Tyyppiä ei voi muuttaa luomisen jälkeen — poista ja lisää uudelleen vaihtaaksesi sen.',
       typeYouTube: 'YouTube',
       typeGeneric: 'Muu',
       typeViewer: 'Katsoja',

@@ -65,6 +65,8 @@ app.put('/radio/config', (req, res) => {
 
 // ── Caption targets — in-memory stand-in for
 // docs/plans/plan_selfservice_config_backend.md §1 (PR #239). ──────────────
+app.get('/icons', (_req, res) => res.json({ icons: [] }));
+
 const targets = new Map(); // id -> target
 app.get('/targets', (_req, res) => res.json({ targets: [...targets.values()] }));
 app.post('/targets', (req, res) => {
