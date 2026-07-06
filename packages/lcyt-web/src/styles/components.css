@@ -3065,13 +3065,35 @@
 .planner-outline__item-hash { font-size: 10px; opacity: 0.5; flex-shrink: 0; }
 .planner-outline__item-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 
-.planner-outline__actions {
-  padding: 10px 12px;
+.planner-outline__actions-wrap {
   border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.planner-outline__actions-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.planner-outline__actions-toggle:hover { color: var(--color-text); }
+
+.planner-outline__actions {
+  padding: 0 12px 10px;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  flex-shrink: 0;
 }
 
 .planner-outline__action {
@@ -3175,10 +3197,15 @@
 }
 
 /* Toolbar */
+/* The basic/most-used tools (filename, insert bar) stay visible while the
+   page scrolls in the stacked narrow layout. */
 .planner-toolbar {
   flex-shrink: 0;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-surface);
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
 
 .planner-toolbar__top {

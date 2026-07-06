@@ -508,7 +508,9 @@ function PlannerQuickAdd({ onAdd }) {
 
 // ─── Structure/outline sidebar ────────────────────────────────────────────────
 
-function PlannerOutline({ filename, totalLines, dirty, outline, onJumpTo, onNew, onImport, onExport }) {
+function PlannerOutline({ filename, totalLines, dirty, outline, onJumpTo, onNew, onImport, onExport, isNarrow }) {
+  const [showActions, setShowActions] = useState(() => !isNarrow);
+
   return (
     <aside className="planner-outline">
       <div className="planner-outline__header">
@@ -541,10 +543,19 @@ function PlannerOutline({ filename, totalLines, dirty, outline, onJumpTo, onNew,
         )}
       </div>
 
-      <div className="planner-outline__actions">
-        <button className="planner-outline__action" onClick={onImport}>⬆ Import .md</button>
-        <button className="planner-outline__action" onClick={onExport}>⬇ Export .md</button>
-        <button className="planner-outline__action" onClick={onNew}>＋ New plan</button>
+      {/* Secondary to the Structure outline above, so it collapses out of
+          the way on narrow screens. */}
+      <div className="planner-outline__actions-wrap">
+        <button className="planner-outline__actions-toggle" onClick={() => setShowActions(v => !v)}>
+          <span aria-hidden="true">{showActions ? '▾' : '▸'}</span> File
+        </button>
+        {showActions && (
+          <div className="planner-outline__actions">
+            <button className="planner-outline__action" onClick={onImport}>⬆ Import .md</button>
+            <button className="planner-outline__action" onClick={onExport}>⬇ Export .md</button>
+            <button className="planner-outline__action" onClick={onNew}>＋ New plan</button>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -906,6 +917,7 @@ export function PlannerPage() {
         onNew={handleNew}
         onImport={handleImport}
         onExport={handleExport}
+        isNarrow={isNarrow}
       />
       <div className="planner-main">
       <PlannerToolbar
