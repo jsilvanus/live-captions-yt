@@ -13,7 +13,7 @@ describe('LoginPage (step-based redesign)', () => {
     render(<LoginPage />);
     expect(screen.getByText(/Choose your backend/i)).toBeInTheDocument();
     expect(screen.getByText(/LCYT Cloud/i)).toBeInTheDocument();
-    expect(screen.getByText(/Minimal/i)).toBeInTheDocument();
+    expect(screen.getByText('Minimal')).toBeInTheDocument();
     expect(screen.getByText(/Self-hosted/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /continue/i })).toBeInTheDocument();
   });
