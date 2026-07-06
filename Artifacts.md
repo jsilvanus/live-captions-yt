@@ -6,4 +6,4 @@ Each entry: the link, the plan/project it documents, and what it actually shows.
 
 | Date | Link | Plan / project | Description |
 |---|---|---|---|
-| 2026-07-06 | [planner-graphics-theming](https://claude.ai/code/artifact/99b461d9-3a27-40cc-9dbb-b49f9de5ce87) | Claude Design mockup import (project `9919ac53` "LCYT") — Planner & Graphics Editor pass, see `HIDDEN.md` / `CONSIDER.md` | Screenshots of the reworked Planner (new structure sidebar, file-include block) and the newly theme-aware Graphics Editor, captured from the running app in both light and dark theme |
+| 2026-07-06 | [planner-graphics-theming](https://claude.ai/code/artifact/99b461d9-3a27-40cc-9dbb-b49f9de5ce87) | Claude Design mockup import (project `9919ac53` "LCYT") — Planner & Graphics Editor pass, see `HIDDEN.md` / `CONSIDER.md` | Screenshots of the reworked Planner (structure sidebar, file-include block) and the theme-aware, responsive Graphics Editor: light/dark theme comparison plus desktop/tablet/mobile size comparison for both pages. Redeployed in place (same URL) when the size comparison was added. |
