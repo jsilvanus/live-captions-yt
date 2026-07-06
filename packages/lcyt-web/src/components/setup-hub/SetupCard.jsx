@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRoute } from 'wouter';
-import { CATEGORY_COLORS, PencilIcon, PlusIcon, TrashIcon } from './icons.jsx';
+import { CATEGORY_COLORS, PencilIcon, PlusIcon, StarIcon, TrashIcon } from './icons.jsx';
+import { useCardFavorites } from '../../lib/cardFavorites.js';
 
 const HIGHLIGHT_MS = 10_000;
 
@@ -38,6 +39,8 @@ export function SetupCard({
   const containerRef = useRef(null);
   const [deepLinked] = useRoute(id ? `/setup/${id}` : '/__setup-card-no-id__');
   const [highlighted, setHighlighted] = useState(false);
+  const { isFavorite, toggle } = useCardFavorites();
+  const favorite = id ? isFavorite(id) : false;
 
   useEffect(() => {
     if (!deepLinked) return;
@@ -69,6 +72,17 @@ export function SetupCard({
           </div>
           {description && <p className="setup-card__desc">{description}</p>}
         </div>
+        {id && !placeholder && (
+          <button
+            type="button"
+            className="setup-card__fav-btn"
+            onClick={() => toggle(id)}
+            aria-pressed={favorite}
+            title={favorite ? 'Remove from favorites' : 'Add to favorites'}
+          >
+            <StarIcon filled={favorite} />
+          </button>
+        )}
         {headerAction && (
           headerAction.href ? (
             <a className="setup-card__add-btn" href={headerAction.href}>
