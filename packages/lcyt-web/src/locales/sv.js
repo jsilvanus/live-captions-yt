@@ -180,6 +180,7 @@ export default {
       noTargets: 'Inga mål konfigurerade. Klicka på "+ Lägg till mål" för att lägga till ett.',
       addTarget: 'Lägg till mål',
       removeTarget: 'Ta bort',
+      typeLockedHint: 'Typen kan inte ändras efter skapande — ta bort och lägg till igen för att ändra den.',
       typeYouTube: 'YouTube',
       typeGeneric: 'Annan',
       typeViewer: 'Tittare',
