@@ -7,6 +7,8 @@ import { initDb, createKey } from '../src/db.js';
 import { SessionStore, makeSessionId } from '../src/store.js';
 import { createCaptionsRouter } from '../src/routes/captions.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createTranslationTarget } from '../src/db/translation-config.js';
+import { createCaptionTarget } from '../src/db/caption-targets.js';
 
 const JWT_SECRET = 'test-captions-secret';
 
@@ -278,5 +280,80 @@ describe('POST /captions', () => {
     assert.strictEqual(event.requestId, data.requestId);
     assert.ok(event.error);
     assert.strictEqual(event.statusCode, 502);
+  });
+
+  describe('Phase 5: per-target translation routing', () => {
+    // Regression coverage for docs/plans/plan_server_stt.md Phase 5's fan-out
+    // change: a caption_targets row with an enabled translation_targets row
+    // pointing at it (via caption_target_id) must receive that row's own
+    // composed text; a target with no such routing must keep receiving
+    // today's default composed text, completely unchanged.
+    it('delivers routed text to a target with a matching translation_targets row, default text to an unrouted target', async () => {
+      const routed = { url: 'https://example.test/routed-webhook', calls: [] };
+      const unrouted = { url: 'https://example.test/unrouted-webhook', calls: [] };
+
+      const origFetch = globalThis.fetch;
+      globalThis.fetch = async (url, opts) => {
+        // Only intercept the two webhook URLs — anything else (notably the
+        // test harness's own postCaptions() call to the local server) must
+        // go through to the real fetch, or caption_result never fires.
+        if (url === routed.url || url === unrouted.url) {
+          const body = JSON.parse(opts.body);
+          (url === routed.url ? routed : unrouted).calls.push(body);
+          return { ok: true, status: 200, json: async () => ({}) };
+        }
+        return origFetch(url, opts);
+      };
+
+      try {
+        // caption_targets.id is a real FK target for translation_targets.caption_target_id
+        // (enforced — confirmed by this test originally failing with
+        // SQLITE_CONSTRAINT_FOREIGNKEY against made-up ids), so create real rows first.
+        const routedTarget = createCaptionTarget(db, 'test-key', { type: 'generic', url: routed.url });
+        assert.ok(routedTarget.ok, routedTarget.error);
+        const unroutedTarget = createCaptionTarget(db, 'test-key', { type: 'generic', url: unrouted.url });
+        assert.ok(unroutedTarget.ok, unroutedTarget.error);
+
+        const session = store.create({
+          apiKey: 'test-key',
+          streamKey: 'test-stream',
+          domain: 'https://test.com',
+          jwt: 'test-jwt',
+          sequence: 0,
+          syncOffset: 0,
+          extraTargets: [
+            { id: routedTarget.target.id,   type: 'generic', url: routed.url },
+            { id: unroutedTarget.target.id, type: 'generic', url: unrouted.url },
+          ],
+        });
+
+        // Route Finnish translation delivery specifically to the routed target.
+        const created = createTranslationTarget(db, 'test-key', {
+          lang: 'fi-FI', target: 'captions', captionTargetId: routedTarget.target.id, showOriginal: false,
+        });
+        assert.ok(created.ok, created.error);
+
+        const token = makeToken(session.sessionId);
+        const eventPromise = waitForEvent(session, 'caption_result');
+        await postCaptions(token, {
+          captions: [{
+            text: 'Hello world',
+            captionLang: 'sv-SE',
+            translations: { 'sv-SE': 'Hej varlden', 'fi-FI': 'Hei maailma' },
+          }],
+        });
+        await eventPromise;
+        // Fan-out is fire-and-forget after the primary result — give it a tick.
+        await new Promise(r => setTimeout(r, 20));
+
+        assert.strictEqual(routed.calls.length, 1);
+        assert.strictEqual(routed.calls[0].captions[0].composedText, 'Hei maailma');
+
+        assert.strictEqual(unrouted.calls.length, 1);
+        assert.strictEqual(unrouted.calls[0].captions[0].composedText, 'Hej varlden');
+      } finally {
+        globalThis.fetch = origFetch;
+      }
+    });
   });
 });

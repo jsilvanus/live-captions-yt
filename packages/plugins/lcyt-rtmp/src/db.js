@@ -143,6 +143,20 @@ export function runMigrations(db) {
   } catch {
     // Column already exists — ignore
   }
+
+  // ── stt_source_languages: predefined per-project source language list ─────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stt_source_languages (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key    TEXT    NOT NULL,
+      lang       TEXT    NOT NULL,
+      label      TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+      UNIQUE(api_key, lang)
+    )
+  `);
 }
 
 // ── STT config DB helpers ──────────────────────────────────────────────────
@@ -208,6 +222,103 @@ export function setSttConfig(db, apiKey, { provider, language, audioSource, stre
       apiKey,
     );
   }
+}
+
+// ── STT source languages DB helpers ────────────────────────────────────────
+
+/**
+ * Get all source languages for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {Array<{ id: number, lang: string, label?: string, sortOrder: number }>}
+ */
+export function getSttSourceLanguages(db, apiKey) {
+  return db.prepare('SELECT id, lang, label, sort_order as sortOrder, created_at as createdAt, updated_at as updatedAt FROM stt_source_languages WHERE api_key = ? ORDER BY sort_order, id')
+    .all(apiKey)
+    .map(row => ({
+      id:        row.id,
+      lang:      row.lang,
+      label:     row.label ?? null,
+      sortOrder: row.sortOrder,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }));
+}
+
+/**
+ * Add a source language to the predefined list.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} lang - BCP-47 language code
+ * @param {{ label?: string, sortOrder?: number }} opts
+ * @returns {{ ok: true, language: object } | { ok: false, error: string }}
+ */
+export function addSttSourceLanguage(db, apiKey, lang, { label = null, sortOrder = null } = {}) {
+  if (!lang || typeof lang !== 'string') {
+    return { ok: false, error: 'lang is required' };
+  }
+  try {
+    const existing = db.prepare('SELECT id FROM stt_source_languages WHERE api_key = ? AND lang = ?').get(apiKey, lang);
+    if (existing) {
+      return { ok: false, error: 'Language already in the list' };
+    }
+    const order = sortOrder !== undefined && sortOrder !== null ? sortOrder
+      : (db.prepare('SELECT COALESCE(MAX(sort_order), -1) + 1 as next FROM stt_source_languages WHERE api_key = ?').get(apiKey).next);
+
+    db.prepare(`
+      INSERT INTO stt_source_languages (api_key, lang, label, sort_order)
+      VALUES (?, ?, ?, ?)
+    `).run(apiKey, lang, label ?? null, order);
+
+    const row = db.prepare('SELECT id, lang, label, sort_order as sortOrder FROM stt_source_languages WHERE api_key = ? AND lang = ?').get(apiKey, lang);
+    return { ok: true, language: { id: row.id, lang: row.lang, label: row.label ?? null, sortOrder: row.sortOrder } };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Update a source language entry.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {number} id
+ * @param {{ label?: string, sortOrder?: number }} patch
+ * @returns {{ ok: true, language: object } | { ok: false, error: string, status?: number }}
+ */
+export function updateSttSourceLanguage(db, apiKey, id, { label, sortOrder } = {}) {
+  const existing = db.prepare('SELECT * FROM stt_source_languages WHERE api_key = ? AND id = ?').get(apiKey, id);
+  if (!existing) {
+    return { ok: false, error: 'Language not found', status: 404 };
+  }
+  try {
+    db.prepare(`
+      UPDATE stt_source_languages
+      SET label      = ?,
+          sort_order = ?,
+          updated_at = strftime('%s','now')
+      WHERE api_key = ? AND id = ?
+    `).run(
+      label !== undefined ? label : existing.label,
+      sortOrder !== undefined ? sortOrder : existing.sort_order,
+      apiKey, id
+    );
+    const row = db.prepare('SELECT id, lang, label, sort_order as sortOrder FROM stt_source_languages WHERE api_key = ? AND id = ?').get(apiKey, id);
+    return { ok: true, language: { id: row.id, lang: row.lang, label: row.label ?? null, sortOrder: row.sortOrder } };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * Remove a source language from the predefined list.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {number} id
+ * @returns {boolean} true if a row was deleted
+ */
+export function deleteSttSourceLanguage(db, apiKey, id) {
+  const result = db.prepare('DELETE FROM stt_source_languages WHERE api_key = ? AND id = ?').run(apiKey, id);
+  return result.changes > 0;
 }
 
 export * from './db/relay.js';
