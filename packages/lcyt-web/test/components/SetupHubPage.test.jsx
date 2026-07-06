@@ -7,6 +7,10 @@ vi.mock('../../src/components/setup-hub/CameraSection.jsx', () => ({ CameraSecti
 vi.mock('../../src/components/setup-hub/MixerSection.jsx', () => ({ MixerSection: () => <div data-testid="mixer-section" /> }));
 vi.mock('../../src/components/setup-hub/EncoderSection.jsx', () => ({ EncoderSection: () => <div data-testid="encoder-section" /> }));
 vi.mock('../../src/components/setup-hub/BridgeSection.jsx', () => ({ BridgeSection: () => <div data-testid="bridge-section" /> }));
+vi.mock('../../src/components/setup-hub/EgressSection.jsx', () => ({ EgressSection: () => <div data-testid="egress-section" /> }));
+vi.mock('../../src/components/setup-hub/IngestionSection.jsx', () => ({ IngestionSection: () => <div data-testid="ingestion-section" /> }));
+vi.mock('../../src/components/setup-hub/WebRadioSection.jsx', () => ({ WebRadioSection: () => <div data-testid="webradio-section" /> }));
+vi.mock('../../src/components/setup-hub/ViewportsSection.jsx', () => ({ ViewportsSection: () => <div data-testid="viewports-section" /> }));
 vi.mock('../../src/components/setup-hub/SttSection.jsx', () => ({ SttSection: () => <div data-testid="stt-section" /> }));
 vi.mock('../../src/components/setup-hub/StorageSection.jsx', () => ({ StorageSection: () => <div data-testid="storage-section" /> }));
 vi.mock('../../src/components/setup-hub/AiModelsSection.jsx', () => ({ AiModelsSection: () => <div data-testid="ai-models-section" /> }));
@@ -32,6 +36,10 @@ describe('SetupHubPage', () => {
     expect(screen.getByTestId('mixer-section')).toBeInTheDocument();
     expect(screen.getByTestId('encoder-section')).toBeInTheDocument();
     expect(screen.getByTestId('bridge-section')).toBeInTheDocument();
+    expect(screen.getByTestId('egress-section')).toBeInTheDocument();
+    expect(screen.getByTestId('ingestion-section')).toBeInTheDocument();
+    expect(screen.getByTestId('webradio-section')).toBeInTheDocument();
+    expect(screen.getByTestId('viewports-section')).toBeInTheDocument();
     expect(screen.getByTestId('stt-section')).toBeInTheDocument();
     expect(screen.getByTestId('storage-section')).toBeInTheDocument();
     expect(screen.getByTestId('ai-models-section')).toBeInTheDocument();

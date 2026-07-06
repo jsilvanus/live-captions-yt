@@ -331,7 +331,7 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
   // Progressive disclosure: bridge name only when 2+ bridges exist
   const bridge     = bridges.length >= 2 ? bridges.find(b => b.id === mixer.bridgeInstanceId) : null;
 
-  const metaParts = [];
+  const metaParts = [typeLabel];
   if (!isLcyt && cfg.host) {
     metaParts.push(mixer.type === 'atem' ? cfg.host : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : mixer.type === 'obs' ? 4455 : 8023)}`);
   }
@@ -348,7 +348,6 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
       statusDot={mixer.connected ? 'var(--color-success)' : 'var(--color-text-muted)'}
       name={mixer.name}
       meta={metaParts.join(' · ')}
-      badge={typeLabel}
       extra={isLcyt && (
         <a
           href={`/production/lcyt-mixer/${mixer.id}`}

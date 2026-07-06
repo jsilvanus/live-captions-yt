@@ -20,7 +20,7 @@ export function MixerSection() {
       description="Video mixer source switching: Roland, AMX, ATEM, OBS, LCYT, Monarch HDX."
       status="ready"
       headerAction={{ label: 'Add', onClick: () => managerRef.current?.openAdd() }}
-      footerLink={{ label: 'Open standalone page', href: '/production/mixers' }}
+      footerLink={{ label: 'Open standalone page', href: '/setup/mixers/page' }}
     >
       <MixersManager embedded ref={managerRef} />
     </SetupCard>

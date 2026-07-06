@@ -1,13 +1,14 @@
 import { Link } from 'wouter';
 import { SetupCard } from './SetupCard.jsx';
-import {
-  EgressIcon, IngestionIcon, WebRadioIcon, ViewportsIcon,
-  CaptionTargetsIcon, LanguagesIcon, WorkflowsIcon,
-} from './icons.jsx';
+import { CaptionTargetsIcon, LanguagesIcon, WorkflowsIcon } from './icons.jsx';
 import { CameraSection } from './CameraSection.jsx';
 import { MixerSection } from './MixerSection.jsx';
 import { EncoderSection } from './EncoderSection.jsx';
 import { BridgeSection } from './BridgeSection.jsx';
+import { EgressSection } from './EgressSection.jsx';
+import { IngestionSection } from './IngestionSection.jsx';
+import { WebRadioSection } from './WebRadioSection.jsx';
+import { ViewportsSection } from './ViewportsSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { AiModelsSection } from './AiModelsSection.jsx';
@@ -51,42 +52,10 @@ export function SetupHubPage() {
         <BridgeSection />
 
         {/* ── Streaming & graphics ── */}
-        <SetupCard
-          id="egress"
-          icon={EgressIcon}
-          color="cyan"
-          title="Egress (stream targets)"
-          description="YouTube / generic RTMP relay targets — 4-slot configuration."
-          status="ready"
-          footerLink={{ label: 'Manage in Broadcast → Settings', href: '/broadcast' }}
-        />
-        <SetupCard
-          id="ingestion"
-          icon={IngestionIcon}
-          color="cyan"
-          title="Ingestion"
-          description="Incoming RTMP status. No dedicated ingestion entity exists yet — this reflects the ingest feature flag only."
-          status="partial"
-          statusLabel="Status only"
-        />
-        <SetupCard
-          id="radio"
-          icon={WebRadioIcon}
-          color="cyan"
-          title="Web radio"
-          description="Audio-only HLS output. Read-only status today; there's no config UI for it yet."
-          status="partial"
-          statusLabel="Status only"
-        />
-        <SetupCard
-          id="viewports"
-          icon={ViewportsIcon}
-          color="accent"
-          title="Viewports"
-          description="Named DSK display regions (e.g. vertical-left, landscape)."
-          status="ready"
-          footerLink={{ label: 'Manage in Graphics → Viewports', href: '/graphics/viewports' }}
-        />
+        <EgressSection />
+        <IngestionSection />
+        <WebRadioSection />
+        <ViewportsSection />
 
         {/* ── Captions & language ── */}
         <SetupCard
