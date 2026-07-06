@@ -8,7 +8,7 @@ import { LanguagePicker } from './LanguagePicker.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { TranslationRow, TranslationVendorSettings } from './panels/TranslationPanel.jsx';
 
-const EMPTY_NEW = { enabled: true, lang: 'en-US', target: 'captions' };
+const EMPTY_NEW = { enabled: true, lang: 'en-US', target: 'captions', captionTargetId: null, showOriginal: false };
 
 function langLabel(entry) {
   return COMMON_LANGUAGES.find(l => l.code === entry.lang)?.label || entry.lang;
@@ -49,6 +49,8 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
   const [translations, setTranslations] = useState([]);
   const [vendorConfig, setVendorConfig] = useState({ vendor: 'mymemory', vendorApiKey: '', libreUrl: '', libreKey: '', showOriginal: false });
   const [sttLanguage, setSttLanguage] = useState('en-US');
+  const [sourceLanguages, setSourceLanguages] = useState([]);
+  const [captionTargets, setCaptionTargets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -74,9 +76,11 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
     setLoading(true);
     setError(null);
     try {
-      const [translationRes, sttRes] = await Promise.all([
+      const [translationRes, sttRes, sourceRes, targetsRes] = await Promise.all([
         authedFetch('/translation/config'),
         authedFetch('/stt/config'),
+        authedFetch('/stt/source-languages'),
+        authedFetch('/targets'),
       ]);
       const translationData = await translationRes.json();
       if (!translationRes.ok) throw new Error(translationData.error || `HTTP ${translationRes.status}`);
@@ -85,6 +89,12 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
 
       const sttData = await sttRes.json().catch(() => ({}));
       if (sttRes.ok) setSttLanguage(sttData.config?.language || 'en-US');
+
+      const sourceData = await sourceRes.json().catch(() => ({}));
+      if (sourceRes.ok) setSourceLanguages(sourceData.languages || []);
+
+      const targetsData = await targetsRes.json().catch(() => ({}));
+      if (targetsRes.ok) setCaptionTargets(targetsData.targets || []);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -108,7 +118,14 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
     try {
       const r = await authedFetch(isNew ? '/translation/config/targets' : `/translation/config/targets/${editing.id}`, {
         method: isNew ? 'POST' : 'PUT',
-        body: JSON.stringify({ enabled: draft.enabled, lang: draft.lang, target: draft.target, format: draft.format ?? null }),
+        body: JSON.stringify({
+          enabled: draft.enabled,
+          lang: draft.lang,
+          target: draft.target,
+          format: draft.format ?? null,
+          captionTargetId: draft.captionTargetId ?? null,
+          showOriginal: draft.showOriginal ?? false,
+        }),
       });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
@@ -200,6 +217,38 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
               t={t}
               hideRemove
             />
+
+            {/* Phase 5: Per-target destination routing */}
+            <div className="settings-field">
+              <label className="settings-field__label">Delivery destination</label>
+              <select
+                className="settings-field__input"
+                value={draft.captionTargetId || ''}
+                onChange={e => setDraft({ ...draft, captionTargetId: e.target.value || null })}
+              >
+                <option value="">Default (unrouted)</option>
+                {captionTargets.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.name || `${t.type}: ${t.streamKey || t.url || t.viewerKey}`}
+                  </option>
+                ))}
+              </select>
+              <span className="settings-field__hint">Route this translation to a specific caption target instead of the default.</span>
+            </div>
+
+            {/* Phase 5: Per-row showOriginal */}
+            <div className="settings-field">
+              <label className="settings-checkbox">
+                <input
+                  type="checkbox"
+                  checked={draft.showOriginal ?? false}
+                  onChange={e => setDraft({ ...draft, showOriginal: e.target.checked })}
+                />
+                Show original above translation
+              </label>
+              <span className="settings-field__hint">When enabled, the caption will contain both the original and the translated text (separated by a line break).</span>
+            </div>
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn--ghost" onClick={() => { setEditing(null); setDraft(null); }}>Cancel</button>
               <button className="btn btn--primary" onClick={handleSave} disabled={!draft.lang}>
@@ -258,7 +307,30 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
             <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
               The language being spoken/transcribed. Changing this restarts server-side STT if it's currently running.
             </p>
-            <LanguagePicker value={sourceDraft} onChange={setSourceDraft} />
+
+            {/* Phase 5: Use predefined source language list if available */}
+            {sourceLanguages.length > 0 ? (
+              <div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: 8 }}>
+                  {sourceLanguages.map(sl => (
+                    <button
+                      key={sl.lang}
+                      type="button"
+                      className={`lang-btn${sourceDraft === sl.lang ? ' lang-btn--active' : ''}`}
+                      onClick={() => setSourceDraft(sl.lang)}
+                    >
+                      {sl.label || sourceLangLabel(sl.lang)}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--color-text-muted)' }}>
+                  No predefined list? Set up source languages in Settings.
+                </p>
+              </div>
+            ) : (
+              <LanguagePicker value={sourceDraft} onChange={setSourceDraft} />
+            )}
+
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn--ghost" onClick={() => setSourceOpen(false)}>Cancel</button>
               <button className="btn btn--primary" onClick={handleSourceSave}>Save</button>

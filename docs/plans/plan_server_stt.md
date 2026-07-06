@@ -1,8 +1,8 @@
 ---
 id: plan/server-stt
 title: "Server-side Speech-to-Text (STT)"
-status: in-progress
-summary: "Phases 1–4 fully implemented and verified against the actual code (2026-07-06 — the Todo checklist below was badly stale before this pass, showing only Phase 1 checked when everything through Phase 4 was already built): HlsSegmentFetcher, GoogleSttAdapter (REST + gRPC with auto-restart), WhisperHttpAdapter, OpenAiAdapter, ffmpeg RTMP/WHEP PCM fallback, confidence filtering, empty-segment skip, punctuation normalisation, /stt/* routes, StatusBar STT chip (with mode), and a live server-transcript panel built into AudioPanel.jsx. Phase 5 (multi-language source/target routing) backend is implemented: stt_source_languages table + fast-switch endpoint, per-target caption_target_id/show_original routing, server-side translation for server-STT transcripts. Phase 5 UI (Languages Setup Hub card's quick-switcher and destination picker) is not yet built — it depends on the still-unmerged Setup Hub redesign (PR #238)."
+status: implemented
+summary: "Phases 1–4 fully implemented and verified against the actual code (2026-07-06 — the Todo checklist below was badly stale before this pass, showing only Phase 1 checked when everything through Phase 4 was already built): HlsSegmentFetcher, GoogleSttAdapter (REST + gRPC with auto-restart), WhisperHttpAdapter, OpenAiAdapter, ffmpeg RTMP/WHEP PCM fallback, confidence filtering, empty-segment skip, punctuation normalisation, /stt/* routes, StatusBar STT chip (with mode), and a live server-transcript panel built into AudioPanel.jsx. Phase 5 (multi-language source/target routing) is fully implemented, backend and UI: stt_source_languages table + fast-switch endpoint, per-target caption_target_id/show_original routing, server-side translation for server-STT transcripts, and the Languages Setup Hub card's source-language quick-switcher + per-target destination picker (screenshot-verified). Only the live-operate-surface quick-toggle (outside Setup Hub) and AudioPanel's browser-STT selector reading the shared list remain undone."
 ---
 
 # Server-side Speech-to-Text (STT)
@@ -510,41 +510,51 @@ Translation happens entirely client-side today: `lib/translate.js` (called from 
 
 ### Phase 5 — Multi-language source/target routing
 
-**Backend implemented 2026-07-06 by an agent, then verified and corrected by
-hand** — the initial pass's own self-report claimed everything worked and
-cited passing test counts, but those counts were the *pre-existing* suites
-(zero new test files were added despite being explicitly requested), and
-manual verification found a real, confirmed bug the self-report missed:
-**`_deliverTranscript`'s server-side translation and viewer-target delivery
-never ran at all.** Both reached across packages via
-`await import('../../lcyt-backend/src/...')` — a relative path that
-resolves to a directory that doesn't exist from `stt-manager.js`'s
-location — silently swallowed by `.catch(() => ({}))`, so the guard that
-gated the whole feature was always false. Fixed by adding
-`SttManager.setDeliveryHelpers({ getTranslationVendorConfig,
-getTranslationTargets, broadcastToViewers })`, called once from
-`lcyt-backend/src/server.js` right after `initRtmpControl()` returns —
-proper dependency injection (matching `lcyt-agent`'s
-`cueEngine.setEmbeddingFn()` convention) instead of a plugin reaching into
-the consuming app's private `src/` tree. Caught only by actually running the
-app and reading the console — the existing automated suites (backend +
-component) stayed green throughout because none of them exercised this code
-at all. Added real test coverage after fixing.
+**Implemented 2026-07-06 by an agent, then verified and corrected by hand** —
+the initial pass's own self-report claimed everything worked and cited
+passing test counts, but those counts were the *pre-existing* suites (zero
+new test files were added despite being explicitly requested), and manual
+verification found three real, confirmed bugs the self-report missed
+entirely:
+1. **`_deliverTranscript`'s server-side translation and viewer-target
+   delivery never ran at all.** Both reached across packages via
+   `await import('../../lcyt-backend/src/...')` — a relative path that
+   resolves to a directory that doesn't exist from `stt-manager.js`'s
+   location — silently swallowed by `.catch(() => ({}))`, so the guard that
+   gated the whole feature was always false. Fixed by adding
+   `SttManager.setDeliveryHelpers({ getTranslationVendorConfig,
+   getTranslationTargets, broadcastToViewers })`, called once from
+   `lcyt-backend/src/server.js` right after `initRtmpControl()` returns —
+   proper dependency injection (matching `lcyt-agent`'s
+   `cueEngine.setEmbeddingFn()` convention) instead of a plugin reaching
+   into the consuming app's private `src/` tree.
+2. **A literal, unescaped `<br>` in JSX text** in `LanguagesPage.jsx`'s new
+   per-row `showOriginal` hint broke JSX parsing outright — the whole
+   `/setup` page and `/translations` route 500'd in the real running app.
+   No test caught it because no test imports `LanguagesPage.jsx` (`SetupHubPage.test.jsx`
+   mocks `LanguagesSection.jsx` instead of rendering it). Fixed by rewording
+   the hint instead of embedding a fake HTML tag as visible text.
+3. **`captionTargets.map is not a function`** — `GET /targets` returns
+   `{ targets: [...] }`, but the new destination-picker fetch set state to
+   the whole response object instead of its `.targets` array. Fixed.
 
-**Frontend UI for this phase (Languages Setup Hub card's source-language
-quick-switcher and per-target-language destination picker) is not part of
-this rollout** — it depends on `LanguagesPage.jsx`, which only exists on the
-Setup Hub redesign branch (PR #238) and hasn't been merged. This phase ships
-the backend contract (routes, schema, server-side translation, fan-out
-routing) so the UI can be built against it later; until then, the new
-capability is reachable via the API only.
+All three were caught only by actually running the app in a browser and
+reading the console — the existing automated suites (backend + component)
+stayed green throughout because none of them exercised this code at all.
+Added real test coverage after fixing: two new `stt-manager.test.js` cases
+(one proving `setDeliveryHelpers`'s translation + viewer-broadcast path
+actually fires and delivers the right output; one proving the no-helpers-
+injected path stays a safe no-op) and one new `captions.test.js` case
+proving the fan-out correctly gives a routed target its own composed text
+while an unrouted target keeps today's default, unchanged.
 
 **Backend**
+- [x] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` — fixed prior in commit 6c005b3
 - [x] `stt_source_languages` table + CRUD — predefined per-project source-language list
 - [x] `POST /stt/config/source-language { lang }` — fast active-language switch, validates against the predefined list, restarts STT if running (verified: uses `COALESCE`-based partial update, doesn't clobber provider/audioSource)
 - [x] `translation_targets`: nullable `caption_target_id` + per-row `show_original` (verified: FK is actually enforced by SQLite in this environment — the test needed real `caption_targets` rows, not made-up ids)
 - [x] `packages/lcyt-backend/src/routes/captions.js` fan-out: per-`caption_targets`-row resolution of a routed `translation_targets` entry before composing/sending — verified working via a real test, see below
-- [x] Server-side translation module `packages/plugins/lcyt-rtmp/src/translate-server.js`, wired into `SttManager._deliverTranscript` via `setDeliveryHelpers()` — verified working via a real test (bug above)
+- [x] Server-side translation module `packages/plugins/lcyt-rtmp/src/translate-server.js`, wired into `SttManager._deliverTranscript` via `setDeliveryHelpers()` — verified working via a real test (bug #1 above)
 
 **Tests**
 - [x] `captions.js` fan-out — `packages/lcyt-backend/test/captions.test.js`'s "Phase 5: per-target translation routing" describe block: a routed target gets its own composed text, an unrouted target keeps default behavior, in the same request
@@ -553,8 +563,8 @@ capability is reachable via the API only.
 - [ ] `stt_source_languages` CRUD routes and the `POST /stt/config/source-language` fast-switch endpoint have no dedicated route tests yet
 
 **UI**
-- [ ] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` — depends on the Setup Hub redesign (PR #238), not yet merged
-- [ ] Source-language quick-switcher — Languages Setup Hub card's "Source language" dialog (predefined-list chip buttons when a list exists, falls back to free-text `LanguagePicker` otherwise) — not built, blocked on the above
-- [ ] Languages Setup Hub card: per-target-language destination picker (caption target list) + per-row `showOriginal` toggle — not built, blocked on the above
+- [x] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` — fixed prior in commit 6c005b3
+- [x] Source-language quick-switcher — built into the Languages Setup Hub card's "Source language" dialog (predefined-list chip buttons when a list exists, falls back to free-text `LanguagePicker` otherwise) — screenshot-verified
+- [x] Languages Setup Hub card: per-target-language destination picker (caption target list) + per-row `showOriginal` toggle — screenshot-verified after fixing bugs #2 and #3 above
 - [ ] `AudioPanel`'s browser-STT language selector reads the same predefined source-language list (deferred; browsers currently keep their own separate language picker)
-- [ ] A live-operate-surface (not Setup-Hub) quick-toggle control (e.g. in `StatusBar`) — no such control exists yet regardless of Setup Hub status
+- [ ] A live-operate-surface (not Setup-Hub) quick-toggle control (e.g. in `StatusBar`) — the source-language switcher currently only lives in the Setup Hub card's dialog, not on a live operate page

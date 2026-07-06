@@ -40,6 +40,15 @@ app.get('/variables', (_req, res) => res.json({ variables: {} }));
 app.get('/ai/config', (_req, res) => res.json({ config: { embeddingProvider: 'none' } }));
 let sttConfig = { provider: 'google', language: 'en-US', audioSource: 'hls' };
 app.get('/stt/config', (_req, res) => res.json({ config: sttConfig }));
+const sttSourceLanguages = [
+  { id: 1, lang: 'en-US', label: 'English (US)', sortOrder: 0 },
+  { id: 2, lang: 'fi-FI', label: 'Finnish',       sortOrder: 1 },
+];
+app.get('/stt/source-languages', (_req, res) => res.json({ languages: sttSourceLanguages }));
+app.post('/stt/config/source-language', (req, res) => {
+  sttConfig = { ...sttConfig, language: (req.body || {}).lang || sttConfig.language };
+  res.json({ ok: true, config: sttConfig });
+});
 app.put('/stt/config', (req, res) => {
   sttConfig = { ...sttConfig, ...(req.body || {}) };
   res.json({ ok: true, config: sttConfig });
