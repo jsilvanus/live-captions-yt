@@ -1877,70 +1877,6 @@
   border-color: rgba(52, 199, 89, 0.4);
 }
 
-/* ── Planner AI Assist ── */
-.planner-ai-assist {
-  padding: 0 12px 6px;
-  border-bottom: 1px solid var(--color-border, #333);
-}
-
-.planner-ai-assist__toggle {
-  margin-top: 6px;
-}
-
-.planner-ai-assist__toggle.active {
-  background: var(--color-accent, #2255aa);
-  color: #fff;
-}
-
-.planner-ai-assist__panel {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.planner-ai-assist__note {
-  font-size: 12px;
-  color: var(--color-text-muted, #888);
-  margin: 0;
-}
-
-.planner-ai-assist__row {
-  display: flex;
-  gap: 6px;
-}
-
-.planner-ai-assist__row--buttons {
-  flex-wrap: wrap;
-}
-
-.planner-ai-assist__select {
-  flex: 1;
-  background: var(--color-bg-elevated, #1e1e1e);
-  border: 1px solid var(--color-border, #444);
-  color: var(--color-text, #eee);
-  border-radius: 3px;
-  padding: 4px 6px;
-  font-size: 13px;
-}
-
-.planner-ai-assist__input {
-  flex: 1;
-  background: var(--color-bg-elevated, #1e1e1e);
-  border: 1px solid var(--color-border, #444);
-  color: var(--color-text, #eee);
-  border-radius: 3px;
-  padding: 4px 6px;
-  font-size: 13px;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.planner-ai-assist__error {
-  font-size: 12px;
-  color: #f88;
-  margin: 0;
-}
 /* ── Privacy link / modal ─────────────────────────────────────────── */
 
 .privacy-btn {
@@ -3946,4 +3882,200 @@
   justify-content: space-between;
   align-items: center;
   gap: 8px;
+}
+
+/* ─── Agent chat panel ────────────────────────────────────────────────────
+   Generic AI-assistant chat column — reused as-is by Planner and the
+   Graphics Editor (see components/agent/AgentChatPanel.jsx). */
+
+/* ─── Generic draggable column-resize handle ──────────────────────────────
+   Desktop-only (callers skip rendering this in narrow/stacked layouts). */
+.col-resize-handle {
+  width: 5px;
+  cursor: col-resize;
+  background: transparent;
+  border-left: 2px solid transparent;
+  flex-shrink: 0;
+  transition: border-color 0.15s;
+  user-select: none;
+}
+.col-resize-handle:hover,
+.col-resize-handle:active {
+  border-left-color: var(--color-accent);
+}
+
+.agent-chat {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+/* Embedded as tab content: fill the container instead of being its own
+   fixed-width bordered column. */
+.agent-chat--embedded {
+  width: 100%;
+  height: 100%;
+  border-left: none;
+  background: none;
+}
+
+.agent-chat__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: bold;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.agent-chat__header-icon { flex-shrink: 0; }
+.agent-chat__header-title { flex: 1; text-align: left; }
+.agent-chat__header-toggle { color: var(--color-text-muted); font-weight: normal; font-size: 11px; }
+
+.agent-chat__body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 10px 12px;
+  gap: 8px;
+}
+
+.agent-chat__subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.agent-chat__disabled {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin: 0;
+  font-style: italic;
+}
+
+.agent-chat__quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.agent-chat__messages {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-chat__empty {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+
+.agent-chat__msg {
+  display: flex;
+}
+.agent-chat__msg--user { justify-content: flex-end; }
+.agent-chat__msg--assistant { justify-content: flex-start; }
+
+.agent-chat__msg-bubble {
+  max-width: 88%;
+  padding: 7px 10px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.agent-chat__msg--user .agent-chat__msg-bubble {
+  background: var(--color-accent);
+  color: #fff;
+  border-bottom-right-radius: 3px;
+}
+.agent-chat__msg--assistant .agent-chat__msg-bubble {
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-bottom-left-radius: 3px;
+}
+
+.agent-chat__msg-bubble--loading {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 10px 12px;
+}
+.agent-chat__dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-text-muted);
+  animation: agent-chat-pulse 1.2s infinite ease-in-out;
+}
+.agent-chat__dot:nth-child(2) { animation-delay: 0.15s; }
+.agent-chat__dot:nth-child(3) { animation-delay: 0.3s; }
+@keyframes agent-chat-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.85); }
+  40% { opacity: 1; transform: scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-chat__dot { animation: none; }
+}
+
+.agent-chat__error {
+  font-size: 12px;
+  color: var(--color-error);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.agent-chat__composer {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.agent-chat__input {
+  flex: 1;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-family: inherit;
+  padding: 6px 8px;
+  resize: vertical;
+  min-height: 44px;
+}
+.agent-chat__input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+@media (max-width: 860px) {
+  /* Not .agent-chat--embedded: as tab content its size already comes from
+     its parent (e.g. the Graphics Editor's Properties panel), which has its
+     own narrow-mode height cap — doubling up here would just over-clip it. */
+  .agent-chat:not(.agent-chat--embedded) {
+    width: 100%;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+    max-height: 50vh;
+  }
 }

@@ -2,9 +2,11 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { usePageThemeOverride } from '../hooks/usePageThemeOverride.js';
+import { useResizableColumn } from '../hooks/useResizableColumn.js';
 import { KEYS } from '../lib/storageKeys.js';
 import { templateSlug } from '../lib/formatting.js';
 import { ImageSettingsTable } from './DskViewportsPage';
+import { AgentChatPanel, useAgentChat } from './agent/AgentChatPanel.jsx';
 
 /**
  * DSK Graphics Template Editor
@@ -216,12 +218,19 @@ export function DskEditorPage() {
   // vertical space is scarce.
   const [showPresets, setShowPresets] = useState(() => !isNarrow);
 
-  // ── AI Assist (Properties panel)
-  const [aiAssistOpen, setAiAssistOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
+  // Desktop-only drag-to-resize for the templates and properties columns.
+  const [templatesWidth, startTemplatesResize] = useResizableColumn('lcyt.dsk-editor.templatesWidth', {
+    defaultWidth: 220, min: 160, max: 420, handleSide: 'right',
+  });
+  const [propertiesWidth, startPropertiesResize] = useResizableColumn('lcyt.dsk-editor.propertiesWidth', {
+    defaultWidth: 280, min: 220, max: 520, handleSide: 'left',
+  });
+
+  // ── AI Assist (Properties panel tab) ────────────────────────────────────────
+  const [propertiesTab, setPropertiesTab] = useState('properties'); // 'properties' | 'assistant'
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
-  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const { messages: chatMessages, addMessage: addChatMessage } = useAgentChat();
 
   // Media Library state
   const [images, setImages]               = useState([]);
@@ -349,51 +358,65 @@ export function DskEditorPage() {
     return fetch(`${serverUrl}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
   }
 
-  async function handleAiGenerate() {
-    if (!aiPrompt.trim() || aiLoading) return;
-    setAiLoading(true); setAiError('');
-    try {
-      const res = await agentFetch('/agent/generate-template', { prompt: aiPrompt.trim(), width: template.width, height: template.height });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      if (data.template) {
-        pushHistory(template);
-        setTemplate(data.template);
-        setTemplateName(prev => prev || aiPrompt.trim().slice(0, 40));
-        isDirty.current = true;
-        setAiPrompt('');
-      }
-    } catch (err) { setAiError(err.message); }
-    finally { setAiLoading(false); }
-  }
-
-  async function handleAiEdit() {
-    if (!aiPrompt.trim() || aiLoading) return;
-    setAiLoading(true); setAiError('');
-    try {
-      const res = await agentFetch('/agent/edit-template', { template, prompt: aiPrompt.trim() });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      if (data.template) {
-        pushHistory(template);
-        setTemplate(data.template);
-        isDirty.current = true;
-        setAiPrompt('');
-      }
-    } catch (err) { setAiError(err.message); }
-    finally { setAiLoading(false); }
-  }
-
-  async function handleAiSuggestStyles() {
+  // An empty template (no layers) means "generate a first draft"; anything
+  // already on the canvas means "edit what's there" — same generate/edit
+  // split the old two-button form had, decided automatically from context.
+  // NOTE: /agent/generate-template and /agent/edit-template are slated to be
+  // rebuilt — this wiring is expected to change; AgentChatPanel itself
+  // shouldn't need to.
+  async function handleChatSend(text) {
     if (aiLoading) return;
-    setAiLoading(true); setAiError(''); setAiSuggestions([]);
+    addChatMessage('user', text);
+    setAiLoading(true); setAiError('');
+    try {
+      if ((template.layers || []).length === 0) {
+        const res = await agentFetch('/agent/generate-template', { prompt: text, width: template.width, height: template.height });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+        if (data.template) {
+          pushHistory(template);
+          setTemplate(data.template);
+          setTemplateName(prev => prev || text.trim().slice(0, 40));
+          isDirty.current = true;
+          addChatMessage('assistant', 'Generated a first draft — see the canvas.');
+        } else {
+          addChatMessage('assistant', "I couldn't generate a template from that. Try describing the layout in more detail.");
+        }
+      } else {
+        const res = await agentFetch('/agent/edit-template', { template, prompt: text });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+        if (data.template) {
+          pushHistory(template);
+          setTemplate(data.template);
+          isDirty.current = true;
+          addChatMessage('assistant', 'Updated the template — see the canvas.');
+        }
+      }
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  }
+
+  async function handleSuggestStyles() {
+    if (aiLoading) return;
+    addChatMessage('user', 'Suggest styles for this template');
+    setAiLoading(true); setAiError('');
     try {
       const res = await agentFetch('/agent/suggest-styles', { template });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      setAiSuggestions(data.suggestions || []);
-    } catch (err) { setAiError(err.message); }
-    finally { setAiLoading(false); }
+      const suggestions = data.suggestions || [];
+      addChatMessage('assistant', suggestions.length
+        ? suggestions.map(s => `• ${s.name} — ${s.description}`).join('\n')
+        : 'No suggestions came back for this template.');
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   const fetchTemplates = useCallback(async () => {
@@ -993,7 +1016,7 @@ export function DskEditorPage() {
 
       {/* ── Left: template list ── */}
       <div style={{
-        width: isNarrow ? '100%' : 220,
+        width: isNarrow ? '100%' : templatesWidth,
         maxHeight: isNarrow ? 220 : undefined,
         borderRight: isNarrow ? 'none' : '1px solid var(--color-border)',
         borderBottom: isNarrow ? '1px solid var(--color-border)' : 'none',
@@ -1037,6 +1060,10 @@ export function DskEditorPage() {
           )}
         </div>
       </div>
+
+      {!isNarrow && (
+        <div className="col-resize-handle" onPointerDown={startTemplatesResize} title="Drag to resize" />
+      )}
 
       {/* ── Main area ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1251,93 +1278,79 @@ export function DskEditorPage() {
             </div>
           </div>
 
-          {/* Properties panel */}
+          {!isNarrow && (
+            <div className="col-resize-handle" onPointerDown={startPropertiesResize} title="Drag to resize" />
+          )}
+
+          {/* Properties panel — tabbed: layer Properties, or the Graphics Assistant chat */}
           <div style={{
-            width: isNarrow ? '100%' : 280,
+            width: isNarrow ? '100%' : propertiesWidth,
             maxHeight: isNarrow ? '60vh' : undefined,
             borderLeft: isNarrow ? 'none' : '1px solid var(--color-border)',
             borderTop: isNarrow ? '1px solid var(--color-border)' : 'none',
-            padding: 12, overflowY: 'auto', flexShrink: 0,
+            flexShrink: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden',
           }}>
-            <div style={{ fontSize: 13, color: 'var(--color-text)', fontWeight: 'bold', marginBottom: 10 }}>Properties</div>
-            <LayerPropertyEditor
-              layer={effectivePrimaryLayer}
-              selectionCount={selectedIds.size}
-              aspectLock={aspectLock}
-              onAspectLock={() => setAspectLock(v => !v)}
-              onChange={handlePropertyChange}
-            />
-
-            {/* Viewport-specific image settings (moved from Viewports page) */}
-            <div style={{ marginTop: 18 }}>
-              <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 'bold', marginBottom: 8 }}>Viewport Image Settings</div>
-              <ImageSettingsTable
-                images={images}
-                viewportName={selectedViewport}
-                getImgVpSettings={getImgVpSettings}
-                saveImgVpSettings={saveImgVpSettings}
-                serverUrl={serverUrl}
-              />
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+              <button
+                onClick={() => setPropertiesTab('properties')}
+                style={{
+                  ...btnStyle, flex: 1, borderRadius: 0, border: 'none', fontSize: 12,
+                  borderBottom: propertiesTab === 'properties' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                  color: propertiesTab === 'properties' ? 'var(--color-text)' : 'var(--color-text-muted)',
+                }}
+              >
+                Properties
+              </button>
+              <button
+                onClick={() => setPropertiesTab('assistant')}
+                style={{
+                  ...btnStyle, flex: 1, borderRadius: 0, border: 'none', fontSize: 12,
+                  borderBottom: propertiesTab === 'assistant' ? '2px solid var(--color-accent)' : '2px solid transparent',
+                  color: propertiesTab === 'assistant' ? 'var(--color-text)' : 'var(--color-text-muted)',
+                }}
+              >
+                ✨ Assistant
+              </button>
             </div>
 
-            {/* ── AI Assist ── */}
-            <div style={{ marginTop: 18, borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, cursor: 'pointer' }}
-                   onClick={() => setAiAssistOpen(v => !v)}>
-                <span style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 'bold', flex: 1 }}>✨ AI Assist</span>
-                <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{aiAssistOpen ? '▲' : '▼'}</span>
-              </div>
-              {aiAssistOpen && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <textarea
-                    rows={3}
-                    value={aiPrompt}
-                    onChange={e => setAiPrompt(e.target.value)}
-                    placeholder="Describe a template to generate, or an edit to make…"
-                    style={{ ...inputStyle, resize: 'vertical', fontSize: 12 }}
-                    disabled={aiLoading}
+            {propertiesTab === 'properties' && (
+              <div style={{ flex: 1, overflowY: 'auto', padding: 12 }}>
+                <LayerPropertyEditor
+                  layer={effectivePrimaryLayer}
+                  selectionCount={selectedIds.size}
+                  aspectLock={aspectLock}
+                  onAspectLock={() => setAspectLock(v => !v)}
+                  onChange={handlePropertyChange}
+                />
+
+                {/* Viewport-specific image settings (moved from Viewports page) */}
+                <div style={{ marginTop: 18 }}>
+                  <div style={{ fontSize: 12, color: 'var(--color-text-muted)', fontWeight: 'bold', marginBottom: 8 }}>Viewport Image Settings</div>
+                  <ImageSettingsTable
+                    images={images}
+                    viewportName={selectedViewport}
+                    getImgVpSettings={getImgVpSettings}
+                    saveImgVpSettings={saveImgVpSettings}
+                    serverUrl={serverUrl}
                   />
-                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                    <button
-                      onClick={handleAiGenerate}
-                      disabled={aiLoading || !aiPrompt.trim()}
-                      style={{ ...btnPrimaryStyle, fontSize: 11, flex: 1 }}
-                      title="Generate a new template from the prompt"
-                    >
-                      {aiLoading ? '…' : 'Generate'}
-                    </button>
-                    <button
-                      onClick={handleAiEdit}
-                      disabled={aiLoading || !aiPrompt.trim()}
-                      style={{ ...btnStyle, fontSize: 11, flex: 1 }}
-                      title="Edit the current template based on the prompt"
-                    >
-                      {aiLoading ? '…' : 'Edit'}
-                    </button>
-                    <button
-                      onClick={handleAiSuggestStyles}
-                      disabled={aiLoading}
-                      style={{ ...btnStyle, fontSize: 11, flex: 1 }}
-                      title="Suggest colour schemes and font pairings"
-                    >
-                      {aiLoading ? '…' : 'Styles'}
-                    </button>
-                  </div>
-                  {aiError && <span style={{ color: 'var(--color-error)', fontSize: 11 }}>{aiError}</span>}
-                  {aiSuggestions.length > 0 && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                      <span style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>Style suggestions:</span>
-                      {aiSuggestions.map((s, i) => (
-                        <div key={i} style={{ background: 'var(--color-surface-elevated)', borderRadius: 4, padding: '5px 8px', fontSize: 11 }}>
-                          <div style={{ color: 'var(--color-text)', fontWeight: 'bold' }}>{s.name}</div>
-                          <div style={{ color: 'var(--color-text-muted)' }}>{s.description}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {propertiesTab === 'assistant' && (
+              <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+                <AgentChatPanel
+                  showHeader={false}
+                  subtitle="Describe a template to generate, or describe a change to make to the one you have."
+                  messages={chatMessages}
+                  onSend={handleChatSend}
+                  loading={aiLoading}
+                  error={aiError}
+                  disabled={!session?.getSessionToken?.()}
+                  quickActions={[{ label: 'Suggest styles', title: 'Suggest colour schemes and font pairings', onClick: handleSuggestStyles }]}
+                />
+              </div>
+            )}
           </div>
 
         </div>
