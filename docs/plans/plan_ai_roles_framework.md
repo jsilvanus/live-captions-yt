@@ -1,12 +1,12 @@
 ---
 id: plan/ai_roles_framework
-title: "AI Roles Framework — Model + Harness Selection for Video Tracker, Video Describer, Planner Assistant, Production Assistant (and beyond)"
+title: "AI Roles Framework — Model + Harness Selection for Vision Roles and Agentic Chat Assistants (and beyond)"
 status: draft
-summary: "Design for an extensible AI 'role' registry (ai_roles catalog + project_ai_role_configs) that replaces ad-hoc single-purpose AI config with a generic model+harness selection mechanism. Specifies the initial roles of Video Tracker (vision object tracking), Video Describer (scene description), Planner Assistant (rundown-writing assist), and Production Assistant (event-driven camera/mixer decision-making with a suggest-only vs. autonomous safety gate), with room for more roles later. Supersedes the 'AI Models — tracker/describer/assistant multi-role' gap noted in plan_team_org_backend.md's appendix."
-related: plan/agent, plan/cues, plan/team_org_backend
+summary: "Design for an extensible AI 'role' registry (ai_roles catalog + project_ai_role_configs) that replaces ad-hoc single-purpose AI config with a generic model+harness selection mechanism. Specifies two vision roles (Video Tracker, Video Describer) and a single consolidated 'agentic_chat' runtime_kind covering five chat-with-tools assistants — Setup Assistant, Asset Control Assistant, Planner Assistant, Graphics Editor Assistant (dsk_designer), and Production Assistant — each just a catalog row + tool allowlist + harness defaults over one shared runtime, one shared tool-calling loop, and one shared confirm/auto safety gate. Tool schemas for every agentic_chat role are defined once in the shared module specified by plan/mcp, not per-role. Also flags Translation (Whisper-style speech translation, backed by the already-implemented but consumer-less translation_vendor_config/translation_targets tables) as a future catalog placeholder. Supersedes the 'AI Models — tracker/describer/assistant multi-role' gap noted in plan_team_org_backend.md's appendix."
+related: plan/agent, plan/cues, plan/team_org_backend, plan/mcp
 ---
 
-# AI Roles Framework — Model + Harness Selection for Video Tracker, Video Describer, Planner Assistant, Production Assistant (and beyond)
+# AI Roles Framework — Model + Harness Selection for Vision Roles and Agentic Chat Assistants (and beyond)
 
 ## Context
 
@@ -18,14 +18,23 @@ This plan is that specification, and it fixes the underlying structural problem 
 
 ## Initial role set
 
-The first version of this framework should support four roles explicitly:
+The first version of this framework should support two vision roles and five **agentic_chat** roles — a chat-with-tools assistant, differing only in system prompt and tool allowlist, not in runtime shape:
 
 - **Video Tracker** — a vision role that tracks a person or object across video frames and emits structured tracking output.
 - **Video Describer** — a vision role that describes the scene from frames or short clips, either as free text or structured JSON.
-- **Planner Assistant** — a request/response role that helps a human author a rundown or show plan from natural-language goals.
-- **Production Assistant** — an event-driven role that proposes or executes production actions such as camera presets or mixer switches, with a suggest-only default and an explicit autonomy gate.
+- **Setup Assistant** — helps configure Setup Hub cards (caption targets, cameras, mixers, encoders, ingestion, etc.) via chat: fills in and submits the card's existing Add/Edit dialogs rather than writing to the DB directly.
+- **Asset Control Assistant** — the same chat-driven-dialog pattern, scoped to the Assets page's tools instead of Setup Hub's.
+- **Planner Assistant** — helps a human author a rundown or show plan from natural-language goals; formally absorbs the existing `generateRundown`/`editRundown` capability (see Runtime Shape 2).
+- **Graphics Editor Assistant** (`role_code: 'dsk_designer'`) — formally absorbs the existing `generateTemplate`/`editTemplate`/`suggestStyles` capability. Already informally previewed in the Setup Hub's AI models card under this user-facing name (`AiModelsSection.jsx`, added 2026-07-06) ahead of this plan being implemented.
+- **Production Assistant** — follows tracker/describer/STT/user signals and proposes or executes camera and mixer changes, with a confirm-by-default safety gate (see Runtime Shape 2).
 
-This plan uses a role catalog that can grow beyond those four without changing the schema; future roles can reuse the same runtime patterns or introduce a new runtime kind if needed.
+**Why one runtime, not five.** An earlier draft of this plan gave Planner its own `request_response` `runtime_kind` and Production Assistant its own `event_driven_decision` `runtime_kind`, on the reasoning that "how a role gets triggered" differs (typed request vs. event stream). In practice the five roles above are identical in every way that matters for *code*: each is one LLM tool-calling turn (system prompt + conversation context + a tool allowlist drawn from the shared MCP-shaped tool-schema module specified in `plan/mcp`), gated by the same `confirm`/`auto` safety mode (see Runtime Shape 2), differing only in *what triggers a turn* (a chat message vs. an incoming sensor event) and *which tools are on the allowlist*. That's a harness-config difference, not a runtime difference — so all five collapse onto a single `agentic_chat` `runtime_kind`, and adding a sixth (a hypothetical "Translator-Assist" chat role, say) costs a catalog row, not a new manager class. Tracker and Describer keep their own `continuous_vision` `runtime_kind` (Runtime Shape 1) since they are genuinely a different shape — a polling loop with no tool use and no human-facing conversation.
+
+This plan uses a role catalog that can grow without changing the schema; future roles can reuse `agentic_chat` or `continuous_vision`, or introduce a new `runtime_kind` if a genuinely new shape shows up (see "Translation" below for one candidate that isn't spec'd yet).
+
+### Translation — flagged, not yet spec'd
+
+`translation_vendor_config` and `translation_targets` (see `plan_selfservice_config_backend.md`) already exist in `lcyt-backend`'s schema — a project can configure a translation vendor and a list of language/output targets — but per this repo's own `CLAUDE.md`, "translation half has no frontend consumer yet": nothing calls a model against that config. Whisper-style speech translation (audio → translated text directly, as an alternative to STT-then-translate) doesn't fit either existing `runtime_kind` cleanly — it's closer to the STT adapter pattern (`lcyt-rtmp/src/stt-adapters/*.js`) than to `continuous_vision` or `agentic_chat`. This plan does not spec a `translation` role or `runtime_kind` — flagging it here only so the next person picking this up doesn't have to rediscover that the config half is already built and the execution half isn't.
 
 ### What already exists that this plan builds on
 
@@ -37,17 +46,17 @@ This plan uses a role catalog that can grow beyond those four without changing t
 
 ---
 
-## The Core Move: A Registry, Not Four Hardcoded Columns
+## The Core Move: A Registry, Not Seven Hardcoded Columns
 
 Two tables, cleanly separated by concern:
 
-1. **`ai_roles`** — a developer-maintained catalog of *kinds* of AI capability. Small, rarely-written, read by both the backend (to know how to run a role) and the frontend (to know what to render in a settings UI). Seeded with four rows today. Growing this list to five, ten, or twenty rows is exactly what it's for.
+1. **`ai_roles`** — a developer-maintained catalog of *kinds* of AI capability. Small, rarely-written, read by both the backend (to know how to run a role) and the frontend (to know what to render in a settings UI). Seeded with seven rows today (Tracker, Describer, Setup Assistant, Asset Control Assistant, Planner Assistant, Graphics Editor Assistant, Production Assistant). Growing this list further is exactly what it's for.
 2. **`project_ai_role_configs`** — one row per `(api_key, role_code)` pair: which model/provider a *specific project* uses for a *specific role*, and that role's harness (system prompt override, tool allowlist, output-schema, thresholds). This is the only table a project owner ever writes to.
 
-The reason this is extensible without migrations is that **the row shape of both tables is generic across every role that will ever exist** — `harness_config` is a JSON blob whose *interpreted* keys differ per role (Assistant reads `toolAllowlist`; Describer reads `outputMode`/`jsonSchema`; Planner reads neither), but the *column* never changes. What *does* differ structurally between roles is the **runtime** — Tracker is a continuous background loop, Assistant is an event-driven decision loop, Planner is a stateless request/response endpoint. That distinction is captured in a single catalog field, `runtime_kind`, which is the actual lever for "how much new code does a new role need":
+The reason this is extensible without migrations is that **the row shape of both tables is generic across every role that will ever exist** — `harness_config` is a JSON blob whose *interpreted* keys differ per role (every `agentic_chat` role reads `toolAllowlist`, empty for Planner and populated for Setup/Asset Control/Graphics Editor/Production Assistant; Describer instead reads `outputMode`/`jsonSchema`), but the *column* never changes. What *does* differ structurally between roles is the **runtime** — Tracker/Describer are a continuous background loop, everything else is one shared tool-calling turn triggered differently per role (a chat message for Setup/Asset Control/Planner/Graphics Editor, an incoming sensor event for Production Assistant — see "Why one runtime, not five" above). That distinction is captured in a single catalog field, `runtime_kind`, which is the actual lever for "how much new code does a new role need":
 
-- New role, same `runtime_kind` as an existing one (e.g. a future "Translator-Assist" request/response role) → **zero new runtime code**, just a catalog row + harness defaults, usually reusing an existing generic route handler.
-- New role, genuinely new `runtime_kind` → one new manager class, following the Tracker/Describer/Assistant/Planner precedent set here. Still zero schema change.
+- New role, same `runtime_kind` as an existing one (e.g. a future chat-with-tools role) → **zero new runtime code**, just a catalog row + harness defaults + a tool allowlist into the shared tool-schema module (`plan/mcp`), reusing the existing `agentic_chat` turn loop and generic route handler.
+- New role, genuinely new `runtime_kind` → one new manager class, following the Tracker/Describer/agentic_chat precedent set here. Still zero schema change.
 
 ---
 
@@ -57,14 +66,14 @@ The reason this is extensible without migrations is that **the row shape of both
 
 ```sql
 CREATE TABLE IF NOT EXISTS ai_roles (
-  role_code       TEXT PRIMARY KEY,            -- 'tracker' | 'describer' | 'assistant' | 'planner' | ...
+  role_code       TEXT PRIMARY KEY,            -- 'tracker' | 'describer' | 'setup_assistant' | 'asset_control_assistant' | 'planner' | 'dsk_designer' | 'assistant' | ...
   name            TEXT NOT NULL,
   description     TEXT NOT NULL DEFAULT '',
   input_types     TEXT NOT NULL DEFAULT '[]',  -- JSON array, e.g. '["video_frames","stt_transcript"]'
   output_type     TEXT NOT NULL,               -- 'action' | 'text' | 'structured_json' | 'suggestion'
-  runtime_kind    TEXT NOT NULL,               -- 'continuous_vision' | 'event_driven_decision' | 'request_response'
-  available_tools TEXT NOT NULL DEFAULT '[]',  -- JSON array of tool ids; only meaningful for 'action' roles
-  is_builtin      INTEGER NOT NULL DEFAULT 1,  -- 1 for the four shipped rows; distinguishes future non-core roles
+  runtime_kind    TEXT NOT NULL,               -- 'continuous_vision' | 'agentic_chat'
+  available_tools TEXT NOT NULL DEFAULT '[]',  -- JSON array of tool ids into the shared tool-schema module (plan/mcp); only meaningful for agentic_chat roles
+  is_builtin      INTEGER NOT NULL DEFAULT 1,  -- 1 for the shipped rows; distinguishes future non-core roles
   created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -77,16 +86,28 @@ INSERT OR IGNORE INTO ai_roles (role_code, name, description, input_types, outpu
   ('describer', 'Describer',
    'Describes what is happening on screen, as text or structured JSON.',
    '["video_frames","video_segments"]', 'text', 'continuous_vision', '[]'),
-  ('assistant', 'Assistant',
-   'Follows tracker/describer/STT/user signals and proposes or executes camera and mixer changes.',
-   '["tracker_events","describer_events","stt_transcript","user_text"]', 'suggestion', 'event_driven_decision',
-   '["camera.preset","mixer.switch"]'),
-  ('planner',   'Planner',
+  ('setup_assistant', 'Setup Assistant',
+   'Chat assistant that configures Setup Hub cards by filling in and submitting their existing Add/Edit dialogs.',
+   '["user_text"]', 'suggestion', 'agentic_chat',
+   '["caption_target.create","caption_target.update","caption_target.delete","camera.create","camera.update","camera.delete","mixer.create","mixer.update","mixer.delete", "..."]'),
+  ('asset_control_assistant', 'Asset Control Assistant',
+   'Chat assistant scoped to the Assets page, same dialog-driving pattern as Setup Assistant.',
+   '["user_text"]', 'suggestion', 'agentic_chat', '["asset.upload","asset.update","asset.delete", "..."]'),
+  ('planner', 'Planner Assistant',
    'Assists a human writing a show rundown/plan from a natural-language goal.',
-   '["user_text"]', 'text', 'request_response', '[]');
+   '["user_text"]', 'text', 'agentic_chat', '[]'),
+  ('dsk_designer', 'Graphics Editor Assistant',
+   'Generates and edits DSK overlay templates and suggests styles from a natural-language goal.',
+   '["user_text"]', 'suggestion', 'agentic_chat', '["dsk_template.generate","dsk_template.edit","dsk_template.suggest_styles"]'),
+  ('assistant', 'Production Assistant',
+   'Follows tracker/describer/STT/user signals and proposes or executes camera and mixer changes.',
+   '["tracker_events","describer_events","stt_transcript","user_text"]', 'suggestion', 'agentic_chat',
+   '["camera.preset","mixer.switch"]');
 ```
 
-`output_type: 'suggestion'` for Assistant (rather than `'action'`) is deliberate: Assistant's *default* behavior is to propose, not act — see "Runtime Shape 2" below. A role's `output_type` describes what it produces in its safest/default configuration; `harness_config.mode` on the per-project config is what upgrades a `suggestion`-shaped role into one that actually calls `available_tools`.
+`output_type: 'suggestion'` (rather than `'action'`) is deliberate for every role whose tools can change live state: the role's *default* behavior is to propose, not act — see "Runtime Shape 2" below. A role's `output_type` describes what it produces in its safest/default configuration; `harness_config.mode` on the per-project config is what upgrades a `suggestion`-shaped role into one that actually calls `available_tools` without a human confirming first. Planner's `output_type: 'text'` reflects that it never calls tools at all — see Runtime Shape 2's Planner subsection.
+
+The tool ids in `available_tools` (`caption_target.create`, `camera.preset`, `dsk_template.generate`, etc.) are not defined here — they are entries in the shared tool-schema module `packages/lcyt-tools` (name from `plan/mcp`), the single place a tool's JSON schema, handler, and MCP annotations (`destructiveHint`, `readOnlyHint`) live. `ai_roles.available_tools` and `project_ai_role_configs.harness_config.toolAllowlist` (a project-chosen subset of it) are just string references into that module's registry — adding a tool to the module makes it immediately assignable to any role's allowlist without touching this schema.
 
 ### `project_ai_role_configs` — per-project role configuration
 
@@ -113,8 +134,10 @@ CREATE INDEX IF NOT EXISTS idx_project_ai_role_configs_key ON project_ai_role_co
 |---|---|---|
 | Tracker | `targetLabel`, `pollIntervalMs` | what to track (e.g. `"person"`), how often to sample frames |
 | Describer | `outputMode` (`'text'`\|`'json'`), `jsonSchema`, `systemPromptOverride`, `pollIntervalMs` | free text vs. structured description, and the schema when `outputMode: 'json'` |
-| Assistant | `mode` (`'suggest'`\|`'autonomous'`), `autonomousConfirmed` (bool), `toolAllowlist` (array, subset of the role's `available_tools`), `cooldownMs`, `systemPromptOverride` | the safety gate (see Runtime Shape 2) |
-| Planner | `systemPromptOverride`, `defaultTemplateId` | prompt customization only — no continuous-loop or tool keys apply |
+| Setup / Asset Control / Graphics Editor / Production Assistant (all `agentic_chat` roles with tools) | `mode` (`'confirm'`\|`'auto'`), `autoConfirmed` (bool), `toolAllowlist` (array, subset of the role's `available_tools`), `cooldownMs`, `systemPromptOverride` | one shared safety gate (see Runtime Shape 2) — same two keys and same meaning for all four roles, not a per-role vocabulary |
+| Planner | `systemPromptOverride`, `defaultTemplateId` | prompt customization only — `mode`/`toolAllowlist` don't apply since Planner never calls tools |
+
+`mode`/`autoConfirmed` replace what an earlier draft of this plan called `mode: 'suggest'|'autonomous'` + `autonomousConfirmed` — same two-key shape (a mode plus a second, independently-set confirmation flag that must also be true to unlock the risky mode), renamed once so Setup/Asset Control's frontend-facing "confirm each step" vs. "just do it" toggle and Production Assistant's suggestion-queue toggle are the same config field with the same name, not two safety gates that happen to work identically. `confirm` renders differently per role depending on whether the role has direct UI access: Setup/Asset Control/Graphics Editor render it as a staged, highlighted walkthrough of the real Setup Hub dialog (see Runtime Shape 2); Production Assistant, which has no dialog to drive, renders it as the pending-suggestions queue already spec'd below. Both are the same `mode: 'confirm'` from the schema's point of view.
 
 This table is a straightforward, wider sibling of the existing `stt_config` table (`lcyt-rtmp`) and `key_storage_config` table (`lcyt-files`) — both already established the "one JSON-payload config row per API key for a pluggable subsystem" shape; `project_ai_role_configs` just adds `role_code` to key on because, unlike STT or storage, a project can have several of these active side-by-side.
 
@@ -163,38 +186,51 @@ GET  /roles/tracker/events | /roles/describer/events  — SSE
 
 ---
 
-## Runtime Shape 2 — Assistant: Event-Driven Decisions, With a Safety Gate
+## Runtime Shape 2 — Agentic Chat: One Tool-Calling Turn Loop, Five Roles, One Safety Gate
 
-This is the one role in the initial four whose default behavior must not be "AI autonomously does the thing." Firing a caption cue (today's `event_cue` ceiling) is reversible and low-stakes; switching what video feed is live on a real broadcast is not. This plan treats that difference as a hard requirement, not a nice-to-have.
+All five `agentic_chat` roles (Setup, Asset Control, Planner, Graphics Editor, Production Assistant) share one runtime. What differs per role is *what triggers a turn* and *which tools are on the allowlist* — never the turn mechanics, the transport, or the safety-gate vocabulary.
+
+### Shared mechanics, built once
+
+- **Tool-calling loop (backend, in `lcyt-agent`):** one small generic turn-loop function, living next to `_callChatCompletion`, using the standard OpenAI-compatible `tools`/`tool_calls` wire format (send `messages` + `tools` → get `message.tool_calls[]` → dispatch each call into the shared tool-schema module's handler → append `role: 'tool'` results → repeat until a plain text reply). This is deliberately **hand-rolled, not an agent-framework dependency** (LangChain, Vercel AI SDK, an Anthropic- or OpenAI-specific Agents SDK) — `lcyt-agent` is intentionally provider-agnostic (`ai-config.js`'s `none`/`server`/`openai`/`custom` modes exist so a project can point at any OpenAI-compatible endpoint, including self-hosted), and every one of those frameworks would either assume one vendor's API shape or add a dependency for what is, in practice, not much code once you're not also inventing the wire format.
+- **Tool schemas + handlers:** defined exactly once, in the shared `packages/lcyt-tools` module specified by `plan/mcp` — the same schemas the MCP servers expose to external clients (Claude Desktop, Claude Code, etc.) and the same schemas `available_tools`/`toolAllowlist` above reference by id. A tool added there is immediately usable by any role and any MCP client; see `plan/mcp` for the module's shape, the in-process linked-transport wiring into `lcyt-agent`, and the `destructiveHint`/`readOnlyHint` annotation convention.
+- **Streaming (backend → frontend):** reuses this codebase's existing SSE convention (the same shape as `/stt/:key/live`, `/music/:key/live`) rather than a chat-framework's own transport — `GET /roles/:roleCode/events` emits token deltas plus tool-call-in-progress/tool-call-result events, per session.
+- **Frontend:** one shared `<AgentChatPanel>` component (message list, input, SSE subscription), parameterized by `role_code` and mounted once per surface (Setup Hub, Assets page, Planner, Graphics Editor) rather than four bespoke chat UIs. For roles that drive existing UI (Setup, Asset Control, Graphics Editor), dialogs opt into a small shared `useGuidedAction` primitive — "I can be opened, highlighted, have field X set, and have my own submit/confirm button located" — so each dialog needs a thin, uniform hook-up rather than bespoke DOM-scripting per card. No such pattern exists anywhere in `lcyt-web` today; this is new frontend work regardless of backend design, confirmed by inspection (no `openAdd`/`setField`/step-plan/highlight pattern found anywhere in the codebase).
+- **Safety gate:** `harness_config.mode: 'confirm'|'auto'` + `autoConfirmed` (see schema section above), the same two-key shape for every tool-bearing role. **`confirm` renders differently depending on whether the role has direct UI access:**
+  - Setup / Asset Control / Graphics Editor (roles that can drive a real dialog): a staged walkthrough — the panel opens the target card's existing dialog, highlights it, fills fields one at a time via `useGuidedAction`, and waits for the human's own click on the dialog's own submit button.
+  - Production Assistant (no dialog to drive — its "actions" are device calls, not form submissions): the pending-suggestions queue described below.
+  - `auto` mode skips the wait and calls/submits immediately in both cases — **except delete/destructive operations, which always go through the target's existing confirm-delete dialog regardless of `mode`.** This is a hard rule carried from the original task brief, not a per-role choice: `auto` upgrades "the AI decides and acts," never "the AI bypasses a safety dialog a human would otherwise have to click through."
+  - `mode: 'auto'` requires **two independent fields both set** — `mode: 'auto'` *and* `autoConfirmed: true` — mirroring the `{ confirm: true }` pattern already used elsewhere in this codebase's plans for irreversible actions (see `plan_team_org_backend.md`'s `POST /orgs/:id/members/:userId/transfer-ownership`). The config UI should present `autoConfirmed` behind its own distinct confirmation dialog, not as a sibling checkbox next to `mode`.
+
+### Setup Assistant / Asset Control Assistant / Graphics Editor Assistant — Chat Driving Existing Dialogs
+
+Trigger is a chat message: `POST /roles/:roleCode/message { text }`. The turn loop runs with a tool allowlist scoped to the surface (Setup Hub CRUD tools for `setup_assistant`, Assets tools for `asset_control_assistant`, DSK template tools for `dsk_designer`), dispatches into the shared module, and the frontend executes the result per the `confirm`/`auto` behavior above. `dsk_designer` formally absorbs the existing `generateTemplate`/`editTemplate`/`suggestStyles` capability and `POST /agent/generate-template` / `POST /agent/edit-template` — same supersession reasoning as Planner below.
+
+### Production Assistant — Event-Driven Trigger, Suggestion Queue
 
 **Trigger sources**, all in-process subscriptions (no network round-trip — Assistant runs in the same backend process as the emitters it listens to):
-- `tracker_update` / `describer_update` from the manager above
+- `tracker_update` / `describer_update` from the vision-role manager
 - `transcript` from `SttManager` (already emitted today)
 - direct user nudges — a lightweight `POST /roles/assistant/prompt { text }`, analogous to today's `POST /agent/context`
 
-**Decision step:** on each trigger (rate-limited — see below), Assistant runs one LLM tool-use turn: a system prompt (`harness_config.systemPromptOverride` or a sensible built-in default) plus recent context (recent tracker/describer/STT/user entries, same shape as `AgentEngine.getContext()`), plus tool definitions built **dynamically per project** from that project's actual `prod_cameras`/`prod_mixers` rows, filtered to `harness_config.toolAllowlist` (itself a subset of the `assistant` catalog row's `available_tools`: `camera.preset`, `mixer.switch`). Regenerating the tool list from the live camera/mixer tables on every turn is cheap (two `SELECT`s) and guarantees the LLM never sees a stale device list.
+On each trigger (rate-limited — see below), Assistant runs the shared turn loop with context (recent tracker/describer/STT/user entries, same shape as `AgentEngine.getContext()`) and a tool allowlist built **dynamically per project** from that project's actual `prod_cameras`/`prod_mixers` rows, filtered to `harness_config.toolAllowlist` (a subset of `camera.preset`/`mixer.switch`). Regenerating the tool list from the live camera/mixer tables on every turn is cheap (two `SELECT`s) and guarantees the LLM never sees a stale device list.
 
-**The safety gate — two modes, and a two-key turn to unlock the risky one:**
+In `confirm` mode, the chosen tool call is captured but not executed — recorded in a per-key pending-suggestions queue (in-memory, same shape as `AgentEngine`'s context window map) and emitted as an `assistant_suggestion` SSE event: `{ id, tool, args, reasoning, ts }`:
+```
+GET    /roles/assistant/suggestions              — list pending suggestions for the session's key
+POST   /roles/assistant/suggestions/:id/confirm  — executes the suggested tool call now
+POST   /roles/assistant/suggestions/:id/reject   — discards it
+GET    /roles/assistant/events                   — SSE: assistant_suggestion, assistant_action
+```
+(The confirm/reject UI itself — presumably a panel on the Production or Dashboard page — is out of scope for this plan; it is a frontend follow-up once the API exists.) In `auto` mode the chosen tool call executes immediately (`registry.callPreset()` / `registry.switchSource()`, called in-process — see "Wiring" below), and `assistant_action` is emitted **after** execution, as an audit record, not a gate.
 
-- **`mode: 'suggest'` (default, and the only mode a project starts in).** The LLM's chosen tool call is captured but **not executed**. It is recorded in a per-key pending-suggestions queue (in-memory, same shape as `AgentEngine`'s context window map) and emitted as an `assistant_suggestion` SSE event: `{ id, tool, args, reasoning, ts }`. A human confirms or dismisses it:
-  ```
-  GET    /roles/assistant/suggestions              — list pending suggestions for the session's key
-  POST   /roles/assistant/suggestions/:id/confirm   — executes the suggested tool call now
-  POST   /roles/assistant/suggestions/:id/reject    — discards it
-  GET    /roles/assistant/events                    — SSE: assistant_suggestion, assistant_action
-  ```
-  (The confirm/reject UI itself — presumably a panel on the Production or Dashboard page — is out of scope for this plan; it is a frontend follow-up once the API exists.)
-- **`mode: 'autonomous'`.** Requires **two independent fields both set**, not one toggle: `mode: 'autonomous'` *and* `autonomousConfirmed: true` in `harness_config`. This mirrors the `{ confirm: true }` pattern already used elsewhere in this codebase's plans for irreversible actions (see `plan_team_org_backend.md`'s `POST /orgs/:id/members/:userId/transfer-ownership`) — a project cannot slide into unattended camera control via a single flipped boolean or a copy-pasted config blob; the config UI should present `autonomousConfirmed` behind its own distinct confirmation dialog, not as a sibling checkbox next to `mode`. In this mode, the chosen tool call executes immediately (`registry.callPreset()` / `registry.switchSource()`, called in-process — see "Wiring" below), and `assistant_action` is emitted **after** execution, as an audit record, not a gate.
-
-**Rate limiting** mirrors `CueEngine`'s existing `cooldown_ms` / `Map<ruleId, lastFiredTs>` pattern almost exactly: `harness_config.cooldownMs`, enforced per-project regardless of *which* tool the LLM picked (prevents an LLM from flapping between two cameras every few seconds even if each individual call looks reasonable in isolation). Unlike `CueEngine`'s cooldown (fully user-configurable, including to `0`), this plan recommends a **server-enforced floor** — e.g. never below 3000ms — applied in code regardless of the configured value, specifically for `mode: 'autonomous'`. Suggest mode is already self-limiting (a human has to act on each suggestion); autonomous mode is the one place a misconfigured `harness_config` could otherwise produce a genuinely disruptive live-broadcast failure mode, so the floor is not user-overridable.
+**Rate limiting** mirrors `CueEngine`'s existing `cooldown_ms` / `Map<ruleId, lastFiredTs>` pattern almost exactly: `harness_config.cooldownMs`, enforced per-project regardless of *which* tool the LLM picked (prevents an LLM from flapping between two cameras every few seconds even if each individual call looks reasonable in isolation). Unlike `CueEngine`'s cooldown (fully user-configurable, including to `0`), this plan recommends a **server-enforced floor** — e.g. never below 3000ms — applied in code regardless of the configured value, specifically for `mode: 'auto'`. `confirm` mode is already self-limiting (a human has to act on each suggestion); `auto` mode is the one place a misconfigured `harness_config` could otherwise produce a genuinely disruptive live-broadcast failure mode, so the floor is not user-overridable.
 
 **Wiring (composition root):** `lcyt-backend/src/server.js` already owns both `registry`/`bridgeManager` (from `initProductionControl()`) and, after this plan, the Assistant runtime (from `lcyt-agent`). It injects the former into the latter via a setter, exactly like the existing `cueEngine.setAgentEvaluateFn((apiKey, desc, opts) => agent.evaluateEventCue(apiKey, desc, opts))` line already does for event cues — no new dependency-injection pattern, no circular package imports between `lcyt-agent` and `lcyt-production`.
 
----
+### Planner Assistant — Chat Trigger, No Tools
 
-## Runtime Shape 3 — Planner: Request/Response, No New Persistence
-
-`packages/lcyt-web/src/components/PlannerPage.jsx` is, today, 100% client-local: its draft is held in React state, persisted only to `localStorage` (`PLANNER_DRAFT_KEY`), and round-tripped through `serializePlan()`/`deserializePlan()` for file import/export. There is no backend rundown-storage table and this plan does not add one — per the task brief, a Planner-assist endpoint should work over "current plan context" passed in the request, not a persisted-plan feature, and that is exactly what already exists.
+`packages/lcyt-web/src/components/PlannerPage.jsx` is, today, 100% client-local: its draft is held in React state, persisted only to `localStorage` (`PLANNER_DRAFT_KEY`), and round-tripped through `serializePlan()`/`deserializePlan()` for file import/export. There is no backend rundown-storage table and this plan does not add one — a Planner-assist endpoint works over "current plan context" passed in the request, not a persisted-plan feature, and that is exactly what already exists.
 
 In fact, **`POST /agent/generate-rundown` and `POST /agent/edit-rundown` (Phase 6, already implemented in `agent-engine.js` and already wired into `PlannerPage.jsx`'s "✨ AI Assist" panel) are, functionally, the Planner role already shipped** — they just predate this framework and so live outside it, hardcoded into `AgentEngine` with no per-project model/prompt configurability. This plan's job for Planner is narrow: give it a real `project_ai_role_configs` row (so `systemPromptOverride` and model/provider become project-configurable instead of baked into `agent-engine.js`'s `RUNDOWN_METACODE_REFERENCE` string) and unify the two existing routes into one:
 
@@ -210,9 +246,9 @@ POST /roles/planner/assist
                                                 already returns today
 ```
 
-`PlannerPage.jsx` needs no response-shape changes at all — it already calls `deserializePlan(data.content)` to turn returned text into blocks (`caption`/`heading`/`audio-start`/`audio-stop`/`graphics`/`codes`/`stanza`/`empty-send`); only the URL and the merged generate/edit request shape change. **This formally supersedes and replaces `POST /agent/generate-rundown` / `POST /agent/edit-rundown`** (`plan_agent.md` Phase 6) — both should be removed, along with their two separate frontend call sites, as part of implementing this plan; keeping three routes doing the same job is not warranted given no back-compat requirement.
+`PlannerPage.jsx` needs no response-shape changes at all — it already calls `deserializePlan(data.content)` to turn returned text into blocks (`caption`/`heading`/`audio-start`/`audio-stop`/`graphics`/`codes`/`stanza`/`empty-send`); only the URL and the merged generate/edit request shape change. **This formally supersedes and replaces `POST /agent/generate-rundown` / `POST /agent/edit-rundown`** (`plan_agent.md` Phase 6) — both should be removed, along with their two separate frontend call sites, as part of implementing this plan; keeping three routes doing the same job is not warranted given no back-compat requirement. Planner never calls tools, so `POST /roles/planner/assist` skips the shared turn loop's tool-dispatch step entirely — it's the degenerate one-turn, zero-tools case of the same mechanism, not a separate code path.
 
-Because Planner has no continuous loop and never touches tools, it needs none of the start/stop/SSE machinery Tracker/Describer/Assistant get — just `POST /roles/planner/assist` plus the standard `GET/PUT /roles/planner/config`.
+Because Planner has no continuous loop and never touches tools, it needs none of the start/stop/SSE machinery Tracker/Describer/the tool-bearing roles get — just `POST /roles/planner/assist` plus the standard `GET/PUT /roles/planner/config`.
 
 ---
 
@@ -269,9 +305,14 @@ GET    /roles/tracker/status    | /roles/describer/status
 GET    /roles/tracker/events    | /roles/describer/events        — SSE
 
 POST   /roles/assistant/prompt                  — one-off human nudge into Assistant's context
-GET    /roles/assistant/suggestions             — pending suggestions (suggest mode)
+GET    /roles/assistant/suggestions             — pending suggestions (confirm mode)
 POST   /roles/assistant/suggestions/:id/confirm | /reject
 GET    /roles/assistant/events                  — SSE: assistant_suggestion, assistant_action
+
+POST   /roles/setup_assistant/message           | /roles/asset_control_assistant/message | /roles/dsk_designer/message
+  Body: { text, conversationId? }                — one chat turn; runs the shared turn loop against the role's tool allowlist
+GET    /roles/setup_assistant/events            | /roles/asset_control_assistant/events  | /roles/dsk_designer/events
+                                                    — SSE: token deltas, tool_call_started, tool_call_result, staged_action (per confirm/auto mode)
 
 POST   /roles/planner/assist                    — { currentPlan?, goal, templateId? } → { ok, content }
                                                     (supersedes /agent/generate-rundown, /agent/edit-rundown)
@@ -287,11 +328,13 @@ All routes require session JWT Bearer auth (same as today's `/ai/*` and `/agent/
 - `ai_roles` seed data + `db/ai-roles.js` / `db/project-ai-role-configs.js` helpers (small — mirrors `ai-config.js`'s existing CRUD shape).
 - `routes/roles.js` — catalog + config CRUD (small-medium).
 - Tracker/Describer: `VisionFrameFetcher` (new, MVP = preview-JPEG polling) + `VisionRoleManager` + 3 vision adapters + SSE routes (medium — the adapters are the STT-adapter template; the frame fetcher is the only genuinely new subsystem).
-- Assistant: decision-loop manager, dynamic tool-definition builder from `prod_cameras`/`prod_mixers`, suggestion queue + confirm/reject routes, `server.js` wiring to `registry`/`bridgeManager` (medium-large — the safety-gate logic and its tests are the highest-scrutiny part of this whole plan).
+- Shared `agentic_chat` turn loop (one function in `lcyt-agent`, next to `_callChatCompletion`) + dispatch into the shared tool-schema module from `plan/mcp` (small-medium — this is the one piece all five tool-bearing/chat roles depend on, so it's worth building and testing once before any individual role).
+- Production Assistant: decision-loop trigger wiring (tracker/describer/STT/prompt subscriptions), dynamic tool-allowlist builder from `prod_cameras`/`prod_mixers`, suggestion queue + confirm/reject routes, `server.js` wiring to `registry`/`bridgeManager` (medium-large — the safety-gate logic and its tests are the highest-scrutiny part of this whole plan).
+- Setup Assistant / Asset Control Assistant / Graphics Editor Assistant: `POST /roles/:roleCode/message` + SSE events route (thin, reuses the shared turn loop) per role (small each, once the shared loop exists) — plus the genuinely new frontend work: `<AgentChatPanel>`, `useGuidedAction`, and wiring each Setup Hub / Assets / Graphics Editor dialog to opt into it (medium-large; no existing pattern to build on, confirmed by inspection).
 - Planner: migrate `generateRundown`/`editRundown` onto `project_ai_role_configs`, add `POST /roles/planner/assist`, remove the two superseded routes + update `PlannerPage.jsx`'s two fetch call sites (small).
-- Full test coverage: catalog seeding, config CRUD, each runtime's start/stop/status lifecycle, Assistant's suggest-vs-autonomous branching and cooldown floor enforcement (the highest-value tests in the plan), Planner generate-vs-edit branching.
+- Full test coverage: catalog seeding, config CRUD, each runtime's start/stop/status lifecycle, the shared turn loop's tool-dispatch and confirm-vs-auto branching (the highest-value tests in the plan, since every tool-bearing role depends on this one code path), cooldown floor enforcement, Planner generate-vs-edit branching.
 
-No frontend UI is speced in detail here beyond the two `PlannerPage.jsx` call-site changes required by superseding its existing routes — a Tracker/Describer/Assistant control panel (status, live suggestions, confirm/reject) is real, separate follow-on work once this API surface exists, same caveat `plan_team_org_backend.md` makes for its own frontend.
+Frontend UI beyond the two `PlannerPage.jsx` call-site changes is real, separate follow-on work once the API surface exists — but note this plan now includes, not defers, the `<AgentChatPanel>`/`useGuidedAction` design itself (see Runtime Shape 2), since "how does chat drive an existing dialog" is core to what Setup/Asset Control/Graphics Editor Assistant *are*, not an implementation detail that can be decided later. Which of the five agentic_chat roles gets built first is an open question below, not decided by this plan.
 
 ---
 
@@ -302,3 +345,5 @@ No frontend UI is speced in detail here beyond the two `PlannerPage.jsx` call-si
 3. **Whether/how Tracker output should drive actual camera auto-framing.** The task brief mentions this as Tracker's "likely" downstream use, but this plan deliberately keeps Tracker non-action (see Runtime Shape 1) and doesn't spec an auto-framing consumer. Is that consumer itself a future Assistant behavior (Assistant subscribes to `tracker_update` and calls `camera.preset`, which the framework already supports unmodified), or a separate, non-AI feature (a literal PID-loop-style auto-framer)? Needs a product decision before that specific capability is built, though nothing in this plan blocks it either way.
 4. **Default polling interval for Tracker/Describer's continuous loops.** `PreviewManager`'s existing default is 5s, chosen for thumbnail-freshness, not vision-API cost/latency tradeoffs. Once there's a real per-frame cost figure for the chosen initial provider(s), the sensible default interval could be very different from 5s. Not resolvable without live usage/cost data.
 5. **Physical placement of the Tracker/Describer runtime code (`lcyt-agent` vs. `lcyt-rtmp`).** This plan recommends `lcyt-agent`, reasoning that it is explicitly meant to be the project's "central AI service" and that HTTP-polling `lcyt-rtmp`'s already-public preview/HLS endpoints is architecturally equivalent to `HlsSegmentFetcher`'s existing pattern either way. If there's a strong preference for co-locating with `lcyt-rtmp`'s existing ffmpeg/MediaMTX expertise instead (matching where the STT adapters live today), that's a one-line change to this plan's placement recommendation, not a redesign.
+6. **Build order for the five `agentic_chat` roles.** Setup Assistant, Asset Control Assistant, Planner (migration of already-shipped functionality), Graphics Editor Assistant (migration of already-shipped functionality), and Production Assistant are five separately-shippable chunks once the shared turn loop + tool-schema module exist. Planner and Graphics Editor are migrations of capability that already works today (lower risk, mostly plumbing); Setup and Asset Control are net-new chat-driven-dialog UI (higher risk, no existing pattern); Production Assistant is the highest-stakes (live camera/mixer control). This plan does not commit to an order — it's a product/priority call, not something inferable from the code.
+7. **How much of Translation to build now.** This plan flags Translation (see "Initial role set") as a real gap with existing config scaffolding and zero execution, but doesn't spec a role or runtime for it. Whether it's worth fully speccing alongside this pass, or left as a flagged gap for a later plan, is a scope call, not an architecture one.
