@@ -1,5 +1,9 @@
 import { Link } from 'wouter';
 import { SetupCard } from './SetupCard.jsx';
+import {
+  EgressIcon, IngestionIcon, WebRadioIcon, ViewportsIcon,
+  CaptionTargetsIcon, LanguagesIcon, WorkflowsIcon,
+} from './icons.jsx';
 import { CameraSection } from './CameraSection.jsx';
 import { MixerSection } from './MixerSection.jsx';
 import { EncoderSection } from './EncoderSection.jsx';
@@ -14,15 +18,19 @@ import { ConnectorsSection } from './ConnectorsSection.jsx';
  * one-time onboarding wizard as the default destination for this route (the
  * wizard itself is not deleted — reachable below via "Run setup wizard").
  *
+ * Styled after the Claude Design mockup (project 9919ac53, Cameras/Mixers/
+ * .../ApiConnectorsCard.dc.html + the isProjectConfig screen in
+ * Dashboard.dc.html): cards flow into a `repeat(auto-fill, minmax(340px,1fr))`
+ * grid instead of one full-width column, and there are no section-title
+ * groupings — the mockup uses filter chips instead, which this port doesn't
+ * wire up (no favorites/team-defaults concept in this codebase yet).
+ *
  * See docs/plans/plan_dashboard_console_redesign.md for the full gap matrix
  * behind each card's status.
  *
  * Deep links: `/setup/:card` (e.g. `/setup/connectors`) renders this same
- * page with the card whose `id` matches `:card` pre-expanded and scrolled
- * into view, so other pages can link straight to a specific card's settings
- * without duplicating its UI on a standalone route. Every card below has an
- * `id` for this reason — see SetupCard's own doc comment for how the
- * matching works.
+ * page with the card whose `id` matches `:card` scrolled into view — every
+ * card below has an `id` for this reason.
  */
 export function SetupHubPage() {
   return (
@@ -33,31 +41,29 @@ export function SetupHubPage() {
       </div>
       <p className="setup-hub-page__desc">
         Everything for this project's devices, services, and integrations in one place.
-        Cards you can expand have real, working configuration; disabled cards are
-        visible so you know what's planned but not built yet.
       </p>
 
-      <div className="setup-hub-page__section-title">Production devices</div>
       <div className="setup-hub-page__grid">
+        {/* ── Production devices ── */}
         <CameraSection />
         <MixerSection />
         <EncoderSection />
         <BridgeSection />
-      </div>
 
-      <div className="setup-hub-page__section-title">Streaming &amp; graphics</div>
-      <div className="setup-hub-page__grid">
+        {/* ── Streaming & graphics ── */}
         <SetupCard
           id="egress"
-          icon="📡"
+          icon={EgressIcon}
+          color="cyan"
           title="Egress (stream targets)"
           description="YouTube / generic RTMP relay targets — 4-slot configuration."
           status="ready"
-          action={{ label: 'Manage in Broadcast → Settings', href: '/broadcast' }}
+          footerLink={{ label: 'Manage in Broadcast → Settings', href: '/broadcast' }}
         />
         <SetupCard
           id="ingestion"
-          icon="🎬"
+          icon={IngestionIcon}
+          color="cyan"
           title="Ingestion"
           description="Incoming RTMP status. No dedicated ingestion entity exists yet — this reflects the ingest feature flag only."
           status="partial"
@@ -65,7 +71,8 @@ export function SetupHubPage() {
         />
         <SetupCard
           id="radio"
-          icon="📻"
+          icon={WebRadioIcon}
+          color="cyan"
           title="Web radio"
           description="Audio-only HLS output. Read-only status today; there's no config UI for it yet."
           status="partial"
@@ -73,61 +80,51 @@ export function SetupHubPage() {
         />
         <SetupCard
           id="viewports"
-          icon="🖼️"
+          icon={ViewportsIcon}
+          color="accent"
           title="Viewports"
           description="Named DSK display regions (e.g. vertical-left, landscape)."
           status="ready"
-          action={{ label: 'Manage in Graphics → Viewports', href: '/graphics/viewports' }}
+          footerLink={{ label: 'Manage in Graphics → Viewports', href: '/graphics/viewports' }}
         />
-      </div>
 
-      <div className="setup-hub-page__section-title">Captions &amp; language</div>
-      <div className="setup-hub-page__grid">
+        {/* ── Captions & language ── */}
         <SetupCard
           id="caption-targets"
-          icon="🎯"
+          icon={CaptionTargetsIcon}
+          color="accent"
           title="Caption targets"
           description="YouTube / viewer / generic delivery targets for sent captions."
           status="client-only"
-          action={{ label: 'Open in Captions (CC → Targets)', href: '/captions' }}
-        >
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
-            This configuration lives in your browser's local storage only — it
-            is not synced server-side yet.
-          </p>
-        </SetupCard>
+          footerLink={{ label: 'Open in Captions (CC → Targets)', href: '/captions' }}
+        />
         <SetupCard
           id="translations"
-          icon="🌐"
-          title="Languages &amp; translation"
+          icon={LanguagesIcon}
+          color="accent"
+          title="Languages & translation"
           description="Real-time translation vendor and per-language routing."
           status="client-only"
-          action={{ label: 'Open Translations', href: '/translations' }}
-        >
-          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
-            This configuration lives in your browser's local storage only — it
-            is not synced server-side yet.
-          </p>
-        </SetupCard>
-      </div>
+          footerLink={{ label: 'Open Translations', href: '/translations' }}
+        />
 
-      <div className="setup-hub-page__section-title">Speech &amp; storage</div>
-      <div className="setup-hub-page__grid">
+        {/* ── Speech & storage ── */}
         <SttSection />
         <StorageSection />
-      </div>
 
-      <div className="setup-hub-page__section-title">AI &amp; integrations</div>
-      <div className="setup-hub-page__grid">
+        {/* ── AI & integrations ── */}
         <AiModelsSection />
         <ConnectorsSection />
+
+        {/* ── Placeholder ── */}
         <SetupCard
           id="workflows"
-          icon="🧩"
+          icon={WorkflowsIcon}
+          color="muted"
           title="Workflows"
           description="Automated multi-step actions triggered by events."
           status="soon"
-          disabled
+          placeholder
         />
       </div>
     </div>

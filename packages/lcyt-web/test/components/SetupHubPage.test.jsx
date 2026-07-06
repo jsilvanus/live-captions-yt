@@ -43,11 +43,11 @@ describe('SetupHubPage', () => {
     expect(screen.getByRole('link', { name: /run setup wizard/i })).toHaveAttribute('href', '/setup/wizard');
   });
 
-  it('shows disabled "Coming soon" cards for backend-less categories', () => {
+  it('shows placeholder "Coming soon" cards for backend-less categories', () => {
     const { container } = renderAt();
     expect(screen.getByText('Workflows')).toBeInTheDocument();
-    const disabledCards = container.querySelectorAll('.setup-card--disabled');
-    expect(disabledCards.length).toBeGreaterThanOrEqual(1);
+    const placeholderCards = container.querySelectorAll('.setup-card--placeholder');
+    expect(placeholderCards.length).toBeGreaterThanOrEqual(1);
   });
 
   it('flags client-only categories with a client-only status pill', () => {
@@ -57,12 +57,10 @@ describe('SetupHubPage', () => {
     expect(screen.getAllByText('Client-only').length).toBeGreaterThanOrEqual(2);
   });
 
-  it('pre-expands and scrolls the deep-linked card into view', () => {
+  it('scrolls the deep-linked card into view', () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
-    const { container } = renderAt('/setup/caption-targets');
+    renderAt('/setup/caption-targets');
     expect(scrollIntoView).toHaveBeenCalled();
-    const captionTargetsBody = container.querySelector('.setup-card__body');
-    expect(captionTargetsBody).toBeTruthy();
   });
 });

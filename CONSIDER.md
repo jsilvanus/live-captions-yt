@@ -99,6 +99,27 @@ a feature diff that doesn't otherwise touch `useSession`'s public shape.
 
 ---
 
+## `SetupHubPage`'s "Run setup wizard" link nests an `<a>` inside wouter's `<Link>`
+
+**Where:** `packages/lcyt-web/src/components/setup-hub/SetupHubPage.jsx` —
+`<Link href="/setup/wizard"><a className="btn btn--ghost btn--sm">...</a></Link>`
+
+**Finding:** React logs a `validateDOMNesting` warning (`<a> cannot appear as
+a descendant of <a>`) on every `/setup` render. The wouter version in use
+already renders an `<a>` itself for `<Link>`, so wrapping a second `<a>`
+inside it is the pre-v3 wouter idiom and no longer needed — `<Link
+className="btn btn--ghost btn--sm">🧙 Run setup wizard</Link>` (no nested
+`<a>`) is the fix.
+
+**Why skipped:** Noticed incidentally while testing the Setup Hub card
+redesign (icons/grid/dialogs); unrelated to that diff and not the only place
+in the codebase that may use the older `<Link><a>` pattern — worth a repo-wide
+sweep for the same idiom rather than a one-off fix here.
+
+(Found during: Setup Hub card redesign pass, 2026-07-06.)
+
+---
+
 ## `db.js`'s three `update*` functions repeat the same coalesce-with-fallback shape
 
 **Where:** `packages/plugins/lcyt-connectors/src/db.js` — `updateConnector`,
