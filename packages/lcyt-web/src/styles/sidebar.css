@@ -1950,6 +1950,32 @@
   max-width: 640px;
 }
 
+.setup-hub-page__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.setup-hub-page__pill {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1.5px solid var(--color-border);
+  background: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.setup-hub-page__pill:hover { border-color: var(--color-accent); color: var(--color-accent); }
+.setup-hub-page__pill--active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: #fff;
+}
+.setup-hub-page__pill--active:hover { color: #fff; }
+
 .setup-hub-page__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -1986,6 +2012,25 @@
   background: var(--color-bg);
 }
 .setup-card--placeholder:hover { border-color: var(--color-border); }
+
+/* ─── Setup hub — CTA variant (Workflows card: an action entry point, not
+   a status display) ─────────────────────────────────────────────────── */
+.setup-card--cta {
+  background: linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 65%, #7c3aed));
+  border-color: transparent;
+}
+.setup-card--cta:hover { border-color: transparent; }
+.setup-card--cta .setup-card__icon-box { background: rgba(255,255,255,0.18); color: #fff; }
+.setup-card--cta .setup-card__title { color: #fff; }
+.setup-card--cta .setup-card__desc { color: rgba(255,255,255,0.82); }
+.setup-card--cta .setup-card__fav-btn { color: rgba(255,255,255,0.7); }
+.setup-card--cta .setup-card__add-btn {
+  background: #fff;
+  border-color: #fff;
+  color: var(--color-accent);
+  font-weight: 600;
+}
+.setup-card--cta .setup-card__add-btn:hover { opacity: 0.9; border-color: #fff; color: var(--color-accent); }
 
 .setup-card__header {
   display: flex;
@@ -2038,6 +2083,23 @@
 .setup-card__pill--client-only { background: color-mix(in srgb, var(--color-accent) 15%, transparent); color: var(--color-accent); }
 .setup-card__pill--partial     { background: color-mix(in srgb, orange 15%, transparent); color: #b5750a; }
 .setup-card__pill--soon        { background: var(--color-border); color: var(--color-text-muted); }
+
+.setup-card__fav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 5px;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.12s;
+}
+.setup-card__fav-btn:hover { background: var(--color-surface-alt); }
 
 .setup-card__add-btn {
   display: flex;

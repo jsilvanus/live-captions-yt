@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { Router } from 'wouter';
 import { memoryLocation } from 'wouter/memory-location';
+import { SessionContext } from '../../src/contexts/SessionContext.jsx';
 
 vi.mock('../../src/components/setup-hub/CameraSection.jsx', () => ({ CameraSection: () => <div data-testid="camera-section" /> }));
 vi.mock('../../src/components/setup-hub/MixerSection.jsx', () => ({ MixerSection: () => <div data-testid="mixer-section" /> }));
@@ -21,13 +22,20 @@ vi.mock('../../src/components/setup-hub/ConnectorsSection.jsx', () => ({ Connect
 import { SetupHubPage } from '../../src/components/setup-hub/SetupHubPage.jsx';
 
 // SetupCard uses wouter's useRoute() (for /setup/:card deep links), which
-// requires a Router context — wrap every render in one, at a given path.
+// requires a Router context. SetupHubPage itself calls useSessionContext()
+// (for the Workflow filter's feature lookup), which throws without a
+// SessionContext.Provider — a disconnected mock is enough since
+// useProjectFeatures() no-ops without a real apiKey/token/backendUrl.
+const mockSession = { connected: false, apiKey: '', backendUrl: '', getSessionToken: () => null };
+
 function renderAt(path = '/setup') {
   const { hook } = memoryLocation({ path });
   return render(
-    <Router hook={hook}>
-      <SetupHubPage />
-    </Router>
+    <SessionContext.Provider value={mockSession}>
+      <Router hook={hook}>
+        <SetupHubPage />
+      </Router>
+    </SessionContext.Provider>
   );
 }
 
@@ -55,11 +63,26 @@ describe('SetupHubPage', () => {
     expect(screen.getByRole('link', { name: /run setup wizard/i })).toHaveAttribute('href', '/setup/wizard');
   });
 
-  it('shows placeholder "Coming soon" cards for backend-less categories', () => {
+  it('renders the Workflows card as a CTA, not a disabled placeholder', () => {
     const { container } = renderAt();
     expect(screen.getByText('Workflows')).toBeInTheDocument();
-    const placeholderCards = container.querySelectorAll('.setup-card--placeholder');
-    expect(placeholderCards.length).toBeGreaterThanOrEqual(1);
+    expect(container.querySelectorAll('.setup-card--placeholder')).toHaveLength(0);
+    expect(container.querySelectorAll('.setup-card--cta')).toHaveLength(1);
+  });
+
+  it('renders the All/Favorites/Workflow filter pills, "All" active by default', () => {
+    renderAt();
+    const all = screen.getByRole('button', { name: 'All' });
+    expect(all).toHaveClass('setup-hub-page__pill--active');
+    expect(screen.getByRole('button', { name: 'Favorites' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Workflow' })).toBeInTheDocument();
+  });
+
+  it('"Favorites" filter hides sections that are not starred, but always keeps Workflows', () => {
+    renderAt();
+    fireEvent.click(screen.getByRole('button', { name: 'Favorites' }));
+    expect(screen.queryByTestId('camera-section')).not.toBeInTheDocument();
+    expect(screen.getByText('Workflows')).toBeInTheDocument();
   });
 
   it('scrolls the deep-linked card into view', () => {

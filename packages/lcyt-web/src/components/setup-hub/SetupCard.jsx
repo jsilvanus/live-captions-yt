@@ -30,10 +30,16 @@ const HIGHLIGHT_MS = 10_000;
  *   id           string    — stable slug for this card (e.g. "connectors").
  *                            When set, navigating to `/setup/:id` scrolls this
  *                            card into view and highlights it for 10 seconds.
+ *                            Also doubles as the favorite-star key (skipped
+ *                            for `placeholder` cards) and the id SetupHubPage's
+ *                            filter pills match against.
+ *   variant      'default' | 'cta' — 'cta' renders a solid accent-filled card
+ *                (no icon-box tint, white text/button) for an action entry
+ *                point rather than a status display — see the Workflows card.
  */
 export function SetupCard({
   id, icon: Icon, color = 'accent', title, description,
-  status, statusLabel, placeholder = false,
+  status, statusLabel, placeholder = false, variant = 'default',
   headerAction, emptyText, children, footerLink,
 }) {
   const containerRef = useRef(null);
@@ -54,10 +60,10 @@ export function SetupCard({
   const hasBody = !placeholder && (children || emptyText);
 
   return (
-    <div ref={containerRef} className={`setup-card${placeholder ? ' setup-card--placeholder' : ''}${highlighted ? ' setup-card--highlighted' : ''}`}>
+    <div ref={containerRef} className={`setup-card${placeholder ? ' setup-card--placeholder' : ''}${highlighted ? ' setup-card--highlighted' : ''}${variant === 'cta' ? ' setup-card--cta' : ''}`}>
       <div className={`setup-card__header${hasBody ? ' setup-card__header--bordered' : ''}`}>
         {Icon && (
-          <div className="setup-card__icon-box" style={{ background: cat.bg, color: cat.fg }}>
+          <div className="setup-card__icon-box" style={variant === 'cta' ? undefined : { background: cat.bg, color: cat.fg }}>
             <Icon />
           </div>
         )}
