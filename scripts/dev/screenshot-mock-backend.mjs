@@ -38,7 +38,12 @@ app.get('/production/bridge/instances', (_req, res) => res.json([]));
 app.get('/connectors', (_req, res) => res.json({ connectors: [] }));
 app.get('/variables', (_req, res) => res.json({ variables: {} }));
 app.get('/ai/config', (_req, res) => res.json({ config: { embeddingProvider: 'none' } }));
-app.get('/stt/config', (_req, res) => res.json({ config: {} }));
+let sttConfig = { provider: 'google', language: 'en-US', audioSource: 'hls' };
+app.get('/stt/config', (_req, res) => res.json({ config: sttConfig }));
+app.put('/stt/config', (req, res) => {
+  sttConfig = { ...sttConfig, ...(req.body || {}) };
+  res.json({ ok: true, config: sttConfig });
+});
 app.get('/file/storage-config', (_req, res) => res.json({ storageMode: 'default', config: null }));
 
 // ── Ingestion + Web Radio — in-memory stand-ins for
@@ -85,6 +90,35 @@ app.put('/targets/:id', (req, res) => {
 app.delete('/targets/:id', (req, res) => {
   const existed = targets.delete(req.params.id);
   if (!existed) return res.status(404).json({ error: 'Target not found' });
+  res.json({ ok: true });
+});
+
+// ── Translation config — in-memory stand-in for
+// docs/plans/plan_selfservice_config_backend.md §1 (real routes already
+// implemented server-side; this mock exists for local frontend dev). ───────
+let translationVendor = { vendor: 'mymemory', vendorApiKey: null, libreUrl: null, libreKey: null, showOriginal: false };
+const translationTargets = new Map(); // id -> target
+app.get('/translation/config', (_req, res) => res.json({ vendor: translationVendor, targets: [...translationTargets.values()] }));
+app.put('/translation/config/vendor', (req, res) => {
+  translationVendor = { ...translationVendor, ...(req.body || {}) };
+  res.json({ ok: true, vendor: translationVendor });
+});
+app.post('/translation/config/targets', (req, res) => {
+  const id = crypto.randomUUID();
+  const { enabled = true, lang, target, format = null } = req.body || {};
+  const row = { id, enabled, lang, target, format, sortOrder: translationTargets.size };
+  translationTargets.set(id, row);
+  res.status(201).json({ ok: true, target: row });
+});
+app.put('/translation/config/targets/:id', (req, res) => {
+  const row = translationTargets.get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Translation target not found' });
+  Object.assign(row, req.body || {});
+  res.json({ ok: true, target: row });
+});
+app.delete('/translation/config/targets/:id', (req, res) => {
+  const existed = translationTargets.delete(req.params.id);
+  if (!existed) return res.status(404).json({ error: 'Translation target not found' });
   res.json({ ok: true });
 });
 

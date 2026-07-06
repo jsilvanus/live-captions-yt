@@ -1,6 +1,6 @@
 import { Link } from 'wouter';
 import { SetupCard } from './SetupCard.jsx';
-import { LanguagesIcon, WorkflowsIcon } from './icons.jsx';
+import { WorkflowsIcon } from './icons.jsx';
 import { CameraSection } from './CameraSection.jsx';
 import { MixerSection } from './MixerSection.jsx';
 import { EncoderSection } from './EncoderSection.jsx';
@@ -10,6 +10,7 @@ import { IngestionSection } from './IngestionSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
 import { CaptionTargetsSection } from './CaptionTargetsSection.jsx';
+import { LanguagesSection } from './LanguagesSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { AiModelsSection } from './AiModelsSection.jsx';
@@ -60,15 +61,7 @@ export function SetupHubPage() {
 
         {/* ── Captions & language ── */}
         <CaptionTargetsSection />
-        <SetupCard
-          id="translations"
-          icon={LanguagesIcon}
-          color="accent"
-          title="Languages & translation"
-          description="Real-time translation vendor and per-language routing."
-          status="client-only"
-          footerLink={{ label: 'Open Translations', href: '/translations' }}
-        />
+        <LanguagesSection />
 
         {/* ── Speech & storage ── */}
         <SttSection />
