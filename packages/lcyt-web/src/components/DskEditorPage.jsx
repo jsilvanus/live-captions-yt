@@ -211,6 +211,11 @@ export function DskEditorPage() {
   }, []);
   const previewTargetWidth = Math.max(240, Math.min(960, canvasAreaWidth - 24));
 
+  // "New from preset" is secondary to the actual template list, so it moves
+  // to the bottom of the panel and starts collapsed on narrow screens where
+  // vertical space is scarce.
+  const [showPresets, setShowPresets] = useState(() => !isNarrow);
+
   // ── AI Assist (Properties panel)
   const [aiAssistOpen, setAiAssistOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState('');
@@ -994,14 +999,8 @@ export function DskEditorPage() {
         borderBottom: isNarrow ? '1px solid var(--color-border)' : 'none',
         display: 'flex', flexDirection: 'column', flexShrink: 0,
       }}>
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--color-border)', fontWeight: 'bold', fontSize: 14, color: 'var(--color-text)' }}>Templates</div>
-        <div style={{ padding: '8px 10px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ fontSize: 11, color: 'var(--color-text-muted)', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 2 }}>New from preset</div>
-          {Object.keys(PRESETS).map(name => (
-            <button key={name} onClick={() => newFromPreset(name)} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>{name}</button>
-          ))}
-          <button onClick={newBlank} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>Blank</button>
-        </div>
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--color-border)', fontWeight: 'bold', fontSize: 14, color: 'var(--color-text)', flexShrink: 0 }}>Templates</div>
+
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {templates.length === 0 && <div style={{ padding: 12, color: 'var(--color-text-muted)', fontSize: 13 }}>No templates yet.</div>}
           {templates.map(t => (
@@ -1018,13 +1017,36 @@ export function DskEditorPage() {
             </div>
           ))}
         </div>
+
+        {/* Secondary to the template list above, so it lives at the bottom
+            and collapses out of the way on narrow screens. */}
+        <div style={{ borderTop: '1px solid var(--color-border)', flexShrink: 0 }}>
+          <button
+            onClick={() => setShowPresets(v => !v)}
+            style={{ ...btnStyle, width: '100%', textAlign: 'left', border: 'none', borderRadius: 0, fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}
+          >
+            <span aria-hidden="true">{showPresets ? '▾' : '▸'}</span> New from preset
+          </button>
+          {showPresets && (
+            <div style={{ padding: '4px 10px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+              {Object.keys(PRESETS).map(name => (
+                <button key={name} onClick={() => newFromPreset(name)} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>{name}</button>
+              ))}
+              <button onClick={newBlank} style={{ ...btnStyle, textAlign: 'left', fontSize: 12 }}>Blank</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ── Main area ── */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-        {/* Toolbar */}
-        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+        {/* Toolbar — the basic/most-used tools, kept visible while the page
+            scrolls in the stacked narrow layout. */}
+        <div style={{
+          padding: '8px 12px', borderBottom: '1px solid var(--color-border)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap',
+          position: 'sticky', top: 0, zIndex: 5, background: 'var(--color-bg)',
+        }}>
           <input type="text" value={templateName}
             onChange={e => { setTemplateName(e.target.value); isDirty.current = true; }}
             placeholder="Template name" style={{ ...inputStyle, flex: '0 0 160px', width: 160 }} />
