@@ -130,6 +130,8 @@ Embeddings do not fit the role shape at all, on three independent grounds:
 
 What *does* move: `evaluateEventCue()`, `generateTemplate()`/`editTemplate()`/`suggestStyles()`, and `generateRundown()`/`editRundown()` were never really about embeddings — they only ever read `ai_config`'s embedding fields because that was the one config row available at the time. This plan's Planner role formally migrates `generateRundown`/`editRundown` onto `project_ai_role_configs` (see Runtime Shape 3), which incidentally fixes the field-name conflation for that one capability. **Event-cue evaluation and DSK generation are explicitly out of scope for this plan** — they keep resolving settings via `ai_config` for now. They are natural candidates for their own `ai_roles` catalog rows later (an `event_cue` role and a `dsk_designer` role respectively — the latter is really already a fifth role in every way except being named one), but migrating them isn't required to ship Tracker/Describer/Assistant/Planner, and doing all six at once would be a much larger and riskier change than this plan needs to be. Flagging DSK generation here is itself useful evidence for the registry design: it shows a "role" already existing in practice, informally, before this framework existed to name it.
 
+(2026-07-06: the Setup Hub's AI models card now previews this role under its user-facing name, **Graphics Assistant** — `role_code: 'dsk_designer'` when it's actually built, matching the `generateTemplate`/`editTemplate`/`suggestStyles` capability described above.)
+
 ---
 
 ## Runtime Shape 1 — Tracker & Describer: Continuous Vision Loops

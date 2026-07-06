@@ -11,7 +11,9 @@
       "Bash(node --test:*)",
       "Bash(npm run build:*)",
       "Bash(npm install:*)",
-      "Artifact"
+      "Artifact",
+      "mcp__claude-design__get_project",
+      "mcp__claude-design__read_file"
     ]
   }
 }
