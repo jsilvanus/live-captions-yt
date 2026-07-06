@@ -1,6 +1,8 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback, useContext } from 'react';
+import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { Dialog } from './Dialog.jsx';
+import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 
 // ── Constants ──────────────────────────────────────────────────────────────
 
@@ -240,34 +242,19 @@ function EncoderRow({ encoder, bridges, onEdit, onDelete }) {
     : 'Backend';
 
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-      border: '1px solid var(--color-border)', borderRadius: 4,
-    }}>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontWeight: 600 }}>{encoder.name}</span>
-        {cfg.host && (
-          <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
-            {cfg.host}
-          </span>
-        )}
-        <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--color-text-muted)' }}>
-          {connLabel}
-        </span>
-      </div>
-      <span style={{
-        fontSize: 11, padding: '2px 6px', borderRadius: 3,
-        background: 'var(--color-surface-alt)', color: 'var(--color-text-muted)', whiteSpace: 'nowrap',
-      }}>{typeLabel}</span>
-      <button className="btn btn--sm btn--ghost" onClick={() => onEdit(encoder)}>Edit</button>
-      <button className="btn btn--sm btn--ghost btn--danger" onClick={() => onDelete(encoder)}>Delete</button>
-    </div>
+    <SetupItemRow
+      name={encoder.name}
+      meta={[cfg.host, connLabel].filter(Boolean).join(' · ')}
+      badge={typeLabel}
+      onSettings={() => onEdit(encoder)}
+      onDelete={() => onDelete(encoder)}
+    />
   );
 }
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-export function EncodersManager() {
+export const EncodersManager = forwardRef(function EncodersManager({ embedded = false }, ref) {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -303,6 +290,8 @@ export function EncodersManager() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useImperativeHandle(ref, () => ({ openAdd: () => setEditing('new') }));
+
   async function handleSave(data) {
     const isNew = editing === 'new';
     const url   = isNew
@@ -330,24 +319,20 @@ export function EncodersManager() {
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 700, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Encoders</h2>
-        <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')} disabled={!!editing}>
-          + Add encoder
-        </button>
-      </div>
+    <div style={embedded ? undefined : { padding: 20, maxWidth: 700, margin: '0 auto' }}>
+      {!embedded && (
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Encoders</h2>
+          <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')} disabled={!!editing}>
+            + Add encoder
+          </button>
+        </div>
+      )}
 
-      {error && <div style={{ color: 'var(--color-error)', marginBottom: 12, fontSize: 13 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--color-error)', margin: embedded ? '0 18px 12px' : '0 0 12px', fontSize: 13 }}>{error}</div>}
 
       {editing && (
-        <div style={{
-          border: '1px solid var(--color-border)', borderRadius: 6, padding: 16,
-          marginBottom: 16, background: 'var(--color-surface-alt)',
-        }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>
-            {editing === 'new' ? 'Add encoder' : `Edit: ${editing.name}`}
-          </h3>
+        <Dialog title={editing === 'new' ? 'Add encoder' : `Edit: ${editing.name}`} onClose={() => setEditing(null)} width={640}>
           <EncoderForm
             initial={editing === 'new' ? null : editing}
             bridges={bridges}
@@ -356,15 +341,15 @@ export function EncodersManager() {
             backendUrl={backendUrl}
             headers={headers}
           />
-        </div>
+        </Dialog>
       )}
 
       {loading ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p style={{ color: 'var(--color-text-muted)', padding: embedded ? '0 18px 14px' : 0 }}>Loading…</p>
       ) : encoders.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No encoders configured yet.</p>
+        <p className={embedded ? 'setup-card__empty' : undefined} style={embedded ? undefined : { color: 'var(--color-text-muted)' }}>No encoders configured yet.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className={embedded ? undefined : 'setup-card'}>
           {encoders.map(enc => (
             <EncoderRow key={enc.id} encoder={enc} bridges={bridges}
               onEdit={e => setEditing(e)} onDelete={e => setConfirmDelete(e)} />
@@ -388,7 +373,7 @@ export function EncodersManager() {
       )}
     </div>
   );
-}
+});
 
 /** ProductionEncodersPage — standalone route wrapper around EncodersManager. */
 export function ProductionEncodersPage() {

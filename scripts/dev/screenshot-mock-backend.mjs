@@ -25,6 +25,18 @@ app.post('/live', (_req, res) => {
   res.json({ token: 'dev-token', sequence: 0, syncOffset: 0, startedAt: Date.now(), graphicsEnabled: true });
 });
 
+// ── Setup Hub card faces — empty-list/default stubs so the hub renders
+// clean empty states instead of 404s during screenshot/demo sessions. ──────
+app.get('/production/cameras', (_req, res) => res.json([]));
+app.get('/production/mixers', (_req, res) => res.json([]));
+app.get('/production/encoders', (_req, res) => res.json([]));
+app.get('/production/bridge/instances', (_req, res) => res.json([]));
+app.get('/connectors', (_req, res) => res.json({ connectors: [] }));
+app.get('/variables', (_req, res) => res.json({ variables: {} }));
+app.get('/ai/config', (_req, res) => res.json({ config: { embeddingProvider: 'none' } }));
+app.get('/stt/config', (_req, res) => res.json({ config: {} }));
+app.get('/file/storage-config', (_req, res) => res.json({ storageMode: 'default', config: null }));
+
 app.get('/events', (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
   res.flushHeaders?.();

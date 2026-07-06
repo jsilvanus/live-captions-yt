@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
-import { SetupCard } from './SetupCard.jsx';
+import { SetupCard, SetupItemRow } from './SetupCard.jsx';
+import { ModelsIcon } from './icons.jsx';
 
 const PROVIDER_LABELS = { none: 'Disabled', server: 'Server-provided', openai: 'OpenAI', custom: 'Custom API' };
 
@@ -34,23 +35,22 @@ export function AiModelsSection() {
   return (
     <SetupCard
       id="ai-models"
-      icon="🤖"
+      icon={ModelsIcon}
+      color="purple"
       title="AI models"
-      description={
-        session?.connected && provider
-          ? `Embedding provider: ${PROVIDER_LABELS[provider] || provider}. Used for fuzzy/semantic cue matching.`
-          : 'Embedding model configuration for fuzzy/semantic cue matching.'
-      }
+      description="Embedding model for fuzzy/semantic cue matching. More roles coming soon."
       status="partial"
       statusLabel="1 of 5 roles"
-      action={{ label: 'Open AI settings', href: '/ai' }}
+      headerAction={{ label: 'Open AI settings', href: '/ai' }}
     >
-      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: 0 }}>
-        Today there is a single embedding-provider slot. A five-role split —
-        Tracker, Describer, Planner Assistant, Production Assistant, and
-        <strong> Graphics Assistant</strong> (DSK template generation) — is
-        <strong> coming soon</strong> — it isn't backed by the server yet.
-      </p>
+      <SetupItemRow
+        name="Embedding provider"
+        meta={
+          session?.connected && provider
+            ? `${PROVIDER_LABELS[provider] || provider} — used for fuzzy/semantic cue matching`
+            : 'Used for fuzzy/semantic cue matching'
+        }
+      />
     </SetupCard>
   );
 }
