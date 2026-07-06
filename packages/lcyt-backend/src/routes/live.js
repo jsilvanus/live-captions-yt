@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 
@@ -32,10 +32,24 @@ function isAllowedDomain(domain) {
  * Each enabled YouTube target gets a new YoutubeLiveCaptionSender started.
  * Each enabled generic target is stored with its parsed headers object.
  *
- * @param {Array} targets  Raw array from POST /live body
+ * When `targets` is `undefined` (the field was omitted entirely, as opposed to
+ * an explicit empty array) and `db`/`apiKey` are supplied, the project's saved
+ * caption-target defaults are loaded and used instead — this lets a thin client
+ * start a session with just `{ apiKey, domain }` and still get its configured
+ * delivery targets. An explicit array (including `[]`) is always used as-is.
+ *
+ * @param {Array|undefined} targets  Raw array from POST/PATCH /live body
+ * @param {{ db?: import('better-sqlite3').Database, apiKey?: string }} [opts]
  * @returns {{ ok: boolean, extraTargets?: Array, error?: string }}
  */
-async function buildExtraTargets(targets) {
+async function buildExtraTargets(targets, { db, apiKey } = {}) {
+  if (targets === undefined) {
+    targets = (db && apiKey)
+      ? getCaptionTargets(db, apiKey)
+        .filter(t => t.enabled)
+        .map(t => ({ id: t.id, type: t.type, streamKey: t.streamKey, url: t.url, headers: t.headers, viewerKey: t.viewerKey, noBatch: t.noBatch }))
+      : [];
+  }
   if (!Array.isArray(targets) || targets.length === 0) return { ok: true, extraTargets: [] };
 
   const extraTargets = [];
@@ -123,13 +137,6 @@ export function createLiveRouter(db, store, jwtSecret) {
       return res.status(status).json({ error: `API key ${validation.reason}` });
     }
 
-    // Build extra targets (validates URLs, creates secondary YouTube senders)
-    const targetsResult = await buildExtraTargets(targets);
-    if (!targetsResult.ok) {
-      return res.status(400).json({ error: targetsResult.error });
-    }
-    const extraTargets = targetsResult.extraTargets;
-
     // Generate deterministic session ID. streamKey defaults to '' for sessions
     // that use only the targets array (no primary stream key).
     const sessionId = makeSessionId(apiKey, streamKey || '', domain);
@@ -140,13 +147,23 @@ export function createLiveRouter(db, store, jwtSecret) {
     if (store.has(sessionId)) {
       const existing = store.get(sessionId);
 
-      // Update extra targets: clean up old secondary senders first
-      for (const t of (existing.extraTargets || [])) {
-        if (t.type === 'youtube' && t.sender) {
-          Promise.resolve(t.sender.end()).catch(() => {});
+      // Only touch the running session's targets when the caller explicitly
+      // supplied a `targets` field (including an explicit empty array) —
+      // omitting it entirely on a reconnect must not wipe the session's
+      // already-configured targets (see buildExtraTargets()'s docstring).
+      if (targets !== undefined) {
+        const targetsResult = await buildExtraTargets(targets);
+        if (!targetsResult.ok) {
+          return res.status(400).json({ error: targetsResult.error });
         }
+        // Clean up old secondary senders first
+        for (const t of (existing.extraTargets || [])) {
+          if (t.type === 'youtube' && t.sender) {
+            Promise.resolve(t.sender.end()).catch(() => {});
+          }
+        }
+        existing.extraTargets = targetsResult.extraTargets;
       }
-      existing.extraTargets = extraTargets;
 
       // Recreate primary sender for rehydrated sessions that have no active sender,
       // but only when a streamKey is available (target-array sessions have no primary sender).
@@ -195,6 +212,15 @@ export function createLiveRouter(db, store, jwtSecret) {
         graphicsEnabled: isGraphicsEnabled(db, apiKey),
       });
     }
+
+    // Build extra targets (validates URLs, creates secondary YouTube senders).
+    // Omitting `targets` entirely loads the project's saved caption-target
+    // defaults, so a thin client can start a session with just { apiKey, domain }.
+    const targetsResult = await buildExtraTargets(targets, { db, apiKey });
+    if (!targetsResult.ok) {
+      return res.status(400).json({ error: targetsResult.error });
+    }
+    const extraTargets = targetsResult.extraTargets;
 
     // Create primary sender when a streamKey is provided.
     // When operating in target-array mode (no streamKey), sender remains null

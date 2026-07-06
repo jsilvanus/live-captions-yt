@@ -188,6 +188,8 @@ Captions are delivered to one or more **targets** configured in the lcyt-web CC 
 
 `BackendCaptionSender` (`packages/lcyt/src/backend-sender.js`): `streamKey` is optional (omit for target-array mode); `start({ targets })` registers targets server-side; `send()`/`sendBatch()` always behave the same — the backend handles routing.
 
+**Server-persisted targets (`GET/POST/PUT/DELETE /targets`, `packages/lcyt-backend/src/routes/targets.js`):** the `caption_targets` table is the server-side source of truth for a project's configured targets, independent of any `POST /live` call. `POST /live`'s `targets` field is an **explicit override** — when present (including an explicit empty array `[]`), it is used as-is, exactly as before; when the field is **omitted entirely**, the server loads the project's saved, enabled `caption_targets` rows instead, so a thin client can start a session with just `{ apiKey, domain }`. On the idempotent reconnect path, this same undefined-vs-provided distinction gates whether the running session's `extraTargets` are touched at all, so a reconnect that omits `targets` no longer wipes an already-configured session (see `plan_selfservice_config_backend.md` §1).
+
 ### Plugin Architecture
 
 Backend plugins live in `packages/plugins/` and follow this pattern:

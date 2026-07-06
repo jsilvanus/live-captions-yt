@@ -2,7 +2,7 @@ import { Router } from 'express';
 import express from 'express';
 import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
-import { isRadioEnabled, getEmbedCors, getSttConfig } from '../db.js';
+import { isRadioEnabled, getEmbedCors, getSttConfig, resolveApiKeyFromIngestStreamKey, getRadioConfig, setRadioConfig } from '../db.js';
 import logger from 'lcyt/logger';
 
 // Radio key validation: same rules as viewer keys
@@ -33,17 +33,20 @@ function setCorsHeaders(res, origin = '*') {
 /**
  * Generate a self-contained vanilla-JS player snippet for an audio-only HLS stream.
  * The snippet creates an <audio> element and wires up hls.js (loaded from CDN on
- * browsers that lack native HLS support).
+ * browsers that lack native HLS support). Optionally renders a title/cover-image
+ * "Now Playing" header above the player when metadata is configured.
  *
  * @param {string} radioKey
  * @param {string} backendOrigin  e.g. "https://api.example.com"
  * @param {import('../radio-manager.js').RadioManager} radioManager
+ * @param {{ title?: string|null, coverImageUrl?: string|null, autoplay?: boolean }} [meta]
  * @returns {string} JavaScript source
  */
-function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
+function buildPlayerSnippet(radioKey, backendOrigin, radioManager, meta = {}) {
   const streamUrl = radioManager
     ? radioManager.getPublicHlsUrl(radioKey, backendOrigin)
     : `${backendOrigin}/radio/${radioKey}/index.m3u8`;
+  const { title = null, coverImageUrl = null, autoplay = false } = meta;
 
   return `/* lcyt radio player — key: ${radioKey} */
 (function (streamUrl) {
@@ -63,9 +66,37 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
     }
   }
 
+  var meta = ${JSON.stringify({ title, coverImageUrl, autoplay: Boolean(autoplay) })};
+
+  if (meta.title || meta.coverImageUrl) {
+    var header = document.createElement('div');
+    header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+    if (meta.coverImageUrl) {
+      var cover = document.createElement('img');
+      cover.src = meta.coverImageUrl;
+      cover.alt = '';
+      cover.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px';
+      header.appendChild(cover);
+    }
+    if (meta.title) {
+      var titleEl = document.createElement('span');
+      titleEl.textContent = meta.title;
+      titleEl.style.cssText = 'font-weight:600';
+      header.appendChild(titleEl);
+    }
+    container.appendChild(header);
+  }
+
   var audio = document.createElement('audio');
   audio.controls = true;
   audio.style.cssText = 'width:100%;display:block';
+  if (meta.autoplay) {
+    // Unmuted autoplay is blocked by browser policy without a user gesture
+    // regardless of what this setting requests — muting is required to
+    // honor autoplay at all.
+    audio.autoplay = true;
+    audio.muted = true;
+  }
   container.appendChild(audio);
 
   function attachHls(HlsClass) {
@@ -103,20 +134,24 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
 /**
  * Factory for the /radio router.
  *
- * Handles three concerns:
+ * Handles four concerns:
  *
- *  1. nginx-rtmp / MediaMTX callbacks (no auth — nginx/mediamtx is the caller):
+ *  1. Self-service config (session Bearer, plan/selfservice_config_backend §3):
+ *       GET /radio/config — { title, description, coverImageUrl, autoplay, enabled, live }
+ *       PUT /radio/config — update title/description/coverImageUrl/autoplay
+ *
+ *  2. nginx-rtmp / MediaMTX callbacks (no auth — nginx/mediamtx is the caller):
  *       POST /radio               — call=publish → start HLS; call=publish_done → stop
  *       POST /radio/on_publish    — nginx on_publish callback (alternative URL style)
  *       POST /radio/on_publish_done — nginx on_publish_done callback
  *
- *  2. HLS proxy (public, CORS *) — proxies to MediaMTX when nginx is not active:
+ *  3. HLS proxy (public, CORS *) — proxies to MediaMTX when nginx is not active:
  *       GET /radio/:key/index.m3u8 — proxy to MediaMTX HLS playlist
  *       GET /radio/:key/*.ts       — proxy to MediaMTX HLS segment
  *
- *  3. Embeddable player snippet (public, CORS *):
+ *  4. Embeddable player snippet (public, CORS *):
  *       GET /radio/:key/player.js  — self-contained vanilla-JS audio player
- *       GET /radio/:key/info       — JSON: { live, hlsUrl, slug? } (no secrets exposed)
+ *       GET /radio/:key/info       — JSON: { live, hlsUrl, title, description, coverImageUrl, autoplay, slug? } (no secrets exposed)
  *
  *  When NginxManager is active, clients use the slug URL directly and the
  *  proxy routes serve as a fallback for clients that hit the backend.
@@ -124,10 +159,34 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('../radio-manager.js').RadioManager} radioManager
  * @param {import('../stt-manager.js').SttManager} [sttManager]
+ * @param {import('express').RequestHandler} [auth]  Session JWT Bearer middleware — required for GET/PUT /config
  * @returns {Router}
  */
-export function createRadioRouter(db, radioManager, sttManager = null) {
+export function createRadioRouter(db, radioManager, sttManager = null, auth = null) {
   const router = Router();
+
+  // ── GET/PUT /radio/config — self-service Web Radio metadata (session Bearer) ──
+  // Registered before the urlencoded parser below since these are JSON routes.
+  // Not gated by RADIO_KEY_RE / public CORS — these are the authenticated,
+  // per-project counterpart to the public GET /radio/:key/info.
+  function requireAuthConfigured(req, res, next) {
+    if (!auth) return res.status(501).json({ error: 'Radio config is not available on this deployment' });
+    return auth(req, res, next);
+  }
+
+  router.get('/config', requireAuthConfigured, (req, res) => {
+    const apiKey = req.session.apiKey;
+    const config = getRadioConfig(db, apiKey);
+    res.json({ ...config, live: radioManager.isRunning(apiKey) });
+  });
+
+  router.put('/config', requireAuthConfigured, (req, res) => {
+    const apiKey = req.session.apiKey;
+    const { title, description, coverImageUrl, autoplay } = req.body || {};
+    const result = setRadioConfig(db, apiKey, { title, description, coverImageUrl, autoplay });
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json({ ...result.config, live: radioManager.isRunning(apiKey) });
+  });
 
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
   router.use(express.urlencoded({ extended: false, limit: '4kb' }));
@@ -141,11 +200,13 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
    * @param {import('express').Response} res
    */
   async function handleNginxCallback(call, name, res) {
-    const radioKey = name;
-
-    if (!radioKey) {
+    if (!name) {
       return res.status(400).send('missing name');
     }
+
+    // Resolve the stream name to the project's api_key — a no-op unless the
+    // project has rotated its ingest stream key via POST /ingestion/config/rotate.
+    const radioKey = resolveApiKeyFromIngestStreamKey(db, name);
 
     if (call === 'publish') {
       if (!isRadioEnabled(db, radioKey)) {
@@ -239,10 +300,12 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
     const backendOrigin = process.env.BACKEND_URL
       || `${req.protocol}://${req.get('host')}`;
 
+    const { title, coverImageUrl, autoplay } = getRadioConfig(db, key);
+
     setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
-    res.send(buildPlayerSnippet(key, backendOrigin, radioManager));
+    res.send(buildPlayerSnippet(key, backendOrigin, radioManager, { title, coverImageUrl, autoplay }));
   });
 
   // GET /radio/:key/info — JSON stream info (public)
@@ -262,10 +325,13 @@ export function createRadioRouter(db, radioManager, sttManager = null) {
     // Only expose the slug when nginx is actually proxying it; otherwise the slug
     // would be meaningless (no nginx location exists for it).
     const slug    = radioManager.isNginxEnabled ? radioManager.getSlug(key) : null;
+    // Metadata has no secrets in it (title/description/cover/autoplay), so it's
+    // safe to expose alongside the stream info for embeddable "Now Playing" UIs.
+    const { title, description, coverImageUrl, autoplay } = getRadioConfig(db, key);
 
     setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Cache-Control', 'no-cache, no-store');
-    res.json({ live, hlsUrl, ...(slug ? { slug } : {}) });
+    res.json({ live, hlsUrl, title, description, coverImageUrl, autoplay, ...(slug ? { slug } : {}) });
   });
 
   // GET /radio/:key/:file — proxy HLS playlist and segments to MediaMTX.

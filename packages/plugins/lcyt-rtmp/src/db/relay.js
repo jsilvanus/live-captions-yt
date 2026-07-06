@@ -9,6 +9,23 @@ export function getKey(db, key) {
   return db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key) ?? null;
 }
 
+/**
+ * Resolve an incoming nginx-rtmp/MediaMTX stream `name` to the api_key it
+ * belongs to. When a project has rotated its ingest stream key
+ * (`api_keys.ingest_stream_key`), broadcasters publish using that rotated
+ * value instead of the literal api_key — this looks it up. Falls back to
+ * treating `name` as the literal api_key when no rotated key matches
+ * (today's behavior, unchanged for any key that has never rotated).
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} name  nginx-rtmp `$name` / MediaMTX stream name
+ * @returns {string} the resolved api_key
+ */
+export function resolveApiKeyFromIngestStreamKey(db, name) {
+  const row = db.prepare('SELECT key FROM api_keys WHERE ingest_stream_key = ?').get(name);
+  return row ? row.key : name;
+}
+
 // ─── RTMP relay config per API key (fan-out: up to 4 slots) ──────────────────
 
 const MAX_RELAY_SLOTS = 4;

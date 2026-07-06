@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import express from 'express';
-import { isRelayAllowed, isRelayActive, getRelays, getKey } from '../db.js';
+import { isRelayAllowed, isRelayActive, getRelays, getKey, resolveApiKeyFromIngestStreamKey } from '../db.js';
 import logger from 'lcyt/logger';
 
 /**
@@ -37,7 +37,7 @@ export function createRtmpRouter(db, relayManager) {
   router.use(express.urlencoded({ extended: false, limit: '4kb' }));
 
   router.post('/', async (req, res) => {
-    const { app: appName, name: apiKey, call } = req.body || {};
+    const { app: appName, name, call } = req.body || {};
 
     // Validate application name when RTMP_APPLICATION is configured.
     // Read env at request time so it can be changed in tests or via hot config.
@@ -47,9 +47,14 @@ export function createRtmpRouter(db, relayManager) {
       return res.status(403).send('wrong application');
     }
 
-    if (!apiKey) {
+    if (!name) {
       return res.status(400).send('missing name');
     }
+
+    // Resolve the stream name to the project's api_key — this is a no-op
+    // (returns `name` unchanged) unless the project has rotated its ingest
+    // stream key via POST /ingestion/config/rotate.
+    const apiKey = resolveApiKeyFromIngestStreamKey(db, name);
 
     // Handle on_publish: call=publish
     if (call === 'publish') {

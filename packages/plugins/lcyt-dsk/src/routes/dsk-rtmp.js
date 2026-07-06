@@ -45,12 +45,27 @@ function dskSourceUrl(apiKey) {
 }
 
 /**
+ * Resolve an incoming nginx-rtmp stream `name` to the api_key it belongs to.
+ * Mirrors `resolveApiKeyFromIngestStreamKey()` in lcyt-rtmp's db/relay.js —
+ * duplicated here (rather than imported) since lcyt-dsk has no dependency on
+ * lcyt-rtmp; both plugins query the shared `api_keys` table directly instead.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} name
+ * @returns {string}
+ */
+function resolveApiKeyFromIngestStreamKey(db, name) {
+  const row = db.prepare('SELECT key FROM api_keys WHERE ingest_stream_key = ?').get(name);
+  return row ? row.key : name;
+}
+
+/**
  * Create the Express router for DSK RTMP ingest callbacks.
  *
+ * @param {import('better-sqlite3').Database} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @returns {Router}
  */
-export function createDskRtmpRouter(relayManager) {
+export function createDskRtmpRouter(db, relayManager) {
   const router = Router();
 
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
@@ -59,7 +74,7 @@ export function createDskRtmpRouter(relayManager) {
   /**
    * Shared handler for nginx-rtmp publish/publish_done events.
    * @param {'publish'|'publish_done'} call
-   * @param {string} name  Stream name = API key
+   * @param {string} name  Stream name = API key (or a rotated ingest stream key)
    * @param {import('express').Response} res
    */
   async function handleNginxCallback(call, name, res) {
@@ -67,7 +82,7 @@ export function createDskRtmpRouter(relayManager) {
       return res.status(400).send('invalid stream name');
     }
 
-    const apiKey = name;
+    const apiKey = resolveApiKeyFromIngestStreamKey(db, name);
     const rtmpUrl = dskSourceUrl(apiKey);
 
     if (call === 'publish') {

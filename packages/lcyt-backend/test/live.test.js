@@ -3,7 +3,7 @@ import assert from 'node:assert';
 import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { initDb, createKey } from '../src/db.js';
+import { initDb, createKey, createCaptionTarget } from '../src/db.js';
 import { SessionStore, makeSessionId } from '../src/store.js';
 import { createLiveRouter } from '../src/routes/live.js';
 
@@ -295,5 +295,105 @@ describe('DELETE /live', () => {
     assert.strictEqual(data.removed, true);
     assert.strictEqual(data.sessionId, sessionId);
     assert.strictEqual(store.has(sessionId), false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /live — targets: explicit override vs. saved-default resolution
+// (plan/selfservice_config_backend §1's "Central design decision" section)
+// ---------------------------------------------------------------------------
+
+describe('POST /live — targets override-vs-default', () => {
+  it('new session with targets omitted loads the project\'s saved enabled caption_targets', async () => {
+    const { key } = createKey(db, { owner: 'DefaultLoad' });
+    createCaptionTarget(db, key, { type: 'youtube', streamKey: 'saved-stream-key' });
+    createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'saved-viewer-key', enabled: false });
+    const domain = 'https://default-load.com';
+
+    const res = await postLive({ apiKey: key, domain });
+    const { sessionId } = await res.json();
+    assert.strictEqual(res.status, 200);
+
+    const session = store.get(sessionId);
+    // Only the enabled target should have been loaded — the disabled viewer target is excluded.
+    assert.strictEqual(session.extraTargets.length, 1);
+    assert.strictEqual(session.extraTargets[0].type, 'youtube');
+  });
+
+  it('new session with targets omitted and no saved targets gets an empty extraTargets array', async () => {
+    const { key } = createKey(db, { owner: 'NoSavedTargets' });
+    const domain = 'https://no-saved.com';
+
+    const res = await postLive({ apiKey: key, domain });
+    const { sessionId } = await res.json();
+    const session = store.get(sessionId);
+    assert.deepStrictEqual(session.extraTargets, []);
+  });
+
+  it('new session with an explicit empty targets array does NOT load saved defaults', async () => {
+    const { key } = createKey(db, { owner: 'ExplicitEmptyOverride' });
+    createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'should-not-load' });
+    const domain = 'https://explicit-empty.com';
+
+    const res = await postLive({ apiKey: key, domain, targets: [] });
+    const { sessionId } = await res.json();
+    const session = store.get(sessionId);
+    assert.deepStrictEqual(session.extraTargets, []);
+  });
+
+  it('new session with an explicit targets array overrides saved defaults', async () => {
+    const { key } = createKey(db, { owner: 'ExplicitOverride' });
+    createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'saved-not-used' });
+    const domain = 'https://explicit-override.com';
+
+    const res = await postLive({ apiKey: key, domain, targets: [{ id: 'x', type: 'viewer', viewerKey: 'override-viewer-key' }] });
+    const { sessionId } = await res.json();
+    const session = store.get(sessionId);
+    assert.strictEqual(session.extraTargets.length, 1);
+    assert.strictEqual(session.extraTargets[0].viewerKey, 'override-viewer-key');
+  });
+
+  it('reconnecting (existing session) with targets omitted does NOT wipe the running session\'s targets', async () => {
+    const { key } = createKey(db, { owner: 'ReconnectNoWipe' });
+    const domain = 'https://reconnect-no-wipe.com';
+
+    // First connect: explicit targets establish the running session's extraTargets.
+    const first = await postLive({ apiKey: key, domain, targets: [{ id: 'a', type: 'viewer', viewerKey: 'still-here-key' }] });
+    const { sessionId } = await first.json();
+    assert.strictEqual(store.get(sessionId).extraTargets.length, 1);
+
+    // Reconnect without a targets field at all — must not wipe to [].
+    const second = await postLive({ apiKey: key, domain });
+    assert.strictEqual(second.status, 200);
+    const session = store.get(sessionId);
+    assert.strictEqual(session.extraTargets.length, 1);
+    assert.strictEqual(session.extraTargets[0].viewerKey, 'still-here-key');
+  });
+
+  it('reconnecting (existing session) with an explicit targets array still replaces the running targets', async () => {
+    const { key } = createKey(db, { owner: 'ReconnectExplicit' });
+    const domain = 'https://reconnect-explicit.com';
+
+    const first = await postLive({ apiKey: key, domain, targets: [{ id: 'a', type: 'viewer', viewerKey: 'old-key' }] });
+    const { sessionId } = await first.json();
+
+    const second = await postLive({ apiKey: key, domain, targets: [{ id: 'b', type: 'viewer', viewerKey: 'new-key' }] });
+    assert.strictEqual(second.status, 200);
+    const session = store.get(sessionId);
+    assert.strictEqual(session.extraTargets.length, 1);
+    assert.strictEqual(session.extraTargets[0].viewerKey, 'new-key');
+  });
+
+  it('reconnecting with an explicit empty targets array clears the running session\'s targets', async () => {
+    const { key } = createKey(db, { owner: 'ReconnectExplicitEmpty' });
+    const domain = 'https://reconnect-explicit-empty.com';
+
+    const first = await postLive({ apiKey: key, domain, targets: [{ id: 'a', type: 'viewer', viewerKey: 'to-be-cleared' }] });
+    const { sessionId } = await first.json();
+    assert.strictEqual(store.get(sessionId).extraTargets.length, 1);
+
+    const second = await postLive({ apiKey: key, domain, targets: [] });
+    assert.strictEqual(second.status, 200);
+    assert.deepStrictEqual(store.get(sessionId).extraTargets, []);
   });
 });

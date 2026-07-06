@@ -22,6 +22,7 @@
  *   if (process.env.RTMP_RELAY_ACTIVE === '1') {
  *     const routers = createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains });
  *     app.use('/rtmp',       routers.rtmpRouter);
+ *     app.use('/ingestion',  routers.ingestionRouter);
  *     app.use('/stream',     routers.streamRouter);
  *     app.use('/stream-hls', routers.streamHlsRouter);
  *     app.use('/radio',      routers.radioRouter);
@@ -45,6 +46,7 @@ import { PreviewManager } from './preview-manager.js';
 import { HlsSubsManager } from './hls-subs-manager.js';
 import { SttManager } from './stt-manager.js';
 import { createRtmpRouter } from './routes/rtmp.js';
+import { createIngestionRouter } from './routes/ingestion.js';
 import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { createRadioRouter } from './routes/radio.js';
@@ -54,6 +56,7 @@ import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { NginxManager } from './nginx-manager.js';
 export { getSttConfig, setSttConfig } from './db.js';
+export { getRadioConfig, setRadioConfig } from './db.js';
 
 /**
  * Initialize the RTMP relay plugin.
@@ -170,6 +173,7 @@ export async function initRtmpControl(db, store = null) {
  * @param {{ allowedRtmpDomains?: string }} [opts]
  * @returns {{
  *   rtmpRouter: import('express').Router,
+ *   ingestionRouter: import('express').Router,
  *   streamRouter: import('express').Router,
  *   streamHlsRouter: import('express').Router,
  *   radioRouter: import('express').Router,
@@ -179,9 +183,10 @@ export async function initRtmpControl(db, store = null) {
 export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager }, { allowedRtmpDomains } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager),
+    ingestionRouter: createIngestionRouter(db, auth, relayManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager),
-    radioRouter:     createRadioRouter(db, radioManager, sttManager),
+    radioRouter:     createRadioRouter(db, radioManager, sttManager, auth),
     previewRouter:   createPreviewRouter(previewManager),
   };
 }

@@ -119,3 +119,36 @@ harder to read at each call site. Only 3 call sites total, which doesn't
 clear the bar for an abstraction. Left as-is on purpose, not an oversight.
 
 (Found during: `/simplify` on `claude/api-connectors-variables-0wce55`, 2026-07-05.)
+
+---
+
+## New `ON DELETE CASCADE` on `caption_targets`/`translation_vendor_config`/`translation_targets` is inert — `PRAGMA foreign_keys` is never enabled
+
+**Where:** `packages/lcyt-backend/src/db/schema.js` (the three new tables from
+`plan_selfservice_config_backend.md` §1) vs. `packages/lcyt-backend/src/db/keys.js`'s
+`deleteKey()` and `routes/keys.js`'s `DELETE /keys/:key?permanent=true` handler.
+
+**Finding:** All three new tables declare `api_key TEXT ... REFERENCES api_keys(key)
+ON DELETE CASCADE`, matching the same declaration already used by
+`project_features`/`project_members`/`project_member_permissions`/`project_device_roles`.
+But nowhere in the codebase is `PRAGMA foreign_keys = ON` ever issued on the
+`better-sqlite3` connection (checked via grep), and SQLite disables FK
+enforcement by default — so every `ON DELETE CASCADE` in this schema,
+including the three new ones, is currently a no-op. `deleteKey()` is a bare
+`DELETE FROM api_keys WHERE key = ?`; the permanent-delete route
+(`routes/keys.js`) only manually cleans up DSK images before calling it.
+Permanently deleting a project key today already leaves orphaned rows behind
+in every one of those "cascading" child tables — this change adds three more
+tables to that existing gap rather than introducing a new one.
+
+**Why skipped:** Pre-existing, repo-wide gap (not specific to this diff) —
+fixing it means either (a) turning on `PRAGMA foreign_keys = ON`, which risks
+surfacing latent FK-violation errors from years of already-orphaned rows in
+production-shaped databases the moment it's enabled, or (b) adding manual
+`DELETE FROM <table> WHERE api_key = ?` cleanup for every child table (there
+are now 7+) inside `deleteKey()`/the permanent-delete route — a real fix, but
+one that touches shared deletion code far outside this plan's scope and
+deserves its own audit + test pass across all affected tables, not three
+lines added incidentally by a config-CRUD feature.
+
+(Found during: `/code-review` on `claude/selfservice-config-backend-djp52h`, 2026-07-06.)
