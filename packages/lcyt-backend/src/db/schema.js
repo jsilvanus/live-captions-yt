@@ -439,6 +439,25 @@ export function initDb(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit_log(actor)');
 
+  // ── Personal MCP access tokens (plan/mcp) ─────────────────────────────────
+  // Named, individually-revocable bearer tokens for external MCP clients
+  // (Claude Desktop, Claude Code). Raw token is shown once at creation and
+  // only its hash is stored — closer to a GitHub PAT list than to
+  // api_keys.ingest_stream_key's single rotatable slot.
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS mcp_tokens (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key      TEXT NOT NULL,
+      label        TEXT NOT NULL,
+      token_hash   TEXT NOT NULL UNIQUE,
+      created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+      last_used_at TEXT,
+      revoked_at   TEXT
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_mcp_tokens_key ON mcp_tokens(api_key)');
+
   // Back-fill project_features from legacy api_keys columns (idempotent)
   const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];
   const LEGACY_FEATURE_MAP = [

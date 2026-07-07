@@ -32,6 +32,7 @@ import {
   incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd,
   incrementDomainHourlyCaptions,
   saveSession, listSessions, deleteSession,
+  verifyMcpToken,
 } from "lcyt-backend/db";
 
 // ── Auth database (optional) ──────────────────────────────────────────────────
@@ -733,16 +734,24 @@ function authenticate(req, res) {
   const provided = db ? req.headers["x-api-key"] : null;
 
   if (provided) {
-    // Key voluntarily provided — validate regardless of REQUIRE_API_KEY
-    const result = validateApiKey(db, provided);
+    // Credential voluntarily provided — validate regardless of REQUIRE_API_KEY.
+    // A personal MCP token (mcp_tokens, plan/mcp) resolves to its owning
+    // api_key by hash; anything else is checked as a raw api_keys.key.
+    const mcpToken = verifyMcpToken(db, provided);
+    const candidateKey = mcpToken ? mcpToken.apiKey : provided;
+    const result = validateApiKey(db, candidateKey);
     if (!result.valid) {
-      console.error(`[lcyt-mcp-http] 403 — key ${provided.slice(0, 8)}... rejected: ${result.reason}`);
-      writeAuthEvent(db, { apiKey: provided, eventType: result.reason, domain: "mcp" });
+      console.error(`[lcyt-mcp-http] 403 — credential ${provided.slice(0, 8)}... rejected: ${result.reason}`);
+      writeAuthEvent(db, { apiKey: candidateKey, eventType: result.reason, domain: "mcp" });
       res.status(403).json({ error: result.reason });
       return { ok: false };
     }
-    apiKey = provided;
-    console.error(`[lcyt-mcp-http] Accepted key ${apiKey.slice(0, 8)}... (owner: ${result.owner})`);
+    apiKey = candidateKey;
+    if (mcpToken) {
+      console.error(`[lcyt-mcp-http] Accepted MCP token "${mcpToken.label}" for key ${apiKey.slice(0, 8)}... (owner: ${result.owner})`);
+    } else {
+      console.error(`[lcyt-mcp-http] Accepted key ${apiKey.slice(0, 8)}... (owner: ${result.owner})`);
+    }
   } else if (REQUIRE_API_KEY) {
     console.error("[lcyt-mcp-http] 401 — X-Api-Key header missing");
     res.status(401).json({ error: "X-Api-Key header required" });
