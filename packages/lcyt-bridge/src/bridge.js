@@ -174,6 +174,20 @@ export class Bridge extends EventEmitter {
         await this._postStatus({ requestId, ok: false, error: err.message });
         this.emit('command:error', { type: 'http_request', url, error: err.message });
       }
+    } else if (cmd.type === 'model_call') {
+      // Local-model inference relay (plan/ai_model_registry): fetch the source
+      // image (if any) from the backend ourselves — raw image bytes never
+      // travel down the SSE command channel — then POST to the local model
+      // endpoint (e.g. an Ollama /api/generate on this bridge's network).
+      const { requestId, sourceUrl, endpoint, model, prompt, outputMode, headers = {} } = cmd;
+      try {
+        const result = await this._modelCall({ sourceUrl, endpoint, model, prompt, outputMode, headers });
+        await this._postStatus({ requestId, ok: true, status: result.status, body: result.body });
+        this.emit('command:ok', { type: 'model_call', endpoint, status: result.status });
+      } catch (err) {
+        await this._postStatus({ requestId, ok: false, error: err.message });
+        this.emit('command:error', { type: 'model_call', endpoint, error: err.message });
+      }
     } else if (cmd.type === 'obs_switch') {
       const { requestId, host, port, password, sceneName } = cmd;
       try {
@@ -218,6 +232,44 @@ export class Bridge extends EventEmitter {
       }
     }
     const response = await fetch(url, init);
+    const text = await response.text().catch(() => '');
+    let parsed;
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+    return { status: response.status, body: parsed };
+  }
+
+  /**
+   * Run a model inference call against a local (this network's) endpoint.
+   * When sourceUrl is present, its bytes are fetched here and passed to the
+   * model as a base64 `images` entry (Ollama vision convention).
+   *
+   * @param {{ sourceUrl?: string, endpoint: string, model?: string, prompt?: string, outputMode?: string, headers?: object }} opts
+   * @returns {Promise<{ status: number, body: any }>}
+   */
+  async _modelCall({ sourceUrl, endpoint, model, prompt, outputMode, headers = {} }) {
+    if (!endpoint) throw new Error('model_call requires an endpoint');
+
+    let images;
+    if (sourceUrl) {
+      const imgRes = await fetch(sourceUrl);
+      if (!imgRes.ok) throw new Error(`Source fetch failed: ${imgRes.status}`);
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      images = [buf.toString('base64')];
+    }
+
+    const payload = {
+      ...(model ? { model } : {}),
+      ...(prompt !== undefined ? { prompt } : {}),
+      stream: false,
+      ...(outputMode === 'json' ? { format: 'json' } : {}),
+      ...(images ? { images } : {}),
+    };
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify(payload),
+    });
     const text = await response.text().catch(() => '');
     let parsed;
     try { parsed = JSON.parse(text); } catch { parsed = text; }

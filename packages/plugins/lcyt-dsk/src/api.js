@@ -32,7 +32,7 @@ import { createDskViewportsRouter } from './routes/dsk-viewports.js';
 import { createImagesRouter } from './routes/images.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
 import { createEditorAuth, editorAuthOrBearer } from './middleware/editor-auth.js';
-export { deleteAllImages } from './db/images.js';
+export { deleteAllImages, listImages, getImageByKey, updateImageSettings, deleteImage } from './db/images.js';
 
 /**
  * Initialise the DSK plugin.

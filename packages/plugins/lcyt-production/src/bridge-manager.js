@@ -13,6 +13,9 @@
 import { randomUUID } from 'node:crypto';
 
 const COMMAND_TIMEOUT_MS = 10_000;
+// Local inference on modest hardware can legitimately take 30–120s — a 10s
+// timeout would make bridge-relayed Ollama unusable (plan/ai_model_registry).
+const MODEL_CALL_TIMEOUT_MS = 120_000;
 const HEARTBEAT_INTERVAL_MS = 20_000;
 
 export class BridgeManager {
@@ -119,21 +122,25 @@ export class BridgeManager {
    *
    * @param {string} instanceId
    * @param {{ type?: string, host?: string, port?: number, payload?: string, [key: string]: any }} command
+   * @param {{ timeoutMs?: number }} [opts] — per-call timeout override;
+   *   defaults to 120s for `model_call` (local inference is slow), 10s otherwise
    * @returns {Promise<{ ok: boolean, error?: string }>}
    */
-  sendCommand(instanceId, command) {
+  sendCommand(instanceId, command, opts = {}) {
     const conn = this._connections.get(instanceId);
     if (!conn) {
       return Promise.reject(new Error(`Bridge ${instanceId} is not connected`));
     }
 
     const requestId = randomUUID();
+    const timeoutMs = opts.timeoutMs
+      ?? (command.type === 'model_call' ? MODEL_CALL_TIMEOUT_MS : COMMAND_TIMEOUT_MS);
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this._pending.delete(requestId);
         reject(new Error('Bridge command timed out'));
-      }, COMMAND_TIMEOUT_MS);
+      }, timeoutMs);
 
       this._pending.set(requestId, { resolve, reject, timer });
 
@@ -167,7 +174,10 @@ export class BridgeManager {
     this._pending.delete(body.requestId);
 
     if (body.ok) {
-      pending.resolve({ ok: true });
+      // Pass response payload fields through (e.g. http_request/model_call
+      // report { status, body }) — callers like Ollama discovery need them.
+      const { requestId, ok, error, type, ...rest } = body;
+      pending.resolve({ ok: true, ...rest });
     } else {
       pending.reject(new Error(body.error || 'Bridge relay failed'));
     }

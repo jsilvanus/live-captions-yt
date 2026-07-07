@@ -329,3 +329,66 @@ describe('BridgeManager.receiveStatus', () => {
     assert.ok(after.last_seen !== null, 'last_seen updated');
   });
 });
+
+// ---------------------------------------------------------------------------
+// sendCommand timeout override + result payload passthrough (plan/ai_model_registry)
+// ---------------------------------------------------------------------------
+
+describe('BridgeManager.sendCommand timeouts and payload passthrough', () => {
+  it('honours a per-call timeoutMs override', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    const start = Date.now();
+    const promise = mgr.sendCommand(id, { type: 'http_request', method: 'GET', url: 'http://x' }, { timeoutMs: 50 });
+    await assert.rejects(() => promise, /timed out/);
+    assert.ok(Date.now() - start < 5_000, 'timed out via the 50ms override, not the 10s default');
+    mgr.disconnect(id);
+  });
+
+  it('passes response payload fields (status, body) through to the resolver', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    const promise = mgr.sendCommand(id, { type: 'http_request', method: 'GET', url: 'http://x' });
+    const cmdData = extractCommandData(res.chunks);
+    mgr.receiveStatus(id, { requestId: cmdData.requestId, ok: true, status: 200, body: { models: [] } });
+
+    const result = await promise;
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, { models: [] });
+    assert.equal(result.requestId, undefined, 'requestId is not leaked into the result');
+    mgr.disconnect(id);
+  });
+
+  it('sends model_call commands as-is with a requestId', () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    mgr.sendCommand(id, {
+      type: 'model_call', endpoint: 'http://ollama:11434/api/generate',
+      model: 'llava', prompt: 'Describe', outputMode: 'text',
+      sourceUrl: 'https://backend/preview/k/incoming.jpg',
+    }).catch(() => { /* resolved below — ignore */ });
+
+    const cmdData = extractCommandData(res.chunks);
+    assert.equal(cmdData.type, 'model_call');
+    assert.equal(cmdData.endpoint, 'http://ollama:11434/api/generate');
+    assert.equal(cmdData.model, 'llava');
+    assert.ok(cmdData.requestId);
+
+    // Resolve so the 120s model_call timer doesn't keep the process alive
+    mgr.receiveStatus(id, { requestId: cmdData.requestId, ok: true, status: 200, body: {} });
+    mgr.disconnect(id);
+  });
+});

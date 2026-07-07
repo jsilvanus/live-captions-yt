@@ -2,10 +2,7 @@ import { Router } from 'express';
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { parseMixer } from '../registry.js';
-import { getSwitchCommand as rolandGetSwitchCommand } from '../adapters/mixer/roland.js';
-import { getSwitchCommand as amxGetSwitchCommand } from '../adapters/mixer/amx.js';
-import { getSwitchCommand as atemGetSwitchCommand } from '../adapters/mixer/atem.js';
-import { getSwitchCommand as monarchHdxGetSwitchCommand } from '../adapters/mixer/monarch_hdx.js';
+import { buildSwitchCommand } from '../crud.js';
 
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
@@ -346,42 +343,4 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   return router;
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Build the bridge command object for a mixer source switch.
- * Returns null for mixer types that do not use bridge dispatch (e.g. lcyt).
- */
-function buildSwitchCommand(mixer, inputNumber) {
-  if (mixer.type === 'lcyt') return null;
-  if (mixer.type === 'roland') {
-    return {
-      host:    mixer.connectionConfig.host,
-      port:    mixer.connectionConfig.port ?? 8023,
-      payload: rolandGetSwitchCommand(mixer.connectionConfig, inputNumber),
-    };
-  }
-  if (mixer.type === 'amx') {
-    return {
-      host:    mixer.connectionConfig.host,
-      port:    mixer.connectionConfig.port ?? 1319,
-      payload: amxGetSwitchCommand(mixer.connectionConfig, inputNumber),
-    };
-  }
-  if (mixer.type === 'atem') {
-    return atemGetSwitchCommand(mixer.connectionConfig, inputNumber);
-  }
-  if (mixer.type === 'obs') {
-    // Import the OBS adapter to delegate getSwitchCommand
-    const obsAdapter = require('../../adapters/mixer/obs.js');
-    return obsAdapter.getSwitchCommand(mixer.connectionConfig, inputNumber);
-  }
-  if (mixer.type === 'monarch_hdx') {
-    return monarchHdxGetSwitchCommand(mixer.connectionConfig, inputNumber);
-  }
-  throw new Error(`No bridge command builder for mixer type '${mixer.type}'`);
 }

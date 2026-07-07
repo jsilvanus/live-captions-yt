@@ -1,0 +1,42 @@
+# Dockerized bridge + Ollama deployment mode (plan/ai_model_registry).
+#
+# Example — not a managed deployment. Both containers share a private compose
+# network; Ollama is deliberately NEVER published to the host, so the only
+# thing on the LAN (or anywhere) that can reach it is the bridge container.
+# Ollama has no built-in auth — this network isolation is the safety model.
+#
+# The LCYT provider's base_url for this Ollama is the Docker-internal service
+# name: http://ollama:11434 (with the provider's bridge_instance_id set to
+# this bridge). Docker's internal DNS satisfies "whatever this bridge instance
+# can reach" exactly the same as a raw LAN address would.
+#
+# Usage:
+#   BRIDGE_TOKEN=<token from POST /production/bridge/instances> docker compose up -d
+#   docker compose exec ollama ollama pull llama3.1:8b
+
+services:
+  ollama:
+    image: ollama/ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - bridge-net
+    # deliberately NOT published to the host — only bridge-net can reach it
+    restart: unless-stopped
+
+  lcyt-bridge:
+    build:
+      context: ../..
+      dockerfile: docker/lcyt-bridge/Dockerfile
+    environment:
+      BACKEND_URL: ${BACKEND_URL:-https://api.lcyt.fi}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN}
+    networks:
+      - bridge-net
+    restart: unless-stopped
+
+networks:
+  bridge-net: {}
+
+volumes:
+  ollama-data: {}

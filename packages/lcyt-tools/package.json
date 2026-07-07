@@ -1,0 +1,23 @@
+{
+  "name": "lcyt-tools",
+  "version": "0.1.0",
+  "description": "Shared tool-schema/handler registry for LCYT — used by MCP servers and lcyt-agent's agentic_chat roles (plan/mcp)",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt-tools"
+  }
+}

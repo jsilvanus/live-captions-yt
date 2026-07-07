@@ -27,7 +27,43 @@
 export { AgentEngine } from './agent-engine.js';
 export { createAgentRouter } from './routes/agent.js';
 export { createAiRouter } from './routes/ai.js';
+export { createAdminAiProvidersRouter } from './routes/ai-providers-admin.js';
+export { createProjectAiProvidersRouter } from './routes/ai-providers-project.js';
+export { createRolesRouter } from './routes/roles.js';
+export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from './routes/roles-chat.js';
+export { createProductionAssistantRouter } from './routes/production-assistant.js';
+export { createVisionRolesRouter, VISION_ROLES } from './routes/vision-roles.js';
 export { runMigrations } from './db.js';
+
+// Vision roles (Tracker & Describer, plan_ai_roles_framework.md Runtime Shape 1)
+export { VisionRoleManager } from './vision-role-manager.js';
+export { VisionFrameFetcher } from './vision-frame-fetcher.js';
+export { createVisionAdapter } from './vision-adapters/index.js';
+
+// Agentic chat turn loop (plan/ai_roles_framework, Runtime Shape 2)
+export {
+  runAgenticTurn, toOpenAiToolSchema, callChatCompletionWithTools,
+  defaultShouldExecute, makeDialogShouldExecute, resolveRoleProviderSettings,
+} from './agentic-turn.js';
+export { RolesBus } from './roles-bus.js';
+export { ProductionAssistantManager, AUTO_COOLDOWN_FLOOR_MS } from './production-assistant.js';
+
+// AI Roles Framework (plan/ai_roles_framework): role catalog + per-project config
+export {
+  runAiRolesMigrations, BUILTIN_ROLES, RUNTIME_KINDS,
+  listRoles, getRole, getRoleConfig, setRoleConfig, defaultRoleConfig, effectiveMode,
+} from './ai-roles.js';
+
+// AI model registry (plan/ai_model_registry): providers, model catalogs, grants
+export {
+  runProviderRegistryMigrations,
+  createProvider, updateProvider, deleteProvider, getProvider,
+  maskProvider, listSiteProviders, listVisibleProviders, isProviderVisible,
+  setGrant, listGrants,
+  listProviderModels, addManualModel, updateModel, deleteModel,
+  PROVIDER_KINDS, PROVIDER_VENDORS,
+} from './provider-registry.js';
+export { discoverProvider, inferCapabilities, upsertDiscoveredModels } from './discovery.js';
 
 // Re-export AI config and embedding utilities so the backend can use them
 export {
@@ -50,7 +86,7 @@ export {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {object} [opts]
- * @returns {Promise<{ agent: import('./agent-engine.js').AgentEngine }>}
+ * @returns {Promise<{ agent, providerRegistry, rolesBus, assistantManager }>}
  */
 export async function initAgent(db, opts = {}) {
   const { runMigrations } = await import('./db.js');
@@ -60,8 +96,46 @@ export async function initAgent(db, opts = {}) {
   const { runAiMigrations } = await import('./ai-config.js');
   runAiMigrations(db);
 
+  // AI model registry migrations (ai_providers / ai_provider_models / ai_provider_grants)
+  const { runProviderRegistryMigrations } = await import('./provider-registry.js');
+  runProviderRegistryMigrations(db);
+
+  // AI Roles Framework migrations (ai_roles catalog seed + project_ai_role_configs)
+  const { runAiRolesMigrations } = await import('./ai-roles.js');
+  runAiRolesMigrations(db);
+
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);
 
-  return { agent };
+  // Agentic chat roles' shared SSE bus + Production Assistant's suggestion
+  // queue. Both only need `db`; the tool registry itself (which needs
+  // cross-plugin deps: lcyt-production, lcyt-dsk) is built by the
+  // composition root (server.js) and passed into the role routers at mount
+  // time, not constructed here.
+  const { RolesBus } = await import('./roles-bus.js');
+  const { ProductionAssistantManager } = await import('./production-assistant.js');
+  const { VisionRoleManager } = await import('./vision-role-manager.js');
+  const rolesBus = new RolesBus();
+  const assistantManager = new ProductionAssistantManager(db, rolesBus);
+  const visionRoleManager = new VisionRoleManager(rolesBus);
+
+  // Small handle for the provider registry. The bridge manager (from
+  // lcyt-production) is injected by the composition root (server.js) after
+  // both plugins are initialized — same setter-injection convention as
+  // cueEngine.setAgentEvaluateFn().
+  const registryModule = await import('./provider-registry.js');
+  const discoveryModule = await import('./discovery.js');
+  const providerRegistry = {
+    _bridgeManager: null,
+    setBridgeManager(bridgeManager) { this._bridgeManager = bridgeManager; },
+    getBridgeManager() { return this._bridgeManager; },
+    getProvider: (id) => registryModule.getProvider(db, id),
+    listVisibleProviders: (apiKey) => registryModule.listVisibleProviders(db, apiKey),
+    listProviderModels: (providerId) => registryModule.listProviderModels(db, providerId),
+    discoverProvider(provider) {
+      return discoveryModule.discoverProvider(db, provider, { bridgeManager: this._bridgeManager });
+    },
+  };
+
+  return { agent, providerRegistry, rolesBus, assistantManager, visionRoleManager };
 }
