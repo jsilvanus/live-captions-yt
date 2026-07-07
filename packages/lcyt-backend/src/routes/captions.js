@@ -5,6 +5,7 @@ import { broadcastToViewers, registerViewerKeyOwner } from './viewer.js';
 import { composeCaptionText, buildVttCue } from '../caption-files.js';
 import { applyMetacodeProcessors } from '../metacode.js';
 import { writeToBackendFile } from 'lcyt-files';
+import { getTranslationTargets } from '../db/translation-config.js';
 
 /**
  * Factory for the /captions router.
@@ -153,6 +154,22 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         if (session.extraTargets && session.extraTargets.length > 0) {
           const source = session.domain;
 
+          // Phase 5: Load per-target routed translations for per-target-aware caption composition
+          let translationsByTargetId = {};
+          try {
+            const allTranslations = getTranslationTargets(db, session.apiKey);
+            for (const tr of allTranslations) {
+              if (tr.enabled && tr.captionTargetId) {
+                if (!translationsByTargetId[tr.captionTargetId]) {
+                  translationsByTargetId[tr.captionTargetId] = [];
+                }
+                translationsByTargetId[tr.captionTargetId].push(tr);
+              }
+            }
+          } catch (err) {
+            // Ignore translation lookup errors — deliver with default composition
+          }
+
           // Build the full per-caption payload for generic targets.
           // Includes the original text, the composed/translated text, and all
           // translation metadata so downstream services can apply their own logic.
@@ -181,29 +198,87 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
 
           for (const target of session.extraTargets) {
             if (target.type === 'youtube' && target.sender) {
-              for (const caption of sendCaptions) {
+              // Phase 5: Check for routed translation target
+              const routedTranslations = translationsByTargetId[target.id] || [];
+              let targetText = sendCaptions;
+
+              if (routedTranslations.length > 0) {
+                // Use the first routed translation for this target
+                const routed = routedTranslations[0];
+                targetText = sendCaptions.map((caption, i) => {
+                  const orig = resolvedCaptions[i];
+                  const composedText = composeCaptionText(
+                    orig.text,
+                    routed.lang,
+                    orig.translations,
+                    routed.showOriginal
+                  );
+                  return { ...caption, text: composedText };
+                });
+              }
+
+              for (const caption of targetText) {
                 target.sender.send(caption.text, caption.timestamp).catch(err => {
                   console.warn(`[captions] Extra YouTube target ${target.id} error: ${err.message}`);
                 });
               }
             } else if (target.type === 'generic' && target.url) {
+              // Phase 5: Use routed translation for generic targets too
+              const routedTranslations = translationsByTargetId[target.id] || [];
+              let targetCaptions = genericCaptions;
+
+              if (routedTranslations.length > 0) {
+                const routed = routedTranslations[0];
+                targetCaptions = resolvedCaptions.map((orig, i) => {
+                  const { text, translations, timestamp, codes } = orig;
+                  const tsStr = typeof timestamp === 'string' ? timestamp
+                    : (timestamp instanceof Date ? timestamp.toISOString() : undefined);
+                  const composedText = composeCaptionText(text, routed.lang, translations, routed.showOriginal);
+                  return {
+                    text,
+                    composedText,
+                    timestamp: tsStr,
+                    ...(translations && { translations }),
+                    ...(routed.lang && { captionLang: routed.lang }),
+                    ...(codes && typeof codes === 'object' && { codes }),
+                  };
+                });
+              }
+
               fetch(target.url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...(target.headers || {}) },
-                body: JSON.stringify({ source, sequence: session.sequence, captions: genericCaptions }),
+                body: JSON.stringify({ source, sequence: session.sequence, captions: targetCaptions }),
               }).catch(err => {
                 console.warn(`[captions] Generic target ${target.id} error: ${err.message}`);
               });
             } else if (target.type === 'viewer' && target.viewerKey) {
               // Register the owner mapping so viewer stats can be attributed to this API key
               registerViewerKeyOwner(target.viewerKey, session.apiKey);
+
+              // Phase 5: Use routed translation for viewer targets
+              const routedTranslations = translationsByTargetId[target.id] || [];
+
               // Broadcast each caption to viewer SSE subscribers.
               // Include original text, composed text, all translations, and metadata codes
               // so viewer pages can filter/display by language and show section info.
-              for (const caption of genericCaptions) {
+              for (let i = 0; i < genericCaptions.length; i++) {
+                const caption = genericCaptions[i];
+                let composedText = caption.composedText;
+
+                if (routedTranslations.length > 0) {
+                  const routed = routedTranslations[0];
+                  composedText = composeCaptionText(
+                    caption.text,
+                    routed.lang,
+                    caption.translations,
+                    routed.showOriginal
+                  );
+                }
+
                 broadcastToViewers(target.viewerKey, {
                   text: caption.text,
-                  composedText: caption.composedText,
+                  composedText,
                   sequence: session.sequence,
                   timestamp: caption.timestamp,
                   ...(caption.translations && { translations: caption.translations }),

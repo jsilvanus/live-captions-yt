@@ -19,6 +19,8 @@ import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
 import { OpenAiAdapter } from './stt-adapters/openai.js';
+import { translateText, isSameLanguage } from './translate-server.js';
+import { getSttConfig } from './db.js';
 import logger from 'lcyt/logger';
 
 const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8888';
@@ -66,10 +68,16 @@ export class SttManager extends EventEmitter {
   /**
    * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store
    *   The backend session store — used to inject transcripts into session._sendQueue.
+   * @param {import('better-sqlite3').Database} [db]
+   *   Optional: required for server-side translation in Phase 5.
    */
-  constructor(store) {
+  constructor(store, db = null) {
     super();
     this._store = store;
+    this._db = db;
+    this._getTranslationVendorConfig = null;
+    this._getTranslationTargets = null;
+    this._broadcastToViewers = null;
     /** @type {Map<string, SttSession>} */
     this._sessions = new Map();
     /** @type {{ major: number, minor: number }|null} */
@@ -86,6 +94,26 @@ export class SttManager extends EventEmitter {
         logger.info(`[stt] ffmpeg ${v.major}.${v.minor} detected — RTMP and WHEP audioSources available`);
       }
     }).catch(() => {});
+  }
+
+  /**
+   * Inject cross-package helpers needed for transcript delivery (Phase 5
+   * server-side translation + viewer-target broadcast). Called once from
+   * lcyt-backend's server.js after `initRtmpControl()` returns — this plugin
+   * must not reach into the consuming app's private `src/` tree directly
+   * (that was a real bug: a previous version of `_deliverTranscript` used
+   * `await import('../../lcyt-backend/src/...')`, a relative path that
+   * doesn't even resolve from this file's location, silently swallowed by
+   * a `.catch(() => ({}))`, so translation and viewer-target delivery never
+   * actually ran). Setter-injection matches this codebase's existing
+   * convention, e.g. `cueEngine.setEmbeddingFn()` in `lcyt-agent`.
+   *
+   * @param {{ getTranslationVendorConfig?: Function, getTranslationTargets?: Function, broadcastToViewers?: Function }} [helpers]
+   */
+  setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers } = {}) {
+    this._getTranslationVendorConfig = getTranslationVendorConfig || null;
+    this._getTranslationTargets = getTranslationTargets || null;
+    this._broadcastToViewers = broadcastToViewers || null;
   }
 
   /**
@@ -155,7 +183,7 @@ export class SttManager extends EventEmitter {
       sess.lastTranscript = text;
       const mode = adapter.mode ?? null;
       this.emit('transcript', { apiKey, text, confidence, timestamp, provider, mode });
-      this._deliverTranscript(apiKey, text, timestamp);
+      this._deliverTranscript(apiKey, text, timestamp, this._db);
     });
 
     adapter.on('error', ({ error }) => {
@@ -325,8 +353,9 @@ export class SttManager extends EventEmitter {
    * @param {string} apiKey
    * @param {string} text
    * @param {Date}   timestamp
+   * @param {import('better-sqlite3').Database} [db]  Optional: required for server-side translation
    */
-  _deliverTranscript(apiKey, text, timestamp) {
+  _deliverTranscript(apiKey, text, timestamp, db = null) {
     if (!this._store) return;
     const trimmed = (text || '').trim();
     if (!trimmed) return;
@@ -353,9 +382,42 @@ export class SttManager extends EventEmitter {
 
         const ts = timestamp instanceof Date ? timestamp : new Date();
 
+        // Server-side translation (Phase 5)
+        let translations = {};
+        let captionLang = null;
+        if (db && this._getTranslationVendorConfig && this._getTranslationTargets) {
+          try {
+            const vendorConfig = this._getTranslationVendorConfig(db, apiKey);
+            const translationTargets = this._getTranslationTargets(db, apiKey).filter(t => t.enabled);
+
+            // Get current STT source language
+            const sttCfg = getSttConfig(db, apiKey);
+            const sourceLang = sttCfg?.language || 'en-US';
+
+            // Translate to all enabled target languages
+            await Promise.allSettled(
+              translationTargets
+                .filter(t => t.target === 'captions' || t.target === 'backend-file')
+                .map(async t => {
+                  if (isSameLanguage(sourceLang, t.lang)) {
+                    translations[t.lang] = trimmed;
+                  } else {
+                    const translated = await translateText(trimmed, sourceLang, t.lang, vendorConfig).catch(() => trimmed);
+                    translations[t.lang] = translated;
+                  }
+                  if (t.target === 'captions') {
+                    captionLang = t.lang;
+                  }
+                })
+            );
+          } catch (err) {
+            logger.debug(`[stt] Translation skipped: ${err.message}`);
+          }
+        }
+
         // Fan-out to all extra targets (YouTube, viewer, generic)
         if (backendSession.extraTargets && backendSession.extraTargets.length > 0) {
-          const { broadcastToViewers } = await import('../../lcyt-backend/src/routes/viewer.js').catch(() => ({ broadcastToViewers: null }));
+          const broadcastToViewers = this._broadcastToViewers;
 
           for (const target of backendSession.extraTargets) {
             if (target.type === 'youtube' && target.sender) {
@@ -368,6 +430,7 @@ export class SttManager extends EventEmitter {
                 composedText:  trimmed,
                 sequence:      seq,
                 timestamp:     ts.toISOString(),
+                ...(Object.keys(translations).length > 0 && { translations }),
               });
             } else if (target.type === 'generic' && target.url) {
               fetch(target.url, {
@@ -376,7 +439,13 @@ export class SttManager extends EventEmitter {
                 body:    JSON.stringify({
                   source:   backendSession.domain,
                   sequence: seq,
-                  captions: [{ text: trimmed, composedText: trimmed, timestamp: ts.toISOString() }],
+                  captions: [{
+                    text: trimmed,
+                    composedText: trimmed,
+                    timestamp: ts.toISOString(),
+                    ...(captionLang && { captionLang }),
+                    ...(Object.keys(translations).length > 0 && { translations }),
+                  }],
                 }),
               }).catch(err => {
                 logger.warn(`[stt] Generic target ${target.id} error: ${err.message}`);

@@ -55,7 +55,7 @@ import { NginxManager } from './nginx-manager.js';
 import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { NginxManager } from './nginx-manager.js';
-export { getSttConfig, setSttConfig } from './db.js';
+export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
 
 /**
@@ -142,7 +142,7 @@ export async function initRtmpControl(db, store = null) {
   const hlsManager     = new HlsManager({ mediamtxClient });
   const hlsSubsManager = new HlsSubsManager();
   const previewManager = new PreviewManager({ mediamtxClient });
-  const sttManager     = new SttManager(store);
+  const sttManager     = new SttManager(store, db);
 
   if (nginxManager.isEnabled) {
     logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
