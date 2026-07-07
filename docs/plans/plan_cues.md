@@ -2,7 +2,7 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; Phase 8 planned."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; compact inline cue syntax, composite/context backend evaluation, and inline cue sync implemented; Phase 9 planned."
 related: plan/agent
 ---
 
@@ -40,12 +40,11 @@ related: plan/agent
 | Backend SSE events | ✅ | `cue_fired` events from CueEngine reach frontend |
 | Regex rules (API) | ✅ | Via CRUD `/cues/rules` (backend-only, not inline metacode) |
 
-### Current limitations
+### Remaining gaps
 
-1. **Any cue can fire** — all cues in the file are eligible regardless of pointer position. In practice, a cue at line 5 can fire even if the pointer is at line 50.
-2. **No directionality** — no forward-only or backward-capable modifiers.
-3. **Exact text only** — no fuzzy/approximate matching for spoken language variations.
-4. **No music-state awareness** — cues cannot trigger based on music detection states.
+1. **Multi-modal scene understanding** — vision + audio + transcript fusion remains the next major milestone.
+2. **Vision-backed event cues** — preview-frame / video inference is still planned rather than shipped.
+3. **Agent-side image analysis** — the preview-image inference hook remains future work.
 
 ---
 
@@ -401,7 +400,28 @@ Instead of matching specific phrases, event cues describe what should happen:
 
 ---
 
-## Phase 8 — Multi-Modal Scene Understanding (Planned)
+## Phase 8 — Compact Inline Cue Syntax, Inline Sync, and Composite/Context Evaluation (Implemented)
+
+### Motivation
+
+Inline cues should be expressible in a compact single-line form and evaluated by the backend when the cue contains composite logic or semantic/event semantics.
+
+### Implemented capabilities
+
+- [x] Compact stanza syntax using escaped newlines or pipe separators:
+  - `<!-- stanza: line one\nline two -->`
+  - `<!-- stanza: line one|line two -->`
+- [x] Compact cue-expression syntax with `|`, `|+`, `|-`, grouping parentheses, named refs, event shorthands, and shorthand match types:
+  - `exact:term`, `~term`, `~~term`, `fuzzy:term`, `semantic:term`
+  - `@named`, `complex:named`, `#event`
+  - `context:section=~prayer`
+- [x] Backend composite evaluation for `and` / `or` / `not` trees and named cue definitions in `packages/plugins/lcyt-cues/src/cue-engine.js`.
+- [x] Inline cue snapshot sync from parsed rundown files to the backend, so composite/context/fuzzy cue trees participate in the runtime path.
+- [x] Planner/parser/runtime regression coverage for the compact syntax plus backend cue-engine tests.
+
+---
+
+## Phase 9 — Multi-Modal Scene Understanding (Planned)
 
 ### Motivation
 

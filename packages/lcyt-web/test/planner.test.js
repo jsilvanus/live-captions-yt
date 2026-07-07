@@ -57,10 +57,10 @@ describe('serializePlan()', () => {
     assert.ok(!result.includes('speaker'));
   });
 
-  it('serializes a stanza block', () => {
+  it('serializes a stanza block as a single-line metacode with escaped newlines', () => {
     const blocks = [{ id: '1', type: 'stanza', lines: ['First line', 'Second line'] }];
     const result = serializePlan(blocks);
-    assert.equal(result, '<!-- stanza\nFirst line\nSecond line\n-->');
+    assert.equal(result, '<!-- stanza: First line\\nSecond line -->');
   });
 
   it('serializes an empty-send block without label', () => {
@@ -145,7 +145,23 @@ describe('deserializePlan()', () => {
     assert.equal(blocks[0].codes.lang, 'fi-FI');
   });
 
-  it('deserializes a stanza block', () => {
+  it('deserializes an inline stanza metacode', () => {
+    const raw = '<!-- stanza: Line 1\\nLine 2 -->';
+    const blocks = deserializePlan(raw);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].type, 'stanza');
+    assert.deepEqual(blocks[0].lines, ['Line 1', 'Line 2']);
+  });
+
+  it('deserializes an inline stanza metacode with pipe separators', () => {
+    const raw = '<!-- stanza: Line 1|Line 2 -->';
+    const blocks = deserializePlan(raw);
+    assert.equal(blocks.length, 1);
+    assert.equal(blocks[0].type, 'stanza');
+    assert.deepEqual(blocks[0].lines, ['Line 1', 'Line 2']);
+  });
+
+  it('deserializes a legacy multiline stanza block', () => {
     const raw = '<!-- stanza\nLine 1\nLine 2\n-->';
     const blocks = deserializePlan(raw);
     assert.equal(blocks.length, 1);

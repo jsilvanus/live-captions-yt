@@ -153,6 +153,13 @@ Second line of the verse
 Caption line that triggers the stanza display
 ```
 
+Single-line compact forms are also supported and serialize back to the same stanza code:
+
+```
+<!-- stanza: First line of the verse\nSecond line of the verse -->
+<!-- stanza: First line of the verse|Second line of the verse -->
+```
+
 - Where handled: parsed by `packages/lcyt-web/src/lib/metacode-parser.js`; compatibility
   re-exports remain in `packages/lcyt-web/src/lib/fileUtils.js`.
 
@@ -264,6 +271,17 @@ The tilde modifier enables Jaro-Winkler fuzzy matching (catches STT spelling var
 <!-- cue~:we beseech thee -->Lord hear us       ← fuzzy next
 <!-- cue*~:amen -->Let us close                  ← fuzzy + skip
 ```
+
+Compact cue-expression syntax is also supported for composite conditions and named definitions:
+
+```
+<!-- cue: exact:Amen|+@closing -->Let us pray
+<!-- cue: ~mercy|~~prayer -->Let us pray
+<!-- cue: context:section=~prayer -->Let us pray
+<!-- cue: exact:Amen|+(exact:Peace|exact:Grace) -->Let us pray
+```
+
+Operators are `|` (OR), `|+` (AND), and `|-` (NOT). Shorthand terms include `exact:`, `fuzzy:`, `semantic:`, bare terms, `~term`, `~~term`, `@named`, `complex:named`, and `#event`.
 
 Bracket modifiers enable backend-only AI matching (these are skipped by the frontend —
 they fire only via backend `cue_fired` SSE events):

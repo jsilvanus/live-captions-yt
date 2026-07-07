@@ -39,6 +39,79 @@ describe('CueEngine', () => {
     assert.deepEqual(fired, []);
   });
 
+  test('inline semantic cues are evaluated when embedding support is available', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    engine.setInlineSnapshot('key1', {
+      cues: [{
+        phrase: 'prayer for healing',
+        matchType: 'semantic',
+        action: { type: 'event', label: 'healing' },
+      }],
+    });
+    engine.setEmbeddingFn(async () => [[1, 0, 0], [0.9, 0.1, 0]]);
+
+    const fired = await engine.evaluateInlineCues('key1', 'prayer for healing');
+    assert.equal(fired.length, 1);
+    assert.equal(fired[0].rule.match_type, 'semantic');
+    assert.equal(fired[0].rule.source, 'inline');
+  });
+
+  test('inline composite cues evaluate simple and/or/not trees', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    engine.setInlineSnapshot('key1', {
+      cueDefs: {
+        'prayer-and-healing': {
+          op: 'and',
+          children: [
+            { type: 'match', matchType: 'phrase', pattern: 'prayer' },
+            { type: 'match', matchType: 'phrase', pattern: 'healing' },
+          ],
+        },
+      },
+      cues: [{
+        phrase: 'composite cue',
+        matchType: 'composite',
+        cueDef: 'prayer-and-healing',
+        action: { type: 'event', label: 'composite' },
+      }],
+    });
+
+    const fired = await engine.evaluateInlineCues('key1', 'prayer and healing');
+    assert.equal(fired.length, 1);
+    assert.equal(fired[0].rule.match_type, 'composite');
+    assert.equal(fired[0].rule.source, 'inline');
+  });
+
+  test('inline composite cues evaluate fuzzy context leaves', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    engine.setInlineSnapshot('key1', {
+      cueDefs: {
+        'fuzzy-section': {
+          type: 'match',
+          matchType: 'context',
+          path: 'section',
+          pattern: 'amen',
+          fuzzy: true,
+          fuzzy_threshold: 0.8,
+        },
+      },
+      cues: [{
+        phrase: 'fuzzy context cue',
+        matchType: 'composite',
+        cueDef: 'fuzzy-section',
+        action: { type: 'event', label: 'fuzzy-context' },
+      }],
+    });
+
+    const fired = await engine.evaluateInlineCues('key1', 'text', { section: 'ameen' });
+    assert.equal(fired.length, 1);
+    assert.equal(fired[0].rule.match_type, 'composite');
+    assert.equal(fired[0].rule.source, 'inline');
+  });
+
   test('phrase match fires when text contains the phrase', () => {
     const db = createDb();
     insertCueRule(db, {
