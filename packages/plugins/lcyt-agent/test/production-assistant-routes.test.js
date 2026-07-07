@@ -74,7 +74,7 @@ function startApp(callToolImpl = async () => ({ ok: true })) {
   const agent = makeFakeAgent();
   const app = express();
   app.use(express.json());
-  app.use('/roles/assistant', createProductionAssistantRouter(db, sessionAuth, toolsContext, manager, rolesBus, agent));
+  app.use('/roles/assistant', createProductionAssistantRouter(db, sessionAuth, toolsContext, manager, agent));
   return new Promise((resolve) => {
     server = createServer(app);
     server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve({ manager, rolesBus }); });
@@ -175,12 +175,15 @@ describe('confirm/reject suggestions', () => {
 describe('auth requirements', () => {
   it('every route requires session auth', async () => {
     await startApp();
+    // GET /roles/assistant/events is deliberately not this router's route —
+    // it's served by routes/roles-chat.js's generic GET /:roleCode/events at
+    // the shared '/roles' mount point (see test/roles-mount-order.test.js
+    // for the integration-level regression test covering that wiring).
     const routes = [
       ['POST', '/roles/assistant/prompt'],
       ['GET', '/roles/assistant/suggestions'],
       ['POST', '/roles/assistant/suggestions/x/confirm'],
       ['POST', '/roles/assistant/suggestions/x/reject'],
-      ['GET', '/roles/assistant/events'],
     ];
     for (const [method, path] of routes) {
       const res = await fetch(`${baseUrl}${path}`, { method, headers: { 'Content-Type': 'application/json' } });

@@ -107,11 +107,19 @@ export function createRolesChatRouter(db, auth, toolsContext, rolesBus) {
     return res.json({ ok: true, reply: result.reply, pendingActions: [], toolCalls: result.toolCalls });
   });
 
+  // Generic event stream for ANY registered role (chat-dialog, vision,
+  // Assistant) — not restricted to CHAT_DIALOG_ROLES. This is deliberately
+  // the single place GET /:roleCode/events is handled: Planner is the only
+  // role excluded (it never streams — see plan_ai_roles_framework.md), and
+  // every other role's own router (production-assistant.js, the future
+  // vision role router) relies on THIS route rather than defining its own,
+  // since Express would otherwise route any /roles/<x>/events request
+  // through whichever router is mounted first at the '/roles' prefix.
   router.get('/:roleCode/events', (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
-    if (!CHAT_DIALOG_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
+    if (roleCode === 'planner' || !getRole(db, roleCode)) return res.status(404).json({ error: 'Unknown role' });
 
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
     res.flushHeaders();

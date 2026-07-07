@@ -38,13 +38,13 @@ function buildSystemPrompt(harnessConfig, production) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
  * @param {{ tools: Array, callTool: Function }} toolsContext
- * @param {import('../production-assistant.js').ProductionAssistantManager} manager
- * @param {import('../roles-bus.js').RolesBus} rolesBus
+ * @param {import('../production-assistant.js').ProductionAssistantManager} manager — already
+ *   holds its own RolesBus reference for emitting assistant_suggestion/assistant_action
  * @param {import('../agent-engine.js').AgentEngine} agent
  * @param {{ listCameras?, listMixers?, registry?, db? }} [production]
  * @returns {import('express').Router}
  */
-export function createProductionAssistantRouter(db, auth, toolsContext, manager, rolesBus, agent, production) {
+export function createProductionAssistantRouter(db, auth, toolsContext, manager, agent, production) {
   const router = Router();
   router.use(auth);
 
@@ -100,15 +100,12 @@ export function createProductionAssistantRouter(db, auth, toolsContext, manager,
     res.json({ ok: true });
   });
 
-  router.get('/events', (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
-    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    res.flushHeaders();
-    res.write('event: connected\ndata: {}\n\n');
-    rolesBus.addSubscriber(apiKey, 'assistant', res);
-    req.on('close', () => rolesBus.removeSubscriber(apiKey, 'assistant', res));
-  });
+  // No GET /events route here — routes/roles-chat.js's generic
+  // GET /:roleCode/events (mounted at the same '/roles' prefix, ahead of
+  // this router) already serves 'assistant' like every other role, off the
+  // same shared RolesBus. Defining a second /events route here would be
+  // unreachable dead code, not a fallback (Express stops at the first
+  // router whose path pattern matches).
 
   return router;
 }

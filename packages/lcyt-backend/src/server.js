@@ -470,7 +470,7 @@ app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddl
 app.use('/roles', createRolesRouter(db, auth));
 app.use('/roles', createRolesChatRouter(db, auth, _toolsContext, _rolesBus));
 app.use('/roles/assistant', createProductionAssistantRouter(
-  db, auth, _toolsContext, _assistantManager, _rolesBus, _agent,
+  db, auth, _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
 app.use('/connectors', createConnectorsRouter(db, auth));
