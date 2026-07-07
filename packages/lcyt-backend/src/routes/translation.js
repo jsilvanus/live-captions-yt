@@ -42,15 +42,15 @@ export function createTranslationRouter(auth, db) {
   });
 
   router.post('/config/targets', auth, (req, res) => {
-    const { id, enabled, lang, target, format } = req.body || {};
-    const result = createTranslationTarget(db, req.session.apiKey, { id, enabled, lang, target, format });
+    const { id, enabled, lang, target, format, captionTargetId, showOriginal } = req.body || {};
+    const result = createTranslationTarget(db, req.session.apiKey, { id, enabled, lang, target, format, captionTargetId, showOriginal });
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.status(201).json({ ok: true, target: result.target });
   });
 
   router.put('/config/targets/:id', auth, (req, res) => {
-    const { enabled, lang, target, format } = req.body || {};
-    const result = updateTranslationTarget(db, req.session.apiKey, req.params.id, { enabled, lang, target, format });
+    const { enabled, lang, target, format, captionTargetId, showOriginal } = req.body || {};
+    const result = updateTranslationTarget(db, req.session.apiKey, req.params.id, { enabled, lang, target, format, captionTargetId, showOriginal });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, target: result.target });
   });

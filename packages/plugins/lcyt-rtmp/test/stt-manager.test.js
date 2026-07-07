@@ -219,4 +219,85 @@ describe('SttManager', () => {
     await new Promise(r => setTimeout(r, 20));
     await mgr.stop('mykey');
   });
+
+  test('setDeliveryHelpers: server-side translation is invoked and delivered to a viewer target (Phase 5)', async () => {
+    // Regression test for a real bug: _deliverTranscript previously reached
+    // across packages via `await import('../../lcyt-backend/src/...')`, a
+    // relative path that doesn't resolve from this file's location, silently
+    // swallowed by `.catch(() => ({}))` — so translation and viewer delivery
+    // never actually ran. setDeliveryHelpers() injects them instead; this
+    // test proves the injected functions are actually called and their
+    // output actually reaches the viewer broadcast.
+    const fakeSession = {
+      apiKey:       'mykey',
+      domain:       'test.local',
+      sequence:     0,
+      extraTargets: [{ id: 'vt1', type: 'viewer', viewerKey: 'test-viewer' }],
+      sender:       null,
+      _sendQueue:   Promise.resolve(),
+    };
+
+    // getSttConfig(db, apiKey) does `db.prepare(...).get(apiKey)` — stub just enough of the shape.
+    const fakeDb = { prepare: () => ({ get: () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) }) };
+
+    globalThis.fetch = async (url) => {
+      // The HlsSegmentFetcher also polls a playlist URL in the background —
+      // only intercept translateText's MyMemory GET, let everything else 404
+      // like the other tests in this file do.
+      if (String(url).includes('mymemory')) {
+        return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: 'Hei maailma' } }) };
+      }
+      return { ok: false, status: 404 };
+    };
+
+    const broadcastCalls = [];
+    const mgr = new SttManager(makeStore([fakeSession]), fakeDb);
+    mgr.setDeliveryHelpers({
+      getTranslationVendorConfig: () => ({ vendor: 'mymemory' }),
+      getTranslationTargets: () => ([{ id: 'tt1', enabled: true, lang: 'fi-FI', target: 'captions' }]),
+      broadcastToViewers: (viewerKey, data) => broadcastCalls.push({ viewerKey, data }),
+    });
+
+    await mgr.start('mykey', { provider: 'google', language: 'en-US' });
+    const sttSession = mgr._sessions.get('mykey');
+    sttSession.adapter.emit('transcript', { text: 'Hello world', confidence: 0.95, timestamp: new Date() });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    assert.equal(broadcastCalls.length, 1);
+    assert.equal(broadcastCalls[0].viewerKey, 'test-viewer');
+    assert.deepEqual(broadcastCalls[0].data.translations, { 'fi-FI': 'Hei maailma' });
+
+    await mgr.stop('mykey');
+  });
+
+  test('setDeliveryHelpers: no-op (default composed text, no translations) when helpers are never injected', async () => {
+    // Same-language shortcut and the "helpers not injected" path must not throw
+    // and must not attempt any translation — this is the pre-Phase-5 default
+    // behavior for any caller (e.g. tests, or a future consumer) that never
+    // calls setDeliveryHelpers().
+    const fakeSession = {
+      apiKey:       'mykey2',
+      domain:       'test.local',
+      sequence:     0,
+      extraTargets: [{ id: 'vt1', type: 'viewer', viewerKey: 'test-viewer-2' }],
+      sender:       null,
+      _sendQueue:   Promise.resolve(),
+    };
+
+    globalThis.fetch = async () => ({ ok: false, status: 404 });
+
+    const mgr = new SttManager(makeStore([fakeSession]), { prepare: () => ({ get: () => null }) });
+    // Deliberately do NOT call setDeliveryHelpers().
+
+    await mgr.start('mykey2', { provider: 'google', language: 'en-US' });
+    const sttSession = mgr._sessions.get('mykey2');
+
+    // Should not throw even though broadcastToViewers was never injected.
+    sttSession.adapter.emit('transcript', { text: 'No translation configured', confidence: 0.9, timestamp: new Date() });
+    await new Promise(r => setTimeout(r, 30));
+
+    assert.equal(fakeSession.sequence, 1);
+    await mgr.stop('mykey2');
+  });
 });

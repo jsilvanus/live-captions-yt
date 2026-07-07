@@ -12,7 +12,8 @@ import { createAccountRouters } from './routes/account.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
-import { setHlsSubsManager } from './routes/viewer.js';
+import { setHlsSubsManager, broadcastToViewers } from './routes/viewer.js';
+import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import { initProductionControl, createProductionRouter } from 'lcyt-production';
 import { initDskControl, createDskRouters } from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
@@ -183,6 +184,12 @@ const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, 
 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
+
+// Inject translation-config + viewer-broadcast helpers into SttManager for
+// transcript delivery (Phase 5: server-side translation, viewer-target
+// fan-out) — sttManager must not import lcyt-backend's own src/ directly,
+// see setDeliveryHelpers()'s doc comment in lcyt-rtmp.
+sttManager?.setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers });
 hlsSubsManager.sweepStaleDir().catch(() => {});
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
