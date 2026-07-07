@@ -3,8 +3,10 @@ id: plan/ai_roles_framework
 title: "AI Roles Framework — Model + Harness Selection for Vision Roles and Agentic Chat Assistants (and beyond)"
 status: draft
 summary: "Design for an extensible AI 'role' registry (ai_roles catalog + project_ai_role_configs) that replaces ad-hoc single-purpose AI config with a generic model+harness selection mechanism. Specifies two vision roles (Video Tracker, Video Describer) and a single consolidated 'agentic_chat' runtime_kind covering five chat-with-tools assistants — Setup Assistant, Asset Control Assistant, Planner Assistant, Graphics Editor Assistant (dsk_designer), and Production Assistant — each just a catalog row + tool allowlist + harness defaults over one shared runtime, one shared tool-calling loop, and one shared confirm/auto safety gate. Tool schemas for every agentic_chat role are defined once in the shared module specified by plan/mcp, not per-role. Also flags Translation (Whisper-style speech translation, backed by the already-implemented but consumer-less translation_vendor_config/translation_targets tables) as a future catalog placeholder. Supersedes the 'AI Models — tracker/describer/assistant multi-role' gap noted in plan_team_org_backend.md's appendix."
-related: plan/agent, plan/cues, plan/team_org_backend, plan/mcp
+related: plan/agent, plan/cues, plan/team_org_backend, plan/mcp, plan/ai_model_registry
 ---
+
+> **Amended by `plan_ai_model_registry.md`:** `project_ai_role_configs`'s `model_provider`/`model_name`/`api_key_ref`/`api_url` columns (schema below) are superseded by a single `provider_id` FK into that plan's `ai_providers` registry — see its "Amendment to `project_ai_role_configs`" section. That plan also adds real Ollama auto-discovery, multiple simultaneous Ollama instances, and bridge-relayed private Ollama providers. Implement that plan's Phase 1 (registry) before or alongside this one; build the role-config schema below in its amended form directly rather than migrating later.
 
 # AI Roles Framework — Model + Harness Selection for Vision Roles and Agentic Chat Assistants (and beyond)
 

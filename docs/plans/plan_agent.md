@@ -228,19 +228,9 @@ Combine all available signals for comprehensive scene understanding:
 
 ---
 
-## Phase 8 — Local Model Support (Planned)
+## Phase 8 — Local Model Support (Superseded by `plan_ai_model_registry.md`)
 
-### Motivation
-
-Some deployments may not want to use cloud APIs for privacy or cost reasons. Local models via Ollama or similar runtimes provide an alternative.
-
-### Implementation plan
-
-- [ ] Ollama embedding endpoint integration
-- [ ] Local LLM chat completion via Ollama
-- [ ] Auto-detection of running Ollama instance
-- [ ] Model download and management UI
-- [ ] Performance optimisation for local inference
+This phase was a one-paragraph stub written before local-model support had a real design. It's superseded in full by **`plan_ai_model_registry.md`**, which specifies an `ai_providers`/`ai_provider_models` registry (site- and project-scoped), real Ollama auto-discovery via `GET /api/tags`, support for multiple simultaneous Ollama instances, and — for the user's actual deployment shape — Ollama instances reachable only through a specific `lcyt-bridge` instance's LAN rather than the backend's, including a Dockerized bridge+Ollama deployment mode. See that plan for the current implementation phases.
 
 ---
 
@@ -252,7 +242,7 @@ Some deployments may not want to use cloud APIs for privacy or cost reasons. Loc
 | **Server** | `embeddingProvider: 'server'` | Uses server-configured API key; no user key needed |
 | **OpenAI** | `embeddingProvider: 'openai'` | User provides their own OpenAI API key |
 | **Custom** | `embeddingProvider: 'custom'` | User provides any OpenAI-compatible API URL + key |
-| **Ollama** | *(Phase 8)* | Local embedding/LLM model via Ollama |
+| **Ollama** | *(superseded — see `plan_ai_model_registry.md`)* | Local embedding/LLM model via Ollama, via that plan's `ai_providers` registry rather than an `embeddingProvider` value |
 
 ---
 
@@ -267,7 +257,7 @@ Some deployments may not want to use cloud APIs for privacy or cost reasons. Loc
 | 5 | AI DSK Template Generation | ✅ Implemented | Phase 2, `lcyt-dsk` |
 | 6 | AI-Assisted Rundown Creation | ✅ Implemented | Phase 2, Planner |
 | 7 | Multi-Modal Scene Understanding | 📋 Planned | Phase 4, `lcyt-music` |
-| 8 | Local Model Support (Ollama) | 📋 Planned | Phase 1 |
+| 8 | Local Model Support (Ollama) | ➡️ Superseded by `plan_ai_model_registry.md` | Phase 1 |
 
 ---
 
