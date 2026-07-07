@@ -22,7 +22,11 @@ export function createDskTemplateTools(deps) {
         properties: { prompt: { type: 'string' }, width: { type: 'number' }, height: { type: 'number' } },
         required: ['prompt'],
       },
-      annotations: {},
+      // readOnlyHint: neither generate nor edit writes to the database — they
+      // compute and return template JSON for the caller to act on, same as
+      // POST /agent/generate-template today. Always safe to run in-loop
+      // regardless of a role's confirm/auto mode.
+      annotations: { readOnlyHint: true },
       handler: async ({ prompt, width, height }, { apiKey }) => {
         const template = await agent.generateTemplate(apiKey, prompt, { width, height });
         return { ok: true, template };
@@ -36,7 +40,7 @@ export function createDskTemplateTools(deps) {
         properties: { template: { type: 'object' }, prompt: { type: 'string' } },
         required: ['template', 'prompt'],
       },
-      annotations: {},
+      annotations: { readOnlyHint: true },
       handler: async ({ template, prompt }, { apiKey }) => {
         const out = await agent.editTemplate(apiKey, template, prompt);
         return { ok: true, template: out };

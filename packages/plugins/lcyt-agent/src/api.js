@@ -30,7 +30,17 @@ export { createAiRouter } from './routes/ai.js';
 export { createAdminAiProvidersRouter } from './routes/ai-providers-admin.js';
 export { createProjectAiProvidersRouter } from './routes/ai-providers-project.js';
 export { createRolesRouter } from './routes/roles.js';
+export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from './routes/roles-chat.js';
+export { createProductionAssistantRouter } from './routes/production-assistant.js';
 export { runMigrations } from './db.js';
+
+// Agentic chat turn loop (plan/ai_roles_framework, Runtime Shape 2)
+export {
+  runAgenticTurn, toOpenAiToolSchema, callChatCompletionWithTools,
+  defaultShouldExecute, makeDialogShouldExecute, resolveRoleProviderSettings,
+} from './agentic-turn.js';
+export { RolesBus } from './roles-bus.js';
+export { ProductionAssistantManager, AUTO_COOLDOWN_FLOOR_MS } from './production-assistant.js';
 
 // AI Roles Framework (plan/ai_roles_framework): role catalog + per-project config
 export {
@@ -70,7 +80,7 @@ export {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {object} [opts]
- * @returns {Promise<{ agent: import('./agent-engine.js').AgentEngine }>}
+ * @returns {Promise<{ agent, providerRegistry, rolesBus, assistantManager }>}
  */
 export async function initAgent(db, opts = {}) {
   const { runMigrations } = await import('./db.js');
@@ -91,6 +101,16 @@ export async function initAgent(db, opts = {}) {
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);
 
+  // Agentic chat roles' shared SSE bus + Production Assistant's suggestion
+  // queue. Both only need `db`; the tool registry itself (which needs
+  // cross-plugin deps: lcyt-production, lcyt-dsk) is built by the
+  // composition root (server.js) and passed into the role routers at mount
+  // time, not constructed here.
+  const { RolesBus } = await import('./roles-bus.js');
+  const { ProductionAssistantManager } = await import('./production-assistant.js');
+  const rolesBus = new RolesBus();
+  const assistantManager = new ProductionAssistantManager(db, rolesBus);
+
   // Small handle for the provider registry. The bridge manager (from
   // lcyt-production) is injected by the composition root (server.js) after
   // both plugins are initialized — same setter-injection convention as
@@ -109,5 +129,5 @@ export async function initAgent(db, opts = {}) {
     },
   };
 
-  return { agent, providerRegistry };
+  return { agent, providerRegistry, rolesBus, assistantManager };
 }

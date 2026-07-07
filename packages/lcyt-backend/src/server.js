@@ -3,6 +3,7 @@ import express from 'express';
 import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
+  getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -14,8 +15,15 @@ import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
 import { setHlsSubsManager } from './routes/viewer.js';
-import { initProductionControl, createProductionRouter } from 'lcyt-production';
-import { initDskControl, createDskRouters } from 'lcyt-dsk';
+import {
+  initProductionControl, createProductionRouter,
+  listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
+  listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
+} from 'lcyt-production';
+import {
+  initDskControl, createDskRouters,
+  listImages, getImageByKey, updateImageSettings, deleteImage,
+} from 'lcyt-dsk';
 import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
@@ -58,8 +66,10 @@ import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListe
 import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
+  createRolesChatRouter, createProductionAssistantRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
+import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
 import {
   initConnectors, createConnectorsRouter, createVariablesRouter,
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
@@ -220,13 +230,40 @@ createSoundCueListener({ store, engine: _cueEngine });
 // context window management, and future vision/LLM features.
 // Also runs AI config DB migrations (ai_config table) and the AI model
 // registry migrations (ai_providers / ai_provider_models / ai_provider_grants).
-const { agent: _agent, providerRegistry: _providerRegistry } = await initAgent(db);
+const {
+  agent: _agent, providerRegistry: _providerRegistry,
+  rolesBus: _rolesBus, assistantManager: _assistantManager,
+} = await initAgent(db);
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
 // bridge manager's SSE command channel. Setter injection — server.js is the
 // only place that holds both plugin instances.
 _providerRegistry.setBridgeManager(productionBridgeManager);
+
+// Shared tool-schema/handler registry (plan/mcp) — every tool an
+// agentic_chat role needs, defined once. server.js is the only place that
+// holds lcyt-backend's caption-target DB helpers, lcyt-production's device
+// registry, lcyt-dsk's image helpers, and the agent instance all together.
+const _toolRegistry = createToolRegistry({
+  db,
+  captionTargets: { getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget },
+  production: {
+    registry: productionRegistry, bridgeManager: productionBridgeManager,
+    listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
+    listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
+  },
+  agent: _agent,
+  assets: { listImages, getImageByKey, updateImageSettings, deleteImage },
+});
+// Real MCP Server + in-process Client wiring (InMemoryTransport) — the
+// agentic_chat turn loop consumes tools through this bridge, exactly the
+// schema an external MCP client would see (see packages/lcyt-tools).
+const _toolBridge = createInProcessMcpBridge(_toolRegistry);
+const _toolsContext = {
+  tools: _toolRegistry.tools,
+  callTool: (name, args, ctx) => _toolBridge.callToolAs(ctx.apiKey, name, args),
+};
 
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
 // user-defined outbound API connectors. Runs its own DB migrations
@@ -431,6 +468,11 @@ app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
 app.use('/roles', createRolesRouter(db, auth));
+app.use('/roles', createRolesChatRouter(db, auth, _toolsContext, _rolesBus));
+app.use('/roles/assistant', createProductionAssistantRouter(
+  db, auth, _toolsContext, _assistantManager, _rolesBus, _agent,
+  { listCameras, listMixers, registry: productionRegistry },
+));
 app.use('/connectors', createConnectorsRouter(db, auth));
 app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
