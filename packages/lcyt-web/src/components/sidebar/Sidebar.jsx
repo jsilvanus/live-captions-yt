@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, Link } from 'wouter';
 import { useSessionContext } from '../../contexts/SessionContext';
-import { useToastContext } from '../../contexts/ToastContext';
 import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.jsx';
@@ -18,49 +17,9 @@ export function setShowAdvanced(val) {
   try { localStorage.setItem('lcyt.sidebar.showAdvanced', String(val)); } catch { /* ignore */ }
 }
 
-// ── ConnectButton ───────────────────────────────────────────────────────────
-
-function ConnectButton() {
-  const session = useSessionContext();
-  const { showToast } = useToastContext();
-  const [connecting, setConnecting] = useState(false);
-
-  async function handleClick() {
-    if (session.connected) {
-      await session.disconnect();
-      return;
-    }
-    const cfg = session.getPersistedConfig();
-    if (!cfg.backendUrl || !cfg.apiKey) {
-      showToast('Enter backend URL and API key in Settings first', 'warning');
-      return;
-    }
-    setConnecting(true);
-    try {
-      await session.connect(cfg);
-    } catch (err) {
-      showToast(err?.message || 'Connection failed', 'error');
-    } finally {
-      setConnecting(false);
-    }
-  }
-
-  const cls = [
-    'top-bar__connect-btn',
-    session.connected ? 'top-bar__connect-btn--connected' : '',
-    connecting ? 'top-bar__connect-btn--connecting' : '',
-  ].filter(Boolean).join(' ');
-
-  return (
-    <button className={cls} onClick={handleClick} disabled={connecting}>
-      {connecting ? 'Connecting…' : session.connected ? 'Disconnect' : 'Connect'}
-    </button>
-  );
-}
-
 // ── HealthDot ───────────────────────────────────────────────────────────────
 
-function HealthDot() {
+function HealthDot({ inline = false }) {
   const { connected, healthStatus, latencyMs } = useSessionContext();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -93,7 +52,7 @@ function HealthDot() {
   }
 
   return (
-    <div className="top-bar__health-wrap" ref={ref}>
+    <div className={['top-bar__health-wrap', inline ? 'top-bar__health-wrap--inline' : ''].filter(Boolean).join(' ')} ref={ref}>
       <button
         className={`${dotClass} top-bar__health-dot--btn`}
         title={label}
@@ -186,16 +145,18 @@ export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
       >
         ≡
       </button>
-      <button
-        className="top-bar__brand"
-        onClick={() => navigate('/')}
-        aria-label="Go to home"
-      >
-        LCYT
-      </button>
+      <div className="top-bar__brand-wrap">
+        <button
+          className="top-bar__brand"
+          onClick={() => navigate('/')}
+          aria-label="Go to home"
+        >
+          LCYT
+        </button>
+        <HealthDot inline />
+      </div>
       <TopBarBadges />
       <span className="top-bar__spacer" />
-      <HealthDot />
       <QuickActionsPopover />
       {onOpenCommandPalette && (
         <button
@@ -217,7 +178,6 @@ export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
           ?
         </button>
       )}
-      <ConnectButton />
     </div>
   );
 }

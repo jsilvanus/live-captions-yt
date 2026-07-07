@@ -12,6 +12,28 @@ import { LangProvider } from './LangContext';
 
 const EMBED_CHANNEL = 'lcyt-embed';
 
+function hasAuthenticatedSession() {
+  try {
+    const rawUser = localStorage.getItem('lcyt-user');
+    if (rawUser) {
+      const parsed = JSON.parse(rawUser);
+      if (parsed?.token && parsed?.backendUrl) return true;
+    }
+
+    const featuresRaw = localStorage.getItem('lcyt.backend.features');
+    if (featuresRaw) {
+      const features = JSON.parse(featuresRaw);
+      if (Array.isArray(features) && !features.includes('login')) {
+        const cfg = JSON.parse(localStorage.getItem('lcyt.session.config') || '{}');
+        if (cfg.backendUrl && cfg.apiKey) return true;
+      }
+    }
+  } catch {
+    // Fall back to persisted config / explicit props below.
+  }
+  return false;
+}
+
 /**
  * Composes all context providers with proper wiring:
  * - SentLog.confirm and SentLog.markError are wired into SessionProvider as callbacks
@@ -97,16 +119,17 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
 
   // Auto-connect on mount:
   //   1. If initConfig + autoConnect prop are provided (embed / URL-param mode), use those.
-  //   2. Otherwise, if the user previously enabled "auto-connect", reload the persisted config
-  //      so the session survives a page refresh.
+  //   2. Otherwise, if the user is authenticated (user auth or minimal-mode config) or the
+  //      user previously enabled "auto-connect", reload the persisted config so the session
+  //      survives a page refresh.
   useEffect(() => {
+    const persisted = session.getPersistedConfig();
+    const shouldConnectFromPersisted = !!(persisted?.backendUrl && persisted?.apiKey && (session.getAutoConnect() || hasAuthenticatedSession()));
+
     if (autoConnect && initConfig?.backendUrl && initConfig?.apiKey) {
       session.connect(initConfig).catch(() => {});
-    } else if (!autoConnect) {
-      const persisted = session.getPersistedConfig();
-      if (session.getAutoConnect() && persisted?.backendUrl && persisted?.apiKey) {
-        session.connect(persisted).catch(() => {});
-      }
+    } else if (shouldConnectFromPersisted) {
+      session.connect(persisted).catch(() => {});
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

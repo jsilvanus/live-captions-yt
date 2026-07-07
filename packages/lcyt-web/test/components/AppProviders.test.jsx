@@ -48,6 +48,7 @@ beforeEach(() => {
   mockSender._token = 'mock-jwt-token';
   mockSender.sequence = 0;
   mockSender.syncOffset = 0;
+  localStorage.clear();
 });
 
 // ---------------------------------------------------------------------------
@@ -90,7 +91,25 @@ describe('AppProviders — autoConnect', () => {
     expect(mockSender.start).toHaveBeenCalledTimes(1);
   });
 
-  it('does not connect when autoConnect is not set', async () => {
+  it('connects automatically when a saved session config exists and the user is authenticated', async () => {
+    localStorage.setItem('lcyt-user', JSON.stringify({ token: 'user-jwt', backendUrl: 'http://backend.test' }));
+    localStorage.setItem('lcyt.session.config', JSON.stringify(VALID_CONFIG));
+
+    await act(async () => {
+      render(
+        <AppProviders>
+          <div>child</div>
+        </AppProviders>
+      );
+    });
+
+    expect(mockSender.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not connect when autoConnect is not set and no auth/session config is present', async () => {
+    localStorage.removeItem('lcyt-user');
+    localStorage.removeItem('lcyt.session.config');
+
     await act(async () => {
       render(
         <AppProviders initConfig={VALID_CONFIG}>
