@@ -1,18 +1,9 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { getDomainUsageStats, getViewerAnonStats } from '../db.js';
+import { parseAllowedDomains } from '../lib/allowed-domains.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
-
-/**
- * Parse ALLOWED_DOMAINS env var.
- * @returns {'*' | string[]}
- */
-function parseAllowedDomains() {
-  const raw = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
-  return raw === '*' ? '*' : raw.split(',').map(d => d.trim()).filter(Boolean);
-}
 
 /**
  * Factory for the /usage router.

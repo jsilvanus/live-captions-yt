@@ -105,6 +105,19 @@ describe('POST /live', () => {
     assert.ok(data.error);
   });
 
+  it('should allow loopback domains used by local dev clients', async () => {
+    const { key } = createKey(db, { owner: 'Loopback' });
+
+    const res = await postLive({
+      apiKey: key,
+      domain: 'http://127.0.0.1:5173'
+    });
+    const data = await res.json();
+
+    assert.strictEqual(res.status, 200);
+    assert.ok(data.token);
+  });
+
   it('should return 401 for revoked API key', async () => {
     const { key } = createKey(db, { owner: 'Revoked' });
     // Revoke it directly via SQL

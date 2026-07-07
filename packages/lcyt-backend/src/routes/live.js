@@ -4,26 +4,7 @@ import { YoutubeLiveCaptionSender } from 'lcyt';
 import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
-
-// NOTE: http://localhost:5173 is included for the Vite dev server — remove it in production.
-const DEFAULT_ALLOWED_DOMAINS = 'https://lcyt.fi,https://www.lcyt.fi,http://localhost:5173';
-
-/**
- * Check whether a domain is permitted to register sessions.
- * Reads ALLOWED_DOMAINS env var (comma-separated list, or "*" for all).
- * Defaults to "lcyt.fi,www.lcyt.fi" when not set.
- * @param {string} domain
- * @returns {boolean}
- */
-function isAllowedDomain(domain) {
-  const raw = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
-  if (raw === '*') return true;
-  // Strip scheme so both "app.lcyt.fi" and "https://app.lcyt.fi" match regardless
-  // of whether ALLOWED_DOMAINS entries include the scheme or not.
-  const stripScheme = s => s.trim().replace(/^https?:\/\//, '');
-  const incoming = stripScheme(domain);
-  return raw.split(',').some(d => stripScheme(d) === incoming);
-}
+import { isAllowedDomain } from '../lib/allowed-domains.js';
 
 /**
  * Validate and build the extraTargets array from the client-supplied targets list.
