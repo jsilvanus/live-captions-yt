@@ -69,10 +69,6 @@ RUN if [ "$RTMP_RELAY_ACTIVE" = "1" ] || [ "$RADIO_ACTIVE" = "1" ] || [ "$HLS_AC
     fi
 
 ARG GRAPHICS_ENABLED=0
-RUN if [ "$GRAPHICS_ENABLED" = "1" ]; then \
-      apt-get update && apt-get install -y --no-install-recommends chromium \
-      && rm -rf /var/lib/apt/lists/*; \
-    fi
 ENV PLAYWRIGHT_DSK_CHROMIUM=/usr/bin/chromium
 
 ENV NODE_ENV=production
@@ -92,7 +88,11 @@ RUN chmod +x /entrypoint.sh \
 RUN rm -rf /app/bin \
  && ln -s /app/packages/lcyt-backend/bin /app/bin || true
 
+RUN mkdir -p /tmp/ms-playwright \
+ && chown -R node:node /tmp/ms-playwright
 USER node
+ENV PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright
+
 EXPOSE 3000
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

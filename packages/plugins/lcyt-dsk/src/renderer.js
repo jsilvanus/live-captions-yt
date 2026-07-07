@@ -21,6 +21,9 @@
  */
 
 import { spawn } from 'node:child_process';
+import { existsSync, readdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import logger from 'lcyt/logger';
 
@@ -28,15 +31,58 @@ import logger from 'lcyt/logger';
 // Chromium executable
 // ---------------------------------------------------------------------------
 
-// Allow operators to point at a specific Chrome/Chromium binary.
-// Falls back to the well-known Playwright cache location used in this repo.
-const CHROMIUM_EXEC = process.env.PLAYWRIGHT_DSK_CHROMIUM || null;
+function resolveChromiumExecutable() {
+  const explicit = (process.env.PLAYWRIGHT_DSK_CHROMIUM || '').trim();
+  if (explicit && existsSync(explicit)) return explicit;
+
+  const candidates = [
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chrome',
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  const cacheRoots = [
+    join(homedir(), '.cache', 'ms-playwright'),
+    '/root/.cache/ms-playwright',
+    '/home/node/.cache/ms-playwright',
+    '/tmp/ms-playwright',
+  ];
+
+  for (const root of cacheRoots) {
+    if (!existsSync(root)) continue;
+    const queue = [root];
+    while (queue.length) {
+      const dir = queue.pop();
+      const entries = readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'chrome' || entry.name === 'chrome-headless-shell') {
+            return fullPath;
+          }
+          queue.push(fullPath);
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+const CHROMIUM_EXEC = resolveChromiumExecutable();
 
 // ---------------------------------------------------------------------------
 // Module-level browser state
 // ---------------------------------------------------------------------------
 
 let _browser = null;
+let _browserUnavailableReason = null;
 
 // Per-API-key state: Map<apiKey, { page, templateJson, ffmpeg, capturing }>
 const _keys = new Map();
@@ -212,17 +258,29 @@ function escHtml(s) {
 let _stopping = false;
 
 async function _launchBrowser() {
-  if (!CHROMIUM_EXEC) throw new Error('PLAYWRIGHT_DSK_CHROMIUM is not set or no accessible Chromium binary found');
-  _browser = await chromium.launch({
-    headless: true,
-    executablePath: CHROMIUM_EXEC,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-    ],
-  });
+  if (!CHROMIUM_EXEC) {
+    _browserUnavailableReason = 'PLAYWRIGHT_DSK_CHROMIUM is not set or no accessible Chromium binary found';
+    throw new Error(_browserUnavailableReason);
+  }
+
+  try {
+    _browser = await chromium.launch({
+      headless: true,
+      executablePath: CHROMIUM_EXEC,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ],
+    });
+  } catch (err) {
+    _browserUnavailableReason = err.message || String(err);
+    _browser = null;
+    throw err;
+  }
+
+  _browserUnavailableReason = null;
 
   // Crash recovery: if Chromium exits unexpectedly, restart it and reload
   // the last active template for each key that had an active capture loop.
@@ -277,7 +335,7 @@ export async function startRenderer() {
     logger.info('[dsk-renderer] Chromium started.');
   } catch (err) {
     logger.error(`[dsk-renderer] Failed to launch Chromium: ${err.message}`);
-    logger.error('[dsk-renderer] Set PLAYWRIGHT_DSK_CHROMIUM to a valid Chromium binary path.');
+    logger.warn('[dsk-renderer] Graphics rendering will stay disabled for this process.');
     _browser = null;
   }
 }
@@ -300,7 +358,12 @@ export async function stopRenderer() {
 // ---------------------------------------------------------------------------
 
 function _ensureBrowser() {
-  if (!_browser) throw new Error('DSK renderer not started (call startRenderer first)');
+  if (!_browser) {
+    if (_browserUnavailableReason) {
+      throw new Error(`DSK renderer unavailable: ${_browserUnavailableReason}`);
+    }
+    throw new Error('DSK renderer not started (call startRenderer first)');
+  }
 }
 
 async function _getOrCreatePage(apiKey) {
@@ -329,7 +392,13 @@ const DSK_LOCAL_SERVER = process.env.DSK_LOCAL_SERVER
  * Any ongoing capture loop will pick up the new visuals automatically.
  */
 export async function updateTemplate(apiKey, templateJson) {
-  _ensureBrowser();
+  try {
+    _ensureBrowser();
+  } catch (err) {
+    logger.warn(`[dsk-renderer:${apiKey}] updateTemplate skipped: ${err.message}`);
+    return;
+  }
+
   const state = await _getOrCreatePage(apiKey);
   state.templateJson = templateJson;
   const html = renderTemplateToHtml(templateJson, { apiKey, serverUrl: DSK_LOCAL_SERVER });
@@ -345,7 +414,10 @@ export async function updateTemplate(apiKey, templateJson) {
  */
 export async function broadcastData(apiKey, data) {
   const state = _keys.get(apiKey);
-  if (!state) throw new Error(`No active renderer for key: ${apiKey}`);
+  if (!state) {
+    logger.warn(`[dsk-renderer:${apiKey}] broadcastData skipped: no active renderer`);
+    return;
+  }
 
   const updates = Array.isArray(data) ? data : [data];
   await state.page.evaluate((items) => {
@@ -372,7 +444,13 @@ const FRAME_INTERVAL_MS = Math.floor(1000 / FRAME_RATE);
  * @param {string} rtmpApp      nginx-rtmp application name, e.g. "dsk"
  */
 export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
-  _ensureBrowser();
+  try {
+    _ensureBrowser();
+  } catch (err) {
+    logger.warn(`[dsk-renderer:${apiKey}] startRtmpStream skipped: ${err.message}`);
+    return;
+  }
+
   const state = await _getOrCreatePage(apiKey);
 
   if (state.capturing) return; // already streaming
