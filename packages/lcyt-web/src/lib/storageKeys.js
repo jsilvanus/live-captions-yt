@@ -55,6 +55,9 @@ export const KEYS = {
   dashboard: {
     config: 'lcyt.dashboard',
   },
+  setup: {
+    favorites: 'lcyt.setup.favorites',
+  },
 };
 
 /** Dynamic key builder for relay per-slot fields */

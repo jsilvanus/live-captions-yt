@@ -6,33 +6,36 @@ import { KEYS } from '../lib/storageKeys.js';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
 import { SessionContext } from '../contexts/SessionContext';
+import { AgentChatPanel, useAgentChat } from './agent/AgentChatPanel.jsx';
 export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 
 function makeBlock(type) {
   switch (type) {
-    case 'caption':     return { id: uid(), type: 'caption',    text: '' };
-    case 'heading':     return { id: uid(), type: 'heading',    text: '' };
-    case 'audio-start': return { id: uid(), type: 'audio-start' };
-    case 'audio-stop':  return { id: uid(), type: 'audio-stop' };
-    case 'graphics':    return { id: uid(), type: 'graphics',   value: '' };
-    case 'codes':       return { id: uid(), type: 'codes',      codes: {} };
-    case 'stanza':      return { id: uid(), type: 'stanza',     lines: [''] };
-    case 'empty-send':  return { id: uid(), type: 'empty-send', label: '' };
-    default:            return { id: uid(), type: 'caption',    text: '' };
+    case 'caption':      return { id: uid(), type: 'caption',    text: '' };
+    case 'heading':      return { id: uid(), type: 'heading',    text: '' };
+    case 'audio-start':  return { id: uid(), type: 'audio-start' };
+    case 'audio-stop':   return { id: uid(), type: 'audio-stop' };
+    case 'graphics':     return { id: uid(), type: 'graphics',   value: '' };
+    case 'codes':        return { id: uid(), type: 'codes',      codes: {} };
+    case 'stanza':       return { id: uid(), type: 'stanza',     lines: [''] };
+    case 'empty-send':   return { id: uid(), type: 'empty-send', label: '' };
+    case 'file-include': return { id: uid(), type: 'file-include', src: '' };
+    default:             return { id: uid(), type: 'caption',    text: '' };
   }
 }
 
 // ─── Block type metadata ──────────────────────────────────────────────────────
 
 const BLOCK_TYPES = [
-  { type: 'caption',     icon: '✏️', label: 'Caption' },
-  { type: 'heading',     icon: '#',  label: 'Heading' },
-  { type: 'audio-start', icon: '🎙', label: 'Audio On' },
-  { type: 'audio-stop',  icon: '⏹', label: 'Audio Off' },
-  { type: 'graphics',    icon: '🎨', label: 'Graphics' },
-  { type: 'codes',       icon: '🏷', label: 'Codes row' },
-  { type: 'stanza',      icon: '♪',  label: 'Stanza' },
-  { type: 'empty-send',  icon: '—',  label: 'Empty send' },
+  { type: 'caption',      icon: '✏️', label: 'Caption' },
+  { type: 'heading',      icon: '#',  label: 'Heading' },
+  { type: 'audio-start',  icon: '🎙', label: 'Audio On' },
+  { type: 'audio-stop',   icon: '⏹', label: 'Audio Off' },
+  { type: 'graphics',     icon: '🎨', label: 'Graphics' },
+  { type: 'codes',        icon: '🏷', label: 'Codes row' },
+  { type: 'stanza',       icon: '♪',  label: 'Stanza' },
+  { type: 'empty-send',   icon: '—',  label: 'Empty send' },
+  { type: 'file-include', icon: '📎', label: 'Include file' },
 ];
 
 const CODE_CHIP_CLASS = { section: 'planner-chip--section', speaker: 'planner-chip--speaker', lang: 'planner-chip--lang', stanza: 'planner-chip--stanza' };
@@ -307,16 +310,83 @@ function EmptySendBlock({ block, onUpdate, onDelete }) {
   );
 }
 
-function BlockContent({ block, onUpdate, onDelete }) {
+// Render each nested block of an included file as a single read-only preview
+// line — mirrors how the block would look serialized, without exposing a
+// full nested editor (the include is a reference, not an embedded copy).
+function includePreviewLines(includedBlocks) {
+  let n = 0;
+  return includedBlocks.map(b => {
+    const isText = b.type === 'caption' || b.type === 'empty-send';
+    const lnum = isText ? String(++n) : (b.type === 'heading' ? '#' : '·');
+    let text = '';
+    switch (b.type) {
+      case 'caption':      text = b.text; break;
+      case 'heading':      text = b.text; break;
+      case 'audio-start':  text = '🎙 Audio On'; break;
+      case 'audio-stop':   text = '⏹ Audio Off'; break;
+      case 'graphics':     text = `🎨 Graphics: ${b.value}`; break;
+      case 'codes':        text = Object.entries(b.codes ?? {}).map(([k, v]) => `${k}: ${v}`).join('  ·  '); break;
+      case 'stanza':       text = `♪ Stanza (${(b.lines ?? []).length} lines)`; break;
+      case 'empty-send':   text = b.label ? `— ${b.label}` : '— (empty send)'; break;
+      case 'file-include': text = `📎 include: ${b.src}`; break;
+      default:             text = '';
+    }
+    return { key: `${b.id}`, lnum, text, isHeading: b.type === 'heading', isMeta: b.type !== 'caption' && b.type !== 'heading' };
+  });
+}
+
+function FileIncludeBlock({ block, onUpdate, onDelete, includedBlocks, onLoad }) {
+  const hasContent = !!includedBlocks;
+  const lines = hasContent ? includePreviewLines(includedBlocks) : [];
+  const lineCount = lines.filter(l => /^\d+$/.test(l.lnum)).length;
+
+  return (
+    <div className="planner-include">
+      <div className="planner-include__header">
+        <span aria-hidden="true">📎</span>
+        <input
+          className="planner-include__src"
+          type="text"
+          value={block.src ?? ''}
+          onChange={e => onUpdate({ src: e.target.value })}
+          placeholder="filename.md"
+          title="Source file path"
+        />
+        {hasContent && (
+          <span className="planner-include__count">{lineCount} line{lineCount !== 1 ? 's' : ''}</span>
+        )}
+        <button className="btn btn--secondary btn--sm" onClick={onLoad}>Load</button>
+        <button className="planner-chip__delete" onClick={onDelete} title="Remove" aria-label="Remove">×</button>
+      </div>
+      {hasContent ? (
+        <div className="planner-include__body">
+          {lines.map(l => (
+            <div key={l.key} className="planner-include__line">
+              <span className="planner-include__linenum">{l.lnum}</span>
+              <span className={`planner-include__text${l.isHeading ? ' planner-include__text--heading' : l.isMeta ? ' planner-include__text--meta' : ''}`}>
+                {l.text}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="planner-include__empty">Click Load to import file contents inline</div>
+      )}
+    </div>
+  );
+}
+
+function BlockContent({ block, onUpdate, onDelete, includedBlocks, onLoadInclude }) {
   switch (block.type) {
-    case 'caption':     return <CaptionBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'heading':     return <HeadingBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'audio-start': return <AudioBlock      type="start"  onDelete={onDelete} />;
-    case 'audio-stop':  return <AudioBlock      type="stop"   onDelete={onDelete} />;
-    case 'graphics':    return <GraphicsBlock   block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'codes':       return <CodesBlock      block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'stanza':      return <StanzaBlock     block={block} onUpdate={onUpdate} onDelete={onDelete} />;
-    case 'empty-send':  return <EmptySendBlock  block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'caption':      return <CaptionBlock     block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'heading':      return <HeadingBlock     block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'audio-start':  return <AudioBlock       type="start"  onDelete={onDelete} />;
+    case 'audio-stop':   return <AudioBlock       type="stop"   onDelete={onDelete} />;
+    case 'graphics':     return <GraphicsBlock    block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'codes':        return <CodesBlock       block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'stanza':       return <StanzaBlock      block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'empty-send':   return <EmptySendBlock   block={block} onUpdate={onUpdate} onDelete={onDelete} />;
+    case 'file-include': return <FileIncludeBlock block={block} onUpdate={onUpdate} onDelete={onDelete} includedBlocks={includedBlocks} onLoad={onLoadInclude} />;
     default: return null;
   }
 }
@@ -357,7 +427,7 @@ function InsertMenu({ onSelect, onClose }) {
 
 // ─── Planner row ──────────────────────────────────────────────────────────────
 
-function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragStart, onDrop }) {
+function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragStart, onDrop, includedBlocks, onLoadInclude }) {
   const [showInsertMenu, setShowInsertMenu] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -372,6 +442,7 @@ function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragS
 
   return (
     <div
+      id={`planner-block-${block.id}`}
       className={rowCls}
       draggable
       onDragStart={onDragStart}
@@ -384,7 +455,7 @@ function PlannerRow({ block, lineNum, onUpdate, onDelete, onInsertAfter, onDragS
         {lineNum ?? ''}
       </span>
       <div className="planner-row__content">
-        <BlockContent block={block} onUpdate={onUpdate} onDelete={onDelete} />
+        <BlockContent block={block} onUpdate={onUpdate} onDelete={onDelete} includedBlocks={includedBlocks} onLoadInclude={onLoadInclude} />
       </div>
       <div className="planner-row__insert-wrap">
         <button
@@ -436,9 +507,64 @@ function PlannerQuickAdd({ onAdd }) {
   );
 }
 
+// ─── Structure/outline sidebar ────────────────────────────────────────────────
+
+function PlannerOutline({ filename, totalLines, dirty, outline, onJumpTo, onNew, onImport, onExport, isNarrow }) {
+  const [showActions, setShowActions] = useState(() => !isNarrow);
+
+  return (
+    <aside className="planner-outline">
+      <div className="planner-outline__header">
+        <div className="planner-outline__brand">
+          <span className="planner-outline__brand-icon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <path d="M2 4h12M2 8h8M2 12h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </span>
+          <span className="planner-outline__brand-label">Planner</span>
+        </div>
+        <div className="planner-outline__filename" title={filename}>{filename}</div>
+        <div className="planner-outline__meta">
+          <span>{totalLines} line{totalLines !== 1 ? 's' : ''}</span>
+          {dirty && <span className="planner-outline__dirty">unsaved</span>}
+        </div>
+      </div>
+
+      <div className="planner-outline__list">
+        <div className="planner-outline__label">Structure</div>
+        {outline.length === 0 ? (
+          <div className="planner-outline__empty">No headings yet</div>
+        ) : (
+          outline.map(item => (
+            <button key={item.id} className="planner-outline__item" onClick={() => onJumpTo(item.id)}>
+              <span className="planner-outline__item-hash" aria-hidden="true">#</span>
+              <span className="planner-outline__item-label">{item.label}</span>
+            </button>
+          ))
+        )}
+      </div>
+
+      {/* Secondary to the Structure outline above, so it collapses out of
+          the way on narrow screens. */}
+      <div className="planner-outline__actions-wrap">
+        <button className="planner-outline__actions-toggle" onClick={() => setShowActions(v => !v)}>
+          <span aria-hidden="true">{showActions ? '▾' : '▸'}</span> File
+        </button>
+        {showActions && (
+          <div className="planner-outline__actions">
+            <button className="planner-outline__action" onClick={onImport}>⬆ Import .md</button>
+            <button className="planner-outline__action" onClick={onExport}>⬇ Export .md</button>
+            <button className="planner-outline__action" onClick={onNew}>＋ New plan</button>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
 // ─── Toolbar ──────────────────────────────────────────────────────────────────
 
-function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNew, onImport, onNormalize, onExport, onToDashboard, onInsert }) {
+function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNormalize, onToDashboard, onInsert }) {
   return (
     <div className="planner-toolbar">
       <div className="planner-toolbar__top">
@@ -465,10 +591,7 @@ function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, on
           )}
         </div>
         <div className="planner-toolbar__actions">
-          <button className="btn btn--secondary btn--sm" onClick={onNew}>New</button>
-          <button className="btn btn--secondary btn--sm" onClick={onImport}>Import</button>
           <button className="btn btn--secondary btn--sm" onClick={onNormalize}>Normalize</button>
-          <button className="btn btn--secondary btn--sm" onClick={onExport}>Export .md</button>
           <button className="btn btn--primary btn--sm" onClick={onToDashboard}>→ Dashboard</button>
         </div>
       </div>
@@ -521,21 +644,34 @@ function usePlannerResize() {
   return { editorWidth, editorRef, startResize };
 }
 
+// Below this width the outline sidebar + resizable editor column no longer
+// have room to breathe — same breakpoint and reasoning as DskEditorPage.
+const NARROW_BREAKPOINT = 860;
+
+function useIsNarrow() {
+  const [isNarrow, setIsNarrow] = useState(() => window.innerWidth < NARROW_BREAKPOINT);
+  useEffect(() => {
+    function onResize() { setIsNarrow(window.innerWidth < NARROW_BREAKPOINT); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  return isNarrow;
+}
+
 export function PlannerPage() {
   usePageThemeOverride(KEYS.ui.plannerTheme);
   const fileStore = useFileContext();
   const { showToast } = useToastContext();
   const { editorWidth, editorRef, startResize } = usePlannerResize();
+  const isNarrow = useIsNarrow();
 
   const session = useContext(SessionContext);
   const backendUrl = (session?.backendUrl || '').replace(/\/$/, '');
   const sessionToken = session?.getSessionToken?.();
 
-  const [aiAssistOpen, setAiAssistOpen] = useState(false);
-  const [aiPrompt, setAiPrompt] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiError, setAiError] = useState('');
-  const [aiTemplateId, setAiTemplateId] = useState('');
+  const { messages: chatMessages, addMessage: addChatMessage } = useAgentChat();
 
   const [blocks, setBlocks] = useState(() => {
     try {
@@ -550,13 +686,14 @@ export function PlannerPage() {
   const [editingFilename, setEditingFilename] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showNormalizeModal, setShowNormalizeModal] = useState(false);
+  // blockId → parsed blocks from an included file (session-only, not persisted/exported)
+  const [includeContents, setIncludeContents] = useState({});
 
-  const RUNDOWN_TEMPLATES = [
-    { id: '', label: 'Custom (no template)' },
-    { id: 'church_service', label: '⛪ Church service' },
-    { id: 'concert', label: '🎵 Concert' },
-    { id: 'conference', label: '🏛 Conference' },
-    { id: 'sports', label: '🏆 Sports event' },
+  const RUNDOWN_STARTERS = [
+    { id: 'church_service', label: '⛪ Church service', prompt: 'Draft a rundown for a church service' },
+    { id: 'concert', label: '🎵 Concert', prompt: 'Draft a rundown for a concert' },
+    { id: 'conference', label: '🏛 Conference', prompt: 'Draft a rundown for a conference' },
+    { id: 'sports', label: '🏆 Sports event', prompt: 'Draft a rundown for a sports event' },
   ];
 
   const saveTimer = useRef(null);
@@ -581,6 +718,31 @@ export function PlannerPage() {
   function deleteBlock(id) {
     setBlocks(prev => prev.filter(b => b.id !== id));
     setDirty(true);
+    setIncludeContents(prev => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  }
+
+  function loadInclude(blockId) {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.md,.txt,text/plain,text/markdown';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        const src = /\.(md|txt)$/i.test(file.name) ? file.name : file.name + '.md';
+        updateBlock(blockId, { src });
+        setIncludeContents(prev => ({ ...prev, [blockId]: deserializePlan(text) }));
+      } catch {
+        showToast('Failed to read file', 'error');
+      }
+    };
+    input.click();
   }
 
   function insertBlock(afterId, newBlock) {
@@ -677,67 +839,96 @@ export function PlannerPage() {
     setDirty(true);
   }
 
-  // ── AI Assist helpers ──
-  async function handleAiGenerate() {
-    if (!aiPrompt.trim() || aiLoading || !backendUrl || !sessionToken) return;
+  // ── AI Assist chat ──
+  // An empty plan means "generate a first draft"; anything already on the
+  // page means "edit what's there" — this is the same generate/edit split
+  // the old two-button form had, just decided automatically from context
+  // instead of asking the user to pick. NOTE: /agent/generate-rundown and
+  // /agent/edit-rundown are slated to be rebuilt — this wiring is expected
+  // to change; AgentChatPanel itself shouldn't need to.
+  async function handleChatSend(text) {
+    if (aiLoading || !backendUrl || !sessionToken) return;
+    addChatMessage('user', text);
     setAiLoading(true); setAiError('');
     try {
-      const body = { prompt: aiPrompt.trim() };
-      if (aiTemplateId) body.templateId = aiTemplateId;
-      const res = await fetch(`${backendUrl}/agent/generate-rundown`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      if (typeof data.content === 'string' && data.content.trim()) {
-        if (dirty && blocks.length > 0 && !window.confirm('Replace current plan with AI-generated rundown?')) return;
-        setBlocks(deserializePlan(data.content));
-        setFilename(aiPrompt.trim().slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '') + '.md');
-        setDirty(true);
-        setAiPrompt('');
+      if (blocks.length === 0) {
+        const res = await fetch(`${backendUrl}/agent/generate-rundown`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
+          body: JSON.stringify({ prompt: text }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+        if (typeof data.content === 'string' && data.content.trim()) {
+          setBlocks(deserializePlan(data.content));
+          setFilename(text.trim().slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '') + '.md');
+          setDirty(true);
+          addChatMessage('assistant', 'Generated a first draft — see the editor.');
+        } else {
+          addChatMessage('assistant', "I couldn't generate a rundown from that. Try describing the event in more detail.");
+        }
+      } else {
+        const content = serializePlan(blocks);
+        const res = await fetch(`${backendUrl}/agent/edit-rundown`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
+          body: JSON.stringify({ content, prompt: text }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+        if (typeof data.content === 'string') {
+          setBlocks(deserializePlan(data.content));
+          setDirty(true);
+          addChatMessage('assistant', 'Updated the rundown — see the editor.');
+        }
       }
-    } catch (err) { setAiError(err.message); }
-    finally { setAiLoading(false); }
-  }
-
-  async function handleAiEdit() {
-    if (!aiPrompt.trim() || aiLoading || !backendUrl || !sessionToken) return;
-    setAiLoading(true); setAiError('');
-    try {
-      const content = serializePlan(blocks);
-      const res = await fetch(`${backendUrl}/agent/edit-rundown`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
-        body: JSON.stringify({ content, prompt: aiPrompt.trim() }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-      if (typeof data.content === 'string') {
-        setBlocks(deserializePlan(data.content));
-        setDirty(true);
-        setAiPrompt('');
-      }
-    } catch (err) { setAiError(err.message); }
-    finally { setAiLoading(false); }
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   // Line number counter (only caption + empty-send blocks get numbers)
   let lineNum = 0;
+  let totalLines = 0;
+  for (const b of blocks) {
+    if (b.type === 'caption' || b.type === 'empty-send') totalLines++;
+  }
+
+  const outline = blocks
+    .filter(b => b.type === 'heading')
+    .map(b => ({ id: b.id, label: b.text || '(untitled)' }));
+
+  function jumpToHeading(blockId) {
+    const container = editorRef.current;
+    const el = document.getElementById(`planner-block-${blockId}`);
+    if (container && el) {
+      container.scrollTo({ top: el.offsetTop - container.offsetTop - 20 + container.scrollTop, behavior: 'smooth' });
+    }
+  }
 
   return (
     <div className="planner-page">
+      <PlannerOutline
+        filename={filename}
+        totalLines={totalLines}
+        dirty={dirty}
+        outline={outline}
+        onJumpTo={jumpToHeading}
+        onNew={handleNew}
+        onImport={handleImport}
+        onExport={handleExport}
+        isNarrow={isNarrow}
+      />
+      <div className="planner-main">
       <PlannerToolbar
         filename={filename}
         editingFilename={editingFilename}
         dirty={dirty}
         onFilenameChange={setFilename}
         onEditingFilename={setEditingFilename}
-        onNew={handleNew}
-        onImport={handleImport}
         onNormalize={() => setShowNormalizeModal(true)}
-        onExport={handleExport}
         onToDashboard={handleToDashboard}
         onInsert={type => {
           insertBlock(null, makeBlock(type));
@@ -752,70 +943,10 @@ export function PlannerPage() {
         />
       )}
       <div className="planner-body">
-        {/* AI Assist panel */}
-        <div className="planner-ai-assist">
-          <button
-            className={`planner-ai-assist__toggle btn btn--secondary btn--sm${aiAssistOpen ? ' active' : ''}`}
-            onClick={() => setAiAssistOpen(v => !v)}
-            title="AI-assisted rundown generation"
-          >
-            ✨ AI Assist {aiAssistOpen ? '▲' : '▼'}
-          </button>
-          {aiAssistOpen && (
-            <div className="planner-ai-assist__panel">
-              {!sessionToken && (
-                <p className="planner-ai-assist__note">Connect to a backend with AI configured to use AI Assist.</p>
-              )}
-              <div className="planner-ai-assist__row">
-                <select
-                  className="planner-ai-assist__select"
-                  value={aiTemplateId}
-                  onChange={e => setAiTemplateId(e.target.value)}
-                  disabled={aiLoading || !sessionToken}
-                  aria-label="Rundown template"
-                >
-                  {RUNDOWN_TEMPLATES.map(t => (
-                    <option key={t.id} value={t.id}>{t.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="planner-ai-assist__row">
-                <textarea
-                  className="planner-ai-assist__input"
-                  rows={2}
-                  value={aiPrompt}
-                  onChange={e => setAiPrompt(e.target.value)}
-                  placeholder="Describe the event or the edit to make…"
-                  disabled={aiLoading || !sessionToken}
-                />
-              </div>
-              <div className="planner-ai-assist__row planner-ai-assist__row--buttons">
-                <button
-                  className="btn btn--primary btn--sm"
-                  onClick={handleAiGenerate}
-                  disabled={aiLoading || !aiPrompt.trim() || !sessionToken}
-                  title="Generate a new rundown from the prompt"
-                >
-                  {aiLoading ? '…' : 'Generate'}
-                </button>
-                <button
-                  className="btn btn--secondary btn--sm"
-                  onClick={handleAiEdit}
-                  disabled={aiLoading || !aiPrompt.trim() || !sessionToken || blocks.length === 0}
-                  title="Edit the current rundown based on the prompt"
-                >
-                  {aiLoading ? '…' : 'Edit'}
-                </button>
-              </div>
-              {aiError && <p className="planner-ai-assist__error">{aiError}</p>}
-            </div>
-          )}
-        </div>
-
         <div
           className="planner-editor"
           ref={editorRef}
-          style={editorWidth ? { width: editorWidth, flexShrink: 0 } : {}}
+          style={editorWidth && !isNarrow ? { width: editorWidth, flexShrink: 0 } : {}}
         >
           {blocks.length === 0 && (
             <div className="planner-empty-state">
@@ -836,17 +967,36 @@ export function PlannerPage() {
                 onInsertAfter={type => insertBlock(block.id, makeBlock(type))}
                 onDragStart={() => onDragStart(block.id)}
                 onDrop={() => onDrop(block.id)}
+                includedBlocks={includeContents[block.id]}
+                onLoadInclude={() => loadInclude(block.id)}
               />
             );
           })}
           <PlannerQuickAdd onAdd={handleQuickAdd} />
         </div>
-        <div
-          className="planner-resize-handle"
-          onPointerDown={startResize}
-          title="Drag to resize editor width"
-        />
+        {!isNarrow && (
+          <div
+            className="planner-resize-handle"
+            onPointerDown={startResize}
+            title="Drag to resize editor width"
+          />
+        )}
       </div>
+      </div>
+      <AgentChatPanel
+        title="Planner Assistant"
+        subtitle="Describe the event to draft a rundown, or describe a change to make to the one you have."
+        messages={chatMessages}
+        onSend={handleChatSend}
+        loading={aiLoading}
+        error={aiError}
+        disabled={!sessionToken}
+        quickActions={blocks.length === 0 ? RUNDOWN_STARTERS.map(t => ({
+          label: t.label,
+          onClick: () => handleChatSend(t.prompt),
+        })) : undefined}
+        isNarrow={isNarrow}
+      />
     </div>
   );
 }

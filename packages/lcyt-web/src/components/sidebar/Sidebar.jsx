@@ -10,17 +10,6 @@ import { readInputLang, INPUT_LANG_EVENT } from '../../lib/inputLang.js';
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 
-export function getGroupOpen(name) {
-  try {
-    const v = localStorage.getItem(`lcyt.sidebar.${name}.open`);
-    return v === 'true';
-  } catch { return false; }
-}
-
-export function setGroupOpen(name, val) {
-  try { localStorage.setItem(`lcyt.sidebar.${name}.open`, String(val)); } catch { /* ignore */ }
-}
-
 export function getShowAdvanced() {
   try { return localStorage.getItem('lcyt.sidebar.showAdvanced') === 'true'; } catch { return false; }
 }
@@ -184,7 +173,7 @@ function TopBarBadges() {
 
 // ── TopBar ──────────────────────────────────────────────────────────────────
 
-export function TopBar({ expanded, onToggle, onOpenCommandPalette, onOpenShortcuts }) {
+export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
   const [, navigate] = useLocation();
 
   return (
@@ -192,8 +181,8 @@ export function TopBar({ expanded, onToggle, onOpenCommandPalette, onOpenShortcu
       <button
         className="top-bar__hamburger"
         onClick={onToggle}
-        aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
-        title={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+        aria-label="Open menu"
+        title="Open menu"
       >
         ≡
       </button>
@@ -235,7 +224,7 @@ export function TopBar({ expanded, onToggle, onOpenCommandPalette, onOpenShortcu
 
 // ── SidebarItem ─────────────────────────────────────────────────────────────
 
-function SidebarItem({ icon, label, path, exact, expanded, onClick }) {
+function SidebarItem({ icon, label, path, exact, onClick }) {
   const [location] = useLocation();
 
   const isActive = exact
@@ -247,80 +236,40 @@ function SidebarItem({ icon, label, path, exact, expanded, onClick }) {
       href={path}
       onClick={onClick}
       className={['sidebar__item', isActive ? 'sidebar__item--active' : ''].filter(Boolean).join(' ')}
-      title={!expanded ? label : undefined}
+      title={label}
     >
       <span className="sidebar__item-icon" aria-hidden="true">{icon}</span>
-      {expanded && <span className="sidebar__item-label">{label}</span>}
     </Link>
   );
 }
 
 // ── SidebarGroup ────────────────────────────────────────────────────────────
+// Icon-only: clicking a group jumps straight to its first item — there's no
+// expanded state left to show a sub-item list in, so groups behave like a
+// single link. (Currently unused: NAV_GROUPS is empty — see navConfig.jsx.)
 
-function SidebarGroup({ group, expanded, onNavigate }) {
+function SidebarGroup({ group, onNavigate }) {
   const [location] = useLocation();
   const groupActive = group.items.some(
     item => location === item.path || location.startsWith(item.path + '/')
   );
 
-  const [open, setOpen] = useState(() => getGroupOpen(group.id) || groupActive);
-
-  useEffect(() => {
-    if (groupActive && !open) {
-      setOpen(true);
-      setGroupOpen(group.id, true);
-    }
-  }, [groupActive, open, group.id]);
-
-  function handleGroupClick() {
-    if (!expanded) {
-      onNavigate(group.items[0].path);
-      return;
-    }
-    const next = !open;
-    setOpen(next);
-    setGroupOpen(group.id, next);
-  }
-
   return (
     <div className={['sidebar__group', groupActive ? 'sidebar__group--active' : ''].filter(Boolean).join(' ')}>
       <button
         className="sidebar__group-header"
-        onClick={handleGroupClick}
-        title={!expanded ? group.label : undefined}
-        aria-expanded={expanded ? open : undefined}
+        onClick={() => onNavigate(group.items[0].path)}
+        title={group.label}
       >
         <span className="sidebar__item-icon" aria-hidden="true">{group.icon}</span>
-        {expanded && (
-          <>
-            <span className="sidebar__item-label">{group.label}</span>
-            <span className="sidebar__group-chevron" aria-hidden="true">
-              {open ? '▾' : '▸'}
-            </span>
-          </>
-        )}
       </button>
-      {expanded && open && (
-        <div className="sidebar__sub-items">
-          {group.items.map(item => (
-            <SidebarItem
-              key={item.id}
-              icon="·"
-              label={item.label}
-              path={item.path}
-              expanded={expanded}
-              onClick={onNavigate ? () => onNavigate(item.path) : undefined}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
 
 // ── Sidebar ─────────────────────────────────────────────────────────────────
 
-export function Sidebar({ expanded, onNavigate }) {
+export function Sidebar({ onNavigate }) {
   const [showAdvanced, setShowAdvancedState] = useState(getShowAdvanced);
   const session = useSessionContext();
   const features = session.backendFeatures;
@@ -348,37 +297,35 @@ export function Sidebar({ expanded, onNavigate }) {
   }
 
   return (
-    <nav className={['sidebar', expanded ? 'sidebar--expanded' : 'sidebar--collapsed'].join(' ')} aria-label="Main navigation">
+    <nav className="sidebar" aria-label="Main navigation">
       <div className="sidebar__main">
         {visibleItems.map(item => (
-          <SidebarItem key={item.id} {...item} expanded={expanded} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
+          <SidebarItem key={item.id} {...item} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
         ))}
         {visibleGroups.map(group => (
-          <SidebarGroup key={group.id} group={group} expanded={expanded} onNavigate={onNavigate} />
+          <SidebarGroup key={group.id} group={group} onNavigate={onNavigate} />
         ))}
         {showAdvanced && (
           <a
             href="/legacy"
             className="sidebar__item"
-            title={!expanded ? 'Legacy' : undefined}
+            title="Legacy"
           >
             <span className="sidebar__item-icon" aria-hidden="true">⏮</span>
-            {expanded && <span className="sidebar__item-label">Legacy</span>}
           </a>
         )}
       </div>
       <div className="sidebar__divider" role="separator" />
       <div className="sidebar__bottom">
         {visibleBottom.map(item => (
-          <SidebarItem key={item.id} {...item} expanded={expanded} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
+          <SidebarItem key={item.id} {...item} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
         ))}
         <button
           className="sidebar__item sidebar__item--btn"
           onClick={toggleAdvanced}
-          title={expanded ? undefined : (showAdvanced ? 'Hide advanced' : 'Show advanced')}
+          title={showAdvanced ? 'Hide advanced' : 'Show advanced'}
         >
           <span className="sidebar__item-icon" aria-hidden="true">{showAdvanced ? '▴' : '▾'}</span>
-          {expanded && <span className="sidebar__item-label sidebar__item-label--dim">{showAdvanced ? 'Less' : 'Advanced'}</span>}
         </button>
       </div>
     </nav>

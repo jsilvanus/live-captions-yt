@@ -201,6 +201,7 @@ export default {
       noTargets: 'No targets configured. Click "+ Add target" to add one.',
       addTarget: 'Add target',
       removeTarget: 'Remove',
+      typeLockedHint: "Type can't be changed after creation — delete and re-add to change it.",
       typeYouTube: 'YouTube',
       typeGeneric: 'Other',
       typeViewer: 'Viewer',

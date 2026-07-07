@@ -1,8 +1,9 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback, useContext } from 'react';
+import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
-import { ConnectionDot } from './production/ConnectionDot.jsx';
+import { Dialog } from './Dialog.jsx';
+import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 
 const MIXER_TYPES = [
   { value: 'roland', label: 'Roland V-series' },
@@ -330,47 +331,24 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
   // Progressive disclosure: bridge name only when 2+ bridges exist
   const bridge     = bridges.length >= 2 ? bridges.find(b => b.id === mixer.bridgeInstanceId) : null;
 
+  const metaParts = [typeLabel];
+  if (!isLcyt && cfg.host) {
+    metaParts.push(mixer.type === 'atem' ? cfg.host : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : mixer.type === 'obs' ? 4455 : 8023)}`);
+  }
+  if (isLcyt && mixer.outputKey) metaParts.push(mixer.outputKey);
+  if (bridge) metaParts.push(`via ${bridge.name}`);
+  if (mixer.type === 'amx' || mixer.type === 'obs') {
+    const n = cfg.inputs?.length ?? 0;
+    metaParts.push(`${n} input${n !== 1 ? 's' : ''}`);
+  }
+  if (mixer.activeSource != null) metaParts.push(`PGM: ${mixer.activeSource}`);
+
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-      border: '1px solid var(--color-border)', borderRadius: 4,
-    }}>
-      <ConnectionDot connected={mixer.connected} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ fontWeight: 600 }}>{mixer.name}</span>
-        {!isLcyt && cfg.host && (
-          <span style={{ marginLeft: 8, color: 'var(--color-text-muted)', fontSize: 12 }}>
-            {mixer.type === 'atem'
-              ? cfg.host
-              : `${cfg.host}:${cfg.port ?? (mixer.type === 'amx' ? 1319 : mixer.type === 'obs' ? 4455 : 8023)}`}
-          </span>
-        )}
-        {isLcyt && mixer.outputKey && (
-          <span style={{ marginLeft: 8, fontSize: 11, fontFamily: 'monospace', color: 'var(--color-text-muted)' }}>
-            {mixer.outputKey}
-          </span>
-        )}
-        {bridge && (
-          <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--color-text-muted)' }}>
-            via {bridge.name}
-          </span>
-        )}
-      </div>
-      <span style={{
-        fontSize: 11, padding: '2px 6px', borderRadius: 3,
-        background: 'var(--color-surface-alt)', color: 'var(--color-text-muted)', whiteSpace: 'nowrap',
-      }}>{typeLabel}</span>
-      {(mixer.type === 'amx' || mixer.type === 'obs') && (
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-          {cfg.inputs?.length ?? 0} input{(cfg.inputs?.length ?? 0) !== 1 ? 's' : ''}
-        </span>
-      )}
-      {mixer.activeSource != null && (
-        <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>
-          PGM: {mixer.activeSource}
-        </span>
-      )}
-      {isLcyt && (
+    <SetupItemRow
+      statusDot={mixer.connected ? 'var(--color-success)' : 'var(--color-text-muted)'}
+      name={mixer.name}
+      meta={metaParts.join(' · ')}
+      extra={isLcyt && (
         <a
           href={`/production/lcyt-mixer/${mixer.id}`}
           target="_blank"
@@ -381,13 +359,13 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
           Open mixer
         </a>
       )}
-      <button className="btn btn--sm btn--ghost" onClick={() => onEdit(mixer)}>Edit</button>
-      <button className="btn btn--sm btn--ghost btn--danger" onClick={() => onDelete(mixer)}>Delete</button>
-    </div>
+      onSettings={() => onEdit(mixer)}
+      onDelete={() => onDelete(mixer)}
+    />
   );
 }
 
-export function MixersManager() {
+export const MixersManager = forwardRef(function MixersManager({ embedded = false }, ref) {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -423,6 +401,8 @@ export function MixersManager() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useImperativeHandle(ref, () => ({ openAdd: () => setEditing('new') }));
+
   async function handleSave(data) {
     const isNew = editing === 'new';
     const url   = isNew
@@ -450,24 +430,20 @@ export function MixersManager() {
   }
 
   return (
-    <div style={{ padding: 20, maxWidth: 700, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Mixers</h2>
-        <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')} disabled={!!editing}>
-          + Add mixer
-        </button>
-      </div>
+    <div style={embedded ? undefined : { padding: 20, maxWidth: 700, margin: '0 auto' }}>
+      {!embedded && (
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Mixers</h2>
+          <button className="btn btn--primary btn--sm" onClick={() => setEditing('new')} disabled={!!editing}>
+            + Add mixer
+          </button>
+        </div>
+      )}
 
-      {error && <div style={{ color: 'var(--color-error)', marginBottom: 12, fontSize: 13 }}>{error}</div>}
+      {error && <div style={{ color: 'var(--color-error)', margin: embedded ? '0 18px 12px' : '0 0 12px', fontSize: 13 }}>{error}</div>}
 
       {editing && (
-        <div style={{
-          border: '1px solid var(--color-border)', borderRadius: 6, padding: 16,
-          marginBottom: 16, background: 'var(--color-surface-alt)',
-        }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>
-            {editing === 'new' ? 'Add mixer' : `Edit: ${editing.name}`}
-          </h3>
+        <Dialog title={editing === 'new' ? 'Add mixer' : `Edit: ${editing.name}`} onClose={() => setEditing(null)} width={640}>
           <MixerForm
             initial={editing === 'new' ? null : editing}
             bridges={bridges}
@@ -476,15 +452,15 @@ export function MixersManager() {
             backendUrl={backendUrl}
             headers={headers}
           />
-        </div>
+        </Dialog>
       )}
 
       {loading ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p style={{ color: 'var(--color-text-muted)', padding: embedded ? '0 18px 14px' : 0 }}>Loading…</p>
       ) : mixers.length === 0 ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>No mixers configured yet.</p>
+        <p className={embedded ? 'setup-card__empty' : undefined} style={embedded ? undefined : { color: 'var(--color-text-muted)' }}>No mixers configured yet.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className={embedded ? undefined : 'setup-card'}>
           {mixers.map(m => (
             <MixerRow key={m.id} mixer={m} bridges={bridges}
               onEdit={mx => setEditing(mx)} onDelete={mx => setConfirmDelete(mx)} />
@@ -508,7 +484,7 @@ export function MixersManager() {
       )}
     </div>
   );
-}
+});
 
 /** ProductionMixersPage — standalone route wrapper around MixersManager. */
 export function ProductionMixersPage() {

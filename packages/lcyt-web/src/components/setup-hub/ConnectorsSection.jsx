@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
-import { SetupCard } from './SetupCard.jsx';
+import { SetupCard, SetupItemRow } from './SetupCard.jsx';
+import { ApiConnectorsIcon } from './icons.jsx';
+import { Dialog } from '../Dialog.jsx';
 
 const AUTH_TYPES = ['none', 'api_key', 'bearer', 'basic', 'custom'];
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'];
@@ -199,8 +201,8 @@ function NewRequestForm({ api, connectorSlug, onCreated }) {
   );
 }
 
-function ConnectorCard({ api, connector, onDeleted }) {
-  const [expanded, setExpanded] = useState(false);
+/** Dialog body for managing one connector's requests + response mappings. */
+function ConnectorDialogBody({ api, connector, onDeleted }) {
   const [requests, setRequests] = useState([]);
 
   const loadRequests = useCallback(async () => {
@@ -210,7 +212,7 @@ function ConnectorCard({ api, connector, onDeleted }) {
     } catch { /* ignore */ }
   }, [api, connector.slug]);
 
-  useEffect(() => { if (expanded) loadRequests(); }, [expanded, loadRequests]);
+  useEffect(() => { loadRequests(); }, [loadRequests]);
 
   async function deleteRequest(requestSlug) {
     await api(`/connectors/${connector.slug}/requests/${requestSlug}`, { method: 'DELETE' });
@@ -218,30 +220,22 @@ function ConnectorCard({ api, connector, onDeleted }) {
   }
 
   return (
-    <div style={{ border: '1px solid var(--border, #ccc)', borderRadius: 10, padding: '0.8rem 1rem', marginBottom: 10 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setExpanded(v => !v)}>
-        <span>
-          <strong>🔌 {connector.name}</strong>{' '}
-          <span style={{ fontSize: '0.85em', opacity: 0.7 }}>{connector.slug} — {connector.baseUrl}</span>{' '}
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.8rem' }}>
+        <span style={{ fontSize: '0.85em', opacity: 0.7 }}>{connector.slug} — {connector.baseUrl}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {connector.authType !== 'none' && (
             <span style={{ fontSize: '0.8em', padding: '1px 6px', borderRadius: 4, background: 'var(--surface, #eee)' }}>
               {connector.authType}{connector.authConfigured ? ' ✓' : ''}
             </span>
           )}
-        </span>
-        <div style={{ display: 'flex', gap: 6 }}>
-          <button type="button" className="btn btn--danger btn--sm" onClick={(e) => { e.stopPropagation(); onDeleted(connector.slug); }}>Delete</button>
-          <span>{expanded ? '▾' : '▸'}</span>
+          <button type="button" className="btn btn--danger btn--sm" onClick={() => onDeleted(connector.slug)}>Delete connector</button>
         </div>
       </div>
-      {expanded && (
-        <div style={{ marginTop: '0.8rem' }}>
-          {requests.map(r => (
-            <RequestRow key={r.id} api={api} connectorSlug={connector.slug} request={r} onDeleted={deleteRequest} />
-          ))}
-          <NewRequestForm api={api} connectorSlug={connector.slug} onCreated={loadRequests} />
-        </div>
-      )}
+      {requests.map(r => (
+        <RequestRow key={r.id} api={api} connectorSlug={connector.slug} request={r} onDeleted={deleteRequest} />
+      ))}
+      <NewRequestForm api={api} connectorSlug={connector.slug} onCreated={loadRequests} />
     </div>
   );
 }
@@ -321,8 +315,7 @@ function VariablesPanel({ api }) {
   const entries = Object.entries(variables);
 
   return (
-    <div style={{ marginTop: '1.2rem', paddingTop: '0.8rem', borderTop: '1px solid var(--border, #eee)' }}>
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>Variables</div>
+    <div>
       {entries.length === 0 && <p style={{ opacity: 0.6, fontSize: '0.85em' }}>No variables yet.</p>}
       {entries.map(([name, v]) => (
         <div key={name} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: '0.9em', marginBottom: 4 }}>
@@ -344,10 +337,12 @@ function VariablesPanel({ api }) {
 }
 
 /**
- * ConnectorsSection — API Connectors & Variables card. Full CRUD for
- * Connectors → Requests → response mappings, plus manual variables, all
- * inline in the expanded card body (same convention as StorageSection/
- * SttSection/CameraSection) — no separate route.
+ * ConnectorsSection — API Connectors & Variables card. The card face lists
+ * each connector inline (name, slug/baseUrl, auth badge) plus a "Variables"
+ * row; each row's settings icon opens a Dialog — per-connector Requests →
+ * response mappings CRUD, or the manual variables editor. "+ Add" (header,
+ * top-right) opens a separate new-connector Dialog, which also carries the
+ * metacode-trigger syntax reminder (not shown on the card face itself).
  *
  * See docs/plans/plan_api_connectors_variables.md and
  * packages/plugins/lcyt-connectors/CLAUDE.md.
@@ -356,6 +351,9 @@ export function ConnectorsSection() {
   const session = useSessionContext();
   const api = useApi(session);
   const [connectors, setConnectors] = useState([]);
+  const [addOpen, setAddOpen] = useState(false);
+  const [editingSlug, setEditingSlug] = useState(null);
+  const [variablesOpen, setVariablesOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!session?.connected) return;
@@ -369,13 +367,17 @@ export function ConnectorsSection() {
 
   async function deleteConnector(slug) {
     await api(`/connectors/${slug}`, { method: 'DELETE' });
+    setEditingSlug(null);
     load();
   }
+
+  const editingConnector = connectors.find(c => c.slug === editingSlug);
 
   return (
     <SetupCard
       id="connectors"
-      icon="🔌"
+      icon={ApiConnectorsIcon}
+      color="teal"
       title="API connectors"
       description={
         session?.connected
@@ -383,21 +385,49 @@ export function ConnectorsSection() {
           : 'Connect third-party services (calendars, ChMS, lighting consoles, etc.) and expose their responses as {{name}} variables.'
       }
       status="ready"
+      headerAction={{ label: 'Add', onClick: () => setAddOpen(true) }}
     >
-      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 0.8rem' }}>
-        Trigger a refresh from a file line with <code>{'<!-- !api:slug.slug -->'}</code> (on
-        arrival), <code>{'<!-- api:slug.slug -->'}</code> (at send), or{' '}
-        <code>{'<!-- api!:slug.slug -->'}</code> (prefetched, small blocking fallback).
-      </p>
-
-      <NewConnectorForm api={api} onCreated={load} />
-
+      {connectors.length === 0 && (
+        <p className="setup-card__empty">No connectors configured — click Add to set up an API connection.</p>
+      )}
       {connectors.map(c => (
-        <ConnectorCard key={c.id} api={api} connector={c} onDeleted={deleteConnector} />
+        <SetupItemRow
+          key={c.id}
+          name={c.name}
+          meta={`${c.slug} · ${c.baseUrl}`}
+          badge={c.authType !== 'none' ? `${c.authType}${c.authConfigured ? ' ✓' : ''}` : undefined}
+          onSettings={() => setEditingSlug(c.slug)}
+        />
       ))}
-      {connectors.length === 0 && <p style={{ opacity: 0.6, fontSize: '0.9em' }}>No connectors yet — create one above.</p>}
 
-      <VariablesPanel api={api} />
+      <SetupItemRow
+        name="Variables"
+        meta="Manual name/value pairs for {{name}} interpolation in captions"
+        onSettings={() => setVariablesOpen(true)}
+      />
+
+      {addOpen && (
+        <Dialog title="Add API connector" onClose={() => setAddOpen(false)}>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 0.8rem' }}>
+            Trigger a refresh from a file line with <code>{'<!-- !api:slug.slug -->'}</code> (on
+            arrival), <code>{'<!-- api:slug.slug -->'}</code> (at send), or{' '}
+            <code>{'<!-- api!:slug.slug -->'}</code> (prefetched, small blocking fallback).
+          </p>
+          <NewConnectorForm api={api} onCreated={() => { setAddOpen(false); load(); }} />
+        </Dialog>
+      )}
+
+      {editingConnector && (
+        <Dialog title={editingConnector.name} onClose={() => setEditingSlug(null)} width={640}>
+          <ConnectorDialogBody api={api} connector={editingConnector} onDeleted={deleteConnector} />
+        </Dialog>
+      )}
+
+      {variablesOpen && (
+        <Dialog title="Variables" onClose={() => setVariablesOpen(false)}>
+          <VariablesPanel api={api} />
+        </Dialog>
+      )}
     </SetupCard>
   );
 }

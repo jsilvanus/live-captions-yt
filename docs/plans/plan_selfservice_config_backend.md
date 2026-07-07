@@ -13,7 +13,26 @@ These three items were flagged as a prioritized backlog in `plan_team_org_backen
 
 **No backward-compatibility burden.** LCYT has no released users yet. None of the schema below hedges for existing production rows, gradual rollout, or zero-downtime migration — additive/nullable columns are used because that is simply good schema design (a project genuinely can have zero configured targets, or no ingestion rotated yet), not because of any compat requirement.
 
-**Implementation status (added 2026-07-06):** the Setup Hub's Ingestion and Web Radio cards (`packages/lcyt-web/src/components/setup-hub/IngestionSection.jsx`, `WebRadioSection.jsx`) are built against sections 2 and 3 below, extended with a `live` status field each (§2a, §3a) — frontend done, backend (this whole plan) still not implemented. The frontend fails soft (try/catch, shows nothing) against routes that don't exist yet, same as every other Setup Hub section. Section 1 (Caption Targets/Translation) has no frontend consumer yet — Setup Hub's "Caption targets"/"Languages & translation" cards are still the pre-existing plain link-out cards pointing at `/captions` and `/translations`.
+**Implementation status:** backend implemented in PR #239 (merged to `main`).
+Setup Hub's Ingestion, Web Radio, and Caption Targets cards
+(`packages/lcyt-web/src/components/setup-hub/IngestionSection.jsx`,
+`WebRadioSection.jsx`, `CaptionTargetsSection.jsx`) are built against §1/§2/§3
+below (Ingestion/Radio extended with a `live` status field each, §2a/§3a) and
+were verified field-for-field compatible against PR #239's actual route code
+before it merged: `GET/PATCH /ingestion/config`'s nested `{ video, dsk }`
+shape incl. `live`/`501` DSK semantics, `GET/PUT /radio/config`'s
+`{ title, description, coverImageUrl, autoplay, enabled, live }`, and
+`GET/POST/PUT/DELETE /targets`'s target shape (`type`/`enabled`/`streamKey`/
+`url`/`headers`/`viewerKey`/`noBatch`) all matched exactly with no changes
+needed on either side. §1's Translation half now has a real Setup Hub card
+(`LanguagesSection.jsx`/`LanguagesPage.jsx`, replacing the old plain link-out
+card) — but as built (2026-07-06) it's wired to the localStorage
+`lib/translationConfig.js` instead of the already-implemented
+`GET/PUT /translation/config*` routes documented above, a bug to fix
+independently (tracked in `plan_server_stt.md`'s Phase 5 todo, since that
+phase's UI work depends on the fix either way). `scripts/dev/
+screenshot-mock-backend.mjs` keeps in-memory stubs for all three routes for
+local frontend dev without a full `lcyt-backend` instance running.
 
 ---
 

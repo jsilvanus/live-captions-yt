@@ -1,7 +1,8 @@
 import { KEYS } from '../lib/storageKeys.js';
-import { useState, useEffect, useCallback, useContext } from 'react';
+import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
-import { ConnectionDot } from './production/ConnectionDot.jsx';
+import { Dialog } from './Dialog.jsx';
+import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 
 function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
   const [name, setName] = useState('');
@@ -30,6 +31,10 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
+        A bridge is a small program that runs on your streaming computer and relays
+        commands to AMX and Roland hardware on the local AV network.
+      </p>
       <div className="settings-field">
         <label className="settings-field__label">Bridge name *</label>
         <input
@@ -49,6 +54,18 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
           onClick={handleCreate}
           disabled={!name.trim() || saving}
         >{saving ? 'Creating…' : 'Create'}</button>
+      </div>
+      <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 10 }}>
+        <p style={{ margin: '0 0 6px', fontSize: 12, color: 'var(--color-text-muted)' }}>
+          Download the bridge app for your platform:
+        </p>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          {BRIDGE_DOWNLOADS.map(({ label, platform, file }) => (
+            <a key={platform} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(backendUrl, platform)} download={file}>
+              ↓ {label}
+            </a>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -245,47 +262,26 @@ function BridgeRow({ bridge, showName, onDelete, onRedownload, onSendTcp, onSend
   const lastSeen = bridge.lastSeen
     ? new Date(bridge.lastSeen + 'Z').toLocaleString()
     : 'Never';
+  const connected = bridge.status === 'connected';
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: 10,
-      padding: '8px 10px',
-      border: '1px solid var(--color-border)',
-      borderRadius: 4,
-    }}>
-      <ConnectionDot connected={bridge.status === 'connected'} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        {showName && <span style={{ fontWeight: 600, marginRight: 8 }}>{bridge.name}</span>}
-        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
-          {bridge.status === 'connected' ? 'Connected' : `Last seen: ${lastSeen}`}
-        </span>
-      </div>
-      {bridge.status === 'connected' && (
+    <SetupItemRow
+      statusDot={connected ? 'var(--color-success)' : 'var(--color-text-muted)'}
+      name={showName ? bridge.name : 'Bridge'}
+      meta={connected ? 'Connected' : `Last seen: ${lastSeen}`}
+      extra={(
         <>
-          <button
-            className="btn btn--sm btn--ghost"
-            onClick={() => onSendTcp(bridge)}
-            title="Send a TCP command via this bridge"
-          >TCP</button>
-          <button
-            className="btn btn--sm btn--ghost"
-            onClick={() => onSendHttp(bridge)}
-            title="Send an HTTP request via this bridge"
-          >HTTP</button>
+          {connected && (
+            <>
+              <button className="btn btn--sm btn--ghost" onClick={() => onSendTcp(bridge)} title="Send a TCP command via this bridge">TCP</button>
+              <button className="btn btn--sm btn--ghost" onClick={() => onSendHttp(bridge)} title="Send an HTTP request via this bridge">HTTP</button>
+            </>
+          )}
+          <button className="btn btn--sm btn--ghost" onClick={() => onRedownload(bridge)} title="Re-download .env">↓ .env</button>
         </>
       )}
-      <button
-        className="btn btn--sm btn--ghost"
-        onClick={() => onRedownload(bridge)}
-        title="Re-download .env"
-      >↓ .env</button>
-      <button
-        className="btn btn--sm btn--ghost btn--danger"
-        onClick={() => onDelete(bridge)}
-      >Delete</button>
-    </div>
+      onDelete={() => onDelete(bridge)}
+    />
   );
 }
 
@@ -320,7 +316,7 @@ function DeleteConfirmModal({ bridge, cameras, mixers, onConfirm, onCancel }) {
   );
 }
 
-export function BridgesManager() {
+export const BridgesManager = forwardRef(function BridgesManager({ embedded = false }, ref) {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -351,6 +347,8 @@ export function BridgesManager() {
   }, [backendUrl, apiKey]);
 
   useEffect(() => { fetchBridges(); }, [fetchBridges]);
+
+  useImperativeHandle(ref, () => ({ openAdd: () => setAdding(true) }));
 
   async function handleCreated(data) {
     setAdding(false);
@@ -398,58 +396,45 @@ export function BridgesManager() {
   const showNames = bridges.length >= 2;
 
   return (
-    <div style={{ padding: 20, maxWidth: 700, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
-        <h2 style={{ margin: 0, fontSize: 18 }}>Bridges</h2>
-        {!adding && (
-          <button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}>
-            + Add bridge
-          </button>
-        )}
-      </div>
+    <div style={embedded ? undefined : { padding: 20, maxWidth: 700, margin: '0 auto' }}>
+      {!embedded && (
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16, gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 18 }}>Bridges</h2>
+          {!adding && (
+            <button className="btn btn--primary btn--sm" onClick={() => setAdding(true)}>
+              + Add bridge
+            </button>
+          )}
+        </div>
+      )}
 
       {error && (
-        <div style={{ color: 'var(--color-error)', marginBottom: 12, fontSize: 13 }}>{error}</div>
+        <div style={{ color: 'var(--color-error)', margin: embedded ? '0 18px 12px' : '0 0 12px', fontSize: 13 }}>{error}</div>
       )}
 
       {newBridge && (
-        <EnvDownloadBanner bridge={newBridge} backendUrl={backendUrl} onDismiss={() => setNewBridge(null)} />
+        <div style={embedded ? { margin: '0 18px 12px' } : undefined}>
+          <EnvDownloadBanner bridge={newBridge} backendUrl={backendUrl} onDismiss={() => setNewBridge(null)} />
+        </div>
       )}
 
       {adding && (
-        <div style={{
-          border: '1px solid var(--color-border)', borderRadius: 6,
-          padding: 16, marginBottom: 16, background: 'var(--color-surface-alt)',
-        }}>
-          <h3 style={{ margin: '0 0 12px', fontSize: 15 }}>Add bridge</h3>
+        <Dialog title="Add bridge" onClose={() => setAdding(false)}>
           <AddBridgeForm
             onCreated={handleCreated}
             onCancel={() => setAdding(false)}
             backendUrl={backendUrl}
             headers={headers}
           />
-        </div>
+        </Dialog>
       )}
 
       {loading ? (
-        <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        <p style={{ color: 'var(--color-text-muted)', padding: embedded ? '0 18px 14px' : 0 }}>Loading…</p>
       ) : bridges.length === 0 ? (
-        <div style={{ fontSize: 14 }}>
-          <p style={{ color: 'var(--color-text-muted)' }}>No bridges configured.</p>
-          <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>
-            A bridge is a small program that runs on your streaming computer and relays
-            commands to AMX and Roland hardware on the local AV network.
-          </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
-            {BRIDGE_DOWNLOADS.map(({ label, platform, file }) => (
-              <a key={platform} className="btn btn--ghost btn--sm" href={bridgeDownloadUrl(backendUrl, platform)} download={file}>
-                ↓ {label}
-              </a>
-            ))}
-          </div>
-        </div>
+        <p className={embedded ? 'setup-card__empty' : undefined} style={embedded ? undefined : { color: 'var(--color-text-muted)' }}>No bridges configured.</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className={embedded ? undefined : 'setup-card'}>
           {bridges.map(b => (
             <BridgeRow
               key={b.id}
@@ -485,7 +470,7 @@ export function BridgesManager() {
       )}
     </div>
   );
-}
+});
 
 /** ProductionBridgesPage — standalone route wrapper around BridgesManager. */
 export function ProductionBridgesPage() {

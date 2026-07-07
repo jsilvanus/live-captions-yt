@@ -43,7 +43,7 @@ export function StatsModal({ isOpen, onClose, stats }) {
 
         <div className="settings-modal__header">
           <span className="settings-modal__title" id="stats-title">Your Data</span>
-          <button className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
         </div>
 
         <div className="settings-modal__body privacy-body">

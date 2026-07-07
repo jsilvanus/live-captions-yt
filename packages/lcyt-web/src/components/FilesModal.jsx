@@ -191,7 +191,7 @@ export function FilesModal({ isOpen, onClose, initialTab }) {
       <div className="settings-modal__box">
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('settings.files.title')}</span>
-          <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
+          <button type="button" className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
         </div>
 
         {/* Tabs */}

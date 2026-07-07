@@ -33,6 +33,7 @@ export { createRolesRouter } from './routes/roles.js';
 export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from './routes/roles-chat.js';
 export { createProductionAssistantRouter } from './routes/production-assistant.js';
 export { createVisionRolesRouter, VISION_ROLES } from './routes/vision-roles.js';
+export { createAiModelsRouter } from './routes/ai-models.js';
 export { runMigrations } from './db.js';
 
 // Vision roles (Tracker & Describer, plan_ai_roles_framework.md Runtime Shape 1)
@@ -80,6 +81,14 @@ export {
   isServerEmbeddingAvailable,
 } from './embeddings.js';
 
+export {
+  runAiModelMigrations,
+  listAiModelConfigs,
+  getAiModelConfig,
+  setAiModelConfig,
+  deleteAiModelConfig,
+} from './ai-models.js';
+
 /**
  * Run DB migrations and create the AgentEngine instance.
  * Call once at backend startup before mounting any routes.
@@ -103,6 +112,9 @@ export async function initAgent(db, opts = {}) {
   // AI Roles Framework migrations (ai_roles catalog seed + project_ai_role_configs)
   const { runAiRolesMigrations } = await import('./ai-roles.js');
   runAiRolesMigrations(db);
+
+  const { runAiModelMigrations } = await import('./ai-models.js');
+  runAiModelMigrations(db);
 
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);

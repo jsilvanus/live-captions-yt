@@ -474,6 +474,18 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_mcp_tokens_key ON mcp_tokens(api_key)');
 
+  // Additive columns for the Setup Hub "MCP access" card (plan/ai_model_registry):
+  // a soft active/inactive toggle distinct from permanent revocation, plus
+  // creator attribution for multi-user projects.
+  {
+    const mcpTokenCols = new Set(
+      db.prepare('PRAGMA table_info(mcp_tokens)').all().map(c => c.name)
+    );
+    if (!mcpTokenCols.has('active'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+    if (!mcpTokenCols.has('created_by_user_id')) db.exec('ALTER TABLE mcp_tokens ADD COLUMN created_by_user_id INTEGER');
+    if (!mcpTokenCols.has('created_by_name'))    db.exec("ALTER TABLE mcp_tokens ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''");
+  }
+
   // Back-fill project_features from legacy api_keys columns (idempotent)
   const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];
   const LEGACY_FEATURE_MAP = [

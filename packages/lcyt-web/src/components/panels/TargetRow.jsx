@@ -12,8 +12,18 @@ import { useLang } from '../../contexts/LangContext.jsx';
  *   onRemove: () => void
  *   backendUrl: string
  *   icons: { id, filename }[]
+ *   typeLocked: boolean — disables the type selector (the server-backed caption_targets
+ *     table treats `type` as immutable once created; only relevant to callers persisting
+ *     to that API, not the localStorage-only TargetsPanel default usage).
+ *   hideRemove: boolean — hides the inline ✕ button (for callers with their own delete
+ *     flow, e.g. a confirm dialog, instead of this row removing itself from a live list).
+ *   hideFormat: boolean — hides the format selector (`format` isn't a column in the
+ *     server-backed caption_targets table yet — see plan_selfservice_config_backend.md §1).
  */
-export function TargetRow({ entry, onChange, onRemove, backendUrl = '', icons = [] }) {
+export function TargetRow({
+  entry, onChange, onRemove, backendUrl = '', icons = [],
+  typeLocked = false, hideRemove = false, hideFormat = false,
+}) {
   const { t } = useLang();
   const [urlError, setUrlError] = useState('');
   const [headersError, setHeadersError] = useState('');
@@ -54,6 +64,9 @@ export function TargetRow({ entry, onChange, onRemove, backendUrl = '', icons = 
   const viewerPageUrl = (isValidViewerKey && backendUrl)
     ? `${window.location.origin}/view/${encodeURIComponent(entry.viewerKey)}?server=${encodeURIComponent(backendUrl)}${entry.iconId ? `&icon=${entry.iconId}` : ''}`
     : null;
+  const headersValue = typeof entry.headers === 'string'
+    ? entry.headers
+    : entry.headers ? JSON.stringify(entry.headers, null, 2) : '';
 
   return (
     <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -68,6 +81,8 @@ export function TargetRow({ entry, onChange, onRemove, backendUrl = '', icons = 
         <select
           className="settings-field__input"
           value={entry.type}
+          disabled={typeLocked}
+          title={typeLocked ? t('settings.targets.typeLockedHint') : undefined}
           onChange={e => {
             const next = { ...entry, type: e.target.value };
             delete next.url; delete next.headers; delete next.streamKey; delete next.viewerKey;
@@ -80,7 +95,7 @@ export function TargetRow({ entry, onChange, onRemove, backendUrl = '', icons = 
           <option value="generic">{t('settings.targets.typeGeneric')}</option>
           <option value="viewer">{t('settings.targets.typeViewer')}</option>
         </select>
-        {entry.type !== 'viewer' && (
+        {!hideFormat && entry.type !== 'viewer' && (
           <select
             className="settings-field__input"
             value={entry.format || 'youtube'}
@@ -91,13 +106,15 @@ export function TargetRow({ entry, onChange, onRemove, backendUrl = '', icons = 
             <option value="json">{t('settings.targets.formatJson')}</option>
           </select>
         )}
-        <button
-          type="button"
-          className="btn btn--secondary btn--sm"
-          onClick={onRemove}
-          title={t('settings.targets.removeTarget')}
-          style={{ flexShrink: 0, marginLeft: 'auto' }}
-        >✕</button>
+        {!hideRemove && (
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={onRemove}
+            title={t('settings.targets.removeTarget')}
+            style={{ flexShrink: 0, marginLeft: 'auto' }}
+          >✕</button>
+        )}
       </div>
 
       {entry.type === 'youtube' && (
@@ -137,8 +154,8 @@ export function TargetRow({ entry, onChange, onRemove, backendUrl = '', icons = 
             <textarea
               className="settings-field__input"
               rows={3}
-              placeholder={'{"Authorization": "Bearer token"}'}
-              value={entry.headers || ''}
+              placeholder={'{"Authorization": "******"}'}
+              value={headersValue}
               onChange={e => { onChange({ ...entry, headers: e.target.value }); setHeadersError(validateHeaders(e.target.value)); }}
               onBlur={e => setHeadersError(validateHeaders(e.target.value))}
               style={{ fontFamily: 'monospace', fontSize: '0.85em', resize: 'vertical' }}

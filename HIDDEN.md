@@ -4,7 +4,9 @@ Pages/nav items removed from the `lcyt-web` sidebar (`packages/lcyt-web/src/comp
 
 **"Hidden" means nav-only.** The route, component, and backend behavior are all untouched — each page still works if you type its URL directly. Removed only from `NAV_ITEMS` / `NAV_GROUPS` / `NAV_BOTTOM` (and therefore from the Command Palette, which is built from the same config). To bring one back: re-add its entry to `navConfig.jsx` with a fitting icon, in whatever position makes sense once it has a design.
 
-The mockup's sidebar order (Setup → Assets → Graphics → Broadcast, then Projects → Team → Admin → Account) is what the current nav follows. Everything below was in the old nav but isn't in the mockup yet.
+The mockup's sidebar order (Setup → Assets → Planner → Graphics → Broadcast, then Projects → Team → Admin → Account) is what the current nav follows. Everything below was in the old nav but isn't in the mockup yet.
+
+**Update (2026-07-06):** Planner is back in the nav (between Assets and Graphics) — the mockup's `Planner Page.dc.html` was fully ported (structure/outline sidebar, file-include block type, theme-aware CSS). See `packages/lcyt-web/src/components/PlannerPage.jsx`.
 
 ## Removed nav items
 
@@ -13,7 +15,6 @@ The mockup's sidebar order (Setup → Assets → Graphics → Broadcast, then Pr
 | Captions | `/captions` | Top nav item | Classic two-panel caption UI — core feature, just not in the mockup yet. |
 | Audio | `/audio` | Top nav item | Full-page audio/STT controls. |
 | Translations | `/translations` | Top nav item | The mockup's Assets screen has a static `AssetTranslationsCard` — worth wiring a real link there once that card gets an `onClick`. |
-| Planner | `/planner` | Top nav item | The mockup *does* have a full `Planner Page.dc.html`, reachable from the Assets screen's "Run planner" card (`AssetRunPlannerCard.dc.html`) — not from the sidebar directly. Consider linking `AssetsPage`'s planner card to `/planner` instead of re-adding a sidebar entry. |
 | AI | `/ai` | Bottom nav item | AI/embedding provider settings. |
 | Settings | `/settings` | Bottom nav item | General/CC/IO preferences. Note: the mockup's Org screen has its own "Setup" tab, but that's team-defaults config (which device/service configs a team pushes into projects), not this page — genuinely no equivalent yet. |
 | DSK Control | `/graphics/control` | Sub-item of the old "Graphics" group | The mockup's Graphics icon opens the Editor directly, no sub-menu. |
@@ -29,5 +30,5 @@ The "Graphics" and "Admin" sidebar groups were also flattened to single items (p
 
 These routes/pages existed before this pass and were **already** not in the sidebar (not part of this cleanup, just noted here since they came up while cross-checking against the mockup):
 
-- `/production/cameras`, `/production/mixers`, `/production/bridges` — standalone camera/mixer/bridge management pages. The mockup's Setup screen already has config *cards* for Cameras/Mixers/Bridges (matching `packages/lcyt-web/src/components/setup-hub/CameraSection.jsx` etc.), so these standalone pages may be redundant once Setup's cards are complete — or may still be needed as what those cards deep-link to. Worth a decision once Setup is fully wired up.
+- `/production/cameras`, `/production/mixers`, `/production/bridges`, `/production/devices` — standalone camera/mixer/encoder/bridge management pages. **Decided (2026-07-06):** kept, not deleted — but no longer linked directly. Each Setup Hub card's "Open standalone page" now goes through `/setup/:card/page` (`SetupStandalonePage.jsx`), which renders the exact same manager component (`CamerasManager` etc., non-embedded) with a parity banner linking back to the hub card, rather than pointing straight at these routes. The routes themselves are untouched and still work by direct URL.
 - `/admin/site-features` (`AdminSiteFeaturesPage`) and `/admin/teams` (`AdminTeamsPage`) — these **do** have design counterparts (the mockup's Admin screen tabs "Site Features" and "Teams") but were never linked from the sidebar to begin with. Low-risk follow-up: wire the flattened Admin nav item into an actual tabbed page (Site Features / Teams / Projects / Users) matching the mockup, instead of just landing on `/admin/users`.
