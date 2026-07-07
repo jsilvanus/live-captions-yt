@@ -2,15 +2,29 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; compact inline cue syntax, composite/context backend evaluation, and inline cue sync implemented; Phase 8 (multi-modal), 8.5 (inline/backend sync gap), 9 (composite & named conditions, incl. a track: leaf for a planned fps30 video tracker), and 10 (Assets-page Cue Rules editor UI) planned."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Implemented work includes compact inline cue syntax, backend composite/context evaluation, and inline cue snapshot sync; remaining work focuses on multi-modal cues and the cue-rules editor UI."
 related: plan/agent, plan/ai_roles_framework
 ---
 
 # Cue Engine Enhanced Capabilities
 
-**Status:** In progress
+**Status:** In progress (core cue implementation is shipped; remaining roadmap items are future work)
 **Scope:** `packages/plugins/lcyt-cues`, `packages/plugins/lcyt-agent`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
 **Related plans:** [AI Agent Plan](plan_agent.md) (lcyt-agent owns AI config, embeddings, LLM calls, and future features including SVG graphics AI and rundown generation)
+
+---
+
+## Implemented work to date
+
+- Compact inline cue syntax and modifier support (`cue:`, `cue*:`, `cue**:`, plus fuzzy/semantic/context-style forms).
+- Backend evaluation for composite/context cues, including named condition definitions and backend-side evaluation paths.
+- Inline cue snapshot sync from parsed rundown files into the backend so backend-evaluated cues participate in the live runtime path.
+- Parser/runtime/regression coverage for the compact syntax and backend cue-evaluation paths.
+
+## Remaining roadmap
+
+- Multi-modal scene understanding and vision-backed event cues.
+- A dedicated cue-rules editor UI for composite rules and named conditions.
 
 ---
 
