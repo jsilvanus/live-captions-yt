@@ -69,3 +69,10 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
 
 // Re-export OBSClient for use by bridge and adapters
 export { OBSClient };
+
+// Plain, directly-callable camera/mixer CRUD (for packages/lcyt-tools — plan/mcp)
+export {
+  listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
+  listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
+  buildSwitchCommand,
+} from './crud.js';
