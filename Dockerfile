@@ -6,12 +6,15 @@ COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
 COPY packages/lcyt-mcp-http/package.json packages/lcyt-mcp-http/
+COPY packages/lcyt-tools/package.json packages/lcyt-tools/
 COPY packages/plugins/lcyt-production/package.json packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/package.json packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/package.json packages/plugins/lcyt-rtmp/
 COPY packages/plugins/lcyt-files/package.json packages/plugins/lcyt-files/
 COPY packages/plugins/lcyt-cues/package.json packages/plugins/lcyt-cues/
 COPY packages/plugins/lcyt-agent/package.json packages/plugins/lcyt-agent/
+COPY packages/plugins/lcyt-connectors/package.json packages/plugins/lcyt-connectors/
+COPY packages/plugins/lcyt-music/package.json packages/plugins/lcyt-music/
 
 # Install workspace dependencies.
 RUN npm ci \
@@ -27,12 +30,15 @@ RUN npm ci \
 COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
 COPY packages/lcyt-mcp-http/src/ packages/lcyt-mcp-http/src/
+COPY packages/lcyt-tools/ packages/lcyt-tools/
 COPY packages/plugins/lcyt-production/ packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/ packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/ packages/plugins/lcyt-rtmp/
 COPY packages/plugins/lcyt-files/ packages/plugins/lcyt-files/
 COPY packages/plugins/lcyt-cues/ packages/plugins/lcyt-cues/
 COPY packages/plugins/lcyt-agent/ packages/plugins/lcyt-agent/
+COPY packages/plugins/lcyt-connectors/ packages/plugins/lcyt-connectors/
+COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
 
 FROM node:20-slim
 WORKDIR /app
