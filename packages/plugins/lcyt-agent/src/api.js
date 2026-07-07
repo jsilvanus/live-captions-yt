@@ -27,6 +27,8 @@
 export { AgentEngine } from './agent-engine.js';
 export { createAgentRouter } from './routes/agent.js';
 export { createAiRouter } from './routes/ai.js';
+export { createAiModelsRouter } from './routes/ai-models.js';
+export { createMcpTokensRouter } from './routes/mcp-tokens.js';
 export { runMigrations } from './db.js';
 
 // Re-export AI config and embedding utilities so the backend can use them
@@ -44,6 +46,19 @@ export {
   isServerEmbeddingAvailable,
 } from './embeddings.js';
 
+export {
+  runAiModelMigrations,
+  listAiModelConfigs,
+  getAiModelConfig,
+  setAiModelConfig,
+  deleteAiModelConfig,
+  runMcpTokenMigrations,
+  createMcpToken,
+  listMcpTokens,
+  updateMcpToken,
+  revokeMcpToken,
+} from './ai-models.js';
+
 /**
  * Run DB migrations and create the AgentEngine instance.
  * Call once at backend startup before mounting any routes.
@@ -59,6 +74,10 @@ export async function initAgent(db, opts = {}) {
   // AI config table migrations (embedding provider config per user)
   const { runAiMigrations } = await import('./ai-config.js');
   runAiMigrations(db);
+
+  const { runAiModelMigrations, runMcpTokenMigrations } = await import('./ai-models.js');
+  runAiModelMigrations(db);
+  runMcpTokenMigrations(db);
 
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);

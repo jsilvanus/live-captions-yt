@@ -4,6 +4,7 @@ const TABS = [
   { id: 'users',         label: 'Users',         path: '/admin/users' },
   { id: 'projects',      label: 'Projects',      path: '/admin/projects' },
   { id: 'audit-log',     label: 'Audit Log',     path: '/admin/audit-log' },
+  { id: 'ai-models',     label: 'AI Models',     path: '/admin/ai-models' },
   { id: 'site-features', label: 'Site Features', path: '/admin/site-features', stub: true },
   { id: 'teams',         label: 'Teams',         path: '/admin/teams',         stub: true },
 ];

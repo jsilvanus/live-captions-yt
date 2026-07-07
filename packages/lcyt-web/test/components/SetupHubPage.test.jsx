@@ -17,6 +17,7 @@ vi.mock('../../src/components/setup-hub/LanguagesSection.jsx', () => ({ Language
 vi.mock('../../src/components/setup-hub/SttSection.jsx', () => ({ SttSection: () => <div data-testid="stt-section" /> }));
 vi.mock('../../src/components/setup-hub/StorageSection.jsx', () => ({ StorageSection: () => <div data-testid="storage-section" /> }));
 vi.mock('../../src/components/setup-hub/AiModelsSection.jsx', () => ({ AiModelsSection: () => <div data-testid="ai-models-section" /> }));
+vi.mock('../../src/components/setup-hub/McpAccessSection.jsx', () => ({ McpAccessSection: () => <div data-testid="mcp-access-section" /> }));
 vi.mock('../../src/components/setup-hub/ConnectorsSection.jsx', () => ({ ConnectorsSection: () => <div data-testid="connectors-section" /> }));
 
 import { SetupHubPage } from '../../src/components/setup-hub/SetupHubPage.jsx';
@@ -54,6 +55,7 @@ describe('SetupHubPage', () => {
     expect(screen.getByTestId('stt-section')).toBeInTheDocument();
     expect(screen.getByTestId('storage-section')).toBeInTheDocument();
     expect(screen.getByTestId('ai-models-section')).toBeInTheDocument();
+    expect(screen.getByTestId('mcp-access-section')).toBeInTheDocument();
     expect(screen.getByTestId('connectors-section')).toBeInTheDocument();
     expect(screen.getByTestId('languages-section')).toBeInTheDocument();
   });

@@ -14,6 +14,7 @@ import { LanguagesSection } from './LanguagesSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { AiModelsSection } from './AiModelsSection.jsx';
+import { McpAccessSection } from './McpAccessSection.jsx';
 import { ConnectorsSection } from './ConnectorsSection.jsx';
 import { useCardFavorites } from '../../lib/cardFavorites.js';
 import { useUserAuth } from '../../hooks/useUserAuth.js';
@@ -113,6 +114,7 @@ export function SetupHubPage() {
 
         {/* ── AI & integrations ── */}
         {isVisible('ai-models') && <AiModelsSection />}
+        {isVisible('mcp-access') && <McpAccessSection />}
         {isVisible('connectors') && <ConnectorsSection />}
 
         {/* ── Workflows — always visible regardless of the active filter

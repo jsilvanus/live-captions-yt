@@ -56,7 +56,7 @@ try {
 }
 import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
 import {
-  initAgent, createAgentRouter, createAiRouter,
+  initAgent, createAgentRouter, createAiRouter, createAiModelsRouter, createMcpTokensRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import {
@@ -303,10 +303,9 @@ const app = express();
 // Auth middleware instance — created here so /icons can be mounted before the
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
-
+const userAuth = createUserAuthMiddleware(jwtSecret);
 // DSK routers require auth — must be created after auth is initialized.
 const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, auth, relayManager);
-
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -415,6 +414,8 @@ app.get('/contact', (req, res) => {
 
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
+app.use('/ai/models', createAiModelsRouter(db, userAuth));
+app.use('/mcp-tokens', createMcpTokensRouter(db, userAuth));
 app.use('/admin', createAdminRouter(db, jwtSecret));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
