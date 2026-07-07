@@ -57,6 +57,7 @@ try {
 import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
 import {
   initAgent, createAgentRouter, createAiRouter,
+  createAdminAiProvidersRouter, createProjectAiProvidersRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import {
@@ -217,8 +218,15 @@ createSoundCueListener({ store, engine: _cueEngine });
 
 // AI Agent — central AI service. Owns AI configuration, embedding calls,
 // context window management, and future vision/LLM features.
-// Also runs AI config DB migrations (ai_config table).
-const { agent: _agent } = await initAgent(db);
+// Also runs AI config DB migrations (ai_config table) and the AI model
+// registry migrations (ai_providers / ai_provider_models / ai_provider_grants).
+const { agent: _agent, providerRegistry: _providerRegistry } = await initAgent(db);
+
+// Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
+// provider with bridge_instance_id set dispatches through the production
+// bridge manager's SSE command channel. Setter injection — server.js is the
+// only place that holds both plugin instances.
+_providerRegistry.setBridgeManager(productionBridgeManager);
 
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
 // user-defined outbound API connectors. Runs its own DB migrations
@@ -418,8 +426,10 @@ app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
 app.use('/cues', createCueRouter(db, auth, _cueEngine));
 app.use('/mcp-tokens', createMcpTokensRouter(db, auth));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, auth, { bridgeManager: productionBridgeManager }));
 app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));
+app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
 app.use('/connectors', createConnectorsRouter(db, auth));
 app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));

@@ -27,7 +27,20 @@
 export { AgentEngine } from './agent-engine.js';
 export { createAgentRouter } from './routes/agent.js';
 export { createAiRouter } from './routes/ai.js';
+export { createAdminAiProvidersRouter } from './routes/ai-providers-admin.js';
+export { createProjectAiProvidersRouter } from './routes/ai-providers-project.js';
 export { runMigrations } from './db.js';
+
+// AI model registry (plan/ai_model_registry): providers, model catalogs, grants
+export {
+  runProviderRegistryMigrations,
+  createProvider, updateProvider, deleteProvider, getProvider,
+  maskProvider, listSiteProviders, listVisibleProviders, isProviderVisible,
+  setGrant, listGrants,
+  listProviderModels, addManualModel, updateModel, deleteModel,
+  PROVIDER_KINDS, PROVIDER_VENDORS,
+} from './provider-registry.js';
+export { discoverProvider, inferCapabilities, upsertDiscoveredModels } from './discovery.js';
 
 // Re-export AI config and embedding utilities so the backend can use them
 export {
@@ -60,8 +73,30 @@ export async function initAgent(db, opts = {}) {
   const { runAiMigrations } = await import('./ai-config.js');
   runAiMigrations(db);
 
+  // AI model registry migrations (ai_providers / ai_provider_models / ai_provider_grants)
+  const { runProviderRegistryMigrations } = await import('./provider-registry.js');
+  runProviderRegistryMigrations(db);
+
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);
 
-  return { agent };
+  // Small handle for the provider registry. The bridge manager (from
+  // lcyt-production) is injected by the composition root (server.js) after
+  // both plugins are initialized — same setter-injection convention as
+  // cueEngine.setAgentEvaluateFn().
+  const registryModule = await import('./provider-registry.js');
+  const discoveryModule = await import('./discovery.js');
+  const providerRegistry = {
+    _bridgeManager: null,
+    setBridgeManager(bridgeManager) { this._bridgeManager = bridgeManager; },
+    getBridgeManager() { return this._bridgeManager; },
+    getProvider: (id) => registryModule.getProvider(db, id),
+    listVisibleProviders: (apiKey) => registryModule.listVisibleProviders(db, apiKey),
+    listProviderModels: (providerId) => registryModule.listProviderModels(db, providerId),
+    discoverProvider(provider) {
+      return discoveryModule.discoverProvider(db, provider, { bridgeManager: this._bridgeManager });
+    },
+  };
+
+  return { agent, providerRegistry };
 }
