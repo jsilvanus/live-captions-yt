@@ -682,9 +682,9 @@ export function PlannerPage() {
     if (!aiPrompt.trim() || aiLoading || !backendUrl || !sessionToken) return;
     setAiLoading(true); setAiError('');
     try {
-      const body = { prompt: aiPrompt.trim() };
+      const body = { goal: aiPrompt.trim() };
       if (aiTemplateId) body.templateId = aiTemplateId;
-      const res = await fetch(`${backendUrl}/agent/generate-rundown`, {
+      const res = await fetch(`${backendUrl}/roles/planner/assist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
         body: JSON.stringify(body),
@@ -706,11 +706,11 @@ export function PlannerPage() {
     if (!aiPrompt.trim() || aiLoading || !backendUrl || !sessionToken) return;
     setAiLoading(true); setAiError('');
     try {
-      const content = serializePlan(blocks);
-      const res = await fetch(`${backendUrl}/agent/edit-rundown`, {
+      const currentPlan = serializePlan(blocks);
+      const res = await fetch(`${backendUrl}/roles/planner/assist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
-        body: JSON.stringify({ content, prompt: aiPrompt.trim() }),
+        body: JSON.stringify({ currentPlan, goal: aiPrompt.trim() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);

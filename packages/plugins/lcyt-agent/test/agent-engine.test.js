@@ -319,41 +319,37 @@ describe('AgentEngine — Phase 5 & 6', () => {
     assert.equal(out.length, 0);
   });
 
-  test('generateRundown returns empty string when no AI config', async () => {
+  test('generateRundown returns empty string when apiSettings is null', async () => {
     const db = await createDb();
     const { AgentEngine } = await import('../src/agent-engine.js');
     const agent = new AgentEngine(db);
-    const out = await agent.generateRundown('key1', 'A church service');
+    const out = await agent.generateRundown(null, 'A church service');
     assert.equal(out, '');
   });
 
-  test('generateRundown returns empty string when provider is none', async () => {
+  test('generateRundown returns empty string when apiSettings has no apiKey', async () => {
     const db = await createDb();
     const { AgentEngine } = await import('../src/agent-engine.js');
-    const { setAiConfig } = await import('../src/ai-config.js');
-    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
     const agent = new AgentEngine(db);
-    const out = await agent.generateRundown('key1', 'Service');
+    const out = await agent.generateRundown({ apiUrl: 'https://api.openai.com', apiKey: '', model: 'gpt-4o-mini' }, 'Service');
     assert.equal(out, '');
   });
 
-  test('editRundown returns original content when no AI config', async () => {
+  test('editRundown returns original content when apiSettings is null', async () => {
     const db = await createDb();
     const { AgentEngine } = await import('../src/agent-engine.js');
     const agent = new AgentEngine(db);
     const content = 'Original rundown';
-    const out = await agent.editRundown('key1', content, 'Add a pause');
+    const out = await agent.editRundown(null, content, 'Add a pause');
     assert.equal(out, content);
   });
 
-  test('editRundown returns original content when provider is none', async () => {
+  test('editRundown returns original content when apiSettings has no apiKey', async () => {
     const db = await createDb();
     const { AgentEngine } = await import('../src/agent-engine.js');
-    const { setAiConfig } = await import('../src/ai-config.js');
-    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
     const agent = new AgentEngine(db);
     const content = 'Original rundown';
-    const out = await agent.editRundown('key1', content, 'Add a pause');
+    const out = await agent.editRundown({ apiUrl: 'https://api.openai.com', apiKey: '', model: 'gpt-4o-mini' }, content, 'Add a pause');
     assert.equal(out, content);
   });
 

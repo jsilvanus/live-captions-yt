@@ -554,18 +554,23 @@ export class AgentEngine {
   /**
    * Generate a new rundown from a natural-language prompt.
    *
-   * @param {string} apiKey
+   * Planner Assistant (plan/ai_roles_framework) resolves its model/provider
+   * via project_ai_role_configs + the ai_providers registry, not ai_config —
+   * so this takes already-resolved apiSettings rather than an apiKey to look
+   * up itself. See routes/planner.js.
+   *
+   * @param {{ apiUrl: string, apiKey: string, model: string }|null} apiSettings
    * @param {string} prompt — e.g. "A church service with opening prayer and sermon"
    * @param {object} [opts]
    * @param {string} [opts.templateId] — optional built-in template key to use as a base
+   * @param {string} [opts.systemPromptOverride] — project-configurable extra instructions
+   *   (harness_config.systemPromptOverride), appended after the built-in guidelines —
+   *   never replacing them outright, since the model still needs the metacode
+   *   reference to produce valid output
    * @returns {Promise<string>} — rundown text with metacodes
    */
-  async generateRundown(apiKey, prompt, opts = {}) {
-    const cfg = getAiConfigRaw(this._db, apiKey);
-    if (!cfg || cfg.embeddingProvider === 'none') return '';
-
-    const apiSettings = this._resolveApiSettings(cfg);
-    if (!apiSettings.apiKey) return '';
+  async generateRundown(apiSettings, prompt, opts = {}) {
+    if (!apiSettings || !apiSettings.apiKey) return '';
 
     const lib = AgentEngine.RUNDOWN_TEMPLATE_LIBRARY;
     const baseTemplate = opts.templateId && lib[opts.templateId] ? lib[opts.templateId] : null;
@@ -579,7 +584,8 @@ export class AgentEngine {
       '- Insert <!-- cue: phrase --> before key lines where the operator should advance\n' +
       '- Use <!-- speaker: Name --> when the speaker changes\n' +
       '- Keep captions short (1-2 sentences per line)\n' +
-      '- Return ONLY the rundown text, no explanation, no markdown fences.';
+      '- Return ONLY the rundown text, no explanation, no markdown fences.' +
+      (opts.systemPromptOverride ? `\n\nAdditional instructions:\n${opts.systemPromptOverride}` : '');
 
     const userPrompt = baseTemplate
       ? `Starting from this template:\n${baseTemplate}\n\nCustomise it for: ${prompt}`
@@ -596,25 +602,26 @@ export class AgentEngine {
   /**
    * Edit an existing rundown based on a natural-language instruction.
    *
-   * @param {string} apiKey
+   * See generateRundown()'s note on apiSettings — resolved by the caller via
+   * the roles framework, not looked up internally from ai_config.
+   *
+   * @param {{ apiUrl: string, apiKey: string, model: string }|null} apiSettings
    * @param {string} content — existing rundown text
    * @param {string} prompt — e.g. "Add a 5-second silence cue before the sermon"
    * @param {object} [opts]
+   * @param {string} [opts.systemPromptOverride] — see generateRundown()'s note
    * @returns {Promise<string>} — modified rundown text
    */
-  async editRundown(apiKey, content, prompt, opts = {}) {
-    const cfg = getAiConfigRaw(this._db, apiKey);
-    if (!cfg || cfg.embeddingProvider === 'none') return content;
-
-    const apiSettings = this._resolveApiSettings(cfg);
-    if (!apiSettings.apiKey) return content;
+  async editRundown(apiSettings, content, prompt, opts = {}) {
+    if (!apiSettings || !apiSettings.apiKey) return content;
 
     const systemPrompt =
       'You are an expert live-event script editor for a captioning system. ' +
       'You will receive an existing rundown and an edit instruction. ' +
       'Apply the instruction to the rundown, preserving all existing metacodes unless the instruction says to change them.\n\n' +
       AgentEngine.RUNDOWN_METACODE_REFERENCE + '\n\n' +
-      'Return ONLY the complete modified rundown text, no explanation, no markdown fences.';
+      'Return ONLY the complete modified rundown text, no explanation, no markdown fences.' +
+      (opts.systemPromptOverride ? `\n\nAdditional instructions:\n${opts.systemPromptOverride}` : '');
 
     const userPrompt =
       `Existing rundown:\n${content}\n\n` +
