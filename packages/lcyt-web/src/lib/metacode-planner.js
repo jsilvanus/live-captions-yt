@@ -4,9 +4,22 @@ export function uid() {
 }
 
 const MULTI_META_RE_SRC = '<!--\\s*([a-z][a-z0-9-]*)\\s*:\\s*([\\s\\S]*?)\\s*-->';
+const STANZA_INLINE_RE = /^<!--\s*stanza\s*:\s*([\s\S]*?)\s*-->$/i;
 
 function isMetadataLine(raw) {
   return raw.replace(new RegExp(MULTI_META_RE_SRC, 'gi'), '').trim() === '';
+}
+
+function escapeStanzaValue(lines) {
+  return (lines ?? []).join('\\n');
+}
+
+function decodeStanzaValue(value) {
+  return String(value ?? '')
+    .replace(/\\n/g, '\n')
+    .split(/\n|\|/)
+    .map(line => line.trim())
+    .filter(Boolean);
 }
 
 export function serializePlan(blocks) {
@@ -23,8 +36,10 @@ export function serializePlan(blocks) {
           .map(([k, v]) => `<!-- ${k}: ${v} -->`);
         return parts.join('');
       }
-      case 'stanza':
-        return `<!-- stanza\n${(b.lines ?? []).join('\n')}\n-->`;
+      case 'stanza': {
+        const encoded = escapeStanzaValue(b.lines ?? []);
+        return encoded ? `<!-- stanza: ${encoded} -->` : '<!-- stanza: -->';
+      }
       case 'empty-send':
         return b.label ? `_ ${b.label}` : '_';
       default: return '';
@@ -42,6 +57,13 @@ export function deserializePlan(rawText) {
 
     if (raw.startsWith('#')) {
       blocks.push({ id: uid(), type: 'heading', text: raw.replace(/^#+\s*/, '') });
+      continue;
+    }
+
+    const stanzaInlineMatch = raw.match(STANZA_INLINE_RE);
+    if (stanzaInlineMatch) {
+      const lines = decodeStanzaValue(stanzaInlineMatch[1]);
+      blocks.push({ id: uid(), type: 'stanza', lines: lines.length ? lines : [''] });
       continue;
     }
 

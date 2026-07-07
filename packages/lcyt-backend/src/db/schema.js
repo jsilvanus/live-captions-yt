@@ -355,6 +355,22 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_translation_targets_api_key ON translation_targets(api_key)');
 
+  // Additive migration: Phase 5 per-target routing and show_original
+  // Add caption_target_id (nullable FK to caption_targets) for per-target routing
+  // Add show_original (per-row, replaces the global vendor_config flag)
+  {
+    const translationTargetsCols = new Set(
+      db.prepare('PRAGMA table_info(translation_targets)').all().map(c => c.name)
+    );
+    if (!translationTargetsCols.has('caption_target_id')) {
+      db.exec('ALTER TABLE translation_targets ADD COLUMN caption_target_id TEXT REFERENCES caption_targets(id) ON DELETE SET NULL');
+    }
+    if (!translationTargetsCols.has('show_original')) {
+      // Default new rows to the prior global vendor config value (0 = false)
+      db.exec('ALTER TABLE translation_targets ADD COLUMN show_original INTEGER NOT NULL DEFAULT 0');
+    }
+  }
+
   // ── Richer projects: feature flags, membership, device roles ─────────────
 
   db.exec(`

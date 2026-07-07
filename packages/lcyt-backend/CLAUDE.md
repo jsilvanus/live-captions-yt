@@ -183,12 +183,17 @@ DELETE /keys/:key/members/:userId — remove member (user Bearer)
 
 GET  /bridge/download/:platform — download pre-built bridge agent binary
 
-GET  /stt/status          — current STT session state for the authenticated API key (Bearer token)
-POST /stt/start           — start server-side STT { provider?, language?, audioSource?, streamKey?, confidenceThreshold? } (Bearer token)
-POST /stt/stop            — stop STT session (Bearer token)
-GET  /stt/events          — SSE stream of transcript events (Bearer token or ?token=)
-GET  /stt/config          — get per-key STT config from DB (Bearer token)
-PUT  /stt/config          — update per-key STT config (Bearer token)
+GET  /stt/status                       — current STT session state for the authenticated API key (Bearer token)
+POST /stt/start                        — start server-side STT { provider?, language?, audioSource?, streamKey?, confidenceThreshold? } (Bearer token)
+POST /stt/stop                         — stop STT session (Bearer token)
+GET  /stt/events                       — SSE stream of transcript events (Bearer token or ?token=)
+GET  /stt/config                       — get per-key STT config from DB (Bearer token)
+PUT  /stt/config                       — update per-key STT config (Bearer token)
+GET  /stt/source-languages             — get predefined source language list for the project (Bearer token; Phase 5)
+POST /stt/source-languages             — add a language to the predefined list { lang, label?, sortOrder? } (Bearer token; Phase 5)
+PUT  /stt/source-languages/:id         — update a source language entry (Bearer token; Phase 5)
+DELETE /stt/source-languages/:id       — remove a source language from the predefined list (Bearer token; Phase 5)
+POST /stt/config/source-language       — fast-switch active language { lang } — validates against predefined list, restarts STT if running (Bearer token; Phase 5)
 
 GET    /targets           — list server-persisted caption delivery targets for the API key (Bearer token)
 POST   /targets           — create a target { type, streamKey?/url?/headers?/viewerKey?, enabled?, noBatch? } (Bearer token)

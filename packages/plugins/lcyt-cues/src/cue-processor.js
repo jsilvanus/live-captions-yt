@@ -55,7 +55,7 @@ function _emitCueResults(store, apiKey, fired) {
       type: 'cue_fired',
       data: {
         label: rule.name,
-        source: 'event_cue',
+        source: rule.source === 'inline' ? 'inline' : 'event_cue',
         ruleId: rule.id,
         matchType: rule.match_type,
         matched,
@@ -143,13 +143,23 @@ export function createCueProcessor({ store, db, engine }) {
         }
       }
 
-      // Evaluate event cue rules asynchronously via the AI agent.
-      // This runs in the background — results arrive via SSE callback.
-      engine.evaluateEventCues(apiKey, cleanText, (eventFired) => {
-        _emitCueResults(store, apiKey, eventFired);
-      }).catch(err => {
-        console.warn('[cues] Event cue evaluation error:', err?.message);
-      });
+      // Evaluate inline cues from the active rundown file and DB-backed event cues.
+      // These run in the background — results arrive via SSE callback.
+      if (typeof engine.evaluateInlineCues === 'function') {
+        void engine.evaluateInlineCues(apiKey, cleanText, codes, (eventFired) => {
+          _emitCueResults(store, apiKey, eventFired);
+        }).catch(err => {
+          console.warn('[cues] Inline cue evaluation error:', err?.message);
+        });
+      }
+
+      if (typeof engine.evaluateEventCues === 'function') {
+        engine.evaluateEventCues(apiKey, cleanText, (eventFired) => {
+          _emitCueResults(store, apiKey, eventFired);
+        }).catch(err => {
+          console.warn('[cues] Event cue evaluation error:', err?.message);
+        });
+      }
     }
 
     return cleanText;

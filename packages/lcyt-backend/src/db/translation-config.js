@@ -5,6 +5,8 @@
  * Split into two tables matching the actual UI shape:
  *   translation_vendor_config — one row per key (vendor choice + credentials)
  *   translation_targets       — a list of language/destination configs per key
+ *                               + per-target routing (Phase 5: caption_target_id,
+ *                               show_original per row instead of global flag)
  */
 
 import { randomUUID } from 'node:crypto';
@@ -86,14 +88,16 @@ export function setTranslationVendorConfig(db, apiKey, patch = {}) {
 
 function formatTargetRow(row) {
   return {
-    id:        row.id,
-    enabled:   row.enabled === 1,
-    lang:      row.lang,
-    target:    row.target,
-    format:    row.format ?? null,
-    sortOrder: row.sort_order,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id:               row.id,
+    enabled:          row.enabled === 1,
+    lang:             row.lang,
+    target:           row.target,
+    format:           row.format ?? null,
+    sortOrder:        row.sort_order,
+    captionTargetId:  row.caption_target_id ?? null,
+    showOriginal:     row.show_original === 1,
+    createdAt:        row.created_at,
+    updatedAt:        row.updated_at,
   };
 }
 
@@ -133,20 +137,20 @@ function validateTargetFields({ lang, target, format }) {
  * Create a translation target for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
- * @param {{ id?: string, enabled?: boolean, lang: string, target: string, format?: string|null }} fields
+ * @param {{ id?: string, enabled?: boolean, lang: string, target: string, format?: string|null, captionTargetId?: string|null, showOriginal?: boolean }} fields
  * @returns {{ ok: true, target: object }|{ ok: false, error: string }}
  */
 export function createTranslationTarget(db, apiKey, fields = {}) {
-  const { id = randomUUID(), enabled = true, lang, target, format = null } = fields;
+  const { id = randomUUID(), enabled = true, lang, target, format = null, captionTargetId = null, showOriginal = false } = fields;
   const error = validateTargetFields({ lang, target, format });
   if (error) return { ok: false, error };
 
   const { maxOrder } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS maxOrder FROM translation_targets WHERE api_key = ?').get(apiKey);
 
   db.prepare(`
-    INSERT INTO translation_targets (id, api_key, enabled, lang, target, format, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, apiKey, enabled ? 1 : 0, lang, target, format, maxOrder + 1);
+    INSERT INTO translation_targets (id, api_key, enabled, lang, target, format, sort_order, caption_target_id, show_original)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, apiKey, enabled ? 1 : 0, lang, target, format, maxOrder + 1, captionTargetId ?? null, showOriginal ? 1 : 0);
 
   return { ok: true, target: getTranslationTarget(db, apiKey, id) };
 }
@@ -156,31 +160,37 @@ export function createTranslationTarget(db, apiKey, fields = {}) {
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {string} id
- * @param {{ enabled?: boolean, lang?: string, target?: string, format?: string|null }} patch
+ * @param {{ enabled?: boolean, lang?: string, target?: string, format?: string|null, captionTargetId?: string|null, showOriginal?: boolean }} patch
  * @returns {{ ok: true, target: object }|{ ok: false, error: string, status?: number }}
  */
 export function updateTranslationTarget(db, apiKey, id, patch = {}) {
   const existing = db.prepare('SELECT * FROM translation_targets WHERE api_key = ? AND id = ?').get(apiKey, id);
   if (!existing) return { ok: false, error: 'Translation target not found', status: 404 };
 
-  const lang   = patch.lang   !== undefined ? patch.lang   : existing.lang;
-  const target = patch.target !== undefined ? patch.target : existing.target;
-  const format = patch.format !== undefined ? patch.format : existing.format;
+  const lang              = patch.lang              !== undefined ? patch.lang              : existing.lang;
+  const target            = patch.target           !== undefined ? patch.target           : existing.target;
+  const format            = patch.format           !== undefined ? patch.format           : existing.format;
+  const captionTargetId   = patch.captionTargetId  !== undefined ? patch.captionTargetId  : existing.caption_target_id;
+  const showOriginal      = patch.showOriginal     !== undefined ? patch.showOriginal     : existing.show_original === 1;
 
   const error = validateTargetFields({ lang, target, format });
   if (error) return { ok: false, error };
 
   db.prepare(`
     UPDATE translation_targets SET
-      enabled    = ?,
-      lang       = ?,
-      target     = ?,
-      format     = ?,
-      updated_at = datetime('now')
+      enabled            = ?,
+      lang               = ?,
+      target             = ?,
+      format             = ?,
+      caption_target_id  = ?,
+      show_original      = ?,
+      updated_at         = datetime('now')
     WHERE api_key = ? AND id = ?
   `).run(
     patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled,
     lang, target, format,
+    captionTargetId ?? null,
+    showOriginal ? 1 : 0,
     apiKey, id,
   );
   return { ok: true, target: getTranslationTarget(db, apiKey, id) };

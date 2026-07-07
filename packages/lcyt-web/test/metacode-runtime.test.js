@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { drainActions, buildCueMap, checkCueMatch } from '../src/lib/metacode-runtime.js';
+import { drainActions, buildCueMap, buildInlineCuePayload, checkCueMatch } from '../src/lib/metacode-runtime.js';
 
 // Minimal mock fileStore and file to exercise drainActions behavior
 function makeFile(lines, lineCodes, lineNumbers) {
@@ -134,6 +134,16 @@ describe('metacode-runtime drainActions()', () => {
 // ---------------------------------------------------------------------------
 // buildCueMap / checkCueMatch
 // ---------------------------------------------------------------------------
+
+describe('buildInlineCuePayload()', () => {
+  it('includes cueTree payloads for backend cue evaluation', () => {
+    const file = makeFile(['Let us pray'], [{ cue: 'Prayer', cueTree: { type: 'match', matchType: 'context', path: 'section', pattern: 'prayer', fuzzy: true } }], [1]);
+    const payload = buildInlineCuePayload(file);
+    assert.equal(payload.cues.length, 1);
+    assert.equal(payload.cues[0].matchType, 'composite');
+    assert.deepEqual(payload.cues[0].tree, { type: 'match', matchType: 'context', path: 'section', pattern: 'prayer', fuzzy: true });
+  });
+});
 
 describe('buildCueMap()', () => {
   it('returns empty map for file with no cues', () => {

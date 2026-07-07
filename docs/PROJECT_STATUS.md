@@ -41,7 +41,7 @@ This is a point-in-time snapshot, not a maintained changelog. The repo has no `C
 
 | Plan | Done | Remaining |
 |---|---|---|
-| plan_cues (Cue Engine) | Phases 1-7: phrase/fuzzy/semantic/event cues, music-state triggers | Phase 8: multi-modal scene understanding |
+| plan_cues (Cue Engine) | Phases 1-7: phrase/fuzzy/semantic/event cues, music-state triggers; compact inline cue syntax, composite/context evaluation, and inline cue sync are now implemented | Phase 9: multi-modal scene understanding |
 | plan_agent (AI Agent) | Phases 1-3, 5-6: config, embeddings, context window, event-cue LLM eval, AI template/rundown generation | Phase 4: video/image inference (`analyseImage()` is a stub — see §3); Phase 7: multi-modal scene understanding; Phase 8: local Ollama support |
 | plan_server_stt (Server-side STT) | Phase 1: HlsSegmentFetcher, Google/Whisper/OpenAI adapters, SttManager, `/stt` routes | Phases 2-4: gRPC streaming hardening, RTMP/WHEP fallback enhancements |
 | plan_music (Music Detection) | Phases 1-3: client-side Web Audio API path, server-side HLS analysis, `music_config` DB table + routes, RTMP audio-source fallback | Phase 4: tuning/export/external classifier; `on_publish` auto-start hook for `music_config.autoStart` not yet wired |

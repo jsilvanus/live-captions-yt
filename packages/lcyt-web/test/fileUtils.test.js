@@ -131,6 +131,22 @@ describe('parseFileContent() — stanza blocks', () => {
     assert.ok(lineCodes[0].stanza.includes('Second song line'));
   });
 
+  it('parses a single-line stanza metacode with escaped newlines', () => {
+    const raw = '<!-- stanza: First song line\\nSecond song line -->\nCaption';
+    const { lineCodes } = parseFileContent(raw);
+    assert.ok(lineCodes[0].stanza);
+    assert.ok(lineCodes[0].stanza.includes('First song line'));
+    assert.ok(lineCodes[0].stanza.includes('Second song line'));
+  });
+
+  it('parses a single-line stanza metacode with pipe separators', () => {
+    const raw = '<!-- stanza: First song line|Second song line -->\nCaption';
+    const { lineCodes } = parseFileContent(raw);
+    assert.ok(lineCodes[0].stanza);
+    assert.ok(lineCodes[0].stanza.includes('First song line'));
+    assert.ok(lineCodes[0].stanza.includes('Second song line'));
+  });
+
   it('clears stanza code on empty stanza block', () => {
     const raw = '<!-- stanza\nFirst\n-->\nLine 1\n<!-- stanza\n-->\nLine 2';
     const { lineCodes } = parseFileContent(raw);
@@ -612,6 +628,65 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lineCodes[1].cue, 'Test');
     assert.equal(lines[2], 'Goodbye');
     assert.equal(lineCodes[2].cue, undefined);
+  });
+
+  it('parses shorthand cue modifiers for fuzzy and semantic terms', () => {
+    const raw = '<!-- cue: ~mercy|~~prayer -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.op, 'or');
+    assert.equal(lineCodes[0].cueTree.children[0].matchType, 'fuzzy');
+    assert.equal(lineCodes[0].cueTree.children[0].pattern, 'mercy');
+    assert.equal(lineCodes[0].cueTree.children[1].matchType, 'semantic');
+    assert.equal(lineCodes[0].cueTree.children[1].pattern, 'prayer');
+  });
+
+  it('parses fuzzy context terms in the context keyword', () => {
+    const raw = '<!-- cue: context:section=~prayer -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.matchType, 'context');
+    assert.equal(lineCodes[0].cueTree.path, 'section');
+    assert.equal(lineCodes[0].cueTree.pattern, 'prayer');
+    assert.equal(lineCodes[0].cueTree.fuzzy, true);
+  });
+
+  it('parses named cue references and compact logical operators', () => {
+    const raw = '<!-- cue: exact:Amen|+@closing -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.op, 'and');
+    assert.equal(lineCodes[0].cueTree.children[0].matchType, 'phrase');
+    assert.equal(lineCodes[0].cueTree.children[0].pattern, 'Amen');
+    assert.equal(lineCodes[0].cueTree.children[1].type, 'ref');
+    assert.equal(lineCodes[0].cueTree.children[1].name, 'closing');
+  });
+
+  it('parses complex and event shorthand terms', () => {
+    const raw = '<!-- cue: complex:prayer|+#music -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.op, 'and');
+    assert.equal(lineCodes[0].cueTree.children[0].type, 'ref');
+    assert.equal(lineCodes[0].cueTree.children[0].name, 'prayer');
+    assert.equal(lineCodes[0].cueTree.children[1].matchType, 'event_cue');
+    assert.equal(lineCodes[0].cueTree.children[1].pattern, 'music');
+  });
+
+  it('parses grouped cue expressions with parenthesis precedence', () => {
+    const raw = '<!-- cue: exact:Amen|+(exact:Peace|exact:Grace) -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.op, 'and');
+    assert.equal(lineCodes[0].cueTree.children[0].matchType, 'phrase');
+    assert.equal(lineCodes[0].cueTree.children[0].pattern, 'Amen');
+    assert.equal(lineCodes[0].cueTree.children[1].op, 'or');
+    assert.equal(lineCodes[0].cueTree.children[1].children[0].pattern, 'Peace');
+    assert.equal(lineCodes[0].cueTree.children[1].children[1].pattern, 'Grace');
+  });
+
+  it('treats named cue references as atomic terms inside the expression', () => {
+    const raw = '<!-- cue: exact:Amen|@closing(D|+E) -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.op, 'or');
+    assert.equal(lineCodes[0].cueTree.children[0].pattern, 'Amen');
+    assert.equal(lineCodes[0].cueTree.children[1].type, 'ref');
+    assert.equal(lineCodes[0].cueTree.children[1].name, 'closing');
   });
 });
 

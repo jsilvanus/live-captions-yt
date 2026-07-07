@@ -25,7 +25,7 @@
  */
 
 import { Router } from 'express';
-import { getSttConfig, setSttConfig } from 'lcyt-rtmp';
+import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from 'lcyt-rtmp';
 import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
@@ -189,6 +189,108 @@ export function createSttRouter(auth, sttManager, db, jwtSecret) {
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // ── GET /stt/source-languages ──────────────────────────────────────────────
+
+  router.get('/source-languages', auth, (req, res) => {
+    const { apiKey } = req.session;
+    const languages = getSttSourceLanguages(db, apiKey);
+    res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
+    res.json({ languages });
+  });
+
+  // ── POST /stt/source-languages ─────────────────────────────────────────────
+
+  router.post('/source-languages', auth, (req, res) => {
+    const { apiKey } = req.session;
+    const { lang, label, sortOrder } = req.body || {};
+
+    if (!lang) {
+      return res.status(400).json({ error: 'lang is required' });
+    }
+
+    const result = addSttSourceLanguage(db, apiKey, lang, { label, sortOrder });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.status(201).json(result.language);
+  });
+
+  // ── PUT /stt/source-languages/:id ──────────────────────────────────────────
+
+  router.put('/source-languages/:id', auth, (req, res) => {
+    const { apiKey } = req.session;
+    const { id } = req.params;
+    const { label, sortOrder } = req.body || {};
+
+    const result = updateSttSourceLanguage(db, apiKey, parseInt(id, 10), { label, sortOrder });
+    if (!result.ok) {
+      return res.status(result.status || 400).json({ error: result.error });
+    }
+    res.json(result.language);
+  });
+
+  // ── DELETE /stt/source-languages/:id ───────────────────────────────────────
+
+  router.delete('/source-languages/:id', auth, (req, res) => {
+    const { apiKey } = req.session;
+    const { id } = req.params;
+
+    const deleted = deleteSttSourceLanguage(db, apiKey, parseInt(id, 10));
+    if (!deleted) {
+      return res.status(404).json({ error: 'Language not found' });
+    }
+    res.json({ ok: true });
+  });
+
+  // ── POST /stt/config/source-language ───────────────────────────────────────
+  // Fast-switch active language: validate against predefined list, update config,
+  // restart STT if running (Phase 5 feature)
+
+  router.post('/config/source-language', auth, async (req, res) => {
+    const { apiKey } = req.session;
+    const { lang } = req.body || {};
+
+    if (!lang) {
+      return res.status(400).json({ error: 'lang is required' });
+    }
+
+    // Validate that the language is in the project's predefined list
+    const predefined = getSttSourceLanguages(db, apiKey);
+    const isValid = predefined.some(l => l.lang === lang);
+    if (predefined.length > 0 && !isValid) {
+      return res.status(400).json({ error: `Language not in predefined list. Valid: ${predefined.map(l => l.lang).join(', ')}` });
+    }
+
+    // Update the config
+    try {
+      setSttConfig(db, apiKey, { language: lang });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    // If STT is currently running, restart it with the new language
+    const isRunning = sttManager.isRunning(apiKey);
+    if (isRunning) {
+      const currentStatus = sttManager.getStatus(apiKey);
+      try {
+        await sttManager.stop(apiKey);
+        // Brief delay to ensure clean shutdown
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await sttManager.start(apiKey, {
+          provider:            currentStatus.provider,
+          language:            lang,
+          audioSource:         currentStatus.audioSource,
+          streamKey:           currentStatus.streamKey,
+          confidenceThreshold: currentStatus.confidenceThreshold,
+        });
+      } catch (err) {
+        return res.status(500).json({ error: `Failed to restart STT: ${err.message}` });
+      }
+    }
+
+    res.json({ ok: true, language: lang, restarted: isRunning });
   });
 
   return router;
