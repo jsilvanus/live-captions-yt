@@ -28,6 +28,31 @@ function isSafeRegex(pattern) {
   return true;
 }
 
+const VALID_MATCH_TYPES = ['phrase', 'regex', 'section', 'fuzzy', 'semantic', 'event_cue', 'music_start', 'music_stop', 'silence'];
+
+function normalizeInlineCue(rawCue, index, apiKey) {
+  const hasCompositeTree = rawCue?.tree || rawCue?.condition || rawCue?.conditionTree || rawCue?.definition;
+  const matchType = rawCue?.match_type || rawCue?.matchType || (rawCue?.semantic ? 'semantic' : rawCue?.events ? 'event_cue' : hasCompositeTree ? 'composite' : 'phrase');
+  const pattern = rawCue?.pattern ?? rawCue?.phrase ?? rawCue?.description ?? rawCue?.value ?? '';
+  return {
+    ...rawCue,
+    id: rawCue?.id || `inline:${apiKey}:${index}:${pattern || 'cue'}`,
+    name: rawCue?.name || rawCue?.label || pattern || `inline-cue-${index + 1}`,
+    match_type: matchType,
+    pattern,
+    action: rawCue?.action ?? {},
+    enabled: rawCue?.enabled !== false,
+    cooldown_ms: rawCue?.cooldown_ms ?? rawCue?.cooldownMs ?? 0,
+    fuzzy_threshold: rawCue?.fuzzy_threshold ?? rawCue?.fuzzyThreshold ?? 0.75,
+    source: 'inline',
+    fileName: rawCue?.fileName ?? rawCue?.file_name ?? null,
+    fileId: rawCue?.fileId ?? rawCue?.file_id ?? null,
+    line: rawCue?.line ?? null,
+    tree: rawCue?.tree ?? rawCue?.condition ?? rawCue?.conditionTree ?? rawCue?.definition ?? null,
+    cueDef: rawCue?.cueDef ?? rawCue?.definitionName ?? rawCue?.definition ?? null,
+    condition: rawCue?.condition ?? rawCue?.tree ?? null,
+  };
+}
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -37,6 +62,30 @@ function isSafeRegex(pattern) {
  */
 export function createCueRouter(db, auth, engine) {
   const router = Router();
+
+  // ── Inline sync ────────────────────────────────────────────────────────
+
+  /** POST /cues/inline — replace the active inline cue snapshot for the session */
+  router.post('/inline', auth, (req, res) => {
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+
+    const body = req.body || {};
+    const cues = Array.isArray(body.cues) ? body.cues : [];
+    if (body.cues !== undefined && !Array.isArray(body.cues)) {
+      return res.status(400).json({ error: 'cues must be an array' });
+    }
+
+    const normalized = cues.map((cue, index) => normalizeInlineCue(cue, index, apiKey));
+    engine.setInlineSnapshot(apiKey, {
+      cues: normalized,
+      cueDefs: body.cueDefs || body.definitions || body.cueDefinitions || {},
+      fileName: body.fileName || body.file_name || null,
+      fileId: body.fileId || body.file_id || null,
+    });
+
+    return res.json({ ok: true, count: normalized.length });
+  });
 
   // ── Rules CRUD ────────────────────────────────────────────────────────────
 
@@ -60,16 +109,19 @@ export function createCueRouter(db, auth, engine) {
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold } = req.body || {};
-    if (!name || !pattern) {
-      return res.status(400).json({ error: 'name and pattern are required' });
+    const resolvedMatchType = match_type || 'phrase';
+    if (!name) {
+      return res.status(400).json({ error: 'name is required' });
     }
-    const validTypes = ['phrase', 'regex', 'section', 'fuzzy'];
-    if (match_type && !validTypes.includes(match_type)) {
-      return res.status(400).json({ error: `match_type must be one of: ${validTypes.join(', ')}` });
+    if (!VALID_MATCH_TYPES.includes(resolvedMatchType)) {
+      return res.status(400).json({ error: `match_type must be one of: ${VALID_MATCH_TYPES.join(', ')}` });
+    }
+    if ((resolvedMatchType === 'regex' || resolvedMatchType === 'phrase' || resolvedMatchType === 'section' || resolvedMatchType === 'fuzzy' || resolvedMatchType === 'semantic' || resolvedMatchType === 'event_cue' || resolvedMatchType === 'silence') && (pattern === undefined || pattern === null || pattern === '')) {
+      return res.status(400).json({ error: 'pattern is required' });
     }
 
     // Validate regex pattern if match_type is regex
-    if (match_type === 'regex') {
+    if (resolvedMatchType === 'regex') {
       if (!isSafeRegex(pattern)) return res.status(400).json({ error: 'Invalid or unsafe regex pattern' });
       try { new RegExp(pattern); } catch {
         return res.status(400).json({ error: 'Invalid regex pattern' });
@@ -111,9 +163,18 @@ export function createCueRouter(db, auth, engine) {
     if (rule.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold } = req.body || {};
+    const resolvedMatchType = match_type || rule.match_type || 'phrase';
+
+    if (!VALID_MATCH_TYPES.includes(resolvedMatchType)) {
+      return res.status(400).json({ error: `match_type must be one of: ${VALID_MATCH_TYPES.join(', ')}` });
+    }
+
+    if ((resolvedMatchType === 'regex' || resolvedMatchType === 'phrase' || resolvedMatchType === 'section' || resolvedMatchType === 'fuzzy' || resolvedMatchType === 'semantic' || resolvedMatchType === 'event_cue' || resolvedMatchType === 'silence') && (pattern === undefined || pattern === null || pattern === '')) {
+      return res.status(400).json({ error: 'pattern is required' });
+    }
 
     // Validate regex pattern if the rule is (or will remain) a regex rule
-    const isRegexRule = match_type === 'regex' || (!match_type && rule.match_type === 'regex');
+    const isRegexRule = resolvedMatchType === 'regex';
     if (isRegexRule && pattern) {
       if (!isSafeRegex(pattern)) return res.status(400).json({ error: 'Invalid or unsafe regex pattern' });
       try { new RegExp(pattern); } catch {

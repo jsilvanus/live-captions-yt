@@ -156,6 +156,43 @@ export function fuzzyWordMatch(pattern, text) {
 // ---------------------------------------------------------------------------
 
 /**
+ * Build a payload that can be synced to the backend for inline semantic/event cues.
+ * Only entries that require backend evaluation are sent.
+ *
+ * @param {{ name?: string, id?: string, lineCodes?: object[], lineNumbers?: number[] }} file
+ * @returns {{ fileName: string|null, fileId: string|null, cues: Array<object> }}
+ */
+export function buildInlineCuePayload(file) {
+  const cues = [];
+  if (!file?.lineCodes) return { fileName: file?.name || null, fileId: file?.id || null, cues };
+
+  file.lineCodes.forEach((lc, idx) => {
+    if (!lc?.cue) return;
+    const needsBackend = lc.cueSemantic || lc.cueEvents || lc.cueDef || lc.cueTree || lc.tree || lc.condition;
+    if (!needsBackend) return;
+    cues.push({
+      line: file.lineNumbers?.[idx] ?? idx + 1,
+      phrase: lc.cue,
+      mode: lc.cueMode || 'next',
+      matchType: lc.cueSemantic ? 'semantic' : lc.cueEvents ? 'event_cue' : 'composite',
+      fuzzy: !!lc.cueFuzzy,
+      semantic: !!lc.cueSemantic,
+      events: !!lc.cueEvents,
+      tree: lc.cueTree || lc.tree || lc.condition || null,
+      cueDef: lc.cueDef || null,
+      action: { type: 'event', label: lc.cue },
+    });
+  });
+
+  const cueDefs = Array.isArray(file?.cueDefs) ? file.cueDefs.reduce((acc, def) => {
+    if (def?.name) acc[def.name] = def.tree ?? null;
+    return acc;
+  }, {}) : {};
+
+  return { fileName: file?.name || null, fileId: file?.id || null, cues, cueDefs, definitions: cueDefs };
+}
+
+/**
  * Build a Map of lowercase cue phrase → { index, mode, fuzzy, semantic, events } from a parsed file.
  * Each `<!-- cue:phrase -->` entry creates one mapping.
  * Mode is 'next' (default), 'skip' (cue*:), or 'any' (cue**:).

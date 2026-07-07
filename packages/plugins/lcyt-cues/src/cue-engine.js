@@ -115,6 +115,33 @@ export function fuzzyWordMatch(pattern, text) {
   return { score: bestScore, matched: bestMatched };
 }
 
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length === 0 || b.length === 0 || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    const av = Number(a[i]) || 0;
+    const bv = Number(b[i]) || 0;
+    dot += av * bv;
+    normA += av * av;
+    normB += bv * bv;
+  }
+  if (!normA || !normB) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function getValueAtPath(obj, path) {
+  if (!obj || !path) return undefined;
+  const parts = String(path).split('.').filter(Boolean);
+  let current = obj;
+  for (const part of parts) {
+    if (current == null || typeof current !== 'object') return undefined;
+    current = current[part];
+  }
+  return current;
+}
+
 // ---------------------------------------------------------------------------
 // CueEngine
 // ---------------------------------------------------------------------------
@@ -168,12 +195,52 @@ export class CueEngine {
      * Map<apiKey, { silenceStart: number|null, timer: NodeJS.Timeout|null, currentLabel: string }>
      */
     this._silenceState = new Map();
+
+    /**
+     * Inline cues synced from the active rundown file.
+     * Map<apiKey, { cues: Array<object>, cueDefs: object, fileName: string|null, fileId: string|null }>
+     */
+    this._inlineState = new Map();
   }
 
   /** Invalidate the rule cache for a given API key (call after CRUD). */
   invalidate(apiKey) {
     this._ruleCache.delete(apiKey);
     this._embeddingCache.delete(apiKey);
+  }
+
+  /** Replace the inline cue snapshot for an API key. */
+  setInlineSnapshot(apiKey, snapshot = {}) {
+    const cues = Array.isArray(snapshot.cues) ? snapshot.cues : [];
+    const entry = {
+      cues: cues.map((cue, index) => ({
+        ...cue,
+        id: cue.id || `inline:${apiKey}:${cue.line ?? index}:${cue.phrase || cue.pattern || cue.description || cue.name || 'cue'}`,
+        name: cue.name || cue.label || cue.phrase || cue.pattern || cue.description || `inline-cue-${index + 1}`,
+        match_type: cue.match_type || cue.matchType || (cue.semantic ? 'semantic' : cue.events ? 'event_cue' : 'phrase'),
+        pattern: cue.pattern || cue.phrase || cue.description || cue.value || '',
+        action: cue.action || {},
+        enabled: cue.enabled !== false,
+        cooldown_ms: cue.cooldown_ms ?? cue.cooldownMs ?? 0,
+        fuzzy_threshold: cue.fuzzy_threshold ?? cue.fuzzyThreshold ?? 0.75,
+        source: 'inline',
+        fileName: cue.fileName ?? snapshot.fileName ?? null,
+        fileId: cue.fileId ?? snapshot.fileId ?? null,
+        line: cue.line ?? null,
+        tree: cue.tree ?? null,
+        cueDef: cue.cueDef ?? null,
+      })),
+      cueDefs: snapshot.cueDefs || snapshot.definitions || {},
+      fileName: snapshot.fileName || null,
+      fileId: snapshot.fileId || null,
+      updatedAt: Date.now(),
+    };
+    this._inlineState.set(apiKey, entry);
+  }
+
+  /** Clear any inline cues for an API key. */
+  clearInlineSnapshot(apiKey) {
+    this._inlineState.delete(apiKey);
   }
 
   /**
@@ -214,6 +281,69 @@ export class CueEngine {
     }
     this._ruleCache.set(apiKey, rules);
     return rules;
+  }
+
+  _evaluateLeafCondition(node, ctx = {}) {
+    if (!node || typeof node !== 'object') return false;
+    const matchType = node.matchType || node.match_type || node.type || 'phrase';
+    const pattern = node.pattern ?? node.value ?? node.text ?? '';
+    const text = String(ctx.text || '');
+    const codes = ctx.codes || {};
+    switch (matchType) {
+      case 'phrase':
+        return text.toLowerCase().includes(String(pattern).toLowerCase());
+      case 'regex': {
+        try { return new RegExp(String(pattern), 'i').test(text); } catch { return false; }
+      }
+      case 'fuzzy': {
+        const threshold = node.fuzzy_threshold ?? node.threshold ?? 0.75;
+        return fuzzyWordMatch(String(pattern), text).score >= threshold;
+      }
+      case 'section':
+        return String(getValueAtPath(codes, node.path || node.key || 'section') || '').toLowerCase() === String(pattern).toLowerCase();
+      case 'context': {
+        const actual = getValueAtPath(codes, node.path || node.key || '');
+        if (actual == null) return false;
+        const actualText = String(actual);
+        const patternText = String(pattern);
+        if (node.fuzzy) {
+          const threshold = node.fuzzy_threshold ?? node.threshold ?? 0.75;
+          return fuzzyWordMatch(patternText, actualText).score >= threshold;
+        }
+        if (node.operator === 'contains') return actualText.toLowerCase().includes(patternText.toLowerCase());
+        return actualText.toLowerCase() === patternText.toLowerCase();
+      }
+      default:
+        return false;
+    }
+  }
+
+  _evaluateCompositeCondition(node, ctx = {}, defs = {}) {
+    if (!node) return false;
+    if (typeof node === 'string') {
+      return this._evaluateCompositeCondition(defs[node], ctx, defs);
+    }
+    if (node.type === 'ref' || node.ref) {
+      const name = node.name || node.ref;
+      return this._evaluateCompositeCondition(name ? defs[name] : null, ctx, defs);
+    }
+    if (node.type === 'match' || node.matchType || node.match_type || node.pattern || node.value || node.text || node.path || node.key) {
+      return this._evaluateLeafCondition(node, ctx);
+    }
+    const op = node.op || node.type || 'and';
+    const items = Array.isArray(node.children) ? node.children : Array.isArray(node.conditions) ? node.conditions : [];
+    switch (op) {
+      case 'and':
+        return items.every(child => this._evaluateCompositeCondition(child, ctx, defs));
+      case 'or':
+        return items.some(child => this._evaluateCompositeCondition(child, ctx, defs));
+      case 'not': {
+        const child = items[0];
+        return !this._evaluateCompositeCondition(child, ctx, defs);
+      }
+      default:
+        return false;
+    }
   }
 
   /**
@@ -288,6 +418,112 @@ export class CueEngine {
           logger.warn('[cues] Failed to insert cue_event:', err?.message);
         }
       }
+    }
+
+    return fired;
+  }
+
+  /**
+   * Evaluate inline cues synced from the active rundown file.
+   *
+   * Inline cues are ephemeral and live alongside DB-backed rules, but they are
+   * sourced from the current active file rather than the CRUD rule table.
+   *
+   * @param {string} apiKey
+   * @param {string} text — the caption text that triggered evaluation
+   * @param {object} [codes] — current persistent codes (unused for now)
+   * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for matches
+   * @returns {Promise<Array<{ rule: object, matched: string }>>}
+   */
+  async evaluateInlineCues(apiKey, text, codes = {}, onFired) {
+    const snapshot = this._inlineState.get(apiKey) || { cues: [] };
+    const rules = (snapshot.cues || []).filter(rule => rule.enabled !== false);
+    if (!rules.length) return [];
+
+    const now = Date.now();
+    const fired = [];
+
+    for (const rule of rules) {
+      if (rule.cooldown_ms > 0) {
+        const last = this._lastFired.get(rule.id);
+        if (last && (now - last) < rule.cooldown_ms) continue;
+      }
+
+      let matched = null;
+      try {
+        switch (rule.match_type) {
+          case 'semantic': {
+            const threshold = rule.fuzzy_threshold ?? 0.75;
+            if (rule.pattern && text) {
+              if (this._embedFn) {
+                try {
+                  const vectors = await Promise.resolve(this._embedFn([rule.pattern, text], { apiKey, rule }));
+                  const first = Array.isArray(vectors) ? vectors[0] : null;
+                  const second = Array.isArray(vectors) ? vectors[1] : null;
+                  if (first && second) {
+                    const similarity = cosineSimilarity(first, second);
+                    if (similarity >= threshold) matched = rule.pattern;
+                  }
+                } catch (err) {
+                  logger.warn(`[cues] Inline semantic eval failed for rule ${rule.id}:`, err?.message);
+                }
+              }
+              if (matched === null) {
+                const { score } = fuzzyWordMatch(rule.pattern, text || '');
+                if (score >= threshold) matched = rule.pattern;
+              }
+            }
+            break;
+          }
+          case 'event_cue': {
+            if (!this._agentEvaluateFn || !rule.pattern) break;
+            const TIMEOUT_MS = parseInt(process.env.CUE_EVENT_TIMEOUT_MS || '5000', 10);
+            const result = await Promise.race([
+              Promise.resolve(this._agentEvaluateFn(apiKey, rule.pattern, { confidenceThreshold: rule.fuzzy_threshold ?? 0.7 })),
+              new Promise((_, rej) => setTimeout(() => rej(new Error('event-eval-timeout')), TIMEOUT_MS)),
+            ]);
+            if (result?.matched) {
+              matched = `event_cue:${rule.pattern} (${result.confidence?.toFixed?.(2) ?? '0.00'})`;
+            }
+            break;
+          }
+          case 'composite': {
+            const snapshot = this._inlineState.get(apiKey) || { cueDefs: {} };
+            const defs = snapshot.cueDefs || {};
+            const tree = rule.tree || rule.condition || rule.definition || (rule.cueDef ? { type: 'ref', name: rule.cueDef } : null);
+            const resolved = this._evaluateCompositeCondition(tree, { text, codes, apiKey, rule }, defs);
+            if (resolved) matched = rule.pattern || rule.name || 'composite';
+            break;
+          }
+          default:
+            break;
+        }
+      } catch (err) {
+        logger.warn(`[cues] Inline cue evaluation failed for rule ${rule.id}:`, err?.message);
+      }
+
+      if (matched !== null) {
+        this._lastFired.set(rule.id, now);
+        fired.push({ rule, matched });
+        try {
+          let action = {};
+          try { action = JSON.parse(rule.action); } catch {
+            logger.warn(`[cues] Malformed action JSON for inline rule ${rule.id}`);
+          }
+          insertCueEvent(this._db, apiKey, {
+            rule_id: rule.id,
+            rule_name: rule.name,
+            matched,
+            action,
+          });
+        } catch (err) {
+          logger.warn('[cues] Failed to insert inline cue_event:', err?.message);
+        }
+      }
+    }
+
+    if (fired.length > 0) {
+      onFired?.(fired);
     }
 
     return fired;

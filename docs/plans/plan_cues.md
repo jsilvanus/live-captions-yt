@@ -2,15 +2,29 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Phases 1-7 implemented; Phase 8 (multi-modal), 8.5 (inline/backend sync gap), 9 (composite & named conditions, incl. a track: leaf for a planned fps30 video tracker), and 10 (Assets-page Cue Rules editor UI) planned."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Implemented work includes compact inline cue syntax, backend composite/context evaluation, and inline cue snapshot sync; remaining work focuses on multi-modal cues and the cue-rules editor UI."
 related: plan/agent, plan/ai_roles_framework
 ---
 
 # Cue Engine Enhanced Capabilities
 
-**Status:** In progress
+**Status:** In progress (core cue implementation is shipped; remaining roadmap items are future work)
 **Scope:** `packages/plugins/lcyt-cues`, `packages/plugins/lcyt-agent`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
 **Related plans:** [AI Agent Plan](plan_agent.md) (lcyt-agent owns AI config, embeddings, LLM calls, and future features including SVG graphics AI and rundown generation)
+
+---
+
+## Implemented work to date
+
+- Compact inline cue syntax and modifier support (`cue:`, `cue*:`, `cue**:`, plus fuzzy/semantic/context-style forms).
+- Backend evaluation for composite/context cues, including named condition definitions and backend-side evaluation paths.
+- Inline cue snapshot sync from parsed rundown files into the backend so backend-evaluated cues participate in the live runtime path.
+- Parser/runtime/regression coverage for the compact syntax and backend cue-evaluation paths.
+
+## Remaining roadmap
+
+- Multi-modal scene understanding and vision-backed event cues.
+- A dedicated cue-rules editor UI for composite rules and named conditions.
 
 ---
 
@@ -40,12 +54,11 @@ related: plan/agent, plan/ai_roles_framework
 | Backend SSE events | ✅ | `cue_fired` events from CueEngine reach frontend |
 | Regex rules (API) | ✅ | Via CRUD `/cues/rules` (backend-only, not inline metacode) |
 
-### Current limitations
+### Remaining gaps
 
-1. **Any cue can fire** — all cues in the file are eligible regardless of pointer position. In practice, a cue at line 5 can fire even if the pointer is at line 50.
-2. **No directionality** — no forward-only or backward-capable modifiers.
-3. **Exact text only** — no fuzzy/approximate matching for spoken language variations.
-4. **No music-state awareness** — cues cannot trigger based on music detection states.
+1. **Multi-modal scene understanding** — vision + audio + transcript fusion remains the next major milestone.
+2. **Vision-backed event cues** — preview-frame / video inference is still planned rather than shipped.
+3. **Agent-side image analysis** — the preview-image inference hook remains future work.
 
 ---
 
@@ -401,7 +414,28 @@ Instead of matching specific phrases, event cues describe what should happen:
 
 ---
 
-## Phase 8 — Multi-Modal Scene Understanding (Planned)
+## Phase 8 — Compact Inline Cue Syntax, Inline Sync, and Composite/Context Evaluation (Implemented)
+
+### Motivation
+
+Inline cues should be expressible in a compact single-line form and evaluated by the backend when the cue contains composite logic or semantic/event semantics.
+
+### Implemented capabilities
+
+- [x] Compact stanza syntax using escaped newlines or pipe separators:
+  - `<!-- stanza: line one\nline two -->`
+  - `<!-- stanza: line one|line two -->`
+- [x] Compact cue-expression syntax with `|`, `|+`, `|-`, grouping parentheses, named refs, event shorthands, and shorthand match types:
+  - `exact:term`, `~term`, `~~term`, `fuzzy:term`, `semantic:term`
+  - `@named`, `complex:named`, `#event`
+  - `context:section=~prayer`
+- [x] Backend composite evaluation for `and` / `or` / `not` trees and named cue definitions in `packages/plugins/lcyt-cues/src/cue-engine.js`.
+- [x] Inline cue snapshot sync from parsed rundown files to the backend, so composite/context/fuzzy cue trees participate in the runtime path.
+- [x] Planner/parser/runtime regression coverage for the compact syntax plus backend cue-engine tests.
+
+---
+
+## Phase 9 — Multi-Modal Scene Understanding (Planned)
 
 ### Motivation
 

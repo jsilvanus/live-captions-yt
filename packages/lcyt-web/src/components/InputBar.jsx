@@ -10,7 +10,7 @@ import { translateAll, openLocalCaptionFile, formatVttCue, formatYouTubeLine } f
 import { getActiveCodes } from '../lib/metacode-active.js';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 import { parseFileContent } from '../lib/metacode-parser.js';
-import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, checkCueMatch } from '../lib/metacode-runtime.js';
+import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, buildInlineCuePayload, checkCueMatch } from '../lib/metacode-runtime.js';
 import { interpolateVariables } from '../lib/metacode-variables.js';
 import { useVariables } from '../hooks/useVariables.js';
 
@@ -75,6 +75,30 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     () => buildCueMap(fileStore.activeFile),
     [fileStore.activeFile?.id, fileStore.activeFile?.lineCodes]
   );
+
+  useEffect(() => {
+    if (!session.connected || !session.backendUrl || !session.getSessionToken?.()) return;
+    const file = fileStore.activeFile;
+    if (!file) return;
+
+    const token = session.getSessionToken();
+    const payload = buildInlineCuePayload(file);
+
+    const timer = setTimeout(() => {
+      fetch(`${session.backendUrl}/cues/inline`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      }).catch(err => {
+        console.warn('[cues] Failed to sync inline cues:', err?.message);
+      });
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [session.connected, session.backendUrl, session.getSessionToken, fileStore.activeFile?.id, fileStore.activeFile?.rawText, fileStore.activeFile?.lineCodes]);
 
   // Listen for backend-fired cue_fired SSE events (e.g. from CueEngine matching
   // against STT transcripts) and jump the pointer + auto-send the cue line.
