@@ -843,47 +843,37 @@ export function PlannerPage() {
   // An empty plan means "generate a first draft"; anything already on the
   // page means "edit what's there" — this is the same generate/edit split
   // the old two-button form had, just decided automatically from context
-  // instead of asking the user to pick. NOTE: /agent/generate-rundown and
-  // /agent/edit-rundown are slated to be rebuilt — this wiring is expected
-  // to change; AgentChatPanel itself shouldn't need to.
+  // instead of asking the user to pick.
   async function handleChatSend(text) {
-    if (aiLoading || !backendUrl || !sessionToken) return;
-    addChatMessage('user', text);
+    const trimmedText = text?.trim();
+    if (aiLoading || !trimmedText || !backendUrl || !sessionToken) return;
+    addChatMessage('user', trimmedText);
     setAiLoading(true); setAiError('');
     try {
-      if (blocks.length === 0) {
-        const res = await fetch(`${backendUrl}/agent/generate-rundown`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
-          body: JSON.stringify({ prompt: text }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-        if (typeof data.content === 'string' && data.content.trim()) {
-          setBlocks(deserializePlan(data.content));
-          setFilename(text.trim().slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '') + '.md');
-          setDirty(true);
-          addChatMessage('assistant', 'Generated a first draft — see the editor.');
-        } else {
-          addChatMessage('assistant', "I couldn't generate a rundown from that. Try describing the event in more detail.");
+      const isNewPlan = blocks.length === 0;
+      const body = { goal: trimmedText };
+      if (!isNewPlan) body.currentPlan = serializePlan(blocks);
+
+      const res = await fetch(`${backendUrl}/roles/planner/assist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      if (typeof data.content === 'string' && data.content.trim()) {
+        setBlocks(deserializePlan(data.content));
+        if (isNewPlan) {
+          setFilename(trimmedText.slice(0, 40).replace(/[^a-zA-Z0-9 _-]/g, '') + '.md');
         }
+        setDirty(true);
+        addChatMessage('assistant', isNewPlan ? 'Generated a first draft — see the editor.' : 'Updated the rundown — see the editor.');
       } else {
-        const content = serializePlan(blocks);
-        const res = await fetch(`${backendUrl}/agent/edit-rundown`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
-          body: JSON.stringify({ content, prompt: text }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-        if (typeof data.content === 'string') {
-          setBlocks(deserializePlan(data.content));
-          setDirty(true);
-          addChatMessage('assistant', 'Updated the rundown — see the editor.');
-        }
+        addChatMessage('assistant', "I couldn't generate a rundown from that. Try describing the event in more detail.");
       }
     } catch (err) {
       setAiError(err.message);
+      addChatMessage('assistant', err.message || 'Sorry, I could not complete that request.');
     } finally {
       setAiLoading(false);
     }

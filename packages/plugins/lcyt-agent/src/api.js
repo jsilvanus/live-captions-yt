@@ -34,6 +34,7 @@ export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from '
 export { createProductionAssistantRouter } from './routes/production-assistant.js';
 export { createVisionRolesRouter, VISION_ROLES } from './routes/vision-roles.js';
 export { createAiModelsRouter } from './routes/ai-models.js';
+export { createPlannerRouter } from './routes/planner.js';
 export { runMigrations } from './db.js';
 
 // Vision roles (Tracker & Describer, plan_ai_roles_framework.md Runtime Shape 1)

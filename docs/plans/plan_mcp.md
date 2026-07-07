@@ -2,7 +2,7 @@
 id: plan/mcp
 title: "MCP Tools for lcyt"
 status: in-progress
-summary: "Model Context Protocol servers for stdio and Streamable HTTP transports exposing caption, production, and DSK graphics tools to AI assistants. The original caption/production/DSK tool surface is implemented and unchanged; this plan now also specifies a shared tool-schema module (packages/lcyt-tools) that both the MCP servers and lcyt-agent's agentic_chat roles (plan/ai_roles_framework) register the same tools against — over real MCP transport for external clients, over an in-process linked transport for lcyt-agent — plus a destructiveHint/readOnlyHint annotation convention and a personal mcp_tokens credential so people can drive LCYT from their own Claude subscription outside the LCYT UI."
+summary: "Model Context Protocol servers for stdio and Streamable HTTP transports exposing caption, production, and DSK graphics tools to AI assistants. The original caption/production/DSK tool surface is implemented and unchanged. Implemented: packages/lcyt-tools, a shared tool-schema/handler registry (caption_target/camera/mixer/dsk_template/asset tools, destructiveHint/readOnlyHint annotations) registered on a real MCP Server, consumed in-process by lcyt-agent's agentic_chat roles over InMemoryTransport; and personal mcp_tokens credentials (table + routes + lcyt-mcp-http auth) so people can drive LCYT from their own Claude subscription outside the LCYT UI. Not yet done: wiring the shared registry into an external-facing MCP transport (lcyt-mcp-http is a separate process with no in-process access to the live device registry/bridge manager/agent instances these new tools need — see CONSIDER.md for the architecture question this raises)."
 related: plan/ai_roles_framework, plan/agent
 ---
 
@@ -29,7 +29,7 @@ MCP support is implemented in the repository. The current surface area is:
   - `X-API-Key` for DSK tools
 - `lcyt-mcp-http`'s own `authenticate()` also accepts `X-Api-Key` directly against `api_keys`, scoping every tool call to that connection's project (`createMcpServer(apiKey)`) — confirmed as the existing, already-working per-project auth model this plan's `mcp_tokens` addition extends rather than replaces.
 
-## Planned: a shared tool-schema module, used by both MCP and in-app chat
+## Implemented: a shared tool-schema module, used by in-app chat (external MCP wiring still pending)
 
 `plan/ai_roles_framework` gives `lcyt-agent` five chat-with-tools roles (Setup Assistant, Asset Control Assistant, Planner Assistant, Graphics Editor Assistant, Production Assistant) that each need a tool-calling LLM turn against a project's real data (Setup Hub CRUD, `prod_cameras`/`prod_mixers`, DSK templates). Rather than that plan defining its own second tool-invocation mechanism alongside this one, every tool used by any `agentic_chat` role is defined **once**, here, and reused by both surfaces.
 
@@ -48,12 +48,12 @@ Tool ids match `ai_roles.available_tools`/`harness_config.toolAllowlist` from `p
 
 ### Registration: one real MCP `Server`, two kinds of client
 
-The tool registry is registered on **one real `@modelcontextprotocol/sdk` `Server` instance**:
+`packages/lcyt-tools`' `createToolRegistry({ db, captionTargets, production, agent, assets })` builds the tool list + handlers; `createInProcessMcpBridge(registry)` registers it on **one real `@modelcontextprotocol/sdk` `Server` instance** and connects an in-process **`Client`** to it over `InMemoryTransport.createLinkedPair()` — real `tools/list`/`tools/call` semantics (verified end-to-end in `test/in-process-bridge.test.js`), so the schema `lcyt-agent`'s turn loop sees is *exactly* the schema an external MCP client would see.
 
-- `lcyt-mcp-stdio` / `lcyt-mcp-http` register it exactly as they register today's caption/production/DSK tools, reachable over stdio/Streamable HTTP by external clients (Claude Desktop, Claude Code, etc.).
-- `lcyt-agent` connects to the **same server object** as an MCP **`Client`**, over `InMemoryTransport.createLinkedPair()` (already available — `@modelcontextprotocol/sdk` resolves to `1.29.0` in this repo's `node_modules`, well past the `^1.0.0` floor in `package.json`, and ships full `Client` + `inMemory` transport support). No subprocess, no network hop, no new npm dependency (only a new declared dependency edge in `lcyt-agent/package.json`) — but real `tools/list`/`tools/call` semantics, so the schema `lcyt-agent`'s turn loop sees is *exactly* the schema an external MCP client sees. This is why the module isn't just a plain function import: a plain import risks the in-process shape and the externally-registered shape drifting apart; going through the same `Server` object for both consumers makes that structurally impossible.
+- `lcyt-agent`'s composition root (`lcyt-backend/src/server.js`) is the only consumer wired up today: it builds the registry from `lcyt-backend`'s caption-target helpers, `lcyt-production`'s device CRUD/registry, `lcyt-dsk`'s image helpers, and the running `AgentEngine`, then wraps it in `createInProcessMcpBridge` for the `agentic_chat` turn loop.
+- `lcyt-mcp-stdio` / `lcyt-mcp-http` do **not** yet register this same `Server` object for external clients — that's the piece still pending. `lcyt-mcp-http` is a separate OS process with no in-process handle to the live `DeviceRegistry`/`BridgeManager`/`AgentEngine` instances these new tools need (unlike its existing production/graphics tools, which proxy over HTTP with a static global `X-Admin-Key`/`X-API-Key`, not the new registry's per-connection `apiKey` scoping) — see CONSIDER.md for the open architecture question (does a new MCP-reachable endpoint belong inside `lcyt-backend` itself, or does `lcyt-mcp-http` grow real in-process access) that needs resolving before that half is built.
 
-This directly answers the original design question this plan chain started from: build the tool-calling mechanism once, as real MCP, and both "in-app agentic chat" and "external AI client, outside our UI" get it for free, rather than needing a second bespoke JSON-step-plan protocol that only the in-app chat could ever use.
+Once that gap closes, the original design goal holds structurally already: build the tool-calling mechanism once, as real MCP, so both "in-app agentic chat" and "external AI client, outside our UI" get it from the same schema, rather than a second bespoke protocol only the in-app chat could ever use.
 
 ### Tool annotations: the external-client equivalent of a confirm dialog
 
@@ -63,7 +63,7 @@ Every tool in the shared registry sets MCP's standard annotations:
 
 Claude Desktop and Claude Code already surface `destructiveHint: true` as an approval prompt before calling. This is the natural external-client analogue of `plan/ai_roles_framework`'s in-app `confirm` mode and the Setup Hub's own confirm-delete dialog — for a caller outside the LCYT UI, MCP's own annotation convention *is* the safety gate, and it comes from the same schema definition rather than a separately-built mechanism.
 
-## Planned: personal MCP access tokens (`mcp_tokens`)
+## Implemented: personal MCP access tokens (`mcp_tokens`)
 
 Today's `X-Api-Key` is the same shared per-project secret used for caption ingestion — workable for a single project owner, but not "personalized tokens for outside-AI": named, individually-revocable credentials for e.g. "Alice's Claude Desktop" vs. "Bob's Claude Code." This doesn't fit the existing `api_keys.ingest_stream_key` precedent either (a single rotatable slot, "replacing any previous value") — it needs its own table, closer to a GitHub personal-access-token list:
 
@@ -91,7 +91,9 @@ DELETE /mcp-tokens/:id      — revoke (through the existing Setup Hub confirm-d
 
 `lcyt-mcp-http`'s `authenticate()` extends to also hash-check the provided credential against `mcp_tokens` (in addition to raw `api_keys.key`), resolving to the same per-connection `apiKey` closure every existing and new tool handler already scopes off of — no changes needed to any tool handler itself.
 
-**UI home:** its own Setup Hub card, not folded into `AiModelsSection.jsx`. Despite the `*Section.jsx` naming convention, every existing "Section" (`AiModelsSection`, `ConnectorsSection`, etc.) renders exactly one `<SetupCard>` — one tile in `SetupHubPage.jsx`'s flat CSS grid; the "── AI & integrations ──"-style headers there are plain JSX comments grouping sibling cards, not container components that hold more than one card. So a new `McpAccessSection.jsx` — its own `<SetupCard id="mcp-access">`, mounted next to `<AiModelsSection />`/`<ConnectorsSection />` under that same grouping comment — is exactly consistent with how every other card in this page already works, not a special case. Content: a token list, "Generate token" (reveal-once + copy), revoke (through the existing confirm-delete dialog), and a ready-to-paste Claude Desktop/Code MCP config snippet (server URL + header).
+Backend (table, routes, `authenticate()` extension) is implemented and tested. The frontend below is not — a Setup Hub card is real, separate follow-on UI work.
+
+**UI home (not yet built):** its own Setup Hub card, not folded into `AiModelsSection.jsx`. Despite the `*Section.jsx` naming convention, every existing "Section" (`AiModelsSection`, `ConnectorsSection`, etc.) renders exactly one `<SetupCard>` — one tile in `SetupHubPage.jsx`'s flat CSS grid; the "── AI & integrations ──"-style headers there are plain JSX comments grouping sibling cards, not container components that hold more than one card. So a new `McpAccessSection.jsx` — its own `<SetupCard id="mcp-access">`, mounted next to `<AiModelsSection />`/`<ConnectorsSection />` under that same grouping comment — is exactly consistent with how every other card in this page already works, not a special case. Content: a token list, "Generate token" (reveal-once + copy), revoke (through the existing confirm-delete dialog), and a ready-to-paste Claude Desktop/Code MCP config snippet (server URL + header).
 
 **Deliberately out of scope here — OAuth.** `mcp_tokens` covers the near-term audience (Desktop/Code, a human pasting a token into their own local config file they control). A hosted third-party connector flow (e.g. claude.ai's web "custom connector" UI, which generally expects OAuth rather than a static header) is real but distinct additional infrastructure with no concrete driver yet — see `plan_mcp_oauth.md`, which this plan defers to rather than duplicates.
 

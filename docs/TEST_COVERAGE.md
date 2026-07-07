@@ -1,6 +1,6 @@
 # Test Coverage
 
-*Last updated: 2026-07-05 (lcyt-connectors plugin added: API Connectors & Variables)*
+*Last updated: 2026-07-07 (AI model backend work: mcp_tokens, AI provider registry, AI Roles Framework, packages/lcyt-tools, vision roles, Planner migration)*
 
 Per-package test coverage detail (covered / gaps) now lives alongside each package's own documentation, in that package's `CLAUDE.md` (e.g. `packages/lcyt-backend/CLAUDE.md`, `packages/plugins/lcyt-rtmp/CLAUDE.md`). This file holds only the repo-wide summary and the cross-package priority list.
 
@@ -13,6 +13,8 @@ Per-package test coverage detail (covered / gaps) now lives alongside each packa
 | `packages/lcyt-backend` | ~3,500 | ~2,750 | Good | Low | graceful shutdown (`index.js`), `db/sequences.js`, `db/helpers.js` |
 | `packages/plugins/lcyt-rtmp` | ~2,500 | ~600 | Moderate | Medium | `SttManager` audio-source switching (rtmp/whep), grpc streaming path, `NginxManager` reload |
 | `packages/plugins/lcyt-connectors` | ~900 | ~700 | Good | Low | `InputBar.jsx` pointer-effect/prefetch-interval wiring (no test file covers `InputBar.jsx` at all yet); frontend Connector/Request/Variable management UI not built |
+| `packages/plugins/lcyt-agent` | ~3,600 | ~2,850 | Good | Medium | Bridge-relayed provider support for the `agentic_chat` turn loop and vision adapters (direct providers only today); `<AgentChatPanel>`/`useGuidedAction` frontend not built |
+| `packages/lcyt-tools` | ~500 | ~300 | Good | Low | External MCP transport wiring (`lcyt-mcp-stdio`/`lcyt-mcp-http`) not built — only the in-process bridge is tested/consumed today |
 | `packages/lcyt-orchestrator` | ~400 | ~200 | Moderate | Low | `autoscaler.js`, full burst-provisioning E2E |
 | `packages/lcyt-worker-daemon` | ~200 | ~150 | Moderate | Low | `uploader.js`, S3 upload errors |
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |

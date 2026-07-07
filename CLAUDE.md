@@ -21,6 +21,7 @@ live-captions-yt/
 │   ├── lcyt-web/               # Browser-based web UI (Vite + React + wouter)
 │   ├── lcyt-orchestrator/      # Compute orchestrator — worker registration, job dispatch, Hetzner autoscaling
 │   ├── lcyt-worker-daemon/     # Minimal worker daemon — ffmpeg job orchestration, S3 upload
+│   ├── lcyt-tools/             # Shared AI tool-schema/handler registry (MCP + agentic_chat roles)
 │   ├── shared-styles/          # Shared CSS design tokens consumed by lcyt-site and lcyt-web
 │   ├── tools/                  # Standalone utilities
 │   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
@@ -42,6 +43,8 @@ live-captions-yt/
 ├── docker/                     # Docker build contexts for containerised services
 │   ├── lcyt-ffmpeg/            # ffmpeg Docker image (used by DockerFfmpegRunner)
 │   ├── lcyt-dsk-renderer/      # Chromium DSK renderer Docker image
+│   ├── lcyt-bridge/            # Plain Node.js container deployment mode for lcyt-bridge
+│   ├── lcyt-bridge-ollama/     # Example: lcyt-bridge + ollama/ollama on a private compose network
 │   └── mediamtx.yml            # MediaMTX configuration template
 ├── ops/                        # Operational runbooks
 │   └── runbooks/               # Deployment and maintenance runbooks
@@ -125,6 +128,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | Cue engine plugin | `packages/plugins/lcyt-cues/CLAUDE.md` |
 | Music detection plugin | `packages/plugins/lcyt-music/CLAUDE.md` |
 | AI agent plugin | `packages/plugins/lcyt-agent/CLAUDE.md` |
+| Shared AI tool-schema/handler registry | `packages/lcyt-tools/CLAUDE.md` |
 | API Connectors & Variables plugin | `packages/plugins/lcyt-connectors/CLAUDE.md` |
 | Core library (Python) | `python-packages/lcyt/CLAUDE.md` |
 | Flask backend (Python) | `python-packages/lcyt-backend/CLAUDE.md` |

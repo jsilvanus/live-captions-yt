@@ -10,6 +10,13 @@
  *   POST /agent/analyse   — analyse a preview image (future)
  *
  * All routes require session JWT Bearer authentication.
+ *
+ * generate-rundown/edit-rundown formerly lived here — superseded by
+ * POST /roles/planner/assist (plan_ai_roles_framework.md's Planner
+ * Assistant role, routes/planner.js), which resolves its model/provider via
+ * project_ai_role_configs + the ai_providers registry instead of ai_config.
+ * Removed here rather than kept alongside per this repo's no-back-compat-
+ * burden convention (see plan_ai_roles_framework.md's Planner section).
  */
 
 import { Router } from 'express';
@@ -34,8 +41,6 @@ export function createAgentRouter(db, auth, agent) {
         'generate_template',
         'edit_template',
         'suggest_styles',
-        'generate_rundown',
-        'edit_rundown',
         // Future: 'image_analysis', 'event_cues', 'scene_description'
       ],
       contextSize: agent.getContext(req.session?.apiKey || '').length,
@@ -109,28 +114,6 @@ export function createAgentRouter(db, auth, agent) {
     const suggestions = await agent.suggestStyles(apiKey, template);
     if (!Array.isArray(suggestions)) return res.status(503).json({ error: 'AI provider not configured' });
     res.json({ ok: true, suggestions });
-  });
-
-  // POST /agent/generate-rundown — { prompt, templateId? } -> { ok, content }
-  router.post('/generate-rundown', auth, async (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
-    const { prompt, templateId } = req.body || {};
-    if (!prompt) return res.status(400).json({ error: 'prompt is required' });
-    const content = await agent.generateRundown(apiKey, prompt, { templateId });
-    if (content === null) return res.status(503).json({ error: 'AI provider not configured' });
-    res.json({ ok: true, content });
-  });
-
-  // POST /agent/edit-rundown — { content, prompt } -> { ok, content }
-  router.post('/edit-rundown', auth, async (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
-    const { content, prompt } = req.body || {};
-    if (typeof content !== 'string' || !prompt) return res.status(400).json({ error: 'content (string) and prompt are required' });
-    const out = await agent.editRundown(apiKey, content, prompt);
-    if (out === null) return res.status(503).json({ error: 'AI provider not configured' });
-    res.json({ ok: true, content: out });
   });
 
   return router;

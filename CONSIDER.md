@@ -211,3 +211,39 @@ already designed. Left for whoever picks up wiring the external-client half:
 decide where that MCP endpoint should live before extending it.
 
 (Found during: implementing plan/mcp's shared tool-schema module, 2026-07-07.)
+
+---
+
+## Bridge-relayed and `deer`-kind AI providers aren't supported by the `agentic_chat` turn loop or vision adapters
+
+**Where:** `packages/plugins/lcyt-agent/src/agentic-turn.js`'s `resolveRoleProviderSettings()`,
+consumed by `routes/roles-chat.js`, `routes/production-assistant.js`, `routes/planner.js`,
+and `routes/vision-roles.js`.
+
+**Finding:** `plan_ai_model_registry.md` designs `ai_providers.bridge_instance_id` so a
+project's Ollama can be reachable only through a specific `lcyt-bridge` instance's LAN, and
+Phase 2 of that plan (implemented) added a `model_call` bridge command specifically so
+inference could be relayed that way. But `resolveRoleProviderSettings()` — the one function
+every `agentic_chat` role (Setup/Asset Control/Graphics Editor Assistant, Production
+Assistant, Planner) and both vision roles (Tracker/Describer) use to turn a
+`project_ai_role_configs.provider_id` into usable settings — returns `null` for any provider
+with `bridge_instance_id` set or `kind: 'deer'`, which every one of those routes then turns
+into a `503 AI provider not configured or unsupported`. So the `model_call` bridge command
+built in Phase 2 has no real caller yet: discovery (`GET /api/tags`) works over a bridge,
+inference does not.
+
+**Why skipped:** Wiring bridge-relayed inference through the turn loop means dispatching a
+full multi-turn, tool-calling chat-completions exchange through `bridgeManager.sendCommand()`
+instead of a direct `fetch()` — `model_call`'s current shape (`{ sourceUrl?, endpoint, model,
+prompt, outputMode }`) was built for vision's single-prompt-plus-image inference, not for an
+iterative conversation with a `tools` array and `tool_calls` responses. Extending it to carry
+a full OpenAI-style `messages`/`tools` payload and get a structured `tool_calls` response back
+over the bridge's request/response round-trip is a real design question (does the bridge parse
+tool-call JSON itself, or just relay bytes both ways?) that plan_ai_model_registry.md doesn't
+answer — building it now would be guessing at an unspecified wire contract rather than
+executing something already designed. `deer` is unimplemented everywhere in this codebase
+(Phase 4, unscoped, pending inspection of the actual `jsilvanus/deer` package APIs), so its
+`null` here is expected, not a gap.
+
+(Found during: implementing plan_ai_roles_framework.md's `agentic_chat` turn loop and vision
+roles, 2026-07-07.)

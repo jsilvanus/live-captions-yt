@@ -82,35 +82,11 @@ Event cue rules (`match_type: 'event_cue'`) are evaluated asynchronously. Result
 
 ---
 
-## Phase 4 — Video/Image Inference (Planned)
+## Phase 4 — Video/Image Inference (Superseded by `plan_ai_roles_framework.md`'s Tracker/Describer roles)
 
-### Motivation
+This phase's MVP scope (preview-JPEG polling → vision LLM → SSE event) is now implemented, but as `plan_ai_roles_framework.md`'s Tracker and Describer roles rather than as a bare `analyseImage()` method on `AgentEngine` — that stub is superseded, not filled in. See that plan's Runtime Shape 1 for the actual implementation: `VisionFrameFetcher` (polls `GET /preview/:key/incoming`), `VisionRoleManager` (one manager parameterized by role), and `vision-adapters/{openai,google,anthropic}-vision.js`. `tracker_update`/`describer_update` SSE events replace the `scene_description` event this phase originally sketched.
 
-A vision-capable LLM can describe what is happening on screen by analysing preview JPEGs or video frames. This enables automated scene descriptions and visual event detection.
-
-### Preview image inference
-
-The backend already provides `GET /preview/:key/incoming.jpg` (RTMP → JPEG thumbnails). The agent can periodically fetch and analyse these frames:
-
-```
-Preview JPEG → Vision LLM → Scene description → SSE event
-```
-
-### Video stream inference
-
-For real-time analysis, the agent could process video segments directly:
-- Use HLS segments from `GET /stream-hls/:key/*`
-- Extract keyframes from fMP4 segments
-- Send frames to vision LLM for analysis
-- Emit `scene_description` SSE events
-
-### Implementation plan
-
-- [ ] `analyseImage()` — wire to OpenAI GPT-4o or compatible vision API
-- [ ] Periodic preview frame analysis on configurable interval
-- [ ] Scene description SSE event emission
-- [ ] Video segment keyframe extraction
-- [ ] Vision model configuration (model selection, provider)
+Video-segment/HLS-keyframe inference (this phase's "Video stream inference" idea, for lower latency or clip-based description) remains unimplemented — the JPEG-polling MVP is what shipped, matching that plan's own scoping ("a strict subset of the eventual richer source").
 
 ---
 
@@ -178,24 +154,24 @@ The planner page currently requires manual creation of rundown files with metaco
 
 ### Implementation plan
 
-- [x] `generateRundown(apiKey, prompt, opts)` method on AgentEngine
-- [x] `editRundown(apiKey, content, prompt, opts)` method on AgentEngine
+- [x] `generateRundown(apiSettings, prompt, opts)` method on AgentEngine
+- [x] `editRundown(apiSettings, content, prompt, opts)` method on AgentEngine
 - [x] `AgentEngine.RUNDOWN_METACODE_REFERENCE` — metacode syntax reference injected into all prompts
 - [x] `AgentEngine.RUNDOWN_TEMPLATE_LIBRARY` — built-in templates (church_service, concert, conference, sports)
-- [x] REST route: `POST /agent/generate-rundown` → returns rundown text
-- [x] REST route: `POST /agent/edit-rundown` → returns modified text
+- [x] REST route: `POST /roles/planner/assist` → generates or edits rundown text
 - [x] Frontend integration in PlannerPage — collapsible "✨ AI Assist" panel with template dropdown, prompt input, Generate and Edit buttons
 - [x] Metacode-aware prompt engineering (full syntax reference in every prompt)
 - [x] Template library with common event structures
 
-### Routes added
+### Routes (migrated to `plan_ai_roles_framework.md`'s Planner role)
+
+`POST /agent/generate-rundown` / `POST /agent/edit-rundown` (below) are **removed** — superseded by one merged route, `POST /roles/planner/assist`, which resolves its model/provider through `project_ai_role_configs` + the `ai_providers` registry instead of `ai_config` (`generateRundown`/`editRundown` now take an already-resolved `apiSettings` object rather than an `apiKey` to look up internally):
 
 ```
-POST /agent/generate-rundown   { prompt, templateId? }   → { ok, content }
-POST /agent/edit-rundown       { content, prompt }        → { ok, content }
+POST /roles/planner/assist   { currentPlan?, goal, templateId? }   → { ok, content }
 ```
 
-All routes require session JWT Bearer authentication.
+`currentPlan` omitted/empty generates from scratch; present, edits it per `goal`. Requires session JWT Bearer auth and a real, enabled `project_ai_role_configs` row for the `planner` role.
 
 ---
 
@@ -253,9 +229,9 @@ This phase was a one-paragraph stub written before local-model support had a rea
 | 1 | AI Configuration & Embeddings | ✅ Implemented | — |
 | 2 | Context Window & Agent Engine | ✅ Implemented | Phase 1 |
 | 3 | Event Cue Evaluation via LLM | ✅ Implemented | Phase 2, `lcyt-cues` |
-| 4 | Video/Image Inference | 📋 Planned | Phase 2 |
+| 4 | Video/Image Inference | ➡️ Superseded by `plan_ai_roles_framework.md` (Tracker/Describer) | Phase 2 |
 | 5 | AI DSK Template Generation | ✅ Implemented | Phase 2, `lcyt-dsk` |
-| 6 | AI-Assisted Rundown Creation | ✅ Implemented | Phase 2, Planner |
+| 6 | AI-Assisted Rundown Creation | ✅ Implemented (migrated to `POST /roles/planner/assist`) | Phase 2, Planner |
 | 7 | Multi-Modal Scene Understanding | 📋 Planned | Phase 4, `lcyt-music` |
 | 8 | Local Model Support (Ollama) | ➡️ Superseded by `plan_ai_model_registry.md` | Phase 1 |
 
@@ -276,5 +252,6 @@ This phase was a one-paragraph stub written before local-model support had a rea
 - 16+ AgentEngine tests (context window, AI config, cosine similarity, event cue evaluation)
 - Agent DB helper tests (event insert/retrieve, migrations)
 - AI config DB tests
-- Phase 5 & 6 fallback tests (10 tests): `generateTemplate`, `editTemplate`, `suggestStyles`, `generateRundown`, `editRundown` — all verified to return safe defaults when no AI config or `provider: none`
+- Phase 5 & 6 fallback tests: `generateTemplate`, `editTemplate`, `suggestStyles` (no AI config/`provider: none`); `generateRundown`/`editRundown` (null/no-apiKey `apiSettings`, since Planner now resolves settings itself — see `routes/planner.js`)
 - `_callChatCompletion` opts forwarding test (temperature + maxTokens)
+- Phase 4's superseding implementation (Tracker/Describer) and Phase 6's route migration have their own test suites under `packages/plugins/lcyt-agent/test/` — see that package's `CLAUDE.md` for the full current list.
