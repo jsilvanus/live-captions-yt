@@ -7,6 +7,10 @@ Same tools as `lcyt-mcp-stdio` plus `privacy`/`privacy_deletion`, exposed over t
 **Port:** `process.env.PORT` (default 3001)
 **Tools exposed:** `start`, `send_caption`, `send_batch`, `sync_clock`, `get_status`, `stop`, `privacy`, `privacy_deletion`
 
+**Auth (`authenticate()`):** the `X-Api-Key` header accepts either a raw `api_keys.key` or a personal `mcp_tokens`-issued token (`lcytmcp_...`, `plan/mcp`) — `verifyMcpToken()` (from `lcyt-backend/db`) is tried first by hash; if it resolves, the underlying `api_key` is validated and used, and the log line names the token's label instead of the raw key prefix. Either credential resolves to the same per-connection `apiKey` closure every tool handler already scopes off of.
+
+**Not wired here:** `packages/lcyt-tools`' shared tool-schema registry (`caption_target.*`/`camera.*`/`mixer.*`/`dsk_template.*`/`asset.*`, `plan/mcp`) is *not* registered on this server — this process has no in-process access to the live `DeviceRegistry`/`BridgeManager`/`AgentEngine` instances those tools need (unlike this server's existing production/graphics tools, which proxy over HTTP with a static global `X-Admin-Key`/`X-API-Key`). See root `CONSIDER.md` for the open question on where that wiring should live.
+
 **Run:** `node packages/lcyt-mcp-http/src/server.js`
 
 ## Test Coverage
@@ -18,3 +22,4 @@ Same tools as `lcyt-mcp-stdio` plus `privacy`/`privacy_deletion`, exposed over t
 
 **Gaps (Low):**
 - Full MCP tool-call flow (start → send_caption → stop) via Streamable HTTP requires a real MCP client harness and is better covered by E2E tests.
+- `authenticate()`'s `mcp_tokens` branch (accepting a `lcytmcp_...` token alongside a raw `api_keys.key`) has no dedicated test in this package — `verifyMcpToken()` itself is covered in `lcyt-backend/test/mcp-tokens.test.js`, but this server's `authenticate()` wiring around it isn't exercised here.

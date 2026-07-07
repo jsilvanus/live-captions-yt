@@ -219,6 +219,32 @@ GET  /agent/context       — current AI context window (Bearer token)
 POST /agent/context       — add a context entry manually (Bearer token)
 DELETE /agent/context     — clear context window (Bearer token)
 GET  /agent/events        — recent agent events (Bearer token)
+POST /agent/generate-template | /agent/edit-template | /agent/suggest-styles — AI DSK template generation (Bearer token)
+
+POST   /mcp-tokens        — create a personal MCP access token { label } → { id, token } (raw token shown once) (Bearer token)
+GET    /mcp-tokens        — list this project's tokens (label + timestamps, hash/raw never returned) (Bearer token)
+DELETE /mcp-tokens/:id    — revoke a token (Bearer token)
+
+GET    /ai/providers               — providers visible to this project: granted site-scope + own project-scope, masked (Bearer token)
+POST   /ai/providers               — create a project-scope provider (Bearer token)
+PUT/DELETE /ai/providers/:id       — own project-scope providers only; a granted site provider is read-only here (403) (Bearer token)
+POST   /ai/providers/:id/discover  — trigger Ollama /api/tags discovery now (Bearer token)
+GET    /ai/providers/:id/models    — provider's model catalog (Bearer token)
+GET/POST/PUT/DELETE /admin/ai-providers[/:id] — site-scope provider CRUD (X-Admin-Key or is_admin user)
+POST   /admin/ai-providers/:id/discover     — trigger discovery (X-Admin-Key or is_admin user)
+GET/POST/PUT/DELETE /admin/ai-providers/:id/models[/:modelId] — model catalog CRUD, ollama providers only (X-Admin-Key or is_admin user)
+GET/PUT /admin/ai-providers/:id/grants[/:apiKey] — which projects have this site provider granted (X-Admin-Key or is_admin user)
+
+GET  /roles/catalog                — list the ai_roles catalog: Tracker, Describer, Setup/Asset Control/Graphics Editor/Production Assistant, Planner (public)
+GET/PUT /roles/:roleCode/config    — get/update this project's config for a role (Bearer token)
+POST /roles/:roleCode/message      — one agentic_chat turn for setup_assistant/asset_control_assistant/dsk_designer (Bearer token)
+GET  /roles/:roleCode/events       — SSE for any role except planner: tool_call_started/tool_call_result/staged_action/reply (chat-dialog roles), tracker_update/describer_update (vision roles), assistant_suggestion/assistant_action (Bearer token)
+POST /roles/:roleCode/start | /roles/:roleCode/stop — start/stop the Tracker/Describer continuous-vision loop (Bearer token)
+GET  /roles/:roleCode/status       — Tracker/Describer running state, lastUpdateAt, lastError (Bearer token)
+POST /roles/assistant/prompt       — one-off human nudge into Production Assistant's context (Bearer token)
+GET  /roles/assistant/suggestions  — pending suggestions queue (confirm mode) (Bearer token)
+POST /roles/assistant/suggestions/:id/confirm | /reject — execute or discard a pending suggestion (Bearer token)
+POST /roles/planner/assist         — { currentPlan?, goal, templateId? } → { ok, content }; supersedes the removed /agent/generate-rundown|edit-rundown (Bearer token)
 
 GET/POST/PUT/DELETE /connectors                              — API Connector CRUD, auth_config masked (Bearer token)
 GET/POST/PUT/DELETE /connectors/:connectorSlug/requests       — nested Request CRUD (Bearer token)
@@ -260,8 +286,11 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/admin.js` — `createAdminRouter(db)`: admin panel routes (`/admin/*`). User CRUD with search/pagination, project management with cross-entity `user:email` search, batch operations (activate/deactivate/delete users; revoke/activate/delete projects), feature flag management, user feature entitlement management (`GET/PATCH /admin/users/:id/features`). All routes require `X-Admin-Key` header.
 - The RTMP/HLS/radio/preview/STT managers previously lived in `lcyt-backend`; they were extracted to `packages/plugins/lcyt-rtmp`. The backend imports them via `import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp'`.
 - The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
-- The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, and LLM-based event cue evaluation. Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings } from 'lcyt-agent'`.
+- The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, LLM-based event cue evaluation, the AI model provider registry (`ai_providers`/`ai_provider_models`/`ai_provider_grants`), and the AI Roles Framework (role catalog, the shared `agentic_chat` turn loop, Production Assistant's suggestion queue, Tracker/Describer vision roles). Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings, createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter, createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter, createPlannerRouter } from 'lcyt-agent'` — see that plugin's `CLAUDE.md` for the full composition-root wiring example (it's the only file that holds `lcyt-backend`'s caption-target helpers, `lcyt-production`'s device registry, `lcyt-dsk`'s image helpers, and the running `AgentEngine` all together, needed to build the shared tool registry from `lcyt-tools`).
 - `src/ai/index.js` — Backward-compatible re-exports from `lcyt-agent` so existing imports from `lcyt-backend/src/ai/` continue to work.
+- `src/db/mcp-tokens.js` — Personal MCP access token DB helpers (`mcp_tokens` table, in `db/schema.js`): `createMcpToken`/`listMcpTokens`/`revokeMcpToken`/`verifyMcpToken` (raw token format `lcytmcp_<64 hex>`, only the SHA-256 hash is stored). `verifyMcpToken` is also imported directly by `lcyt-mcp-http` (via `lcyt-backend/db`) so that server's `authenticate()` accepts either a raw `api_keys.key` or an `mcp_tokens`-issued token, resolving to the same per-connection `apiKey` scoping either way.
+- `src/routes/mcp-tokens.js` — `createMcpTokensRouter(db, auth)`: the `/mcp-tokens` CRUD routes above.
+- `packages/lcyt-tools` (imported as `lcyt-tools`) — the shared tool-schema/handler registry (`plan/mcp`) consumed by `lcyt-agent`'s `agentic_chat` turn loop over an in-process MCP `Client`/`Server` pair. See its own `CLAUDE.md`.
 - API Connectors & Variables (`lcyt-connectors`) owns the `{{ }}` variable system and outbound API connector CRUD/resolution engine. Imported via `import { initConnectors, createConnectorsRouter, createVariablesRouter } from 'lcyt-connectors'`; `initConnectors(db, { filesControl: { resolveStorage } })` runs its own migrations and returns `{ bus, engine }`.
 - `src/middleware/user-auth.js` — JWT Bearer verification for user tokens (`{ type: 'user', userId, email }`).
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.

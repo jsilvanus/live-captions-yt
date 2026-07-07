@@ -1,8 +1,8 @@
 ---
 id: plan/ai_model_registry
 title: "AI Model Registry — Site & Project Provider Catalog, Ollama Auto-Discovery, Bridge-Relayed Local Models"
-status: draft
-summary: "Design for ai_providers / ai_provider_models / ai_provider_grants: a registry of model *sources* (cloud API, self-hosted Ollama, in-process 'deer' runtimes) that sits underneath plan_ai_roles_framework.md's per-role config. Covers site-level (admin-curated) providers, project-private providers (including a project's own bridge-relayed Ollama on a LAN the backend can't reach directly), multiple simultaneous Ollama instances, and automatic model discovery via Ollama's /api/tags. Amends project_ai_role_configs to reference this registry instead of embedding provider/credential fields per role; supersedes plan_agent.md's Phase 8 (Local Model Support) stub."
+status: in-progress
+summary: "ai_providers / ai_provider_models / ai_provider_grants: a registry of model *sources* (cloud API, self-hosted Ollama, in-process 'deer' runtimes) that sits underneath plan_ai_roles_framework.md's per-role config. Phase 1 (registry core: schema, CRUD, grants, direct-reachable discovery) and Phase 2 (bridge-relayed providers: model_call bridge command with a per-call timeout override, Dockerized bridge+Ollama deployment mode) are implemented. Phase 3 (wiring project_ai_role_configs' provider_id through to the agentic_chat turn loop and vision adapters for *inference*, not just discovery) is only partly done — those two call sites currently resolve direct (non-bridge) providers only; bridge-relayed inference for agentic_chat/vision is a known gap, flagged in CONSIDER.md. Phase 4 ('deer' in-process runtimes) remains unscoped, pending inspection of the actual jsilvanus/deer package APIs. Amends project_ai_role_configs to reference this registry instead of embedding provider/credential fields per role; supersedes plan_agent.md's Phase 8 (Local Model Support) stub."
 related: plan/ai_roles_framework, plan/agent, plan/prod, plan/api_connectors_variables
 ---
 
