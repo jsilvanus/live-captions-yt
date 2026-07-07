@@ -57,7 +57,7 @@ try {
 import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
 import {
   initAgent, createAgentRouter, createAiRouter,
-  createAdminAiProvidersRouter, createProjectAiProvidersRouter,
+  createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import {
@@ -430,6 +430,7 @@ app.use('/ai/providers', createProjectAiProvidersRouter(db, auth, { bridgeManage
 app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
+app.use('/roles', createRolesRouter(db, auth));
 app.use('/connectors', createConnectorsRouter(db, auth));
 app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));

@@ -29,7 +29,14 @@ export { createAgentRouter } from './routes/agent.js';
 export { createAiRouter } from './routes/ai.js';
 export { createAdminAiProvidersRouter } from './routes/ai-providers-admin.js';
 export { createProjectAiProvidersRouter } from './routes/ai-providers-project.js';
+export { createRolesRouter } from './routes/roles.js';
 export { runMigrations } from './db.js';
+
+// AI Roles Framework (plan/ai_roles_framework): role catalog + per-project config
+export {
+  runAiRolesMigrations, BUILTIN_ROLES, RUNTIME_KINDS,
+  listRoles, getRole, getRoleConfig, setRoleConfig, defaultRoleConfig, effectiveMode,
+} from './ai-roles.js';
 
 // AI model registry (plan/ai_model_registry): providers, model catalogs, grants
 export {
@@ -76,6 +83,10 @@ export async function initAgent(db, opts = {}) {
   // AI model registry migrations (ai_providers / ai_provider_models / ai_provider_grants)
   const { runProviderRegistryMigrations } = await import('./provider-registry.js');
   runProviderRegistryMigrations(db);
+
+  // AI Roles Framework migrations (ai_roles catalog seed + project_ai_role_configs)
+  const { runAiRolesMigrations } = await import('./ai-roles.js');
+  runAiRolesMigrations(db);
 
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);
