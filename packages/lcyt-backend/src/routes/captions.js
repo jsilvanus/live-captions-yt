@@ -159,7 +159,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           try {
             const allTranslations = getTranslationTargets(db, session.apiKey);
             for (const tr of allTranslations) {
-              if (tr.enabled && tr.captionTargetId) {
+              if (tr.enabled && tr.target === 'captions' && tr.captionTargetId) {
                 if (!translationsByTargetId[tr.captionTargetId]) {
                   translationsByTargetId[tr.captionTargetId] = [];
                 }

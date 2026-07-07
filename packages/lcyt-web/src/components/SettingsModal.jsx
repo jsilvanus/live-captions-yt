@@ -207,7 +207,7 @@ export function SettingsModal({ isOpen, onClose, inline }) {
       <div className="settings-modal__box" style={inline ? { position: 'static', maxWidth: '100%', maxHeight: '100%', height: '100%', borderRadius: 0, border: 'none', boxShadow: 'none' } : {}}>
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('statusBar.settings')}</span>
-          {!inline && <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>}
+          {!inline && <button type="button" className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>}
         </div>
 
         {TABS.length > 1 && (

@@ -1,4 +1,15 @@
+import path from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..', '..');
+const outputDir = process.env.SCREENSHOT_OUTPUT_DIR
+  ? path.resolve(process.env.SCREENSHOT_OUTPUT_DIR)
+  : path.join(repoRoot, 'tmp', 'screenshots');
+mkdirSync(outputDir, { recursive: true });
+const screenshotPath = (fileName) => path.join(outputDir, fileName);
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
@@ -31,15 +42,15 @@ await page.waitForTimeout(1000);
 const nav = await page.$('nav.sidebar');
 if (!nav) {
   console.log('SIDEBAR NOT FOUND — current URL:', page.url());
-  await page.screenshot({ path: '/home/jsilvanus/.claude/jobs/bd4fd75b/tmp/fallback.png', fullPage: true });
+  await page.screenshot({ path: screenshotPath('fallback.png'), fullPage: true });
 } else {
-  await page.screenshot({ path: '/home/jsilvanus/.claude/jobs/bd4fd75b/tmp/sidebar-collapsed.png' });
+  await page.screenshot({ path: screenshotPath('sidebar-collapsed.png') });
   // Expand sidebar via hamburger toggle for label text
   const hamburger = await page.$('.top-bar__hamburger');
   if (hamburger) {
     await hamburger.click();
     await page.waitForTimeout(300);
-    await page.screenshot({ path: '/home/jsilvanus/.claude/jobs/bd4fd75b/tmp/sidebar-expanded.png' });
+    await page.screenshot({ path: screenshotPath('sidebar-expanded.png') });
   }
   const itemsText = await page.$$eval('.sidebar__item, .sidebar__group-header', els =>
     els.map(el => el.textContent.trim())

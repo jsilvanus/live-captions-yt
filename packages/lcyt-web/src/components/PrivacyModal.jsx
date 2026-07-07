@@ -130,7 +130,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
           <div className="settings-modal__header">
             <span className="settings-modal__title" id="privacy-title">Privacy &amp; Terms &amp; Data</span>
             {!requireAcceptance && (
-              <button className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
+              <button type="button" className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>
             )}
           </div>
 

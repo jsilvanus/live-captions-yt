@@ -34,7 +34,7 @@ export function NormalizeLinesModal({ fileName, rawLines, onConfirm, onSkip }) {
       <div className="settings-modal__box">
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('normalizeModal.title')}</span>
-          <button className="settings-modal__close" onClick={onSkip} title="Close (Esc)">✕</button>
+          <button type="button" className="settings-modal__close" onClick={onSkip} title="Close (Esc)">✕</button>
         </div>
         <div className="settings-modal__body">
           <div className="settings-panel settings-panel--active">

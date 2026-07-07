@@ -21,7 +21,7 @@ export function BroadcastModal({ isOpen, onClose, inline }) {
     >
       <div className="settings-modal__header">
         <span className="settings-modal__title">Broadcast</span>
-        {!inline && <button className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>}
+        {!inline && <button type="button" className="settings-modal__close" onClick={onClose} aria-label="Close">✕</button>}
       </div>
 
       <div className="settings-modal__tabs">
