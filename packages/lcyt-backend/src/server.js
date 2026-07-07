@@ -66,7 +66,7 @@ import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListe
 import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
-  createRolesChatRouter, createProductionAssistantRouter,
+  createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
@@ -232,7 +232,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 // registry migrations (ai_providers / ai_provider_models / ai_provider_grants).
 const {
   agent: _agent, providerRegistry: _providerRegistry,
-  rolesBus: _rolesBus, assistantManager: _assistantManager,
+  rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
 } = await initAgent(db);
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
@@ -469,6 +469,7 @@ app.use('/agent', createAgentRouter(db, auth, _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
 app.use('/roles', createRolesRouter(db, auth));
 app.use('/roles', createRolesChatRouter(db, auth, _toolsContext, _rolesBus));
+app.use('/roles', createVisionRolesRouter(db, auth, _visionRoleManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, auth, _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },

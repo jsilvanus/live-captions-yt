@@ -33,7 +33,9 @@ import { runProviderRegistryMigrations } from '../src/provider-registry.js';
 import { createRolesRouter } from '../src/routes/roles.js';
 import { createRolesChatRouter } from '../src/routes/roles-chat.js';
 import { createProductionAssistantRouter } from '../src/routes/production-assistant.js';
+import { createVisionRolesRouter } from '../src/routes/vision-roles.js';
 import { ProductionAssistantManager } from '../src/production-assistant.js';
+import { VisionRoleManager } from '../src/vision-role-manager.js';
 import { RolesBus } from '../src/roles-bus.js';
 
 const JWT_SECRET = 'test-mount-order-secret';
@@ -57,6 +59,7 @@ before(() => new Promise((resolve) => {
 
   const rolesBus = new RolesBus();
   const manager = new ProductionAssistantManager(db, rolesBus);
+  const visionManager = new VisionRoleManager(rolesBus);
   const toolsContext = { tools: [], callTool: async () => ({ ok: true }) };
   const agent = { addContext() {}, getContext: () => [] };
 
@@ -65,6 +68,7 @@ before(() => new Promise((resolve) => {
   // Exact mount order from lcyt-backend/src/server.js:
   app.use('/roles', createRolesRouter(db, sessionAuth));
   app.use('/roles', createRolesChatRouter(db, sessionAuth, toolsContext, rolesBus));
+  app.use('/roles', createVisionRolesRouter(db, sessionAuth, visionManager));
   app.use('/roles/assistant', createProductionAssistantRouter(db, sessionAuth, toolsContext, manager, agent));
 
   server = createServer(app);
@@ -126,5 +130,34 @@ describe('other assistant routes still reachable under the shared /roles prefix'
     assert.equal(res.status, 503);
     const body = await res.json();
     assert.match(body.error, /not enabled/);
+  });
+});
+
+describe('vision roles reachable alongside chat-dialog/assistant routes', () => {
+  it('GET /roles/tracker/events reaches roles-chat.js\'s generic events route', async () => {
+    const res = await fetch(`${baseUrl}/roles/tracker/events`, { headers: bearer() });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('content-type'), /^text\/event-stream/);
+    res.body?.cancel?.();
+  });
+
+  it('GET /roles/describer/events also works', async () => {
+    const res = await fetch(`${baseUrl}/roles/describer/events`, { headers: bearer() });
+    assert.equal(res.status, 200);
+    res.body?.cancel?.();
+  });
+
+  it('POST /roles/tracker/start reaches vision-roles.js, not roles-chat.js', async () => {
+    // Role isn't enabled in this test's db — a 503 here (not a 404) proves
+    // the request reached vision-roles.js's own handler.
+    const res = await fetch(`${baseUrl}/roles/tracker/start`, { method: 'POST', headers: bearer() });
+    assert.equal(res.status, 503);
+  });
+
+  it('GET /roles/tracker/status reaches vision-roles.js, not roles.js\'s GET /:roleCode/config', async () => {
+    const res = await fetch(`${baseUrl}/roles/tracker/status`, { headers: bearer() });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.running, false);
   });
 });

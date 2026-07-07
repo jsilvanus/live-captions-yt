@@ -32,7 +32,13 @@ export { createProjectAiProvidersRouter } from './routes/ai-providers-project.js
 export { createRolesRouter } from './routes/roles.js';
 export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from './routes/roles-chat.js';
 export { createProductionAssistantRouter } from './routes/production-assistant.js';
+export { createVisionRolesRouter, VISION_ROLES } from './routes/vision-roles.js';
 export { runMigrations } from './db.js';
+
+// Vision roles (Tracker & Describer, plan_ai_roles_framework.md Runtime Shape 1)
+export { VisionRoleManager } from './vision-role-manager.js';
+export { VisionFrameFetcher } from './vision-frame-fetcher.js';
+export { createVisionAdapter } from './vision-adapters/index.js';
 
 // Agentic chat turn loop (plan/ai_roles_framework, Runtime Shape 2)
 export {
@@ -108,8 +114,10 @@ export async function initAgent(db, opts = {}) {
   // time, not constructed here.
   const { RolesBus } = await import('./roles-bus.js');
   const { ProductionAssistantManager } = await import('./production-assistant.js');
+  const { VisionRoleManager } = await import('./vision-role-manager.js');
   const rolesBus = new RolesBus();
   const assistantManager = new ProductionAssistantManager(db, rolesBus);
+  const visionRoleManager = new VisionRoleManager(rolesBus);
 
   // Small handle for the provider registry. The bridge manager (from
   // lcyt-production) is injected by the composition root (server.js) after
@@ -129,5 +137,5 @@ export async function initAgent(db, opts = {}) {
     },
   };
 
-  return { agent, providerRegistry, rolesBus, assistantManager };
+  return { agent, providerRegistry, rolesBus, assistantManager, visionRoleManager };
 }
