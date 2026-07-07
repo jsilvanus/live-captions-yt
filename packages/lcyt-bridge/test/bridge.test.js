@@ -372,6 +372,127 @@ describe('Bridge — _handleCommand() tcp_send', () => {
 });
 
 // ---------------------------------------------------------------------------
+// _handleCommand() — model_call (plan/ai_model_registry)
+// ---------------------------------------------------------------------------
+
+describe('Bridge — _handleCommand() model_call', () => {
+  const origFetch = global.fetch;
+  afterEach(() => { global.fetch = origFetch; });
+
+  it('POSTs to the endpoint and reports the parsed body via _postStatus', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+
+    const fetchCalls = [];
+    global.fetch = async (url, init) => {
+      fetchCalls.push({ url, init });
+      return {
+        ok: true, status: 200,
+        text: async () => JSON.stringify({ response: 'A person on stage', done: true }),
+      };
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call',
+      requestId: 'mc-1',
+      endpoint: 'http://ollama:11434/api/generate',
+      model: 'llama3.1:8b',
+      prompt: 'Summarise the context',
+      outputMode: 'text',
+    }));
+
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].url, 'http://ollama:11434/api/generate');
+    const payload = JSON.parse(fetchCalls[0].init.body);
+    assert.equal(payload.model, 'llama3.1:8b');
+    assert.equal(payload.prompt, 'Summarise the context');
+    assert.equal(payload.stream, false);
+    assert.equal(payload.format, undefined, 'no format field in text mode');
+    assert.equal(payload.images, undefined);
+
+    const status = statusCalls.find(c => c.requestId === 'mc-1');
+    assert.equal(status.ok, true);
+    assert.equal(status.status, 200);
+    assert.equal(status.body.response, 'A person on stage');
+    bridge.destroy();
+  });
+
+  it('fetches sourceUrl itself and attaches base64 images; json mode sets format', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+
+    const imageBytes = Buffer.from('fake-jpeg-bytes');
+    const fetchCalls = [];
+    global.fetch = async (url, init) => {
+      fetchCalls.push({ url, init });
+      if (url.includes('/preview/')) {
+        return { ok: true, status: 200, arrayBuffer: async () => imageBytes };
+      }
+      return { ok: true, status: 200, text: async () => JSON.stringify({ response: '{"objects":[]}' }) };
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call',
+      requestId: 'mc-2',
+      sourceUrl: 'http://backend.test/preview/key1/incoming.jpg',
+      endpoint: 'http://ollama:11434/api/generate',
+      model: 'llava',
+      prompt: 'Describe the scene',
+      outputMode: 'json',
+    }));
+
+    assert.equal(fetchCalls.length, 2, 'image fetch + model POST');
+    assert.equal(fetchCalls[0].url, 'http://backend.test/preview/key1/incoming.jpg');
+    const payload = JSON.parse(fetchCalls[1].init.body);
+    assert.deepEqual(payload.images, [imageBytes.toString('base64')]);
+    assert.equal(payload.format, 'json');
+
+    const status = statusCalls.find(c => c.requestId === 'mc-2');
+    assert.equal(status.ok, true);
+    bridge.destroy();
+  });
+
+  it('reports { ok: false } when the source fetch fails', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+    global.fetch = async () => ({ ok: false, status: 404 });
+
+    const errEvent = new Promise(r => bridge.once('command:error', r));
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call',
+      requestId: 'mc-3',
+      sourceUrl: 'http://backend.test/preview/key1/incoming.jpg',
+      endpoint: 'http://ollama:11434/api/generate',
+      model: 'llava',
+      prompt: 'x',
+    }));
+
+    const status = statusCalls.find(c => c.requestId === 'mc-3');
+    assert.equal(status.ok, false);
+    assert.match(status.error, /Source fetch failed: 404/);
+    const evt = await errEvent;
+    assert.equal(evt.type, 'model_call');
+    bridge.destroy();
+  });
+
+  it('reports { ok: false } when endpoint is missing', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call',
+      requestId: 'mc-4',
+      prompt: 'x',
+    }));
+
+    const status = statusCalls.find(c => c.requestId === 'mc-4');
+    assert.equal(status.ok, false);
+    assert.match(status.error, /requires an endpoint/);
+    bridge.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // _handleCommand() — bad input
 // ---------------------------------------------------------------------------
 
