@@ -1,3 +1,5 @@
+import logger from 'lcyt/logger';
+
 /**
  * Server-side translation module (Phase 5)
  *
@@ -16,6 +18,17 @@ function toLang2(code) {
   return code ? code.split('-')[0].toLowerCase() : 'en';
 }
 
+function normalizeDeepLCode(code) {
+  const raw = typeof code === 'string' ? code.trim() : '';
+  if (!raw) return null;
+  const parts = raw.split('-').map(part => part.trim()).filter(Boolean);
+  if (parts.length === 0) return null;
+  const [lang, region] = parts;
+  const upperLang = lang.toUpperCase();
+  if (!region) return upperLang;
+  if (region.length === 2 && region.toUpperCase() === upperLang) return upperLang;
+  return `${upperLang}-${region.toUpperCase()}`;
+}
 async function translateMyMemory(text, sourceLang, targetLang) {
   const src = toLang2(sourceLang);
   const tgt = toLang2(targetLang);
@@ -47,8 +60,8 @@ async function translateGoogle(text, sourceLang, targetLang, vendorApiKey) {
 
 async function translateDeepL(text, sourceLang, targetLang, vendorApiKey) {
   if (!vendorApiKey) throw new Error('DeepL API key not configured');
-  const src = toLang2(sourceLang).toUpperCase();
-  const tgt = targetLang.toUpperCase();
+  const src = normalizeDeepLCode(sourceLang) || toLang2(sourceLang).toUpperCase();
+  const tgt = normalizeDeepLCode(targetLang) || toLang2(targetLang).toUpperCase();
   const baseUrl = vendorApiKey.endsWith(':fx')
     ? 'https://api-free.deepl.com/v2/translate'
     : 'https://api.deepl.com/v2/translate';
@@ -112,7 +125,7 @@ export async function translateText(text, sourceLang, targetLang, vendorConfig) 
     }
   } catch (err) {
     // Log error but don't break the delivery pipeline — fall back to original text
-    console.warn(`[translate-server] Failed to translate: ${err.message}`);
+    logger.warn(`[translate-server] Failed to translate: ${err.message}`);
     return text;
   }
 }

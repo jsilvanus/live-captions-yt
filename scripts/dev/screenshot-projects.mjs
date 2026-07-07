@@ -1,4 +1,15 @@
+import path from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(scriptDir, '..', '..');
+const outputDir = process.env.SCREENSHOT_OUTPUT_DIR
+  ? path.resolve(process.env.SCREENSHOT_OUTPUT_DIR)
+  : path.join(repoRoot, 'tmp', 'screenshots');
+mkdirSync(outputDir, { recursive: true });
+const screenshotPath = (fileName) => path.join(outputDir, fileName);
 
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
@@ -49,13 +60,13 @@ page.on('pageerror', (err) => console.log('[pageerror]', err.message));
 
 await page.goto('http://localhost:5173/projects', { waitUntil: 'networkidle' });
 await page.waitForTimeout(800);
-await page.screenshot({ path: '/home/jsilvanus/.claude/jobs/bd4fd75b/tmp/projects-list.png', fullPage: true });
+await page.screenshot({ path: screenshotPath('projects-list.png'), fullPage: true });
 
 const row = await page.$('.project-row');
 if (row) {
   await row.click();
   await page.waitForTimeout(500);
-  await page.screenshot({ path: '/home/jsilvanus/.claude/jobs/bd4fd75b/tmp/project-settings-slidein.png', fullPage: true });
+  await page.screenshot({ path: screenshotPath('project-settings-slidein.png'), fullPage: true });
   console.log('URL after click:', page.url());
 } else {
   console.log('No .project-row found');

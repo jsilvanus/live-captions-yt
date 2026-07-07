@@ -237,7 +237,7 @@ export function CaptionsModal({ isOpen, onClose }) {
       <div className="settings-modal__box">
         <div className="settings-modal__header">
           <span className="settings-modal__title">{t('statusBar.caption')}</span>
-          <button className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
+          <button type="button" className="settings-modal__close" onClick={onClose} title="Close (Esc)">✕</button>
         </div>
 
         <div className="settings-modal__tabs">

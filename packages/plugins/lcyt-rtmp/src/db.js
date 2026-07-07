@@ -299,7 +299,7 @@ export function updateSttSourceLanguage(db, apiKey, id, { label, sortOrder } = {
       WHERE api_key = ? AND id = ?
     `).run(
       label !== undefined ? label : existing.label,
-      sortOrder !== undefined ? sortOrder : existing.sort_order,
+      sortOrder ?? existing.sort_order,
       apiKey, id
     );
     const row = db.prepare('SELECT id, lang, label, sort_order as sortOrder FROM stt_source_languages WHERE api_key = ? AND id = ?').get(apiKey, id);
