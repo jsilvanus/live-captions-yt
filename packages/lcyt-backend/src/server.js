@@ -68,7 +68,7 @@ import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
-  createAiModelsRouter, createMcpTokensRouter as createAiMcpTokensRouter,
+  createAiModelsRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
@@ -462,7 +462,6 @@ app.get('/contact', (req, res) => {
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/ai/models', createAiModelsRouter(db, userAuth));
-app.use('/ai/mcp-tokens', createAiMcpTokensRouter(db, userAuth));
 app.use('/admin', createAdminRouter(db, jwtSecret));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
@@ -471,7 +470,7 @@ app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
 app.use('/cues', createCueRouter(db, auth, _cueEngine));
-app.use('/mcp-tokens', createMcpTokensRouter(db, auth));
+app.use('/mcp-tokens', createMcpTokensRouter(db, userAuth));
 app.use('/ai/providers', createProjectAiProvidersRouter(db, auth, { bridgeManager: productionBridgeManager }));
 app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));

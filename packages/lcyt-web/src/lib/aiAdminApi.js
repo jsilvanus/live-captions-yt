@@ -18,12 +18,12 @@ async function requestJson(backendUrl, path, { token, apiKey, method = 'GET', bo
 }
 
 export async function listMcpTokens({ backendUrl, token, apiKey }) {
-  const data = await requestJson(backendUrl, '/ai/mcp-tokens', { token, apiKey });
+  const data = await requestJson(backendUrl, '/mcp-tokens', { token, apiKey });
   return data.tokens || [];
 }
 
 export async function createMcpToken({ backendUrl, token, apiKey, label, createdByName, active = true }) {
-  return requestJson(backendUrl, '/ai/mcp-tokens', {
+  return requestJson(backendUrl, '/mcp-tokens', {
     token,
     apiKey,
     method: 'POST',
@@ -32,7 +32,7 @@ export async function createMcpToken({ backendUrl, token, apiKey, label, created
 }
 
 export async function updateMcpToken({ backendUrl, token, apiKey, id, label, createdByName, active }) {
-  return requestJson(backendUrl, `/ai/mcp-tokens/${id}`, {
+  return requestJson(backendUrl, `/mcp-tokens/${id}`, {
     token,
     apiKey,
     method: 'PATCH',
@@ -41,7 +41,7 @@ export async function updateMcpToken({ backendUrl, token, apiKey, id, label, cre
 }
 
 export async function deleteMcpToken({ backendUrl, token, apiKey, id }) {
-  return requestJson(backendUrl, `/ai/mcp-tokens/${id}`, {
+  return requestJson(backendUrl, `/mcp-tokens/${id}`, {
     token,
     apiKey,
     method: 'DELETE',

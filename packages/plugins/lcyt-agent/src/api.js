@@ -34,7 +34,6 @@ export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from '
 export { createProductionAssistantRouter } from './routes/production-assistant.js';
 export { createVisionRolesRouter, VISION_ROLES } from './routes/vision-roles.js';
 export { createAiModelsRouter } from './routes/ai-models.js';
-export { createMcpTokensRouter } from './routes/mcp-tokens.js';
 export { runMigrations } from './db.js';
 
 // Vision roles (Tracker & Describer, plan_ai_roles_framework.md Runtime Shape 1)
@@ -88,11 +87,6 @@ export {
   getAiModelConfig,
   setAiModelConfig,
   deleteAiModelConfig,
-  runMcpTokenMigrations,
-  createMcpToken,
-  listMcpTokens,
-  updateMcpToken,
-  revokeMcpToken,
 } from './ai-models.js';
 
 /**
@@ -119,9 +113,8 @@ export async function initAgent(db, opts = {}) {
   const { runAiRolesMigrations } = await import('./ai-roles.js');
   runAiRolesMigrations(db);
 
-  const { runAiModelMigrations, runMcpTokenMigrations } = await import('./ai-models.js');
+  const { runAiModelMigrations } = await import('./ai-models.js');
   runAiModelMigrations(db);
-  runMcpTokenMigrations(db);
 
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);
