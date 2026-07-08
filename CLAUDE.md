@@ -164,6 +164,9 @@ See each package's own `CLAUDE.md` for its test file layout and current coverage
 ### Error Hierarchy
 All packages define a typed exception hierarchy: `LCYTError` (base) → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`). Always raise/throw the most specific type.
 
+### Database access convention
+Backend route handlers should stay thin and delegate SQL/data-access work to `packages/lcyt-backend/src/db/*.js` modules. New query logic, row shaping, and write-path helpers belong there, not inline inside route files. This applies to the org/team routes and should be treated as the default pattern for future backend work.
+
 ### Skipped Review Findings
 When a `/code-review` or `/simplify` pass surfaces a real finding that is deliberately **not** fixed (too invasive for the current diff, out of scope, requires a wider API change, or the "fix" wouldn't actually be simpler), log it in `CONSIDER.md` at the repo root instead of letting it evaporate at the end of the turn — what was found, why it was skipped, and where. Don't silently drop skipped findings from a review summary; either fix them or write them down.
 

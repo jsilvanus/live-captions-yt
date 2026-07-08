@@ -5,6 +5,8 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 **Entry:** `src/index.js` (graceful shutdown: SIGTERM/SIGINT, closes sender/DB/server)
 **App factory:** `src/server.js`
 
+**Database convention:** keep route handlers thin and put SQL/query helpers in `src/db/*.js` modules (for example `src/db/keys.js`, `src/db/users.js`, `src/db/orgs.js`). New backend data access should follow that pattern rather than embedding raw SQL directly in route files.
+
 **Environment variables:**
 | Variable | Purpose | Default |
 |---|---|---|
