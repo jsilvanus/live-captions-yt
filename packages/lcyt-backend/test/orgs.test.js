@@ -126,4 +126,27 @@ describe('Organizations routes', () => {
     assert.strictEqual(defaultsRes.status, 200);
     assert.deepStrictEqual(defaults.features, ['captions', 'translations']);
   });
+
+  it('returns project counts for org members', async () => {
+    const createRes = await fetch(`${baseUrl}/orgs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${makeToken(userA)}`,
+      },
+      body: JSON.stringify({ name: 'Member Count Team' }),
+    });
+    const created = await createRes.json();
+
+    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('counted-project', 'Counted Project', created.organization.id);
+    db.prepare('INSERT INTO project_members (api_key, user_id, access_level, invited_by) VALUES (?, ?, ?, ?)').run('counted-project', userB.id, 'member', userA.id);
+
+    const membersRes = await fetch(`${baseUrl}/orgs/${created.organization.id}/members`, {
+      headers: { Authorization: `Bearer ${makeToken(userA)}` },
+    });
+    const membersData = await membersRes.json();
+
+    assert.strictEqual(membersRes.status, 200);
+    assert.strictEqual(membersData.members[0].projectCount, 1);
+  });
 });

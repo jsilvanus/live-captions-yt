@@ -80,6 +80,47 @@ export function createAdminRouter(db, jwtSecret) {
   router.use(createAdminMiddleware(db, jwtSecret));
 
   // -----------------------------------------------------------------------
+  // Organizations (site admin)
+  // -----------------------------------------------------------------------
+
+  /**
+   * GET /admin/orgs?q=&limit=&offset=
+   * List all orgs for site administration.
+   */
+  router.get('/orgs', (req, res) => {
+    const q = (req.query.q || '').trim();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+    const conditions = [];
+    const params = [];
+    if (q) {
+      conditions.push('(name LIKE ? OR slug LIKE ?)');
+      params.push(`%${q}%`, `%${q}%`);
+    }
+
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    const rows = db.prepare(`
+      SELECT id, name, slug FROM organizations ${where}
+      ORDER BY created_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limit, offset);
+    const { count: total } = db.prepare(`SELECT COUNT(*) as count FROM organizations ${where}`).get(...params);
+
+    res.json({
+      orgs: rows.map(row => ({
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        memberCount: db.prepare('SELECT COUNT(*) as n FROM org_members WHERE org_id = ?').get(row.id).n,
+        projectCount: db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE org_id = ?').get(row.id).n,
+      })),
+      total,
+      limit,
+      offset,
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Users
   // -----------------------------------------------------------------------
 
@@ -94,31 +135,45 @@ export function createAdminRouter(db, jwtSecret) {
     const from = (req.query.from || '').trim();    // ISO date e.g. 2024-01-01
     const to   = (req.query.to   || '').trim();    // ISO date e.g. 2024-12-31
     const active = req.query.active;               // '1'|'0'|undefined
+    const orgId = Number(req.query.orgId);
 
     const conditions = [];
     const params = [];
 
     if (q) {
-      conditions.push('(email LIKE ? OR name LIKE ? OR CAST(id AS TEXT) = ?)');
+      conditions.push('(u.email LIKE ? OR u.name LIKE ? OR CAST(u.id AS TEXT) = ?)');
       const like = `%${q}%`;
       params.push(like, like, q);
     }
-    if (from) { conditions.push('created_at >= ?'); params.push(from); }
-    if (to)   { conditions.push('created_at <= ?'); params.push(to + 'T23:59:59'); }
-    if (active === '1') { conditions.push('active = 1'); }
-    else if (active === '0') { conditions.push('active = 0'); }
+    if (from) { conditions.push('u.created_at >= ?'); params.push(from); }
+    if (to)   { conditions.push('u.created_at <= ?'); params.push(to + 'T23:59:59'); }
+    if (active === '1') { conditions.push('u.active = 1'); }
+    else if (active === '0') { conditions.push('u.active = 0'); }
+    if (Number.isFinite(orgId)) {
+      conditions.push('EXISTS (SELECT 1 FROM org_members om WHERE om.user_id = u.id AND om.org_id = ?)');
+      params.push(orgId);
+    }
 
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = db.prepare(
-      `SELECT id, email, name, created_at, active FROM users ${where} ORDER BY id LIMIT ? OFFSET ?`
+      `SELECT u.id, u.email, u.name, u.created_at, u.active,
+              (SELECT o.name FROM org_members om JOIN organizations o ON o.id = om.org_id WHERE om.user_id = u.id ORDER BY om.joined_at ASC LIMIT 1) AS org_name
+       FROM users u ${where} ORDER BY u.id LIMIT ? OFFSET ?`
     ).all(...params, limit, offset);
     const { count: total } = db.prepare(
-      `SELECT COUNT(*) as count FROM users ${where}`
+      `SELECT COUNT(*) as count FROM users u ${where}`
     ).get(...params);
 
     res.json({
-      users: rows.map(r => ({ ...r, active: r.active === 1 })),
+      users: rows.map(r => ({
+        id: r.id,
+        email: r.email,
+        name: r.name,
+        createdAt: r.created_at,
+        active: r.active === 1,
+        orgName: r.org_name || null,
+      })),
       total,
       limit,
       offset,
@@ -364,7 +419,7 @@ export function createAdminRouter(db, jwtSecret) {
     const orgRow = db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId);
     if (!orgRow) return res.status(404).json({ error: 'Organization not found' });
     const overrides = getOrgFeatureOverrides(db, orgId);
-    return res.json({ overrides: overrides.map(r => ({ code: r.feature_code, mode: r.mode, setBy: r.set_by, setAt: r.set_at })) });
+    return res.json({ overrides: overrides.map(r => ({ code: r.feature_code, mode: r.mode, binaryOnly: BINARY_ONLY_FEATURES.has(r.feature_code), setBy: r.set_by, setAt: r.set_at })) });
   });
 
   router.put('/orgs/:id/feature-overrides/:code', featurePolicyRateLimit, (req, res) => {
@@ -408,6 +463,8 @@ export function createAdminRouter(db, jwtSecret) {
     const from   = (req.query.from || '').trim();
     const to     = (req.query.to   || '').trim();
     const status = req.query.status; // 'active'|'revoked'|undefined
+    const orgIdInput = (req.query.orgId || '').toString().trim();
+    const orgId = orgIdInput ? Number(orgIdInput) : null;
 
     let rows;
     let total;
@@ -431,6 +488,10 @@ export function createAdminRouter(db, jwtSecret) {
     if (to)              { extraConditions.push('k.created_at <= ?'); extraParams.push(to + 'T23:59:59'); }
     if (status === 'active')  { extraConditions.push('k.active = 1'); }
     if (status === 'revoked') { extraConditions.push('k.active = 0'); }
+    if (orgId != null && Number.isFinite(orgId)) {
+      extraConditions.push('k.org_id = ?');
+      extraParams.push(orgId);
+    }
 
     if (userFilters.length > 0) {
       // Find user IDs matching the email filters
@@ -455,39 +516,39 @@ export function createAdminRouter(db, jwtSecret) {
       if (textQuery) {
         const like = `%${textQuery}%`;
         rows = db.prepare(
-          `SELECT k.*, u.email as user_email, u.name as user_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE ${baseWhere} AND (k.owner LIKE ? OR k.key LIKE ?)${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
+          `SELECT k.*, u.email as user_email, u.name as user_name, o.name as org_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE ${baseWhere} AND (k.owner LIKE ? OR k.key LIKE ?)${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
         ).all(...baseParams, like, like, ...extraParams, limit, offset);
         total = db.prepare(
-          `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE ${baseWhere} AND (k.owner LIKE ? OR k.key LIKE ?)${extraClause}`
+          `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE ${baseWhere} AND (k.owner LIKE ? OR k.key LIKE ?)${extraClause}`
         ).get(...baseParams, like, like, ...extraParams).count;
       } else {
         rows = db.prepare(
-          `SELECT k.*, u.email as user_email, u.name as user_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE ${baseWhere}${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
+          `SELECT k.*, u.email as user_email, u.name as user_name, o.name as org_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE ${baseWhere}${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
         ).all(...baseParams, ...extraParams, limit, offset);
         total = db.prepare(
-          `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE ${baseWhere}${extraClause}`
+          `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE ${baseWhere}${extraClause}`
         ).get(...baseParams, ...extraParams).count;
       }
     } else if (textQuery) {
       const like = `%${textQuery}%`;
       const extraClause = extraConditions.length > 0 ? ' AND ' + extraConditions.join(' AND ') : '';
       rows = db.prepare(
-        `SELECT k.*, u.email as user_email, u.name as user_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE (k.owner LIKE ? OR k.key LIKE ? OR u.email LIKE ?)${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
+        `SELECT k.*, u.email as user_email, u.name as user_name, o.name as org_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE (k.owner LIKE ? OR k.key LIKE ? OR u.email LIKE ?)${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
       ).all(like, like, like, ...extraParams, limit, offset);
       total = db.prepare(
-        `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE (k.owner LIKE ? OR k.key LIKE ? OR u.email LIKE ?)${extraClause}`
+        `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE (k.owner LIKE ? OR k.key LIKE ? OR u.email LIKE ?)${extraClause}`
       ).get(like, like, like, ...extraParams).count;
     } else if (extraConditions.length > 0) {
       const extraClause = extraConditions.join(' AND ');
       rows = db.prepare(
-        `SELECT k.*, u.email as user_email, u.name as user_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE ${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
+        `SELECT k.*, u.email as user_email, u.name as user_name, o.name as org_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE ${extraClause} ORDER BY k.id LIMIT ? OFFSET ?`
       ).all(...extraParams, limit, offset);
       total = db.prepare(
-        `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id WHERE ${extraClause}`
+        `SELECT COUNT(*) as count FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id WHERE ${extraClause}`
       ).get(...extraParams).count;
     } else {
       rows = db.prepare(
-        'SELECT k.*, u.email as user_email, u.name as user_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id ORDER BY k.id LIMIT ? OFFSET ?'
+        'SELECT k.*, u.email as user_email, u.name as user_name, o.name as org_name FROM api_keys k LEFT JOIN users u ON k.user_id = u.id LEFT JOIN organizations o ON o.id = k.org_id ORDER BY k.id LIMIT ? OFFSET ?'
       ).all(limit, offset);
       total = db.prepare('SELECT COUNT(*) as count FROM api_keys').get().count;
     }
@@ -498,6 +559,7 @@ export function createAdminRouter(db, jwtSecret) {
         userId: r.user_id || null,
         userEmail: r.user_email || null,
         userName: r.user_name || null,
+        orgName: r.org_name || null,
       })),
       total,
       limit,
