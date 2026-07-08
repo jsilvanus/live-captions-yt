@@ -8,13 +8,13 @@
 
 ## Background
 
-`DskBus` (`packages/lcyt-backend/src/dsk-bus.js`) is one of at least **four** independently-implemented, near-identical per-API-key SSE subscriber registries:
+`DskBus` (`packages/lcyt-backend/src/dsk-bus.js`) is one of at least **four** independently-implemented, near-identical per-project SSE subscriber registries:
 
 | Bus | File | Keyed by | Events |
 |---|---|---|---|
-| `DskBus` | `lcyt-backend/src/dsk-bus.js` | `apiKey` | `graphics`, `text`, `bindings`, `templates`, `layer_update` |
-| `VariablesBus` | `lcyt-connectors/src/variables-bus.js` | `apiKey` | `variable_updated` |
-| `RolesBus` | `lcyt-agent/src/roles-bus.js` | `` `${apiKey}:${roleCode}` `` | `tool_call_started`, `tool_call_result`, `reply`, `staged_action`, `assistant_suggestion`, `assistant_action`, `tracker_update`, `describer_update` |
+| `DskBus` | `lcyt-backend/src/dsk-bus.js` | `projectId` | `graphics`, `text`, `bindings`, `templates`, `layer_update` |
+| `VariablesBus` | `lcyt-connectors/src/variables-bus.js` | `projectId` | `variable_updated` |
+| `RolesBus` | `lcyt-agent/src/roles-bus.js` | `` `${projectId}:${roleCode}` `` | `tool_call_started`, `tool_call_result`, `reply`, `staged_action`, `assistant_suggestion`, `assistant_action`, `tracker_update`, `describer_update` |
 | `session.emitter` (per-session `EventEmitter`) | `lcyt-backend/src/store.js` | session | `caption_result`, `caption_error`, `mic_state`, `session_closed`, generic `event` (cue/plugin forwarding) |
 
 Plus bespoke SSE routes for STT (`/stt/events`) and cues (`/cues/events`), and `BridgeManager` (`lcyt-production/src/bridge-manager.js`) which runs its own SSE connection-handling for a structurally different consumer (installed hardware agents).
@@ -33,10 +33,11 @@ Plus bespoke SSE routes for STT (`/stt/events`) and cues (`/cues/events`), and `
 - One unified external SSE endpoint with topic filtering, **additive** to the existing bespoke endpoints (no breaking change to any current client).
 - Let Production Assistant / vision roles / cue engine subscribe to each other's events in-process — closes the cross-plugin blindness gap.
 - Resolve the `CONSIDER.md`-flagged duplication as a side effect of building this properly, rather than a standalone mechanical refactor.
+- Keep the existing session-based live-caption routes (`/live`, `/captions`, `/sync`, `/events`, `/stats`, `/file`, `/mic`) as session-bound, while moving project-scoped config/event subscriptions onto the new project-access model.
 
 ## Non-Goals
 
-- **Auth mechanism.** Depends on `plan_authentication_refactor.md`'s three tiers (project access, scoped `mcp_tokens`, bridge tokens) plus its explicit public-route allow-list. This plan assumes that lands first or in parallel — it does not re-litigate auth.
+- **Auth mechanism.** Depends on `plan_authentication_refactor.md`'s auth-policy model (project access, scoped `mcp_tokens`, bridge tokens, device tokens) plus its explicit public-route allow-list. The event bus should consume the common identity shape from that plan: a user context with `sub`/`userId`, `siteRole`, `projectRole`, and optional scopes. This plan assumes that lands first or in parallel — it does not re-litigate auth.
 - **Delivery guarantees beyond best-effort broadcast.** Already decided: no Last-Event-ID/replay buffer, no reconnect resumption. Gaps of 10–20 seconds are acceptable for every current consumer.
 - **A durable, replayable event log.** The persisted log below is an audit trail, explicitly *not* a replay mechanism for reconnecting subscribers.
 - **Webhook-style outbound push** to third-party URLs — not requested, not designed here.
@@ -52,28 +53,28 @@ New module (e.g. `packages/lcyt-backend/src/event-bus.js`):
 ```js
 export class EventBus {
   constructor() {
-    this._subscribers = new Map();   // apiKey -> Set<{ res, topics }>
-    this._listeners = new Map();     // apiKey -> Set<{ topics, handler }>  (in-process, no res)
+    this._subscribers = new Map();   // projectId -> Set<{ res, topics }>
+    this._listeners = new Map();     // projectId -> Set<{ topics, handler }>  (in-process, no res)
   }
 
-  publish(apiKey, topic, data) {
-    const envelope = { topic, apiKey, ts: Date.now(), data };
-    for (const sub of this._subscribers.get(apiKey) ?? []) {
+  publish(projectId, topic, data) {
+    const envelope = { topic, projectId, ts: Date.now(), data };
+    for (const sub of this._subscribers.get(projectId) ?? []) {
       if (!topicMatches(sub.topics, topic)) continue;
       try { sub.res.write(`event: ${topic}\ndata: ${JSON.stringify(envelope)}\n\n`); }
-      catch { this._subscribers.get(apiKey)?.delete(sub); }
+      catch { this._subscribers.get(projectId)?.delete(sub); }
     }
-    for (const l of this._listeners.get(apiKey) ?? []) {
+    for (const l of this._listeners.get(projectId) ?? []) {
       if (topicMatches(l.topics, topic)) l.handler(envelope);
     }
   }
 
-  subscribeSse(apiKey, topics, res) { /* add to _subscribers, same prune-on-write-failure pattern as today's buses */ }
-  subscribe(apiKey, topics, handler) { /* in-process listener, no HTTP */ }
+  subscribeSse(projectId, topics, res) { /* add to _subscribers, same prune-on-write-failure pattern as today's buses */ }
+  subscribe(projectId, topics, handler) { /* in-process listener, no HTTP */ }
 }
 ```
 
-This is the generalized version of the `SseSubscriberBus` extraction `CONSIDER.md` already deferred — same connection bookkeeping (`Map<apiKey, Set<...>>`, write-with-prune-on-failure) as today's four buses, but topic-aware and usable both over SSE and in-process.
+This is the generalized version of the `SseSubscriberBus` extraction `CONSIDER.md` already deferred — same connection bookkeeping (`Map<projectId, Set<...>>`, write-with-prune-on-failure) as today's four buses, but topic-aware and usable both over SSE and in-process.
 
 ### Topic taxonomy
 
@@ -93,7 +94,7 @@ Namespacing convention: `<domain>.<event>`. Mapping from today's ad hoc event na
 
 ### External unified endpoint
 
-`GET /events/stream?topics=dsk.*,cue.fired` — one SSE connection, topic-filtered (wildcard suffix matching, since the topic list will keep growing), authenticated per `plan_authentication_refactor.md`.
+`GET /events/stream?topics=dsk.*,cue.fired` — one SSE connection, topic-filtered (wildcard suffix matching, since the topic list will keep growing), authenticated per `plan_authentication_refactor.md` using the new project-access model (project membership + scoped tokens, not the old per-api-key assumption).
 
 **Additive, not a replacement.** Every existing bespoke endpoint (`/dsk/:apikey/events`, `/variables/events`, `/roles/:roleCode/events`, `/cues/events`, `/stt/events`) keeps its current URL and exact event-name wire shape — each becomes a thin wrapper that internally calls `eventBus.subscribeSse()` filtered to its own topic(s) and re-emits under its historical event name. Zero client-visible change for any existing consumer (browser tabs, OBS overlays, existing dashboard code).
 
@@ -101,8 +102,8 @@ Namespacing convention: `<domain>.<event>`. Mapping from today's ad hoc event na
 
 ```js
 // inside lcyt-agent's Production Assistant wiring
-eventBus.subscribe(apiKey, ['cue.fired'], (envelope) => {
-  assistantManager.notePluginEvent(apiKey, envelope);
+eventBus.subscribe(projectId, ['cue.fired'], (envelope) => {
+  assistantManager.notePluginEvent(projectId, envelope);
 });
 ```
 
@@ -112,7 +113,7 @@ No HTTP round-trip, no polling — this is what closes the gap where Production 
 
 Per the explicit decision that replay is unnecessary and 10–20s gaps are fine for live subscribers:
 
-- New table, e.g. `bus_events (id INTEGER PRIMARY KEY, api_key TEXT, topic TEXT, ts INTEGER, payload_json TEXT)`, insert-only.
+- New table, e.g. `bus_events (id INTEGER PRIMARY KEY, project_id TEXT, topic TEXT, ts INTEGER, payload_json TEXT)`, insert-only.
 - **Not wired to reconnect/replay in any way** — purely a queryable history for humans/debugging, decoupled from the live SSE path.
 - **Curated allowlist, not every topic.** `better-sqlite3` is synchronous/single-writer; logging high-frequency topics (`caption.sent`, `session.mic_state`, `stt.transcript`) would put a synchronous DB write on the hot path for no real benefit (losing those costs nothing given the accepted gap tolerance). Log only topics with real audit/debug value: `assistant.suggestion`/`assistant.action`, `cue.fired`, `dsk.templates_changed`/`dsk.graphics_changed`, target/translation config changes, `bridge.command_result`.
 - **Kept separate from `AgentEngine`'s `agent_context`.** `agent_context` is prompt-shaping (max 50 entries, curated for what the model sees); this log is a human-facing/debug audit trail with different retention and volume needs. Do not couple them.
