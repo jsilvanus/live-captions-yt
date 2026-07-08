@@ -150,13 +150,17 @@ describe('/admin/users', () => {
   let testUser;
 
   beforeEach(() => {
-    // Clean in FK-safe order
+    db.exec('PRAGMA foreign_keys = OFF');
     try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
     try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
     try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
     try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
-    db.prepare('DELETE FROM api_keys').run();
-    db.prepare('DELETE FROM users').run();
+    try { db.prepare('DELETE FROM org_feature_overrides').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM org_members').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM organizations').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM api_keys').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM users').run(); } catch { /* */ }
+    db.exec('PRAGMA foreign_keys = ON');
   });
 
   it('GET /admin/users returns empty list', async () => {
@@ -202,6 +206,30 @@ describe('/admin/users', () => {
     assert.equal(body.total, 5);
     assert.equal(body.limit, 2);
     assert.equal(body.offset, 0);
+  });
+
+  it('GET /admin/orgs lists all orgs with counts', async () => {
+    const owner = seedUser('admin-org-owner@test.com', 'Admin Org Owner');
+    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Admin Org', 'admin-org', owner.id);
+    db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, owner.id, 'owner', owner.id);
+    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('org-project-key', 'Org Project', org.lastInsertRowid);
+
+    const { status, body } = await adminGet('/admin/orgs');
+    assert.equal(status, 200);
+    assert.equal(body.orgs.length, 1);
+    assert.equal(body.orgs[0].memberCount, 1);
+    assert.equal(body.orgs[0].projectCount, 1);
+  });
+
+  it('GET /admin/users?orgId= filters users by org membership and includes orgName', async () => {
+    const user = seedUser('orguser@test.com', 'Org User');
+    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Org Team', 'org-team', user.id);
+    db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, user.id, 'editor', user.id);
+
+    const { body } = await adminGet(`/admin/users?orgId=${org.lastInsertRowid}`);
+    assert.equal(body.users.length, 1);
+    assert.equal(body.users[0].email, 'orguser@test.com');
+    assert.equal(body.users[0].orgName, 'Org Team');
   });
 
   it('GET /admin/users/:id returns user with projects', async () => {
@@ -305,8 +333,16 @@ describe('/admin/users', () => {
 
 describe('/admin/projects', () => {
   beforeEach(() => {
-    db.prepare('DELETE FROM api_keys').run();
-    db.prepare('DELETE FROM users').run();
+    db.exec('PRAGMA foreign_keys = OFF');
+    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM org_feature_overrides').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM org_members').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM organizations').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM api_keys').run(); } catch { /* */ }
+    try { db.prepare('DELETE FROM users').run(); } catch { /* */ }
+    db.exec('PRAGMA foreign_keys = ON');
   });
 
   it('GET /admin/projects returns empty list', async () => {
@@ -345,6 +381,17 @@ describe('/admin/projects', () => {
     const { body } = await adminGet('/admin/projects?q=user:alice@org.com');
     assert.equal(body.projects.length, 1);
     assert.equal(body.projects[0].owner, 'AliceProject');
+  });
+
+  it('GET /admin/projects?orgId= filters by org and includes orgName', async () => {
+    const user = seedUser('projorg@test.com', 'Proj Org');
+    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Project Org', 'project-org', user.id);
+    createKey(db, { key: 'org-project-key', owner: 'Org Project', user_id: user.id, org_id: org.lastInsertRowid });
+
+    const { body } = await adminGet(`/admin/projects?orgId=${org.lastInsertRowid}`);
+    assert.equal(body.projects.length, 1);
+    assert.equal(body.projects[0].owner, 'Org Project');
+    assert.equal(body.projects[0].orgName, 'Project Org');
   });
 
   it('GET /admin/projects?q= with multiple user: filters', async () => {
