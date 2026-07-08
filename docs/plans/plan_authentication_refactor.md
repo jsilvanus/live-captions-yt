@@ -62,22 +62,39 @@ Define a small policy registry for route families:
 - `external-token` — scoped tokens for external subscribers (future event-bus consumers)
 - `device-token` — short-lived JWTs issued after device login for project-bound resources such as cameras, microphones, and mixers
 
+For MCP access, the token should be a first-class delegated credential rather than an anonymous key. Every MCP token should be bound to:
+
+- a specific user (`userId`/`sub`)
+- a specific project (`projectId`)
+- a declared scope set (for example `dsk:read`, `cue:write`, `events:stream`)
+
+The token should be revocable, and its effective permissions should be derived from the user’s membership and role in that project plus the token’s own scope list.
+
+The refactor should also make the identity model explicit. The plan should use three credential families:
+
+1. **Identity JWT / identity cookie** — long-lived enough for the browser session, carrying the user’s stable identity and site-level role. Suggested claims: `sub`/`userId`, `siteRole`, `exp`.
+2. **Project-scoped access JWT / cookie** — short-lived, minted after the user selects a project, carrying the user identity plus project-specific role and context. Suggested claims: `sub`/`userId`, `siteRole`, `projectRole`, `projectId`, `exp`.
+3. **Device JWT** — short-lived, minted after device login, carrying project context and device-specific role. Suggested claims: `projectId`, `deviceRole`, `exp`; optionally also `sub`/`userId` if the device is linked to a specific user or owner.
+
+This is the shared identity shape behind the user cookie, the project-scoped access token, and any user-issued service tokens. The site-role and project-role claims should be checked independently: site role answers “can this user act at the platform level?”, while project role answers “can this user act inside this project?”
+
 This makes intent explicit and avoids “auth by omission.”
 
 ### Tier 1 — Project access (dashboard / any logged-in project member)
 
 Introduce a new middleware, additive to (not replacing) the existing Session JWT check. The preferred browser-oriented model is:
 
-- an HttpOnly identity cookie (e.g. `lcyt_identity`) for the user login/session, with a 3-hour lifetime
-- a short-lived, project-scoped access cookie (also HttpOnly, e.g. `lcyt_project`) for browser clients, minted server-side after the user selects a project
+- an HttpOnly identity cookie (e.g. `lcyt_identity`) for the user login/session, with a 3-hour lifetime, carrying the user’s identity and site-level role
+- a short-lived, project-scoped access cookie (also HttpOnly, e.g. `lcyt_project`) for browser clients, minted server-side after the user selects a project, carrying the user identity plus project role and project context
 - for non-browser clients, the same project-scoped claims can be issued as a bearer token instead of a cookie
-- the project-scoped credential carries both user identity and project context (for example `userId`, `projectId`, `role`, `scopes`, `exp`)
+- the project-scoped credential carries both user identity and project context (for example `userId`, `siteRole`, `projectRole`, `projectId`, `scopes`, `exp`)
+- user-issued service tokens and browser sessions should use the same claim vocabulary so authorization code can be shared across the stack
 
 This keeps the browser session simple while ensuring project-scoped requests are explicitly bound to one project and one user.
 
 If a user has the necessary project rights, they should also be able to create or manage ingestion endpoints in MediaMTX for that project; that permission should be resolved from the same project-membership and role model rather than from a legacy API-key credential.
 
-The same pattern also applies to the device-login flow: after a device completes the two-pin login step, the backend issues a short-lived device JWT scoped to the project and the specific resource role (for example camera, mic, or mixer). That token is distinct from the user identity cookie and from the project-scoped web session token.
+The same pattern also applies to the device-login flow: after a device completes the two-pin login step, the backend issues a short-lived device JWT scoped to the project and the specific resource role (for example camera, mic, or mixer). That token is distinct from the user identity cookie and from the project-scoped web session token, but it should still carry the same core identity claims (`userId`/`sub`, `siteRole`, `projectRole`) where relevant, with the device-specific role or resource claim layered on top.
 
 ```js
 // middleware/project-access.js
@@ -197,9 +214,11 @@ This is a **superset** of today's behavior: anything that works with a Session J
 
 ### Tier 2 — External scoped tokens
 
-Extend `mcp_tokens` rather than invent a fourth token type. It already provides the right shape: mintable, labeled, individually revocable, hash-stored, and resolved to one project context.
+Extend `mcp_tokens` rather than invent a fourth token type. It already provides the right shape: mintable, labeled, individually revocable, hash-stored, and resolved to one project context. Each token must be bound to a user, a project, and a scope set.
 
 ```sql
+ALTER TABLE mcp_tokens ADD COLUMN user_id TEXT;
+ALTER TABLE mcp_tokens ADD COLUMN project_id TEXT;
 ALTER TABLE mcp_tokens ADD COLUMN scopes TEXT; -- nullable JSON array, e.g. ["cue.*", "dsk.graphics_changed"]
 ```
 
@@ -213,7 +232,7 @@ Proposed scope semantics:
   - `*:read` (wildcard resource)
 - `tokenAllowsTopic(scopes, topic)` should be implemented in `src/db/mcp-tokens.js` and should clearly treat missing/empty scopes as full access.
 
-`verifyMcpToken()` should return `{ projectId, label, scopes }` (or similar), and `POST /mcp-tokens` / `GET /mcp-tokens` should accept/surface the optional `scopes` field.
+`verifyMcpToken()` should return `{ userId, projectId, label, scopes }` (or similar), and `POST /mcp-tokens` / `GET /mcp-tokens` should accept/surface the optional `userId`, `projectId`, and `scopes` fields.
 
 ### Tier 3 — Bridge instance tokens
 
