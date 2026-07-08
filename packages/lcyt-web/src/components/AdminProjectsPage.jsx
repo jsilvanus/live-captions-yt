@@ -1,17 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
-import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { adminFetch } from '../lib/admin.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
 import { AdminTabShell } from './AdminTabShell.jsx';
+import { ProjectThumbnail } from './ProjectsPage.jsx';
 
 // ── Admin Projects Page ─────────────────────────────────────────────────────
 
 export function AdminProjectsPage() {
-  const session = useSessionContext();
-  const backendUrl = session.backendUrl;
-  const { user } = useUserAuth();
+  const { user, backendUrl } = useUserAuth();
   const [, navigate] = useLocation();
 
   return (
@@ -23,11 +21,6 @@ export function AdminProjectsPage() {
   );
 }
 
-function maskKey(key) {
-  if (!key || key.length < 12) return key;
-  return key.slice(0, 12) + '••••••••••••••••';
-}
-
 function AdminProjectsContent({ backendUrl, navigate }) {
   const [projects, setProjects] = useState([]);
   const [total, setTotal] = useState(0);
@@ -36,12 +29,18 @@ function AdminProjectsContent({ backendUrl, navigate }) {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(new Set());
   const [batchAction, setBatchAction] = useState('');
+  const [teams, setTeams] = useState([]);
+  const [teamFilter, setTeamFilter] = useState('');
   // Advanced filters
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
   const limit = 50;
+
+  useEffect(() => {
+    adminFetch(backendUrl, '/admin/orgs').then(res => res.ok ? res.json() : { orgs: [] }).then(data => setTeams(data.orgs || [])).catch(() => setTeams([]));
+  }, [backendUrl]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,6 +50,7 @@ function AdminProjectsContent({ backendUrl, navigate }) {
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
       if (statusFilter) params.set('status', statusFilter);
+      if (teamFilter) params.set('orgId', teamFilter);
       const res = await adminFetch(backendUrl, `/admin/projects?${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -60,7 +60,7 @@ function AdminProjectsContent({ backendUrl, navigate }) {
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, search, offset, fromDate, toDate, statusFilter]);
+  }, [backendUrl, search, offset, fromDate, toDate, statusFilter, teamFilter]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -134,31 +134,27 @@ function AdminProjectsContent({ backendUrl, navigate }) {
   const currentPage = Math.floor(offset / limit) + 1;
 
   return (
-    <div style={{ padding: 24, maxWidth: 1100 }}>
-      <h2 style={{ marginBottom: 16 }}>📁 Projects</h2>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: '10px 28px', borderBottom: '1px solid var(--color-border)', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text"
           value={search}
           onChange={e => { setSearch(e.target.value); setOffset(0); }}
-          placeholder="Search by name, key, email or user:email…"
-          style={{ flex: 1, minWidth: 250, padding: '8px 12px', borderRadius: 6, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}
+          placeholder="Search projects… (or user:email)"
+          style={{ flex: '1 1 200px', maxWidth: 260, padding: '0.38rem 0.75rem', borderRadius: 7, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13 }}
         />
+        <select value={teamFilter} onChange={e => { setTeamFilter(e.target.value); setOffset(0); }}
+          style={{ padding: '0.38rem 0.65rem', borderRadius: 7, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)', fontSize: 13 }}>
+          <option value="">All teams</option>
+          {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
         <button className="btn btn--ghost btn--sm" onClick={load} disabled={loading}>
-          {loading ? '⏳' : '🔄'} Refresh
+          {loading ? '…' : 'Refresh'}
         </button>
       </div>
 
-      <p style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 8 }}>
-        Tip: use <code>user:alice@example.com</code> to find projects by user email. Multiple <code>user:</code> filters combine results.
-      </p>
-
-      {/* Advanced filters */}
-      <details style={{ marginBottom: 12 }}>
-        <summary style={{ fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer', userSelect: 'none' }}>
-          🔍 Advanced filters
-        </summary>
+      <details style={{ padding: '8px 28px 0' }}>
+        <summary style={{ fontSize: 12, color: 'var(--color-text-muted)', cursor: 'pointer', userSelect: 'none' }}>Advanced filters</summary>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, padding: '8px 12px', background: 'var(--color-surface)', borderRadius: 6, border: '1px solid var(--color-border)' }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
             Created from
@@ -181,96 +177,72 @@ function AdminProjectsContent({ backendUrl, navigate }) {
           </label>
           {(fromDate || toDate || statusFilter) && (
             <button className="btn btn--ghost btn--sm" style={{ alignSelf: 'flex-end' }} onClick={() => { setFromDate(''); setToDate(''); setStatusFilter(''); setOffset(0); }}>
-              ✕ Clear filters
+              Clear filters
             </button>
           )}
         </div>
       </details>
 
-      {/* Export / Import toolbar */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
-        <button className="btn btn--ghost btn--sm" onClick={handleExport}>⬇ Export JSON</button>
+      <div style={{ padding: '8px 28px 0', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn--ghost btn--sm" onClick={handleExport}>Export JSON</button>
         <label className="btn btn--ghost btn--sm" style={{ cursor: 'pointer' }}>
-          ⬆ Import JSON
+          Import JSON
           <input type="file" accept=".json" style={{ display: 'none' }} onChange={handleImportFile} />
         </label>
+        {selected.size > 0 && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginLeft: 'auto' }}>
+            <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{selected.size} selected</span>
+            <select value={batchAction} onChange={e => setBatchAction(e.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+              <option value="">Batch action…</option>
+              <option value="activate">Activate</option>
+              <option value="revoke">Revoke</option>
+              <option value="delete">Delete</option>
+            </select>
+            <button className="btn btn--ghost btn--sm" onClick={handleBatch} disabled={!batchAction}>Apply</button>
+          </div>
+        )}
       </div>
 
-      {selected.size > 0 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', padding: '8px 12px', background: 'var(--color-surface)', borderRadius: 6, border: '1px solid var(--color-border)' }}>
-          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>{selected.size} selected</span>
-          <select value={batchAction} onChange={e => setBatchAction(e.target.value)} style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
-            <option value="">Batch action…</option>
-            <option value="activate">Activate</option>
-            <option value="revoke">Revoke</option>
-            <option value="delete">Delete</option>
-          </select>
-          <button className="btn btn--ghost btn--sm" onClick={handleBatch} disabled={!batchAction}>
-            Apply
-          </button>
-        </div>
-      )}
-
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-        <thead>
-          <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
-            <th style={{ padding: '8px 4px', textAlign: 'left' }}>
-              <input type="checkbox" checked={selected.size === projects.length && projects.length > 0} onChange={toggleAll} />
-            </th>
-            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Name</th>
-            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Key</th>
-            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Owner</th>
-            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Status</th>
-            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Expires</th>
-            <th style={{ padding: '8px 4px', textAlign: 'right' }}></th>
-          </tr>
-        </thead>
-        <tbody>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 28px' }}>
+        <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 14 }}>All Projects</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--color-text-muted)' }}>
+            <input type="checkbox" checked={selected.size === projects.length && projects.length > 0} onChange={toggleAll} />
+            Select all
+          </label>
           {projects.map(p => (
-            <tr key={p.key} style={{ borderBottom: '1px solid var(--color-border)' }}>
-              <td style={{ padding: '6px 4px' }}>
-                <input type="checkbox" checked={selected.has(p.key)} onChange={() => toggleSelect(p.key)} />
-              </td>
-              <td style={{ padding: '6px 4px', fontWeight: 500 }}>{p.owner}</td>
-              <td style={{ padding: '6px 4px', fontFamily: 'monospace', fontSize: 11 }}>{maskKey(p.key)}</td>
-              <td style={{ padding: '6px 4px' }}>
-                {p.userEmail ? (
-                  <button className="btn btn--ghost" style={{ fontSize: 12, padding: '2px 4px' }} onClick={() => navigate(`/admin/users/${p.userId}`)}>
-                    {p.userEmail}
-                  </button>
-                ) : (
-                  <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-                )}
-              </td>
-              <td style={{ padding: '6px 4px' }}>
-                <span style={{ padding: '2px 6px', borderRadius: 8, fontSize: 11, background: p.active ? 'var(--color-success-bg, #e6f9e6)' : 'var(--color-error-bg, #fde8e8)', color: p.active ? 'var(--color-success, #2a7)' : 'var(--color-error, #e55)' }}>
-                  {p.active ? 'Active' : 'Revoked'}
-                </span>
-              </td>
-              <td style={{ padding: '6px 4px', fontSize: 12, color: 'var(--color-text-muted)' }}>{p.expires || '—'}</td>
-              <td style={{ padding: '6px 4px', textAlign: 'right' }}>
-                <button className="btn btn--ghost btn--sm" onClick={() => navigate(`/admin/projects/${p.key}`)}>
-                  Manage →
-                </button>
-              </td>
-            </tr>
+            <div key={p.key} style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '11px 16px', background: 'var(--color-surface)', border: '1.5px solid var(--color-border)', borderRadius: 10 }}>
+              <input type="checkbox" checked={selected.has(p.key)} onChange={() => toggleSelect(p.key)} />
+              <ProjectThumbnail />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{p.owner}</div>
+                <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>
+                  {p.userEmail ? (
+                    <button className="btn btn--ghost" style={{ fontSize: 11, padding: '0', color: 'var(--color-text-muted)' }} onClick={() => navigate(`/admin/users/${p.userId}`)}>
+                      {p.userEmail}
+                    </button>
+                  ) : '—'}
+                  {p.orgName && <> · {p.orgName}</>}
+                </div>
+              </div>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: p.active ? '#15803d' : 'var(--color-border)', flexShrink: 0 }} title={p.active ? 'Active' : 'Revoked'} />
+              {p.expires && <span style={{ fontSize: 11, color: 'var(--color-text-muted)', whiteSpace: 'nowrap' }}>Expires {p.expires}</span>}
+              <button className="btn btn--ghost btn--sm" onClick={() => navigate(`/admin/projects/${p.key}`)}>Manage →</button>
+            </div>
           ))}
           {projects.length === 0 && !loading && (
-            <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-muted)' }}>No projects found</td></tr>
+            <div style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-muted)', fontSize: 13 }}>No projects found</div>
           )}
-        </tbody>
-      </table>
-
-      {pageCount > 1 && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'center', alignItems: 'center' }}>
-          <button className="btn btn--ghost btn--sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>← Prev</button>
-          <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Page {currentPage} of {pageCount}</span>
-          <button className="btn btn--ghost btn--sm" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>Next →</button>
         </div>
-      )}
+
+        {pageCount > 1 && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'center', alignItems: 'center' }}>
+            <button className="btn btn--ghost btn--sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - limit))}>← Prev</button>
+            <span style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>Page {currentPage} of {pageCount}</span>
+            <button className="btn btn--ghost btn--sm" disabled={offset + limit >= total} onClick={() => setOffset(offset + limit)}>Next →</button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
-
-// ── Admin Projects Page ─────────────────────────────────────────────────────
-

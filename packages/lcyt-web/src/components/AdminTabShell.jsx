@@ -1,21 +1,21 @@
 import { useLocation } from 'wouter';
 
+// Matches the Claude Design mockup's Admin tab bar exactly (Site Features,
+// Teams, Projects, Users — in this order). Audit Log and AI Models have no
+// counterpart there; they keep their routes/components but are no longer
+// part of this visible tab bar (still reachable by direct URL — see
+// HIDDEN.md), same convention as every other page removed from sidebar nav.
 const TABS = [
-  { id: 'users',         label: 'Users',         path: '/admin/users' },
+  { id: 'site-features', label: 'Site Features', path: '/admin/site-features' },
+  { id: 'teams',         label: 'Teams',         path: '/admin/teams' },
   { id: 'projects',      label: 'Projects',      path: '/admin/projects' },
-  { id: 'audit-log',     label: 'Audit Log',     path: '/admin/audit-log' },
-  { id: 'ai-models',     label: 'AI Models',     path: '/admin/ai-models' },
-  { id: 'site-features', label: 'Site Features', path: '/admin/site-features', stub: true },
-  { id: 'teams',         label: 'Teams',         path: '/admin/teams',         stub: true },
+  { id: 'users',         label: 'Users',         path: '/admin/users' },
 ];
 
 /**
- * AdminTabShell — thin tab bar wrapping the existing admin pages
- * (Users/Projects/Audit Log) plus two new visible-but-stub tabs
- * (Site Features/Teams — no corresponding backend concept exists).
- *
- * Each Admin*Page component renders its own content as `children`, wrapped
- * in this shell so all five tabs are always visible and navigable.
+ * AdminTabShell — thin tab bar wrapping the Admin*Page components. Each
+ * Admin*Page renders its own content as `children`, wrapped in this shell so
+ * all four tabs are always visible and navigable.
  */
 export function AdminTabShell({ active, children }) {
   const [, navigate] = useLocation();
@@ -28,10 +28,8 @@ export function AdminTabShell({ active, children }) {
             key={tab.id}
             className={`settings-tab${active === tab.id ? ' settings-tab--active' : ''}`}
             onClick={() => navigate(tab.path)}
-            title={tab.stub ? 'Coming soon' : undefined}
           >
             {tab.label}
-            {tab.stub && <span className="admin-tab-shell__soon">soon</span>}
           </button>
         ))}
       </div>

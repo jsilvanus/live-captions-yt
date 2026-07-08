@@ -3,6 +3,7 @@ import { Link } from 'wouter';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
 import { applyTheme } from '../lib/settings.js';
+import { initialsFromName } from '../lib/avatar.js';
 
 // ─── Anonymous state ──────────────────────────────────────────────────────────
 
@@ -26,6 +27,83 @@ function AnonymousPanel() {
   );
 }
 
+// ─── Segmented pill control (General/Editor/Planner theme) ───────────────────
+
+function SegmentedControl({ options, value, onChange }) {
+  return (
+    <div style={{ display: 'inline-flex', background: 'var(--color-surface)', border: '1.5px solid var(--color-border)', borderRadius: 8, padding: 3, gap: 2 }}>
+      {options.map(o => {
+        const active = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            onClick={() => onChange(o.value)}
+            style={{
+              padding: '0.3rem 1rem', borderRadius: 5, fontSize: 13, fontWeight: active ? 600 : 400,
+              background: active ? 'var(--color-primary)' : 'transparent',
+              color: active ? '#fff' : 'var(--color-text-muted)',
+              border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+            }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Account info (display name + email) ──────────────────────────────────────
+
+function AccountInfoForm({ user, updateProfile }) {
+  const [name, setName] = useState(user.name || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    setError('');
+    setSuccess(false);
+    try {
+      await updateProfile(name.trim());
+      setSuccess(true);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="account-page__section">
+      <h3 className="account-page__section-title">Account</h3>
+      <div className="settings-field">
+        <label className="settings-field__label" htmlFor="acct-display-name">Display name</label>
+        <input
+          id="acct-display-name"
+          className="settings-field__input"
+          type="text"
+          value={name}
+          onChange={e => { setName(e.target.value); setSuccess(false); }}
+        />
+      </div>
+      <div className="settings-field">
+        <label className="settings-field__label" htmlFor="acct-email">Email address</label>
+        <input id="acct-email" className="settings-field__input" type="email" value={user.email} disabled />
+      </div>
+      {error && <div className="account-page__error">{error}</div>}
+      {success && <div className="account-page__success">Saved.</div>}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button className="btn btn--primary" type="button" onClick={handleSave} disabled={saving || name.trim() === (user.name || '')}>
+          {saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Change password form ─────────────────────────────────────────────────────
 
 function ChangePasswordForm({ changePassword }) {
@@ -35,6 +113,9 @@ function ChangePasswordForm({ changePassword }) {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const mismatch = next.length > 0 && confirm.length > 0 && next !== confirm;
+  const disabled = loading || !current || next.length < 8 || next !== confirm;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -105,10 +186,11 @@ function ChangePasswordForm({ changePassword }) {
           required
         />
       </div>
-      {error && <div className="account-page__error">{error}</div>}
+      {mismatch && <div className="account-page__error">Passwords do not match.</div>}
+      {error && !mismatch && <div className="account-page__error">{error}</div>}
       {success && <div className="account-page__success">Password changed successfully.</div>}
-      <button className="btn btn--primary" type="submit" disabled={loading}>
-        {loading ? 'Saving…' : 'Change password'}
+      <button className="btn btn--primary" type="submit" disabled={disabled}>
+        {loading ? 'Saving…' : 'Update password'}
       </button>
     </form>
   );
@@ -117,7 +199,7 @@ function ChangePasswordForm({ changePassword }) {
 // ─── Appearance (theme pickers) ───────────────────────────────────────────────
 
 const THEME_OPTIONS = [
-  { value: 'auto',  label: 'Auto (system)' },
+  { value: 'auto',  label: 'Auto' },
   { value: 'dark',  label: 'Dark' },
   { value: 'light', label: 'Light' },
 ];
@@ -150,67 +232,116 @@ function AppearancePanel() {
 
   return (
     <div className="account-page__section">
-      <h3 className="account-page__section-title">Appearance</h3>
-      <div className="settings-field">
-        <label className="settings-field__label" htmlFor="acct-theme-general">General theme</label>
-        <select
-          id="acct-theme-general"
-          className="settings-field__input"
-          value={general}
-          onChange={e => handleGeneralChange(e.target.value)}
-        >
-          {THEME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+      <h3 className="account-page__section-title">Settings</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>General theme</p>
+          <p className="account-page__section-desc" style={{ margin: '2px 0 0' }}>Overall application appearance</p>
+        </div>
+        <SegmentedControl options={THEME_OPTIONS} value={general} onChange={handleGeneralChange} />
       </div>
-      <div className="settings-field">
-        <label className="settings-field__label" htmlFor="acct-theme-editor">Graphics editor theme</label>
-        <select
-          id="acct-theme-editor"
-          className="settings-field__input"
-          value={editor}
-          onChange={e => handlePageThemeChange(KEYS.ui.editorTheme, e.target.value, setEditor)}
-        >
-          {THEME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <p className="account-page__section-desc">Applies only while you're on the Graphics → Editor page.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 20 }}>
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>Editor theme</p>
+          <p className="account-page__section-desc" style={{ margin: '2px 0 0' }}>Graphics Editor appearance</p>
+        </div>
+        <SegmentedControl options={THEME_OPTIONS} value={editor} onChange={v => handlePageThemeChange(KEYS.ui.editorTheme, v, setEditor)} />
       </div>
-      <div className="settings-field">
-        <label className="settings-field__label" htmlFor="acct-theme-planner">Planner theme</label>
-        <select
-          id="acct-theme-planner"
-          className="settings-field__input"
-          value={planner}
-          onChange={e => handlePageThemeChange(KEYS.ui.plannerTheme, e.target.value, setPlanner)}
-        >
-          {THEME_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <p className="account-page__section-desc">Applies only while you're on the Planner page.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div>
+          <p style={{ fontSize: 14, fontWeight: 500, margin: 0 }}>Planner theme</p>
+          <p className="account-page__section-desc" style={{ margin: '2px 0 0' }}>Run planner appearance</p>
+        </div>
+        <SegmentedControl options={THEME_OPTIONS} value={planner} onChange={v => handlePageThemeChange(KEYS.ui.plannerTheme, v, setPlanner)} />
       </div>
     </div>
   );
 }
 
-// ─── Danger zone (stub — no backend endpoints exist yet) ─────────────────────
+// ─── Danger zone ───────────────────────────────────────────────────────────────
 
-function DangerZonePanel() {
+function DangerZonePanel({ exportData, removeData, deleteAccount, logout }) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
+
+  async function handleExport() {
+    setError('');
+    setBusy('export');
+    try {
+      const data = await exportData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lcyt-account-data-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function handleRemoveData() {
+    if (!window.confirm('Permanently delete your owned projects, files, and history? This cannot be undone.')) return;
+    setError('');
+    setBusy('remove');
+    try {
+      await removeData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy('');
+    }
+  }
+
+  async function handleDeleteAccount() {
+    if (!window.confirm('Permanently delete your account? This cannot be undone.')) return;
+    setError('');
+    setBusy('delete');
+    try {
+      await deleteAccount();
+      window.location.href = '/login';
+    } catch (err) {
+      setError(err.message);
+      setBusy('');
+    }
+  }
+
   return (
-    <div className="account-page__section">
-      <h3 className="account-page__section-title">Danger zone</h3>
-      <p className="account-page__section-desc">
-        These actions require backend endpoints that don't exist yet — shown
-        here so the plan is visible, not hidden.
-      </p>
-      <div className="account-page__row-disabled">
-        <button className="btn btn--ghost" disabled title="Coming soon">Export my data</button>
-        <span className="account-page__soon-badge">Coming soon</span>
+    <div className="account-page__section account-page__section--danger">
+      <h3 className="account-page__section-title account-page__section-title--danger">Danger zone</h3>
+      {error && <div className="account-page__error">{error}</div>}
+
+      <div className="account-page__danger-row">
+        <div>
+          <p className="account-page__danger-row-title">Export my data</p>
+          <p className="account-page__section-desc">Download a copy of all your data.</p>
+        </div>
+        <button className="btn btn--ghost" onClick={handleExport} disabled={busy === 'export'}>
+          {busy === 'export' ? 'Exporting…' : 'Export data'}
+        </button>
       </div>
-      <div className="account-page__row-disabled">
-        <button className="btn btn--ghost" disabled title="Coming soon">Remove my data</button>
-        <span className="account-page__soon-badge">Coming soon</span>
+
+      <div className="account-page__danger-row">
+        <div>
+          <p className="account-page__danger-row-title">Remove all data</p>
+          <p className="account-page__section-desc">Permanently delete your projects, files and history.</p>
+        </div>
+        <button className="btn btn--ghost" onClick={handleRemoveData} disabled={busy === 'remove'}>
+          {busy === 'remove' ? 'Removing…' : 'Remove data'}
+        </button>
       </div>
-      <div className="account-page__row-disabled">
-        <button className="btn btn--danger" disabled title="Coming soon">Delete account</button>
-        <span className="account-page__soon-badge">Coming soon</span>
+
+      <div className="account-page__danger-row account-page__danger-row--severe">
+        <div>
+          <p className="account-page__danger-row-title account-page__danger-row-title--danger">Delete account</p>
+          <p className="account-page__section-desc">Permanently delete your account. This cannot be undone.</p>
+        </div>
+        <button className="btn btn--danger" onClick={handleDeleteAccount} disabled={busy === 'delete'}>
+          {busy === 'delete' ? 'Deleting…' : 'Delete account'}
+        </button>
       </div>
     </div>
   );
@@ -218,58 +349,25 @@ function DangerZonePanel() {
 
 // ─── Logged-in profile view ───────────────────────────────────────────────────
 
-function ProfilePanel({ user, backendUrl, logout, changePassword }) {
+function ProfilePanel({ user, logout, changePassword, updateProfile, exportData, removeData, deleteAccount }) {
   return (
     <div className="account-page__profile">
-      {/* User info */}
-      <div className="account-page__section">
-        <h3 className="account-page__section-title">Profile</h3>
-        <div className="account-page__info-row">
-          <span className="account-page__info-label">Email</span>
-          <span className="account-page__info-value">{user.email}</span>
-        </div>
-        {user.name && (
-          <div className="account-page__info-row">
-            <span className="account-page__info-label">Name</span>
-            <span className="account-page__info-value">{user.name}</span>
-          </div>
-        )}
-        {backendUrl && (
-          <div className="account-page__info-row">
-            <span className="account-page__info-label">Server</span>
-            <span className="account-page__info-value account-page__info-value--muted">{backendUrl}</span>
-          </div>
-        )}
-        <div className="account-page__row-disabled">
-          <button className="btn btn--ghost btn--sm" disabled title="Coming soon">Edit name</button>
-          <span className="account-page__soon-badge">Coming soon</span>
+      <div className="account-page__header">
+        <div className="account-page__avatar">{initialsFromName(user.name, user.email)}</div>
+        <div>
+          <h1 className="account-page__display-name">{user.name || user.email}</h1>
+          <p className="account-page__section-desc">{user.email}</p>
         </div>
       </div>
 
-      {/* Projects quick link */}
-      <div className="account-page__section">
-        <h3 className="account-page__section-title">Projects</h3>
-        <p className="account-page__section-desc">
-          Manage your API keys and projects.
-        </p>
-        <Link href="/projects">
-          <a className="btn btn--ghost">Go to Projects →</a>
-        </Link>
-      </div>
-
-      {/* Appearance */}
-      <AppearancePanel />
-
-      {/* Change password */}
+      <AccountInfoForm user={user} updateProfile={updateProfile} />
       <ChangePasswordForm changePassword={changePassword} />
+      <AppearancePanel />
+      <DangerZonePanel exportData={exportData} removeData={removeData} deleteAccount={deleteAccount} logout={logout} />
 
-      {/* Danger zone */}
-      <DangerZonePanel />
-
-      {/* Sign out */}
-      <div className="account-page__section">
+      <div className="account-page__section" style={{ border: 'none', boxShadow: 'none' }}>
         <button
-          className="btn btn--danger"
+          className="btn btn--ghost"
           onClick={() => { logout(); window.location.href = '/login'; }}
           type="button"
         >
@@ -286,12 +384,12 @@ function ProfilePanel({ user, backendUrl, logout, changePassword }) {
  * AccountPage — `/account`
  *
  * Shows a sign-in / register prompt when the user is not authenticated, or
- * a profile view (email, name, server URL, password change, sign-out) when
- * they are logged in.  Keeps `/login` and `/register` as separate standalone
- * routes for direct-link access (per plan Phase 4).
+ * a profile view (avatar, display name, email, password change, appearance,
+ * danger zone, sign-out) when they are logged in.  Keeps `/login` and
+ * `/register` as separate standalone routes for direct-link access.
  */
 export function AccountPage() {
-  const { user, backendUrl, loading, logout, changePassword } = useUserAuth();
+  const { user, loading, logout, changePassword, updateProfile, exportData, removeData, deleteAccount } = useUserAuth();
 
   if (loading) {
     return (
@@ -304,7 +402,15 @@ export function AccountPage() {
   return (
     <div className="account-page">
       {user
-        ? <ProfilePanel user={user} backendUrl={backendUrl} logout={logout} changePassword={changePassword} />
+        ? <ProfilePanel
+            user={user}
+            logout={logout}
+            changePassword={changePassword}
+            updateProfile={updateProfile}
+            exportData={exportData}
+            removeData={removeData}
+            deleteAccount={deleteAccount}
+          />
         : <AnonymousPanel />}
     </div>
   );

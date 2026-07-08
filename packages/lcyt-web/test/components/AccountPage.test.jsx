@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { AccountPage } from '../../src/components/AccountPage.jsx';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,10 @@ function setupAnonymous() {
     changePassword: vi.fn(),
     login: vi.fn(),
     register: vi.fn(),
+    updateProfile: vi.fn(),
+    exportData: vi.fn(),
+    removeData: vi.fn(),
+    deleteAccount: vi.fn(),
   };
 }
 
@@ -47,6 +51,10 @@ function setupLoading() {
     changePassword: vi.fn(),
     login: vi.fn(),
     register: vi.fn(),
+    updateProfile: vi.fn(),
+    exportData: vi.fn(),
+    removeData: vi.fn(),
+    deleteAccount: vi.fn(),
   };
 }
 
@@ -60,6 +68,10 @@ function setupLoggedIn(overrides = {}) {
     changePassword: vi.fn().mockResolvedValue({}),
     login: vi.fn(),
     register: vi.fn(),
+    updateProfile: vi.fn().mockResolvedValue({ name: 'Updated Name' }),
+    exportData: vi.fn().mockResolvedValue({ user: {}, projects: [], orgs: [] }),
+    removeData: vi.fn().mockResolvedValue({ deletedProjectCount: 0 }),
+    deleteAccount: vi.fn().mockResolvedValue({ deleted: true }),
     ...overrides,
   };
 }
@@ -124,39 +136,25 @@ describe('AccountPage — logged in', () => {
   it('shows the user email', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    expect(screen.getByText('test@example.com')).toBeInTheDocument();
+    expect(screen.getAllByText('test@example.com').length).toBeGreaterThan(0);
   });
 
-  it('shows the user name when provided', () => {
+  it('shows the display name in the header and as an editable field', () => {
     setupLoggedIn();
     render(<AccountPage />);
     expect(screen.getByText('Test User')).toBeInTheDocument();
+    expect(screen.getByLabelText(/display name/i)).toHaveValue('Test User');
   });
 
-  it('shows the backend URL', () => {
+  it('shows avatar initials derived from the display name', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    expect(screen.getByText('https://api.test')).toBeInTheDocument();
-  });
-
-  it('does not show name when user has no name', () => {
-    setupLoggedIn({ user: { userId: 'u1', email: 'test@example.com', name: undefined } });
-    render(<AccountPage />);
-    expect(screen.queryByText('undefined')).not.toBeInTheDocument();
-  });
-
-  it('shows a Projects link pointing to /projects', () => {
-    setupLoggedIn();
-    render(<AccountPage />);
-    const link = screen.getByRole('link', { name: /go to projects/i });
-    expect(link).toBeInTheDocument();
-    expect(link.getAttribute('href')).toBe('/projects');
+    expect(screen.getByText('TU')).toBeInTheDocument();
   });
 
   it('shows a Change Password section', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    // Section heading is an h3; there may also be a "Change password" submit button
     const matches = screen.getAllByText(/change password/i);
     expect(matches.length).toBeGreaterThan(0);
   });
@@ -165,7 +163,6 @@ describe('AccountPage — logged in', () => {
     setupLoggedIn();
     render(<AccountPage />);
     expect(screen.getByLabelText(/current password/i)).toBeInTheDocument();
-    // Use exact label text to avoid matching "Confirm new password"
     expect(screen.getByLabelText('New password')).toBeInTheDocument();
     expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument();
   });
@@ -188,6 +185,36 @@ describe('AccountPage — logged in', () => {
     render(<AccountPage />);
     expect(screen.queryByText(/not signed in/i)).not.toBeInTheDocument();
   });
+
+  it('does not show a redundant Projects quick-link (covered by sidebar nav)', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    expect(screen.queryByText(/go to projects/i)).not.toBeInTheDocument();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Account info (display name)
+// ---------------------------------------------------------------------------
+
+describe('AccountPage — account info', () => {
+  it('disables Save changes until the name actually changes', () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'New Name' } });
+    expect(screen.getByRole('button', { name: /save changes/i })).not.toBeDisabled();
+  });
+
+  it('calls updateProfile with the new name on save', async () => {
+    setupLoggedIn();
+    render(<AccountPage />);
+    fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'New Name' } });
+    fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
+    await waitFor(() => {
+      expect(mockAuth.updateProfile).toHaveBeenCalledWith('New Name');
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -201,24 +228,10 @@ describe('AccountPage — change password', () => {
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass1' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass2' } });
-    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
     await waitFor(() => {
       expect(screen.getByText(/do not match/i)).toBeInTheDocument();
     });
-    expect(mockAuth.changePassword).not.toHaveBeenCalled();
-  });
-
-  it('shows error when new password is too short', async () => {
-    setupLoggedIn();
-    render(<AccountPage />);
-    fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass' } });
-    fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'short' } });
-    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'short' } });
-    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
-    await waitFor(() => {
-      expect(screen.getByText(/at least 8 characters/i)).toBeInTheDocument();
-    });
-    expect(mockAuth.changePassword).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /update password/i })).toBeDisabled();
   });
 
   it('calls changePassword with correct args on valid submit', async () => {
@@ -227,7 +240,7 @@ describe('AccountPage — change password', () => {
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass1' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
-    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
     await waitFor(() => {
       expect(mockAuth.changePassword).toHaveBeenCalledWith('oldpass1', 'newpass99');
     });
@@ -239,7 +252,7 @@ describe('AccountPage — change password', () => {
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass1' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
-    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
     await waitFor(() => {
       expect(screen.getByText(/password changed successfully/i)).toBeInTheDocument();
     });
@@ -253,43 +266,31 @@ describe('AccountPage — change password', () => {
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'wrongpass' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
-    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
+    fireEvent.click(screen.getByRole('button', { name: /update password/i }));
     await waitFor(() => {
       expect(screen.getByText(/invalid current password/i)).toBeInTheDocument();
-    });
-  });
-
-  it('clears fields after successful password change', async () => {
-    setupLoggedIn();
-    render(<AccountPage />);
-    const currentInput = screen.getByLabelText(/current password/i);
-    fireEvent.change(currentInput, { target: { value: 'oldpass1' } });
-    fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
-    fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
-    fireEvent.click(screen.getByRole('button', { name: /change password/i }));
-    await waitFor(() => {
-      expect(currentInput.value).toBe('');
     });
   });
 });
 
 // ---------------------------------------------------------------------------
-// Appearance (theme pickers)
+// Appearance (segmented theme controls)
 // ---------------------------------------------------------------------------
 
 describe('AccountPage — appearance', () => {
-  it('renders General / Editor / Planner theme selects', () => {
+  it('renders General / Editor / Planner theme segmented controls', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    expect(screen.getByLabelText(/general theme/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/graphics editor theme/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/planner theme/i)).toBeInTheDocument();
+    expect(screen.getByText('General theme')).toBeInTheDocument();
+    expect(screen.getByText('Editor theme')).toBeInTheDocument();
+    expect(screen.getByText('Planner theme')).toBeInTheDocument();
   });
 
   it('persists the editor theme to its own storage key without touching the general theme', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    fireEvent.change(screen.getByLabelText(/graphics editor theme/i), { target: { value: 'dark' } });
+    const editorSection = screen.getByText('Editor theme').closest('div');
+    fireEvent.click(within(editorSection.parentElement).getByText('Dark'));
     expect(localStorage.getItem('lcyt.ui.editorTheme')).toBe('dark');
     expect(localStorage.getItem('lcyt.ui.theme')).not.toBe('dark');
   });
@@ -297,29 +298,56 @@ describe('AccountPage — appearance', () => {
   it('applies the general theme immediately via the data-theme attribute', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    fireEvent.change(screen.getByLabelText(/general theme/i), { target: { value: 'dark' } });
+    const generalSection = screen.getByText('General theme').closest('div');
+    fireEvent.click(within(generalSection.parentElement).getByText('Dark'));
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
     expect(localStorage.getItem('lcyt.ui.theme')).toBe('dark');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Danger zone (disabled stubs — no backend endpoints exist yet)
+// Danger zone (real actions, calling the new self-service endpoints)
 // ---------------------------------------------------------------------------
 
 describe('AccountPage — danger zone', () => {
-  it('shows disabled Export/Remove/Delete actions labeled "Coming soon"', () => {
+  it('shows enabled Export/Remove/Delete actions', () => {
     setupLoggedIn();
     render(<AccountPage />);
-    expect(screen.getByRole('button', { name: /export my data/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /remove my data/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /delete account/i })).toBeDisabled();
-    expect(screen.getAllByText('Coming soon').length).toBeGreaterThanOrEqual(3);
+    expect(screen.getByRole('button', { name: /export data/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /remove data/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /delete account/i })).not.toBeDisabled();
   });
 
-  it('shows a disabled "Edit name" action in the Profile section', () => {
+  it('calls exportData when Export data is clicked', async () => {
     setupLoggedIn();
     render(<AccountPage />);
-    expect(screen.getByRole('button', { name: /edit name/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /export data/i }));
+    await waitFor(() => expect(mockAuth.exportData).toHaveBeenCalledTimes(1));
+  });
+
+  it('calls removeData after confirmation when Remove data is clicked', async () => {
+    setupLoggedIn();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<AccountPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove data/i }));
+    await waitFor(() => expect(mockAuth.removeData).toHaveBeenCalledTimes(1));
+  });
+
+  it('does not call removeData when the confirmation is cancelled', () => {
+    setupLoggedIn();
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<AccountPage />);
+    fireEvent.click(screen.getByRole('button', { name: /remove data/i }));
+    expect(mockAuth.removeData).not.toHaveBeenCalled();
+  });
+
+  it('shows a soft failure message when deleteAccount is not implemented on the backend', async () => {
+    setupLoggedIn({ deleteAccount: vi.fn().mockRejectedValue(new Error('Account deletion is not available on this backend yet')) });
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<AccountPage />);
+    fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/not available on this backend yet/i)).toBeInTheDocument();
+    });
   });
 });

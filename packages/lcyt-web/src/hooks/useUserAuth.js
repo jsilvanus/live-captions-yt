@@ -115,5 +115,61 @@ export function useUserAuth() {
     return data;
   }, [token, backendUrl]);
 
-  return { user, token, backendUrl, loading, login, register, logout, changePassword };
+  // Self-service display-name update (BACKEND_PROJECT.md item 1).
+  const updateProfile = useCallback(async (name) => {
+    if (!token || !backendUrl) throw new Error('Not logged in');
+    const res = await fetch(`${backendUrl}/auth/me`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not save name');
+    setUser(u => u ? { ...u, name: data.name } : u);
+    return data;
+  }, [token, backendUrl]);
+
+  // Self-service GDPR data export (BACKEND_PROJECT.md item 2).
+  const exportData = useCallback(async () => {
+    if (!token || !backendUrl) throw new Error('Not logged in');
+    const res = await fetch(`${backendUrl}/auth/me/export`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Export is not available on this backend yet');
+    return data;
+  }, [token, backendUrl]);
+
+  // Self-service "remove all my data" — deletes owned projects, keeps the account (BACKEND_PROJECT.md item 3).
+  const removeData = useCallback(async () => {
+    if (!token || !backendUrl) throw new Error('Not logged in');
+    const res = await fetch(`${backendUrl}/auth/me/data`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Data removal is not available on this backend yet');
+    return data;
+  }, [token, backendUrl]);
+
+  // Self-service full account deletion (BACKEND_PROJECT.md item 4).
+  const deleteAccount = useCallback(async () => {
+    if (!token || !backendUrl) throw new Error('Not logged in');
+    const res = await fetch(`${backendUrl}/auth/me`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Account deletion is not available on this backend yet');
+    logout();
+    return data;
+  }, [token, backendUrl, logout]);
+
+  return {
+    user, token, backendUrl, loading, login, register, logout, changePassword,
+    updateProfile, exportData, removeData, deleteAccount,
+  };
 }

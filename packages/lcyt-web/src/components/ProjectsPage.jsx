@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useUserAuth } from '../hooks/useUserAuth';
-import { KEYS } from '../lib/storageKeys.js';
+import { activateProject } from '../lib/projectSession.js';
 import { FeaturePicker } from './FeaturePicker';
 
 const FEATURE_BADGE_LABELS = {
@@ -21,7 +21,7 @@ const FEATURE_BADGE_LABELS = {
 // Placeholder thumbnail — matches the Claude Design mockup's project-row
 // treatment (dark gradient tile + faint camera glyph). There's no real
 // per-project preview image in the API yet, so this stays decorative/static.
-function ProjectThumbnail() {
+export function ProjectThumbnail() {
   return (
     <div className="project-row__thumb">
       <svg width="20" height="20" viewBox="0 0 16 16" fill="none">
@@ -32,7 +32,7 @@ function ProjectThumbnail() {
   );
 }
 
-function ProjectRow({ project, onUse, onManage }) {
+export function ProjectRow({ project, onUse, onManage }) {
   const badgeCodes = (project.features || []).filter(c => FEATURE_BADGE_LABELS[c]);
 
   return (
@@ -192,17 +192,7 @@ export function ProjectsPage() {
   }
 
   function handleUseProject(project) {
-    try {
-      const existing = JSON.parse(localStorage.getItem(KEYS.session.config) || '{}');
-      localStorage.setItem(KEYS.session.config, JSON.stringify({
-        ...existing,
-        backendUrl,
-        apiKey: project.key,
-      }));
-    } catch {
-      localStorage.setItem(KEYS.session.config, JSON.stringify({ backendUrl, apiKey: project.key }));
-    }
-    window.location.href = '/';
+    activateProject(backendUrl, project.key);
   }
 
   if (authLoading) {

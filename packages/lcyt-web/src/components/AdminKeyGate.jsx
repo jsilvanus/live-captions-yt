@@ -16,12 +16,19 @@ export function AdminKeyGate({ backendUrl, userIsAdmin = false, children }) {
   const [error, setError] = useState('');
   const [valid, setValid] = useState(false);
 
+  // Hooks must run unconditionally on every render (rules of hooks) — the
+  // user-based-admin early return below happens after this, not before.
+  // `userIsAdmin` starts false and flips to true once useUserAuth's async
+  // /auth/me check resolves, so an early return placed before this useEffect
+  // would make this component call a different number of hooks across
+  // renders of the same instance, crashing with "Rendered fewer hooks than
+  // expected" the moment a real (non-legacy-key) admin logs in.
+  useEffect(() => {
+    if (!userIsAdmin && key) verify(key);
+  }, []);
+
   // User-based admin: skip the key gate entirely
   if (userIsAdmin) return children;
-
-  useEffect(() => {
-    if (key) verify(key);
-  }, []);
 
   async function verify(k) {
     setChecking(true);

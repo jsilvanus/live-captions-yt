@@ -22,13 +22,15 @@ The mockup's sidebar order (Setup → Assets → Planner → Graphics → Broadc
 | Production — Operator | `/production` | Sub-item of the old "Production" group | Live operator control surface. The mockup has no equivalent screen (distinct from the Setup page's device *configuration* cards). |
 | Production — Visual | `/production/visual` | Sub-item of the old "Production" group | |
 | Production — Devices | `/production/devices` | Sub-item of the old "Production" group | |
-| Admin — Audit Log | `/admin/audit-log` | Sub-item of the old "Admin" group | The mockup's Admin screen has tabs for Site Features / Teams / Projects / Users — no Audit Log tab. |
+| Admin — Audit Log | `/admin/audit-log` | Tab in `AdminTabShell` | The mockup's Admin screen has tabs for Site Features / Teams / Projects / Users — no Audit Log tab. Route/component untouched, still reachable by direct URL. |
+| Admin — AI Models | `/admin/ai-models` | Tab in `AdminTabShell` | Same reasoning as Audit Log — not one of the mockup's four Admin tabs. Route/component untouched, still reachable by direct URL. |
 
 The "Graphics" and "Admin" sidebar groups were also flattened to single items (pointing at `/graphics/editor` and `/admin/users` respectively) to match the mockup, which shows them as single icons rather than expandable groups.
+
+**Update (2026-07-08):** the Admin tab bar (`AdminTabShell.jsx`) now matches the mockup's four tabs exactly — Site Features, Teams, Projects, Users, in that order — resolving the "wire the flattened Admin nav item into an actual tabbed page" follow-up noted below. `AdminSiteFeaturesPage.jsx` and `AdminTeamsPage.jsx` went from stubs to real content (`GET/PUT /admin/feature-policies`, new `GET /admin/orgs`, `GET/PUT /admin/orgs/:id/feature-overrides` — see `BACKEND_PROJECT.md`). Audit Log and AI Models dropped out of the visible tab bar per the two rows above.
 
 ## Already unlinked (not new — flagging for awareness)
 
 These routes/pages existed before this pass and were **already** not in the sidebar (not part of this cleanup, just noted here since they came up while cross-checking against the mockup):
 
 - `/production/cameras`, `/production/mixers`, `/production/bridges`, `/production/devices` — standalone camera/mixer/encoder/bridge management pages. **Decided (2026-07-06):** kept, not deleted — but no longer linked directly. Each Setup Hub card's "Open standalone page" now goes through `/setup/:card/page` (`SetupStandalonePage.jsx`), which renders the exact same manager component (`CamerasManager` etc., non-embedded) with a parity banner linking back to the hub card, rather than pointing straight at these routes. The routes themselves are untouched and still work by direct URL.
-- `/admin/site-features` (`AdminSiteFeaturesPage`) and `/admin/teams` (`AdminTeamsPage`) — these **do** have design counterparts (the mockup's Admin screen tabs "Site Features" and "Teams") but were never linked from the sidebar to begin with. Low-risk follow-up: wire the flattened Admin nav item into an actual tabbed page (Site Features / Teams / Projects / Users) matching the mockup, instead of just landing on `/admin/users`.
