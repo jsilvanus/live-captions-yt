@@ -31,14 +31,14 @@ These refinements are reflected below.
 | User JWT bearer | `middleware/user-auth.js`'s `createUserAuthMiddleware` | `{ type: 'user', userId, email }` | `/auth/me`, `/auth/change-password`, user-owned project routes, `/orgs/*` |
 | Admin API key | `middleware/admin.js` | n/a (constant-time string compare) | `/admin/*` |
 | DSK Editor credential | `editorAuthOrBearer` in `lcyt-dsk` | n/a (`X-Project-Id` header) | DSK template/image routes — this is being replaced by project membership-based auth in the refactor |
-| Personal MCP token | `db/mcp-tokens.js` (`mcp_tokens` table, `lcytmcp_<64 hex>`, SHA-256 hashed) | resolves to a project context and scopes | `lcyt-mcp-http`/`lcyt-mcp-stdio`'s `authenticate()` only |
+| Personal external token | `db/mcp-tokens.js` (`mcp_tokens` table, `lcytmcp_<64 hex>`, SHA-256 hashed) | resolves to a project context and scopes | `lcyt-mcp-http`/`lcyt-mcp-stdio`'s `authenticate()` only |
 | Bridge instance token | `BridgeManager.authenticate()` in `lcyt-production` | `prod_bridge_instances.token` | `/production/bridge/*` (SSE command stream + status callback) |
 | Public-by-URL | none | project identifier in the path | `/dsk/:projectId/events`, `/dsk/:projectId/images`, `/dsk/:projectId/viewports/public`, `/viewer/:id` |
 
 ### Problems this creates
 
 1. **Plugin routes are coupled to an ephemeral live session, not the project.** DSK graphics config, variables, cue rules, roles config, and STT config are all project-level concerns — they are meaningful even when no YouTube caption session is running. Because they are gated by the Session JWT (`{sessionId, projectId}`), a logged-in team member has no way to reach them without first starting a `/live` session and holding onto its token.
-2. **No scoped, revocable credential exists for external, non-account-holder subscribers.** `mcp_tokens` is the closest primitive, but it is currently shaped for MCP tool calls rather than a general-purpose “read-only access to a specific set of event topics.”
+2. **No scoped, revocable credential exists for external, non-account-holder subscribers.** The existing external-token store is the closest primitive, but it is currently shaped around the old MCP terminology rather than a general-purpose “read-only access to a specific set of event topics.”
 3. **Too many independently implemented auth checks are answering the same conceptual question:** “Is this caller allowed to touch project X, and how much?” This has already produced at least one real bug class: the STT and Variables SSE endpoints' `?token=` verification used to be an unverified base64 decode rather than a real `jwt.verify` (fixed, but only because those paths were audited).
 4. **Public-by-URL exposure is a deliberate carve-out but not a documented one.** A future route that skips auth looks identical to one that skips it on purpose.
 
@@ -62,7 +62,7 @@ Define a small policy registry for route families:
 - `external-token` — scoped tokens for external subscribers (future event-bus consumers)
 - `device-token` — short-lived JWTs issued after device login for project-bound resources such as cameras, microphones, and mixers
 
-For MCP access, the token should be a first-class delegated credential rather than an anonymous key. Every MCP token should be bound to:
+For external access, the token should be a first-class delegated credential rather than an anonymous key. Every external token should be bound to:
 
 - a specific user (`userId`/`sub`)
 - a specific project (`projectId`)
@@ -232,7 +232,7 @@ Proposed scope semantics:
   - `*:read` (wildcard resource)
 - `tokenAllowsTopic(scopes, topic)` should be implemented in `src/db/mcp-tokens.js` and should clearly treat missing/empty scopes as full access.
 
-`verifyMcpToken()` should return `{ userId, projectId, label, scopes }` (or similar), and `POST /mcp-tokens` / `GET /mcp-tokens` should accept/surface the optional `userId`, `projectId`, and `scopes` fields.
+`verifyMcpToken()` should return `{ userId, projectId, label, scopes }` (or similar), and `POST /external-tokens` / `GET /external-tokens` should accept/surface the optional `userId`, `projectId`, and `scopes` fields.
 
 ### Tier 3 — Bridge instance tokens
 
@@ -296,7 +296,7 @@ The backend capability above is real, but the current UI may still need a follow
    e. `/stt/config`, `/stt/status` (not `/stt/events` SSE — leave on Session JWT + `?token=` for now, since that is a live-session-scoped stream)
    f. `/targets/*`, `/translation/*`
 6. **Extend `verifyMcpToken()`** to return `scopes`; add `tokenAllowsTopic(scopes, topic)` helper. No caller yet.
-7. **`PUT/GET /mcp-tokens`** — accept/surface optional `scopes` field.
+7. **`PUT/GET /external-tokens`** — accept/surface optional `scopes` field.
 8. **Document `PUBLIC_PROJECT_ROUTES`** as a code constant plus a short note in `lcyt-backend/CLAUDE.md`'s Authentication section.
 9. **Tests:**
    - `resolveProjectId` / auth-policy routing: header, route-param, body, and missing-project cases.

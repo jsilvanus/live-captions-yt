@@ -243,10 +243,14 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
   // No expiry — role must be deactivated to revoke
   const token = jwt.sign(
     {
-      type:        'device',
-      apiKey:      keyRow.key,
-      roleId:      matchedRole.id,
-      roleType:    matchedRole.role_type,
+      type: 'device',
+      kind: 'device',
+      projectId: keyRow.key,
+      apiKey: keyRow.key,
+      roleId: matchedRole.id,
+      roleType: matchedRole.role_type,
+      deviceRole: matchedRole.role_type,
+      projectRole: 'member',
       permissions,
     },
     jwtSecret,

@@ -14,7 +14,7 @@ import { createOrganizationsRouter } from './routes/orgs.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
-import { createMcpTokensRouter } from './routes/mcp-tokens.js';
+import { createExternalTokensRouter } from './routes/mcp-tokens.js';
 import { setHlsSubsManager, broadcastToViewers } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
@@ -79,6 +79,7 @@ import {
 } from 'lcyt-connectors';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
+import { createProjectAccessMiddleware } from './middleware/project-access.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -352,6 +353,7 @@ const app = express();
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
 const userAuth = createUserAuthMiddleware(jwtSecret);
+const projectAuth = createProjectAccessMiddleware(db, jwtSecret);
 // DSK routers require auth — must be created after auth is initialized.
 const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, auth, relayManager);
 // Dynamic CORS middleware — must run before all routers (including /icons) so
@@ -472,7 +474,8 @@ app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
 app.use('/cues', createCueRouter(db, auth, _cueEngine));
-app.use('/mcp-tokens', createMcpTokensRouter(db, userAuth));
+app.use('/external-tokens', createExternalTokensRouter(db, projectAuth));
+app.use('/mcp-tokens', createExternalTokensRouter(db, projectAuth));
 app.use('/ai/providers', createProjectAiProvidersRouter(db, auth, { bridgeManager: productionBridgeManager }));
 app.use('/ai', createAiRouter(db, auth));
 app.use('/agent', createAgentRouter(db, auth, _agent));

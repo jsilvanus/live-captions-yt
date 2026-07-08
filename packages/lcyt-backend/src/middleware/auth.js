@@ -1,5 +1,40 @@
 import jwt from 'jsonwebtoken';
 
+export function extractBearerToken(req) {
+  const authHeader = req.headers.authorization;
+  if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+    return authHeader.slice(7);
+  }
+  return null;
+}
+
+export function extractCookie(req, name) {
+  const header = req.headers.cookie;
+  if (typeof header !== 'string') return null;
+  const match = header.split(';').map((part) => part.trim()).find((part) => part.startsWith(`${name}=`));
+  if (!match) return null;
+  return decodeURIComponent(match.slice(name.length + 1));
+}
+
+export function normalizeUserPayload(payload) {
+  const userId = payload.userId ?? payload.sub ?? null;
+  const email = payload.email ?? null;
+  const isAdmin = !!(payload.isAdmin || payload.siteRole === 'admin' || payload.role === 'admin');
+  const siteRole = payload.siteRole || (payload.role === 'admin' || isAdmin ? 'admin' : (payload.role || 'member'));
+  return {
+    userId,
+    email,
+    isAdmin,
+    siteRole,
+    tokenType: payload.kind === 'identity' ? 'identity' : payload.type,
+    raw: payload,
+  };
+}
+
+export function extractAuthToken(req) {
+  return extractBearerToken(req) || extractCookie(req, 'lcyt_identity') || extractCookie(req, 'lcyt_project');
+}
+
 /**
  * JWT authentication middleware factory.
  *

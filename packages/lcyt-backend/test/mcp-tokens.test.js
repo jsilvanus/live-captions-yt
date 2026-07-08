@@ -26,6 +26,7 @@ before(() => new Promise((resolve) => {
   const userAuth = createUserAuthMiddleware(JWT_SECRET);
   const app = express();
   app.use(express.json());
+  app.use('/external-tokens', createMcpTokensRouter(db, userAuth));
   app.use('/mcp-tokens', createMcpTokensRouter(db, userAuth));
 
   apiKey = createKey(db, { owner: 'McpUser' }).key;
@@ -110,6 +111,20 @@ describe('mcp-tokens db helpers', () => {
         ['active', 'createdAt', 'createdByName', 'id', 'label', 'lastUsedAt', 'revokedAt'],
       );
     }
+  });
+});
+
+describe('POST /external-tokens', () => {
+  it('creates a token through the renamed external-token route', async () => {
+    const res = await fetch(`${baseUrl}/external-tokens`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ label: 'External token route' }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.match(body.token, /^lcytmcp_/);
   });
 });
 

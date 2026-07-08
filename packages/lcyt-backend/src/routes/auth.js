@@ -8,12 +8,40 @@ import { deviceLoginHandler } from './device-roles.js';
 
 const BCRYPT_ROUNDS = 12;
 const USER_TOKEN_TTL_DAYS = 30;
+const PROJECT_TOKEN_TTL_DAYS = 30;
 
-function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
+function issueUserToken(jwtSecret, { userId, email, isAdmin = false, siteRole = 'member' }) {
   return jwt.sign(
-    { type: 'user', userId, email, isAdmin: !!isAdmin },
+    {
+      type: 'user',
+      kind: 'identity',
+      userId,
+      email,
+      isAdmin: !!isAdmin,
+      siteRole: siteRole === 'admin' ? 'admin' : 'member',
+      role: siteRole === 'admin' ? 'admin' : 'member',
+    },
     jwtSecret,
     { expiresIn: `${USER_TOKEN_TTL_DAYS}d` }
+  );
+}
+
+function issueProjectAccessToken(jwtSecret, { userId, email, projectId, projectRole = 'member', isAdmin = false, siteRole = 'member' }) {
+  return jwt.sign(
+    {
+      type: 'user',
+      kind: 'project',
+      userId,
+      email,
+      isAdmin: !!isAdmin,
+      siteRole: siteRole === 'admin' ? 'admin' : 'member',
+      role: projectRole === 'owner' || projectRole === 'admin' ? projectRole : 'member',
+      projectId,
+      projectRole: projectRole === 'owner' || projectRole === 'admin' || projectRole === 'member' ? projectRole : 'member',
+      scopes: [],
+    },
+    jwtSecret,
+    { expiresIn: `${PROJECT_TOKEN_TTL_DAYS}d` }
   );
 }
 
@@ -65,8 +93,9 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = createUser(db, { email, passwordHash, name: name || null });
       provisionDefaultUserFeatures(db, user.id);
-      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false });
-      res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false });
+      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false, siteRole: 'member' });
+      res.cookie('lcyt_identity', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+      res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false, siteRole: 'member' });
     } catch (err) {
       console.error('[auth] register error:', err.message);
       res.status(500).json({ error: 'Registration failed' });
@@ -88,19 +117,41 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       if (!match) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
-      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin });
-      res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin });
+      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
+      res.cookie('lcyt_identity', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+      res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
     } catch (err) {
       console.error('[auth] login error:', err.message);
       res.status(500).json({ error: 'Login failed' });
     }
   });
 
+  // POST /auth/project-token — exchange a user identity token for a project-scoped access token
+  router.post('/project-token', userAuth, (req, res) => {
+    const projectId = req.body?.projectId || req.body?.project_id || req.query?.projectId || req.query?.project_id;
+    if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+
+    const projectRole = req.body?.projectRole || req.body?.project_role || 'member';
+    const token = issueProjectAccessToken(jwtSecret, {
+      userId: req.user.userId,
+      email: req.user.email,
+      projectId: projectId.trim(),
+      projectRole,
+      isAdmin: !!req.user.isAdmin,
+      siteRole: req.user.siteRole || 'member',
+    });
+
+    res.cookie('lcyt_project', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    res.json({ token, projectId: projectId.trim(), projectRole, userId: req.user.userId, siteRole: req.user.siteRole || 'member' });
+  });
+
   // GET /auth/me — requires user token
   router.get('/me', userAuth, (req, res) => {
     const user = getUserById(db, req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
+    res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
   });
 
   // PATCH /auth/me — update own profile (name); requires user token
@@ -120,7 +171,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       updateUser(db, req.user.userId, { name: trimmed });
       const user = getUserById(db, req.user.userId);
       if (!user) return res.status(404).json({ error: 'User not found' });
-      res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
+      res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
     } catch (err) {
       console.error('[auth] update-me error:', err.message);
       res.status(500).json({ error: 'Profile update failed' });
