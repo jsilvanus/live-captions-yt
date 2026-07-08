@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
+import { createKey } from '../src/db/keys.js';
 import { createAuthRouter } from '../src/routes/auth.js';
 
 // Reduce bcrypt rounds for speed — override the module-level constant via the
@@ -302,6 +303,83 @@ describe('PATCH /auth/me', () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.name, 'Updated Name');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /auth/me/export
+// ---------------------------------------------------------------------------
+
+describe('GET /auth/me/export', () => {
+  it('returns the current user export payload with projects and orgs', async () => {
+    const { body } = await register('export-user@example.com', 'password123', 'Export User');
+    const userId = body.userId;
+
+    createKey(db, { key: 'export-project-key', owner: 'Export Project', email: 'export-user@example.com', user_id: userId });
+    db.prepare('INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, ?, 1)').run('export-project-key', 'captions');
+
+    const orgResult = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Export Org', 'export-org', userId);
+    db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(orgResult.lastInsertRowid, userId, 'editor', userId);
+    db.prepare('UPDATE api_keys SET org_id = ? WHERE key = ?').run(orgResult.lastInsertRowid, 'export-project-key');
+
+    const res = await fetch(`${baseUrl}/auth/me/export`, {
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+
+    assert.equal(res.status, 200);
+    const exportBody = await res.json();
+    assert.equal(exportBody.user.email, 'export-user@example.com');
+    assert.equal(exportBody.projects.length, 1);
+    assert.equal(exportBody.projects[0].key, 'export-project-key');
+    assert.equal(exportBody.orgs.length, 1);
+    assert.equal(exportBody.orgs[0].name, 'Export Org');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /auth/me/data
+// ---------------------------------------------------------------------------
+
+describe('DELETE /auth/me/data', () => {
+  it('deletes owned projects but leaves unrelated shared projects intact', async () => {
+    const { body } = await register('delete-data@example.com', 'password123', 'Delete Data');
+    const userId = body.userId;
+
+    createKey(db, { key: 'owned-project-key', owner: 'Owned Project', email: 'delete-data@example.com', user_id: userId });
+    createKey(db, { key: 'shared-project-key', owner: 'Shared Project', email: 'shared@example.com' });
+    db.prepare('INSERT INTO project_members (api_key, user_id, access_level, invited_by) VALUES (?, ?, ?, ?)').run('shared-project-key', userId, 'member', userId);
+
+    const res = await fetch(`${baseUrl}/auth/me/data`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+
+    assert.equal(res.status, 200);
+    const deleteBody = await res.json();
+    assert.equal(deleteBody.deletedProjectCount, 1);
+    assert.equal(db.prepare('SELECT key FROM api_keys WHERE key = ?').get('owned-project-key'), undefined);
+    assert.ok(db.prepare('SELECT key FROM api_keys WHERE key = ?').get('shared-project-key'));
+    assert.equal(db.prepare('SELECT COUNT(*) as count FROM project_members WHERE api_key = ? AND user_id = ?').get('shared-project-key', userId).count, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /auth/me
+// ---------------------------------------------------------------------------
+
+describe('DELETE /auth/me', () => {
+  it('deletes the account and removes the user row', async () => {
+    const { body } = await register('delete-account@example.com', 'password123', 'Delete Account');
+
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+
+    assert.equal(res.status, 200);
+    const deleteBody = await res.json();
+    assert.equal(deleteBody.deleted, true);
+    assert.equal(db.prepare('SELECT id FROM users WHERE email = ?').get('delete-account@example.com'), undefined);
   });
 });
 

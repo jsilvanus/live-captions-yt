@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser } from '../db/users.js';
+import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser, getUserAccountExport, deleteOwnedProjectsForUser, deleteUserAccount } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { deviceLoginHandler } from './device-roles.js';
@@ -125,6 +125,43 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       console.error('[auth] update-me error:', err.message);
       res.status(500).json({ error: 'Profile update failed' });
     }
+  });
+
+  // GET /auth/me/export — export the current user's own data
+  router.get('/me/export', userAuth, (req, res) => {
+    const exportData = getUserAccountExport(db, req.user.userId);
+    if (!exportData) return res.status(404).json({ error: 'User not found' });
+    res.json(exportData);
+  });
+
+  // DELETE /auth/me/data — delete the user's owned projects, keep the account
+  router.delete('/me/data', userAuth, (req, res) => {
+    const deletedProjectCount = deleteOwnedProjectsForUser(db, req.user.userId);
+    res.json({ deletedProjectCount });
+  });
+
+  // DELETE /auth/me — full account deletion
+  router.delete('/me', userAuth, (req, res) => {
+    const orgRows = db.prepare(`
+      SELECT om.org_id
+      FROM org_members om
+      JOIN organizations o ON o.id = om.org_id
+      WHERE om.user_id = ? AND om.role = 'owner'
+    `).all(req.user.userId);
+
+    for (const orgRow of orgRows) {
+      const memberCount = db.prepare(
+        'SELECT COUNT(*) as count FROM org_members WHERE org_id = ? AND user_id != ?'
+      ).get(orgRow.org_id, req.user.userId).count;
+      if (memberCount > 0) {
+        return res.status(409).json({
+          error: 'Cannot delete your account while you are the sole owner of an org with other members. Transfer ownership or remove them first.',
+        });
+      }
+    }
+
+    deleteUserAccount(db, req.user.userId);
+    res.json({ deleted: true });
   });
 
   // POST /auth/change-password — requires user token

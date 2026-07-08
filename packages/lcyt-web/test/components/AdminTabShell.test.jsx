@@ -11,11 +11,16 @@ import { AdminTabShell } from '../../src/components/AdminTabShell.jsx';
 beforeEach(() => vi.clearAllMocks());
 
 describe('AdminTabShell', () => {
-  it('renders all five tabs, including the two stubs', () => {
+  it('renders exactly the mock\'s four tabs, in order', () => {
     render(<AdminTabShell active="users"><div>content</div></AdminTabShell>);
-    for (const label of ['Users', 'Projects', 'Audit Log', 'Site Features', 'Teams']) {
-      expect(screen.getByText(label)).toBeInTheDocument();
-    }
+    const tabs = screen.getAllByRole('button').map(b => b.textContent);
+    expect(tabs).toEqual(['Site Features', 'Teams', 'Projects', 'Users']);
+  });
+
+  it('does not render Audit Log or AI Models (kept as direct-URL-only routes)', () => {
+    render(<AdminTabShell active="users"><div>content</div></AdminTabShell>);
+    expect(screen.queryByText('Audit Log')).not.toBeInTheDocument();
+    expect(screen.queryByText('AI Models')).not.toBeInTheDocument();
   });
 
   it('marks the active tab', () => {
@@ -27,18 +32,12 @@ describe('AdminTabShell', () => {
 
   it('navigates when a tab is clicked', () => {
     render(<AdminTabShell active="users"><div>content</div></AdminTabShell>);
-    fireEvent.click(screen.getByText('Audit Log'));
-    expect(navigate).toHaveBeenCalledWith('/admin/audit-log');
+    fireEvent.click(screen.getByText('Teams'));
+    expect(navigate).toHaveBeenCalledWith('/admin/teams');
   });
 
   it('renders children', () => {
     render(<AdminTabShell active="users"><div data-testid="child">hi</div></AdminTabShell>);
     expect(screen.getByTestId('child')).toBeInTheDocument();
-  });
-
-  it('labels the stub tabs as coming soon', () => {
-    render(<AdminTabShell active="users"><div>content</div></AdminTabShell>);
-    const soonLabels = screen.getAllByText('soon');
-    expect(soonLabels.length).toBe(2);
   });
 });

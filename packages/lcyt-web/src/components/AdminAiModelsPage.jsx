@@ -7,8 +7,13 @@ import { McpAccessSection } from './setup-hub/McpAccessSection.jsx';
 
 export function AdminAiModelsPage() {
   const session = useSessionContext();
-  const backendUrl = session?.backendUrl || '';
-  const { user } = useUserAuth();
+  // Prefer the user-login backend (same source Team/Account use) — falling
+  // back to the connected-project session avoids a broken/empty backendUrl
+  // for an admin who is logged in but has no project session connected. Only
+  // affects the AdminKeyGate check here — McpAccessSection/AiModelsSection
+  // below read their own project-scoped backendUrl independently.
+  const { user, backendUrl: authBackendUrl } = useUserAuth();
+  const backendUrl = authBackendUrl || session?.backendUrl || '';
 
   return (
     <AdminKeyGate backendUrl={backendUrl} userIsAdmin={!!user?.isAdmin}>

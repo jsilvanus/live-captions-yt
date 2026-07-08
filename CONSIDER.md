@@ -247,3 +247,60 @@ executing something already designed. `deer` is unimplemented everywhere in this
 
 (Found during: implementing plan_ai_roles_framework.md's `agentic_chat` turn loop and vision
 roles, 2026-07-07.)
+
+---
+
+## `AdminProjectDetailPage.jsx`'s revoke flow sends a vestigial no-op `PATCH`
+
+**Where:** `packages/lcyt-web/src/components/AdminProjectDetailPage.jsx`,
+`handleRevoke()`
+
+**Finding:** Before calling the real `POST /admin/batch/projects` with
+`action: 'revoke'`, the handler first fires
+`adminFetch(backendUrl, '/admin/projects/:key', { method: 'PATCH', body:
+JSON.stringify({ owner: project.owner }) })` — its own inline comment admits
+this is `// no-op for owner, triggers revoke separately`. The response isn't
+even checked (`res` is unused). This looks like leftover code from an earlier
+implementation that used `PATCH` directly for the status change before the
+batch-action route existed.
+
+**Why skipped:** Found while reconciling the Admin pages against the Claude
+Design mockup (Profile/Team/Admin session) — fixing it (delete the dead
+`PATCH` call) is a one-line, zero-risk cleanup, but it's unrelated to that
+session's UI-reconciliation scope and touching a `handleRevoke` fetch call
+felt worth a deliberate look (e.g. confirm nothing server-side relies on that
+PATCH's audit-log side effect) rather than a drive-by delete.
+
+(Found during: Profile/Team/Admin Claude Design reconciliation, 2026-07-08.)
+
+---
+
+## `FeaturePicker.jsx`'s "Restream fanout" toggle uses the wrong feature code
+
+**Where:** `packages/lcyt-web/src/components/FeaturePicker.jsx` —
+`{ code: 'restream-fanout', label: 'Restream fanout', ... }`
+
+**Finding:** The real backend feature code is `restream` (see
+`FEATURE_DEPS` in `packages/lcyt-backend/src/db/project-features.js` and
+`FEATURE_LABELS` in `AdminUserDetailPage.jsx`/`AdminProjectDetailPage.jsx`,
+both of which correctly use `restream`). `FeaturePicker.jsx` has always used
+`restream-fanout` instead — a code that doesn't exist anywhere server-side —
+so toggling "Restream fanout" in any `FeaturePicker` consumer (project
+creation, org team defaults) silently sets a feature flag the backend never
+checks, while the real `restream` flag stays whatever it defaulted to. The
+new `FeaturePolicyGrid.jsx` (built this session for Admin Site Features/Team
+overrides) uses the correct `restream` code — this bug is isolated to
+`FeaturePicker.jsx`.
+
+**Why skipped:** Real bug, but `FeaturePicker` is consumed by
+`ProjectsPage.jsx` (create-project form), `TeamPage.jsx` (team feature
+defaults), and others — fixing the code string is one line, but verifying no
+stored feature sets anywhere already depend on the wrong string (unlikely
+given it never matched a real backend code, but worth a quick grep/data check
+first) felt like it deserved its own small pass rather than a side-effect fix
+buried in an unrelated UI-reconciliation diff.
+
+(Found during: Profile/Team/Admin Claude Design reconciliation, 2026-07-08 —
+building `FeaturePolicyGrid.jsx` required re-deriving the real feature-code
+list from `plan_site_feature_policies.md`, which is what surfaced the
+mismatch.)

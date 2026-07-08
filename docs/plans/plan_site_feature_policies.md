@@ -1,8 +1,8 @@
 ---
 id: plan/site_feature_policies
 title: "Site Feature Policies — Tri-State Availability Model"
-status: in-progress
-summary: "Site-wide feature availability policy (available / self_service / denied per feature code), with per-org overrides, sitting alongside the existing user_features (per-user entitlement) and project_features (actual per-project toggle state) tables. Resolves the 'Site Features (admin global flags)' open question from plan_team_org_backend.md's appendix with a concrete recommendation. Worked example: custom storage (files-custom-bucket / files-webdav). Implemented: `site_feature_policies`/`org_feature_overrides` schema, `resolveFeaturePolicy()` baseline-plus-override resolver wired into the self-service project-features route, `GET/PUT /admin/feature-policies` + `GET/PUT /admin/orgs/:id/feature-overrides` admin routes. Remaining: admin frontend UI for managing policies/overrides (no page yet — API-only today)."
+status: implemented
+summary: "Site-wide feature availability policy (available / self_service / denied per feature code), with per-org overrides, sitting alongside the existing user_features (per-user entitlement) and project_features (actual per-project toggle state) tables. Resolves the 'Site Features (admin global flags)' open question from plan_team_org_backend.md's appendix with a concrete recommendation. Worked example: custom storage (files-custom-bucket / files-webdav). Implemented: `site_feature_policies`/`org_feature_overrides` schema, `resolveFeaturePolicy()` baseline-plus-override resolver wired into the self-service project-features route, `GET/PUT /admin/feature-policies` + `GET/PUT /admin/orgs/:id/feature-overrides` admin routes (both include `binaryOnly` per code), and the admin frontend UI — `AdminSiteFeaturesPage.jsx`/`AdminTeamsPage.jsx` + shared `FeaturePolicyGrid.jsx` (see `plan_profile_team_admin_reconciliation.md`)."
 ---
 
 # Site Feature Policies — Tri-State Availability Model
@@ -267,7 +267,7 @@ New exports: `getSiteFeaturePolicy(db, code)`, `getSiteFeaturePolicies(db)`, `se
 
 ## What This Plan Does Not Cover
 
-- **Frontend UI** for the admin feature-policy editor (a new admin page or a tab on the existing project/user feature editors) is not specced here — a natural follow-up once the API lands, same as the team/org plan's frontend section.
+- **Frontend UI** for the admin feature-policy editor was not specced here originally — it shipped as a follow-up, see `plan_profile_team_admin_reconciliation.md` (`AdminSiteFeaturesPage.jsx`/`AdminTeamsPage.jsx` + shared `FeaturePolicyGrid.jsx`).
 - **Per-user overrides** (as opposed to per-org) are not introduced — if a single user (not an org) needs an exception to a `denied` site policy, the existing raw `X-Admin-Key` admin bypass on `PUT /admin/projects/:key/features` already covers that case without new schema.
 - **Whether `user_features` should eventually be simplified or merged with this model** is explicitly deferred (see "Relationship to `user_features`" above) — both stay as they are for now.
 

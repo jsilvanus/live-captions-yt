@@ -155,6 +155,7 @@ export function listOrganizationMembers(db, orgId) {
     role: row.role,
     invitedBy: row.invited_by,
     joinedAt: row.joined_at,
+    projectCount: db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE org_id = ?').get(orgId).n,
   }));
 }
 

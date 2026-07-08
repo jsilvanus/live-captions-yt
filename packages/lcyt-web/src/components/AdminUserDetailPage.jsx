@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRoute, useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
+import { useUserAuth } from '../hooks/useUserAuth.js';
 import { adminFetch } from '../lib/admin.js';
 
 const FEATURE_LABELS = {
@@ -31,7 +32,11 @@ const FEATURE_LABELS = {
 
 export function AdminUserDetailPage() {
   const session = useSessionContext();
-  const backendUrl = session.backendUrl;
+  // Prefer the user-login backend (same source Team/Account use) — falling
+  // back to the connected-project session avoids a broken/empty backendUrl
+  // for an admin who is logged in but has no project session connected.
+  const { backendUrl: authBackendUrl } = useUserAuth();
+  const backendUrl = authBackendUrl || session.backendUrl;
   const [, params] = useRoute('/admin/users/:id');
   const [, navigate] = useLocation();
   const userId = params?.id;

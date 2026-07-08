@@ -9,8 +9,11 @@ import { AdminTabShell } from './AdminTabShell.jsx';
 
 export function AdminAuditLogPage() {
   const session = useSessionContext();
-  const backendUrl = session.backendUrl;
-  const { user } = useUserAuth();
+  // Prefer the user-login backend (same source Team/Account use) — falling
+  // back to the connected-project session avoids a broken/empty backendUrl
+  // for an admin who is logged in but has no project session connected.
+  const { user, backendUrl: authBackendUrl } = useUserAuth();
+  const backendUrl = authBackendUrl || session.backendUrl;
 
   return (
     <AdminKeyGate backendUrl={backendUrl} userIsAdmin={!!user?.isAdmin}>
