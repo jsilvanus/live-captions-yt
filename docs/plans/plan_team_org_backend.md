@@ -2,7 +2,7 @@
 id: plan/team_org_backend
 title: "Team/Org Data Model — Backend Design"
 status: in-progress
-summary: "Design for a real multi-project Team/Org data model (organizations, org_members, api_keys.org_id) to replace the /team 'Coming soon' placeholder. Resolves the org-vs-project access precedence question with a baseline-plus-override model. Schema implemented (`organizations`, `org_members`, `api_keys.org_id`) as the foundation for `plan_site_feature_policies.md`'s org-level feature overrides; org CRUD/membership routes, general org-vs-project access-precedence resolution (beyond the feature-policy-specific resolver in the sibling plan), and the `/team` frontend page itself remain unimplemented."
+summary: "Design for a real multi-project Team/Org data model (organizations, org_members, api_keys.org_id) to replace the /team 'Coming soon' placeholder. Resolves the org-vs-project access precedence question with a baseline-plus-override model. Implemented: schema (`organizations`, `org_members`, `api_keys.org_id`), full org CRUD + membership routes (`/orgs/*`), and the `/team` frontend page (see `plan_profile_team_admin_reconciliation.md`). Remaining: the `getEffectiveProjectAccessLevel()` org-baseline-plus-project-override access resolver below and the mechanical sweep of existing per-project auth checks onto it — org membership does not yet grant baseline project access anywhere in the actual route code, only the org/team management surface itself is live."
 ---
 
 # Team/Org Data Model — Backend Design

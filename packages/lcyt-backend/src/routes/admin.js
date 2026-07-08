@@ -158,7 +158,8 @@ export function createAdminRouter(db, jwtSecret) {
 
     const rows = db.prepare(
       `SELECT u.id, u.email, u.name, u.created_at, u.active,
-              (SELECT o.name FROM org_members om JOIN organizations o ON o.id = om.org_id WHERE om.user_id = u.id ORDER BY om.joined_at ASC LIMIT 1) AS org_name
+              (SELECT o.name FROM org_members om JOIN organizations o ON o.id = om.org_id WHERE om.user_id = u.id ORDER BY om.joined_at ASC LIMIT 1) AS org_name,
+              (SELECT om.role FROM org_members om WHERE om.user_id = u.id ORDER BY om.joined_at ASC LIMIT 1) AS org_role
        FROM users u ${where} ORDER BY u.id LIMIT ? OFFSET ?`
     ).all(...params, limit, offset);
     const { count: total } = db.prepare(
@@ -173,6 +174,7 @@ export function createAdminRouter(db, jwtSecret) {
         createdAt: r.created_at,
         active: r.active === 1,
         orgName: r.org_name || null,
+        role: r.org_role || null,
       })),
       total,
       limit,

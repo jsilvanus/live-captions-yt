@@ -221,7 +221,7 @@ describe('/admin/users', () => {
     assert.equal(body.orgs[0].projectCount, 1);
   });
 
-  it('GET /admin/users?orgId= filters users by org membership and includes orgName', async () => {
+  it('GET /admin/users?orgId= filters users by org membership and includes orgName + role', async () => {
     const user = seedUser('orguser@test.com', 'Org User');
     const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Org Team', 'org-team', user.id);
     db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, user.id, 'editor', user.id);
@@ -230,6 +230,7 @@ describe('/admin/users', () => {
     assert.equal(body.users.length, 1);
     assert.equal(body.users[0].email, 'orguser@test.com');
     assert.equal(body.users[0].orgName, 'Org Team');
+    assert.equal(body.users[0].role, 'editor');
   });
 
   it('GET /admin/users/:id returns user with projects', async () => {
