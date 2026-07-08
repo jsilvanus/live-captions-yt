@@ -83,10 +83,18 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
 
     // ── admin path ────────────────────────────────────────────────────────────
     return adminMiddleware(req, res, () => {
-      const { owner, key, expires, daily_limit, lifetime_limit } = req.body || {};
+      const { owner, key, expires, daily_limit, lifetime_limit, orgId } = req.body || {};
 
       if (!owner) {
         return res.status(400).json({ error: 'owner is required' });
+      }
+
+      let resolvedOrgId = null;
+      if (orgId !== undefined && orgId !== null) {
+        resolvedOrgId = Number(orgId);
+        if (!Number.isFinite(resolvedOrgId)) {
+          return res.status(400).json({ error: 'orgId must be a number' });
+        }
       }
 
       const newKey = createKey(db, {
@@ -95,6 +103,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
         expiresAt: expires || null,
         daily_limit: daily_limit ?? null,
         lifetime_limit: lifetime_limit ?? null,
+        org_id: resolvedOrgId,
       });
       return res.status(201).json(formatKey(newKey));
     });
@@ -146,6 +155,15 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
       if ('cea708_delay_ms' in body) updates.cea708_delay_ms = body.cea708_delay_ms;
       if ('graphics_enabled' in body) updates.graphics_enabled = !!body.graphics_enabled;
       if ('embed_cors' in body) updates.embed_cors = body.embed_cors ?? '*';
+      if ('orgId' in body) {
+        if (body.orgId === null || body.orgId === undefined) {
+          updates.org_id = null;
+        } else {
+          const parsedOrgId = Number(body.orgId);
+          if (!Number.isFinite(parsedOrgId)) return res.status(400).json({ error: 'orgId must be a number' });
+          updates.org_id = parsedOrgId;
+        }
+      }
 
       updateKey(db, req.params.key, updates);
 
@@ -222,21 +240,35 @@ function _userListKeys(db, jwtSecret, req, res) {
 function _userCreateKey(db, jwtSecret, req, res) {
   const user = _verifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  const { name, features: requestedFeatures } = req.body || {};
+  const { name, features: requestedFeatures, orgId } = req.body || {};
   if (!name || typeof name !== 'string' || !name.trim()) {
     return res.status(400).json({ error: 'name is required' });
   }
+
+  let resolvedOrgId = null;
+  if (orgId !== undefined && orgId !== null) {
+    resolvedOrgId = Number(orgId);
+    if (!Number.isFinite(resolvedOrgId)) {
+      return res.status(400).json({ error: 'orgId must be a number' });
+    }
+    const membership = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(resolvedOrgId, user.userId);
+    if (!membership || !['owner', 'admin'].includes(membership.role)) {
+      return res.status(403).json({ error: 'owner or admin role required for this team' });
+    }
+  }
+
   const newKey = createKey(db, {
     owner: name.trim(),
     user_id: user.userId,
+    org_id: resolvedOrgId,
   });
   // Provision default features + any requested extras (validated against user entitlements)
   const extra = Array.isArray(requestedFeatures) ? requestedFeatures.filter(f => typeof f === 'string') : [];
-  provisionDefaultProjectFeatures(db, newKey.key, extra);
+  provisionDefaultProjectFeatures(db, newKey.key, extra, resolvedOrgId);
   // Add creating user as owner
   addMember(db, newKey.key, user.userId, 'owner');
   const features = [...getEnabledFeatureSet(db, newKey.key)].sort();
-  return res.status(201).json({ ...formatKey(newKey), features, memberCount: 1, myAccessLevel: 'owner' });
+  return res.status(201).json({ ...formatKey(newKey), features, memberCount: 1, myAccessLevel: 'owner', orgId: resolvedOrgId });
 }
 
 function _userUpdateKey(db, jwtSecret, req, res) {
@@ -245,13 +277,28 @@ function _userUpdateKey(db, jwtSecret, req, res) {
   const existing = getKey(db, req.params.key);
   if (!existing) return res.status(404).json({ error: 'API key not found' });
   if (existing.user_id !== user.userId) return res.status(403).json({ error: 'Forbidden' });
-  const { name } = req.body || {};
-  if (!name || typeof name !== 'string' || !name.trim()) {
+  const { name, orgId } = req.body || {};
+  if (name !== undefined && (!name || typeof name !== 'string' || !name.trim())) {
     return res.status(400).json({ error: 'name is required' });
   }
-  updateKey(db, req.params.key, { owner: name.trim() });
+
+  let resolvedOrgId = undefined;
+  if (orgId !== undefined) {
+    if (orgId === null) {
+      resolvedOrgId = null;
+    } else {
+      resolvedOrgId = Number(orgId);
+      if (!Number.isFinite(resolvedOrgId)) return res.status(400).json({ error: 'orgId must be a number' });
+      const membership = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(resolvedOrgId, user.userId);
+      if (!membership || !['owner', 'admin'].includes(membership.role)) {
+        return res.status(403).json({ error: 'owner or admin role required for this team' });
+      }
+    }
+  }
+
+  updateKey(db, req.params.key, { owner: name?.trim(), org_id: resolvedOrgId });
   const updated = getKey(db, req.params.key);
-  return res.status(200).json(formatKey(updated));
+  return res.status(200).json({ ...formatKey(updated), orgId: updated.org_id ?? null });
 }
 
 function _userDeleteKey(db, jwtSecret, req, res) {

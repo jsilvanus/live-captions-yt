@@ -150,13 +150,13 @@ export function getKeyByEmail(db, email) {
 /**
  * Create a new API key.
  * @param {import('better-sqlite3').Database} db
- * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, user_id?: number|null }} options
+ * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, user_id?: number|null, org_id?: number|null }} options
  * @returns {object} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id } = {}) {
+export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id, org_id } = {}) {
   const resolvedKey = key || randomUUID();
   db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id, org_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     resolvedKey,
     owner,
@@ -172,6 +172,7 @@ export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifet
     cea708_delay_ms ?? 0,
     embed_cors ?? '*',
     user_id ?? null,
+    org_id ?? null,
   );
   return getKey(db, resolvedKey);
 }
@@ -272,10 +273,10 @@ export function anonymizeKey(db, key) {
  * Update owner and/or expires_at for a key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key
- * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string }} fields
+ * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, org_id?: number|null }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, org_id } = {}) {
   const parts = [];
   const params = [];
 
@@ -322,6 +323,10 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (embed_cors !== undefined) {
     parts.push('embed_cors = ?');
     params.push(embed_cors ?? '*');
+  }
+  if (org_id !== undefined) {
+    parts.push('org_id = ?');
+    params.push(org_id ?? null);
   }
 
   if (parts.length === 0) return false;

@@ -10,6 +10,7 @@ import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createSessionRouters } from './routes/session.js';
 import { createAccountRouters } from './routes/account.js';
+import { createOrganizationsRouter } from './routes/orgs.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -461,6 +462,7 @@ app.get('/contact', (req, res) => {
 
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
+app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
 app.use('/ai/models', createAiModelsRouter(db, userAuth));
 app.use('/admin', createAdminRouter(db, jwtSecret));
 app.use('/images',   imagesRouter);
