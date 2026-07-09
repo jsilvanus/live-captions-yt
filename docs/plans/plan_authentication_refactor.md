@@ -1,8 +1,10 @@
 # Plan: Authentication Refactor — Unified Project Access & Scoped External Tokens
 
-**Status:** Draft / Exploratory — not yet scheduled
-**Date:** 2026-07-08
+**Status:** Implemented (backend auth policy, project-access middleware, project-scoped JWTs, and scoped external tokens)
+**Date:** 2026-07-09
 **Context:** Surfaced while designing an event-bus/pub-sub layer for external subscribers. The event bus needs a coherent external-auth story; investigating that exposed pre-existing inconsistencies in how project-scoped routes are gated today. This plan covers **auth only** — it does not cover the bus itself, topic design, or delivery guarantees (event log/audit trail), which remain separate discussions.
+
+**Implementation note:** The backend now has a dedicated `project-access` middleware that accepts session JWTs, identity/project JWTs, device JWTs, and scoped external tokens; the project-scoped routing families were migrated onto that middleware, and backend tests now cover project access and external-token enforcement.
 
 ---
 

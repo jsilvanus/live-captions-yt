@@ -13,6 +13,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
 import { createKey } from '../src/db/keys.js';
+import { addMember } from '../src/db/project-members.js';
 import { createAuthRouter } from '../src/routes/auth.js';
 
 // Reduce bcrypt rounds for speed — override the module-level constant via the
@@ -178,6 +179,46 @@ describe('POST /auth/login', () => {
 // ---------------------------------------------------------------------------
 // GET /auth/me
 // ---------------------------------------------------------------------------
+
+describe('POST /auth/project-token', () => {
+  let userToken;
+  let projectKey;
+
+  before(async () => {
+    const { body } = await register('project-token@example.com', 'password123', 'Project User');
+    userToken = body.token;
+    projectKey = createKey(db, { owner: 'Project User', user_id: body.userId }).key;
+    addMember(db, projectKey, body.userId, 'owner');
+  });
+
+  it('issues a project-scoped token for a project member', async () => {
+    const res = await fetch(`${baseUrl}/auth/project-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ projectId: projectKey, projectRole: 'editor' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.projectId, projectKey);
+    assert.equal(body.projectRole, 'editor');
+    assert.ok(body.token);
+  });
+
+  it('rejects project-scoped token issuance for non-members', async () => {
+    const res = await fetch(`${baseUrl}/auth/project-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ projectId: 'not-a-project' }),
+    });
+    assert.equal(res.status, 403);
+  });
+});
 
 describe('GET /auth/me', () => {
   let userToken;

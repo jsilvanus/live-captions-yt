@@ -455,7 +455,7 @@ export function initDb(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit_log(actor)');
 
-  // ── External access tokens (formerly MCP access tokens) ───────────────────
+  // ── Personal MCP access tokens (plan/mcp) ─────────────────────────────────
   // Named, individually-revocable bearer tokens for external MCP clients
   // (Claude Desktop, Claude Code). Raw token is shown once at creation and
   // only its hash is stored — closer to a GitHub PAT list than to
@@ -467,6 +467,9 @@ export function initDb(dbPath) {
       api_key      TEXT NOT NULL,
       label        TEXT NOT NULL,
       token_hash   TEXT NOT NULL UNIQUE,
+      user_id      INTEGER,
+      project_id   TEXT,
+      scopes       TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       last_used_at TEXT,
       revoked_at   TEXT
@@ -486,7 +489,7 @@ export function initDb(dbPath) {
     if (!mcpTokenCols.has('created_by_name'))    db.exec("ALTER TABLE mcp_tokens ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''");
     if (!mcpTokenCols.has('user_id'))            db.exec('ALTER TABLE mcp_tokens ADD COLUMN user_id INTEGER');
     if (!mcpTokenCols.has('project_id'))         db.exec('ALTER TABLE mcp_tokens ADD COLUMN project_id TEXT');
-    if (!mcpTokenCols.has('scopes'))             db.exec("ALTER TABLE mcp_tokens ADD COLUMN scopes TEXT");
+    if (!mcpTokenCols.has('scopes'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN scopes TEXT');
   }
 
   // Back-fill project_features from legacy api_keys columns (idempotent)

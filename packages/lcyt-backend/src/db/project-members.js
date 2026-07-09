@@ -192,7 +192,12 @@ export function getMemberAccessLevel(db, apiKey, userId) {
   const row = db.prepare(
     'SELECT access_level FROM project_members WHERE api_key = ? AND user_id = ?'
   ).get(apiKey, userId);
-  return row?.access_level ?? null;
+  if (row?.access_level) return row.access_level;
+
+  const keyRow = db.prepare('SELECT user_id FROM api_keys WHERE key = ?').get(apiKey);
+  if (keyRow?.user_id === userId) return 'owner';
+
+  return null;
 }
 
 /**
@@ -203,18 +208,4 @@ export function getMemberAccessLevel(db, apiKey, userId) {
  */
 export function getMemberCount(db, apiKey) {
   return db.prepare('SELECT COUNT(*) as n FROM project_members WHERE api_key = ?').get(apiKey)?.n ?? 0;
-}
-
-/**
- * Check whether a user is allowed to access a project.
- * The ownership path is checked first (api_keys.user_id), then project_members.
- * @param {import('better-sqlite3').Database} db
- * @param {number} userId
- * @param {string} apiKey
- * @returns {boolean}
- */
-export function isProjectMember(db, userId, apiKey) {
-  const keyRow = db.prepare('SELECT user_id FROM api_keys WHERE key = ?').get(apiKey);
-  if (keyRow?.user_id && Number(keyRow.user_id) === Number(userId)) return true;
-  return !!db.prepare('SELECT 1 FROM project_members WHERE api_key = ? AND user_id = ? LIMIT 1').get(apiKey, userId);
 }

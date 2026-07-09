@@ -3,45 +3,36 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser, getUserAccountExport, deleteOwnedProjectsForUser, deleteUserAccount } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
+import { getMemberAccessLevel } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { deviceLoginHandler } from './device-roles.js';
 
 const BCRYPT_ROUNDS = 12;
 const USER_TOKEN_TTL_DAYS = 30;
-const PROJECT_TOKEN_TTL_DAYS = 30;
 
-function issueUserToken(jwtSecret, { userId, email, isAdmin = false, siteRole = 'member' }) {
+function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
   return jwt.sign(
-    {
-      type: 'user',
-      kind: 'identity',
-      userId,
-      email,
-      isAdmin: !!isAdmin,
-      siteRole: siteRole === 'admin' ? 'admin' : 'member',
-      role: siteRole === 'admin' ? 'admin' : 'member',
-    },
+    { type: 'user', userId, email, isAdmin: !!isAdmin },
     jwtSecret,
     { expiresIn: `${USER_TOKEN_TTL_DAYS}d` }
   );
 }
 
-function issueProjectAccessToken(jwtSecret, { userId, email, projectId, projectRole = 'member', isAdmin = false, siteRole = 'member' }) {
+function issueProjectToken(jwtSecret, { userId, email, isAdmin = false, projectId, projectRole = 'member', siteRole = null, scopes = null }) {
   return jwt.sign(
     {
-      type: 'user',
       kind: 'project',
+      type: 'user',
       userId,
       email,
       isAdmin: !!isAdmin,
-      siteRole: siteRole === 'admin' ? 'admin' : 'member',
-      role: projectRole === 'owner' || projectRole === 'admin' ? projectRole : 'member',
+      siteRole: siteRole || (isAdmin ? 'admin' : null),
       projectId,
-      projectRole: projectRole === 'owner' || projectRole === 'admin' || projectRole === 'member' ? projectRole : 'member',
-      scopes: [],
+      projectRole,
+      scopes,
     },
     jwtSecret,
-    { expiresIn: `${PROJECT_TOKEN_TTL_DAYS}d` }
+    { expiresIn: '2h' }
   );
 }
 
@@ -93,9 +84,8 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
       const user = createUser(db, { email, passwordHash, name: name || null });
       provisionDefaultUserFeatures(db, user.id);
-      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false, siteRole: 'member' });
-      res.cookie('lcyt_identity', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-      res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false, siteRole: 'member' });
+      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false });
+      res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false });
     } catch (err) {
       console.error('[auth] register error:', err.message);
       res.status(500).json({ error: 'Registration failed' });
@@ -117,41 +107,39 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       if (!match) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
-      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
-      res.cookie('lcyt_identity', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-      res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
+      const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin });
+      res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin });
     } catch (err) {
       console.error('[auth] login error:', err.message);
       res.status(500).json({ error: 'Login failed' });
     }
   });
 
-  // POST /auth/project-token — exchange a user identity token for a project-scoped access token
+  // POST /auth/project-token — exchange a user JWT for a project-scoped access JWT
   router.post('/project-token', userAuth, (req, res) => {
-    const projectId = req.body?.projectId || req.body?.project_id || req.query?.projectId || req.query?.project_id;
+    const { projectId, projectRole = 'member', scopes } = req.body || {};
     if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
       return res.status(400).json({ error: 'projectId is required' });
     }
-
-    const projectRole = req.body?.projectRole || req.body?.project_role || 'member';
-    const token = issueProjectAccessToken(jwtSecret, {
+    const accessLevel = getMemberAccessLevel(db, projectId.trim(), req.user.userId);
+    if (!accessLevel) {
+      return res.status(403).json({ error: 'Not a project member' });
+    }
+    const token = issueProjectToken(jwtSecret, {
       userId: req.user.userId,
       email: req.user.email,
       projectId: projectId.trim(),
-      projectRole,
-      isAdmin: !!req.user.isAdmin,
-      siteRole: req.user.siteRole || 'member',
+      projectRole: projectRole || accessLevel,
+      scopes,
     });
-
-    res.cookie('lcyt_project', token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
-    res.json({ token, projectId: projectId.trim(), projectRole, userId: req.user.userId, siteRole: req.user.siteRole || 'member' });
+    return res.json({ token, projectId: projectId.trim(), projectRole: projectRole || accessLevel, accessLevel });
   });
 
   // GET /auth/me — requires user token
   router.get('/me', userAuth, (req, res) => {
     const user = getUserById(db, req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
-    res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
+    res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
   });
 
   // PATCH /auth/me — update own profile (name); requires user token
@@ -171,7 +159,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       updateUser(db, req.user.userId, { name: trimmed });
       const user = getUserById(db, req.user.userId);
       if (!user) return res.status(404).json({ error: 'User not found' });
-      res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin, siteRole: user.is_admin ? 'admin' : 'member' });
+      res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
     } catch (err) {
       console.error('[auth] update-me error:', err.message);
       res.status(500).json({ error: 'Profile update failed' });

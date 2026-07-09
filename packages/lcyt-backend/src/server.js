@@ -14,7 +14,7 @@ import { createOrganizationsRouter } from './routes/orgs.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
-import { createExternalTokensRouter } from './routes/mcp-tokens.js';
+import { createMcpTokensRouter } from './routes/mcp-tokens.js';
 import { setHlsSubsManager, broadcastToViewers } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
@@ -78,8 +78,8 @@ import {
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
 import { createAdminMiddleware } from './middleware/admin.js';
-import { createUserAuthMiddleware } from './middleware/user-auth.js';
 import { createProjectAccessMiddleware } from './middleware/project-access.js';
+import { createUserAuthMiddleware } from './middleware/user-auth.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -355,7 +355,7 @@ const auth = createAuthMiddleware(jwtSecret);
 const userAuth = createUserAuthMiddleware(jwtSecret);
 const projectAuth = createProjectAccessMiddleware(db, jwtSecret);
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, auth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, projectAuth, relayManager);
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -472,24 +472,23 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
-app.use('/cues', createCueRouter(db, auth, _cueEngine));
-app.use('/external-tokens', createExternalTokensRouter(db, projectAuth));
-app.use('/mcp-tokens', createExternalTokensRouter(db, projectAuth));
-app.use('/ai/providers', createProjectAiProvidersRouter(db, auth, { bridgeManager: productionBridgeManager }));
-app.use('/ai', createAiRouter(db, auth));
-app.use('/agent', createAgentRouter(db, auth, _agent));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, projectAuth));
+app.use('/cues', createCueRouter(db, projectAuth, _cueEngine));
+app.use('/mcp-tokens', createMcpTokensRouter(db, projectAuth));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, projectAuth, { bridgeManager: productionBridgeManager }));
+app.use('/ai', createAiRouter(db, projectAuth));
+app.use('/agent', createAgentRouter(db, projectAuth, _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, auth));
-app.use('/roles', createRolesChatRouter(db, auth, _toolsContext, _rolesBus));
-app.use('/roles', createVisionRolesRouter(db, auth, _visionRoleManager));
+app.use('/roles', createRolesRouter(db, projectAuth));
+app.use('/roles', createRolesChatRouter(db, projectAuth, _toolsContext, _rolesBus));
+app.use('/roles', createVisionRolesRouter(db, projectAuth, _visionRoleManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
-  db, auth, _toolsContext, _assistantManager, _agent,
+  db, projectAuth, _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
-app.use('/roles/planner', createPlannerRouter(db, auth, _agent));
-app.use('/connectors', createConnectorsRouter(db, auth));
-app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine, jwtSecret));
+app.use('/roles/planner', createPlannerRouter(db, projectAuth, _agent));
+app.use('/connectors', createConnectorsRouter(db, projectAuth));
+app.use('/variables', createVariablesRouter(db, projectAuth, _connectorsBus, _connectorsEngine, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {

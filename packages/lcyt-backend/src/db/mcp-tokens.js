@@ -27,20 +27,35 @@ function serializeScopes(scopes) {
   return null;
 }
 
+function parseScopes(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed.filter(Boolean) : [trimmed];
+    } catch {
+      return trimmed.split(',').map((entry) => entry.trim()).filter(Boolean);
+    }
+  }
+  return null;
+}
+
 export function tokenHasScope(scopes, scope) {
   if (!scope) return true;
-  if (!scopes || (Array.isArray(scopes) && scopes.length === 0)) return true;
-  const normalized = Array.isArray(scopes) ? scopes : (typeof scopes === 'string' ? scopes.split(',') : []);
-  const patterns = normalized.map((entry) => String(entry).trim()).filter(Boolean);
-  if (patterns.length === 0) return true;
-  return patterns.some((pattern) => {
+  const normalized = parseScopes(scopes);
+  if (!normalized || normalized.length === 0) return true;
+  return normalized.some((pattern) => {
     if (pattern === '*') return true;
     if (pattern === scope) return true;
-    const [resource, verb] = pattern.split(':');
+    const [resource, verb] = String(pattern).split(':');
     if (!resource || !verb) return false;
+    const [scopeResource, scopeVerb] = String(scope).split(':');
     if (resource === '*' && verb === '*') return true;
-    if (resource === '*' && verb === scope.split(':')[1]) return true;
-    if (resource === scope.split(':')[0] && (verb === '*' || verb === scope.split(':')[1])) return true;
+    if (resource === '*' && verb === scopeVerb) return true;
+    if (resource === scopeResource && (verb === '*' || verb === scopeVerb)) return true;
     return false;
   });
 }
@@ -50,7 +65,7 @@ export function tokenHasScope(scopes, scope) {
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {{ label: string, active?: boolean, createdByName?: string, createdByEmail?: string, createdByUserId?: number|null, userId?: number|null, projectId?: string|null, scopes?: string[]|string|null }} opts
- * @returns {{ id: number, token: string, label: string, active: boolean, createdByName: string }} — raw token, shown once
+ * @returns {{ id: number, token: string, label: string, active: boolean, createdByName: string, scopes: string[]|null }} — raw token, shown once
  */
 export function createMcpToken(db, apiKey, opts = {}) {
   const label = (opts.label || '').trim();
@@ -68,7 +83,7 @@ export function createMcpToken(db, apiKey, opts = {}) {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(apiKey, label, hashToken(token), active, createdByUserId, createdByName, userId, projectId, scopes);
 
-  return { id: Number(info.lastInsertRowid), token, label, active: active === 1, createdByName };
+  return { id: Number(info.lastInsertRowid), token, label, active: active === 1, createdByName, scopes: parseScopes(scopes) };
 }
 
 /**
@@ -160,7 +175,7 @@ export function verifyMcpToken(db, rawToken) {
     label: row.label,
     userId: row.user_id ?? null,
     projectId: row.project_id ?? null,
-    scopes: row.scopes ? JSON.parse(row.scopes) : null,
+    scopes: parseScopes(row.scopes),
   };
 }
 

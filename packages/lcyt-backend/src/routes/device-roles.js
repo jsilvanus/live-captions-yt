@@ -240,20 +240,21 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
   let permissions = [];
   try { permissions = JSON.parse(matchedRole.permissions || '[]'); } catch {}
 
-  // No expiry — role must be deactivated to revoke
+  // Short-lived project-scoped device JWT. The role must be deactivated to revoke.
   const token = jwt.sign(
     {
-      type: 'device',
-      kind: 'device',
-      projectId: keyRow.key,
-      apiKey: keyRow.key,
-      roleId: matchedRole.id,
-      roleType: matchedRole.role_type,
-      deviceRole: matchedRole.role_type,
+      kind:        'device',
+      type:        'device',
+      apiKey:      keyRow.key,
+      projectId:   keyRow.key,
       projectRole: 'member',
+      deviceRole:  matchedRole.role_type,
+      roleId:      matchedRole.id,
+      roleType:    matchedRole.role_type,
       permissions,
     },
     jwtSecret,
+    { expiresIn: '1h' },
   );
 
   return res.json({
