@@ -87,8 +87,15 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
 
         // For each caption, compose text from translations and write backend files
         const sendCaptions = resolvedCaptions.map(caption => {
-          const { text, translations, captionLang, showOriginal, timestamp, speechStart, ...rest } = caption;
+          const { text, translations, captionLang, showOriginal, timestamp, speechStart, fileFormats, ...rest } = caption;
           const composedText = composeCaptionText(text, captionLang, translations, showOriginal);
+
+          // Per-language backend-file format from the client ('text' | 'youtube' | 'vtt';
+          // 'original' keys the untranslated text). Anything else falls back to 'youtube'.
+          const fileFormatFor = (lang) => {
+            const f = fileFormats?.[lang];
+            return (f === 'vtt' || f === 'text' || f === 'youtube') ? f : 'youtube';
+          };
 
           // Write original and all translations to backend files if enabled
           const tsStr = typeof timestamp === 'string' ? timestamp
@@ -97,7 +104,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
             resolveStorage(session.apiKey).then(fileStorage => {
               for (const [lang, translatedText] of Object.entries(translations)) {
                 writeToBackendFile(
-                  { apiKey: session.apiKey, sessionId, lang, format: 'youtube', fileHandles: session._fileHandles, sessionStartMs: session.startedAt },
+                  { apiKey: session.apiKey, sessionId, lang, format: fileFormatFor(lang), fileHandles: session._fileHandles, sessionStartMs: session.startedAt },
                   translatedText, tsStr, db, fileStorage, buildVttCue
                 );
               }
@@ -106,7 +113,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           if (backendFileEnabled && resolveStorage) {
             resolveStorage(session.apiKey).then(fileStorage => {
               writeToBackendFile(
-                { apiKey: session.apiKey, sessionId, lang: 'original', format: 'youtube', fileHandles: session._fileHandles, sessionStartMs: session.startedAt },
+                { apiKey: session.apiKey, sessionId, lang: 'original', format: fileFormatFor('original'), fileHandles: session._fileHandles, sessionStartMs: session.startedAt },
                 text, tsStr, db, fileStorage, buildVttCue
               );
             }).catch(() => {});

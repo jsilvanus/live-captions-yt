@@ -305,6 +305,32 @@ describe('BackendCaptionSender send()', () => {
 
     assert.ok(calls[0].options.headers['Authorization'] === 'Bearer test-jwt-token');
   });
+
+  it('should pass extraOpts fileFormats through to the caption', async () => {
+    const calls = setupFetch([
+      { ok: true, status: 202, data: { ok: true, requestId: 'r1' } }
+    ]);
+
+    await sender.send('With formats', undefined, {
+      translations: { 'fi-FI': 'käännös' },
+      fileFormats: { original: 'vtt', 'fi-FI': 'vtt' },
+    });
+
+    const body = JSON.parse(calls[0].options.body);
+    assert.deepStrictEqual(body.captions[0].fileFormats, { original: 'vtt', 'fi-FI': 'vtt' });
+    assert.deepStrictEqual(body.captions[0].translations, { 'fi-FI': 'käännös' });
+  });
+
+  it('should omit fileFormats when not an object', async () => {
+    const calls = setupFetch([
+      { ok: true, status: 202, data: { ok: true, requestId: 'r1' } }
+    ]);
+
+    await sender.send('No formats', undefined, { fileFormats: 'vtt' });
+
+    const body = JSON.parse(calls[0].options.body);
+    assert.ok(!('fileFormats' in body.captions[0]));
+  });
 });
 
 // ---------------------------------------------------------------------------

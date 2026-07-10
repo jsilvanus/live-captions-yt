@@ -35,6 +35,18 @@ export interface SyncResult {
   statusCode: number;
 }
 
+/** Backend caption-file format for one language ('original' keys the untranslated text). */
+export type CaptionFileFormat = 'text' | 'youtube' | 'vtt';
+
+/** Extra per-caption fields merged into the POST /captions payload. */
+export interface SendExtraOptions {
+  translations?: Record<string, string>;
+  captionLang?: string;
+  showOriginal?: boolean;
+  codes?: Record<string, unknown>;
+  fileFormats?: Record<string, CaptionFileFormat>;
+}
+
 export declare class BackendCaptionSender {
   backendUrl: string;
   apiKey: string;
@@ -52,8 +64,8 @@ export declare class BackendCaptionSender {
   start(): Promise<this>;
   end(): Promise<this>;
 
-  send(text: string, timestamp?: string | Date | number): Promise<SendResult>;
-  send(text: string, options: { time: number }): Promise<SendResult>;
+  send(text: string, timestamp?: string | Date | number, extraOpts?: SendExtraOptions): Promise<SendResult>;
+  send(text: string, options: { time: number }, extraOpts?: SendExtraOptions): Promise<SendResult>;
   sendBatch(captions?: BackendCaptionItem[]): Promise<SendBatchResult>;
 
   construct(text: string, timestamp?: string | Date | number): number;

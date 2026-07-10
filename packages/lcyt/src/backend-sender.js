@@ -161,7 +161,10 @@ export class BackendCaptionSender {
    *   - `{ time: number }` — milliseconds since session start, resolved server-side
    *   - Omit for auto-generated timestamp
    * @param {object} [extraOpts] - Optional extra fields to merge into the caption object
-   *   e.g. { translations: { 'fi-FI': '...' }, captionLang: 'fi-FI', showOriginal: true }
+   *   e.g. { translations: { 'fi-FI': '...' }, captionLang: 'fi-FI', showOriginal: true,
+   *          fileFormats: { original: 'vtt', 'fi-FI': 'vtt' } }
+   *   `fileFormats` selects the backend caption-file format per language
+   *   ('text' | 'youtube' | 'vtt'; 'original' keys the untranslated text)
    * @returns {Promise<{ok: boolean, requestId: string}>} Immediate ack; delivery result arrives via GET /events SSE stream
    */
   async send(text, timestampOrOptions, extraOpts) {
@@ -185,6 +188,7 @@ export class BackendCaptionSender {
       if (extraOpts.captionLang) caption.captionLang = extraOpts.captionLang;
       if (extraOpts.showOriginal !== undefined) caption.showOriginal = extraOpts.showOriginal;
       if (extraOpts.codes && typeof extraOpts.codes === 'object') caption.codes = extraOpts.codes;
+      if (extraOpts.fileFormats && typeof extraOpts.fileFormats === 'object') caption.fileFormats = extraOpts.fileFormats;
     }
 
     return this._fetch('/captions', {
