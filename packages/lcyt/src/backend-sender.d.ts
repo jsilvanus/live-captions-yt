@@ -8,7 +8,7 @@ export interface BackendSenderOptions {
   verbose?: boolean;
 }
 
-export interface BackendCaptionItem {
+export interface BackendCaptionItem extends SendExtraOptions {
   text: string;
   timestamp?: string | Date | number;
   time?: number;
@@ -68,7 +68,7 @@ export declare class BackendCaptionSender {
   send(text: string, options: { time: number }, extraOpts?: SendExtraOptions): Promise<SendResult>;
   sendBatch(captions?: BackendCaptionItem[]): Promise<SendBatchResult>;
 
-  construct(text: string, timestamp?: string | Date | number): number;
+  construct(text: string, timestamp?: string | Date | number | { time: number }, extraOpts?: SendExtraOptions): number;
   getQueue(): BackendCaptionItem[];
   clearQueue(): number;
 

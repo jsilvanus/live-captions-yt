@@ -1,8 +1,10 @@
 # Batched YouTube Sending with Per-Caption Options
 
-**Status:** draft
+**Status:** implemented
 **Scope:** `packages/lcyt` (client library), `packages/lcyt-web` (`useSession`), regression tests in `packages/lcyt-backend`
 **Backend changes:** none (verification only)
+
+> Implemented as planned: `BackendCaptionSender.construct(text, timestamp, extraOpts)` with queue-time timestamping (plus `{ time }` form support for parity with `send()`), `useSession.construct` opts forwarding, `.d.ts` types (`BackendCaptionItem extends SendExtraOptions`), and the Phase 3 backend regression test (`test/captions.test.js`, "batch send keeps per-caption options...").
 
 ## Problem
 

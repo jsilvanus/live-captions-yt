@@ -454,7 +454,7 @@ export function useSession({
     const tempId = 'q-' + Math.random().toString(36).slice(2);
     const meta = _translationMeta(opts);
     cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true, ...meta });
-    senderRef.current.construct(text, timestamp);
+    senderRef.current.construct(text, timestamp, opts);
     batchBufferRef.current.push({ text, requestId: tempId });
 
     if (!batchTimerRef.current) {

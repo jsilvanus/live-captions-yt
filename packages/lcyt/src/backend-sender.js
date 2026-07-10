@@ -224,12 +224,40 @@ export class BackendCaptionSender {
    * Add a caption to the local queue without sending.
    * Use sendBatch() (with no arguments) to flush the queue.
    *
+   * When `timestamp` is omitted, the caption is stamped with the current time
+   * at queue time (ISO string, no trailing 'Z') so batched captions keep
+   * their real spacing instead of collapsing to the flush time.
+   *
    * @param {string} text - Caption text
-   * @param {string|Date|number} [timestamp] - Optional timestamp
+   * @param {string|Date|number|{time: number}} [timestamp] - Optional timestamp,
+   *   or `{ time }` (ms since session start, resolved server-side)
+   * @param {object} [extraOpts] - Same whitelisted fields as send():
+   *   translations, captionLang, showOriginal, codes, fileFormats
    * @returns {number} Current queue length
    */
-  construct(text, timestamp) {
-    this._queue.push({ text, timestamp: timestamp !== undefined ? timestamp : null });
+  construct(text, timestamp, extraOpts) {
+    const caption = { text };
+
+    if (timestamp !== undefined && timestamp !== null) {
+      if (typeof timestamp === 'object' && !(timestamp instanceof Date) && 'time' in timestamp) {
+        caption.time = timestamp.time;
+      } else {
+        caption.timestamp = timestamp;
+      }
+    } else {
+      caption.timestamp = new Date().toISOString().replace('Z', '');
+    }
+
+    if (extraOpts) {
+      if (extraOpts.translations && Object.keys(extraOpts.translations).length > 0)
+        caption.translations = extraOpts.translations;
+      if (extraOpts.captionLang) caption.captionLang = extraOpts.captionLang;
+      if (extraOpts.showOriginal !== undefined) caption.showOriginal = extraOpts.showOriginal;
+      if (extraOpts.codes && typeof extraOpts.codes === 'object') caption.codes = extraOpts.codes;
+      if (extraOpts.fileFormats && typeof extraOpts.fileFormats === 'object') caption.fileFormats = extraOpts.fileFormats;
+    }
+
+    this._queue.push(caption);
     return this._queue.length;
   }
 

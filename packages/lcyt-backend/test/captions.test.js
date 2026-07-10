@@ -392,7 +392,8 @@ describe('POST /captions — backend file formats', () => {
   });
 
   function createFileSession() {
-    return store.create({
+    const batchCalls = [];
+    const session = store.create({
       apiKey: 'file-key',
       streamKey: 'file-stream',
       domain: 'https://test.com',
@@ -401,27 +402,29 @@ describe('POST /captions — backend file formats', () => {
       syncOffset: 0,
       sender: {
         sequence: 0,
+        batchCalls,
         send: async () => ({ sequence: 1, timestamp: '2026-02-20T12:00:00.000', statusCode: 200, serverTimestamp: null }),
-        sendBatch: async (c) => ({ sequence: c.length, count: c.length, statusCode: 200, serverTimestamp: null }),
+        sendBatch: async (c) => { batchCalls.push(c); return { sequence: c.length, count: c.length, statusCode: 200, serverTimestamp: null }; },
         end: async () => {},
       },
     });
+    return session;
   }
 
   // The backend-file writes are fire-and-forget and go through append streams,
-  // so a file can exist before its content is flushed. Poll until the expected
-  // number of files exist AND their contents satisfy the predicate.
+  // so a file can exist before its content is flushed. Poll until at least
+  // `count` files with the extension have contents satisfying the predicate,
+  // and return those contents (files from other tests in this suite won't
+  // match the predicate and are ignored).
   async function waitForFiles(ext, count, ready, timeoutMs = 2000) {
     const keyDir = join(filesDir, 'file-key');
     const deadline = Date.now() + timeoutMs;
     for (;;) {
       let names = [];
       try { names = readdirSync(keyDir).filter(n => n.endsWith(ext)); } catch {}
-      if (names.length >= count) {
-        const contents = names.map(n => readFileSync(join(keyDir, n), 'utf8'));
-        if (contents.every(ready)) return contents;
-      }
-      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${count} ready ${ext} file(s), saw ${names.length}`);
+      const contents = names.map(n => readFileSync(join(keyDir, n), 'utf8')).filter(ready);
+      if (contents.length >= count) return contents;
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${count} ready ${ext} file(s), saw ${contents.length}`);
       await new Promise(r => setTimeout(r, 25));
     }
   }
@@ -484,5 +487,46 @@ describe('POST /captions — backend file formats', () => {
       assert.ok(!c.includes('WEBVTT'));
       assert.ok(!c.includes('-->'));
     }
+  });
+
+  it('batch send keeps per-caption options and delivers one sendBatch to YouTube (plan_batch_options)', async () => {
+    const session = createFileSession();
+    const token = jwt.sign(
+      { sessionId: session.sessionId, apiKey: 'file-key', streamKey: 'file-stream', domain: 'https://test.com' },
+      JWT_SECRET
+    );
+
+    const res = await fetch(`${fileBaseUrl}/captions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        captions: [
+          { text: 'Batch line one', time: 5000,  translations: { 'fi-FI': 'Erärivi yksi' },  fileFormats: { original: 'vtt', 'fi-FI': 'vtt' } },
+          { text: 'Batch line two', time: 12000, translations: { 'fi-FI': 'Erärivi kaksi' }, fileFormats: { original: 'vtt', 'fi-FI': 'vtt' } },
+        ],
+      }),
+    });
+    assert.strictEqual(res.status, 202);
+
+    // Both cues from this batch must land in each file (original + fi-FI),
+    // with session-relative times taken from each caption's own `time`.
+    const contents = await waitForFiles('.vtt', 2,
+      c => c.includes('00:00:05.000 --> 00:00:08.000') && c.includes('00:00:12.000 --> 00:00:15.000'));
+    assert.ok(contents.some(c => c.includes('Batch line one') && c.includes('Batch line two')));
+    assert.ok(contents.some(c => c.includes('Erärivi yksi') && c.includes('Erärivi kaksi')));
+
+    // YouTube delivery stays batched: exactly one sendBatch call with both captions.
+    assert.strictEqual(session.sender.batchCalls.length, 1);
+    const batch = session.sender.batchCalls[0];
+    assert.strictEqual(batch.length, 2);
+    assert.strictEqual(batch[0].text, 'Batch line one');
+    assert.strictEqual(batch[1].text, 'Batch line two');
+    // Per-caption timestamps survive (resolved from each caption's `time`)
+    const t0 = new Date(batch[0].timestamp).getTime();
+    const t1 = new Date(batch[1].timestamp).getTime();
+    assert.strictEqual(t1 - t0, 7000);
+    // Internal-only fields never leak into the YouTube payload
+    assert.ok(!('fileFormats' in batch[0]));
+    assert.ok(!('translations' in batch[0]));
   });
 });
