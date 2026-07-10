@@ -77,7 +77,9 @@ export class SttManager extends EventEmitter {
     this._db = db;
     this._getTranslationVendorConfig = null;
     this._getTranslationTargets = null;
-    this._broadcastToViewers = null;
+    this._writeBackendCaptionFiles = null;
+    this._composeCaptionText = null;
+    this._fanOutToTargets = null;
     /** @type {Map<string, SttSession>} */
     this._sessions = new Map();
     /** @type {{ major: number, minor: number }|null} */
@@ -108,12 +110,24 @@ export class SttManager extends EventEmitter {
    * actually ran). Setter-injection matches this codebase's existing
    * convention, e.g. `cueEngine.setEmbeddingFn()` in `lcyt-agent`.
    *
-   * @param {{ getTranslationVendorConfig?: Function, getTranslationTargets?: Function, broadcastToViewers?: Function }} [helpers]
+   * @param {{ getTranslationVendorConfig?: Function, getTranslationTargets?: Function, writeBackendCaptionFiles?: Function, composeCaptionText?: Function, fanOutToTargets?: Function }} [helpers]
+   *   `writeBackendCaptionFiles(session, { text, translations, fileFormats, timestamp })`
+   *   archives the transcript + translations as backend caption files
+   *   (lcyt-backend's createSessionCaptionFileWriter) — the same archiving
+   *   POST /captions does, which this direct-delivery path bypasses.
+   *   `fanOutToTargets(session, captions)` delivers to the session's extra
+   *   targets with per-target routed composition (lcyt-backend's
+   *   createCaptionFanout — shared with POST /captions); it replaced the
+   *   old hand-rolled loop and the `broadcastToViewers` injection.
+   *   `composeCaptionText(text, captionLang, translations, showOriginal)`
+   *   builds the default composed text for the primary sender and targets.
    */
-  setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers } = {}) {
+  setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, writeBackendCaptionFiles, composeCaptionText, fanOutToTargets } = {}) {
     this._getTranslationVendorConfig = getTranslationVendorConfig || null;
     this._getTranslationTargets = getTranslationTargets || null;
-    this._broadcastToViewers = broadcastToViewers || null;
+    this._writeBackendCaptionFiles = writeBackendCaptionFiles || null;
+    this._composeCaptionText = composeCaptionText || null;
+    this._fanOutToTargets = fanOutToTargets || null;
   }
 
   /**
@@ -385,6 +399,8 @@ export class SttManager extends EventEmitter {
         // Server-side translation (Phase 5)
         let translations = {};
         let captionLang = null;
+        const fileFormats = {};
+        let showOriginal;
         if (db && this._getTranslationVendorConfig && this._getTranslationTargets) {
           try {
             const vendorConfig = this._getTranslationVendorConfig(db, apiKey);
@@ -407,56 +423,67 @@ export class SttManager extends EventEmitter {
                   }
                   if (t.target === 'captions') {
                     captionLang = t.lang;
+                    if (t.showOriginal !== undefined && t.showOriginal !== null) showOriginal = t.showOriginal;
+                  }
+                  if (t.target === 'backend-file' && t.format) {
+                    fileFormats[t.lang] = t.format;
                   }
                 })
             );
+
+            // No per-row value on the captions-target row → vendor-level default
+            if (showOriginal === undefined && vendorConfig?.showOriginal !== undefined) {
+              showOriginal = Boolean(vendorConfig.showOriginal);
+            }
           } catch (err) {
             logger.debug(`[stt] Translation skipped: ${err.message}`);
           }
         }
 
-        // Fan-out to all extra targets (YouTube, viewer, generic)
-        if (backendSession.extraTargets && backendSession.extraTargets.length > 0) {
-          const broadcastToViewers = this._broadcastToViewers;
+        // Default composition: what YouTube/viewers see when no per-target
+        // routing overrides it — same composeCaptionText the captions route
+        // uses (injected; identity fallback when helpers were never set).
+        const composedText = this._composeCaptionText
+          ? this._composeCaptionText(trimmed, captionLang, translations, showOriginal)
+          : trimmed;
 
-          for (const target of backendSession.extraTargets) {
-            if (target.type === 'youtube' && target.sender) {
-              target.sender.send(trimmed, ts).catch(err => {
-                logger.warn(`[stt] YouTube target ${target.id} error: ${err.message}`);
-              });
-            } else if (target.type === 'viewer' && target.viewerKey && broadcastToViewers) {
-              broadcastToViewers(target.viewerKey, {
-                text:          trimmed,
-                composedText:  trimmed,
-                sequence:      seq,
-                timestamp:     ts.toISOString(),
-                ...(Object.keys(translations).length > 0 && { translations }),
-              });
-            } else if (target.type === 'generic' && target.url) {
-              fetch(target.url, {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json', ...(target.headers || {}) },
-                body:    JSON.stringify({
-                  source:   backendSession.domain,
-                  sequence: seq,
-                  captions: [{
-                    text: trimmed,
-                    composedText: trimmed,
-                    timestamp: ts.toISOString(),
-                    ...(captionLang && { captionLang }),
-                    ...(Object.keys(translations).length > 0 && { translations }),
-                  }],
-                }),
-              }).catch(err => {
-                logger.warn(`[stt] Generic target ${target.id} error: ${err.message}`);
-              });
-            }
+        // Archive transcript + translations as backend caption files (same
+        // archiving POST /captions does; this delivery path bypasses it).
+        // Fire-and-forget; the writer itself checks backend_file_enabled.
+        if (this._writeBackendCaptionFiles) {
+          try {
+            this._writeBackendCaptionFiles(backendSession, {
+              text: trimmed,
+              translations,
+              fileFormats,
+              timestamp: ts.toISOString().replace('Z', ''),
+            });
+          } catch (err) {
+            logger.debug(`[stt] Backend caption-file write skipped: ${err.message}`);
           }
         }
 
-        // Legacy primary sender
+        // Fan-out to all extra targets (YouTube, viewer, generic) via the
+        // shared helper from lcyt-backend (per-target routed composition,
+        // viewer-owner registration — same code path as POST /captions).
+        if (this._fanOutToTargets) {
+          try {
+            this._fanOutToTargets(backendSession, [{
+              text: trimmed,
+              composedText,
+              timestamp: ts,
+              ...(Object.keys(translations).length > 0 && { translations }),
+              ...(captionLang && { captionLang }),
+              ...(showOriginal !== undefined && { showOriginal }),
+            }]);
+          } catch (err) {
+            logger.warn(`[stt] Target fan-out error: ${err.message}`);
+          }
+        }
+
+        // Legacy primary sender — receives the same composed text as targets
         if (backendSession.sender) {
-          backendSession.sender.send(trimmed, ts).catch(err => {
+          backendSession.sender.send(composedText, ts).catch(err => {
             logger.warn(`[stt] Primary sender error: ${err.message}`);
           });
           backendSession.sequence = backendSession.sender.sequence;

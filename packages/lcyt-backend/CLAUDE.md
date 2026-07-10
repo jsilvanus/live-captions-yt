@@ -55,6 +55,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `RTMP_HOST` | RTMP host for RTMP relay | none |
 | `RTMP_APP` / `RTMP_APPLICATION` | RTMP application name for relay | none |
 | `RTMP_RELAY_ACTIVE` | If set to `1`, enables RTMP relay functionality | unset |
+| `MUSIC_DETECTION_ACTIVE` | If set to `1`, mounts the `/music` server-side analysis routes (`lcyt-music`) | unset |
 | `RTMP_CONTROL_URL` | nginx-rtmp control URL (legacy fallback for `dropPublisher`) | none |
 | `MEDIAMTX_API_URL` | MediaMTX v3 REST API base URL; activates MediaMTX `dropPublisher` path when set | none |
 | `MEDIAMTX_API_USER` | Basic-auth username for the MediaMTX API | none |
@@ -111,13 +112,13 @@ POST /auth/change-password — change password (user Bearer token)
 POST /live                — register session → returns session JWT
 GET  /live                — session status (Bearer token)
 DELETE /live              — tear down session (Bearer token)
-POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token)
+POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token); per-caption fileFormats { original|<lang>: 'text'|'youtube'|'vtt' } selects the backend caption-file format per language (default 'youtube' plain text)
 GET  /events              — SSE stream of caption delivery results (Bearer token or ?token=)
 POST /sync                — NTP clock sync (Bearer token)
 GET  /stats               — per-key usage stats (Bearer token)
 DELETE /stats             — GDPR right-to-erasure: anonymise key and delete personal data (Bearer token)
 GET  /file                — list caption files saved for the authenticated key (Bearer token)
-GET  /file/:id            — download a caption file (Bearer token or ?token=)
+GET  /file/:id            — download a caption file (Bearer token or ?token=); ?offsetMs=±N shifts VTT cue times on the fly for VOD alignment (vtt files only)
 DELETE /file/:id          — delete a caption file (Bearer token)
 GET  /usage               — per-domain caption stats (public if USAGE_PUBLIC, else X-Admin-Key)
 POST /mic                 — claim/release soft mic lock for collaborative sessions (Bearer token)
@@ -166,6 +167,9 @@ GET  /production/mixers   — list mixers with connection status
 POST /production/mixers   — create mixer
 PUT/DELETE /production/mixers/:id — update/delete mixer
 POST /production/mixers/:id/switch — switch mixer source
+GET/POST /production/encoders — hardware encoder list/create (Monarch HD/HDX)
+GET/PUT/DELETE /production/encoders/:id — encoder detail/update/delete
+POST /production/encoders/:id/start|stop|test — encoder control (direct, frontend, or bridge-relayed)
 GET  /production/bridge/commands?token=xxx — SSE stream for bridge agents
 POST /production/bridge/status — bridge heartbeat + command result callback
 GET/POST/DELETE /production/bridge/instances — bridge instance CRUD
@@ -258,6 +262,27 @@ POST   /variables/refresh — fire a connector request; { connectorSlug, request
 GET/POST/DELETE /admin/connector-network-rules[/:id] — global outbound-connector SSRF allow/deny rules (X-Admin-Key or is_admin user)
 GET/POST/DELETE /orgs/:orgId/connector-network-rules[/:id] — per-org SSRF allow/deny rules, enforced (user Bearer token; GET for any org member, write for owner/admin)
 
+GET    /orgs                — list orgs the user belongs to (user Bearer token)
+POST   /orgs                — create org; creator becomes owner (user Bearer token)
+GET    /orgs/:id            — org detail (any member)
+PATCH  /orgs/:id            — update name/slug (owner only)
+DELETE /orgs/:id            — delete org (owner only)
+GET    /orgs/:id/members    — list members (any member)
+POST   /orgs/:id/members    — invite member by email (owner/admin)
+PATCH  /orgs/:id/members/:userId — change member role; roles: owner/admin/editor/operator/viewer (owner/admin; owner changes owner-only)
+DELETE /orgs/:id/members/:userId — remove member, self-removal allowed, owner cannot be removed (owner/admin)
+GET    /orgs/:id/projects   — list projects attached to the org (any member)
+GET    /orgs/:id/features   — org feature codes (any member)
+PUT    /orgs/:id/features   — update org feature codes (owner/admin)
+
+GET/POST/PATCH/DELETE /ai/models[/:id] — per-key, per-role AI model config CRUD (lcyt-agent; user Bearer token + X-API-Key header or apiKey field)
+
+GET  /music/status          — server-side music analysis session state (Bearer token; mounted only when MUSIC_DETECTION_ACTIVE=1)
+POST /music/start | /music/stop — start/stop server-side HLS audio analysis (Bearer token)
+GET  /music/events/history  — paginated music/speech/silence event history (Bearer token)
+GET  /music/:key/live       — public SSE stream of live sound-label/BPM events (no auth)
+GET/PUT /music/config       — per-key detector settings (Bearer token)
+
 GET    /admin/users                  — list users with search (X-Admin-Key)
 GET    /admin/users/:id              — user detail with projects (X-Admin-Key)
 POST   /admin/users                  — create user (X-Admin-Key)
@@ -272,6 +297,7 @@ PATCH  /admin/projects/:key          — update project (X-Admin-Key)
 PUT    /admin/projects/:key/features — batch update features (X-Admin-Key)
 POST   /admin/batch/users            — batch user operations (X-Admin-Key)
 POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
+GET    /admin/orgs                       — list all orgs with search/pagination (X-Admin-Key)
 GET    /admin/feature-policies                    — list tri-state site feature policies (available/self_service/denied) (X-Admin-Key)
 PUT    /admin/feature-policies/:code              — set a site-wide feature policy mode (X-Admin-Key)
 GET    /admin/orgs/:id/feature-overrides           — list an org's per-feature policy overrides (X-Admin-Key)
@@ -280,7 +306,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 
 **Key internals:**
 - `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK, plus a rotatable `ingest_stream_key` — `plan_selfservice_config_backend.md` §2), `caption_usage`, `session_stats`, `caption_errors`, `sessions`, `caption_targets`/`translation_vendor_config`/`translation_targets` (server-persisted target/translation config — §1). Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
-- `src/db/schema.js` — also defines `organizations` and `org_members` (schema-only so far, from `plan_team_org_backend.md` — no org CRUD/membership routes yet, `/team` is still a "Coming soon" placeholder) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
+- `src/db/schema.js` — also defines `organizations` and `org_members` (from `plan_team_org_backend.md`; served by `src/routes/orgs.js`'s `/orgs` CRUD/membership routes and the lcyt-web `/team` page) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter(auth, sttManager, db, jwtSecret)`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`. The `?token=`/Bearer SSE auth verifies with `jwt.verify(token, jwtSecret)` (previously an unverified base64 decode of the payload — same class of bug fixed in `lcyt-connectors`' `/variables/events`, see that plugin's `CLAUDE.md`).
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
@@ -298,6 +324,8 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
 - `src/caption-files.js` — Pure caption-text utilities: `composeCaptionText`, `formatVttTime`, `buildVttCue`. File I/O was extracted to `lcyt-files`.
+- `src/caption-file-writer.js` — `createSessionCaptionFileWriter({ db, resolveStorage })` → `(session, { text, translations, fileFormats, timestamp })`: backend caption-file archiving for delivery paths that bypass `POST /captions`. Injected into `lcyt-rtmp`'s `SttManager` via `setDeliveryHelpers` so server-STT transcripts + translations are archived with the same per-language format rules as the captions route.
+- `src/caption-fanout.js` — `createCaptionFanout({ db })` → `fanOutToTargets(session, captions)`: extra-target delivery (YouTube senders, generic webhooks, viewer SSE) with Phase 5 per-target routed composition (`translation_targets.caption_target_id` + per-row `show_original`) and viewer-owner registration. Extracted from `routes/captions.js` and shared with server-STT via `setDeliveryHelpers`; when an entry has no `composedText` it computes the default composition from `captionLang`/`translations`/`showOriginal` (the STT case). Fire-and-forget per target.
 - `src/backup.js` — DB backup utilities.
 - `src/dsk-bus.js` — `DskBus`: DSK graphics SSE subscriber registry and per-key graphics state, extracted from SessionStore so `lcyt-dsk` does not depend on session lifecycle.
 - `src/ffmpeg/index.js` — ffmpeg runner factory: selects `local-runner`, `docker-runner`, or `worker-runner` based on `FFMPEG_RUNNER` env var. Exports `createFfmpegRunner()`.
@@ -309,6 +337,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/device-roles.js` — Device role CRUD + pin-code auth for production devices.
 - `src/routes/project-features.js` — Per-project feature flag CRUD.
 - `src/routes/project-members.js` — Project membership CRUD (invite, role update, remove).
+- `src/routes/orgs.js` — Organization CRUD + membership routes (`/orgs/*`, backed by `src/db/orgs.js`); role hierarchy owner/admin/editor/operator/viewer.
 - `src/routes/bridge-download.js` — Bridge agent binary download endpoint.
 - `src/routes/account.js` — User account routes (profile, settings).
 - `src/routes/session.js` — Session management routes.

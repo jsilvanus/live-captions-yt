@@ -304,3 +304,41 @@ buried in an unrelated UI-reconciliation diff.
 building `FeaturePolicyGrid.jsx` required re-deriving the real feature-code
 list from `plan_site_feature_policies.md`, which is what surfaced the
 mismatch.)
+
+## Server-STT delivery doesn't compose translated caption text for YouTube/viewer targets
+
+**Where:** `packages/plugins/lcyt-rtmp/src/stt-manager.js` (`_deliverTranscript`)
+
+**Finding:** The server-STT delivery path computes `captionLang` from
+`captions`-target translation rows but never uses it: YouTube targets get
+`sender.send(trimmed, ts)` (original text only) and viewer broadcasts set
+`composedText: trimmed`. The client-driven path (`routes/captions.js`)
+composes via `composeCaptionText(text, captionLang, translations,
+showOriginal)` and does per-target routed composition via
+`translationsByTargetId`, so a "captions"-target translation changes what
+YouTube/viewers see there but not in server-STT mode. Viewers still receive
+the raw `translations` map, so viewer pages can render translations — the gap
+is the composed text (and per-target routing / `show_original` handling).
+
+**Why skipped:** Reproducing `captions.js`'s Phase 5 per-target composition
+(routed `caption_target_id`, per-row `show_original`, `<br>` composition)
+inside `_deliverTranscript` is a real chunk of duplicated logic; the right fix
+is probably extracting the composition/fan-out block from `routes/captions.js`
+into a shared helper (like `caption-file-writer.js` did for archiving) and
+using it from both paths — its own pass, not a side effect of the archiving
+fix that surfaced it.
+
+(Found during: caption/translation pipeline audit after `plan_batch_options`,
+2026-07-10 — the same audit fixed the sibling gap where `_deliverTranscript`
+translated for `backend-file` targets and then dropped the result; archiving
+is now wired via `createSessionCaptionFileWriter` + `setDeliveryHelpers`.)
+
+**Update (2026-07-10): RESOLVED.** The extraction pass ran the same day:
+`src/caption-fanout.js` (`createCaptionFanout({ db })`) now owns the
+extra-target delivery block, `routes/captions.js` calls it (move-not-change —
+route tests unchanged as the regression proof), and `SttManager` receives it
+plus `composeCaptionText` via `setDeliveryHelpers`. Server-STT now composes
+YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
+fallback), honours per-target routing, and registers viewer key owners — a
+stats-attribution miss the extraction also surfaced and fixed. The old
+`broadcastToViewers` injection was removed.

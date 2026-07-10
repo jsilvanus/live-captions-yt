@@ -111,6 +111,7 @@ export async function translateText(text, sourceLang, targetLang) {
  *     translationsMap: { 'fi-FI': 'käännetty', ... },  // all langs (captions + backend-file)
  *     captionLang: 'fi-FI' | null,                     // the "captions" target lang, if any
  *     localFileEntries: [{ lang, text, format }],       // langs targeting local "file"
+ *     backendFileFormats: { 'fi-FI': 'vtt', ... },      // format per backend-file target lang
  *   }
  *
  * Skips translation when source and target language are the same.
@@ -124,6 +125,7 @@ export async function translateAll(text, sourceLang, enabledTranslations) {
   const translationsMap = {};
   let captionLang = null;
   const localFileEntries = [];
+  const backendFileFormats = {};
 
   await Promise.allSettled(
     enabledTranslations.map(async (t) => {
@@ -138,11 +140,12 @@ export async function translateAll(text, sourceLang, enabledTranslations) {
         // 'captions' or 'backend-file' — include in map for backend
         translationsMap[t.lang] = translated;
         if (t.target === 'captions') captionLang = t.lang;
+        if (t.target === 'backend-file') backendFileFormats[t.lang] = t.format || 'youtube';
       }
     })
   );
 
-  return { translationsMap, captionLang, localFileEntries };
+  return { translationsMap, captionLang, localFileEntries, backendFileFormats };
 }
 
 // ─── Local file writing (File System Access API) ─────────────────────────────

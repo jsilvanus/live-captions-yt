@@ -15,7 +15,7 @@ import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
-import { setHlsSubsManager, broadcastToViewers } from './routes/viewer.js';
+import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
   initProductionControl, createProductionRouter,
@@ -78,6 +78,9 @@ import {
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
 import { createAdminMiddleware } from './middleware/admin.js';
+import { createSessionCaptionFileWriter } from './caption-file-writer.js';
+import { createCaptionFanout } from './caption-fanout.js';
+import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
 
 // ---------------------------------------------------------------------------
@@ -199,11 +202,6 @@ const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
 
-// Inject translation-config + viewer-broadcast helpers into SttManager for
-// transcript delivery (Phase 5: server-side translation, viewer-target
-// fan-out) — sttManager must not import lcyt-backend's own src/ directly,
-// see setDeliveryHelpers()'s doc comment in lcyt-rtmp.
-sttManager?.setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers });
 hlsSubsManager.sweepStaleDir().catch(() => {});
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
@@ -217,6 +215,20 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+
+// Inject translation-config + fan-out + caption-file helpers into SttManager
+// for transcript delivery (Phase 5: server-side translation, per-target
+// routed fan-out via the shared createCaptionFanout, backend caption-file
+// archiving) — sttManager must not import lcyt-backend's own src/ directly,
+// see setDeliveryHelpers()'s doc comment in lcyt-rtmp. Runs after
+// initFilesControl so the writer can close over resolveStorage.
+sttManager?.setDeliveryHelpers({
+  getTranslationVendorConfig,
+  getTranslationTargets,
+  writeBackendCaptionFiles: createSessionCaptionFileWriter({ db, resolveStorage }),
+  composeCaptionText,
+  fanOutToTargets: createCaptionFanout({ db }),
+});
 
 // Music detection plugin — run DB migrations, create the SoundCaptionProcessor, and
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.

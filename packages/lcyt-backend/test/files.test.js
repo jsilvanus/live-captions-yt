@@ -330,6 +330,93 @@ describe('GET /file/:id', () => {
     });
     assert.strictEqual(res.status, 404);
   });
+
+  // Helper for the offsetMs tests: register a real .vtt file on disk + in DB
+  async function registerVttFile(session, content) {
+    const safe = session.apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+    const dir = join(FILES_BASE_DIR, safe);
+    await mkdir(dir, { recursive: true });
+    const filepath = join(dir, `2026-01-01-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-original.vtt`);
+    await writeFile(filepath, content, 'utf8');
+    return registerCaptionFile(db, {
+      apiKey: session.apiKey,
+      sessionId: session.sessionId,
+      filename: filepath,
+      lang: 'original',
+      format: 'vtt',
+      type: 'caption',
+    });
+  }
+
+  const VTT_DOC = 'WEBVTT\n\n1\n00:00:14.000 --> 00:00:17.000\nHello\n\n2\n00:01:14.500 --> 00:01:17.500\nWorld\n';
+
+  it('should shift vtt cue times with ?offsetMs=', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const fileId = await registerVttFile(session, VTT_DOC);
+
+    const res = await fetch(`${baseUrl}/file/${fileId}?offsetMs=2500`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.text();
+    assert.ok(body.includes('00:00:16.500 --> 00:00:19.500'));
+    assert.ok(body.includes('00:01:17.000 --> 00:01:20.000'));
+    assert.ok(body.includes('Hello'));
+    assert.strictEqual(res.headers.get('Content-Length'), String(Buffer.byteLength(body)));
+  });
+
+  it('should clamp negative offsetMs shifts at zero', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const fileId = await registerVttFile(session, VTT_DOC);
+
+    const res = await fetch(`${baseUrl}/file/${fileId}?offsetMs=-15000`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.text();
+    assert.ok(body.includes('00:00:00.000 --> 00:00:02.000'));
+  });
+
+  it('should serve vtt unchanged for offsetMs=0', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const fileId = await registerVttFile(session, VTT_DOC);
+
+    const res = await fetch(`${baseUrl}/file/${fileId}?offsetMs=0`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.text();
+    assert.strictEqual(body, VTT_DOC);
+  });
+
+  it('should return 400 for offsetMs on a non-vtt file', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const id = await registerTestFile(session, { content: 'plain text', format: 'youtube' });
+
+    const res = await fetch(`${baseUrl}/file/${id}?offsetMs=1000`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const data = await res.json();
+    assert.strictEqual(res.status, 400);
+    assert.ok(data.error.includes('vtt'));
+  });
+
+  it('should return 400 for a non-numeric or out-of-range offsetMs', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const fileId = await registerVttFile(session, VTT_DOC);
+
+    for (const bad of ['abc', '1.5', '90000000000']) {
+      const res = await fetch(`${baseUrl}/file/${fileId}?offsetMs=${bad}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      assert.strictEqual(res.status, 400, `offsetMs=${bad} should be rejected`);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

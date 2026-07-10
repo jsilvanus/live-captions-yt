@@ -21,7 +21,11 @@ import {
   hasFeature,
 } from 'lcyt-backend/db';
 import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
+import { shiftVttContent } from '../vtt.js';
 import logger from 'lcyt/logger';
+
+// Sanity bound for ?offsetMs= on VTT downloads: ±24h
+const MAX_OFFSET_MS = 86_400_000;
 
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({
@@ -189,12 +193,36 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const row = getCaptionFile(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'File not found' });
 
+    // Optional cue-time shift for VTT files (?offsetMs=±N) — lets the user
+    // align archived captions to a VOD timeline without modifying the file.
+    let offsetMs = 0;
+    if (req.query.offsetMs !== undefined) {
+      offsetMs = Number(req.query.offsetMs);
+      if (!Number.isFinite(offsetMs) || !Number.isInteger(offsetMs) || Math.abs(offsetMs) > MAX_OFFSET_MS) {
+        return res.status(400).json({ error: `offsetMs must be an integer between -${MAX_OFFSET_MS} and ${MAX_OFFSET_MS}` });
+      }
+      if (offsetMs !== 0 && row.format !== 'vtt') {
+        return res.status(400).json({ error: 'offsetMs is only supported for vtt files' });
+      }
+    }
+
     try {
       const storage = await _resolve(apiKey);
       const { stream, contentType, size } = await storage.openRead(apiKey, row.filename, row.format);
       res.set('Cache-Control', 'private, max-age=31536000, immutable');
       res.set('Content-Type', contentType + '; charset=utf-8');
       res.set('Content-Disposition', `attachment; filename="${basename(row.filename)}"`);
+
+      if (offsetMs !== 0) {
+        // Buffer + transform: caption files are small (KBs–low MBs) and the
+        // shifted length differs from the stored size, so streaming is out.
+        const chunks = [];
+        for await (const chunk of stream) chunks.push(chunk);
+        const shifted = shiftVttContent(Buffer.concat(chunks).toString('utf8'), offsetMs);
+        res.set('Content-Length', String(Buffer.byteLength(shifted)));
+        return res.send(shifted);
+      }
+
       if (size != null) res.set('Content-Length', String(size));
       stream.pipe(res);
     } catch (err) {

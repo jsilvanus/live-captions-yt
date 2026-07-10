@@ -34,9 +34,13 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/production/mixers` | `ProductionMixersPage` | Mixer management |
 | `/production/bridges` | `ProductionBridgesPage` | Bridge instance management |
 | `/production/devices` | `ProductionDevicesPage` | Device role management |
+| `/production/visual` | `ProductionVisualPage` | Video/audio signal-flow diagram of the production setup (Mermaid) |
 | `/planner` | `PlannerPage` | Event/service planner |
 | `/translations` | `TranslationsPage` | Translation management |
 | `/projects` | `ProjectsPage` | User project (API key) management |
+| `/projects/:key` | `ProjectSettingsPage` | Per-project settings page (Summary, Features, Team, Device roles, Danger zone tabs — `ProjectDetailModal` un-nested) |
+| `/assets` | `AssetsPage` | Cross-content library view (DSK template counts are real; other kinds labeled "Not tracked yet") |
+| `/team` | `TeamPage` | Organization/team management (backed by the `/orgs` backend routes: members, roles, org projects) |
 | `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable |
 | `/setup/wizard` | `SetupWizardPage` | Guided one-time setup wizard (superseded by the hub as the default `/setup` destination, still reachable) |
 | `/setup/:card` | `SetupHubPage` | Deep link — same page as `/setup`, with the card whose `id` matches `:card` (e.g. `connectors`, `cameras`, `stt`, `storage`) scrolled into view and highlighted for 10s |
@@ -48,6 +52,10 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/admin/users/:id` | `AdminUserDetailPage` | User detail, projects, password reset (feature-gated: `admin`) |
 | `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |
 | `/admin/projects/:key` | `AdminProjectDetailPage` | Project detail, features, members (feature-gated: `admin`) |
+| `/admin/audit-log` | `AdminAuditLogPage` | Admin audit log (feature-gated: `admin`; removed from sidebar nav, route still live) |
+| `/admin/ai-models` | `AdminAiModelsPage` | Site-scope AI provider/model management (feature-gated: `admin`) |
+| `/admin/site-features` | `AdminSiteFeaturesPage` | Tri-state site feature policies + per-org overrides (feature-gated: `admin`) |
+| `/admin/teams` | `AdminTeamsPage` | All orgs on the deployment (`GET /admin/orgs`), feature overrides (feature-gated: `admin`) |
 
 #### Standalone routes (no sidebar)
 

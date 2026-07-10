@@ -1,8 +1,12 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { createServer } from 'node:http';
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { createLocalAdapter } from 'lcyt-files/src/adapters/local.js';
 import { initDb, createKey } from '../src/db.js';
 import { SessionStore, makeSessionId } from '../src/store.js';
 import { createCaptionsRouter } from '../src/routes/captions.js';
@@ -355,5 +359,174 @@ describe('POST /captions', () => {
         globalThis.fetch = origFetch;
       }
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /captions — backend caption-file formats (fileFormats wiring)
+// ---------------------------------------------------------------------------
+
+describe('POST /captions — backend file formats', () => {
+  let fileServer, fileBaseUrl, filesDir;
+
+  before(() => new Promise((resolve) => {
+    createKey(db, { key: 'file-key', owner: 'File User', backend_file_enabled: 1 });
+    filesDir = mkdtempSync(join(tmpdir(), 'lcyt-captions-files-'));
+    const adapter = createLocalAdapter(filesDir);
+    const auth = createAuthMiddleware(JWT_SECRET);
+
+    const app = express();
+    app.use(express.json({ limit: '64kb' }));
+    app.use('/captions', createCaptionsRouter(store, auth, db, null, null, async () => adapter));
+
+    fileServer = createServer(app);
+    fileServer.listen(0, () => {
+      fileBaseUrl = `http://localhost:${fileServer.address().port}`;
+      resolve();
+    });
+  }));
+
+  after(async () => {
+    await new Promise(r => fileServer.close(r));
+    rmSync(filesDir, { recursive: true, force: true });
+  });
+
+  function createFileSession() {
+    const batchCalls = [];
+    const session = store.create({
+      apiKey: 'file-key',
+      streamKey: 'file-stream',
+      domain: 'https://test.com',
+      jwt: 'test-jwt',
+      sequence: 0,
+      syncOffset: 0,
+      sender: {
+        sequence: 0,
+        batchCalls,
+        send: async () => ({ sequence: 1, timestamp: '2026-02-20T12:00:00.000', statusCode: 200, serverTimestamp: null }),
+        sendBatch: async (c) => { batchCalls.push(c); return { sequence: c.length, count: c.length, statusCode: 200, serverTimestamp: null }; },
+        end: async () => {},
+      },
+    });
+    return session;
+  }
+
+  // The backend-file writes are fire-and-forget and go through append streams,
+  // so a file can exist before its content is flushed. Poll until at least
+  // `count` files with the extension have contents satisfying the predicate,
+  // and return those contents (files from other tests in this suite won't
+  // match the predicate and are ignored).
+  async function waitForFiles(ext, count, ready, timeoutMs = 2000) {
+    const keyDir = join(filesDir, 'file-key');
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      let names = [];
+      try { names = readdirSync(keyDir).filter(n => n.endsWith(ext)); } catch {}
+      const contents = names.map(n => readFileSync(join(keyDir, n), 'utf8')).filter(ready);
+      if (contents.length >= count) return contents;
+      if (Date.now() > deadline) throw new Error(`Timed out waiting for ${count} ready ${ext} file(s), saw ${contents.length}`);
+      await new Promise(r => setTimeout(r, 25));
+    }
+  }
+
+  it('writes session-relative VTT files when fileFormats requests vtt', async () => {
+    const session = createFileSession();
+    const token = jwt.sign(
+      { sessionId: session.sessionId, apiKey: 'file-key', streamKey: 'file-stream', domain: 'https://test.com' },
+      JWT_SECRET
+    );
+
+    const res = await fetch(`${fileBaseUrl}/captions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        captions: [{
+          text: 'Hello world',
+          time: 14000,
+          translations: { 'fi-FI': 'Hei maailma' },
+          fileFormats: { original: 'vtt', 'fi-FI': 'vtt' },
+        }],
+      }),
+    });
+    assert.strictEqual(res.status, 202);
+
+    const contents = await waitForFiles('.vtt', 2, c => c.includes('-->'));
+    for (const c of contents) {
+      assert.ok(c.startsWith('WEBVTT\n\n'), 'file should start with WEBVTT header');
+      assert.ok(c.includes('00:00:14.000 --> 00:00:17.000'), `cue should be session-relative, got:\n${c}`);
+    }
+    assert.ok(contents.some(c => c.includes('Hello world')));
+    assert.ok(contents.some(c => c.includes('Hei maailma')));
+  });
+
+  it('defaults to plain-text youtube format when fileFormats is absent or invalid', async () => {
+    const session = createFileSession();
+    const token = jwt.sign(
+      { sessionId: session.sessionId, apiKey: 'file-key', streamKey: 'file-stream', domain: 'https://test.com' },
+      JWT_SECRET
+    );
+
+    const res = await fetch(`${fileBaseUrl}/captions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        captions: [{
+          text: 'Plain line',
+          time: 1000,
+          translations: { 'sv-SE': 'Vanlig rad' },
+          fileFormats: { 'sv-SE': 'evil/../format' },
+        }],
+      }),
+    });
+    assert.strictEqual(res.status, 202);
+
+    const contents = await waitForFiles('.txt', 2, c => c.trim().length > 0);
+    assert.ok(contents.some(c => c.includes('Plain line')));
+    assert.ok(contents.some(c => c.includes('Vanlig rad')));
+    for (const c of contents) {
+      assert.ok(!c.includes('WEBVTT'));
+      assert.ok(!c.includes('-->'));
+    }
+  });
+
+  it('batch send keeps per-caption options and delivers one sendBatch to YouTube (plan_batch_options)', async () => {
+    const session = createFileSession();
+    const token = jwt.sign(
+      { sessionId: session.sessionId, apiKey: 'file-key', streamKey: 'file-stream', domain: 'https://test.com' },
+      JWT_SECRET
+    );
+
+    const res = await fetch(`${fileBaseUrl}/captions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({
+        captions: [
+          { text: 'Batch line one', time: 5000,  translations: { 'fi-FI': 'Erärivi yksi' },  fileFormats: { original: 'vtt', 'fi-FI': 'vtt' } },
+          { text: 'Batch line two', time: 12000, translations: { 'fi-FI': 'Erärivi kaksi' }, fileFormats: { original: 'vtt', 'fi-FI': 'vtt' } },
+        ],
+      }),
+    });
+    assert.strictEqual(res.status, 202);
+
+    // Both cues from this batch must land in each file (original + fi-FI),
+    // with session-relative times taken from each caption's own `time`.
+    const contents = await waitForFiles('.vtt', 2,
+      c => c.includes('00:00:05.000 --> 00:00:08.000') && c.includes('00:00:12.000 --> 00:00:15.000'));
+    assert.ok(contents.some(c => c.includes('Batch line one') && c.includes('Batch line two')));
+    assert.ok(contents.some(c => c.includes('Erärivi yksi') && c.includes('Erärivi kaksi')));
+
+    // YouTube delivery stays batched: exactly one sendBatch call with both captions.
+    assert.strictEqual(session.sender.batchCalls.length, 1);
+    const batch = session.sender.batchCalls[0];
+    assert.strictEqual(batch.length, 2);
+    assert.strictEqual(batch[0].text, 'Batch line one');
+    assert.strictEqual(batch[1].text, 'Batch line two');
+    // Per-caption timestamps survive (resolved from each caption's `time`)
+    const t0 = new Date(batch[0].timestamp).getTime();
+    const t1 = new Date(batch[1].timestamp).getTime();
+    assert.strictEqual(t1 - t0, 7000);
+    // Internal-only fields never leak into the YouTube payload
+    assert.ok(!('fileFormats' in batch[0]));
+    assert.ok(!('translations' in batch[0]));
   });
 });
