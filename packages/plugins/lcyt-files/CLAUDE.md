@@ -1,14 +1,15 @@
 # `packages/plugins/lcyt-files` — Caption File Storage Plugin (v0.1.0)
 
-Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default), S3-compatible object storage, and WebDAV backends behind a common interface. Imported by `lcyt-backend` as `lcyt-files`.
+Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default), S3-compatible object storage, and WebDAV backends behind a common interface, in three modes: **local** (`FILES_DIR`), **operator-configured S3** (`S3_*` env vars), and **user-defined (runtime) per-key S3** — credentials stored in the plugin-owned `key_storage_config` table, gated on the `custom-storage` project feature. Imported by `lcyt-backend` as `lcyt-files`.
 
 **Main entry:** `src/api.js`
 **Usage in lcyt-backend:**
 ```js
 import { initFilesControl, createFilesRouter, writeToBackendFile, closeFileHandles } from 'lcyt-files';
 
-const { storage } = await initFilesControl(db);
-// Wire storage into captions.js (via createSessionRouters) and files route (via createContentRouters).
+const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+// resolveStorage(apiKey) picks the per-key adapter (falls back to the global one);
+// wire it into captions.js (via createSessionRouters) and content.js (via createContentRouters).
 // Close handles on session end:
 store.onSessionEnd = async (session) => {
   if (session._fileHandles?.size > 0) await closeFileHandles(session._fileHandles);
@@ -16,8 +17,9 @@ store.onSessionEnd = async (session) => {
 ```
 
 **Source files (`src/`):**
-- `api.js` — `initFilesControl(db)` → `{ storage }` (logs adapter type at startup). Exports `writeToBackendFile`, `closeFileHandles`, `createFilesRouter`.
-- `storage.js` — `createStorageAdapter()` factory; reads `FILE_STORAGE` env var.
+- `api.js` — `initFilesControl(db)` → `{ storage, resolveStorage, invalidateStorageCache }`: runs the plugin's DB migrations, creates the global adapter, and creates the per-key resolver (logs adapter type at startup). Exports `writeToBackendFile`, `closeFileHandles`, `createFilesRouter`.
+- `storage.js` — `createStorageAdapter()` factory (reads `FILE_STORAGE` env var) + `createStorageResolver(db, globalAdapter)` → `{ resolveStorage, invalidateCache }` for per-key adapter resolution with caching.
+- `db.js` — `key_storage_config` table migrations + per-key storage config read/write helpers (bucket, region, endpoint, prefix, credentials, `storage_type`).
 - `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`.
 - `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, storage)` → `GET /file`, `GET /file/:id`, `DELETE /file/:id`.
 - `adapters/local.js` — `createLocalAdapter(baseDir)`: wraps `fs.WriteStream` (append) and `fs.ReadStream`. `storedKey` is the full filesystem path.

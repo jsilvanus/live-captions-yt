@@ -5,17 +5,34 @@ Audio classification and BPM estimation plugin. Detects when music is playing in
 **Main entry:** `src/api.js`
 **Usage in lcyt-backend:**
 ```js
-import { initMusicControl, createSoundCaptionProcessor } from 'lcyt-music';
+import { initMusicControl, createSoundCaptionProcessor, createMusicRouters } from 'lcyt-music';
 
-const { musicManager } = await initMusicControl(db);
-const soundProcessor = createSoundCaptionProcessor({ store, db, musicManager });
+const { musicManager } = await initMusicControl(db, store);
+const soundProcessor = createSoundCaptionProcessor({ store, db });
 // Inject soundProcessor into captions route to handle <!-- sound:... --> and <!-- bpm:... --> metacodes
+
+// Opt-in server-side analysis routes:
+if (process.env.MUSIC_DETECTION_ACTIVE === '1') {
+  app.use('/music', ...createMusicRouters(db, auth, musicManager));
+}
+// In graceful shutdown: await musicManager.stopAll();
 ```
 
+**Environment variables:**
+| Variable | Purpose | Default |
+|---|---|---|
+| `MUSIC_DETECTION_ACTIVE` | Set to `1` to mount the `/music` server-side analysis routes | unset (routes not mounted) |
+
 **Source files (`src/`):**
-- `api.js` — `initMusicControl(db)` + `createSoundCaptionProcessor()`.
+- `api.js` — `initMusicControl(db, store)` → `{ musicManager }` (null without a store) + `createSoundCaptionProcessor({ store, db })` + `createMusicRouters(db, auth, musicManager)` → router array.
+- `music-manager.js` — `MusicManager`: per-key server-side analysis sessions over HLS audio; drives the analyser chain and feeds results into the sound processor. `stopAll()` for graceful shutdown.
 - `sound-caption-processor.js` — `SoundCaptionProcessor`: extracts `<!-- sound:... -->` and `<!-- bpm:... -->` metacodes from caption text, updates per-API-key sound state, emits `sound_label` and `bpm_update` SSE events, returns clean text (always empty for pure metacode captions).
-- `db.js` — `sound_state` table with indexes on `api_key`. Stores current `{ label, bpm, confidence, ts }` per key.
+- `hls-segment-fetcher.js` / `pcm-extractor.js` / `wav-encoder.js` — HLS segment download, PCM audio extraction, and WAV encoding for the analysis pipeline.
+- `analyser/spectral-detector.js` / `analyser/bpm-detector.js` / `analyser/fft.js` — spectral music/speech/silence classification and BPM estimation.
+- `analyser/external-classifier.js` — optional external HTTP classifier hook.
+- `routes/music.js` — `GET /music/status`, `POST /music/start`, `POST /music/stop`, `GET /music/events/history` (Bearer token), `GET /music/:key/live` (public SSE).
+- `routes/music-config.js` — `GET/PUT /music/config` per-key detector settings (Bearer token).
+- `db.js` — `sound_state` table (current `{ label, bpm, confidence, ts }` per key), `music_events` history table, and `music_config` per-key server-side detector settings.
 
 **Sound metacode syntax (frontend inline markers):**
 ```
