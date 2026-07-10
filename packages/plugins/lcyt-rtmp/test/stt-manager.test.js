@@ -220,14 +220,15 @@ describe('SttManager', () => {
     await mgr.stop('mykey');
   });
 
-  test('setDeliveryHelpers: server-side translation is invoked and delivered to a viewer target (Phase 5)', async () => {
+  test('setDeliveryHelpers: server-side translation is invoked and delivered via the shared fan-out (Phase 5)', async () => {
     // Regression test for a real bug: _deliverTranscript previously reached
     // across packages via `await import('../../lcyt-backend/src/...')`, a
     // relative path that doesn't resolve from this file's location, silently
-    // swallowed by `.catch(() => ({}))` — so translation and viewer delivery
-    // never actually ran. setDeliveryHelpers() injects them instead; this
-    // test proves the injected functions are actually called and their
-    // output actually reaches the viewer broadcast.
+    // swallowed by `.catch(() => ({}))` — so translation and delivery never
+    // actually ran. setDeliveryHelpers() injects them instead; this test
+    // proves the injected functions are actually called and the translated,
+    // composed output actually reaches the fan-out helper (lcyt-backend's
+    // createCaptionFanout in production).
     const fakeSession = {
       apiKey:       'mykey',
       domain:       'test.local',
@@ -250,12 +251,17 @@ describe('SttManager', () => {
       return { ok: false, status: 404 };
     };
 
-    const broadcastCalls = [];
+    const fanoutCalls = [];
     const mgr = new SttManager(makeStore([fakeSession]), fakeDb);
     mgr.setDeliveryHelpers({
-      getTranslationVendorConfig: () => ({ vendor: 'mymemory' }),
-      getTranslationTargets: () => ([{ id: 'tt1', enabled: true, lang: 'fi-FI', target: 'captions' }]),
-      broadcastToViewers: (viewerKey, data) => broadcastCalls.push({ viewerKey, data }),
+      getTranslationVendorConfig: () => ({ vendor: 'mymemory', showOriginal: false }),
+      getTranslationTargets: () => ([{ id: 'tt1', enabled: true, lang: 'fi-FI', target: 'captions', showOriginal: false }]),
+      // Same semantics as lcyt-backend's composeCaptionText
+      composeCaptionText: (text, captionLang, translations, showOriginal) => {
+        if (!captionLang || !translations?.[captionLang]) return text;
+        return showOriginal ? `${text}<br>${translations[captionLang]}` : translations[captionLang];
+      },
+      fanOutToTargets: (session, captions) => fanoutCalls.push({ session, captions }),
     });
 
     await mgr.start('mykey', { provider: 'google', language: 'en-US' });
@@ -264,9 +270,60 @@ describe('SttManager', () => {
 
     await new Promise(r => setTimeout(r, 50));
 
-    assert.equal(broadcastCalls.length, 1);
-    assert.equal(broadcastCalls[0].viewerKey, 'test-viewer');
-    assert.deepEqual(broadcastCalls[0].data.translations, { 'fi-FI': 'Hei maailma' });
+    assert.equal(fanoutCalls.length, 1);
+    assert.equal(fanoutCalls[0].session, fakeSession);
+    const entry = fanoutCalls[0].captions[0];
+    assert.equal(entry.text, 'Hello world');
+    // The captions-target translation composes the default text — the gap
+    // this extraction closed: YouTube/viewer targets used to get the raw
+    // original in server-STT mode.
+    assert.equal(entry.composedText, 'Hei maailma');
+    assert.equal(entry.captionLang, 'fi-FI');
+    assert.equal(entry.showOriginal, false);
+    assert.deepEqual(entry.translations, { 'fi-FI': 'Hei maailma' });
+
+    await mgr.stop('mykey');
+  });
+
+  test('setDeliveryHelpers: primary sender receives composed text with show_original from the captions-target row', async () => {
+    const sends = [];
+    const fakeSession = {
+      apiKey:       'mykey',
+      domain:       'test.local',
+      sequence:     0,
+      extraTargets: [],
+      sender:       { sequence: 5, send: async (text, ts) => { sends.push({ text, ts }); } },
+      _sendQueue:   Promise.resolve(),
+    };
+
+    const fakeDb = { prepare: () => ({ get: () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) }) };
+
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('mymemory')) {
+        return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: 'Hei maailma' } }) };
+      }
+      return { ok: false, status: 404 };
+    };
+
+    const mgr = new SttManager(makeStore([fakeSession]), fakeDb);
+    mgr.setDeliveryHelpers({
+      getTranslationVendorConfig: () => ({ vendor: 'mymemory', showOriginal: false }),
+      // Per-row show_original=true must win over the vendor-level false
+      getTranslationTargets: () => ([{ id: 'tt1', enabled: true, lang: 'fi-FI', target: 'captions', showOriginal: true }]),
+      composeCaptionText: (text, captionLang, translations, showOriginal) => {
+        if (!captionLang || !translations?.[captionLang]) return text;
+        return showOriginal ? `${text}<br>${translations[captionLang]}` : translations[captionLang];
+      },
+    });
+
+    await mgr.start('mykey', { provider: 'google', language: 'en-US' });
+    const sttSession = mgr._sessions.get('mykey');
+    sttSession.adapter.emit('transcript', { text: 'Hello world', confidence: 0.95, timestamp: new Date() });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    assert.equal(sends.length, 1);
+    assert.equal(sends[0].text, 'Hello world<br>Hei maailma');
 
     await mgr.stop('mykey');
   });

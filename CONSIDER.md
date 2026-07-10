@@ -332,3 +332,13 @@ fix that surfaced it.
 2026-07-10 — the same audit fixed the sibling gap where `_deliverTranscript`
 translated for `backend-file` targets and then dropped the result; archiving
 is now wired via `createSessionCaptionFileWriter` + `setDeliveryHelpers`.)
+
+**Update (2026-07-10): RESOLVED.** The extraction pass ran the same day:
+`src/caption-fanout.js` (`createCaptionFanout({ db })`) now owns the
+extra-target delivery block, `routes/captions.js` calls it (move-not-change —
+route tests unchanged as the regression proof), and `SttManager` receives it
+plus `composeCaptionText` via `setDeliveryHelpers`. Server-STT now composes
+YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
+fallback), honours per-target routing, and registers viewer key owners — a
+stats-attribution miss the extraction also surfaced and fixed. The old
+`broadcastToViewers` injection was removed.
