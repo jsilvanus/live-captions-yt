@@ -97,7 +97,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
             resolveStorage(session.apiKey).then(fileStorage => {
               for (const [lang, translatedText] of Object.entries(translations)) {
                 writeToBackendFile(
-                  { apiKey: session.apiKey, sessionId, lang, format: 'youtube', fileHandles: session._fileHandles },
+                  { apiKey: session.apiKey, sessionId, lang, format: 'youtube', fileHandles: session._fileHandles, sessionStartMs: session.startedAt },
                   translatedText, tsStr, db, fileStorage, buildVttCue
                 );
               }
@@ -106,7 +106,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           if (backendFileEnabled && resolveStorage) {
             resolveStorage(session.apiKey).then(fileStorage => {
               writeToBackendFile(
-                { apiKey: session.apiKey, sessionId, lang: 'original', format: 'youtube', fileHandles: session._fileHandles },
+                { apiKey: session.apiKey, sessionId, lang: 'original', format: 'youtube', fileHandles: session._fileHandles, sessionStartMs: session.startedAt },
                 text, tsStr, db, fileStorage, buildVttCue
               );
             }).catch(() => {});

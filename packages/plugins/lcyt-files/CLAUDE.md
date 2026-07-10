@@ -20,7 +20,7 @@ store.onSessionEnd = async (session) => {
 - `api.js` — `initFilesControl(db)` → `{ storage, resolveStorage, invalidateStorageCache }`: runs the plugin's DB migrations, creates the global adapter, and creates the per-key resolver (logs adapter type at startup). Exports `writeToBackendFile`, `closeFileHandles`, `createFilesRouter`.
 - `storage.js` — `createStorageAdapter()` factory (reads `FILE_STORAGE` env var) + `createStorageResolver(db, globalAdapter)` → `{ resolveStorage, invalidateCache }` for per-key adapter resolution with caching.
 - `db.js` — `key_storage_config` table migrations + per-key storage config read/write helpers (bucket, region, endpoint, prefix, credentials, `storage_type`).
-- `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`.
+- `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`. For `format: 'vtt'`, cue times are session-relative: `context.sessionStartMs` (epoch ms; `captions.js` passes `session.startedAt`) anchors them to the session start, falling back to the first caption written to the file when absent; timestamps before the anchor clamp to `00:00:00.000`.
 - `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, storage)` → `GET /file`, `GET /file/:id`, `DELETE /file/:id`.
 - `adapters/local.js` — `createLocalAdapter(baseDir)`: wraps `fs.WriteStream` (append) and `fs.ReadStream`. `storedKey` is the full filesystem path.
 - `adapters/s3.js` — `createS3Adapter({ bucket, prefix, region, endpoint, credentials })`: multipart upload via `@aws-sdk/lib-storage`. `storedKey` is the S3 object key.
