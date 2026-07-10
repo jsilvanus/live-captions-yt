@@ -271,6 +271,56 @@ describe('SttManager', () => {
     await mgr.stop('mykey');
   });
 
+  test('setDeliveryHelpers: transcript + translations are archived via writeBackendCaptionFiles', async () => {
+    // Server STT delivery bypasses POST /captions, so backend caption-file
+    // archiving happens through the injected writer. Previously translations
+    // for backend-file targets were computed and then dropped.
+    const fakeSession = {
+      apiKey:       'mykey',
+      sessionId:    'sess-stt-1',
+      domain:       'test.local',
+      sequence:     0,
+      startedAt:    1_000_000,
+      extraTargets: [],
+      sender:       null,
+      _sendQueue:   Promise.resolve(),
+    };
+
+    const fakeDb = { prepare: () => ({ get: () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) }) };
+
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('mymemory')) {
+        return { ok: true, json: async () => ({ responseStatus: 200, responseData: { translatedText: 'Hei maailma' } }) };
+      }
+      return { ok: false, status: 404 };
+    };
+
+    const writeCalls = [];
+    const mgr = new SttManager(makeStore([fakeSession]), fakeDb);
+    mgr.setDeliveryHelpers({
+      getTranslationVendorConfig: () => ({ vendor: 'mymemory' }),
+      getTranslationTargets: () => ([
+        { id: 'tt1', enabled: true, lang: 'fi-FI', target: 'backend-file', format: 'vtt' },
+      ]),
+      writeBackendCaptionFiles: (session, entry) => writeCalls.push({ session, entry }),
+    });
+
+    await mgr.start('mykey', { provider: 'google', language: 'en-US' });
+    const sttSession = mgr._sessions.get('mykey');
+    sttSession.adapter.emit('transcript', { text: 'Hello world', confidence: 0.95, timestamp: new Date() });
+
+    await new Promise(r => setTimeout(r, 50));
+
+    assert.equal(writeCalls.length, 1);
+    assert.equal(writeCalls[0].session, fakeSession);
+    assert.equal(writeCalls[0].entry.text, 'Hello world');
+    assert.deepEqual(writeCalls[0].entry.translations, { 'fi-FI': 'Hei maailma' });
+    assert.deepEqual(writeCalls[0].entry.fileFormats, { 'fi-FI': 'vtt' });
+    assert.match(writeCalls[0].entry.timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
+
+    await mgr.stop('mykey');
+  });
+
   test('setDeliveryHelpers: no-op (default composed text, no translations) when helpers are never injected', async () => {
     // Same-language shortcut and the "helpers not injected" path must not throw
     // and must not attempt any translation — this is the pre-Phase-5 default

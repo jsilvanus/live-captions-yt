@@ -324,6 +324,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
 - `src/caption-files.js` — Pure caption-text utilities: `composeCaptionText`, `formatVttTime`, `buildVttCue`. File I/O was extracted to `lcyt-files`.
+- `src/caption-file-writer.js` — `createSessionCaptionFileWriter({ db, resolveStorage })` → `(session, { text, translations, fileFormats, timestamp })`: backend caption-file archiving for delivery paths that bypass `POST /captions`. Injected into `lcyt-rtmp`'s `SttManager` via `setDeliveryHelpers` so server-STT transcripts + translations are archived with the same per-language format rules as the captions route.
 - `src/backup.js` — DB backup utilities.
 - `src/dsk-bus.js` — `DskBus`: DSK graphics SSE subscriber registry and per-key graphics state, extracted from SessionStore so `lcyt-dsk` does not depend on session lifecycle.
 - `src/ffmpeg/index.js` — ffmpeg runner factory: selects `local-runner`, `docker-runner`, or `worker-runner` based on `FFMPEG_RUNNER` env var. Exports `createFfmpegRunner()`.

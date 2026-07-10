@@ -78,6 +78,7 @@ export class SttManager extends EventEmitter {
     this._getTranslationVendorConfig = null;
     this._getTranslationTargets = null;
     this._broadcastToViewers = null;
+    this._writeBackendCaptionFiles = null;
     /** @type {Map<string, SttSession>} */
     this._sessions = new Map();
     /** @type {{ major: number, minor: number }|null} */
@@ -108,12 +109,17 @@ export class SttManager extends EventEmitter {
    * actually ran). Setter-injection matches this codebase's existing
    * convention, e.g. `cueEngine.setEmbeddingFn()` in `lcyt-agent`.
    *
-   * @param {{ getTranslationVendorConfig?: Function, getTranslationTargets?: Function, broadcastToViewers?: Function }} [helpers]
+   * @param {{ getTranslationVendorConfig?: Function, getTranslationTargets?: Function, broadcastToViewers?: Function, writeBackendCaptionFiles?: Function }} [helpers]
+   *   `writeBackendCaptionFiles(session, { text, translations, fileFormats, timestamp })`
+   *   archives the transcript + translations as backend caption files
+   *   (lcyt-backend's createSessionCaptionFileWriter) — the same archiving
+   *   POST /captions does, which this direct-delivery path bypasses.
    */
-  setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers } = {}) {
+  setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers, writeBackendCaptionFiles } = {}) {
     this._getTranslationVendorConfig = getTranslationVendorConfig || null;
     this._getTranslationTargets = getTranslationTargets || null;
     this._broadcastToViewers = broadcastToViewers || null;
+    this._writeBackendCaptionFiles = writeBackendCaptionFiles || null;
   }
 
   /**
@@ -385,6 +391,7 @@ export class SttManager extends EventEmitter {
         // Server-side translation (Phase 5)
         let translations = {};
         let captionLang = null;
+        const fileFormats = {};
         if (db && this._getTranslationVendorConfig && this._getTranslationTargets) {
           try {
             const vendorConfig = this._getTranslationVendorConfig(db, apiKey);
@@ -408,10 +415,29 @@ export class SttManager extends EventEmitter {
                   if (t.target === 'captions') {
                     captionLang = t.lang;
                   }
+                  if (t.target === 'backend-file' && t.format) {
+                    fileFormats[t.lang] = t.format;
+                  }
                 })
             );
           } catch (err) {
             logger.debug(`[stt] Translation skipped: ${err.message}`);
+          }
+        }
+
+        // Archive transcript + translations as backend caption files (same
+        // archiving POST /captions does; this delivery path bypasses it).
+        // Fire-and-forget; the writer itself checks backend_file_enabled.
+        if (this._writeBackendCaptionFiles) {
+          try {
+            this._writeBackendCaptionFiles(backendSession, {
+              text: trimmed,
+              translations,
+              fileFormats,
+              timestamp: ts.toISOString().replace('Z', ''),
+            });
+          } catch (err) {
+            logger.debug(`[stt] Backend caption-file write skipped: ${err.message}`);
           }
         }
 

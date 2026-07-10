@@ -78,6 +78,7 @@ import {
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
 import { createAdminMiddleware } from './middleware/admin.js';
+import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
 
 // ---------------------------------------------------------------------------
@@ -199,11 +200,6 @@ const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
 
-// Inject translation-config + viewer-broadcast helpers into SttManager for
-// transcript delivery (Phase 5: server-side translation, viewer-target
-// fan-out) — sttManager must not import lcyt-backend's own src/ directly,
-// see setDeliveryHelpers()'s doc comment in lcyt-rtmp.
-sttManager?.setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers });
 hlsSubsManager.sweepStaleDir().catch(() => {});
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
@@ -217,6 +213,19 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+
+// Inject translation-config + viewer-broadcast + caption-file helpers into
+// SttManager for transcript delivery (Phase 5: server-side translation,
+// viewer-target fan-out, backend caption-file archiving) — sttManager must
+// not import lcyt-backend's own src/ directly, see setDeliveryHelpers()'s
+// doc comment in lcyt-rtmp. Runs after initFilesControl so the writer can
+// close over resolveStorage.
+sttManager?.setDeliveryHelpers({
+  getTranslationVendorConfig,
+  getTranslationTargets,
+  broadcastToViewers,
+  writeBackendCaptionFiles: createSessionCaptionFileWriter({ db, resolveStorage }),
+});
 
 // Music detection plugin — run DB migrations, create the SoundCaptionProcessor, and
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
