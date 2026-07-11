@@ -410,6 +410,15 @@ export function DskViewportsPage() {
                 </Section>
               )}
 
+              {/* Streaming — server-side per-viewport RTMP (Phase 4). The
+                  renderer that consumes this is a later increment; config is
+                  editable now. */}
+              {!selectedVp._builtin && editSettings && (
+                <Section title="Streaming" style={{ marginBottom: 24 }}>
+                  <StreamSettingsEditor settings={editSettings} onChange={saveDisplaySettings} />
+                </Section>
+              )}
+
               {/* Display URL */}
               <Section title="Display URL" style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 12, color: dark.muted, marginBottom: 8 }}>
@@ -581,6 +590,99 @@ function DisplaySettingsEditor({ settings, onChange }) {
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function StreamSettingsEditor({ settings, onChange }) {
+  // Local draft so typing a push URL doesn't fire a PUT per keystroke; commit
+  // the whole stream config with the Save button. Re-seed when the selected
+  // viewport's persisted stream changes.
+  const [stream, setStream_] = useState(settings.stream ?? {});
+  const persisted = JSON.stringify(settings.stream ?? {});
+  useEffect(() => { setStream_(settings.stream ?? {}); }, [persisted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pushUrls = Array.isArray(stream.pushUrls) ? stream.pushUrls : [];
+  const chroma = stream.chromaKey ?? {};
+  const dirty = JSON.stringify(stream) !== persisted;
+
+  function setStream(patch) { setStream_(s => ({ ...s, ...patch })); }
+  function setChroma(patch) { setStream_(s => ({ ...s, chromaKey: { ...(s.chromaKey ?? {}), ...patch } })); }
+  function setPush(i, patch) { setStream_(s => ({ ...s, pushUrls: (s.pushUrls ?? []).map((p, idx) => idx === i ? { ...p, ...patch } : p) })); }
+  function addPush() { setStream_(s => ({ ...s, pushUrls: [...(s.pushUrls ?? []), { url: '', enabled: true }] })); }
+  function removePush(i) { setStream_(s => ({ ...s, pushUrls: (s.pushUrls ?? []).filter((_, idx) => idx !== i) })); }
+
+  function save() {
+    // Drop empty push URLs and the whole stream object when nothing meaningful remains.
+    const cleanUrls = pushUrls.filter(p => (p.url || '').trim());
+    const next = { ...stream, ...(cleanUrls.length ? { pushUrls: cleanUrls } : { pushUrls: undefined }) };
+    const meaningful = next.enabled || cleanUrls.length || next.chromaKey?.enabled || next.mode;
+    onChange({ ...settings, stream: meaningful ? next : undefined });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: dark.text }}>
+        <input type="checkbox" checked={!!stream.enabled} onChange={e => setStream({ enabled: e.target.checked })} />
+        Stream this viewport server-side (RTMP)
+      </label>
+
+      {stream.enabled && (
+        <>
+          <div>
+            <label style={labelStyle}>Mode</label>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+                <input type="radio" checked={stream.mode === 'composite'} onChange={() => setStream({ mode: 'composite' })} /> Composite onto program
+              </label>
+              <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+                <input type="radio" checked={stream.mode !== 'composite'} onChange={() => setStream({ mode: 'standalone' })} /> Standalone
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: dark.muted }}>Only one viewport can be the program composite; selecting it here demotes any other.</div>
+          </div>
+
+          {/* Chroma key (relevant to composite / keyed output) */}
+          <div>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: dark.text }}>
+              <input type="checkbox" checked={!!chroma.enabled} onChange={e => setChroma({ enabled: e.target.checked })} />
+              Chroma-key the overlay (key out a color)
+            </label>
+            {chroma.enabled && (
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, alignItems: 'flex-end' }}>
+                <div style={{ flex: '0 0 90px' }}>
+                  <label style={labelStyle}>Key color</label>
+                  <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(chroma.color ?? '') ? chroma.color : '#00B140'} onChange={e => setChroma({ color: e.target.value })} />
+                </div>
+                <div style={{ flex: '0 0 110px' }}>
+                  <label style={labelStyle}>Similarity</label>
+                  <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.05" min="0" max="1"
+                    value={chroma.similarity ?? 0.3} onChange={e => setChroma({ similarity: parseFloat(e.target.value) })} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Push targets */}
+          <div>
+            <label style={labelStyle}>Push targets (RTMP)</label>
+            {pushUrls.map((p, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                <input type="checkbox" checked={p.enabled !== false} onChange={e => setPush(i, { enabled: e.target.checked })} />
+                <input style={{ ...inputStyle, flex: 1 }} placeholder="rtmp://ingest.example/app/streamkey"
+                  value={p.url} onChange={e => setPush(i, { url: e.target.value })} />
+                <button style={btnSmall} onClick={() => removePush(i)}>Remove</button>
+              </div>
+            ))}
+            <button style={btnSmall} onClick={addPush}>+ Add push target</button>
+            <div style={{ fontSize: 11, color: dark.muted, marginTop: 4 }}>e.g. a vertical viewport → a TikTok / YouTube-vertical ingest URL.</div>
+          </div>
+        </>
+      )}
+
+      <div>
+        <button style={{ ...btnPrimary, opacity: dirty ? 1 : 0.5 }} disabled={!dirty} onClick={save}>Save streaming settings</button>
       </div>
     </div>
   );
