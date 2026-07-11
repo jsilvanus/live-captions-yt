@@ -532,35 +532,3 @@ These are **design-level changes**, not local refactorings. Worth revisiting aft
 
 (Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)
 
----
-
-## Per-project storage path segment is duplicated across storage pipelines
-
-**Where:** `packages/plugins/lcyt-dsk/src/db/images.js:13`,
-`packages/plugins/lcyt-dsk/src/routes/images.js:272,301`,
-`packages/lcyt-backend/src/routes/icons.js:116,170,200`,
-`packages/lcyt-backend/src/routes/keys.js:192`
-
-**Finding:** The per-project directory segment
-`apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40)` is hand-inlined at ~7
-sites across three separate storage pipelines (caption files, DSK graphics
-images, icon assets). The caption-file pipeline (`lcyt-files`) was centralized
-into `src/adapters/key-segment.js` (`keySegment()`) and made collision-proof
-(a short hash suffix is appended whenever sanitization alters the raw key, so
-two distinct keys can no longer share a directory). The DSK-graphics and icons
-pipelines still use the raw inline `slice(0, 40)`, which retains the latent
-collision edge for non-UUID / long / special-character api keys.
-
-**Why skipped:** Those two pipelines write to different roots (`GRAPHICS_DIR`,
-`ICONS_DIR`) than caption files (`FILES_DIR`), and their delete paths
-(`keys.js:192`, `images.js`) re-derive the segment inline, so hardening them
-means moving a shared helper up to a package all three depend on (`lcyt` core)
-and updating write + delete + serve sites atomically per pipeline — broader
-than the caption-storage pipeline this task was scoped to. Default keys are
-`randomUUID()` (36 chars, already safe), so the collision is latent, not
-active, in typical deployments.
-
-**Follow-up:** promote `keySegment()` to `lcyt` core and route the DSK/icons
-sites through it in a dedicated pass.
-
-(Found during: storage-pipelines check, 2026-07-11.)

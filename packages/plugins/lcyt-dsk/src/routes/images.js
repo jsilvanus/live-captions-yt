@@ -269,7 +269,7 @@ export function createImagesRouter(db, auth) {
     const row = getImage(db, id);
     if (!row) return res.status(404).json({ error: 'Image not found' });
 
-    const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+    const safe = safeApiKey(row.api_key);
     const safeFilename = basename(row.filename);
     const filepath = join(GRAPHICS_BASE_DIR, safe, safeFilename);
 
@@ -298,7 +298,7 @@ export function createImagesRouter(db, auth) {
 
     // Best-effort disk deletion
     try {
-      const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+      const safe = safeApiKey(row.api_key);
       const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
       if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
     } catch (e) {

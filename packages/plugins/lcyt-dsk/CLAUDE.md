@@ -30,7 +30,7 @@ await stopDsk();
 - `renderer-container.js` — Docker-based renderer: runs the Chromium DSK renderer inside a container (uses `docker/lcyt-dsk-renderer` image).
 - `caption-processor.js` — `createDskCaptionProcessor()`. Extracts `<!-- graphics:... -->` and `<!-- graphics[viewport,...]:... -->` metacodes from caption text; emits DSK SSE events; updates RTMP relay overlay. Supports delta mode (`+name`, `-name`) and landscape aliases (`landscape`, `default`, `main`).
 - `db.js` — Re-exports from `src/db/`. Migrations for `dsk_templates` table + image columns.
-- `db/images.js` — Image CRUD; `deleteAllImages()` exported from main entry.
+- `db/images.js` — Image CRUD; `deleteAllImages()` exported from main entry. Also owns `safeApiKey(apiKey)` — the single source of truth for the graphics pipeline's per-project directory segment (under `GRAPHICS_DIR`), used by the write/serve/delete paths in `routes/images.js` and re-exported through `lcyt-backend/db` for `keys.js`'s delete-on-key-deletion path. Collision-proof: appends a short hash of the full raw key whenever sanitization alters it, so two distinct keys can't share a directory; already-safe keys ≤40 chars (all default `randomUUID()` keys) are returned unchanged.
 - `db/dsk-templates.js` — Template CRUD.
 - `db/viewports.js` — Viewport CRUD.
 - `routes/dsk.js` — Public endpoints: image list, public viewports, SSE events stream. The `:apikey` path segment resolves **public slug first, then raw api_key** (`resolveKey()`, `plan_dsk_viewport_settings` Phase 2) — legacy apiKey URLs keep working; all downstream DB access uses the resolved `row.key`. `GET /:seg/viewports/public` also returns `projectSlug` and now caches for 60s (was 3600s) so display-setting edits propagate quickly.
