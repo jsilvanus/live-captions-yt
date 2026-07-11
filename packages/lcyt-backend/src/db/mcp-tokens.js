@@ -45,7 +45,7 @@ function parseScopes(value) {
 
 export function tokenHasScope(scopes, scope) {
   if (!scope) return true;
-  const normalized = parseScopes(scopes);
+  const normalized = Array.isArray(scopes) ? scopes : parseScopes(scopes);
   if (!normalized || normalized.length === 0) return true;
   return normalized.some((pattern) => {
     if (pattern === '*') return true;

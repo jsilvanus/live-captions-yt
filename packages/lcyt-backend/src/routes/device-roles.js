@@ -33,18 +33,9 @@ import {
 import { getKey } from '../db/keys.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
+import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 
 const BCRYPT_ROUNDS = 10;
-
-function verifyUserToken(jwtSecret, req) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  try {
-    const payload = jwt.verify(header.slice(7), jwtSecret);
-    if (payload.type !== 'user') return null;
-    return { userId: payload.userId, email: payload.email };
-  } catch { return null; }
-}
 
 function requireOwnerOrAdmin(db, apiKey, user) {
   const level = getMemberAccessLevel(db, apiKey, user.userId);
@@ -63,7 +54,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       if (!requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
@@ -82,7 +73,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       if (!requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
@@ -98,7 +89,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       const level = getMemberAccessLevel(db, req.params.key, user.userId);
       if (!level) return res.status(403).json({ error: 'Not a project member' });
@@ -112,7 +103,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       if (!requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
@@ -144,7 +135,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       if (!requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
@@ -165,7 +156,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       if (!requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
@@ -185,7 +176,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-      const user = verifyUserToken(jwtSecret, req);
+      const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
       if (!requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });

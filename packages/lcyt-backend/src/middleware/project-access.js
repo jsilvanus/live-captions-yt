@@ -1,54 +1,39 @@
 import jwt from 'jsonwebtoken';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { verifyMcpToken, tokenHasScope } from '../db/mcp-tokens.js';
-import { extractAuthToken, normalizeUserPayload, verifySessionToken } from './auth.js';
+import { extractAuthToken, normalizeUserPayload } from './auth.js';
 
 function resolveProjectId(req) {
   const explicit = req.headers['x-project-id'] || req.headers['x-api-key'];
   if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
 
-  const routeCandidates = [
+  const candidates = [
     req.params?.projectId,
     req.params?.project_id,
     req.params?.apiKey,
     req.params?.api_key,
     req.params?.key,
     req.params?.id,
-  ];
-
-  for (const candidate of routeCandidates) {
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-
-  const bodyCandidates = [
     req.body?.projectId,
     req.body?.project_id,
     req.body?.apiKey,
     req.body?.api_key,
-  ];
-
-  for (const candidate of bodyCandidates) {
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
-  }
-
-  const queryCandidates = [
     req.query?.projectId,
     req.query?.project_id,
     req.query?.apiKey,
     req.query?.api_key,
   ];
 
-  for (const candidate of queryCandidates) {
-    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim();
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && (candidate = candidate.trim())) return candidate;
   }
 
   return req.auth?.projectId || req.project?.projectId || null;
 }
 
 function normalizeProjectRole(projectRole) {
-  if (projectRole === 'owner' || projectRole === 'admin' || projectRole === 'editor' || projectRole === 'operator' || projectRole === 'viewer') return projectRole;
-  if (projectRole === 'member') return 'member';
-  return 'member';
+  const validRoles = new Set(['owner', 'admin', 'editor', 'operator', 'viewer']);
+  return validRoles.has(projectRole) ? projectRole : 'member';
 }
 
 function attachProjectContext(req, authInfo) {
@@ -108,16 +93,15 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
 
     try {
       const payload = jwt.verify(token, jwtSecret);
-      const sessionPayload = verifySessionToken(token, jwtSecret);
-      if (sessionPayload && (sessionPayload.sessionId || sessionPayload.apiKey)) {
-        const resolvedProjectId = projectId || sessionPayload.projectId || sessionPayload.apiKey || null;
+      if (payload && (payload.sessionId || payload.apiKey)) {
+        const resolvedProjectId = projectId || payload.projectId || payload.apiKey || null;
         if (!resolvedProjectId) {
           return res.status(400).json({ error: 'projectId is required' });
         }
         attachProjectContext(req, {
           kind: 'session',
           projectId: resolvedProjectId,
-          sessionId: sessionPayload.sessionId || null,
+          sessionId: payload.sessionId || null,
           projectRole: 'member',
           userId: null,
           email: null,
