@@ -338,7 +338,53 @@ is now wired via `createSessionCaptionFileWriter` + `setDeliveryHelpers`.)
 extra-target delivery block, `routes/captions.js` calls it (move-not-change —
 route tests unchanged as the regression proof), and `SttManager` receives it
 plus `composeCaptionText` via `setDeliveryHelpers`. Server-STT now composes
-YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
-fallback), honours per-target routing, and registers viewer key owners — a
-stats-attribution miss the extraction also surfaced and fixed. The old
-`broadcastToViewers` injection was removed.
+mismatch.)
+
+---
+
+## Auth Middleware: 10 Altitude Issues Require Unified Token & Access-Control Model
+
+**Where:** `packages/lcyt-backend/src/middleware/project-access.js` and related route/DB files
+
+**Findings:** `/simplify` review surfaced 10 interrelated altitude issues in the auth refactor (PR #252):
+
+1. **Fragile token-type detection** — Token type is inferred from prefix (`lcytmcp_`) + payload field introspection (`payload.kind`, `payload.type`, etc.) across 4 token branches rather than from a canonical JWT field. Runtime derivation vs. issuance-time validation.
+
+2. **Overly exhaustive project ID resolution** — `resolveProjectId()` searches ~15 locations (headers, route params, body, query) instead of enforcing a single convention (e.g., always `X-Project-Id` header for scoped endpoints, hierarchical route param for others).
+
+3. **Four duplicate resolve+validate+attach patterns** — External/session/user/device token branches each repeat: resolve projectId → check not-null → call accessLevel check → attach context → next(). Fixed with `handleTokenAuth()` factory (commit `8581b2c`), but only locally — the underlying polymorphism remains.
+
+4. **Scope checking only on external tokens** — `requiredScope` validation lives only in the external-token branch, but user/project/device tokens also carry scopes. Inconsistent enforcement.
+
+5. **Session tokens bypass membership verification** — Only user tokens call `getMemberAccessLevel()`; session/external/device tokens are accepted unconditionally. Different access-control standards per token type.
+
+6. **Scattered access-control concerns** — Membership checks happen in middleware, routes, and DB modules independently. Routes re-implement token extraction (`verifyUserToken` duplicated in 4 files — partially fixed in commits `e028e06`/`482b83b`, but keys.js patterns remain) instead of trusting middleware.
+
+7. **Inconsistent request context attachment** — `req.user`, `req.auth`, `req.project`, `req.session` are conditionally set depending on token type. No guaranteed shape across all flows.
+
+8. **Ad-hoc scope serialization** — `serializeScopes()` / `parseScopes()` try JSON.parse with CSV fallback, applied at every read/verification. Suggests scopes aren't normalized at issuance time.
+
+9. **`normalizeUserPayload()` defined but inconsistently used** — Reusable, but `project-access.js` extracts fields inline instead of calling it, and it's not called by device-token branch.
+
+10. **Device-roles router re-implements auth** — `verifyUserToken()` (now using shared `extractAndVerifyUserToken()` after commit `482b83b`) was duplicated in routes instead of relying on middleware to attach context.
+
+**Root cause:** The middleware adds **polymorphism at the middleware layer** (4 token types) without first refactoring the **underlying domain model** (token structure, access-control gate, request context shape). Result: each branch has its own special cases + defensive logic, and routes don't trust the middleware to do auth consistently.
+
+**What fixed:** Commits `e028e06`, `8581b2c`, `482b83b` addressed the **local reuse/simplification issues**:
+- Consolidated `resolveProjectId` loops (29 lines saved)
+- Extracted `handleTokenAuth()` factory (32 lines saved)
+- Unified user-token extraction helper (33 lines saved)
+- Removed dead code + optimized scope parsing (4 lines saved)
+
+**What remains:** The **altitude issues** (10 findings) all point to the same architectural gap: token payloads, membership-check gate, and request context need to be unified *first*, before adding polymorphism. Doing so now would require:
+
+- Redesign all 4 token payloads to have canonical field names (`type` instead of `kind`, etc.)
+- Extract a single membership-check gate that applies after token verification, regardless of type
+- Define a consistent request context object (`req.auth` or `req.context`) with guaranteed shape
+- Establish canonical scope format (e.g., always JSON array in DB), normalized at token creation
+
+These are **design-level changes**, not local refactorings. Worth revisiting after this pass ships, with explicit product/architecture alignment on the unified model.
+
+**Why skipped:** Fixing the altitude issues would mean re-architecting 4 token types + unifying access control across 3+ layers (middleware/routes/DB), then re-testing all auth flows (368 backend tests exist; many would need assertion updates). Out of scope for a focused `/simplify` pass. This pass delivered measurable local cleanup (98 lines saved, 5 reusable helpers extracted), leaving the broader unification for a future architectural pass with its own scope and test coverage.
+
+(Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)

@@ -22,19 +22,21 @@ import { createFilesRouter } from 'lcyt-files';
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
  * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function }} [managers]
+ * @param {import('express').RequestHandler} [projectAuth]
  * @returns {Router}
  */
-export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null } = {}) {
+export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null } = {}, projectAuth = null) {
   const router = Router();
+  const scopedAuth = projectAuth || auth;
   router.use('/stats',           createStatsRouter(db, auth, store, { resolveStorage }));
   router.use('/usage',           createUsageRouter(db));
   router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache));
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/youtube',         createYouTubeRouter(auth));
-  router.use('/stt',             createSttRouter(auth, sttManager, db, jwtSecret));
-  router.use('/targets',         createTargetsRouter(auth, db));
-  router.use('/translation',     createTranslationRouter(auth, db));
+  router.use('/stt',             createSttRouter(scopedAuth, sttManager, db, jwtSecret));
+  router.use('/targets',         createTargetsRouter(scopedAuth, db));
+  router.use('/translation',     createTranslationRouter(scopedAuth, db));
   router.use('/bridge-download', createBridgeDownloadRouter());
   return router;
 }

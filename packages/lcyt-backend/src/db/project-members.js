@@ -192,7 +192,12 @@ export function getMemberAccessLevel(db, apiKey, userId) {
   const row = db.prepare(
     'SELECT access_level FROM project_members WHERE api_key = ? AND user_id = ?'
   ).get(apiKey, userId);
-  return row?.access_level ?? null;
+  if (row?.access_level) return row.access_level;
+
+  const keyRow = db.prepare('SELECT user_id FROM api_keys WHERE key = ?').get(apiKey);
+  if (keyRow?.user_id === userId) return 'owner';
+
+  return null;
 }
 
 /**
