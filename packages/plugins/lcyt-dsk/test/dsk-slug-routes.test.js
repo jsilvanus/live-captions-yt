@@ -314,11 +314,11 @@ describe('stream-name convention', () => {
   });
 });
 
-describe('dsk-rtmp composite exclusion', () => {
+describe('dsk-rtmp composite exclusion + chromaKey passthrough', () => {
   let rtmpServer, rtmpBase, calls;
   before(() => new Promise(resolve => {
     calls = [];
-    const relayManager = { setDskRtmpSource: async (k, url) => { calls.push({ k, url }); } };
+    const relayManager = { setDskRtmpSource: async (k, url, opts) => { calls.push({ k, url, opts }); } };
     const app = express();
     app.use('/dsk-rtmp', createDskRtmpRouter(db, relayManager));
     rtmpServer = createServer(app);
@@ -335,6 +335,7 @@ describe('dsk-rtmp composite exclusion', () => {
     assert.equal(res.status, 200);
     assert.equal(calls.length, 1);
     assert.ok(calls[0].url);
+    assert.equal(calls[0].opts.chromaKey, null); // no composite viewport → unkeyed
   });
 
   it('does NOT trigger the composite for a viewport stream (__)', async () => {
@@ -345,5 +346,41 @@ describe('dsk-rtmp composite exclusion', () => {
     });
     assert.equal(res.status, 200);
     assert.equal(calls.length, 0, 'viewport stream must not restart the program relay');
+  });
+
+  it('passes the composite viewport chromaKey through to the relay', async () => {
+    makeKey('ckkey');
+    upsertViewport(db, 'ckkey', {
+      name: 'prog', viewportType: 'landscape',
+      displaySettingsJson: JSON.stringify({ stream: { enabled: true, mode: 'composite', chromaKey: { enabled: true, color: '#00B140', similarity: 0.25 } } }),
+    });
+    calls.length = 0;
+    const res = await fetch(`${rtmpBase}/dsk-rtmp/on_publish`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'name=ckkey',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].opts.chromaKey.enabled, true);
+    assert.equal(calls[0].opts.chromaKey.color, '#00B140');
+    assert.equal(calls[0].opts.chromaKey.similarity, 0.25);
+  });
+});
+
+describe('getCompositeChromaKey', () => {
+  it('returns the enabled chromaKey of the composite viewport only', async () => {
+    const { getCompositeChromaKey } = await import('../src/db/viewports.js');
+    makeKey('gck');
+    // standalone viewport with chromaKey — must be ignored
+    upsertViewport(db, 'gck', { name: 'vert', displaySettingsJson: JSON.stringify({ stream: { mode: 'standalone', chromaKey: { enabled: true, color: '#111111' } } }) });
+    assert.equal(getCompositeChromaKey(db, 'gck'), null);
+
+    // composite but chromaKey disabled — null
+    upsertViewport(db, 'gck', { name: 'prog', displaySettingsJson: JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: false } } }) });
+    assert.equal(getCompositeChromaKey(db, 'gck'), null);
+
+    // composite + enabled — returned
+    upsertViewport(db, 'gck', { name: 'prog', displaySettingsJson: JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: true, color: '#0a0b0c' } } }) });
+    assert.equal(getCompositeChromaKey(db, 'gck').color, '#0a0b0c');
   });
 });

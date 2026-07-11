@@ -91,6 +91,26 @@ export function demoteOtherCompositeViewports(db, apiKey, keepName) {
 }
 
 /**
+ * Return the chroma-key config of the api_key's composite-mode viewport, or
+ * null. Used by the DSK RTMP program composite (Phase 5) to key the overlay.
+ * Only an enabled chromaKey is returned.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {{ enabled: boolean, color?: string, similarity?: number, blend?: number }|null}
+ */
+export function getCompositeChromaKey(db, apiKey) {
+  const rows = db.prepare('SELECT display_settings_json FROM dsk_viewports WHERE api_key = ?').all(apiKey);
+  for (const r of rows) {
+    let s;
+    try { s = JSON.parse(r.display_settings_json || 'null'); } catch { continue; }
+    if (s?.stream?.mode === 'composite' && s.stream.chromaKey?.enabled) {
+      return s.stream.chromaKey;
+    }
+  }
+  return null;
+}
+
+/**
  * Delete a viewport by name.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey

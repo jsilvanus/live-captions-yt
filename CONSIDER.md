@@ -462,3 +462,23 @@ YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
 fallback), honours per-target routing, and registers viewer key owners — a
 stats-attribution miss the extraction also surfaced and fixed. The old
 `broadcastToViewers` injection was removed.
+
+## `lcyt-rtmp`'s `test/rtmp-manager.unit.test.js` is not in the package's test script and has bit-rotted
+
+**Where:** `packages/plugins/lcyt-rtmp/package.json` `test` script vs.
+`packages/plugins/lcyt-rtmp/test/rtmp-manager.unit.test.js`.
+
+**Finding:** The rtmp `test` script lists test files explicitly and omits
+`rtmp-manager.unit.test.js` — so it has never run in CI. Adding it surfaces
+one failing case ("awaits runner.start and writeCaption returns false when no
+fifo writer"), i.e. the test has drifted from the current `RtmpRelayManager`
+behavior. Same class of gap as `lcyt-dsk`'s `test/index.js` (which was
+silently skipping `dsk-slug-routes.test.js`, fixed in Phase 2/3).
+
+**Why skipped:** Out of scope for the Phase 5 colorkey change that surfaced it
+— fixing means either repairing the stale assertions against current behavior
+or deleting the file, which deserves its own look at what it was meant to
+cover. Left the rtmp `test` script listing my new `dsk-composite-filter.test.js`
+but not `rtmp-manager.unit.test.js`.
+
+(Found during: plan_dsk_viewport_settings Phase 5, 2026-07-11.)

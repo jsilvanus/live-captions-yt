@@ -27,6 +27,7 @@
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
 import { isViewportStream } from '../stream-names.js';
+import { getCompositeChromaKey } from '../db/viewports.js';
 
 // The local nginx-rtmp base URL and DSK application name.
 // These must match the nginx-rtmp config on the server.
@@ -95,9 +96,12 @@ export function createDskRtmpRouter(db, relayManager) {
     const rtmpUrl = dskSourceUrl(apiKey);
 
     if (call === 'publish') {
-      logger.info(`[dsk-rtmp] on_publish: key=${apiKey.slice(0, 8)}… → ${rtmpUrl}`);
+      // Phase 5: key the program composite with the composite viewport's chromaKey (if any).
+      let chromaKey = null;
+      try { chromaKey = getCompositeChromaKey(db, apiKey); } catch { /* pre-migration schema */ }
+      logger.info(`[dsk-rtmp] on_publish: key=${apiKey.slice(0, 8)}… → ${rtmpUrl}${chromaKey ? ' (keyed)' : ''}`);
       try {
-        await relayManager.setDskRtmpSource(apiKey, rtmpUrl);
+        await relayManager.setDskRtmpSource(apiKey, rtmpUrl, { chromaKey });
       } catch (err) {
         logger.error(`[dsk-rtmp] Failed to set DSK RTMP source for ${apiKey.slice(0, 8)}…: ${err.message}`);
         // Return 200 so nginx allows the ingest; DSK is best-effort

@@ -96,7 +96,9 @@ Today `renderer.js` keys everything by apiKey (one Chromium page, template HTML,
 
 **Tests:** renderer map keying + dimension resolution, `__` name parsing and composite-trigger exclusion in dsk-rtmp routes, tee target construction, status shape.
 
-## Phase 5 — Colorkey for the RTMP DSK composite
+## Phase 5 — Colorkey for the RTMP DSK composite ✅ (implemented 2026-07-11)
+
+> Implemented: `buildDskCompositeFilter(chromaKey)` (exported from `lcyt-rtmp/src/rtmp-manager.js`) — plain opaque overlay when disabled, `[1:v]colorkey=<color>:<sim>:<blend>[keyed];[0:v][keyed]overlay=…` when enabled (hex→`0x`, non-hex colors stripped to alnum so no filter-graph injection, sim/blend clamped 0–1). `setDskRtmpSource(apiKey, rtmpUrl, { chromaKey })` stores it; `routes/dsk-rtmp.js` `on_publish` reads the composite viewport's `stream.chromaKey` via `getCompositeChromaKey(db, apiKey)` and passes it through. No chromaKey → today's exact opaque behavior. Config source is the one composite viewport (single-composite invariant from Phase 4). Static-image overlay path untouched. Live keyed-composite behavior needs a real ffmpeg+RTMP run to visually confirm; arg construction is unit-tested.
 
 - `RtmpRelayManager.setDskRtmpSource(apiKey, rtmpUrl, { chromaKey })`: when enabled, the composite filter becomes `[1:v]colorkey=<color>:<similarity>:<blend>[keyed];[0:v][keyed]overlay=0:0:shortest=1[ovout]` (re-encode via libx264 is already the case; no new cost). No config → today's exact opaque full-frame behavior.
 - Config source: the composite viewport's `stream.chromaKey` — one source of truth for our renderer's pushes *and* external OBS pushes to `rtmp://server/dsk/<key>`; `routes/dsk-rtmp.js` `on_publish` loads it and passes it through.
