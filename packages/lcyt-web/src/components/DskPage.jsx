@@ -34,12 +34,16 @@ export function DskPage() {
   // ── URL params ──────────────────────────────────────────
   const params = new URLSearchParams(window.location.search);
   const pathParts = window.location.pathname.split('/');
-  // /dsk/<apikey>  →  pathParts[2]
-  // Also accept ?apikey=<key> as a fallback for embed contexts (OBS, iframes)
+  // /dsk/<slugOrKey>[/<viewport>]  →  pathParts[2], pathParts[3]
+  // The path segment may be the project public slug (preferred) or the raw
+  // api key (legacy) — the backend resolves either. Also accept ?apikey= as a
+  // fallback for embed contexts (OBS, iframes).
   const apiKey = pathParts[2] || params.get('apikey') || '';
   const ccMode      = params.get('cc') === '1';
   const bgColor     = params.get('bg') || '#00B140';
-  const viewportName = params.get('viewport') || null;
+  // Viewport from the path (/dsk/:slug/:viewport) preferred; ?viewport= is the
+  // legacy query form and an override when both are present.
+  const viewportName = params.get('viewport') || (pathParts[3] || null);
 
   function resolveServer() {
     const fromUrl = params.get('server');

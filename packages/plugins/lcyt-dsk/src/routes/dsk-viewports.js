@@ -18,6 +18,15 @@ import { listViewports, getViewport, upsertViewport, deleteViewport } from '../d
 // Viewport name must be a lowercase slug (letters, digits, hyphens, underscores)
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 
+// A viewport name becomes the second path segment in /dsk/:slug/:viewport, so
+// it must not collide with the sibling sub-routes under /dsk/:apikey/*
+// (plan_dsk_viewport_settings Phase 2 — otherwise a viewport named "events"
+// would shadow the SSE route). Exported for tests.
+export const RESERVED_VIEWPORT_NAMES = new Set([
+  'public', 'events', 'images', 'viewports', 'templates', 'template',
+  'broadcast', 'renderer', 'renderer_start', 'renderer_stop',
+]);
+
 export function createDskViewportsRouter(db, auth) {
   const router = Router();
 
@@ -33,7 +42,13 @@ export function createDskViewportsRouter(db, auth) {
   router.get('/:apikey/viewports', auth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const rows = listViewports(db, req.params.apikey);
-    res.json({ viewports: rows.map(formatViewport) });
+    // projectSlug (when set) lets the Viewports page build slug-form display
+    // URLs (/dsk/<slug>/<viewport>) without a separate lookup.
+    let projectSlug = null;
+    try {
+      projectSlug = db.prepare('SELECT public_slug FROM api_keys WHERE key = ?').get(req.params.apikey)?.public_slug ?? null;
+    } catch { /* pre-migration schema */ }
+    res.json({ viewports: rows.map(formatViewport), projectSlug });
   });
 
   // POST /dsk/:apikey/viewports
@@ -44,8 +59,8 @@ export function createDskViewportsRouter(db, auth) {
     if (!name || !SLUG_RE.test(name)) {
       return res.status(400).json({ error: 'name must be a lowercase slug (letters, digits, hyphens, underscores)' });
     }
-    if (name === 'public') {
-      return res.status(400).json({ error: 'Reserved viewport name' });
+    if (RESERVED_VIEWPORT_NAMES.has(name)) {
+      return res.status(400).json({ error: `'${name}' is a reserved viewport name` });
     }
     const vt = viewportType ?? 'landscape';
     if (!['landscape', 'vertical'].includes(vt)) {

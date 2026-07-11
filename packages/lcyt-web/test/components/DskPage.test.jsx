@@ -95,6 +95,38 @@ describe('DskPage — exit animation', () => {
     await waitFor(() => expect(activeImg(container)).toBeNull());
   });
 
+  it('reads slug + viewport from the path form /dsk/:slug/:viewport', async () => {
+    const vpImage = {
+      id: 3, shorthand: 'logo', mimeType: 'image/png',
+      settingsJson: { viewports: { 'vertical-left': { animation: '' } } },
+    };
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('/images')) {
+        return Promise.resolve({ ok: true, json: async () => ({ images: [vpImage] }) });
+      }
+      if (String(url).includes('/viewports/public')) {
+        return Promise.resolve({ ok: true, json: async () => ({ projectSlug: 'sunday', viewports: [
+          { name: 'vertical-left', viewportType: 'vertical', width: 1080, height: 1920, textLayers: [] },
+        ] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    window.history.pushState({}, '', '/dsk/sunday/vertical-left');
+
+    const { container } = render(<DskPage />);
+    await waitFor(() => expect(esInstances.length).toBe(1));
+
+    // SSE opened against the slug path segment, not a raw key.
+    expect(esInstances[0].url).toContain('/dsk/sunday/events');
+
+    // A graphics event scoped to the path-derived viewport activates the image,
+    // proving the viewport name came from pathParts[3].
+    act(() => {
+      esInstances[0].emit('graphics', { default: [], viewports: { 'vertical-left': ['logo'] }, ts: Date.now() });
+    });
+    await waitFor(() => expect(activeImg(container)).not.toBeNull());
+  });
+
   it('removes an image instantly when it has no configured animation', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     global.fetch = vi.fn((url) => {

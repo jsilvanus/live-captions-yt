@@ -139,7 +139,7 @@ GET  /preview/:key/incoming.jpg — latest RTMP → JPEG thumbnail (public)
 
 GET  /dsk/:apikey/images           — list DSK overlay images for an API key (public)
 GET  /dsk/:apikey/events           — SSE stream of graphics events for DSK page (public)
-GET  /dsk/:apikey/viewports/public — list public viewport definitions (public)
+GET  /dsk/:slugOrKey/viewports/public — list public viewport definitions + projectSlug (public; segment resolves public slug then raw api key)
 GET/POST/PUT/DELETE /dsk/:apikey/templates — DSK template CRUD (JWT Bearer or X-API-Key)
 POST /dsk/:apikey/templates/:id/activate   — activate a template in renderer (JWT Bearer or X-API-Key)
 POST /dsk/:apikey/template         — render a one-off template (JWT Bearer or X-API-Key)

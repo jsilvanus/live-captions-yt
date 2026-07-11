@@ -1,6 +1,6 @@
 # DSK Viewports v2 — Slug URLs, UI-Based Display Settings, Multi-Renderer Streaming, RTMP Colorkey
 
-**Status:** in-progress (Phase 1 implemented)
+**Status:** in-progress (Phases 1–2 implemented)
 **Scope:** `packages/lcyt-backend` (api_keys slug, org slug policy, routes), `packages/plugins/lcyt-dsk` (schema, routes, renderer), `packages/lcyt-web` (`DskPage`, `DskViewportsPage`, `ProjectSettingsPage`), `packages/plugins/lcyt-rtmp` (`RtmpRelayManager` colorkey)
 
 ## Problem
@@ -35,7 +35,7 @@ Decisions taken (2026-07-11, with the project owner):
 
 **Tests:** validation matrix (format, reserved, prefix policy, uniqueness), route auth, admin bypass.
 
-## Phase 2 — DSK public surfaces on slugs
+## Phase 2 — DSK public surfaces on slugs ✅ (implemented 2026-07-11)
 
 - Backend DSK public routes gain slug resolution: `/dsk/:slugOrKey/events`, `/dsk/:slugOrKey/images`, `/dsk/:slugOrKey/viewports/public` resolve `public_slug` **first**, then fall back to treating the segment as an apiKey (deprecated but working — nothing breaks). One shared `resolveDskKey(db, segment)` helper in `lcyt-dsk`.
 - SPA display route becomes path-shaped: `/dsk/:slugOrKey/:viewport` (wouter route added alongside the legacy `/dsk/:apikey?viewport=` query form).

@@ -62,7 +62,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | Path | Component | Notes |
 |---|---|---|
 | `/view/:key` | `ViewerPage` | Full-screen caption viewer (public) |
-| `/dsk/:key` | `DskPage` | DSK green-screen overlay (public, transparent bg) |
+| `/dsk/:slugOrKey[/:viewport]` | `DskPage` | DSK green-screen overlay (public, transparent bg). Path segment is the project public slug (preferred) or raw api key (legacy); viewport from the path or `?viewport=` |
 | `/dsk-control/:key` | `DskControlPage` | DSK control (standalone mode) |
 | `/mcp/:sessionId` | `SpeechCapturePage` | MCP speech session |
 | `/embed/audio` | `EmbedAudioPage` | Mic / STT capture widget |

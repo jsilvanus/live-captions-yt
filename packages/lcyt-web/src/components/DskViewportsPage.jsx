@@ -20,6 +20,7 @@ export function DskViewportsPage() {
   const [screenApiSupported, setScreenApiSupported] = useState(null); // null=unknown
   const [presentBg, setPresentBg] = useState('');
   const [presentTransparent, setPresentTransparent] = useState(false);
+  const [projectSlug, setProjectSlug] = useState(null);
 
   // ── API helpers ──────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export function DskViewportsPage() {
       if (!res.ok) return;
       const data = await res.json();
       setViewports(data.viewports || []);
+      setProjectSlug(data.projectSlug ?? null);
     } catch {}
   }, [apiKey, serverUrl, apiFetch]);
 
@@ -184,9 +186,18 @@ export function DskViewportsPage() {
   }
 
   function getDisplayUrl(vp) {
-    const base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
+    // Prefer the slug form /dsk/<slug>/<viewport> when a project public slug
+    // is set; otherwise fall back to the legacy /dsk/<apikey>?viewport= form.
+    const named = vp && !vp._builtin;
+    let base;
+    if (projectSlug) {
+      base = `${window.location.origin}/dsk/${encodeURIComponent(projectSlug)}`;
+      if (named) base += `/${encodeURIComponent(vp.name)}`;
+    } else {
+      base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
+    }
     const u = new URL(base);
-    if (vp && !vp._builtin) u.searchParams.set('viewport', vp.name);
+    if (!projectSlug && named) u.searchParams.set('viewport', vp.name);
     if (presentTransparent) u.searchParams.set('bg', 'transparent');
     else if (presentBg) u.searchParams.set('bg', presentBg);
     return u.toString();
@@ -381,6 +392,11 @@ export function DskViewportsPage() {
                   {selectedVp._builtin && ' (Existing landscape DSK behaviour — no change needed.)'}
                 </div>
                 <UrlBlock url={getDisplayUrl(selectedVp)} onCopy={() => flash('Copied')} />
+                {!projectSlug && (
+                  <div style={{ fontSize: 12, color: dark.muted, marginTop: 8 }}>
+                    This URL exposes your API key. Set a <a href="/projects" style={{ color: dark.accent }}>project slug</a> in project settings for a clean, shareable URL.
+                  </div>
+                )}
               </Section>
 
               {/* Present to screen */}
