@@ -177,6 +177,24 @@ export function initDb(dbPath) {
     db.exec('CREATE UNIQUE INDEX idx_api_keys_ingest_stream_key ON api_keys(ingest_stream_key)');
   }
 
+  // User-defined public slug replacing the raw api_key in user-facing URLs
+  // (plan_dsk_viewport_settings Phase 1). NULL = slug URLs not enabled for
+  // this project. Uniqueness via index (NULLs are distinct in SQLite).
+  if (!existingCols.has('public_slug')) db.exec('ALTER TABLE api_keys ADD COLUMN public_slug TEXT');
+  if (!existingApiKeyIndexes.has('idx_api_keys_public_slug')) {
+    db.exec('CREATE UNIQUE INDEX idx_api_keys_public_slug ON api_keys(public_slug)');
+  }
+
+  // Additive migrations for organizations table
+  const existingOrgCols = new Set(
+    db.prepare('PRAGMA table_info(organizations)').all().map(c => c.name)
+  );
+  // 'none' | 'prefix' — when 'prefix', this org's projects must have
+  // public_slugs starting with "<organizations.slug>-" (plan_dsk_viewport_settings Phase 1).
+  if (!existingOrgCols.has('project_slug_policy')) {
+    db.exec("ALTER TABLE organizations ADD COLUMN project_slug_policy TEXT NOT NULL DEFAULT 'none'");
+  }
+
   // Additive migrations for users table
   const existingUserCols = new Set(
     db.prepare('PRAGMA table_info(users)').all().map(c => c.name)

@@ -57,4 +57,8 @@ export function runMigrations(db) {
     db.prepare('PRAGMA table_info(dsk_viewports)').all().map(c => c.name)
   );
   if (!vpCols.has('text_layers_json')) db.exec('ALTER TABLE dsk_viewports ADD COLUMN text_layers_json TEXT');
+  // display_settings_json: per-viewport presentation config consumed by the
+  // display page (background, CC burn-in + styling) — plan_dsk_viewport_settings
+  // Phase 3. Stream/chroma-key config is a later phase (Phase 4/5).
+  if (!vpCols.has('display_settings_json')) db.exec('ALTER TABLE dsk_viewports ADD COLUMN display_settings_json TEXT');
 }

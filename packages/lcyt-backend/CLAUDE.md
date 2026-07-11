@@ -139,7 +139,7 @@ GET  /preview/:key/incoming.jpg — latest RTMP → JPEG thumbnail (public)
 
 GET  /dsk/:apikey/images           — list DSK overlay images for an API key (public)
 GET  /dsk/:apikey/events           — SSE stream of graphics events for DSK page (public)
-GET  /dsk/:apikey/viewports/public — list public viewport definitions (public)
+GET  /dsk/:slugOrKey/viewports/public — list public viewport definitions + projectSlug (public; segment resolves public slug then raw api key)
 GET/POST/PUT/DELETE /dsk/:apikey/templates — DSK template CRUD (JWT Bearer or X-API-Key)
 POST /dsk/:apikey/templates/:id/activate   — activate a template in renderer (JWT Bearer or X-API-Key)
 POST /dsk/:apikey/template         — render a one-off template (JWT Bearer or X-API-Key)
@@ -181,6 +181,10 @@ GET  /production/device-roles/:code/auth     — device role pin-code authentica
 
 GET  /keys/:key/features — list project feature flags (user Bearer)
 PUT  /keys/:key/features — update project feature flags (user Bearer)
+
+GET  /keys/:key/slug        — current public slug + org-policy required prefix (member or X-Admin-Key)
+GET  /keys/:key/slug/check  — ?slug= availability probe with reason (member or X-Admin-Key)
+PUT  /keys/:key/slug        — { slug: string|null } set/clear public slug; org prefix policy enforced for users, bypassed for X-Admin-Key
 
 GET  /keys/:key/members  — list project members (user Bearer)
 POST /keys/:key/members  — invite member (user Bearer)
@@ -265,8 +269,8 @@ GET/POST/DELETE /orgs/:orgId/connector-network-rules[/:id] — per-org SSRF allo
 GET    /orgs                — list orgs the user belongs to (user Bearer token)
 POST   /orgs                — create org; creator becomes owner (user Bearer token)
 GET    /orgs/:id            — org detail (any member)
-PATCH  /orgs/:id            — update name/slug (owner only)
-DELETE /orgs/:id            — delete org (owner only)
+PATCH  /orgs/:id            — update name/slug/projectSlugPolicy ('none'|'prefix': require "<orgslug>-" prefix on project public slugs) (owner only)
+DELETE /orgs/:id            — delete org (owner only); member projects are detached (api_keys.org_id → NULL), never deleted
 GET    /orgs/:id/members    — list members (any member)
 POST   /orgs/:id/members    — invite member by email (owner/admin)
 PATCH  /orgs/:id/members/:userId — change member role; roles: owner/admin/editor/operator/viewer (owner/admin; owner changes owner-only)
@@ -288,7 +292,7 @@ GET    /admin/users/:id              — user detail with projects (X-Admin-Key)
 POST   /admin/users                  — create user (X-Admin-Key)
 PATCH  /admin/users/:id              — update user name/active (X-Admin-Key)
 POST   /admin/users/:id/set-password — admin password reset (X-Admin-Key)
-DELETE /admin/users/:id              — delete user (X-Admin-Key)
+DELETE /admin/users/:id?force=true   — delete user (X-Admin-Key); without force, 409s if the user has active projects or owns an organization; with force, projects are unlinked (user_id → NULL) and owned orgs are transferred to another member or torn down if the user was the sole member (reassignOrDeleteOwnedOrgs)
 GET    /admin/users/:id/features     — list user feature entitlements (X-Admin-Key)
 PATCH  /admin/users/:id/features     — grant/revoke user feature entitlements (X-Admin-Key)
 GET    /admin/projects               — list projects with search (X-Admin-Key)
@@ -305,7 +309,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 ```
 
 **Key internals:**
-- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK, plus a rotatable `ingest_stream_key` — `plan_selfservice_config_backend.md` §2), `caption_usage`, `session_stats`, `caption_errors`, `sessions`, `caption_targets`/`translation_vendor_config`/`translation_targets` (server-persisted target/translation config — §1). Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
+- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous) — this install enables `PRAGMA foreign_keys` **by default** (verified: `new Database(':memory:').pragma('foreign_keys', {simple:true})` returns `1`; no explicit pragma statement exists anywhere in the codebase, none is needed), so every `REFERENCES ... ON DELETE CASCADE`/`SET NULL` in `schema.js` is live and enforced, and every plain `REFERENCES` with no `ON DELETE` clause is a real, enforced NO-ACTION constraint — deleting a referenced parent row throws `SQLITE_CONSTRAINT_FOREIGNKEY` if child rows exist. Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK, plus a rotatable `ingest_stream_key` — `plan_selfservice_config_backend.md` §2), `caption_usage`, `session_stats`, `caption_errors`, `sessions`, `caption_targets`/`translation_vendor_config`/`translation_targets` (server-persisted target/translation config — §1). Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup. All `api_keys(key)`-referencing core child tables (`caption_targets`, `translation_vendor_config`, `translation_targets`, `project_features`, `project_members` [→ `project_member_permissions` cascades transitively], `project_device_roles`) declare `ON DELETE CASCADE`, so `deleteKey()` (`src/db/keys.js`) doesn't need to clean them up manually — it does still explicitly delete rows in the tables that key off `api_key` **without** a declared FK at all (`caption_usage`, `session_stats`, `caption_errors`, `auth_events`, `sessions`, `caption_files`, `icons`, `viewer_key_daily_stats`, `mcp_tokens`, plus `rtmp_stream_stats`/`rtmp_relays` when present), inside one `db.transaction(...)`, since those would otherwise silently orphan rather than error.
 - `src/db/schema.js` — also defines `organizations` and `org_members` (from `plan_team_org_backend.md`; served by `src/routes/orgs.js`'s `/orgs` CRUD/membership routes and the lcyt-web `/team` page) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
 - `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter(auth, sttManager, db, jwtSecret)`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`. The `?token=`/Bearer SSE auth verifies with `jwt.verify(token, jwtSecret)` (previously an unverified base64 decode of the payload — same class of bug fixed in `lcyt-connectors`' `/variables/events`, see that plugin's `CLAUDE.md`).
@@ -337,7 +341,8 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/device-roles.js` — Device role CRUD + pin-code auth for production devices.
 - `src/routes/project-features.js` — Per-project feature flag CRUD.
 - `src/routes/project-members.js` — Project membership CRUD (invite, role update, remove).
-- `src/routes/orgs.js` — Organization CRUD + membership routes (`/orgs/*`, backed by `src/db/orgs.js`); role hierarchy owner/admin/editor/operator/viewer.
+- `src/routes/orgs.js` — Organization CRUD + membership routes (`/orgs/*`, backed by `src/db/orgs.js`); role hierarchy owner/admin/editor/operator/viewer. `deleteOrganization()` detaches member projects (`api_keys.org_id = NULL`) before deleting the org row — `api_keys.org_id` has no `ON DELETE` action, so under this install's live `PRAGMA foreign_keys` enforcement (see below) a bare `DELETE FROM organizations` would otherwise throw `SQLITE_CONSTRAINT_FOREIGNKEY` whenever the org still has projects. `reassignOrDeleteOwnedOrgs(db, userId)` resolves `organizations.owner_user_id` (NOT NULL, no `ON DELETE` action) ahead of a user delete: promotes another member to owner if one exists, otherwise tears the org down the same way — used by both `deleteUserAccount()` (self-service `DELETE /auth/me`) and `DELETE /admin/users/:id?force=true`.
+- `src/routes/project-slug.js` — `/keys/:key/slug[/check]` public-slug routes (`plan_dsk_viewport_settings` Phase 1). Slug helpers (`validatePublicSlugFormat`, `RESERVED_PUBLIC_SLUGS`, `checkPublicSlugAvailability`, `setPublicSlug`, `resolveKeyByPublicSlug`, `getRequiredSlugPrefix`) live in `src/db/keys.js`; `api_keys.public_slug` is unique-indexed; `PATCH /admin/projects/:key` accepts `publicSlug` with the org prefix policy bypassed.
 - `src/routes/bridge-download.js` — Bridge agent binary download endpoint.
 - `src/routes/account.js` — User account routes (profile, settings).
 - `src/routes/session.js` — Session management routes.
@@ -345,7 +350,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/db/device-roles.js` — Device role DB helpers (`prod_device_roles` table).
 - `src/db/project-features.js` — Project feature flag DB helpers (`project_features` table).
 - `src/db/project-members.js` — Project membership DB helpers (`project_members` table).
-- `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`).
+- `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`). `deleteUserAccount()` (self-service full account deletion) runs, in order: `deleteOwnedProjectsForUser()`, `reassignOrDeleteOwnedOrgs()` (resolves any orgs the user owns — see `src/routes/orgs.js` above), `clearUserReferences()` (nulls the user out of every nullable `invited_by`/`granted_by`/`set_by`/`updated_by` FK column across `org_members`/`project_members`/`project_features`/`user_features`/`site_feature_policies`/`org_feature_overrides`), then deletes `org_members` and the `users` row — this order is load-bearing under live FK enforcement, not stylistic.
 - `src/db/index.js` — DB init + all table migrations (users, api_keys, sessions, etc.); re-exported by `src/db.js`.
 - `src/routes/auth.js` — User registration/login/me/change-password routes.
 - `src/routes/keys.js` — API key CRUD (admin + user project management).

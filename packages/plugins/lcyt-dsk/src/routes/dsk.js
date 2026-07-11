@@ -1,15 +1,18 @@
 import { Router } from 'express';
 import { listImages } from '../db/images.js';
 import { listViewports } from '../db/viewports.js';
+import { publicDisplaySettings } from './dsk-viewports.js';
 
 /**
  * Factory for the /dsk router.
  *
- * Public endpoints — no authentication required. The API key is in the URL path.
- * These power the green-screen DSK overlay page in lcyt-web.
+ * Public endpoints — no authentication required. The URL path segment is
+ * either the project's user-defined public slug (preferred,
+ * plan_dsk_viewport_settings Phase 2) or the raw API key (legacy, still
+ * supported). These power the green-screen DSK overlay page in lcyt-web.
  *
- * GET /dsk/:apikey/images  — list images available for this API key (for pre-loading in the DSK page)
- * GET /dsk/:apikey/events  — SSE stream; emits 'graphics' events when captions with <!-- graphics:... --> are received
+ * GET /dsk/:slugOrKey/images  — list images available for this project (for pre-loading in the DSK page)
+ * GET /dsk/:slugOrKey/events  — SSE stream; emits 'graphics' events when captions with <!-- graphics:... --> are received
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../../../../lcyt-backend/src/dsk-bus.js').DskBus} dskBus
@@ -18,9 +21,21 @@ import { listViewports } from '../db/viewports.js';
 export function createDskRouter(db, dskBus) {
   const router = Router();
 
-  // Validate API key exists and is active — shared by both endpoints
-  function resolveKey(apiKey, res) {
-    const row = db.prepare('SELECT key, active FROM api_keys WHERE key = ?').get(apiKey);
+  // Resolve a public URL segment to an active api_keys row: user-defined
+  // public_slug first, then raw api_key (legacy URLs). Queries the shared
+  // api_keys table directly (same precedent as routes/dsk-rtmp.js). Returns
+  // the row — callers must use row.key for all downstream DB access, since
+  // data tables are keyed by api_key, never by slug.
+  function resolveKey(segment, res) {
+    let row = null;
+    try {
+      row = db.prepare('SELECT key, active, public_slug FROM api_keys WHERE public_slug = ?').get(segment)
+         ?? db.prepare('SELECT key, active, public_slug FROM api_keys WHERE key = ?').get(segment)
+         ?? null;
+    } catch {
+      // Pre-migration schema without public_slug — legacy apiKey lookup only
+      row = db.prepare('SELECT key, active FROM api_keys WHERE key = ?').get(segment) ?? null;
+    }
     if (!row || row.active !== 1) {
       res.status(404).json({ error: 'API key not found' });
       return null;
@@ -32,8 +47,9 @@ export function createDskRouter(db, dskBus) {
   // Includes settingsJson (per-viewport visibility/position/animation) so the
   // display page has everything it needs in a single fetch.
   router.get('/:apikey/images', (req, res) => {
-    const { apikey } = req.params;
-    if (!resolveKey(apikey, res)) return;
+    const row = resolveKey(req.params.apikey, res);
+    if (!row) return;
+    const apikey = row.key;
 
     const rows = listImages(db, apikey);
     const images = rows.map(r => ({
@@ -53,18 +69,24 @@ export function createDskRouter(db, dskBus) {
   // NOTE: this route must be declared before the /:apikey/events route so Express
   // doesn't interpret "viewports" as an apikey.
   router.get('/:apikey/viewports/public', (req, res) => {
-    const { apikey } = req.params;
-    if (!resolveKey(apikey, res)) return;
+    const row = resolveKey(req.params.apikey, res);
+    if (!row) return;
+    const apikey = row.key;
     const rows = listViewports(db, apikey);
-    res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=3600');
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({
+      // The project's public slug (when set) so authenticated pages can build
+      // slug-form display URLs without a separate lookup. Public by design:
+      // the slug is already the public URL identifier.
+      projectSlug: row.public_slug ?? null,
       viewports: rows.map(r => ({
-        name:         r.name,
-        label:        r.label ?? null,
-        viewportType: r.viewport_type,
-        width:        r.width,
-        height:       r.height,
-        textLayers:   parseJson(r.text_layers_json, []),
+        name:            r.name,
+        label:           r.label ?? null,
+        viewportType:    r.viewport_type,
+        width:           r.width,
+        height:          r.height,
+        textLayers:      parseJson(r.text_layers_json, []),
+        displaySettings: publicDisplaySettings(parseJson(r.display_settings_json, null)),
       })),
     });
   });

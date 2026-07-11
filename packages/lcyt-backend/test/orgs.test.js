@@ -127,6 +127,42 @@ describe('Organizations routes', () => {
     assert.deepStrictEqual(defaults.features, ['captions', 'translations']);
   });
 
+  // `api_keys.org_id` has no ON DELETE action, so under live FK enforcement
+  // deleting an org that still has member projects attached used to throw
+  // SQLITE_CONSTRAINT_FOREIGNKEY. Per the Caption Target Architecture
+  // convention, an org vanishing must never delete or break its projects —
+  // deleteOrganization() now detaches them (org_id = NULL) instead.
+  it('deletes an org with member projects, detaching (not deleting) them', async () => {
+    const createRes = await fetch(`${baseUrl}/orgs`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${makeToken(userA)}`,
+      },
+      body: JSON.stringify({ name: 'Deletable Team' }),
+    });
+    const created = await createRes.json();
+    const orgId = created.organization.id;
+
+    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('org-delete-project', 'Org Delete Project', orgId);
+
+    const deleteRes = await fetch(`${baseUrl}/orgs/${orgId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${makeToken(userA)}` },
+    });
+    const deleteBody = await deleteRes.json();
+
+    assert.strictEqual(deleteRes.status, 200);
+    assert.strictEqual(deleteBody.deleted, true);
+    assert.strictEqual(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
+
+    const project = db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get('org-delete-project');
+    assert.ok(project, 'the project must survive the org delete');
+    assert.strictEqual(project.org_id, null);
+
+    db.prepare('DELETE FROM api_keys WHERE key = ?').run('org-delete-project');
+  });
+
   it('returns project counts for org members', async () => {
     const createRes = await fetch(`${baseUrl}/orgs`, {
       method: 'POST',

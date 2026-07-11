@@ -37,7 +37,8 @@ import {
   findTemplatesWithAnyElementIds,
   autoRenameConflictingIds,
 } from '../db/dsk-templates.js';
-import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus } from '../renderer.js';
+import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus, startViewportStream, stopViewportStream } from '../renderer.js';
+import { getViewport } from '../db/viewports.js';
 import logger from 'lcyt/logger';
 import { editorAuthOrBearer } from '../middleware/editor-auth.js';
 
@@ -255,8 +256,34 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   router.post('/:apikey/renderer/start', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
-    const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
+    const viewport = req.body?.viewport;
 
+    // Per-viewport page-capture stream (Phase 4): captures /dsk/<slug>/<viewport>
+    // and publishes to <key>__<viewport> (+ push targets). Does NOT feed the
+    // program composite — that is the bare-key renderer stream below.
+    if (viewport) {
+      const vp = getViewport(db, apiKey, viewport);
+      if (!vp) return res.status(404).json({ error: 'Viewport not found' });
+      let displaySettings = null;
+      try { displaySettings = JSON.parse(vp.display_settings_json || 'null'); } catch {}
+      let slug = null;
+      try { slug = db.prepare('SELECT public_slug FROM api_keys WHERE key = ?').get(apiKey)?.public_slug ?? null; } catch {}
+      try {
+        await startViewportStream(apiKey, {
+          slug, viewport,
+          dimensions: { width: vp.width, height: vp.height },
+          displaySettings,
+          rtmpBase: LOCAL_RTMP_BASE, rtmpApp: DSK_RTMP_APP,
+          pushUrls: displaySettings?.stream?.pushUrls ?? [],
+        });
+        return res.json({ ok: true, viewport });
+      } catch (err) {
+        logger.error(`[dsk-renderer] viewport start error for ${apiKey}::${viewport}:`, err.message);
+        return res.status(500).json({ error: 'Failed to start viewport stream' });
+      }
+    }
+
+    const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
     try {
       await startRtmpStream(apiKey, LOCAL_RTMP_BASE, DSK_RTMP_APP);
       // Wire the Playwright RTMP output directly into the relay overlay pipeline.
@@ -295,6 +322,17 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   router.post('/:apikey/renderer/stop', combinedAuth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
+    const viewport = req.body?.viewport;
+
+    if (viewport) {
+      try {
+        await stopViewportStream(apiKey, viewport);
+        return res.json({ ok: true, viewport });
+      } catch (err) {
+        logger.error(`[dsk-renderer] viewport stop error for ${apiKey}::${viewport}:`, err.message);
+        return res.status(500).json({ error: 'Failed to stop viewport stream' });
+      }
+    }
 
     try {
       await stopRtmpStream(apiKey);

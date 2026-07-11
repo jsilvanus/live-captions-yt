@@ -72,7 +72,10 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
 
     const name = req.body?.name;
     const slug = req.body?.slug;
-    if (name === undefined && slug === undefined) return res.status(400).json({ error: 'name or slug is required' });
+    const projectSlugPolicy = req.body?.projectSlugPolicy;
+    if (name === undefined && slug === undefined && projectSlugPolicy === undefined) {
+      return res.status(400).json({ error: 'name, slug, or projectSlugPolicy is required' });
+    }
 
     const updates = {};
     if (name !== undefined) {
@@ -84,6 +87,12 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
       const normalized = slugify(slug);
       if (!normalized) return res.status(400).json({ error: 'slug is required' });
       updates.slug = normalized;
+    }
+    if (projectSlugPolicy !== undefined) {
+      if (projectSlugPolicy !== 'none' && projectSlugPolicy !== 'prefix') {
+        return res.status(400).json({ error: "projectSlugPolicy must be 'none' or 'prefix'" });
+      }
+      updates.projectSlugPolicy = projectSlugPolicy;
     }
 
     const updated = updateOrganization(db, orgId, updates);

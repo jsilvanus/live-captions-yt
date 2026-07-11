@@ -326,6 +326,60 @@ describe('/admin/users', () => {
     assert.ok(key);
     assert.equal(key.user_id, null);
   });
+
+  // `organizations.owner_user_id` is NOT NULL with no ON DELETE action.
+  // Without resolving it first, `DELETE FROM users` throws
+  // SQLITE_CONSTRAINT_FOREIGNKEY under live FK enforcement whenever the
+  // target user owns an org — this exercises both branches of
+  // reassignOrDeleteOwnedOrgs().
+  it('DELETE /admin/users/:id refuses without force when user owns an organization', async () => {
+    const user = seedUser('orgowner-noforce@test.com');
+    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('NoForce Org', 'noforce-org', user.id);
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(org.lastInsertRowid, user.id, user.id);
+
+    const { status, body } = await adminDelete(`/admin/users/${user.id}`);
+    assert.equal(status, 409);
+    assert.equal(body.ownedOrgs, 1);
+    assert.ok(getUserById(db, user.id));
+  });
+
+  it('DELETE /admin/users/:id?force=true transfers ownership of a multi-member org', async () => {
+    const owner = seedUser('orgowner-transfer@test.com');
+    const admin2 = seedUser('org-admin@test.com');
+    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Transfer Org', 'transfer-org', owner.id);
+    const orgId = org.lastInsertRowid;
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, owner.id, owner.id);
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'admin', ?)").run(orgId, admin2.id, owner.id);
+
+    const { status, body } = await adminDelete(`/admin/users/${owner.id}?force=true`);
+    assert.equal(status, 200);
+    assert.equal(body.deleted, true);
+    assert.equal(getUserById(db, owner.id), undefined);
+
+    const updatedOrg = db.prepare('SELECT owner_user_id FROM organizations WHERE id = ?').get(orgId);
+    assert.ok(updatedOrg, 'org should survive when another member can take over');
+    assert.equal(updatedOrg.owner_user_id, admin2.id);
+    const promotedMember = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(orgId, admin2.id);
+    assert.equal(promotedMember.role, 'owner');
+  });
+
+  it('DELETE /admin/users/:id?force=true tears down a solely-owned org and detaches its projects', async () => {
+    const user = seedUser('orgowner-solo@test.com');
+    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Solo Admin Org', 'solo-admin-org', user.id);
+    const orgId = org.lastInsertRowid;
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, user.id, user.id);
+    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('solo-admin-org-project', 'Solo Admin Org Project', orgId);
+
+    const { status, body } = await adminDelete(`/admin/users/${user.id}?force=true`);
+    assert.equal(status, 200);
+    assert.equal(body.deleted, true);
+    assert.equal(getUserById(db, user.id), undefined);
+    assert.equal(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
+
+    const project = getKey(db, 'solo-admin-org-project');
+    assert.ok(project, 'the org\'s project must survive the org teardown');
+    assert.equal(project.org_id, null);
+  });
 });
 
 // ---------------------------------------------------------------------------

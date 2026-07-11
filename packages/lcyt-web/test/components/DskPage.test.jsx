@@ -95,6 +95,83 @@ describe('DskPage — exit animation', () => {
     await waitFor(() => expect(activeImg(container)).toBeNull());
   });
 
+  it('reads slug + viewport from the path form /dsk/:slug/:viewport', async () => {
+    const vpImage = {
+      id: 3, shorthand: 'logo', mimeType: 'image/png',
+      settingsJson: { viewports: { 'vertical-left': { animation: '' } } },
+    };
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('/images')) {
+        return Promise.resolve({ ok: true, json: async () => ({ images: [vpImage] }) });
+      }
+      if (String(url).includes('/viewports/public')) {
+        return Promise.resolve({ ok: true, json: async () => ({ projectSlug: 'sunday', viewports: [
+          { name: 'vertical-left', viewportType: 'vertical', width: 1080, height: 1920, textLayers: [] },
+        ] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    window.history.pushState({}, '', '/dsk/sunday/vertical-left');
+
+    const { container } = render(<DskPage />);
+    await waitFor(() => expect(esInstances.length).toBe(1));
+
+    // SSE opened against the slug path segment, not a raw key.
+    expect(esInstances[0].url).toContain('/dsk/sunday/events');
+
+    // A graphics event scoped to the path-derived viewport activates the image,
+    // proving the viewport name came from pathParts[3].
+    act(() => {
+      esInstances[0].emit('graphics', { default: [], viewports: { 'vertical-left': ['logo'] }, ts: Date.now() });
+    });
+    await waitFor(() => expect(activeImg(container)).not.toBeNull());
+  });
+
+  it('applies persisted ccMode from viewport display settings without a ?cc= param', async () => {
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('/images')) {
+        return Promise.resolve({ ok: true, json: async () => ({ images: [] }) });
+      }
+      if (String(url).includes('/viewports/public')) {
+        return Promise.resolve({ ok: true, json: async () => ({ projectSlug: 'svc', viewports: [
+          { name: 'vertical-left', viewportType: 'vertical', width: 1080, height: 1920, textLayers: [],
+            displaySettings: { ccMode: true, background: 'transparent' } },
+        ] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    // No ?cc= and no ?bg= — persisted settings must drive both.
+    window.history.pushState({}, '', '/dsk/svc/vertical-left');
+
+    const { container, getByText } = render(<DskPage />);
+    await waitFor(() => expect(esInstances.length).toBe(1));
+
+    act(() => {
+      esInstances[0].emit('text', { text: 'Hello captions' });
+    });
+    // CC text renders because persisted ccMode=true, even with no ?cc=1.
+    await waitFor(() => expect(getByText('Hello captions')).toBeTruthy());
+  });
+
+  it('lets ?cc=0 force CC off over a persisted ccMode=true', async () => {
+    global.fetch = vi.fn((url) => {
+      if (String(url).includes('/images')) return Promise.resolve({ ok: true, json: async () => ({ images: [] }) });
+      if (String(url).includes('/viewports/public')) {
+        return Promise.resolve({ ok: true, json: async () => ({ projectSlug: 'svc', viewports: [
+          { name: 'v', viewportType: 'vertical', width: 1080, height: 1920, textLayers: [], displaySettings: { ccMode: true } },
+        ] }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({}) });
+    });
+    window.history.pushState({}, '', '/dsk/svc/v?cc=0');
+
+    const { queryByText } = render(<DskPage />);
+    await waitFor(() => expect(esInstances.length).toBe(1));
+    act(() => { esInstances[0].emit('text', { text: 'Should stay hidden' }); });
+    await new Promise(r => setTimeout(r, 20));
+    expect(queryByText('Should stay hidden')).toBeNull();
+  });
+
   it('removes an image instantly when it has no configured animation', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     global.fetch = vi.fn((url) => {
