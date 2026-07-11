@@ -78,6 +78,13 @@ This is the generalized version of the `SseSubscriberBus` extraction `CONSIDER.m
 
 ### Topic taxonomy
 
+> **See also `plan_metacode_variable_unification.md`.** That plan proposes that these topic
+> names be *declared by* the metacode/variable reserved-name registry (each name's `emitsTopic`),
+> so `variable.updated` fires on any plain variable assignment and each reserved actionable name
+> (`graphics`, `cue`, `audio`, …) owns its domain topic. It doesn't change the taxonomy below —
+> it gives it a single authoritative source, and keeps *metacode name ≈ variable name ≈
+> event-bus domain* one vocabulary. This plan (the bus mechanism) is independent of that one.
+
 Namespacing convention: `<domain>.<event>`. Mapping from today's ad hoc event names:
 
 | Topic | Publisher | Today's equivalent |
