@@ -58,6 +58,39 @@ export function upsertViewport(db, apiKey, { name, label, viewportType, width, h
 }
 
 /**
+ * Enforce the single-composite-stream invariant (plan_dsk_viewport_settings
+ * Phase 4): at most one viewport per api_key may have
+ * `displaySettings.stream.mode === 'composite'`. Demotes every OTHER composite
+ * viewport to `'standalone'` (keeping it enabled — only the composite bit is
+ * exclusive). No-op unless `keepName`'s own stream is composite.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} keepName  the viewport allowed to stay composite
+ * @returns {string[]} names of viewports that were demoted
+ */
+export function demoteOtherCompositeViewports(db, apiKey, keepName) {
+  const rows = db.prepare(
+    'SELECT name, display_settings_json FROM dsk_viewports WHERE api_key = ? AND name != ?'
+  ).all(apiKey, keepName);
+
+  const demoted = [];
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      let settings;
+      try { settings = JSON.parse(r.display_settings_json || 'null'); } catch { continue; }
+      if (settings?.stream?.mode !== 'composite') continue;
+      settings.stream.mode = 'standalone';
+      db.prepare('UPDATE dsk_viewports SET display_settings_json = ?, updated_at = datetime(\'now\') WHERE api_key = ? AND name = ?')
+        .run(JSON.stringify(settings), apiKey, r.name);
+      demoted.push(r.name);
+    }
+  });
+  tx();
+  return demoted;
+}
+
+/**
  * Delete a viewport by name.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey

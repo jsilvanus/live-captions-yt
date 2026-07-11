@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { listImages } from '../db/images.js';
 import { listViewports } from '../db/viewports.js';
+import { publicDisplaySettings } from './dsk-viewports.js';
 
 /**
  * Factory for the /dsk router.
@@ -85,7 +86,7 @@ export function createDskRouter(db, dskBus) {
         width:           r.width,
         height:          r.height,
         textLayers:      parseJson(r.text_layers_json, []),
-        displaySettings: parseJson(r.display_settings_json, null),
+        displaySettings: publicDisplaySettings(parseJson(r.display_settings_json, null)),
       })),
     });
   });

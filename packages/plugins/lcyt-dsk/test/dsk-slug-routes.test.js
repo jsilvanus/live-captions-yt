@@ -11,7 +11,9 @@ import Database from 'better-sqlite3';
 
 import { runMigrations } from '../src/db.js';
 import { createDskRouter } from '../src/routes/dsk.js';
-import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES, sanitizeDisplaySettings } from '../src/routes/dsk-viewports.js';
+import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES, sanitizeDisplaySettings, publicDisplaySettings } from '../src/routes/dsk-viewports.js';
+import { viewportStreamName, parseStreamName, isViewportStream } from '../src/stream-names.js';
+import { createDskRtmpRouter } from '../src/routes/dsk-rtmp.js';
 import { upsertViewport } from '../src/db/viewports.js';
 
 let server, baseUrl, db;
@@ -35,7 +37,8 @@ before(() => new Promise(resolve => {
   `);
   db.exec(`
     CREATE TABLE api_keys (
-      key TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1, public_slug TEXT UNIQUE
+      key TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1,
+      public_slug TEXT UNIQUE, ingest_stream_key TEXT
     )
   `);
   runMigrations(db);
@@ -223,5 +226,124 @@ describe('viewport display settings persistence', () => {
     });
     const list = await (await fetch(`${baseUrl}/dsk/ds3/viewports`, { headers: { 'x-api-key': 'ds3' } })).json();
     assert.equal(list.viewports.find(v => v.name === 'v1').displaySettings, null);
+  });
+});
+
+// ── Phase 4: stream config, composite invariant, RTMP naming ────────────────
+
+describe('stream config sanitize + public stripping', () => {
+  it('whitelists stream fields and rejects non-rtmp push urls', () => {
+    const out = sanitizeDisplaySettings({
+      stream: {
+        enabled: 1, mode: 'composite',
+        pushUrls: [
+          { url: 'rtmp://a.example/live/key1', enabled: true },
+          { url: 'https://evil.example/x' },       // not rtmp → dropped
+          { url: 'rtmps://b.example/live/key2', enabled: false },
+        ],
+        chromaKey: { enabled: true, color: '#00B140', similarity: 5, blend: -1 },
+      },
+    });
+    assert.equal(out.stream.enabled, true);
+    assert.equal(out.stream.mode, 'composite');
+    assert.equal(out.stream.pushUrls.length, 2);
+    assert.equal(out.stream.pushUrls[1].enabled, false);
+    assert.equal(out.stream.chromaKey.similarity, 1); // clamped
+    assert.equal(out.stream.chromaKey.blend, 0);       // clamped
+  });
+
+  it('publicDisplaySettings strips the whole stream sub-object', () => {
+    const full = { background: 'transparent', stream: { pushUrls: [{ url: 'rtmp://x/y/secretkey' }] } };
+    const pub = publicDisplaySettings(full);
+    assert.equal(pub.background, 'transparent');
+    assert.ok(!('stream' in pub));
+  });
+
+  it('never exposes pushUrls on the public viewports endpoint', async () => {
+    makeKey('st1', 'st-slug');
+    await fetch(`${baseUrl}/dsk/st1/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'st1' },
+      body: JSON.stringify({
+        name: 'vert', viewportType: 'vertical',
+        displaySettings: { background: 'transparent', stream: { enabled: true, mode: 'standalone', pushUrls: [{ url: 'rtmp://ingest/app/SECRET' }] } },
+      }),
+    });
+    const pub = await (await fetch(`${baseUrl}/dsk/st-slug/viewports/public`)).json();
+    const vp = pub.viewports.find(v => v.name === 'vert');
+    assert.equal(vp.displaySettings.background, 'transparent');
+    assert.ok(!vp.displaySettings.stream, 'stream config must not appear publicly');
+    assert.ok(!JSON.stringify(pub).includes('SECRET'), 'push stream key must never leak');
+  });
+});
+
+describe('single-composite invariant', () => {
+  it('demotes a prior composite viewport when a new one becomes composite', async () => {
+    makeKey('ci1');
+    const mk = (name) => fetch(`${baseUrl}/dsk/ci1/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ci1' },
+      body: JSON.stringify({ name, viewportType: 'landscape', displaySettings: { stream: { enabled: true, mode: 'composite' } } }),
+    });
+    await mk('prog-a');
+    await mk('prog-b'); // second composite → first must demote to standalone
+
+    const list = await (await fetch(`${baseUrl}/dsk/ci1/viewports`, { headers: { 'x-api-key': 'ci1' } })).json();
+    const a = list.viewports.find(v => v.name === 'prog-a');
+    const b = list.viewports.find(v => v.name === 'prog-b');
+    assert.equal(a.displaySettings.stream.mode, 'standalone');
+    assert.equal(b.displaySettings.stream.mode, 'composite');
+  });
+
+  it('rejects viewport names containing the __ delimiter', async () => {
+    makeKey('ci2');
+    const res = await fetch(`${baseUrl}/dsk/ci2/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ci2' },
+      body: JSON.stringify({ name: 'foo__bar', viewportType: 'vertical' }),
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /__/);
+  });
+});
+
+describe('stream-name convention', () => {
+  it('builds and parses viewport stream names', () => {
+    assert.equal(viewportStreamName('abc-123', 'vertical-left'), 'abc-123__vertical-left');
+    assert.deepEqual(parseStreamName('abc-123__vertical-left'), { apiKey: 'abc-123', viewport: 'vertical-left' });
+    assert.deepEqual(parseStreamName('abc-123'), { apiKey: 'abc-123', viewport: null });
+    assert.equal(isViewportStream('abc-123__v'), true);
+    assert.equal(isViewportStream('abc-123'), false);
+  });
+});
+
+describe('dsk-rtmp composite exclusion', () => {
+  let rtmpServer, rtmpBase, calls;
+  before(() => new Promise(resolve => {
+    calls = [];
+    const relayManager = { setDskRtmpSource: async (k, url) => { calls.push({ k, url }); } };
+    const app = express();
+    app.use('/dsk-rtmp', createDskRtmpRouter(db, relayManager));
+    rtmpServer = createServer(app);
+    rtmpServer.listen(0, () => { rtmpBase = `http://127.0.0.1:${rtmpServer.address().port}`; resolve(); });
+  }));
+  after(() => new Promise(resolve => rtmpServer.close(resolve)));
+
+  it('triggers the program composite for a bare-key publish', async () => {
+    calls.length = 0;
+    const res = await fetch(`${rtmpBase}/dsk-rtmp/on_publish`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'name=progkey123',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 1);
+    assert.ok(calls[0].url);
+  });
+
+  it('does NOT trigger the composite for a viewport stream (__)', async () => {
+    calls.length = 0;
+    const res = await fetch(`${rtmpBase}/dsk-rtmp/on_publish`, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'name=progkey123__vertical-left',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls.length, 0, 'viewport stream must not restart the program relay');
   });
 });

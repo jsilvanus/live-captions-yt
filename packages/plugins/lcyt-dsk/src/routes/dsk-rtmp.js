@@ -26,6 +26,7 @@
 
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
+import { isViewportStream } from '../stream-names.js';
 
 // The local nginx-rtmp base URL and DSK application name.
 // These must match the nginx-rtmp config on the server.
@@ -80,6 +81,14 @@ export function createDskRtmpRouter(db, relayManager) {
   async function handleNginxCallback(call, name, res) {
     if (!name || !API_KEY_RE.test(name)) {
       return res.status(400).send('invalid stream name');
+    }
+
+    // Per-viewport renderer streams (`<key>__<viewport>`) are standalone —
+    // they publish to the dsk app but must NOT restart the program relay with
+    // a DSK composite (that is only for a bare-key program push). Ack and skip.
+    if (isViewportStream(name)) {
+      logger.info(`[dsk-rtmp] ${call}: viewport stream ${name} — no program composite`);
+      return res.status(200).send('ok');
     }
 
     const apiKey = resolveApiKeyFromIngestStreamKey(db, name);

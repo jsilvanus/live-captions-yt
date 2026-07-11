@@ -79,7 +79,10 @@ Decisions taken (2026-07-11, with the project owner):
 
 **Tests:** db round-trip + composite invariant, public shape (pushUrls stripped), DskPage precedence matrix (Vitest), cache header.
 
-## Phase 4 — Multi-renderer: per-viewport streams with scoped graphics
+## Phase 4 — Multi-renderer: per-viewport streams with scoped graphics 🚧 (backend foundation implemented 2026-07-11)
+
+> **Done (testable backend core):** `stream` config in `display_settings_json` (`sanitizeStreamConfig`: enabled/mode/pushUrls/chromaKey, rtmp-only push URLs, clamped); the single-`composite` invariant (`demoteOtherCompositeViewports`); `publicDisplaySettings()` strips the whole `stream` object from `/viewports/public` (pushUrls carry secrets); the `<key>__<viewport>` RTMP naming convention (`src/stream-names.js`) with composite-exclusion in `routes/dsk-rtmp.js` (viewport streams never restart the program relay); `__` barred from viewport names.
+> **Remaining (integration-only, needs live browser + ffmpeg + RTMP to validate):** the renderer multi-page refactor (per-`(apiKey, viewport)` Chromium pages capturing the real display page → `<key>__<viewport>` RTMP with a tee to push targets), `renderer/start|stop` gaining `{ viewport? }`, the status shape, and the Viewports-page Stream section. Deferred to its own increment.
 
 Today `renderer.js` keys everything by apiKey (one Chromium page, template HTML, hard-coded 1920×1080, one ffmpeg). To broadcast vertical + landscape simultaneously *with separately scoped graphics*, per-viewport streams render **the actual display page**, not template HTML — that is what makes the graphics scoping real, since `/dsk/:slug/:viewport` already shows exactly that viewport's image set, text layers, and CC per its settings.
 

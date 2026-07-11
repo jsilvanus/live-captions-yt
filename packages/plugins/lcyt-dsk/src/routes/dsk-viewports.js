@@ -13,7 +13,7 @@
  * @param {import('express').RequestHandler} auth
  */
 import { Router } from 'express';
-import { listViewports, getViewport, upsertViewport, deleteViewport } from '../db/viewports.js';
+import { listViewports, getViewport, upsertViewport, deleteViewport, demoteOtherCompositeViewports } from '../db/viewports.js';
 
 // Viewport name must be a lowercase slug (letters, digits, hyphens, underscores)
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}$/;
@@ -59,6 +59,9 @@ export function createDskViewportsRouter(db, auth) {
     if (!name || !SLUG_RE.test(name)) {
       return res.status(400).json({ error: 'name must be a lowercase slug (letters, digits, hyphens, underscores)' });
     }
+    if (name.includes('__')) {
+      return res.status(400).json({ error: "name must not contain '__' (reserved as the RTMP stream delimiter)" });
+    }
     if (RESERVED_VIEWPORT_NAMES.has(name)) {
       return res.status(400).json({ error: `'${name}' is a reserved viewport name` });
     }
@@ -78,6 +81,7 @@ export function createDskViewportsRouter(db, auth) {
     const cleanSettings = sanitizeDisplaySettings(displaySettings);
     const displaySettingsJson = cleanSettings ? JSON.stringify(cleanSettings) : null;
     const row = upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h, textLayersJson, displaySettingsJson });
+    if (cleanSettings?.stream?.mode === 'composite') demoteOtherCompositeViewports(db, req.params.apikey, name);
     res.status(201).json({ viewport: formatViewport(row) });
   });
 
@@ -119,6 +123,10 @@ export function createDskViewportsRouter(db, auth) {
       textLayersJson,
       displaySettingsJson,
     });
+    // Enforce the single-composite invariant when this viewport is now composite.
+    let savedStreamMode = null;
+    try { savedStreamMode = JSON.parse(displaySettingsJson || 'null')?.stream?.mode ?? null; } catch {}
+    if (savedStreamMode === 'composite') demoteOtherCompositeViewports(db, req.params.apikey, name);
     res.json({ viewport: formatViewport(row) });
   });
 
@@ -159,9 +167,13 @@ function parseJsonObject(str) {
 }
 
 /**
- * Whitelist + clamp display settings (plan_dsk_viewport_settings Phase 3).
- * Returns null when nothing is set. Presentation values only — safe to serve
- * on the public viewports endpoint.
+ * Whitelist + clamp display settings (plan_dsk_viewport_settings Phase 3/4).
+ * Returns null when nothing is set.
+ *
+ * Presentation fields (background, ccMode, ccStyle) are safe to serve
+ * publicly. The `stream` sub-object (Phase 4 — renderer/relay config) is
+ * server-side only and MUST be stripped before public exposure via
+ * `publicDisplaySettings()`, since `stream.pushUrls` can embed stream keys.
  */
 export function sanitizeDisplaySettings(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -183,5 +195,52 @@ export function sanitizeDisplaySettings(raw) {
     if (Object.keys(cc).length > 0) out.ccStyle = cc;
   }
 
+  const stream = sanitizeStreamConfig(raw.stream);
+  if (stream) out.stream = stream;
+
   return Object.keys(out).length > 0 ? out : null;
+}
+
+/** Whitelist + clamp the per-viewport stream config (Phase 4). Returns null when empty. */
+function sanitizeStreamConfig(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  if (raw.enabled !== undefined) out.enabled = !!raw.enabled;
+  if (raw.mode === 'composite' || raw.mode === 'standalone') out.mode = raw.mode;
+
+  if (Array.isArray(raw.pushUrls)) {
+    const urls = [];
+    for (const p of raw.pushUrls.slice(0, 8)) {
+      if (!p || typeof p !== 'object') continue;
+      const url = typeof p.url === 'string' ? p.url.trim() : '';
+      // Only rtmp(s):// push targets; cap length.
+      if (!/^rtmps?:\/\//i.test(url)) continue;
+      urls.push({ url: url.slice(0, 512), enabled: p.enabled !== false });
+    }
+    if (urls.length > 0) out.pushUrls = urls;
+  }
+
+  if (raw.chromaKey && typeof raw.chromaKey === 'object') {
+    const c = raw.chromaKey;
+    const ck = {};
+    ck.enabled = !!c.enabled;
+    if (typeof c.color === 'string' && c.color.trim()) ck.color = c.color.trim().slice(0, 64);
+    if (Number.isFinite(Number(c.similarity))) ck.similarity = Math.max(0, Math.min(1, Number(c.similarity)));
+    if (Number.isFinite(Number(c.blend))) ck.blend = Math.max(0, Math.min(1, Number(c.blend)));
+    out.chromaKey = ck;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * Strip server-only fields from display settings for public exposure.
+ * Removes the entire `stream` sub-object (renderer/relay config; may carry
+ * push stream keys) — the public display page only needs background/CC.
+ */
+export function publicDisplaySettings(settings) {
+  if (!settings || typeof settings !== 'object') return settings ?? null;
+  if (!('stream' in settings)) return settings;
+  const { stream, ...rest } = settings;
+  return Object.keys(rest).length > 0 ? rest : null;
 }
