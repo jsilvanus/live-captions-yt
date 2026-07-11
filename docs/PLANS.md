@@ -65,6 +65,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 ### Pending
 | [plan_help.md](plans/plan_help.md) | Help Page Screenshot Capture | Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page. | |
+| [plan_dsk_viewport_settings.md](plans/plan_dsk_viewport_settings.md) | DSK Viewport Display Settings + RTMP Colorkey | Replaces DSK display URL-building with settings persisted on the viewport entity (`display_settings_json` + `is_stream_source` on `dsk_viewports`): background, CC burn-in + styling, renderer/stream binding — edited in `DskViewportsPage`, consumed by `DskPage` with URL params as overrides. Final phase adds an optional ffmpeg `colorkey` to the RTMP DSK composite (configured via the stream-source viewport's `chromaKey` settings) so external RTMP pushes and the renderer path work as keyed overlays instead of full-frame takeover. | |
 
 ### Draft
 
