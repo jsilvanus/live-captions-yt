@@ -16,7 +16,9 @@ import {
   getKeysByUserId,
   updateUserPassword,
   createUser,
+  clearUserReferences,
 } from '../db/users.js';
+import { reassignOrDeleteOwnedOrgs } from '../db/orgs.js';
 import {
   getAllKeys,
   getKey,
@@ -287,7 +289,18 @@ export function createAdminRouter(db, jwtSecret) {
 
   /**
    * DELETE /admin/users/:id?force=true
-   * Delete a user. Without ?force, fails if user has active projects.
+   * Delete a user. Without ?force, fails if the user has active projects or
+   * owns any organizations — deleting a user who owns an org (or an active
+   * project) is a real ownership-transfer decision, not a silent side effect.
+   *
+   * With ?force=true: API keys are unlinked (user_id = NULL, project
+   * survives — see keys.js's deleteKey()/orgs.js's deleteOrganization() for
+   * the sibling "detach, don't destroy" convention), owned organizations are
+   * either transferred to another member or torn down if the user was the
+   * sole member (reassignOrDeleteOwnedOrgs — organizations.owner_user_id is
+   * NOT NULL with no ON DELETE action, so it must be resolved before the
+   * user row can be deleted under live FK enforcement), and any dangling
+   * invited_by/granted_by/etc. attributions are cleared (clearUserReferences).
    */
   router.delete('/users/:id', (req, res) => {
     const id = Number(req.params.id);
@@ -298,21 +311,29 @@ export function createAdminRouter(db, jwtSecret) {
 
     const keys = getKeysByUserId(db, id);
     const activeKeys = keys.filter(k => k.active === 1);
+    const ownedOrgs = db.prepare('SELECT id FROM organizations WHERE owner_user_id = ?').all(id);
 
-    if (activeKeys.length > 0 && req.query.force !== 'true') {
+    if ((activeKeys.length > 0 || ownedOrgs.length > 0) && req.query.force !== 'true') {
       return res.status(409).json({
-        error: 'User has active projects. Use ?force=true to unlink and delete.',
+        error: 'User has active projects or owns organizations. Use ?force=true to unlink/transfer and delete.',
         activeProjects: activeKeys.length,
+        ownedOrgs: ownedOrgs.length,
       });
     }
 
     db.transaction(() => {
-      // Unlink API keys from user
+      // Unlink API keys from user (project survives, ownerless)
       db.prepare('UPDATE api_keys SET user_id = NULL WHERE user_id = ?').run(id);
+      // Transfer or tear down organizations this user owns
+      reassignOrDeleteOwnedOrgs(db, id);
+      // Clear dangling invited_by/granted_by/set_by/updated_by attributions
+      clearUserReferences(db, id);
       // Remove user features
       try { db.prepare('DELETE FROM user_features WHERE user_id = ?').run(id); } catch { /* table may not exist */ }
       // Remove project membership
       try { db.prepare('DELETE FROM project_members WHERE user_id = ?').run(id); } catch { /* table may not exist */ }
+      // Remove org membership
+      db.prepare('DELETE FROM org_members WHERE user_id = ?').run(id);
       // Delete user
       db.prepare('DELETE FROM users WHERE id = ?').run(id);
     })();

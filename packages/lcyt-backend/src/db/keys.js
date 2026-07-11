@@ -319,12 +319,45 @@ export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
 
 /**
  * Permanently delete an API key.
+ *
+ * Every core child table that declares `REFERENCES api_keys(key)` uses
+ * `ON DELETE CASCADE` (caption_targets, translation_vendor_config,
+ * translation_targets, project_features, project_members [which cascades
+ * project_member_permissions in turn], project_device_roles) — under the
+ * live FK enforcement `better-sqlite3` has on by default, the engine cleans
+ * those up automatically and this DELETE alone would not fail even with
+ * child rows present. A handful of other tables key off `api_key` without
+ * ever declaring an FK constraint at all (caption_usage, session_stats,
+ * caption_errors, auth_events, sessions, caption_files, icons,
+ * viewer_key_daily_stats, mcp_tokens) — deleting a key wouldn't error on
+ * these, but would silently orphan their rows, so they're cleaned up
+ * explicitly here too, mirroring cleanRevokedKeys()'s existing pattern for
+ * the subset it already covers.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key
  * @returns {boolean} true if a row was deleted
  */
 export function deleteKey(db, key) {
-  const result = db.prepare('DELETE FROM api_keys WHERE key = ?').run(key);
+  const result = db.transaction(() => {
+    // No declared FK — orphan-row cleanup, not FK-required, but done here so
+    // deleteKey() is a complete teardown of everything keyed on `key`.
+    db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM session_stats WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM sessions WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM icons WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM viewer_key_daily_stats WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM mcp_tokens WHERE api_key = ?').run(key);
+    try {
+      db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
+      db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
+    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
+    // caption_targets/translation_vendor_config/translation_targets/project_features/
+    // project_members(+permissions)/project_device_roles: ON DELETE CASCADE, left to the engine.
+    return db.prepare('DELETE FROM api_keys WHERE key = ?').run(key);
+  })();
   return result.changes > 0;
 }
 
