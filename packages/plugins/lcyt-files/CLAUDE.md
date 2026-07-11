@@ -1,14 +1,15 @@
 # `packages/plugins/lcyt-files` — Caption File Storage Plugin (v0.1.0)
 
-Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default), S3-compatible object storage, and WebDAV backends behind a common interface. Imported by `lcyt-backend` as `lcyt-files`.
+Storage-adapter–backed caption file I/O for lcyt-backend. Provides local filesystem (default), S3-compatible object storage, and WebDAV backends behind a common interface, in three modes: **local** (`FILES_DIR`), **operator-configured S3** (`S3_*` env vars), and **user-defined (runtime) per-key S3** — credentials stored in the plugin-owned `key_storage_config` table, gated on the `custom-storage` project feature. Imported by `lcyt-backend` as `lcyt-files`.
 
 **Main entry:** `src/api.js`
 **Usage in lcyt-backend:**
 ```js
 import { initFilesControl, createFilesRouter, writeToBackendFile, closeFileHandles } from 'lcyt-files';
 
-const { storage } = await initFilesControl(db);
-// Wire storage into captions.js (via createSessionRouters) and files route (via createContentRouters).
+const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+// resolveStorage(apiKey) picks the per-key adapter (falls back to the global one);
+// wire it into captions.js (via createSessionRouters) and content.js (via createContentRouters).
 // Close handles on session end:
 store.onSessionEnd = async (session) => {
   if (session._fileHandles?.size > 0) await closeFileHandles(session._fileHandles);
@@ -16,10 +17,12 @@ store.onSessionEnd = async (session) => {
 ```
 
 **Source files (`src/`):**
-- `api.js` — `initFilesControl(db)` → `{ storage }` (logs adapter type at startup). Exports `writeToBackendFile`, `closeFileHandles`, `createFilesRouter`.
-- `storage.js` — `createStorageAdapter()` factory; reads `FILE_STORAGE` env var.
-- `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`.
-- `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, storage)` → `GET /file`, `GET /file/:id`, `DELETE /file/:id`.
+- `api.js` — `initFilesControl(db)` → `{ storage, resolveStorage, invalidateStorageCache }`: runs the plugin's DB migrations, creates the global adapter, and creates the per-key resolver (logs adapter type at startup). Exports `writeToBackendFile`, `closeFileHandles`, `createFilesRouter`.
+- `storage.js` — `createStorageAdapter()` factory (reads `FILE_STORAGE` env var) + `createStorageResolver(db, globalAdapter)` → `{ resolveStorage, invalidateCache }` for per-key adapter resolution with caching.
+- `db.js` — `key_storage_config` table migrations + per-key storage config read/write helpers (bucket, region, endpoint, prefix, credentials, `storage_type`).
+- `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`. `context.format` is per-file (`'text' | 'youtube' | 'vtt'`; the caption POST's per-language `fileFormats` field selects it — see `packages/lcyt-backend/src/routes/captions.js`). For `format: 'vtt'`, cue times are session-relative: `context.sessionStartMs` (epoch ms; `captions.js` passes `session.startedAt`) anchors them to the session start, falling back to the first caption written to the file when absent; timestamps before the anchor clamp to `00:00:00.000`.
+- `vtt.js` — `shiftVttContent(content, offsetMs)`: pure cue-time shifter for aligning archived VTT to a VOD timeline (clamps at zero, leaves non-timing lines untouched). Used by the download route's `?offsetMs=` and exported from the plugin entry for future post-broadcast upload work.
+- `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache)` → `GET /file`, `GET /file/:id` (supports `?offsetMs=±N` on `vtt` files to shift cue times on the fly; 400 on non-vtt or out-of-range values, bound ±24h), `DELETE /file/:id`, `GET/PUT/DELETE /file/storage-config`.
 - `adapters/local.js` — `createLocalAdapter(baseDir)`: wraps `fs.WriteStream` (append) and `fs.ReadStream`. `storedKey` is the full filesystem path.
 - `adapters/s3.js` — `createS3Adapter({ bucket, prefix, region, endpoint, credentials })`: multipart upload via `@aws-sdk/lib-storage`. `storedKey` is the S3 object key.
 - `adapters/webdav.js` — `createWebdavAdapter({ url, username, password })`: WebDAV client adapter for remote file storage.

@@ -256,13 +256,13 @@ export const AudioPanel = forwardRef(function AudioPanel(
     if (enabledTranslations.length > 0) {
       const sourceLang = getSttLang();
       translateAll(cleaned, sourceLang, enabledTranslations)
-        .then(({ translationsMap, captionLang, localFileEntries }) => {
+        .then(({ translationsMap, captionLang, localFileEntries, backendFileFormats }) => {
           // Write to local files for "file" target translations
           writeLocalFileEntries(localFileEntries, utteranceTimestamp);
 
           // Compose caption text: backend will do it now, but we still need text for local display
           // Send original + translations to backend; backend composes the <br> caption
-          sendTranscript(cleaned, utteranceTimestamp, translationsMap, captionLang);
+          sendTranscript(cleaned, utteranceTimestamp, translationsMap, captionLang, backendFileFormats);
         })
         .catch(err => {
           console.warn('Translation failed, using original text', err);
@@ -363,7 +363,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     }
   }
 
-  async function sendTranscript(text, explicitTimestamp, translationsMap, captionLang) {
+  async function sendTranscript(text, explicitTimestamp, translationsMap, captionLang, backendFileFormats) {
     if (!text) return;
     if (session?.connected) {
       // Use explicit timestamp when provided (e.g. utterance start), otherwise compute now
@@ -376,6 +376,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
           translations: translationsMap,
           captionLang,
           showOriginal: getTranslationShowOriginal(),
+          ...(backendFileFormats && Object.keys(backendFileFormats).length > 0 && { fileFormats: backendFileFormats }),
         };
         if (intervalMs > 0) {
           await session.construct(text, timestamp, opts);

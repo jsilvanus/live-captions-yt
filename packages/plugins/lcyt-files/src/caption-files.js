@@ -20,7 +20,10 @@ import logger from 'lcyt/logger';
  * On first call for a given (lang, format) pair in a session, a new file is
  * created and registered in the DB. Subsequent calls append to the same handle.
  *
- * @param {{ apiKey: string, sessionId: string, lang: string, format: string, fileHandles: Map }} context
+ * @param {{ apiKey: string, sessionId: string, lang: string, format: string, fileHandles: Map, sessionStartMs?: number }} context
+ *   `sessionStartMs` (epoch ms, e.g. `session.startedAt`) anchors VTT cue times so they are
+ *   relative to the session start. Without it, the first cue written to a file becomes 00:00:00.000
+ *   and later cues are relative to that first caption.
  * @param {string} text
  * @param {string|undefined} timestamp  ISO string of caption time
  * @param {object} db
@@ -30,7 +33,7 @@ import logger from 'lcyt/logger';
  */
 export async function writeToBackendFile(context, text, timestamp, db, storage, buildVttCue) {
   try {
-    const { apiKey, sessionId, lang, format, fileHandles } = context;
+    const { apiKey, sessionId, lang, format, fileHandles, sessionStartMs } = context;
 
     // Sanitize lang to only allow safe characters for filenames
     const langKey = (lang || 'original').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 20);
@@ -54,7 +57,7 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
         await handle.write('WEBVTT\n\n').catch(() => {});
       }
 
-      const seq = { current: 0 };
+      const seq = { current: 0, baseMs: null };
       const dbId = registerCaptionFile(db, {
         apiKey,
         sessionId,
@@ -71,7 +74,12 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
 
     let line;
     if (format === 'vtt') {
-      const startMs = timestamp ? new Date(timestamp).getTime() : Date.now();
+      // VTT cue times must be relative to the session (stream) start, not epoch time.
+      const absMs = timestamp ? new Date(timestamp).getTime() : Date.now();
+      if (entry.seq.baseMs === null) {
+        entry.seq.baseMs = Number.isFinite(sessionStartMs) ? sessionStartMs : absMs;
+      }
+      const startMs = Math.max(0, absMs - entry.seq.baseMs);
       const endMs = startMs + 3000;
       line = buildVttCue(entry.seq.current, startMs, endMs, text);
     } else {

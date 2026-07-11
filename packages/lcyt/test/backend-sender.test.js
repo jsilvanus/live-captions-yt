@@ -305,6 +305,32 @@ describe('BackendCaptionSender send()', () => {
 
     assert.ok(calls[0].options.headers['Authorization'] === 'Bearer test-jwt-token');
   });
+
+  it('should pass extraOpts fileFormats through to the caption', async () => {
+    const calls = setupFetch([
+      { ok: true, status: 202, data: { ok: true, requestId: 'r1' } }
+    ]);
+
+    await sender.send('With formats', undefined, {
+      translations: { 'fi-FI': 'käännös' },
+      fileFormats: { original: 'vtt', 'fi-FI': 'vtt' },
+    });
+
+    const body = JSON.parse(calls[0].options.body);
+    assert.deepStrictEqual(body.captions[0].fileFormats, { original: 'vtt', 'fi-FI': 'vtt' });
+    assert.deepStrictEqual(body.captions[0].translations, { 'fi-FI': 'käännös' });
+  });
+
+  it('should omit fileFormats when not an object', async () => {
+    const calls = setupFetch([
+      { ok: true, status: 202, data: { ok: true, requestId: 'r1' } }
+    ]);
+
+    await sender.send('No formats', undefined, { fileFormats: 'vtt' });
+
+    const body = JSON.parse(calls[0].options.body);
+    assert.ok(!('fileFormats' in body.captions[0]));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -363,6 +389,27 @@ describe('BackendCaptionSender sendBatch()', () => {
 
     const body = JSON.parse(calls[0].options.body);
     assert.strictEqual(body.captions.length, 3);
+  });
+
+  it('should post queued extraOpts verbatim when draining', async () => {
+    const calls = setupFetch([
+      { ok: true, data: { sequence: 2, count: 2, statusCode: 200, serverTimestamp: null } }
+    ]);
+
+    sender.construct('Hello', '2026-02-20T12:00:00.000', {
+      translations: { 'fi-FI': 'Hei' },
+      fileFormats: { original: 'vtt', 'fi-FI': 'vtt' },
+    });
+    sender.construct('Plain', '2026-02-20T12:00:01.000');
+
+    await sender.sendBatch();
+
+    const body = JSON.parse(calls[0].options.body);
+    assert.strictEqual(body.captions.length, 2);
+    assert.deepStrictEqual(body.captions[0].translations, { 'fi-FI': 'Hei' });
+    assert.deepStrictEqual(body.captions[0].fileFormats, { original: 'vtt', 'fi-FI': 'vtt' });
+    assert.ok(!('translations' in body.captions[1]));
+    assert.strictEqual(body.captions[1].timestamp, '2026-02-20T12:00:01.000');
   });
 
   it('should not modify queue when captions array provided explicitly', async () => {
@@ -502,16 +549,76 @@ describe('BackendCaptionSender local queue', () => {
     assert.strictEqual(queue[0].timestamp, '2026-02-20T12:00:00.000');
   });
 
-  it('construct() without timestamp stores null', () => {
+  it('construct() without timestamp stamps queue time (ISO, no trailing Z)', () => {
     const sender = new BackendCaptionSender({
       backendUrl: BACKEND_URL,
       apiKey: API_KEY,
       streamKey: STREAM_KEY
     });
 
+    const before = Date.now();
     sender.construct('No ts');
+    const after = Date.now();
+
     const queue = sender.getQueue();
-    assert.strictEqual(queue[0].timestamp, null);
+    assert.match(queue[0].timestamp, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}$/);
+    const stamped = new Date(queue[0].timestamp + 'Z').getTime();
+    assert.ok(stamped >= before && stamped <= after);
+  });
+
+  it('construct() stamps each queued caption at its own queue time', async () => {
+    const sender = new BackendCaptionSender({
+      backendUrl: BACKEND_URL,
+      apiKey: API_KEY,
+      streamKey: STREAM_KEY
+    });
+
+    sender.construct('First');
+    await new Promise(r => setTimeout(r, 10));
+    sender.construct('Second');
+
+    const queue = sender.getQueue();
+    const t1 = new Date(queue[0].timestamp + 'Z').getTime();
+    const t2 = new Date(queue[1].timestamp + 'Z').getTime();
+    assert.ok(t2 > t1, `expected distinct queue-time stamps, got ${queue[0].timestamp} / ${queue[1].timestamp}`);
+  });
+
+  it('construct() supports the { time } relative-timestamp form', () => {
+    const sender = new BackendCaptionSender({
+      backendUrl: BACKEND_URL,
+      apiKey: API_KEY,
+      streamKey: STREAM_KEY
+    });
+
+    sender.construct('Relative', { time: 5000 });
+    const queue = sender.getQueue();
+    assert.strictEqual(queue[0].time, 5000);
+    assert.ok(!('timestamp' in queue[0]));
+  });
+
+  it('construct() merges whitelisted extraOpts and drops unknown fields', () => {
+    const sender = new BackendCaptionSender({
+      backendUrl: BACKEND_URL,
+      apiKey: API_KEY,
+      streamKey: STREAM_KEY
+    });
+
+    sender.construct('Batched', '2026-02-20T12:00:00.000', {
+      translations: { 'fi-FI': 'käännös' },
+      captionLang: 'fi-FI',
+      showOriginal: false,
+      codes: { lang: 'sv-SE' },
+      fileFormats: { original: 'vtt' },
+      unknownField: 'nope',
+    });
+
+    const item = sender.getQueue()[0];
+    assert.deepStrictEqual(item.translations, { 'fi-FI': 'käännös' });
+    assert.strictEqual(item.captionLang, 'fi-FI');
+    assert.strictEqual(item.showOriginal, false);
+    assert.deepStrictEqual(item.codes, { lang: 'sv-SE' });
+    assert.deepStrictEqual(item.fileFormats, { original: 'vtt' });
+    assert.ok(!('unknownField' in item));
   });
 
   it('getQueue() returns empty array initially', () => {

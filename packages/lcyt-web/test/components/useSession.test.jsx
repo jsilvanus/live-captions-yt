@@ -260,3 +260,37 @@ describe('useSession — sendBatch()', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// construct() — batch mode
+// ---------------------------------------------------------------------------
+
+describe('useSession — construct() batch mode', () => {
+  beforeEach(() => {
+    localStorage.setItem('lcyt.captions.batchInterval', '5');
+  });
+
+  it('forwards per-caption opts to sender.construct (plan_batch_options)', async () => {
+    const opts = {
+      translations: { 'fi-FI': 'Hei' },
+      captionLang: 'fi-FI',
+      showOriginal: true,
+      fileFormats: { original: 'vtt' },
+    };
+    const { result } = renderHook(() => useSession());
+    await act(() => result.current.connect(VALID_CONFIG));
+    await act(() => result.current.construct('Queued caption', undefined, opts));
+    expect(mockSender.construct).toHaveBeenCalledWith('Queued caption', undefined, opts);
+    expect(mockSender.send).not.toHaveBeenCalled();
+  });
+
+  it('sends immediately with opts when batching is disabled', async () => {
+    localStorage.setItem('lcyt.captions.batchInterval', '0');
+    const opts = { translations: { 'sv-SE': 'Hej' } };
+    const { result } = renderHook(() => useSession());
+    await act(() => result.current.connect(VALID_CONFIG));
+    await act(() => result.current.construct('Direct caption', undefined, opts));
+    expect(mockSender.send).toHaveBeenCalledWith('Direct caption', undefined, opts);
+    expect(mockSender.construct).not.toHaveBeenCalled();
+  });
+});

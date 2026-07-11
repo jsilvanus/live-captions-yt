@@ -272,10 +272,12 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     const enabledTranslations = getEnabledTranslations();
     let translationsMap = {};
     let captionLang = null;
+    let backendFileFormats = {};
     if (enabledTranslations.length > 0) {
       const result = await translateAll(resolvedText, effectiveLang || 'en-US', enabledTranslations);
       translationsMap = result.translationsMap;
       captionLang = result.captionLang;
+      backendFileFormats = result.backendFileFormats || {};
       if (result.localFileEntries.length > 0) {
         writeLocalFiles(result.localFileEntries, undefined).catch(e => console.warn(e));
       }
@@ -288,6 +290,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
         captionLang,
         showOriginal: getTranslationShowOriginal(),
       }),
+      ...(Object.keys(backendFileFormats).length > 0 && { fileFormats: backendFileFormats }),
       ...(codes && { codes }),
     };
     const finalOpts = Object.keys(opts).length > 0 ? opts : undefined;
