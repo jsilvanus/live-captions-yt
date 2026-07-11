@@ -2,7 +2,7 @@
 id: plan/metacode_variable_unification
 title: "Metacode ↔ Variable Unification — One Namespace, a Reserved-Name Registry, Event-Bus-Coherent Names"
 status: draft
-summary: "Reframes every metacode `<!-- name: value -->` as a write into a single per-project variable namespace, governed by one explicit reserved-name registry: plain names are variable assignments (readable via `{{name}}`, watched by downstream consumers, emitted as `variable.updated`), reserved names are actionable (fire a side effect via a handler, may also carry state). Replaces the current scattered `if (key === 'audio')` / dedicated-regex handling in `metacode-parser.js` with a registry-driven dispatch, and makes *metacode name ≈ variable name ≈ event-bus domain* one coherent vocabulary. Reconciles the three existing plans: extends `plan_api_connectors_variables.md`'s partial (snapshot-merge) unification into a true single namespace, gives `plan_pubsub_event_bus.md`'s topic taxonomy an explicit source (the registry's `emitsTopic`), and folds `plan_metacode_refactor.md`'s mechanical file moves into building the registry rather than relocating the scattered handling as-is. One product decision is left open and flagged: how deeply plain file-metacode assignments persist (full DB namespace vs. session-scoped vs. keep-additive)."
+summary: "Reframes every metacode `<!-- name: value -->` as a write into a single per-project variable namespace, governed by one explicit reserved-name registry: plain names are variable assignments (readable via `{{name}}`, watched by downstream consumers, emitted as `variable.updated`), reserved names are actionable (fire a side effect via a handler, may also carry state). Replaces the current scattered `if (key === 'audio')` / dedicated-regex handling in `metacode-parser.js` with a registry-driven dispatch, and makes *metacode name ≈ variable name ≈ event-bus domain* one coherent vocabulary. Reconciles the three existing plans: extends `plan_api_connectors_variables.md`'s partial (snapshot-merge) unification into a true single namespace, gives `plan_pubsub_event_bus.md`'s topic taxonomy an explicit source (the registry's `emitsTopic`), and folds `plan_metacode_refactor.md`'s mechanical file moves into building the registry rather than relocating the scattered handling as-is. Namespace depth is decided: full DB namespace (every writer — file/manual/connector — targets the durable `variables` table), made safe for positional/temporary values by a per-assignment TTL/expiry (`<!-- section: Prayer [20s:Hymn] -->` — trailing end-anchored `[<count><unit>(:<revert>)?]`, units s/m/ms/c, revert to baseline/literal/previous)."
 related: plan/api_connectors_variables, plan/pubsub_event_bus, plan/metacode_refactor, plan/cues, plan/dsk, plan/authentication_refactor
 ---
 
@@ -131,26 +131,84 @@ The registry's `emitsTopic` is the single source that makes the three vocabulari
   not after. Running the refactor first and the registry later means touching the same code
   twice. Mark it **superseded-by / folded-into** this plan.
 
-## The one open decision (product call, flagged not silently chosen)
+## Namespace depth — DECIDED: full DB namespace (Option A)
 
-How deeply does a **plain file-metacode assignment** persist? All three options share the
-registry spine above; they differ only in where a plain name's value lives.
+A **plain file-metacode assignment writes into the durable per-project `variables` table**,
+same as a manual set or a connector mapping. `{{section}}` reads a file-set `section`, it shows
+in `GET /variables`, and it survives reload. File codes carry a distinct `source` (e.g.
+`source: 'file'`) so their provenance stays visible, but they share the one namespace.
 
-| Option | `{{section}}` reads a file-set `section`? | Shows in `GET /variables`? | Survives reload? | Cost |
-|---|---|---|---|---|
-| **A. Full DB namespace** | Yes | Yes | Yes | File metacodes gain a backend write path; positional/ephemeral semantics get muddier (a `section` on line 40 becomes global project state) |
-| **B. Session-scoped** *(recommended)* | Yes (live) | Live-only (not stored) | No | Single namespace conceptually; live to `{{ }}` + event bus via the session snapshot; no DB write for positional codes |
-| **C. Keep additive** | No | No | No | Smallest change; formalizes the registry taxonomy only; plain file codes stay ephemeral `lineCodes` as today |
+The obvious objection to A — "a positional `section` on line 40 becomes permanent project
+state, and reopening the file fights the stored value" — is answered by the **TTL / expiry**
+mechanism below, which was the deciding factor for choosing A over the session-scoped
+alternative: positional codes can now be given an explicit lifetime instead of relying on the
+store being ephemeral. A durable store + per-assignment TTL is strictly more expressive than a
+session-scoped store, and it's the same model for manual, file, and connector writers.
 
-**Recommendation: B.** It matches the reality that file metacodes are *positional* (a
-`section` means "from here on in this file"), so persisting them to a durable project variable
-row (A) overreaches — reopening the file would fight the stored value. B still delivers the
-literal vision: one namespace, `{{name}}` and the event bus see file-set codes live, reserved
-names are actionable — without turning every line-level code into permanent project state.
-Manual (`ActionsPanel`) and connector variables remain durable (`source: manual|connector`),
-because those *are* deliberate project state; file codes are session/pointer state. C is the
-fallback if the appetite for change is minimal — it still buys the registry cleanup and naming
-coherence, just not readability of file codes via `{{ }}`.
+*(Alternatives considered and rejected: **B. session-scoped** — live to `{{ }}`/event bus but
+not stored, simpler but can't express "revert after N"; **C. keep additive** — plain file codes
+stay ephemeral `lineCodes`, smallest change but no `{{ }}` readability. Both are strictly less
+capable than A+TTL.)*
+
+## Variable TTL / expiry
+
+A variable assignment may carry a **lifetime**, after which the variable reverts. This is what
+makes a durable namespace safe for positional/temporary values (lower-thirds, "back in 5 min"
+banners, score overlays, a temporary `section`).
+
+### Syntax — trailing, end-anchored value annotation
+
+The lifetime is a bracket group at the **very end of the value**, matched by a strict grammar so
+it never collides with literal `[...]` inside a value:
+
+```
+<!-- name: value [<count><unit>(:<revert>)?] -->
+
+grammar:  /\s*\[(\d+(?:\.\d+)?)(ms|s|m|c)(?::([^\]]*))?\]\s*$/  applied to the parsed value
+```
+
+Chosen over a key-side modifier (`section[20s]: value`) because trailing **composes with every
+code type** — including the existing key-bracket codes (`<!-- graphics[vertical-left]: logo [20s] -->`)
+— and reads left-to-right as an operator thinks. Key-side brackets stay reserved for *addressing*
+(`file[server]`, `graphics[viewport]`, `cue[semantic]`); value-side brackets are *lifetime*. A
+trailing `[...]` that does **not** match the TTL grammar is treated as literal value text.
+
+| Unit | Meaning | Enforcement point |
+|---|---|---|
+| `ms` / `s` / `m` | milli / seconds / minutes (decimals allowed, like `timer:`) | wall-clock from assignment; **active** revert (scheduled), see below |
+| `c` | captions sent | reverts at the send that crosses the threshold |
+
+### Revert target
+
+Bare form ties into the existing fallback chain (`current → default_value → ''`), so `[20s]`
+means "expire back to baseline" and coincides with "to null" whenever no default is set:
+
+| Syntax | After expiry |
+|---|---|
+| `<!-- section: Prayer [20s] -->` | → `default_value` if set, else empty (baseline) |
+| `<!-- section: Prayer [20s:Hymn] -->` | → literal `"Hymn"` |
+| `<!-- section: Prayer [20s:] -->` | → explicit empty string (clear) |
+| `<!-- lower-third: Live [5c] -->` | → baseline after 5 captions sent |
+| `<!-- section: Announcement [30s:~] -->` | → **restore previous value** (temporary override), `~` opt-in |
+
+### Backend / DB implications (part of adopting Option A)
+
+- **`variables` gains:** `expires_at TEXT` (ISO, time TTLs) *or* `expires_at_seq INTEGER`
+  (caption TTLs), `revert_mode TEXT` (`baseline` | `literal` | `previous`), `revert_value TEXT`,
+  and `prev_value TEXT` (only for `~`).
+- **Time-based TTLs revert *actively*, not lazily-on-read.** Push consumers (a DSK overlay
+  subscribed to `variable.updated`) must see the revert without waiting for the next caption, so
+  the server schedules the revert (a `setTimeout`, or a periodic sweep) that writes the row and
+  emits `variable.updated`. Caption-based (`c`) reverts at the existing send hook.
+- **Last-write-wins clears a pending TTL.** Any subsequent assignment to the same name —
+  including a connector refresh landing mid-countdown — cancels the pending revert and replaces
+  it. Keeps behavior predictable; no stacked timers.
+- **`c` needs a project-scoped sent counter.** Today's monotonic `sequence` is per-*session*
+  (`store.js`); caption-based TTL needs a project-level count so it behaves correctly across
+  multiple sessions on one project. Small addition, flagged.
+- TTL applies to single-value assignments only; not meaningful for `stanza` blocks or the
+  actionable one-shot codes (`goto`/`timer`/`audio`/`api`), which have no persisted value to
+  revert.
 
 ## Implementation sketch (once the decision above is fixed)
 
@@ -161,10 +219,11 @@ coherence, just not readability of file codes via `{{ }}`.
    and the per-family regexes collapse into registry `modifier` handling (cue keeps its
    expression grammar as a `parseValue`). Compatibility re-exports stay per
    `plan_metacode_refactor.md`.
-3. **Namespace wiring** — per the chosen option: session snapshot merge (B), DB write path (A),
-   or none (C). `useVariables()` becomes the single read surface; `getActiveCodes()`
+3. **Namespace wiring (Option A)** — file-metacode assignments POST into the durable `variables`
+   table (new `source: 'file'`); `useVariables()` becomes the single read surface; `getActiveCodes()`
    (localStorage) is migrated onto it (this also finishes the connectors plan's own deferred
-   `ActionsPanel`/`QuickActionsPopover` migration).
+   `ActionsPanel`/`QuickActionsPopover` migration). Add the TTL columns + active-revert scheduler +
+   caption-counter described under "Variable TTL / expiry."
 4. **Event-bus emit** — assignment publishes `registry[name].emitsTopic` (once
    `plan_pubsub_event_bus.md`'s `EventBus` exists; until then, keep the current per-bus emits).
 5. **Validation** — reserved-actionable names can't be created as manual variables (registry
