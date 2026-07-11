@@ -25,7 +25,8 @@ await stopDsk();
 
 **Source files (`src/`):**
 - `api.js` — `initDskControl(db, store, relayManager)` + `createDskRouters(db, store, auth, relayManager)` → `{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }`.
-- `renderer.js` — `startRenderer()` / `stopRenderer()`. Manages a single persistent headless Chromium instance. Per-key: `updateTemplate()`, `broadcastData()`, `startRtmpStream()`, `stopRtmpStream()`, `getStatus()`. Uses ffmpeg to push frames to nginx-rtmp.
+- `renderer.js` — `startRenderer()` / `stopRenderer()`. Manages a single persistent headless Chromium instance. Per-key (legacy template path): `updateTemplate()`, `broadcastData()`, `startRtmpStream()`, `stopRtmpStream()`, `getStatus()`. Uses ffmpeg to push frames to nginx-rtmp. **Per-viewport streams (Phase 4):** `startViewportStream()`/`stopViewportStream()`/`listViewportStreams()` keyed by `<apiKey>::<viewport>` — each gets its own Chromium page capturing the real display page `/dsk/<slug>/<viewport>` and encodes to `<key>__<viewport>` on the dsk app plus any push targets (ffmpeg tee), alongside the untouched legacy per-key renderer. Crash recovery replays viewport streams with their stored opts. Pure decision helpers live in `renderer-helpers.js` (tested); the page-capture + ffmpeg spawn are integration-only.
+- `renderer-helpers.js` — pure, unit-tested seams of the multi-renderer refactor: `viewportPageUrl` (slug-preferred display-page URL; `DSK_PAGE_BASE_URL` env), `resolveCaptureDimensions`, `resolveCaptureBackground` (transparent+chromaKey → key color, else black+warning — alpha doesn't survive h264), `buildViewportOutputs` (local `<key>__<viewport>` + enabled rtmp push targets → ffmpeg `tee` string).
 - `renderer-container.js` — Docker-based renderer: runs the Chromium DSK renderer inside a container (uses `docker/lcyt-dsk-renderer` image).
 - `caption-processor.js` — `createDskCaptionProcessor()`. Extracts `<!-- graphics:... -->` and `<!-- graphics[viewport,...]:... -->` metacodes from caption text; emits DSK SSE events; updates RTMP relay overlay. Supports delta mode (`+name`, `-name`) and landscape aliases (`landscape`, `default`, `main`).
 - `db.js` — Re-exports from `src/db/`. Migrations for `dsk_templates` table + image columns.
@@ -67,6 +68,7 @@ await stopDsk();
 |---|---|---|
 | `PLAYWRIGHT_DSK_CHROMIUM` | Path to Chromium binary | Playwright cache location |
 | `DSK_LOCAL_SERVER` | Local server URL for renderer to fetch templates | `http://localhost:$PORT` |
+| `DSK_PAGE_BASE_URL` | Base URL the renderer loads per-viewport display pages from (`/dsk/<slug>/<viewport>`); requires the SPA to be reachable (e.g. `STATIC_DIR`) | falls back to `DSK_LOCAL_SERVER` |
 | `DSK_LOCAL_RTMP` | nginx-rtmp base URL for DSK RTMP output | `rtmp://127.0.0.1:1935` |
 | `DSK_RTMP_APP` | RTMP application name for DSK renderer | `live` |
 

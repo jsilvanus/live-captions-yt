@@ -127,6 +127,19 @@ export function DskViewportsPage() {
     } catch { flash('Network error'); }
   }
 
+  async function controlViewportStream(action) {
+    if (!selectedVp || selectedVp._builtin) return;
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/renderer/${action}`, {
+        method: 'POST',
+        body:   JSON.stringify({ viewport: selectedVp.name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { flash(data.error || `Failed to ${action} stream`); return; }
+      flash(action === 'start' ? 'Viewport stream started' : 'Viewport stream stopped');
+    } catch { flash('Network error'); }
+  }
+
   async function handleSaveVp() {
     if (!selectedVp || selectedVp._builtin || !editVp) return;
     try {
@@ -416,6 +429,13 @@ export function DskViewportsPage() {
               {!selectedVp._builtin && editSettings && (
                 <Section title="Streaming" style={{ marginBottom: 24 }}>
                   <StreamSettingsEditor settings={editSettings} onChange={saveDisplaySettings} />
+                  {editSettings.stream?.enabled && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+                      <button style={btnPrimary} onClick={() => controlViewportStream('start')}>Start stream</button>
+                      <button style={btnSmall} onClick={() => controlViewportStream('stop')}>Stop</button>
+                      <span style={{ fontSize: 11, color: dark.muted }}>Save streaming settings first. Requires the server renderer (GRAPHICS_ENABLED).</span>
+                    </div>
+                  )}
                 </Section>
               )}
 

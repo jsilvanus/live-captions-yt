@@ -26,6 +26,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import logger from 'lcyt/logger';
+import { viewportPageUrl, resolveCaptureDimensions, resolveCaptureBackground, buildViewportOutputs } from './renderer-helpers.js';
 
 // ---------------------------------------------------------------------------
 // Chromium executable
@@ -298,6 +299,8 @@ async function _launchBrowser() {
         wasCapturing: state.capturing,
         rtmpBase:     state._rtmpBase,
         rtmpApp:      state._rtmpApp,
+        viewportOpts: state._viewportOpts,   // set for per-viewport streams
+        baseApiKey:   state._apiKey,
       });
       // Mark as not running so stop logic in the capture loop exits cleanly.
       state.capturing = false;
@@ -313,10 +316,15 @@ async function _launchBrowser() {
       await _launchBrowser();
       logger.info('[dsk-renderer] Chromium restarted.');
 
-      for (const { apiKey, templateJson, wasCapturing, rtmpBase, rtmpApp } of toRestore) {
+      for (const { apiKey, templateJson, wasCapturing, rtmpBase, rtmpApp, viewportOpts, baseApiKey } of toRestore) {
         try {
-          if (templateJson) await updateTemplate(apiKey, templateJson);
-          if (wasCapturing && rtmpBase) await startRtmpStream(apiKey, rtmpBase, rtmpApp || 'dsk');
+          if (viewportOpts && baseApiKey) {
+            // Per-viewport page-capture stream — replay with its original opts.
+            if (wasCapturing) await startViewportStream(baseApiKey, viewportOpts);
+          } else {
+            if (templateJson) await updateTemplate(apiKey, templateJson);
+            if (wasCapturing && rtmpBase) await startRtmpStream(apiKey, rtmpBase, rtmpApp || 'dsk');
+          }
         } catch (err) {
           logger.error(`[dsk-renderer] Recovery failed for ${apiKey}: ${err.message}`);
         }
@@ -558,10 +566,132 @@ export async function stopRtmpStream(apiKey) {
 
 export function getStatus(apiKey) {
   const state = _keys.get(apiKey);
-  if (!state) return { running: false, template: null };
+  const viewportStreams = listViewportStreams(apiKey);
+  if (!state) return { running: false, template: null, viewportStreams };
   return {
     running:       state.capturing,
     template:      state.templateJson,
     browserAlive:  !!_browser,
+    viewportStreams,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Per-viewport streams (plan_dsk_viewport_settings Phase 4 renderer increment)
+//
+// Each streaming viewport gets its OWN Chromium page (compound-keyed
+// `<apiKey>::<viewport>`) that captures the real display page
+// (/dsk/<slug>/<viewport>) and encodes to `<key>__<viewport>` on the dsk app
+// (plus any push targets, via ffmpeg tee). This runs alongside the legacy
+// per-key template renderer above, which is untouched.
+//
+// NOTE (integration-only): the page.goto + ffmpeg spawn below need a live
+// browser + ffmpeg + RTMP + served SPA to validate; only the pure decisions
+// (URL/dimensions/background/tee targets in renderer-helpers.js) are
+// unit-tested.
+// ---------------------------------------------------------------------------
+
+function _viewportKey(apiKey, viewport) {
+  return `${apiKey}::${viewport}`;
+}
+
+/**
+ * Start (or no-op if already running) a per-viewport capture stream.
+ * @param {string} apiKey
+ * @param {{ slug?: string|null, viewport: string, dimensions?: {width,height}, displaySettings?: object, rtmpBase: string, rtmpApp?: string, pushUrls?: Array }} opts
+ */
+export async function startViewportStream(apiKey, opts) {
+  const { slug = null, viewport, displaySettings = null, rtmpBase, rtmpApp = 'dsk', pushUrls = [] } = opts || {};
+  if (!viewport || !rtmpBase) return;
+  try { _ensureBrowser(); }
+  catch (err) { logger.warn(`[dsk-renderer:${apiKey}::${viewport}] startViewportStream skipped: ${err.message}`); return; }
+
+  const key = _viewportKey(apiKey, viewport);
+  let state = _keys.get(key);
+  if (state?.capturing) return; // already streaming
+
+  const { width, height } = resolveCaptureDimensions(opts.dimensions);
+  const { background, warnTransparent } = resolveCaptureBackground(displaySettings);
+  if (warnTransparent) logger.warn(`[dsk-renderer:${key}] transparent background without chroma-key will render black over RTMP`);
+
+  if (!state) {
+    const page = await _browser.newPage();
+    state = { page, templateJson: null, ffmpeg: null, capturing: false, _viewport: viewport, _rtmpBase: rtmpBase, _rtmpApp: rtmpApp };
+    _keys.set(key, state);
+  }
+  // Remember start opts so a Chromium-crash recovery can replay this stream.
+  state._apiKey = apiKey;
+  state._viewportOpts = { slug, viewport, dimensions: opts.dimensions, displaySettings, rtmpBase, rtmpApp, pushUrls };
+  await state.page.setViewportSize({ width, height });
+  await state.page.goto(viewportPageUrl({ slug, apiKey, viewport }), { waitUntil: 'domcontentloaded' }).catch(err => {
+    logger.error(`[dsk-renderer:${key}] page.goto failed: ${err.message}`);
+  });
+  // Paint the resolved background behind a transparent page body.
+  await state.page.evaluate((bg) => { document.documentElement.style.background = bg; document.body.style.background = bg; }, background).catch(() => {});
+
+  const { localUrl, teeString } = buildViewportOutputs({ apiKey, viewport, rtmpBase, rtmpApp, pushUrls });
+  const encodeArgs = [
+    '-y', '-f', 'image2pipe', '-framerate', String(FRAME_RATE), '-i', 'pipe:0',
+    '-vf', 'format=yuv420p', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+    '-g', String(FRAME_RATE * 2),
+  ];
+  const outputArgs = teeString ? ['-f', 'tee', teeString] : ['-f', 'flv', localUrl];
+  const ffmpeg = spawn('ffmpeg', [...encodeArgs, ...outputArgs], { stdio: ['pipe', 'ignore', 'pipe'] });
+
+  ffmpeg.stderr.on('data', (buf) => {
+    const msg = buf.toString().trim();
+    if (/error|warning/i.test(msg)) logger.error(`[dsk-renderer:${key}] ffmpeg: ${msg}`);
+  });
+  ffmpeg.on('exit', (code, signal) => {
+    if (state.capturing) logger.warn(`[dsk-renderer:${key}] ffmpeg exited (code=${code}, signal=${signal})`);
+    const s = _keys.get(key);
+    if (s?.ffmpeg === ffmpeg) { s.ffmpeg = null; s.capturing = false; }
+  });
+
+  state.ffmpeg = ffmpeg;
+  state.capturing = true;
+
+  const loop = async () => {
+    while (state.capturing) {
+      const start = Date.now();
+      try {
+        const frame = await state.page.screenshot({ type: 'png' });
+        if (!state.capturing) break;
+        if (!ffmpeg.stdin.write(frame)) await new Promise((r) => ffmpeg.stdin.once('drain', r));
+      } catch (err) {
+        if (state.capturing) logger.error(`[dsk-renderer:${key}] capture error: ${err.message}`);
+        break;
+      }
+      const wait = FRAME_INTERVAL_MS - (Date.now() - start);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }
+    try { ffmpeg.stdin.end(); } catch {}
+  };
+  loop().catch((err) => { if (state.capturing) logger.error(`[dsk-renderer:${key}] loop error: ${err.message}`); });
+
+  logger.info(`[dsk-renderer:${key}] viewport stream started → ${localUrl}${teeString ? ' (+push)' : ''}`);
+}
+
+/** Stop a per-viewport stream and close its page. */
+export async function stopViewportStream(apiKey, viewport) {
+  const key = _viewportKey(apiKey, viewport);
+  const state = _keys.get(key);
+  if (!state) return;
+  state.capturing = false;
+  if (state.ffmpeg) { try { state.ffmpeg.stdin.end(); } catch {} state.ffmpeg = null; }
+  try { await state.page.close(); } catch {}
+  _keys.delete(key);
+  logger.info(`[dsk-renderer:${key}] viewport stream stopped`);
+}
+
+/** List running per-viewport streams for an api key. */
+export function listViewportStreams(apiKey) {
+  const prefix = `${apiKey}::`;
+  const out = [];
+  for (const [k, state] of _keys) {
+    if (k.startsWith(prefix) && state._viewport) {
+      out.push({ viewport: state._viewport, running: !!state.capturing });
+    }
+  }
+  return out;
 }
