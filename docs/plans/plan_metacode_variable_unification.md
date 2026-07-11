@@ -2,7 +2,7 @@
 id: plan/metacode_variable_unification
 title: "Metacode ↔ Variable Unification — One Namespace, a Reserved-Name Registry, Event-Bus-Coherent Names"
 status: draft
-summary: "Reframes every metacode `<!-- name: value -->` as a write into a single per-project variable namespace, governed by one explicit reserved-name registry: plain names are variable assignments (readable via `{{name}}`, watched by downstream consumers, emitted as `variable.updated`), reserved names are actionable (fire a side effect via a handler, may also carry state). Replaces the current scattered `if (key === 'audio')` / dedicated-regex handling in `metacode-parser.js` with a registry-driven dispatch, and makes *metacode name ≈ variable name ≈ event-bus domain* one coherent vocabulary. Reconciles the three existing plans: extends `plan_api_connectors_variables.md`'s partial (snapshot-merge) unification into a true single namespace, gives `plan_pubsub_event_bus.md`'s topic taxonomy an explicit source (the registry's `emitsTopic`), and folds `plan_metacode_refactor.md`'s mechanical file moves into building the registry rather than relocating the scattered handling as-is. Namespace depth is decided: full DB namespace (every writer — file/manual/connector — targets the durable `variables` table), made safe for positional/temporary values by a per-assignment TTL/expiry (`<!-- section: Prayer [20s:Hymn] -->` — trailing end-anchored `[<count><unit>(:<revert>)?]`, units s/m/ms/c, revert to baseline/literal/previous)."
+summary: "Reframes every metacode `<!-- name: value -->` as a write into a single per-project variable namespace, governed by one explicit reserved-name registry: plain names are variable assignments (readable via `{{name}}`, watched by downstream consumers, emitted as `variable.updated`), reserved names are actionable (fire a side effect via a handler, may also carry state). Replaces the current scattered `if (key === 'audio')` / dedicated-regex handling in `metacode-parser.js` with a registry-driven dispatch, and makes *metacode name ≈ variable name ≈ event-bus domain* one coherent vocabulary. Reconciles the three existing plans: extends `plan_api_connectors_variables.md`'s partial (snapshot-merge) unification into a true single namespace, gives `plan_pubsub_event_bus.md`'s topic taxonomy an explicit source (the registry's `emitsTopic`), and folds `plan_metacode_refactor.md`'s mechanical file moves into building the registry rather than relocating the scattered handling as-is. Namespace depth is decided: full DB namespace (every writer — file/manual/connector — targets the durable `variables` table), made safe for positional/temporary values by a per-assignment TTL/expiry (`<!-- section: Prayer => 20s:Hymn -->` — a `=>` sigil after the value, `<count><unit>(:<revert>)?`, spaces optional, units s/m/ms/c, revert to baseline / literal / previous-value via `~`)."
 related: plan/api_connectors_variables, plan/pubsub_event_bus, plan/metacode_refactor, plan/cues, plan/dsk, plan/authentication_refactor
 ---
 
@@ -156,22 +156,25 @@ A variable assignment may carry a **lifetime**, after which the variable reverts
 makes a durable namespace safe for positional/temporary values (lower-thirds, "back in 5 min"
 banners, score overlays, a temporary `section`).
 
-### Syntax — trailing, end-anchored value annotation
+### Syntax — `=>` sigil after the value
 
-The lifetime is a bracket group at the **very end of the value**, matched by a strict grammar so
-it never collides with literal `[...]` inside a value:
+The lifetime is introduced by a `=>` sigil after the value, followed by `<count><unit>` and an
+optional `:<revert>`. Spaces around `=>` and the `:` are optional:
 
 ```
-<!-- name: value [<count><unit>(:<revert>)?] -->
+<!-- name: value => <count><unit>(:<revert>)? -->
 
-grammar:  /\s*\[(\d+(?:\.\d+)?)(ms|s|m|c)(?::([^\]]*))?\]\s*$/  applied to the parsed value
+grammar:  /\s*=>\s*(\d+(?:\.\d+)?)(ms|s|m|c)(?:\s*:\s*([\s\S]*?))?\s*$/  applied to the parsed value
 ```
 
-Chosen over a key-side modifier (`section[20s]: value`) because trailing **composes with every
-code type** — including the existing key-bracket codes (`<!-- graphics[vertical-left]: logo [20s] -->`)
-— and reads left-to-right as an operator thinks. Key-side brackets stay reserved for *addressing*
-(`file[server]`, `graphics[viewport]`, `cue[semantic]`); value-side brackets are *lifetime*. A
-trailing `[...]` that does **not** match the TTL grammar is treated as literal value text.
+The `=>` reads left-to-right as "…then becomes…", and is **far less likely to collide with
+literal value text than `[...]`** (editorial `[asides]` are common; a value ending in `=> 20s`
+is not). Collision is contained further by the strict end-anchored grammar: a trailing `=> …`
+whose tail is **not** a valid `<count><unit>` spec is treated as literal value text, so
+`section: if x => y` stays literal. Chosen over a key-side modifier (`section[20s]: value`)
+because the sigil **composes with every code type** including the existing key-bracket codes
+(`<!-- graphics[vertical-left]: logo => 20s -->`) and keeps key-side brackets reserved for
+*addressing* (`file[server]`, `graphics[viewport]`, `cue[semantic]`).
 
 | Unit | Meaning | Enforcement point |
 |---|---|---|
@@ -180,16 +183,19 @@ trailing `[...]` that does **not** match the TTL grammar is treated as literal v
 
 ### Revert target
 
-Bare form ties into the existing fallback chain (`current → default_value → ''`), so `[20s]`
-means "expire back to baseline" and coincides with "to null" whenever no default is set:
+The revert value (after the `:`) selects what the variable becomes on expiry. Bare (no `:`) ties
+into the existing fallback chain (`current → default_value → ''`), so `=> 20s` means "expire back
+to baseline" and coincides with "to null" whenever no default is set. `~` is the one reserved
+revert token — it restores the value that was there *before* this assignment:
 
 | Syntax | After expiry |
 |---|---|
-| `<!-- section: Prayer [20s] -->` | → `default_value` if set, else empty (baseline) |
-| `<!-- section: Prayer [20s:Hymn] -->` | → literal `"Hymn"` |
-| `<!-- section: Prayer [20s:] -->` | → explicit empty string (clear) |
-| `<!-- lower-third: Live [5c] -->` | → baseline after 5 captions sent |
-| `<!-- section: Announcement [30s:~] -->` | → **restore previous value** (temporary override), `~` opt-in |
+| `<!-- section: Prayer => 20s -->` | → `default_value` if set, else empty (baseline) |
+| `<!-- section: Prayer => 20s:Hymn -->` | → literal `"Hymn"` |
+| `<!-- section: Prayer => 20s: -->` | → explicit empty string (clear) |
+| `<!-- section: Announcement => 30s:~ -->` | → **restore previous value** (temporary override) |
+| `<!-- lower-third: Live => 5c -->` | → baseline after 5 captions sent |
+| `<!-- section:Prayer=>20s:Hymn -->` | → same as row 2 — spaces around `=>` / `:` are optional |
 
 ### Backend / DB implications (part of adopting Option A)
 
