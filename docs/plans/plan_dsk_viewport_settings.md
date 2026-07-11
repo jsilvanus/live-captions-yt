@@ -1,95 +1,111 @@
-# DSK Viewport Display Settings — UI-Based Configuration + RTMP Colorkey
+# DSK Viewports v2 — Slug URLs, UI-Based Display Settings, Multi-Renderer Streaming, RTMP Colorkey
 
 **Status:** pending
-**Scope:** `packages/plugins/lcyt-dsk` (schema, routes, renderer), `packages/lcyt-web` (`DskPage`, `DskViewportsPage`), `packages/plugins/lcyt-rtmp` (`RtmpRelayManager`, `routes/dsk-rtmp` consumer side)
+**Scope:** `packages/lcyt-backend` (api_keys slug, org slug policy, routes), `packages/plugins/lcyt-dsk` (schema, routes, renderer), `packages/lcyt-web` (`DskPage`, `DskViewportsPage`, `ProjectSettingsPage`), `packages/plugins/lcyt-rtmp` (`RtmpRelayManager` colorkey)
 
 ## Problem
 
-Configuring a DSK display today means **URL building**: `/dsk/:key?server=…&bg=…&cc=1&viewport=…`. The choices an operator makes in `DskViewportsPage`'s "present" flow (background, transparency) are ephemeral query params — nothing is persisted, so every browser/OBS/HDMI endpoint needs a hand-crafted URL, and changing a setting means redistributing URLs to every display.
+Three intertwined issues with the DSK display story:
+
+1. **URL building**: configuring a display means hand-crafting `/dsk/:apikey?server=…&bg=…&cc=1&viewport=…`. Settings are ephemeral query params; changing one means redistributing URLs to every endpoint.
+2. **apiKey in user-facing URLs**: the raw API key appears in every public DSK URL (and is pasted into OBS configs, sent to volunteers' browsers, shown on screen when debugging). The project owner wants apiKey transitioned to an internal credential, replaced user-facing by user-defined slugs.
+3. **Single renderer**: the server-side renderer is one page per API key at hard-coded 1920×1080 — you cannot broadcast a vertical and a landscape output simultaneously with separately scoped graphics.
 
 Decisions taken (2026-07-11, with the project owner):
-1. Display settings **bind to the viewport entity** — the viewport already *is* the per-display concept and `DskPage` already fetches `/dsk/:key/viewports/public` when `?viewport=` is set. No new entity.
-2. Persisted settings: **background**, **CC burn-in + styling**, **renderer/stream binding**. (Per-viewport default animations: not now.)
-3. The **ffmpeg colorkey** option for the RTMP DSK composite is part of this plan as its own phase — it makes external RTMP pushes and the renderer→RTMP path work as *keyed* overlays instead of full-frame takeover (today the composite is a plain `overlay=0:0:shortest=1`; no chroma-key exists anywhere in the codebase).
+- Display settings bind to the **viewport entity** (no new profile/device entity).
+- Persisted settings: **background**, **CC burn-in + styling**, **stream binding** (not per-viewport default animations).
+- Public URL shape: **`/dsk/:projectSlug/:viewport`** (two segments; viewport names are already user-chosen and unique per project).
+- Slug infrastructure is **project-level and global** (on `api_keys`), with project-settings UI ("check availability" + set); **org/team prefix rules** enforceable by admins. Only DSK surfaces migrate in this plan; `/video`, `/radio`, `/preview`, `/stream-hls` follow in a later plan.
+- Multiple renderers: per-viewport streams, one may **composite** onto the main program relay, others are **standalone**, and each streaming viewport can configure its **own outbound RTMP push targets**.
+- ffmpeg **colorkey** for the RTMP DSK composite is included as its own phase.
 
-## Phase 1 — Schema + API
+## Phase 1 — Project public slug + org slug policy
 
-**`dsk_viewports` additive migration** (`src/db/viewports.js`):
-- `display_settings_json TEXT` — one JSON column (mirrors the images `settings_json` pattern):
+**Schema (`lcyt-backend`):**
+- `api_keys.public_slug TEXT UNIQUE` (nullable — unset means "slug URLs not yet enabled for this project").
+- Validation: `^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$` (3–40 chars, lowercase, no leading/trailing/double dash), plus a reserved-word blocklist (`events`, `images`, `viewports`, `templates`, `template`, `broadcast`, `renderer`, `public`, `admin`, `api` …) so slugs can never collide with route segments.
+- **Org prefix policy** (the "team1-" rule): organizations already have a unique `slug` column — reuse it as the team namespace rather than inventing a separate team-slug concept. New org column `project_slug_policy TEXT NOT NULL DEFAULT 'none'` (`'none' | 'prefix'`). When `'prefix'`, any project belonging to that org must have `public_slug` starting with `<org.slug>-`. Set via the existing `PATCH /orgs/:id` (owner/admin); site admin (`X-Admin-Key`) can set any slug on any project regardless of policy.
+
+**Routes (`lcyt-backend`, thin handlers + `src/db/keys.js` helpers per repo convention):**
+- `GET  /keys/:key/slug` — current slug + the policy-derived required prefix, if any (user Bearer).
+- `PUT  /keys/:key/slug { slug }` — validate + enforce org policy + uniqueness (user Bearer, project owner/admin).
+- `GET  /slugs/check?slug=…` — `{ available, reason? }` availability probe for the UI (user Bearer; also validates format/reserved/prefix so the UI shows *why* not just *no*).
+
+**UI (`ProjectSettingsPage` Summary tab):** slug field with live availability check, required-prefix hint when org policy applies, and a URL preview (`/dsk/<slug>/<viewport>`).
+
+**Tests:** validation matrix (format, reserved, prefix policy, uniqueness), route auth, admin bypass.
+
+## Phase 2 — DSK public surfaces on slugs
+
+- Backend DSK public routes gain slug resolution: `/dsk/:slugOrKey/events`, `/dsk/:slugOrKey/images`, `/dsk/:slugOrKey/viewports/public` resolve `public_slug` **first**, then fall back to treating the segment as an apiKey (deprecated but working — nothing breaks). One shared `resolveDskKey(db, segment)` helper in `lcyt-dsk`.
+- SPA display route becomes path-shaped: `/dsk/:slugOrKey/:viewport` (wouter route added alongside the legacy `/dsk/:apikey?viewport=` query form).
+- `DskViewportsPage` URL builders emit the slug form when a slug is set; when unset, they show the apiKey form with a "set a project slug" nudge linking to project settings.
+- Viewport-name validation gains the same reserved-word blocklist (a viewport literally named `events` would shadow the SSE route).
+
+**Tests:** slug-first/key-fallback resolution, reserved viewport names rejected, SPA route param parsing.
+
+## Phase 3 — Viewport display settings (schema → page → UI)
+
+**`dsk_viewports` additive migration:**
+- `display_settings_json TEXT`:
   ```jsonc
   {
-    "background": "#00B140",        // CSS color | "transparent"; default #00B140
-    "ccMode": false,                 // caption burn-in
-    "ccStyle": {                     // optional; only when ccMode
-      "fontSize": 32, "position": "bottom", "color": "#fff", "background": "rgba(0,0,0,0.6)"
-    },
-    "chromaKey": {                   // Phase 5 consumer (RTMP composite keying)
-      "enabled": false, "color": "#00B140", "similarity": 0.3, "blend": 0.1
+    "background": "#00B140",          // CSS color | "transparent"
+    "ccMode": false,
+    "ccStyle": { "fontSize": 32, "position": "bottom", "color": "#fff", "background": "rgba(0,0,0,0.6)" },
+    "stream": {                        // Phase 4/5 consumer
+      "enabled": false,
+      "mode": "standalone",           // "composite" (program DSK) | "standalone"
+      "pushUrls": [{ "url": "rtmp://…", "enabled": true }],
+      "chromaKey": { "enabled": false, "color": "#00B140", "similarity": 0.3, "blend": 0.1 }
     }
   }
   ```
-- `is_stream_source INTEGER NOT NULL DEFAULT 0` — own column (not JSON) so the invariant is enforceable: **at most one stream-source viewport per api_key**; setting it clears the flag on siblings in the same transaction.
-- `upsertViewport()` accepts `displaySettings` + `isStreamSource`; `listViewports`/`getViewport` return them parsed.
+- Invariant enforced on write: **at most one viewport per api_key with `stream.mode === 'composite'`** (transactionally clears siblings). This replaces the earlier single `is_stream_source` flag design — composite-ness is the exclusive bit; any number of standalone streaming viewports is fine.
 
-**Routes** (`routes/dsk-viewports.js`, `routes/dsk.js`):
-- Authed CRUD passes both fields through.
-- `GET /dsk/:key/viewports/public` adds `displaySettings` to each row (public — it only contains presentation values). `isStreamSource` stays authed-only.
-- Cache: the public endpoint currently serves `Cache-Control: public, max-age=3600`. Settings edits must reach displays without an hour's wait → drop to `max-age=60, stale-while-revalidate=300`. (Displays re-fetch on the SSE `reload` event too; the templates router's broadcast of `reload` on viewport save is a cheap addition — include it.)
-
-**Tests:** db helpers (upsert round-trip, sibling-clear invariant), public route shape, cache header.
-
-## Phase 2 — `DskPage` consumes persisted settings
-
-When `?viewport=` is present, apply the fetched `displaySettings` with **URL params as explicit overrides**:
+**`DskPage` consumption** — with a viewport resolved, persisted settings apply with URL params as explicit overrides:
 
 | Setting | Precedence |
 |---|---|
-| Background | `?bg=` param → `displaySettings.background` → `#00B140` |
-| CC burn-in | `?cc=1` forces on, `?cc=0` forces off → `displaySettings.ccMode` → off |
-| CC styling | `displaySettings.ccStyle` (no URL equivalent today; none added) |
+| Background | `?bg=` → `displaySettings.background` → `#00B140` |
+| CC burn-in | `?cc=1` forces on, `?cc=0` forces off → `ccMode` → off |
+| CC styling | `ccStyle` (no URL equivalent) |
 
-The Display URL for a configured viewport collapses to `/dsk/:key?viewport=name` (plus `?server=` only when the page is served from a different origin than the backend — the existing auto-resolution already covers app.lcyt.fi→api.lcyt.fi and same-origin deployments).
+**Public viewports endpoint** returns `displaySettings` minus `stream.pushUrls` (outbound URLs may embed stream keys — never expose them publicly); cache drops from `max-age=3600` to `max-age=60, stale-while-revalidate=300`, and viewport saves broadcast the existing SSE `reload` event.
 
-**Tests:** Vitest — precedence matrix (param beats persisted beats default, `cc=0` force-off), ccStyle application.
+**`DskViewportsPage` UI:** per-viewport settings editor — background swatches (chroma green / transparent / custom hex), CC toggle + styling fields; Display URL block shows the short slug form. i18n en/fi/sv.
 
-## Phase 3 — `DskViewportsPage` UI
+**Tests:** db round-trip + composite invariant, public shape (pushUrls stripped), DskPage precedence matrix (Vitest), cache header.
 
-Per-viewport settings section (server-persisted via the existing authed viewport CRUD):
-- Background: chroma-green preset / transparent / custom hex swatch.
-- CC burn-in toggle; when on, the basic styling fields (font size, position top/bottom, text/background color).
-- "Use as stream source" toggle (radio-like across viewports — reflects the Phase 1 invariant).
-- Display URL block simplified to the short form; the existing "present" overrides stay for one-off cases.
-- i18n: en/fi/sv keys.
+## Phase 4 — Multi-renderer: per-viewport streams with scoped graphics
 
-**Tests:** component-level where cheap; the page is currently untested — do not block the phase on building a full harness, but cover the settings→PUT payload mapping.
+Today `renderer.js` keys everything by apiKey (one Chromium page, template HTML, hard-coded 1920×1080, one ffmpeg). To broadcast vertical + landscape simultaneously *with separately scoped graphics*, per-viewport streams render **the actual display page**, not template HTML — that is what makes the graphics scoping real, since `/dsk/:slug/:viewport` already shows exactly that viewport's image set, text layers, and CC per its settings.
 
-## Phase 4 — Renderer/stream binding
+- **Renderer re-keyed** by `(apiKey, viewportName)`: `_keys` map key becomes `${apiKey}::${viewport}`; each streaming viewport gets its own page sized from the viewport's `width`/`height`, loading `${DSK_PAGE_BASE_URL}/dsk/<slug>/<viewport>` (new env `DSK_PAGE_BASE_URL`; defaults to `DSK_LOCAL_SERVER`, which works when the backend serves the SPA via `STATIC_DIR` — documented requirement).
+- Background coherence: if the viewport background is `transparent` and chromaKey is enabled, the capture renders against the key color (alpha does not survive h264); plain `transparent` without keying renders black with a UI warning.
+- **RTMP naming:** each viewport stream publishes to the `dsk` app as `<apiKey>__<viewportName>`. The composite trigger in `routes/dsk-rtmp.js` fires **only** for bare-key (or ingest-key) publishes — `__`-suffixed standalone streams never restart the program relay.
+- **Push targets:** the capture ffmpeg uses the tee muxer (`_buildTeeTargets` pattern from `lcyt-rtmp`) — local `dsk` path plus each enabled `pushUrls` entry, so vertical can go straight to a TikTok/YouTube-vertical ingest without a relay slot. Per-target failures log; the local leg is authoritative.
+- **Legacy path preserved:** the per-key template renderer (`updateTemplate` → template HTML → composite) keeps working unchanged for existing users; the composite-mode viewport may use either the legacy template mode or page-capture mode (config flag), with template mode the default until page capture proves out.
+- **Routes:** `POST /dsk/:apikey/renderer/start|stop` gain `{ viewport? }` (absent = legacy behavior); `GET /dsk/:apikey/renderer/status` returns all running `(viewport, rtmpUrl, pushTargets, uptime)` entries.
+- **UI:** per-viewport Stream section in `DskViewportsPage` — enable, mode (composite radio-exclusive / standalone), push URL list, start/stop, live status.
 
-Today `POST /dsk/:key/renderer/start` captures the active template at a hard-coded 1920×1080 (`_getOrCreatePage` → `setViewportSize`). With a stream-source viewport bound:
-- `renderer/start` resolves the key's `is_stream_source` viewport and uses its `width`/`height` for `setViewportSize` and as the template-dimension fallback; no bound viewport → current behavior (1920×1080).
-- `getStatus(apiKey)` reports the bound viewport name; the control UI (`DskControlPage`/viewports page) shows which viewport feeds the stream.
-- When the bound viewport's `background` is set and the template itself has none, the renderer substitutes it — with one twist for Phase 5: if the background is `transparent` **and** chroma-keying is enabled, the renderer renders against the configured key color instead (transparency does not survive h264; the key color is what the relay then keys out).
-
-**Deferred design note (logged, not built):** the deeper unification is for the renderer to capture the actual `/dsk/:key?viewport=X` page instead of `renderTemplateToHtml` — server stream output would then be pixel-identical to what browser displays show (images + text layers + animations, not just template layers). It requires the SPA to be reachable from the renderer (STATIC_DIR or a bundled page) and is a separate plan if wanted.
+**Tests:** renderer map keying + dimension resolution, `__` name parsing and composite-trigger exclusion in dsk-rtmp routes, tee target construction, status shape.
 
 ## Phase 5 — Colorkey for the RTMP DSK composite
 
-`RtmpRelayManager.start()`'s DSK-RTMP branch gains optional keying:
-- `setDskRtmpSource(apiKey, rtmpUrl, { chromaKey })` — when `chromaKey.enabled`, the filter becomes
-  `[1:v]colorkey=<color>:<similarity>:<blend>[keyed];[0:v][keyed]overlay=0:0:shortest=1[ovout]`
-  (re-encode via `libx264` is already the case in this mode; no new cost).
-- Config source: the stream-source viewport's `displaySettings.chromaKey` (single source of truth for both our renderer's pushes and external OBS pushes to `rtmp://server/dsk/<key>`). `routes/dsk-rtmp.js`'s `on_publish` loads it and passes it through; no chromaKey config → exact current behavior (opaque full-frame).
-- Static-image overlay path is untouched (PNG alpha already works there).
+- `RtmpRelayManager.setDskRtmpSource(apiKey, rtmpUrl, { chromaKey })`: when enabled, the composite filter becomes `[1:v]colorkey=<color>:<similarity>:<blend>[keyed];[0:v][keyed]overlay=0:0:shortest=1[ovout]` (re-encode via libx264 is already the case; no new cost). No config → today's exact opaque full-frame behavior.
+- Config source: the composite viewport's `stream.chromaKey` — one source of truth for our renderer's pushes *and* external OBS pushes to `rtmp://server/dsk/<key>`; `routes/dsk-rtmp.js` `on_publish` loads it and passes it through.
+- Static-image overlay path untouched (PNG alpha already works).
 
-**Tests:** rtmp-manager arg-construction tests for keyed vs unkeyed composite; dsk-rtmp route test that the viewport config reaches `setDskRtmpSource`.
+**Tests:** ffmpeg arg construction keyed vs unkeyed; on_publish passes viewport config through.
 
 ## Compatibility
 
-Everything is additive: existing display URLs with explicit params behave exactly as before (params win); viewports without settings render with today's defaults; relays without chromaKey config composite exactly as today; the renderer without a bound viewport keeps 1920×1080.
+Everything is additive. ApiKey-based DSK URLs keep working (slug resolution falls back); unset slugs change nothing; viewports without settings render today's defaults; the single-renderer template path is untouched until a viewport opts into streaming; relays without chromaKey composite exactly as today.
 
-## Out of scope
+## Out of scope (follow-ups)
 
-- Per-viewport default animations (deliberately dropped).
-- Per-device settings via production device roles (possible phase 2 of the display story).
-- Renderer capturing the real DskPage (deferred design note in Phase 4).
-- A `url`/iframe template layer type ("web page as DSK input") — separate feature, not planned here.
+- Migrating `/video`, `/radio`, `/preview`, `/stream-hls`, viewer embeds, and Android TV deep links to project slugs — follow-up plan once the slug infra ships here.
+- Per-device display settings via production device roles.
+- Retiring the template-HTML renderer in favour of page capture for the composite path (revisit after Phase 4 proves page capture).
+- A `url`/iframe template layer type ("web page as DSK input").
