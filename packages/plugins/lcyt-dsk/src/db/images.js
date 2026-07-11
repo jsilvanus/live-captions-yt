@@ -1,16 +1,33 @@
 // ─── Image / graphics helpers ─────────────────────────────────────────────────
 
+import { createHash } from 'node:crypto';
+
 /**
- * Derive a safe per-key directory name component from an API key.
- * Strips characters not safe for file system paths and caps the length at 40.
- * Used as the subdirectory name under GRAPHICS_DIR (routes/images.js) and for
- * constructing image file paths in other modules (routes/captions.js).
+ * Derive a safe, collision-free per-key directory name component from an API key.
+ *
+ * Single source of truth for the graphics pipeline's per-project directory
+ * segment: it is used as the subdirectory name under GRAPHICS_DIR by the write
+ * (routes/images.js), serve, and delete paths — including the delete-on-key
+ * path in lcyt-backend's keys.js, which imports this via `lcyt-dsk`. Every site
+ * that touches a project's graphics directory must agree on it, so it lives here.
+ *
+ * The raw key is sanitized to `[a-zA-Z0-9-]` and capped at 40 chars, which is
+ * lossy — two distinct keys can sanitize to the same string (by differing only
+ * in stripped characters, or beyond the length cap) and would then share a
+ * directory. To keep the mapping 1:1 a short hash of the full raw key is
+ * appended whenever sanitization altered it. Any already-safe key ≤40 chars —
+ * including every default `randomUUID()` key — is returned unchanged, matching
+ * the historical output so existing on-disk paths are untouched.
  *
  * @param {string} apiKey
  * @returns {string}
  */
 export function safeApiKey(apiKey) {
-  return apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+  const raw = String(apiKey ?? '');
+  const safe = raw.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+  if (safe === raw) return safe;
+  const suffix = createHash('sha256').update(raw).digest('hex').slice(0, 8);
+  return `${safe}-${suffix}`;
 }
 
 /**

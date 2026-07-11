@@ -531,3 +531,4 @@ These are **design-level changes**, not local refactorings. Worth revisiting aft
 **Why skipped:** Fixing the altitude issues would mean re-architecting 4 token types + unifying access control across 3+ layers (middleware/routes/DB), then re-testing all auth flows (368 backend tests exist; many would need assertion updates). Out of scope for a focused `/simplify` pass. This pass delivered measurable local cleanup (98 lines saved, 5 reusable helpers extracted), leaving the broader unification for a future architectural pass with its own scope and test coverage.
 
 (Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)
+

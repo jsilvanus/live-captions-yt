@@ -12,6 +12,7 @@
  */
 
 import { PassThrough } from 'node:stream';
+import { keySegment } from './key-segment.js';
 
 /**
  * Create an S3 storage adapter.
@@ -45,8 +46,7 @@ export async function createS3Adapter({ bucket, prefix = 'captions', region = 'a
    * @returns {string}
    */
   function keyDir(apiKey) {
-    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    return `${prefix}/${safe}`;
+    return `${prefix}/${keySegment(apiKey)}`;
   }
 
   /**

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { join, resolve, basename } from 'node:path';
 import * as fs from 'node:fs';
-import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, getKeysByUserId } from '../db.js';
+import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey, getKeysByUserId } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
 import { addMember, getMemberAccessLevel, getMemberCount } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
@@ -189,7 +189,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
         const imageRows = deleteAllImages(db, req.params.key);
         for (const row of imageRows) {
           try {
-            const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+            const safe = safeApiKey(row.api_key);
             const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
             if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
           } catch (e) {

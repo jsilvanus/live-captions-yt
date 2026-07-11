@@ -23,4 +23,4 @@ export * from './translation-config.js';
 export * from './mcp-tokens.js';
 
 // Re-export DSK image helpers needed by lcyt-backend routes (keys.js delete cascade)
-export { deleteAllImages } from 'lcyt-dsk';
+export { deleteAllImages, safeApiKey } from 'lcyt-dsk';

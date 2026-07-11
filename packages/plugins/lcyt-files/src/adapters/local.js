@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { promisify } from 'node:util';
+import { keySegment } from './key-segment.js';
 
 const unlinkAsync   = promisify(fs.unlink);
 const writeFileAsync = promisify(fs.writeFile);
@@ -25,8 +26,7 @@ export function createLocalAdapter(baseDir) {
    * @returns {string} absolute path to the key's directory
    */
   function keyDir(apiKey) {
-    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    const dir = join(baseDir, safe);
+    const dir = join(baseDir, keySegment(apiKey));
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   }
@@ -164,8 +164,7 @@ export function createLocalAdapter(baseDir) {
    */
   async function* listObjects(apiKey, prefix = '') {
     // Compute the key dir path without creating it (keyDir creates; we avoid that here)
-    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    const dir = join(baseDir, safe);
+    const dir = join(baseDir, keySegment(apiKey));
     const targetDir = prefix ? join(dir, prefix) : dir;
 
     function* walkDir(currentDir) {

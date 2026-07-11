@@ -21,11 +21,33 @@ import {
   createReadStream, existsSync, unlinkSync, mkdirSync, writeFileSync,
 } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { registerIcon, listIcons, getIcon, deleteIcon } from '../db.js';
 
 const ICONS_DIR = resolve(process.env.ICONS_DIR || '/data/icons');
+
+/**
+ * Safe, collision-free per-project directory segment for the icons pipeline.
+ *
+ * Sanitizes the api key to `[a-zA-Z0-9-]` (capped at 40 chars) so it is safe as
+ * a path component, and appends a short hash of the full raw key whenever that
+ * sanitization altered it — otherwise two distinct keys could sanitize to the
+ * same string and share a directory. Any already-safe key ≤40 chars (every
+ * default `randomUUID()` key) is returned unchanged, matching the historical
+ * output so existing on-disk paths are untouched. Used by the write, serve, and
+ * delete paths so they always resolve the same directory.
+ *
+ * @param {string} apiKey
+ * @returns {string}
+ */
+function iconKeySegment(apiKey) {
+  const raw = String(apiKey ?? '');
+  const safe = raw.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+  if (safe === raw) return safe;
+  const suffix = createHash('sha256').update(raw).digest('hex').slice(0, 8);
+  return `${safe}-${suffix}`;
+}
 
 /** Maximum icon file size in bytes (200 KB). Base64-encoded that's ~267 KB body. */
 const MAX_ICON_BYTES = 200 * 1024;
@@ -113,7 +135,7 @@ export function createIconRouter(db, auth, store, baseDir) {
       }
 
       const ext = mimeType === 'image/svg+xml' ? '.svg' : '.png';
-      const safeKey = session.apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+      const safeKey = iconKeySegment(session.apiKey);
       const diskFilename = `${randomUUID()}${ext}`;
       const dir = join(ICONS_DIR, safeKey);
 
@@ -167,7 +189,7 @@ export function createIconRouter(db, auth, store, baseDir) {
     const row = getIcon(db, id);
     if (!row) return res.status(404).json({ error: 'Icon not found' });
 
-    const safeKey = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+    const safeKey = iconKeySegment(row.api_key);
     const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
     if (!existsSync(filepath)) return res.status(404).json({ error: 'Icon file not found on disk' });
 
@@ -197,7 +219,7 @@ export function createIconRouter(db, auth, store, baseDir) {
 
     // Best-effort disk cleanup
     try {
-      const safeKey = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+      const safeKey = iconKeySegment(row.api_key);
       const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
       if (existsSync(filepath)) unlinkSync(filepath);
     } catch (e) {
