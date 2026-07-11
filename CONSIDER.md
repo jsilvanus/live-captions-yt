@@ -174,6 +174,17 @@ lines added incidentally by a config-CRUD feature.
 
 (Found during: `/code-review` on `claude/selfservice-config-backend-djp52h`, 2026-07-06.)
 
+**Update (2026-07-11): the premise is stale.** The installed `better-sqlite3`
+enables `PRAGMA foreign_keys` **by default** (verified: `new Database(':memory:')`
+reports `foreign_keys = 1`; no explicit pragma exists in the codebase, but none
+is needed). So the `ON DELETE CASCADE` declarations are live, not inert — FK
+constraint errors are real (a test writing `DELETE FROM organizations` before
+`DELETE FROM api_keys` fails with `SQLITE_CONSTRAINT_FOREIGNKEY`). The residual
+concern inverts: rather than orphaned rows, deployments upgraded from an era of
+already-orphaned rows may hit FK violations on writes touching them. Worth a
+short audit pass of `deleteKey()`/permanent-delete against live-FK semantics,
+then this entry can close.
+
 ---
 
 ## `packages/lcyt-tools`'s shared registry isn't wired into an external-facing MCP transport yet

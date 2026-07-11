@@ -52,7 +52,7 @@ export function listOrganizationsForUser(db, userId) {
 
 export function getOrganizationDetails(db, orgId) {
   const org = db.prepare(`
-    SELECT id, name, slug, owner_user_id, created_at
+    SELECT id, name, slug, owner_user_id, project_slug_policy, created_at
     FROM organizations
     WHERE id = ?
   `).get(orgId);
@@ -78,6 +78,7 @@ export function getOrganizationDetails(db, orgId) {
     id: org.id,
     name: org.name,
     slug: org.slug,
+    projectSlugPolicy: org.project_slug_policy ?? 'none',
     ownerUserId: org.owner_user_id,
     createdAt: org.created_at,
     members: members.map(member => ({
@@ -127,10 +128,14 @@ export function updateOrganization(db, orgId, updates) {
     fields.push('slug = ?');
     params.push(updates.slug);
   }
+  if ('projectSlugPolicy' in updates) {
+    fields.push('project_slug_policy = ?');
+    params.push(updates.projectSlugPolicy);
+  }
   if (fields.length === 0) return null;
   params.push(orgId);
   db.prepare(`UPDATE organizations SET ${fields.join(', ')} WHERE id = ?`).run(...params);
-  return db.prepare('SELECT id, name, slug, owner_user_id, created_at FROM organizations WHERE id = ?').get(orgId);
+  return db.prepare('SELECT id, name, slug, owner_user_id, project_slug_policy, created_at FROM organizations WHERE id = ?').get(orgId);
 }
 
 export function deleteOrganization(db, orgId) {

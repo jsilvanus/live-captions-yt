@@ -1,6 +1,6 @@
 # DSK Viewports v2 — Slug URLs, UI-Based Display Settings, Multi-Renderer Streaming, RTMP Colorkey
 
-**Status:** pending
+**Status:** in-progress (Phase 1 implemented)
 **Scope:** `packages/lcyt-backend` (api_keys slug, org slug policy, routes), `packages/plugins/lcyt-dsk` (schema, routes, renderer), `packages/lcyt-web` (`DskPage`, `DskViewportsPage`, `ProjectSettingsPage`), `packages/plugins/lcyt-rtmp` (`RtmpRelayManager` colorkey)
 
 ## Problem
@@ -19,7 +19,7 @@ Decisions taken (2026-07-11, with the project owner):
 - Multiple renderers: per-viewport streams, one may **composite** onto the main program relay, others are **standalone**, and each streaming viewport can configure its **own outbound RTMP push targets**.
 - ffmpeg **colorkey** for the RTMP DSK composite is included as its own phase.
 
-## Phase 1 — Project public slug + org slug policy
+## Phase 1 — Project public slug + org slug policy ✅ (implemented 2026-07-11)
 
 **Schema (`lcyt-backend`):**
 - `api_keys.public_slug TEXT UNIQUE` (nullable — unset means "slug URLs not yet enabled for this project").

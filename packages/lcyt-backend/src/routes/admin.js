@@ -25,6 +25,8 @@ import {
   revokeKey,
   deleteKey,
   createKey,
+  checkPublicSlugAvailability,
+  setPublicSlug,
 } from '../db/keys.js';
 import {
   getProjectFeatures,
@@ -605,8 +607,29 @@ export function createAdminRouter(db, jwtSecret) {
     const row = getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
 
-    const updated = updateKey(db, req.params.key, req.body);
-    if (!updated) return res.status(400).json({ error: 'No fields to update' });
+    // publicSlug is handled separately: validated (format/reserved/unique) but
+    // exempt from the org prefix policy — site admin may assign any slug.
+    const { publicSlug, ...rest } = req.body || {};
+    let slugChanged = false;
+    if (publicSlug !== undefined) {
+      if (publicSlug === null) {
+        setPublicSlug(db, req.params.key, null);
+        slugChanged = true;
+      } else {
+        const result = checkPublicSlugAvailability(db, req.params.key, publicSlug, { bypassPolicy: true });
+        if (!result.available) return res.status(400).json({ error: result.reason });
+        try {
+          setPublicSlug(db, req.params.key, publicSlug);
+        } catch (err) {
+          if (String(err.message).includes('UNIQUE')) return res.status(409).json({ error: 'slug is already taken' });
+          throw err;
+        }
+        slugChanged = true;
+      }
+    }
+
+    const updated = Object.keys(rest).length > 0 ? updateKey(db, req.params.key, rest) : null;
+    if (!updated && !slugChanged) return res.status(400).json({ error: 'No fields to update' });
     writeAuditLog(db, { actor: resolveActor(req), action: 'project.update', targetType: 'project', targetId: req.params.key, details: req.body, ip: resolveIp(req) });
     res.json({ ok: true });
   });

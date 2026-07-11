@@ -182,6 +182,10 @@ GET  /production/device-roles/:code/auth     — device role pin-code authentica
 GET  /keys/:key/features — list project feature flags (user Bearer)
 PUT  /keys/:key/features — update project feature flags (user Bearer)
 
+GET  /keys/:key/slug        — current public slug + org-policy required prefix (member or X-Admin-Key)
+GET  /keys/:key/slug/check  — ?slug= availability probe with reason (member or X-Admin-Key)
+PUT  /keys/:key/slug        — { slug: string|null } set/clear public slug; org prefix policy enforced for users, bypassed for X-Admin-Key
+
 GET  /keys/:key/members  — list project members (user Bearer)
 POST /keys/:key/members  — invite member (user Bearer)
 PUT  /keys/:key/members/:userId — update member role (user Bearer)
@@ -265,7 +269,7 @@ GET/POST/DELETE /orgs/:orgId/connector-network-rules[/:id] — per-org SSRF allo
 GET    /orgs                — list orgs the user belongs to (user Bearer token)
 POST   /orgs                — create org; creator becomes owner (user Bearer token)
 GET    /orgs/:id            — org detail (any member)
-PATCH  /orgs/:id            — update name/slug (owner only)
+PATCH  /orgs/:id            — update name/slug/projectSlugPolicy ('none'|'prefix': require "<orgslug>-" prefix on project public slugs) (owner only)
 DELETE /orgs/:id            — delete org (owner only)
 GET    /orgs/:id/members    — list members (any member)
 POST   /orgs/:id/members    — invite member by email (owner/admin)
@@ -338,6 +342,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/project-features.js` — Per-project feature flag CRUD.
 - `src/routes/project-members.js` — Project membership CRUD (invite, role update, remove).
 - `src/routes/orgs.js` — Organization CRUD + membership routes (`/orgs/*`, backed by `src/db/orgs.js`); role hierarchy owner/admin/editor/operator/viewer.
+- `src/routes/project-slug.js` — `/keys/:key/slug[/check]` public-slug routes (`plan_dsk_viewport_settings` Phase 1). Slug helpers (`validatePublicSlugFormat`, `RESERVED_PUBLIC_SLUGS`, `checkPublicSlugAvailability`, `setPublicSlug`, `resolveKeyByPublicSlug`, `getRequiredSlugPrefix`) live in `src/db/keys.js`; `api_keys.public_slug` is unique-indexed; `PATCH /admin/projects/:key` accepts `publicSlug` with the org prefix policy bypassed.
 - `src/routes/bridge-download.js` — Bridge agent binary download endpoint.
 - `src/routes/account.js` — User account routes (profile, settings).
 - `src/routes/session.js` — Session management routes.

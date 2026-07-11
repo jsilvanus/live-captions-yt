@@ -28,9 +28,117 @@ function maskKey(key) {
   return key.slice(0, 8) + '••••••••••••••••••••••••••••';
 }
 
+// ── Public slug section (Summary tab) ────────────────────────────────────────
+//
+// User-defined slug replacing the raw API key in public URLs (starting with
+// DSK display pages, plan_dsk_viewport_settings Phase 1). Live availability
+// check with reason; org slug policies may require a "teamslug-" prefix.
+
+function PublicSlugSection({ project, backendUrl, token }) {
+  const [currentSlug, setCurrentSlug]       = useState(null);
+  const [requiredPrefix, setRequiredPrefix] = useState(null);
+  const [draft, setDraft]                   = useState('');
+  const [check, setCheck]                   = useState(null);   // { available, reason } | null
+  const [busy, setBusy]                     = useState(false);
+  const [error, setError]                   = useState(null);
+  const [loaded, setLoaded]                 = useState(false);
+
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+  const slugUrl = `${backendUrl}/keys/${encodeURIComponent(project.key)}/slug`;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(slugUrl, { headers });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (cancelled) return;
+        setCurrentSlug(data.slug);
+        setRequiredPrefix(data.requiredPrefix);
+        setDraft(data.slug ?? data.requiredPrefix ?? '');
+      } catch { /* section stays editable with defaults */ }
+      finally { if (!cancelled) setLoaded(true); }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project.key, backendUrl, token]);
+
+  async function handleCheck() {
+    if (!draft) return;
+    setBusy(true); setError(null);
+    try {
+      const r = await fetch(`${slugUrl}/check?slug=${encodeURIComponent(draft)}`, { headers });
+      setCheck(await r.json());
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+
+  async function handleSave(slugValue) {
+    setBusy(true); setError(null);
+    try {
+      const r = await fetch(slugUrl, { method: 'PUT', headers, body: JSON.stringify({ slug: slugValue }) });
+      const data = await r.json();
+      if (!r.ok) { setError(data.error || 'Failed to save slug'); return; }
+      setCurrentSlug(data.slug);
+      setDraft(data.slug ?? requiredPrefix ?? '');
+      setCheck(null);
+    } catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+
+  if (!loaded) return null;
+  const dirty = draft !== (currentSlug ?? '');
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>Public slug</div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+        Replaces the API key in public URLs (graphics displays, viewers). Lowercase letters, digits, and dashes.
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <input
+          className="input"
+          style={{ fontFamily: 'monospace', fontSize: 13, maxWidth: 260 }}
+          value={draft}
+          placeholder={requiredPrefix ? `${requiredPrefix}my-project` : 'my-project'}
+          onChange={e => { setDraft(e.target.value.toLowerCase()); setCheck(null); }}
+        />
+        <button className="btn btn--ghost btn--sm" disabled={busy || !draft} onClick={handleCheck}>
+          Check availability
+        </button>
+        <button className="btn btn--primary btn--sm" disabled={busy || !dirty || !draft} onClick={() => handleSave(draft)}>
+          Save
+        </button>
+        {currentSlug && (
+          <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => handleSave(null)}>
+            Clear
+          </button>
+        )}
+      </div>
+      {requiredPrefix && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+          Organization policy: slug must start with <code>{requiredPrefix}</code>
+        </div>
+      )}
+      {check && (
+        <div style={{ fontSize: 12, color: check.available ? 'var(--color-success, #2e7d32)' : 'var(--color-danger, #c62828)' }}>
+          {check.available ? '✓ Available' : `✗ ${check.reason}`}
+        </div>
+      )}
+      {error && <div style={{ fontSize: 12, color: 'var(--color-danger, #c62828)' }}>{error}</div>}
+      {currentSlug && (
+        <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+          URL preview: <code>{`${window.location.origin}/dsk/${currentSlug}/<viewport>`}</code>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Summary tab ─────────────────────────────────────────────────────────────
 
-function SummaryTab({ project, isActiveSession }) {
+function SummaryTab({ project, isActiveSession, backendUrl, token }) {
   const [showKey, setShowKey] = useState(false);
 
   return (
@@ -78,6 +186,8 @@ function SummaryTab({ project, isActiveSession }) {
           </div>
         )}
       </div>
+
+      <PublicSlugSection project={project} backendUrl={backendUrl} token={token} />
 
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Quick links</div>
@@ -468,7 +578,7 @@ export function ProjectSettingsPage({ implicitKey = false } = {}) {
         ))}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-        {tab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} />}
+        {tab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} backendUrl={backendUrl} token={token} />}
         {tab === 'Features'     && <FeaturesTab project={project} backendUrl={backendUrl} token={token} />}
         {tab === 'Team'         && <TeamTab project={project} backendUrl={backendUrl} token={token} />}
         {tab === 'Device roles' && <DeviceRolesTab project={project} backendUrl={backendUrl} token={token} />}
