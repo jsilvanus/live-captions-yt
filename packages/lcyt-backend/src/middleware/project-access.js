@@ -52,6 +52,14 @@ function attachProjectContext(req, authInfo) {
   return authInfo;
 }
 
+function handleTokenAuth(req, res, next, authInfo) {
+  if (!authInfo.projectId) {
+    return res.status(400).json({ error: 'projectId is required' });
+  }
+  attachProjectContext(req, authInfo);
+  return next();
+}
+
 /**
  * Create middleware for project-scoped access routes.
  *
@@ -71,16 +79,12 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
       if (!external) {
         return res.status(401).json({ error: 'Invalid or expired external token' });
       }
-      const resolvedProjectId = projectId || external.projectId || external.apiKey || null;
-      if (!resolvedProjectId) {
-        return res.status(400).json({ error: 'projectId is required' });
-      }
       if (requiredScope && !tokenHasScope(external.scopes, requiredScope)) {
         return res.status(403).json({ error: 'Insufficient token scope' });
       }
-      attachProjectContext(req, {
+      return handleTokenAuth(req, res, next, {
         kind: 'external',
-        projectId: resolvedProjectId,
+        projectId: projectId || external.projectId || external.apiKey,
         userId: external.userId,
         email: null,
         siteRole: null,
@@ -88,26 +92,20 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         scopes: external.scopes,
         tokenId: external.id,
       });
-      return next();
     }
 
     try {
       const payload = jwt.verify(token, jwtSecret);
       if (payload && (payload.sessionId || payload.apiKey)) {
-        const resolvedProjectId = projectId || payload.projectId || payload.apiKey || null;
-        if (!resolvedProjectId) {
-          return res.status(400).json({ error: 'projectId is required' });
-        }
-        attachProjectContext(req, {
+        return handleTokenAuth(req, res, next, {
           kind: 'session',
-          projectId: resolvedProjectId,
+          projectId: projectId || payload.projectId || payload.apiKey,
           sessionId: payload.sessionId || null,
           projectRole: 'member',
           userId: null,
           email: null,
           siteRole: null,
         });
-        return next();
       }
 
       if (payload.type === 'user' || payload.kind === 'identity' || payload.kind === 'user' || payload.kind === 'project') {
@@ -115,7 +113,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         if (!user.userId) {
           return res.status(401).json({ error: 'Invalid token payload' });
         }
-        const resolvedProjectId = projectId || payload.projectId || payload.project || payload.apiKey || null;
+        const resolvedProjectId = projectId || payload.projectId || payload.project || payload.apiKey;
         if (!resolvedProjectId) {
           return res.status(400).json({ error: 'projectId is required' });
         }
@@ -124,7 +122,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         if (!accessLevel) {
           return res.status(403).json({ error: 'Not a project member' });
         }
-        attachProjectContext(req, {
+        return handleTokenAuth(req, res, next, {
           kind: payload.kind === 'project' ? 'project' : 'user',
           userId: user.userId,
           email: user.email,
@@ -133,17 +131,12 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           projectRole: accessLevel,
           scopes: payload.scopes || null,
         });
-        return next();
       }
 
       if (payload.type === 'device' || payload.kind === 'device') {
-        const resolvedProjectId = projectId || payload.projectId || payload.apiKey || null;
-        if (!resolvedProjectId) {
-          return res.status(400).json({ error: 'projectId is required' });
-        }
-        attachProjectContext(req, {
+        return handleTokenAuth(req, res, next, {
           kind: 'device',
-          projectId: resolvedProjectId,
+          projectId: projectId || payload.projectId || payload.apiKey,
           deviceRole: payload.deviceRole || payload.role || null,
           projectRole: payload.projectRole || null,
           userId: payload.userId || null,
@@ -151,7 +144,6 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           siteRole: payload.siteRole || null,
           scopes: payload.scopes || null,
         });
-        return next();
       }
 
       return res.status(401).json({ error: 'Invalid token type' });
