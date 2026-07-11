@@ -11,6 +11,8 @@
  * Tested with Nextcloud, ownCloud, Apache mod_dav, and nginx-dav-ext-module.
  */
 
+import { keySegment } from './key-segment.js';
+
 export async function createWebDavAdapter({ url, prefix = 'captions', username, password }) {
   // Dynamic import so webdav package is not required when using local/S3
   const { createClient } = await import('webdav');
@@ -27,8 +29,7 @@ export async function createWebDavAdapter({ url, prefix = 'captions', username, 
    * Per-key path prefix (safe characters only).
    */
   function keyDir(apiKey) {
-    const safe = apiKey.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
-    return `${prefix}/${safe}`;
+    return `${prefix}/${keySegment(apiKey)}`;
   }
 
   /**

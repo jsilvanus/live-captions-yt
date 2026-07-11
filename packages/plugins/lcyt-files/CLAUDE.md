@@ -23,6 +23,7 @@ store.onSessionEnd = async (session) => {
 - `caption-files.js` — `writeToBackendFile(context, text, timestamp, db, storage, buildVttCue)` + `closeFileHandles(fileHandles)`. `context.format` is per-file (`'text' | 'youtube' | 'vtt'`; the caption POST's per-language `fileFormats` field selects it — see `packages/lcyt-backend/src/routes/captions.js`). For `format: 'vtt'`, cue times are session-relative: `context.sessionStartMs` (epoch ms; `captions.js` passes `session.startedAt`) anchors them to the session start, falling back to the first caption written to the file when absent; timestamps before the anchor clamp to `00:00:00.000`.
 - `vtt.js` — `shiftVttContent(content, offsetMs)`: pure cue-time shifter for aligning archived VTT to a VOD timeline (clamps at zero, leaves non-timing lines untouched). Used by the download route's `?offsetMs=` and exported from the plugin entry for future post-broadcast upload work.
 - `routes/files.js` — `createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache)` → `GET /file`, `GET /file/:id` (supports `?offsetMs=±N` on `vtt` files to shift cue times on the fly; 400 on non-vtt or out-of-range values, bound ±24h), `DELETE /file/:id`, `GET/PUT/DELETE /file/storage-config`.
+- `adapters/key-segment.js` — `keySegment(apiKey)`: single source of truth for the per-project path segment shared by all three adapters. Sanitizes to `[a-zA-Z0-9-]`, bounds length to `KEY_SEGMENT_MAX` (40), and appends a short SHA-256 suffix **only when** sanitization alters the raw key, so two distinct keys can never collide into one directory. Backward-compatible: any already-safe key ≤40 chars (every default `randomUUID()` key) is returned unchanged, matching the historical `slice(0, 40)` output.
 - `adapters/local.js` — `createLocalAdapter(baseDir)`: wraps `fs.WriteStream` (append) and `fs.ReadStream`. `storedKey` is the full filesystem path.
 - `adapters/s3.js` — `createS3Adapter({ bucket, prefix, region, endpoint, credentials })`: multipart upload via `@aws-sdk/lib-storage`. `storedKey` is the S3 object key.
 - `adapters/webdav.js` — `createWebdavAdapter({ url, username, password })`: WebDAV client adapter for remote file storage.
@@ -53,4 +54,7 @@ describe()                                      → string (startup log message)
 - For S3: the multipart upload streams data as it is written; `close()` (called in `onSessionEnd`) completes the upload.
 - `@aws-sdk/client-s3` and `@aws-sdk/lib-storage` are optional dependencies; not required when `FILE_STORAGE=local`.
 
-**Tests:** `packages/plugins/lcyt-files/test/local-adapter.test.js` — 17 tests covering adapter methods, `writeToBackendFile`, and `closeFileHandles`.
+**Tests:**
+- `packages/plugins/lcyt-files/test/local-adapter.test.js` — adapter methods, `writeToBackendFile`, and `closeFileHandles`.
+- `packages/plugins/lcyt-files/test/key-segment.test.js` — 9 tests: UUID/backward-compat pass-through, sanitization, and collision-resistance for keys that sanitize identically or share a 40-char prefix.
+- `packages/plugins/lcyt-files/test/vtt.test.js` — `shiftVttContent` cue shifting.
