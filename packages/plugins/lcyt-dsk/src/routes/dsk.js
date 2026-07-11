@@ -79,12 +79,13 @@ export function createDskRouter(db, dskBus) {
       // the slug is already the public URL identifier.
       projectSlug: row.public_slug ?? null,
       viewports: rows.map(r => ({
-        name:         r.name,
-        label:        r.label ?? null,
-        viewportType: r.viewport_type,
-        width:        r.width,
-        height:       r.height,
-        textLayers:   parseJson(r.text_layers_json, []),
+        name:            r.name,
+        label:           r.label ?? null,
+        viewportType:    r.viewport_type,
+        width:           r.width,
+        height:          r.height,
+        textLayers:      parseJson(r.text_layers_json, []),
+        displaySettings: parseJson(r.display_settings_json, null),
       })),
     });
   });

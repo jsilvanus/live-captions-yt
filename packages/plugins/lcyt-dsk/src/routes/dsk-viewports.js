@@ -54,7 +54,7 @@ export function createDskViewportsRouter(db, auth) {
   // POST /dsk/:apikey/viewports
   router.post('/:apikey/viewports', auth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const { name, label, viewportType, width, height, textLayers } = req.body ?? {};
+    const { name, label, viewportType, width, height, textLayers, displaySettings } = req.body ?? {};
 
     if (!name || !SLUG_RE.test(name)) {
       return res.status(400).json({ error: 'name must be a lowercase slug (letters, digits, hyphens, underscores)' });
@@ -75,7 +75,9 @@ export function createDskViewportsRouter(db, auth) {
     }
 
     const textLayersJson = Array.isArray(textLayers) ? JSON.stringify(textLayers) : null;
-    const row = upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h, textLayersJson });
+    const cleanSettings = sanitizeDisplaySettings(displaySettings);
+    const displaySettingsJson = cleanSettings ? JSON.stringify(cleanSettings) : null;
+    const row = upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h, textLayersJson, displaySettingsJson });
     res.status(201).json({ viewport: formatViewport(row) });
   });
 
@@ -86,7 +88,7 @@ export function createDskViewportsRouter(db, auth) {
     const existing = getViewport(db, req.params.apikey, name);
     if (!existing) return res.status(404).json({ error: 'Viewport not found' });
 
-    const { label, viewportType, width, height, textLayers } = req.body ?? {};
+    const { label, viewportType, width, height, textLayers, displaySettings } = req.body ?? {};
     const vt = viewportType ?? existing.viewport_type;
     if (!['landscape', 'vertical'].includes(vt)) {
       return res.status(400).json({ error: 'viewportType must be landscape or vertical' });
@@ -96,6 +98,18 @@ export function createDskViewportsRouter(db, auth) {
       ? JSON.stringify(textLayers)
       : (textLayers === null ? null : existing.text_layers_json ?? null);
 
+    // Coalesce display settings so a text-layers-only PUT (and vice versa)
+    // doesn't wipe the other field. `null` explicitly clears.
+    let displaySettingsJson;
+    if (displaySettings === undefined) {
+      displaySettingsJson = existing.display_settings_json ?? null;
+    } else if (displaySettings === null) {
+      displaySettingsJson = null;
+    } else {
+      const clean = sanitizeDisplaySettings(displaySettings);
+      displaySettingsJson = clean ? JSON.stringify(clean) : null;
+    }
+
     const row = upsertViewport(db, req.params.apikey, {
       name,
       label:           label        !== undefined ? label        : existing.label,
@@ -103,6 +117,7 @@ export function createDskViewportsRouter(db, auth) {
       width:           width        !== undefined ? (parseInt(width, 10)  || existing.width)  : existing.width,
       height:          height       !== undefined ? (parseInt(height, 10) || existing.height) : existing.height,
       textLayersJson,
+      displaySettingsJson,
     });
     res.json({ viewport: formatViewport(row) });
   });
@@ -120,19 +135,53 @@ export function createDskViewportsRouter(db, auth) {
 
 function formatViewport(row) {
   return {
-    id:           row.id,
-    name:         row.name,
-    label:        row.label ?? null,
-    viewportType: row.viewport_type,
-    width:        row.width,
-    height:       row.height,
-    textLayers:   parseJsonArray(row.text_layers_json),
-    createdAt:    row.created_at,
-    updatedAt:    row.updated_at,
+    id:              row.id,
+    name:            row.name,
+    label:           row.label ?? null,
+    viewportType:    row.viewport_type,
+    width:           row.width,
+    height:          row.height,
+    textLayers:      parseJsonArray(row.text_layers_json),
+    displaySettings: sanitizeDisplaySettings(parseJsonObject(row.display_settings_json)),
+    createdAt:       row.created_at,
+    updatedAt:       row.updated_at,
   };
 }
 
 function parseJsonArray(str) {
   if (!str) return [];
   try { return JSON.parse(str); } catch { return []; }
+}
+
+function parseJsonObject(str) {
+  if (!str) return null;
+  try { const v = JSON.parse(str); return (v && typeof v === 'object') ? v : null; } catch { return null; }
+}
+
+/**
+ * Whitelist + clamp display settings (plan_dsk_viewport_settings Phase 3).
+ * Returns null when nothing is set. Presentation values only — safe to serve
+ * on the public viewports endpoint.
+ */
+export function sanitizeDisplaySettings(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+
+  if (typeof raw.background === 'string' && raw.background.trim()) {
+    // CSS color or 'transparent'; cap length to avoid style-injection payloads.
+    out.background = raw.background.trim().slice(0, 64);
+  }
+  if (raw.ccMode !== undefined) out.ccMode = !!raw.ccMode;
+
+  if (raw.ccStyle && typeof raw.ccStyle === 'object') {
+    const s = raw.ccStyle;
+    const cc = {};
+    if (Number.isFinite(Number(s.fontSize))) cc.fontSize = Math.max(8, Math.min(200, Math.round(Number(s.fontSize))));
+    if (s.position === 'top' || s.position === 'bottom') cc.position = s.position;
+    if (typeof s.color === 'string' && s.color.trim()) cc.color = s.color.trim().slice(0, 64);
+    if (typeof s.background === 'string' && s.background.trim()) cc.background = s.background.trim().slice(0, 64);
+    if (Object.keys(cc).length > 0) out.ccStyle = cc;
+  }
+
+  return Object.keys(out).length > 0 ? out : null;
 }

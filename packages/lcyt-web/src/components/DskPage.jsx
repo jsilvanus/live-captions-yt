@@ -39,8 +39,10 @@ export function DskPage() {
   // api key (legacy) — the backend resolves either. Also accept ?apikey= as a
   // fallback for embed contexts (OBS, iframes).
   const apiKey = pathParts[2] || params.get('apikey') || '';
-  const ccMode      = params.get('cc') === '1';
-  const bgColor     = params.get('bg') || '#00B140';
+  // Explicit URL overrides; when absent, persisted viewport display settings
+  // (fetched below) apply, then hard defaults (plan_dsk_viewport_settings Phase 3).
+  const bgParam = params.get('bg');            // string | null
+  const ccParam = params.get('cc');            // '1' | '0' | null
   // Viewport from the path (/dsk/:slug/:viewport) preferred; ?viewport= is the
   // legacy query form and an override when both are present.
   const viewportName = params.get('viewport') || (pathParts[3] || null);
@@ -74,6 +76,7 @@ export function DskPage() {
   const [status, setStatus]           = useState('connecting');
   // viewport dimensions (null = use 100vw/100vh)
   const [vpDimensions, setVpDimensions] = useState(null); // { width, height } | null
+  const [displaySettings, setDisplaySettings] = useState(null); // { background?, ccMode?, ccStyle? } | null
   // text layers from viewport config: [{ id, binding, x, y, width, height, fontSize, ... }]
   const [textLayers, setTextLayers]   = useState([]);
   // live bindings from caption codes: { section: 'Gospel', stanza: '...', ... }
@@ -85,6 +88,11 @@ export function DskPage() {
 
   // CSS scale to fit viewport dimensions into the window
   const [scale, setScale] = useState(1);
+
+  // Precedence: explicit URL param → persisted viewport display setting → default.
+  const bgColor = bgParam || displaySettings?.background || '#00B140';
+  const ccMode = ccParam === '1' ? true : ccParam === '0' ? false : !!displaySettings?.ccMode;
+  const ccStyle = displaySettings?.ccStyle || null;
 
   const esRef       = useRef(null);
   const retryDelay  = useRef(1000);
@@ -115,6 +123,7 @@ export function DskPage() {
       if (vp) {
         setVpDimensions({ width: vp.width, height: vp.height });
         setTextLayers(Array.isArray(vp.textLayers) ? vp.textLayers : []);
+        setDisplaySettings(vp.displaySettings || null);
       }
     } catch { /* non-fatal */ }
   }
@@ -154,7 +163,9 @@ export function DskPage() {
     });
 
     es.addEventListener('text', (e) => {
-      if (!mounted.current || !ccMode) return;
+      // Always capture CC text; rendering gates on ccMode so a display-settings
+      // load that flips ccMode on after connect() still shows already-received text.
+      if (!mounted.current) return;
       try {
         const { text } = JSON.parse(e.data);
         setCcText(text || '');
@@ -366,18 +377,20 @@ export function DskPage() {
         )
       )}
 
-      {/* CC burn-in text (cc=1 mode only) */}
+      {/* CC burn-in text (cc mode). Styling from the viewport's persisted
+          ccStyle when present, else the built-in defaults. */}
       {ccMode && ccText && (
         <div style={{
           position: 'absolute',
-          bottom: '8%',
+          ...(ccStyle?.position === 'top' ? { top: '8%' } : { bottom: '8%' }),
           left: '5%',
           right: '5%',
           textAlign: 'center',
-          color: '#ffffff',
-          fontSize: 'clamp(20px, 3vw, 48px)',
+          color: ccStyle?.color || '#ffffff',
+          fontSize: ccStyle?.fontSize ? `${ccStyle.fontSize}px` : 'clamp(20px, 3vw, 48px)',
           fontFamily: 'sans-serif',
           fontWeight: 'bold',
+          ...(ccStyle?.background ? { background: ccStyle.background, padding: '0.25em 0.5em', borderRadius: 6 } : {}),
           textShadow: '0 2px 8px rgba(0,0,0,0.9)',
           pointerEvents: 'none',
           zIndex: activeNames.length + 2,

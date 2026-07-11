@@ -101,14 +101,31 @@ export function DskViewportsPage() {
   // ── Viewport edit ────────────────────────────────────────────────────────
 
   const [editVp, setEditVp] = useState(null); // draft for editing
+  const [editSettings, setEditSettings] = useState(null); // draft display settings
 
   useEffect(() => {
     if (selectedVp && !selectedVp._builtin) {
       setEditVp({ label: selectedVp.label ?? '', viewportType: selectedVp.viewportType, width: selectedVp.width, height: selectedVp.height });
+      setEditSettings(selectedVp.displaySettings ?? {});
     } else {
       setEditVp(null);
+      setEditSettings(null);
     }
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveDisplaySettings(next) {
+    if (!selectedVp || selectedVp._builtin) return;
+    setEditSettings(next);
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/viewports/${encodeURIComponent(selectedVp.name)}`, {
+        method: 'PUT',
+        body:   JSON.stringify({ displaySettings: next }),
+      });
+      if (!res.ok) { flash('Save failed'); return; }
+      await loadViewports();
+      flash('Display settings saved');
+    } catch { flash('Network error'); }
+  }
 
   async function handleSaveVp() {
     if (!selectedVp || selectedVp._builtin || !editVp) return;
@@ -385,6 +402,14 @@ export function DskViewportsPage() {
                 </Section>
               )}
 
+              {/* Display Settings — persisted on the viewport, applied by the
+                  display page unless overridden by URL params */}
+              {!selectedVp._builtin && editSettings && (
+                <Section title="Display Settings" style={{ marginBottom: 24 }}>
+                  <DisplaySettingsEditor settings={editSettings} onChange={saveDisplaySettings} />
+                </Section>
+              )}
+
               {/* Display URL */}
               <Section title="Display URL" style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 12, color: dark.muted, marginBottom: 8 }}>
@@ -489,6 +514,74 @@ function Section({ title, children, style }) {
     <div style={{ background: dark.card, border: `1px solid ${dark.border}`, borderRadius: 8, padding: 16, ...style }}>
       <div style={{ fontSize: 12, fontWeight: 'bold', color: dark.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>{title}</div>
       {children}
+    </div>
+  );
+}
+
+function DisplaySettingsEditor({ settings, onChange }) {
+  // Background: chroma green preset / transparent / custom hex.
+  const bg = settings.background ?? '#00B140';
+  const bgMode = bg === 'transparent' ? 'transparent' : (bg === '#00B140' ? 'green' : 'custom');
+  const cc = settings.ccStyle ?? {};
+
+  function set(patch) { onChange({ ...settings, ...patch }); }
+  function setCc(patch) {
+    const next = { ...cc, ...patch };
+    for (const k of Object.keys(next)) if (next[k] === '' || next[k] == null) delete next[k];
+    set({ ccStyle: Object.keys(next).length ? next : undefined });
+  }
+
+  const radioRow = { display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Background */}
+      <div>
+        <label style={labelStyle}>Background</label>
+        <div style={radioRow}>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+            <input type="radio" checked={bgMode === 'green'} onChange={() => set({ background: '#00B140' })} /> Chroma green
+          </label>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+            <input type="radio" checked={bgMode === 'transparent'} onChange={() => set({ background: 'transparent' })} /> Transparent
+          </label>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+            <input type="radio" checked={bgMode === 'custom'} onChange={() => set({ background: bgMode === 'custom' ? bg : '#000000' })} /> Custom
+          </label>
+          {bgMode === 'custom' && (
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(bg) ? bg : '#000000'} onChange={e => set({ background: e.target.value })} />
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: dark.muted }}>Transparent suits OBS browser sources; chroma green suits hardware keyers.</div>
+      </div>
+
+      {/* CC burn-in */}
+      <div>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: dark.text }}>
+          <input type="checkbox" checked={!!settings.ccMode} onChange={e => set({ ccMode: e.target.checked })} />
+          Burn in caption text (CC)
+        </label>
+        {settings.ccMode && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+            <div style={{ flex: '0 0 90px' }}>
+              <label style={labelStyle}>Font size</label>
+              <input style={{ ...inputStyle, width: '100%' }} type="number" placeholder="auto"
+                value={cc.fontSize ?? ''} onChange={e => setCc({ fontSize: e.target.value ? parseInt(e.target.value, 10) : '' })} />
+            </div>
+            <div style={{ flex: '0 0 110px' }}>
+              <label style={labelStyle}>Position</label>
+              <select style={{ ...inputStyle, width: '100%' }} value={cc.position ?? 'bottom'} onChange={e => setCc({ position: e.target.value })}>
+                <option value="bottom">Bottom</option>
+                <option value="top">Top</option>
+              </select>
+            </div>
+            <div style={{ flex: '0 0 90px' }}>
+              <label style={labelStyle}>Text color</label>
+              <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(cc.color ?? '') ? cc.color : '#ffffff'} onChange={e => setCc({ color: e.target.value })} />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

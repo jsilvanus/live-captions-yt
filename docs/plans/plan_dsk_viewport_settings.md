@@ -1,6 +1,6 @@
 # DSK Viewports v2 — Slug URLs, UI-Based Display Settings, Multi-Renderer Streaming, RTMP Colorkey
 
-**Status:** in-progress (Phases 1–2 implemented)
+**Status:** in-progress (Phases 1–3 implemented)
 **Scope:** `packages/lcyt-backend` (api_keys slug, org slug policy, routes), `packages/plugins/lcyt-dsk` (schema, routes, renderer), `packages/lcyt-web` (`DskPage`, `DskViewportsPage`, `ProjectSettingsPage`), `packages/plugins/lcyt-rtmp` (`RtmpRelayManager` colorkey)
 
 ## Problem
@@ -44,7 +44,9 @@ Decisions taken (2026-07-11, with the project owner):
 
 **Tests:** slug-first/key-fallback resolution, reserved viewport names rejected, SPA route param parsing.
 
-## Phase 3 — Viewport display settings (schema → page → UI)
+## Phase 3 — Viewport display settings (schema → page → UI) ✅ (implemented 2026-07-11)
+
+> Implemented: `dsk_viewports.display_settings_json` (background, ccMode, ccStyle — the `stream` sub-object is deferred to Phase 4/5 where the renderer consumes it, rather than adding an unread invariant now); `sanitizeDisplaySettings()` whitelist/clamp; POST/PUT `displaySettings` with coalescing (text-layers and display-settings edits don't clobber each other; `null` clears); public endpoint returns `displaySettings`; `DskPage` precedence (param → persisted → default) with `ccStyle` applied to burn-in; `DisplaySettingsEditor` UI in `DskViewportsPage`. Also registered `dsk-slug-routes.test.js` in the package's `test/index.js` (Phase 2's tests weren't being run by `npm test`).
 
 **`dsk_viewports` additive migration:**
 - `display_settings_json TEXT`:

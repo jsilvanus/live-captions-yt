@@ -11,7 +11,7 @@ import Database from 'better-sqlite3';
 
 import { runMigrations } from '../src/db.js';
 import { createDskRouter } from '../src/routes/dsk.js';
-import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES } from '../src/routes/dsk-viewports.js';
+import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES, sanitizeDisplaySettings } from '../src/routes/dsk-viewports.js';
 import { upsertViewport } from '../src/db/viewports.js';
 
 let server, baseUrl, db;
@@ -137,5 +137,91 @@ describe('reserved viewport names', () => {
       body: JSON.stringify({ name: 'vertical-left', viewportType: 'vertical' }),
     });
     assert.equal(res.status, 201);
+  });
+});
+
+describe('sanitizeDisplaySettings', () => {
+  it('whitelists and clamps fields, drops junk', () => {
+    const out = sanitizeDisplaySettings({
+      background: '  transparent ', ccMode: 1,
+      ccStyle: { fontSize: '999', position: 'top', color: '#fff', bogus: 'x' },
+      evil: '<script>',
+    });
+    assert.equal(out.background, 'transparent');
+    assert.equal(out.ccMode, true);
+    assert.equal(out.ccStyle.fontSize, 200); // clamped
+    assert.equal(out.ccStyle.position, 'top');
+    assert.equal(out.ccStyle.color, '#fff');
+    assert.ok(!('bogus' in out.ccStyle));
+    assert.ok(!('evil' in out));
+  });
+
+  it('returns null for empty/invalid input', () => {
+    assert.equal(sanitizeDisplaySettings(null), null);
+    assert.equal(sanitizeDisplaySettings({}), null);
+    assert.equal(sanitizeDisplaySettings({ ccStyle: { position: 'sideways' } }), null);
+  });
+});
+
+describe('viewport display settings persistence', () => {
+  it('round-trips display settings through create and the public endpoint', async () => {
+    makeKey('ds1', 'ds-slug');
+    const create = await fetch(`${baseUrl}/dsk/ds1/viewports`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds1' },
+      body: JSON.stringify({
+        name: 'v1', viewportType: 'vertical',
+        displaySettings: { background: 'transparent', ccMode: true, ccStyle: { fontSize: 40, position: 'top' } },
+      }),
+    });
+    assert.equal(create.status, 201);
+    assert.equal((await create.json()).viewport.displaySettings.background, 'transparent');
+
+    const pub = await fetch(`${baseUrl}/dsk/ds-slug/viewports/public`);
+    const vp = (await pub.json()).viewports.find(v => v.name === 'v1');
+    assert.equal(vp.displaySettings.background, 'transparent');
+    assert.equal(vp.displaySettings.ccMode, true);
+    assert.equal(vp.displaySettings.ccStyle.fontSize, 40);
+  });
+
+  it('a text-layers-only PUT does not wipe display settings (and vice versa)', async () => {
+    makeKey('ds2');
+    await fetch(`${baseUrl}/dsk/ds2/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds2' },
+      body: JSON.stringify({ name: 'v1', viewportType: 'vertical', displaySettings: { background: 'transparent' } }),
+    });
+    // Update only text layers
+    await fetch(`${baseUrl}/dsk/ds2/viewports/v1`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds2' },
+      body: JSON.stringify({ textLayers: [{ id: 'a', binding: 'section' }] }),
+    });
+    let list = await (await fetch(`${baseUrl}/dsk/ds2/viewports`, { headers: { 'x-api-key': 'ds2' } })).json();
+    let vp = list.viewports.find(v => v.name === 'v1');
+    assert.equal(vp.displaySettings.background, 'transparent', 'display settings survived a text-layers PUT');
+    assert.equal(vp.textLayers.length, 1);
+
+    // Update only display settings
+    await fetch(`${baseUrl}/dsk/ds2/viewports/v1`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds2' },
+      body: JSON.stringify({ displaySettings: { ccMode: true } }),
+    });
+    list = await (await fetch(`${baseUrl}/dsk/ds2/viewports`, { headers: { 'x-api-key': 'ds2' } })).json();
+    vp = list.viewports.find(v => v.name === 'v1');
+    assert.equal(vp.textLayers.length, 1, 'text layers survived a display-settings PUT');
+    assert.equal(vp.displaySettings.ccMode, true);
+  });
+
+  it('clears display settings when PUT sends null', async () => {
+    makeKey('ds3');
+    await fetch(`${baseUrl}/dsk/ds3/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds3' },
+      body: JSON.stringify({ name: 'v1', viewportType: 'vertical', displaySettings: { background: 'transparent' } }),
+    });
+    await fetch(`${baseUrl}/dsk/ds3/viewports/v1`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds3' },
+      body: JSON.stringify({ displaySettings: null }),
+    });
+    const list = await (await fetch(`${baseUrl}/dsk/ds3/viewports`, { headers: { 'x-api-key': 'ds3' } })).json();
+    assert.equal(list.viewports.find(v => v.name === 'v1').displaySettings, null);
   });
 });
