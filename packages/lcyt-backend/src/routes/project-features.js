@@ -10,7 +10,6 @@
  */
 
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { getKey } from '../db/keys.js';
 import {
   getProjectFeatures,
@@ -22,16 +21,7 @@ import {
 } from '../db/project-features.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
-
-function verifyUserToken(jwtSecret, req) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  try {
-    const payload = jwt.verify(header.slice(7), jwtSecret);
-    if (payload.type !== 'user') return null;
-    return { userId: payload.userId, email: payload.email };
-  } catch { return null; }
-}
+import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 
 function formatFeatures(rows) {
   return rows.map(r => {
@@ -78,7 +68,7 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
       return adminMiddleware(req, res, () => _listFeatures(db, req, res));
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
     const row = getKey(db, req.params.key);
@@ -97,7 +87,7 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
       return adminMiddleware(req, res, () => _batchUpdateFeatures(db, null, req, res));
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
     const row = getKey(db, req.params.key);
@@ -119,7 +109,7 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
       return adminMiddleware(req, res, () => _patchFeature(db, null, req, res));
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
     const row = getKey(db, req.params.key);

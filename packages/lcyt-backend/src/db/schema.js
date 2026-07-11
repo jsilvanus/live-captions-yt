@@ -485,6 +485,9 @@ export function initDb(dbPath) {
       api_key      TEXT NOT NULL,
       label        TEXT NOT NULL,
       token_hash   TEXT NOT NULL UNIQUE,
+      user_id      INTEGER,
+      project_id   TEXT,
+      scopes       TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       last_used_at TEXT,
       revoked_at   TEXT
@@ -502,6 +505,9 @@ export function initDb(dbPath) {
     if (!mcpTokenCols.has('active'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
     if (!mcpTokenCols.has('created_by_user_id')) db.exec('ALTER TABLE mcp_tokens ADD COLUMN created_by_user_id INTEGER');
     if (!mcpTokenCols.has('created_by_name'))    db.exec("ALTER TABLE mcp_tokens ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''");
+    if (!mcpTokenCols.has('user_id'))            db.exec('ALTER TABLE mcp_tokens ADD COLUMN user_id INTEGER');
+    if (!mcpTokenCols.has('project_id'))         db.exec('ALTER TABLE mcp_tokens ADD COLUMN project_id TEXT');
+    if (!mcpTokenCols.has('scopes'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN scopes TEXT');
   }
 
   // Back-fill project_features from legacy api_keys columns (idempotent)
