@@ -8,9 +8,14 @@
 // and every other name falls through to a plain variable assignment.
 //
 // Entry shape:
-//   kind:    'action' | 'variable' | 'block'  — what assigning the name does
+//   kind:    'action' | 'variable' | 'block' | 'definition'  — what the name does
+//   fires:   'pointer' | 'send'                — for kind 'action', WHEN the
+//                                                side effect runs: pointer-tier
+//                                                one-shots (timer/audio/goto/file,
+//                                                drained on pointer arrival) vs.
+//                                                send-tier (named `action:` macros)
 //   lexer:   'dedicated'                       — parsed by its own regex earlier
-//                                                (cue/api); the generic loop skips it
+//                                                (cue/api/action); the generic loop skips it
 //   boolean: true                              — value coerced to a boolean
 //   apply(value, actions)                      — action one-shots: write the
 //                                                parsed result into `actions`
@@ -20,16 +25,17 @@
 import { parseDuration } from './metacode-ttl.js';
 
 export const RESERVED_METACODES = {
-  // --- Action one-shots (no persisted value; drained by the runtime) ---
+  // --- Pointer-fired action one-shots (no persisted value; drained by the
+  //     runtime when the pointer reaches the line) ---
   audio: {
-    kind: 'action',
+    kind: 'action', fires: 'pointer',
     emitsTopic: 'session.mic_state',
     apply: (value, actions) => {
       if (value === 'start' || value === 'stop') actions.audioCapture = value;
     },
   },
   timer: {
-    kind: 'action',
+    kind: 'action', fires: 'pointer',
     // Bare number = seconds (back-compat) or explicit ms/s/m; stored in seconds
     // since the runtime multiplies by 1000. Shares parseDuration with the TTL grammar.
     apply: (value, actions) => {
@@ -38,20 +44,20 @@ export const RESERVED_METACODES = {
     },
   },
   goto: {
-    kind: 'action',
+    kind: 'action', fires: 'pointer',
     apply: (value, actions) => {
       const lineN = parseInt(value, 10);
       if (!isNaN(lineN) && lineN > 0) actions.goto = lineN;
     },
   },
   file: {
-    kind: 'action',
+    kind: 'action', fires: 'pointer',
     apply: (value, actions) => {
       if (value !== '') actions.fileSwitch = value;
     },
   },
   'file[server]': {
-    kind: 'action',
+    kind: 'action', fires: 'pointer',
     apply: (value, actions) => {
       if (value !== '') actions.fileSwitchServer = value;
     },
@@ -61,6 +67,10 @@ export const RESERVED_METACODES = {
   //     loop; listed here so the taxonomy is complete and the loop skips them) ---
   cue: { kind: 'action', lexer: 'dedicated', emitsTopic: 'cue.fired' },
   api: { kind: 'action', lexer: 'dedicated', emitsTopic: 'variable.updated' },
+  // Named action macro — a bundle of atoms run together on SEND. See
+  // plan_named_actions.md. Parsed by its own regex into lineCodes.actions.
+  action: { kind: 'action', fires: 'send', lexer: 'dedicated', emitsTopic: 'action.fired' },
+  'action-def': { kind: 'definition', lexer: 'dedicated' },
 
   // --- Persistent codes: ordinary variables that other subsystems happen to
   //     watch. Listed for documentation/validation; the parser treats any
@@ -87,7 +97,7 @@ export const BOOLEAN_CODES = Object.entries(RESERVED_METACODES)
 export const NON_PERSISTENT_CODE_KEYS = new Set([
   'audioCapture', 'timer', 'goto', 'fileSwitch', 'fileSwitchServer',
   'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'cueTree',
-  'apiTriggers', 'emptySend', 'emptySendLabel', 'codeTtls',
+  'apiTriggers', 'actions', 'emptySend', 'emptySendLabel', 'codeTtls',
 ]);
 
 /**
