@@ -151,6 +151,19 @@ describe('POST /mcp-tokens', () => {
     assert.equal(res.status, 400);
   });
 
+  it('persists a scopes array from the request body', async () => {
+    const res = await fetch(`${baseUrl}/mcp-tokens`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ label: 'Scoped', scopes: ['events:read', 'dsk.*'] }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    // The token now gates /events/stream: events:read granted, only dsk.* topics.
+    const row = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(body.id);
+    assert.deepEqual(JSON.parse(row.scopes), ['events:read', 'dsk.*']);
+  });
+
   it('requires a user auth token', async () => {
     const res = await fetch(`${baseUrl}/mcp-tokens`, {
       method: 'POST',

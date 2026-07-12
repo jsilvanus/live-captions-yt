@@ -6,7 +6,22 @@ import { Dialog } from '../Dialog.jsx';
 import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { ApiConnectorsIcon } from './icons.jsx';
 
-const EMPTY_FORM = { label: '', active: true };
+const EMPTY_FORM = { label: '', active: true, restrict: false, scopes: [] };
+
+// Scope grants offered when a token is restricted. Values map directly to the
+// backend scope grammar: `events:read` is the resource:verb gate for
+// GET /events/stream (checked by tokenHasScope), the rest are dotted event-bus
+// topic patterns that narrow which topics the token may subscribe to (checked
+// by tokenAllowsTopic). An empty/absent scope set = full access.
+const SCOPE_OPTIONS = [
+  { value: 'events:read', label: 'Event stream access', hint: 'Required for the unified event stream (/events/stream)' },
+  { value: 'dsk.*', label: 'DSK graphics events', hint: 'dsk.*' },
+  { value: 'variable.updated', label: 'Variable updates', hint: 'variable.updated' },
+  { value: 'cue.fired', label: 'Cue fires', hint: 'cue.fired' },
+  { value: 'role.*', label: 'AI role & assistant events', hint: 'role.*' },
+  { value: 'caption.*', label: 'Caption results', hint: 'caption.*' },
+  { value: 'session.*', label: 'Session lifecycle', hint: 'session.*' },
+];
 
 export function McpAccessSection() {
   const session = useSessionContext();
@@ -54,7 +69,7 @@ export function McpAccessSection() {
   function openCreate() {
     setEditingToken(null);
     setCreatedToken('');
-    setForm({ label: '', active: true });
+    setForm({ ...EMPTY_FORM });
     setError('');
     setOpen(true);
   }
@@ -62,15 +77,29 @@ export function McpAccessSection() {
   function openEdit(token) {
     setEditingToken(token);
     setCreatedToken('');
-    setForm({ label: token.label, active: token.active });
+    // Scopes aren't returned by GET /mcp-tokens, so editing is label/active only.
+    setForm({ label: token.label, active: token.active, restrict: false, scopes: [] });
     setError('');
     setOpen(true);
+  }
+
+  function toggleScope(value) {
+    setForm(prev => ({
+      ...prev,
+      scopes: prev.scopes.includes(value)
+        ? prev.scopes.filter(s => s !== value)
+        : [...prev.scopes, value],
+    }));
   }
 
   async function handleSave(event) {
     event.preventDefault();
     if (!form.label.trim()) {
       setError('Enter a token name');
+      return;
+    }
+    if (!editingToken && form.restrict && form.scopes.length === 0) {
+      setError('Select at least one scope, or turn off "Restrict access" for full access.');
       return;
     }
     try {
@@ -91,6 +120,7 @@ export function McpAccessSection() {
             label: form.label.trim(),
             createdByName: creatorName,
             active: form.active,
+            scopes: form.restrict ? form.scopes : undefined,
           });
       if (!editingToken && payload?.token) {
         setCreatedToken(payload.token);
@@ -207,6 +237,45 @@ export function McpAccessSection() {
                   <input type="checkbox" checked={!!form.active} onChange={event => setForm(prev => ({ ...prev, active: event.target.checked }))} />
                   <span>Active</span>
                 </label>
+
+                {!editingToken && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={!!form.restrict}
+                        onChange={event => setForm(prev => ({ ...prev, restrict: event.target.checked }))}
+                      />
+                      <span style={{ fontWeight: 600 }}>Restrict access</span>
+                    </label>
+                    {form.restrict ? (
+                      <fieldset style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: '0.6rem 0.75rem', margin: 0, display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <legend style={{ padding: '0 0.35rem', fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>Scopes</legend>
+                        {SCOPE_OPTIONS.map(opt => (
+                          <label key={opt.value} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.5rem' }}>
+                            <input
+                              type="checkbox"
+                              checked={form.scopes.includes(opt.value)}
+                              onChange={() => toggleScope(opt.value)}
+                              style={{ marginTop: '0.2rem' }}
+                            />
+                            <span style={{ display: 'flex', flexDirection: 'column' }}>
+                              <span>{opt.label}</span>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', fontFamily: 'monospace' }}>{opt.hint}</span>
+                            </span>
+                          </label>
+                        ))}
+                        <p style={{ margin: '0.2rem 0 0', fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                          To subscribe to the event stream, include <strong>Event stream access</strong>. Adding topic scopes narrows which events the token receives; with none selected it can read all topics.
+                        </p>
+                      </fieldset>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
+                        Full access — the token can use every project API and event topic.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {error && <div style={{ color: 'var(--color-danger, #c2410c)', fontSize: '0.9rem' }}>{error}</div>}
               </div>

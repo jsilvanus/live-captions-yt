@@ -234,7 +234,7 @@ DELETE /agent/context     — clear context window (Bearer token)
 GET  /agent/events        — recent agent events (Bearer token)
 POST /agent/generate-template | /agent/edit-template | /agent/suggest-styles — AI DSK template generation (Bearer token)
 
-POST   /mcp-tokens        — create a personal MCP access token { label } → { id, token } (raw token shown once) (Bearer token)
+POST   /mcp-tokens        — create a personal MCP access token { label, scopes? } → { id, token } (raw token shown once); optional `scopes` array restricts the token (`resource:verb` like `events:read` + dotted event-topic patterns like `dsk.*`); omit/empty = full access (Bearer token). Surfaced in the Setup Hub "MCP access" card's create form.
 GET    /mcp-tokens        — list this project's tokens (label + timestamps, hash/raw never returned) (Bearer token)
 DELETE /mcp-tokens/:id    — revoke a token (Bearer token)
 
