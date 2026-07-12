@@ -10,6 +10,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { SetupCard } from './setup-hub/SetupCard.jsx';
+import { NamedActionsManager } from './NamedActionsManager.jsx';
 
 const TILES = [
   { id: 'captions',      icon: '💬', title: 'Captions',     href: '/captions',    tracked: false },
@@ -100,6 +101,8 @@ export function AssetsPage() {
           );
         })}
       </div>
+
+      <NamedActionsManager />
 
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 20 }}>
         Looking for device/service configuration instead? See <Link href="/setup"><a>Setup</a></Link>.

@@ -12,8 +12,10 @@ import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLan
 import { parseFileContent } from '../lib/metacode-parser.js';
 import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, buildInlineCuePayload, checkCueMatch } from '../lib/metacode-runtime.js';
 import { interpolateVariables } from '../lib/metacode-variables.js';
-import { extractPersistentCodes } from '../lib/metacode-registry.js';
+import { extractPersistentCodes, NON_PERSISTENT_CODE_KEYS } from '../lib/metacode-registry.js';
+import { expandActionItems, applyAtoms } from '../lib/metacode-actions.js';
 import { useVariables } from '../hooks/useVariables.js';
+import { useActions } from '../hooks/useActions.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -34,6 +36,11 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const sentLog = useSentLogContext();
   const { showToast } = useToastContext();
   const variables = useVariables({
+    backendUrl: session.backendUrl,
+    connected: session.connected,
+    getToken: session.getSessionToken,
+  });
+  const namedActions = useActions({
     backendUrl: session.backendUrl,
     connected: session.connected,
     getToken: session.getSessionToken,
@@ -275,6 +282,33 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       const ttl = codeTtls[name];
       if (ttl || varSnap[name] !== strVal) variables.writeFileCode(name, strVal, ttl);
     }
+
+    // Named actions (plan_named_actions.md): a `<!-- action: … -->` line runs its
+    // atoms on SEND. Expand @refs (file-local action-defs then the /actions store,
+    // with a cycle guard) and apply: persistent/variable/graphics atoms merge into
+    // this caption's codes (and durable variables); api: fires a connector refresh;
+    // audio: toggles capture. Pointer atoms (goto/file/timer) are v1-skipped.
+    delete mergedCodes.actions; // trigger list — not a forwarded code
+    if (Array.isArray(lineCodes.actions) && lineCodes.actions.length > 0) {
+      const localDefs = fileStore.activeFile?.actionDefs || [];
+      const resolveDef = (name) =>
+        (localDefs.find((d) => d.name === name)?.items) || namedActions.resolveDef(name);
+      const atoms = expandActionItems(lineCodes.actions, resolveDef, (m) => console.warn('[action]', m));
+      applyAtoms(atoms, {
+        setCode: (name, value, ttl) => {
+          mergedCodes[name] = value;
+          if (!NON_PERSISTENT_CODE_KEYS.has(name)) variables.writeFileCode(name, value == null ? '' : String(value), ttl);
+        },
+        refreshApi: (connectorSlug, requestSlug) => variables.refresh(connectorSlug, requestSlug),
+        audio: (v) => {
+          if (typeof window !== 'undefined' && window?.dispatchEvent) {
+            try { window.dispatchEvent(new CustomEvent('lcyt:audio-capture', { detail: { action: v } })); } catch { /* ignore */ }
+          }
+        },
+        onWarn: (m) => console.warn('[action]', m),
+      });
+    }
+
     const effectiveLang = mergedCodes.lang || inputLang || null;
     if (effectiveLang) mergedCodes.lang = effectiveLang;
     else delete mergedCodes.lang;

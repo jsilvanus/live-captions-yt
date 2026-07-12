@@ -104,11 +104,11 @@ export function useFileStore({
       const entries = [];
       for (const item of saved) {
         if (!item.name || typeof item.rawText !== 'string') continue;
-        const { lines, lineCodes, lineNumbers, cueDefs } = parseFileContent(item.rawText);
+        const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(item.rawText);
         const id = newId();
         const savedPointer = pointers[item.name] ?? 0;
         const pointer = Math.min(savedPointer, Math.max(0, lines.length - 1));
-        entries.push({ id, name: item.name, lines, lineCodes, lineNumbers, cueDefs, pointer, rawText: item.rawText });
+        entries.push({ id, name: item.name, lines, lineCodes, lineNumbers, cueDefs, actionDefs, pointer, rawText: item.rawText });
       }
       if (entries.length === 0) return;
       setFiles(entries);
@@ -129,14 +129,14 @@ export function useFileStore({
 
       reader.onload = (e) => {
         const rawText = e.target.result;
-        const { lines, lineCodes, lineNumbers, cueDefs } = parseFileContent(rawText);
+        const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(rawText);
 
         const id = newId();
         const pointers = loadPointers();
         const savedPointer = pointers[file.name] ?? 0;
         const pointer = Math.min(savedPointer, Math.max(0, lines.length - 1));
 
-        const entry = { id, name: file.name, lines, lineCodes, lineNumbers, cueDefs, pointer, rawText };
+        const entry = { id, name: file.name, lines, lineCodes, lineNumbers, cueDefs, actionDefs, pointer, rawText };
         const newFiles = [...filesRef.current, entry];
         setFiles(newFiles);
         saveFilesToStorage(newFiles);
@@ -246,11 +246,11 @@ export function useFileStore({
     if (fileIdx === -1) return;
 
     const file = filesRef.current[fileIdx];
-    const { lines, lineCodes, lineNumbers, cueDefs } = parseFileContent(rawText);
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(rawText);
     const pointer = Math.min(file.pointer, Math.max(0, lines.length - 1));
 
     const newFiles = [...filesRef.current];
-    newFiles[fileIdx] = { ...file, lines, lineCodes, lineNumbers, cueDefs, rawText, pointer };
+    newFiles[fileIdx] = { ...file, lines, lineCodes, lineNumbers, cueDefs, actionDefs, rawText, pointer };
     setFiles(newFiles);
     saveFilesToStorage(newFiles);
   }
@@ -280,9 +280,9 @@ export function useFileStore({
    * @returns {{ id, name, lines, lineCodes, lineNumbers, pointer, rawText }}
    */
   function loadFileFromText(name, rawText) {
-    const { lines, lineCodes, lineNumbers, cueDefs } = parseFileContent(rawText);
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(rawText);
     const id = newId();
-    const entry = { id, name, lines, lineCodes, lineNumbers, cueDefs, pointer: 0, rawText };
+    const entry = { id, name, lines, lineCodes, lineNumbers, cueDefs, actionDefs, pointer: 0, rawText };
     const newFiles = [...filesRef.current, entry];
     setFiles(newFiles);
     saveFilesToStorage(newFiles);

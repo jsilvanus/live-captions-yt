@@ -17,6 +17,7 @@
 
 import { RESERVED_METACODES, BOOLEAN_CODES } from './metacode-registry.js';
 import { parseValueTtl } from './metacode-ttl.js';
+import { parseActionItems } from './metacode-actions.js';
 const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
 const CUE_DEF_RE = /<!--\s*cue-def\s*:\s*([a-z0-9_-]+)\s*:\s*([\s\S]*?)\s*-->/gi;
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
@@ -38,6 +39,15 @@ const CUE_META_RE = /<!--\s*cue(\*{0,2})(~?)(\[(?:semantic|events)\])?\s*:\s*([\
 // Multiple triggers on one line are comma-separated, e.g. <!-- api!:weather.current,login.token -->.
 // A dedicated regex is used (like cue) so a plain "api:" key isn't also picked up by MULTI_META_RE.
 const API_TRIGGER_RE = /<!--\s*(!)?api(!)?\s*:\s*([\s\S]*?)\s*-->/gi;
+
+// Named / composite actions (see docs/plans/plan_named_actions.md):
+//   <!-- action: @intro | api:cam.preset1 -->   invoke (fires on send)
+//   <!-- action-def: intro: audio:start | ... --> define a file-local named action
+// Dedicated regexes so `action:`/`action-def:` aren't picked up by MULTI_META_RE.
+// action-def is matched first (its `action-def:` prefix would not match ACTION_RE
+// anyway, but stripping it first keeps things unambiguous).
+const ACTION_DEF_RE = /<!--\s*action-def\s*:\s*([a-z0-9_-]+)\s*:\s*([\s\S]*?)\s*-->/gi;
+const ACTION_RE = /<!--\s*action\s*:\s*([\s\S]*?)\s*-->/gi;
 
 /**
  * Strip ALL HTML comment metacodes from a raw line and return the remaining
@@ -271,6 +281,7 @@ export function parseFileContent(rawText) {
   const lineCodes = [];
   const lineNumbers = [];
   const cueDefs = [];
+  const actionDefs = [];
   const currentCodes = {};
 
   for (let i = 0; i < rawLines.length; i++) {
@@ -327,9 +338,27 @@ export function parseFileContent(rawText) {
       }
       return '';
     }).trim();
-    const lineRaw = (cuePhrase != null || apiTriggers != null) ? afterApiStrip : raw;
+    // --- Extract named-action definitions (dedicated regex), then invocations ---
+    ACTION_DEF_RE.lastIndex = 0;
+    const lineActionDefs = [];
+    const afterActionDefStrip = afterApiStrip.replace(ACTION_DEF_RE, (_, name, val) => {
+      if (name) lineActionDefs.push({ name: name.toLowerCase(), items: parseActionItems(val) });
+      return '';
+    }).trim();
+    ACTION_RE.lastIndex = 0;
+    let actions = null;
+    const afterActionStrip = afterActionDefStrip.replace(ACTION_RE, (_, val) => {
+      const items = parseActionItems(val);
+      if (items.length > 0) actions = (actions || []).concat(items);
+      return '';
+    }).trim();
+    const anyDedicated = cuePhrase != null || apiTriggers != null || actions != null || lineActionDefs.length > 0;
+    const lineRaw = anyDedicated ? afterActionStrip : raw;
     if (lineCueDefs.length > 0) {
       for (const def of lineCueDefs) cueDefs.push(def);
+    }
+    if (lineActionDefs.length > 0) {
+      for (const def of lineActionDefs) actionDefs.push(def);
     }
 
     const stanzaInlineMatch = lineRaw.match(STANZA_INLINE_RE);
@@ -366,6 +395,7 @@ export function parseFileContent(rawText) {
       const codes = { ...currentCodes, emptySend: true, ...(label ? { emptySendLabel: label } : {}) };
       if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; codes.cueTree = cueTree; }
       if (apiTriggers) codes.apiTriggers = apiTriggers;
+      if (actions) codes.actions = actions;
       lines.push('');
       lineCodes.push(codes);
       lineNumbers.push(i + 1);
@@ -411,12 +441,13 @@ export function parseFileContent(rawText) {
     if (lineActions.fileSwitchServer != null) codes.fileSwitchServer = lineActions.fileSwitchServer;
     if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; codes.cueTree = cueTree; }
     if (apiTriggers) codes.apiTriggers = apiTriggers;
+    if (actions) codes.actions = actions;
     // Per-line `=>` TTLs for persistent assignments (consumed by the send-time
     // file→variables sync; not a forwarded code — stripped before delivery).
     if (Object.keys(lineCodeTtls).length > 0) codes.codeTtls = lineCodeTtls;
 
     // Did the line contain any metacodes markers that were stripped?
-    const hadMetacodes = contentText !== lineRaw || cuePhrase != null || apiTriggers != null;
+    const hadMetacodes = contentText !== lineRaw || cuePhrase != null || apiTriggers != null || actions != null;
 
     // Always emit the line — content lines, metadata-only lines, and lines
     // whose comments were stripped all produce entries in the output.
@@ -427,5 +458,5 @@ export function parseFileContent(rawText) {
     }
   }
 
-  return { lines, lineCodes, lineNumbers, cueDefs };
+  return { lines, lineCodes, lineNumbers, cueDefs, actionDefs };
 }

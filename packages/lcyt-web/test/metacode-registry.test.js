@@ -18,6 +18,15 @@ describe('metacode registry', () => {
     assert.equal(isReservedName('SECTION'), true); // case-insensitive
   });
 
+  it('tags action fire-timing: pointer one-shots vs send-fired named actions', () => {
+    for (const n of ['timer', 'audio', 'goto', 'file', 'file[server]']) {
+      assert.equal(RESERVED_METACODES[n].fires, 'pointer', n);
+    }
+    assert.equal(RESERVED_METACODES.action.fires, 'send');
+    assert.equal(RESERVED_METACODES.action.lexer, 'dedicated');
+    assert.equal(RESERVED_METACODES['action-def'].kind, 'definition');
+  });
+
   it('isReservedActionable is true only for action-kind names', () => {
     for (const n of ['audio', 'timer', 'goto', 'file', 'file[server]', 'cue', 'api']) {
       assert.equal(isReservedActionable(n), true, n);

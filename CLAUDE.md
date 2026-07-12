@@ -130,6 +130,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | AI agent plugin | `packages/plugins/lcyt-agent/CLAUDE.md` |
 | Shared AI tool-schema/handler registry | `packages/lcyt-tools/CLAUDE.md` |
 | API Connectors & Variables plugin | `packages/plugins/lcyt-connectors/CLAUDE.md` |
+| Named Actions plugin | `packages/plugins/lcyt-actions/CLAUDE.md` |
 | Core library (Python) | `python-packages/lcyt/CLAUDE.md` |
 | Flask backend (Python) | `python-packages/lcyt-backend/CLAUDE.md` |
 | MCP server (Python) | `python-packages/lcyt-mcp/CLAUDE.md` |
