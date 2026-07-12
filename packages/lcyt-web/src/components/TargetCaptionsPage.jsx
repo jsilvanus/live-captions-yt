@@ -101,8 +101,8 @@ export const CaptionTargetsManager = forwardRef(function CaptionTargetsManager({
     }
     const isNew = editing === 'new';
     const body = isNew
-      ? { type: draft.type, streamKey: draft.streamKey, url: draft.url, headers, viewerKey: draft.viewerKey, noBatch: draft.noBatch }
-      : { enabled: draft.enabled, streamKey: draft.streamKey, url: draft.url, headers, viewerKey: draft.viewerKey, noBatch: draft.noBatch };
+      ? { type: draft.type, streamKey: draft.streamKey, url: draft.url, headers, viewerKey: draft.viewerKey, iconId: draft.iconId, iconEnabled: draft.iconEnabled, noBatch: draft.noBatch }
+      : { enabled: draft.enabled, streamKey: draft.streamKey, url: draft.url, headers, viewerKey: draft.viewerKey, iconId: draft.iconId, iconEnabled: draft.iconEnabled, noBatch: draft.noBatch };
     try {
       const r = await authedFetch(isNew ? '/targets' : `/targets/${editing.id}`, {
         method: isNew ? 'POST' : 'PUT',

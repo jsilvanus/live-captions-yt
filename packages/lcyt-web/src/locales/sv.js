@@ -203,6 +203,7 @@ export default {
       viewerQrTitle: 'QR-kod',
       viewerQrHint: 'Skanna för att öppna tittar-sidan',
       viewerIcon: 'Ikon',
+      viewerIconEnabled: 'Visa ikon på tittar-sidan',
       viewerIconNone: 'Ingen',
       viewerIconHint: 'Välj en ikon att visa i övre högra hörnet på tittar-sidan. Ladda upp ikoner i Inställningar → Ikoner.',
       noBatch: 'Inaktivera batchsändning för detta mål',
