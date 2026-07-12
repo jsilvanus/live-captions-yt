@@ -110,9 +110,9 @@ export function createVariablesRouter(db, auth, bus, engine, scheduler, jwtSecre
     if (!apiKey) return;
     const { name } = req.params;
     if (name.startsWith('_')) return res.status(400).json({ error: 'variable names starting with "_" are reserved' });
-    const { value, defaultValue, ttl } = req.body || {};
+    const { value, defaultValue, ttl, source } = req.body || {};
     const w = resolveWriteTtl(value, ttl);
-    const row = upsertManualVariable(db, apiKey, name, { value: w.value, defaultValue, ttl: w.ttl });
+    const row = upsertManualVariable(db, apiKey, name, { value: w.value, defaultValue, ttl: w.ttl, source });
     scheduler.reschedule(apiKey, name);
     bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
     res.json({ variable: serializeVariableRow(row) });

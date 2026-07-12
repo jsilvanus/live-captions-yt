@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   RESERVED_METACODES, BOOLEAN_CODES, isReservedName, isReservedActionable,
+  extractPersistentCodes,
 } from '../src/lib/metacode-registry.js';
 
 describe('metacode registry', () => {
@@ -42,5 +43,18 @@ describe('metacode registry', () => {
     RESERVED_METACODES.goto.apply('0', a);      // not > 0
     RESERVED_METACODES.file.apply('', a);       // empty
     assert.deepEqual(a, {});
+  });
+
+  it('extractPersistentCodes keeps variables, drops action outputs and markers', () => {
+    const codes = {
+      section: 'Prayer', speaker: 'Alice', lyrics: true, custom: 'x',
+      audioCapture: 'start', timer: 5, goto: 3, fileSwitch: 'a.txt', fileSwitchServer: '/f',
+      cue: 'Amen', cueMode: 'next', apiTriggers: [{}], emptySend: true, emptySendLabel: 'L',
+      codeTtls: { section: {} },
+    };
+    assert.deepEqual(extractPersistentCodes(codes), {
+      section: 'Prayer', speaker: 'Alice', lyrics: true, custom: 'x',
+    });
+    assert.deepEqual(extractPersistentCodes(null), {});
   });
 });

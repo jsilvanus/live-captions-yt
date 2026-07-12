@@ -79,6 +79,31 @@ export const BOOLEAN_CODES = Object.entries(RESERVED_METACODES)
   .filter(([, e]) => e.boolean)
   .map(([name]) => name);
 
+/**
+ * Internal fields a parsed `codes` object can carry that are NOT persistent
+ * variable assignments — action outputs, cue metadata, connector triggers, and
+ * markers. Everything else on a `codes` object is a persistent variable.
+ */
+export const NON_PERSISTENT_CODE_KEYS = new Set([
+  'audioCapture', 'timer', 'goto', 'fileSwitch', 'fileSwitchServer',
+  'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'cueTree',
+  'apiTriggers', 'emptySend', 'emptySendLabel', 'codeTtls',
+]);
+
+/**
+ * Given a parsed `codes` object, return only the persistent variable
+ * assignments (section/speaker/lyrics/lang/custom/…), dropping action outputs
+ * and markers. Used by the send-time file→variables sync (namespace unification).
+ */
+export function extractPersistentCodes(codes) {
+  const out = {};
+  if (!codes) return out;
+  for (const [k, v] of Object.entries(codes)) {
+    if (!NON_PERSISTENT_CODE_KEYS.has(k)) out[k] = v;
+  }
+  return out;
+}
+
 /** Is `name` a reserved metacode of any kind? */
 export function isReservedName(name) {
   return Object.prototype.hasOwnProperty.call(RESERVED_METACODES, String(name).toLowerCase());

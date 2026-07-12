@@ -320,36 +320,37 @@ function computeTtlColumns(ttl, prevValue) {
   };
 }
 
-export function upsertManualVariable(db, apiKey, name, { value, defaultValue, ttl = null } = {}) {
+export function upsertManualVariable(db, apiKey, name, { value, defaultValue, ttl = null, source = 'manual' } = {}) {
   const existing = getVariable(db, apiKey, name);
   const nextValue = value !== undefined ? value : (existing ? existing.current_value : null);
   const nextDefault = defaultValue !== undefined ? defaultValue : (existing ? existing.default_value : null);
   const resolvedBumped = value !== undefined;
   const t = computeTtlColumns(ttl, existing ? existing.current_value : null);
+  const src = source === 'file' ? 'file' : 'manual';
 
   if (!existing) {
     db.prepare(`
       INSERT INTO variables
         (api_key, name, current_value, default_value, source, resolved_at, updated_at,
          expires_at, expires_at_seq, revert_mode, revert_value, prev_value)
-      VALUES (?, ?, ?, ?, 'manual',
+      VALUES (?, ?, ?, ?, ?,
         CASE WHEN ? THEN datetime('now') ELSE NULL END, datetime('now'),
         ?, ?, ?, ?, ?)
     `).run(
-      apiKey, name, nextValue ?? null, nextDefault ?? null, resolvedBumped ? 1 : 0,
+      apiKey, name, nextValue ?? null, nextDefault ?? null, src, resolvedBumped ? 1 : 0,
       t.expires_at, t.expires_at_seq, t.revert_mode, t.revert_value, t.prev_value,
     );
     return getVariable(db, apiKey, name);
   }
   db.prepare(`
     UPDATE variables
-    SET current_value = ?, default_value = ?, source = 'manual',
+    SET current_value = ?, default_value = ?, source = ?,
         resolved_at = CASE WHEN ? THEN datetime('now') ELSE resolved_at END,
         updated_at = datetime('now'),
         expires_at = ?, expires_at_seq = ?, revert_mode = ?, revert_value = ?, prev_value = ?
     WHERE api_key = ? AND name = ?
   `).run(
-    nextValue ?? null, nextDefault ?? null, resolvedBumped ? 1 : 0,
+    nextValue ?? null, nextDefault ?? null, src, resolvedBumped ? 1 : 0,
     t.expires_at, t.expires_at_seq, t.revert_mode, t.revert_value, t.prev_value,
     apiKey, name,
   );

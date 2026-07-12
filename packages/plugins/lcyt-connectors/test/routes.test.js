@@ -141,6 +141,18 @@ describe('lcyt-connectors routes', () => {
     assert.equal(res.body.variables.lww.expiresAt, null);
   });
 
+  test('PUT /variables/:name writes a source:file code with an inline => TTL', async () => {
+    // Mirrors what useVariables.writeFileCode() sends for a file metacode.
+    const res = await json('/variables/section', {
+      method: 'PUT', body: JSON.stringify({ value: 'Prayer => 20s:Hymn', source: 'file' }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.variable.value, 'Prayer');
+    assert.equal(res.body.variable.source, 'file');
+    assert.ok(res.body.variable.expiresAt);
+    assert.equal(res.body.variable.revertMode, 'literal');
+  });
+
   test('POST /variables rejects names starting with underscore', async () => {
     const { status, body } = await json('/variables', { method: 'POST', body: JSON.stringify({ name: '_reserved', value: '1' }) });
     assert.equal(status, 400);

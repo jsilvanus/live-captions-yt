@@ -85,6 +85,14 @@ describe('variable TTL — storage & revert', () => {
     assert.equal(row.revert_mode, null);
   });
 
+  it('writes source "file" for file-metacode assignments (namespace unification)', () => {
+    upsertManualVariable(db, K, 'section', { value: 'Prayer', source: 'file' });
+    assert.equal(getVariable(db, K, 'section').source, 'file');
+    // an unknown/invalid source falls back to manual
+    upsertManualVariable(db, K, 'greeting', { value: 'hi', source: 'bogus' });
+    assert.equal(getVariable(db, K, 'greeting').source, 'manual');
+  });
+
   it('captions-based TTL stores expires_at_seq, no wall-clock expiry', () => {
     upsertManualVariable(db, K, 'lower', {
       value: 'Live', ttl: { ms: null, captions: 5, revertMode: 'baseline', revertValue: null },

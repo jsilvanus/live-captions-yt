@@ -16,6 +16,7 @@
 //       with the `=>` TTL vocabulary via parseDuration().
 
 import { RESERVED_METACODES, BOOLEAN_CODES } from './metacode-registry.js';
+import { parseValueTtl } from './metacode-ttl.js';
 const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
 const CUE_DEF_RE = /<!--\s*cue-def\s*:\s*([a-z0-9_-]+)\s*:\s*([\s\S]*?)\s*-->/gi;
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
@@ -377,6 +378,9 @@ export function parseFileContent(rawText) {
     // lexer name (cue/api) was already handled above and is skipped; every other
     // name — reserved persistent or custom — is a plain variable assignment.
     const lineActions = {};
+    // Per-line TTL annotations (`=>`) on persistent assignments — tied to *this*
+    // assignment, not persisted forward like the value itself.
+    const lineCodeTtls = {};
 
     MULTI_META_RE.lastIndex = 0;
     for (const m of lineRaw.matchAll(MULTI_META_RE)) {
@@ -389,7 +393,9 @@ export function parseFileContent(rawText) {
       if (value === '') {
         delete currentCodes[key];
       } else {
-        currentCodes[key] = BOOLEAN_CODES.includes(key) ? value.toLowerCase() === 'true' : value;
+        const { value: cleanValue, ttl } = parseValueTtl(value);
+        currentCodes[key] = BOOLEAN_CODES.includes(key) ? cleanValue.toLowerCase() === 'true' : cleanValue;
+        if (ttl) lineCodeTtls[key] = ttl;
       }
     }
 
@@ -405,6 +411,9 @@ export function parseFileContent(rawText) {
     if (lineActions.fileSwitchServer != null) codes.fileSwitchServer = lineActions.fileSwitchServer;
     if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; codes.cueTree = cueTree; }
     if (apiTriggers) codes.apiTriggers = apiTriggers;
+    // Per-line `=>` TTLs for persistent assignments (consumed by the send-time
+    // file→variables sync; not a forwarded code — stripped before delivery).
+    if (Object.keys(lineCodeTtls).length > 0) codes.codeTtls = lineCodeTtls;
 
     // Did the line contain any metacodes markers that were stripped?
     const hadMetacodes = contentText !== lineRaw || cuePhrase != null || apiTriggers != null;

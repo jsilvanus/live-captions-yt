@@ -385,6 +385,24 @@ describe('parseFileContent() — timer metacode', () => {
   });
 });
 
+describe('parseFileContent() — persistent-code => TTL (namespace unification)', () => {
+  it('strips a valid => annotation off a persistent value and records codeTtls', () => {
+    const { lineCodes } = parseFileContent('<!-- section: Prayer => 20s:Hymn -->\nLine');
+    // value cleaned; original literal annotation gone
+    assert.equal(lineCodes[0].section, 'Prayer');
+    assert.deepEqual(lineCodes[0].codeTtls.section, { ms: 20000, captions: null, revertMode: 'literal', revertValue: 'Hymn' });
+    // TTL is per-line, not persisted forward
+    assert.equal(lineCodes[1].section, 'Prayer');
+    assert.equal(lineCodes[1].codeTtls, undefined);
+  });
+
+  it('leaves a value with no valid => untouched (no codeTtls)', () => {
+    const { lineCodes } = parseFileContent('<!-- section: Prayer for peace -->');
+    assert.equal(lineCodes[0].section, 'Prayer for peace');
+    assert.equal(lineCodes[0].codeTtls, undefined);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // goto metacode (<!-- goto: N -->)
 // ---------------------------------------------------------------------------
