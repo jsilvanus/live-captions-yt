@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseActionItems, expandActionItems } from '../src/lib/metacode-actions.js';
+import { parseActionItems, expandActionItems, applyAtoms } from '../src/lib/metacode-actions.js';
 import { parseFileContent } from '../src/lib/metacode-parser.js';
 
 describe('parseActionItems', () => {
@@ -66,6 +66,45 @@ describe('expandActionItems', () => {
     const out = expandActionItems([{ ref: 'ghost' }], resolve, (m) => warnings.push(m));
     assert.deepEqual(out, []);
     assert.equal(warnings.some((w) => /unknown/.test(w)), true);
+  });
+});
+
+describe('applyAtoms', () => {
+  it('routes persistent atoms to setCode (with => TTL parsed off), api to refreshApi, audio to audio', () => {
+    const codes = {}; const api = []; const audio = [];
+    const summary = applyAtoms(
+      [
+        { metacode: 'section', value: 'Intro' },
+        { metacode: 'graphics', value: '+banner' },
+        { metacode: 'lower-third', value: 'Live => 20s:Off' },
+        { metacode: 'api', value: 'cam.preset1' },
+        { metacode: 'audio', value: 'start' },
+      ],
+      {
+        setCode: (n, v, ttl) => { codes[n] = { v, ttl: ttl ? ttl.ms : null }; },
+        refreshApi: (c, r) => api.push(`${c}.${r}`),
+        audio: (v) => audio.push(v),
+      },
+    );
+    assert.deepEqual(codes, {
+      section: { v: 'Intro', ttl: null },
+      graphics: { v: '+banner', ttl: null },
+      'lower-third': { v: 'Live', ttl: 20000 }, // => TTL parsed off the atom value
+    });
+    assert.deepEqual(api, ['cam.preset1']);
+    assert.deepEqual(audio, ['start']);
+    assert.deepEqual(summary.api, [{ connectorSlug: 'cam', requestSlug: 'preset1' }]);
+  });
+
+  it('skips pointer/navigation atoms in v1 and warns', () => {
+    const warns = [];
+    const summary = applyAtoms(
+      [{ metacode: 'goto', value: '5' }, { metacode: 'file', value: 'x.txt' }, { metacode: 'timer', value: '5' }],
+      { onWarn: (m) => warns.push(m) },
+    );
+    assert.equal(Object.keys(summary.codes).length, 0);
+    assert.equal(summary.skipped.length, 3);
+    assert.equal(warns.length, 3);
   });
 });
 
