@@ -13,7 +13,7 @@ authorized by the same token scopes. It supersedes the earlier MCP-only framing.
 Related plans: `plan_pubsub_event_bus.md` (the bus, Phase 0), `plan_mcp.md` (the
 shared tool registry), `plan_authentication_refactor.md` (project access +
 scopes), `plan_ai_roles_framework.md` (the agent turn loop + Production Assistant),
-`plan_usevariables_events_stream.md` (a Phase-0 consumer migration).
+`plan_web_ui_event_stream_consolidation.md` (fold the operator UI onto one stream).
 
 ---
 
