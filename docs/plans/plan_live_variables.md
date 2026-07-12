@@ -90,6 +90,14 @@ sane across them, tagging virtual lines so save/serialize skips them.
 - **Idea 2** depends on `plan_pubsub_event_bus.md` (live push) — schedule after it.
 - **Idea 3** depends on the file/pointer-model work; schedule after
   `plan_metacode_variable_unification.md`'s namespace phase.
+- **Caption-based (`c`) TTL enforcement** (Phase 1b of
+  `plan_metacode_variable_unification.md`) does **not** require the event bus, but
+  its clean wiring is a `caption.sent` subscription, so it should **ride on the
+  event bus as that topic's first consumer** rather than adding a throwaway direct
+  send-path hook now. The revert emit itself reuses the existing `VariablesBus`;
+  only the "count captions per project + revert `expires_at_seq` rows on the send
+  that crosses the threshold" trigger waits on the bus. Time-based TTL already
+  covers the common cases, so `c` is not urgent.
 
 ## Index Entry
 
