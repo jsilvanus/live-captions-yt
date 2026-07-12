@@ -38,8 +38,8 @@ clients can consume dynamic topic sets.
 **full access** (the `events:read` `requiredScope` gate only applies to external
 `lcytmcp_` tokens, not JWTs). So the browser's existing user JWT works via
 `?token=<userJWT>` exactly like `/variables/events` does today. `GET /variables`
-is JWT-only (external tokens are rejected — they use `/events/stream`) and
-returns everything for a JWT member.
+requires `variable:read` for a scoped external token; a JWT member has full
+access and gets the whole snapshot.
 
 ---
 

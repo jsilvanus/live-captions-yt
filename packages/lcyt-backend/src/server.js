@@ -381,14 +381,17 @@ const app = express();
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
 const userAuth = createUserAuthMiddleware(jwtSecret);
-// Project-scoped config/CRUD and the legacy per-plugin SSE routes are for our
-// own UI (browser/CLI) — JWT project members only. External `lcytmcp_` tokens
-// are rejected here (403) and use the unified `/events/stream` instead. Session/
-// user/project/device JWTs are accepted as before, so browser/CLI behavior is
-// unchanged.
-const jwtOnlyAuth = createProjectAccessMiddleware(db, jwtSecret, { jwtOnly: true });
+// Project-scoped routers are gated by `scopedAuth('<resource>')`. Access = the
+// token's scopes: session/user/project/device JWTs and full-access (NULL-scope)
+// external tokens have full delegation; a scoped external token needs
+// `<resource>:read` to GET and `<resource>:write` to mutate (see
+// createProjectAccessMiddleware). The legacy per-plugin SSE endpoints stay
+// JWT-only — `/variables/events` and `/stt/events` via their own `jwt.verify`,
+// `/roles/:roleCode/events` via an in-handler external-token block — so external
+// subscribers use the unified `/events/stream` instead.
+const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, jwtOnlyAuth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager);
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -505,9 +508,9 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, jwtOnlyAuth));
-app.use('/cues', createCueRouter(db, jwtOnlyAuth, _cueEngine));
-app.use('/mcp-tokens', createMcpTokensRouter(db, jwtOnlyAuth));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, scopedAuth));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
+app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
 // scope; topics are further narrowed per-token by tokenAllowsTopic.
@@ -516,21 +519,21 @@ app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { require
 // Setup Hub scope picker (no project data, so no auth). Mounted before the
 // session `/events` router; that router only matches exactly `/events`.
 app.use('/events/topics', createEventsCatalogRouter());
-app.use('/ai/providers', createProjectAiProvidersRouter(db, jwtOnlyAuth, { bridgeManager: productionBridgeManager }));
-app.use('/ai', createAiRouter(db, jwtOnlyAuth));
-app.use('/agent', createAgentRouter(db, jwtOnlyAuth, _agent));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), { bridgeManager: productionBridgeManager }));
+app.use('/ai', createAiRouter(db, scopedAuth('ai')));
+app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, jwtOnlyAuth));
-app.use('/roles', createRolesChatRouter(db, jwtOnlyAuth, _toolsContext, _rolesBus));
-app.use('/roles', createVisionRolesRouter(db, jwtOnlyAuth, _visionRoleManager));
+app.use('/roles', createRolesRouter(db, scopedAuth('role')));
+app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus));
+app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
-  db, jwtOnlyAuth, _toolsContext, _assistantManager, _agent,
+  db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
-app.use('/roles/planner', createPlannerRouter(db, jwtOnlyAuth, _agent));
-app.use('/connectors', createConnectorsRouter(db, jwtOnlyAuth));
-app.use('/actions', createActionsRouter(db, jwtOnlyAuth));
-app.use('/variables', createVariablesRouter(db, jwtOnlyAuth, _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
+app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent));
+app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector')));
+app.use('/actions', createActionsRouter(db, scopedAuth('action')));
+app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {

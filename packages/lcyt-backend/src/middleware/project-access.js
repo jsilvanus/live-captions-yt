@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { verifyMcpToken, tokenHasScope } from '../db/mcp-tokens.js';
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 import { extractAuthToken, normalizeUserPayload } from './auth.js';
 
 function resolveProjectId(req) {
@@ -84,8 +86,17 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
       if (!external) {
         return res.status(401).json({ error: 'Invalid or expired external token' });
       }
-      if (requiredScope && !tokenHasScope(external.scopes, requiredScope)) {
-        return res.status(403).json({ error: 'Insufficient token scope' });
+      if (requiredScope) {
+        // `resource:verb` requiredScope (e.g. 'events:read') is matched exactly;
+        // a bare resource (e.g. 'dsk') infers the verb from the HTTP method, so a
+        // token needs `dsk:read` to GET and `dsk:write` to mutate. Empty/NULL
+        // scopes = full delegation (tokenHasScope returns true).
+        const needed = requiredScope.includes(':')
+          ? requiredScope
+          : `${requiredScope}:${READ_METHODS.has(req.method) ? 'read' : 'write'}`;
+        if (!tokenHasScope(external.scopes, needed)) {
+          return res.status(403).json({ error: 'Insufficient token scope' });
+        }
       }
       return handleTokenAuth(req, res, next, {
         kind: 'external',
