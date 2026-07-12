@@ -105,8 +105,8 @@ export function createEventsPublishRouter(eventBus) {
     }
 
     // Size limit
-    const payloadStr = JSON.stringify(data ?? null);
-    if (payloadStr.length > MAX_PAYLOAD_BYTES) {
+    const payloadSize = JSON.stringify(data ?? null).length;
+    if (payloadSize > MAX_PAYLOAD_BYTES) {
       return res.status(413).json({ error: `Payload exceeds ${MAX_PAYLOAD_BYTES} byte limit` });
     }
 

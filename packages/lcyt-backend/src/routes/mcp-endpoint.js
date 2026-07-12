@@ -240,7 +240,9 @@ export function createMcpEndpointRouter({ registry, eventBus, db, assistantManag
         const hasFullDelegation = !scopes || scopes.length === 0;
 
         if (isDestructive && !hasFullDelegation && assistantManager) {
-          // Stage as a suggestion for human confirmation
+          // Stage as a suggestion for human confirmation via the assistant
+          // manager's public _addSuggestion interface (matches the pattern
+          // used by ProductionAssistantManager.runTrigger)
           const suggestion = {
             id: randomUUID(),
             tool: name,
@@ -250,11 +252,7 @@ export function createMcpEndpointRouter({ registry, eventBus, db, assistantManag
             source: 'mcp',
             tokenId,
           };
-          // Store suggestion in the assistant manager's queue
-          if (!assistantManager._suggestions.has(projectId)) {
-            assistantManager._suggestions.set(projectId, new Map());
-          }
-          assistantManager._suggestions.get(projectId).set(suggestion.id, suggestion);
+          assistantManager._addSuggestion(projectId, suggestion);
 
           // Emit event for the UI
           eventBus.publish(projectId, 'mcp.tool_staged', {

@@ -16,6 +16,7 @@ import { randomUUID } from 'node:crypto';
 
 const DEFAULT_COOLDOWN_MS = 5000;
 const MAX_CONTEXT_EVENTS = 50;
+const EVAL_CONTEXT_WINDOW = 20;
 const DEFAULT_TOPICS = ['cue.fired', 'caption.*', 'session.*', 'dsk.*', 'external.*'];
 
 /**
@@ -235,7 +236,7 @@ export class OperatorManager {
 
     const { mode, systemPrompt } = session.config;
     const contextStr = session.context
-      .slice(-20)
+      .slice(-EVAL_CONTEXT_WINDOW)
       .map((e) => `[${e.role}] ${e.content}`)
       .join('\n');
 
