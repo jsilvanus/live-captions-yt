@@ -367,6 +367,15 @@ describe('parseFileContent() — timer metacode', () => {
     assert.equal(resultNeg.lineCodes[0].timer, undefined);
   });
 
+  it('accepts explicit ms/s/m units, normalized to seconds', () => {
+    // codes.timer is stored in seconds (the runtime multiplies by 1000).
+    assert.equal(parseFileContent('<!-- timer: 500ms -->').lineCodes[0].timer, 0.5);
+    assert.equal(parseFileContent('<!-- timer: 5s -->').lineCodes[0].timer, 5);
+    assert.equal(parseFileContent('<!-- timer: 2m -->').lineCodes[0].timer, 120);
+    // bare number still means seconds (back-compat)
+    assert.equal(parseFileContent('<!-- timer: 3 -->').lineCodes[0].timer, 3);
+  });
+
   it('timer action inherits currentCodes', () => {
     const raw = '<!-- lang: fi-FI -->\n<!-- timer: 2 -->\nLine 1';
     const { lineCodes } = parseFileContent(raw);

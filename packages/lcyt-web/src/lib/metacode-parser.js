@@ -11,6 +11,11 @@
 //     → content "Let us pray.", lineCodes { section: 'Prayer', cue: 'Amen' }
 //   <!-- timer: 5 -->
 //     → content "", lineCodes { timer: 5 }
+//   <!-- timer: 500ms -->  /  <!-- timer: 2m -->
+//     → timer accepts explicit ms/s/m units (bare number = seconds), shared
+//       with the `=>` TTL vocabulary via parseDuration().
+
+import { parseDuration } from './metacode-ttl.js';
 
 const BOOLEAN_CODES = ['lyrics', 'no-translate'];
 const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
@@ -384,8 +389,11 @@ export function parseFileContent(rawText) {
       if (key === 'audio' && (value === 'start' || value === 'stop')) {
         audioAction = value;
       } else if (key === 'timer') {
-        const secs = parseFloat(value);
-        if (!isNaN(secs) && secs > 0) timerAction = secs;
+        // Accepts a bare number (seconds, back-compat) or an explicit unit
+        // (`5s`, `500ms`, `2m`), shared with the `=>` TTL vocabulary. Stored in
+        // seconds, since the runtime multiplies by 1000.
+        const ms = parseDuration(value, { defaultUnit: 's' });
+        if (ms != null) timerAction = ms / 1000;
       } else if (key === 'goto') {
         const lineN = parseInt(value, 10);
         if (!isNaN(lineN) && lineN > 0) gotoAction = lineN;

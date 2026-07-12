@@ -193,9 +193,14 @@ line. The timer is an inline marker that coexists with content on the same line.
 ```
 <!-- timer: 5 -->Let us pray
 <!-- timer: 0.5 -->
+<!-- timer: 500ms -->
+<!-- timer: 2m -->
 ```
 
-- Values: positive number (seconds, fractions allowed)
+- Values: a positive number, optionally with a unit — `ms` / `s` / `m`. A bare
+  number means **seconds** (e.g. `timer: 5` = 5 s), fractions allowed. Units are
+  shared with the `=>` variable-TTL vocabulary (`parseDuration`); `timer` has no
+  `c`/captions unit since it is a wall-clock playback delay, not a value lifetime.
 - Effect: sends the line's content after the delay, then moves the pointer forward
 - Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime scheduling in
   `packages/lcyt-web/src/lib/metacode-runtime.js`.

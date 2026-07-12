@@ -1,4 +1,32 @@
 /**
+ * Parse a bare duration string to milliseconds, shared by the `timer:` metacode
+ * and the `=>` TTL annotation so both speak the same unit vocabulary.
+ *
+ *   parseDuration('5')            → 5000   (defaultUnit 's')
+ *   parseDuration('500ms')        → 500
+ *   parseDuration('2m')           → 120000
+ *   parseDuration('0') / bad input → null
+ *
+ * Units: `ms` | `s` | `m`. (No `c`/captions — a duration is wall-clock only; the
+ * caption-count unit is meaningful for a variable TTL, not for a playback timer.)
+ *
+ * @param {string|number} raw
+ * @param {{ defaultUnit?: 'ms'|'s'|'m' }} [opts]
+ * @returns {number|null} milliseconds, or null if not a positive duration
+ */
+export function parseDuration(raw, { defaultUnit = 's' } = {}) {
+  const m = String(raw ?? '').trim().match(/^(\d+(?:\.\d+)?)\s*(ms|s|m)?$/);
+  if (!m) return null;
+  const count = parseFloat(m[1]);
+  if (!Number.isFinite(count) || count <= 0) return null;
+  const unit = m[2] || defaultUnit;
+  if (unit === 'ms') return Math.round(count);
+  if (unit === 's') return Math.round(count * 1000);
+  if (unit === 'm') return Math.round(count * 60000);
+  return null;
+}
+
+/**
  * Parse a `=>` TTL/expiry annotation off a metacode value.
  * Pure — see docs/plans/plan_metacode_variable_unification.md 'Variable TTL / expiry'.
  */

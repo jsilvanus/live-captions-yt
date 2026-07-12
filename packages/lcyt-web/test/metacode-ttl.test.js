@@ -1,6 +1,30 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseValueTtl } from '../src/lib/metacode-ttl.js';
+import { parseValueTtl, parseDuration } from '../src/lib/metacode-ttl.js';
+
+describe('parseDuration', () => {
+  it('treats a bare number as seconds → milliseconds', () => {
+    assert.equal(parseDuration('5'), 5000);
+    assert.equal(parseDuration('0.5'), 500);
+  });
+  it('honours explicit ms/s/m units', () => {
+    assert.equal(parseDuration('500ms'), 500);
+    assert.equal(parseDuration('5s'), 5000);
+    assert.equal(parseDuration('2m'), 120000);
+    assert.equal(parseDuration('20 s'), 20000);
+  });
+  it('respects a custom defaultUnit', () => {
+    assert.equal(parseDuration('500', { defaultUnit: 'ms' }), 500);
+  });
+  it('rejects zero, negative, captions, and junk', () => {
+    assert.equal(parseDuration('0'), null);
+    assert.equal(parseDuration('-1'), null);
+    assert.equal(parseDuration('5c'), null); // captions is not a wall-clock duration
+    assert.equal(parseDuration('abc'), null);
+    assert.equal(parseDuration(''), null);
+    assert.equal(parseDuration(null), null);
+  });
+});
 
 describe('parseValueTtl', () => {
   it('should return no TTL for plain value without annotation', () => {

@@ -200,6 +200,7 @@ revert token — it restores the value that was there *before* this assignment:
 ### Implementation status
 
 - **Done (time-based TTL, backend):** `lcyt-connectors` — `parseValueTtl` (`ttl.js` + `lcyt-web`'s `metacode-ttl.js`), `variables` TTL columns + `upsertManualVariable(ttl)`/`applyRevert`/`materializeExpired`, the active `TtlScheduler` (revert-on-timer + emit, `restore()` on startup, last-write-wins cancel), and `POST`/`PUT /variables` accepting a structured `ttl` or an inline `=>` value. Manual/connector variables set via the API honour TTL today. Tested (`ttl.test.js`, `ttl-variables.test.js`, routes).
+- **Done (unit alignment):** the `timer:` metacode and the `=>` TTL now share one duration vocabulary via `parseDuration` (`metacode-ttl.js`) — `timer:` accepts `ms`/`s`/`m` (bare number still = seconds, back-compat), matching the TTL units. `timer` has no `c` unit (wall-clock playback delay, not a value lifetime).
 - **Pending:** caption-based (`c`) enforcement (needs the project caption counter below); the frontend path that parses `=>` in `parseFileContent` and writes file-metacode assignments to `/variables` (part of the namespace-unification phase); the "stale/default" style UI.
 
 ### Backend / DB implications (part of adopting Option A)
