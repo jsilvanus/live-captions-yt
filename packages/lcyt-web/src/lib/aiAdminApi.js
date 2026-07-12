@@ -17,6 +17,11 @@ async function requestJson(backendUrl, path, { token, apiKey, method = 'GET', bo
   return data;
 }
 
+// Public catalog of subscribable event topics ({ baseScope, topics }). No auth.
+export async function listEventTopics({ backendUrl }) {
+  return requestJson(backendUrl, '/events/topics', {});
+}
+
 export async function listMcpTokens({ backendUrl, token, apiKey }) {
   const data = await requestJson(backendUrl, '/mcp-tokens', { token, apiKey });
   return data.tokens || [];

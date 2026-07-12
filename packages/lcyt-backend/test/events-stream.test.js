@@ -132,6 +132,20 @@ describe('GET /events/stream', () => {
     assert.equal(events[0].event, 'dsk.text');
   });
 
+  it('a token scoped to a single variable only receives that variable\'s changes', async () => {
+    const { token } = createMcpToken(db, apiKey, { label: 'one-var', scopes: ['events:read', 'variable.section.changed'] });
+    const url = `${baseUrl}/events/stream?token=${token}`;
+    const { events } = await collectStream(url, {
+      onReady: () => {
+        bus.publish(apiKey, 'variable.section.changed', { name: 'section', value: 'Prayer' });
+        bus.publish(apiKey, 'variable.hymn.changed', { name: 'hymn', value: 'Amazing Grace' }); // other variable
+      },
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].event, 'variable.section.changed');
+    assert.equal(events[0].data.data.value, 'Prayer'); // content delivered
+  });
+
   it('external token without events:read is 403', async () => {
     const { token } = createMcpToken(db, apiKey, { label: 'no-events', scopes: ['dsk.*'] });
     const res = await fetch(`${baseUrl}/events/stream?token=${token}`);

@@ -1,17 +1,25 @@
 /**
  * VariablesBus — SSE subscriber registry for variable_updated events.
  *
- * Delegates SSE bookkeeping to the shared EventBus (lcyt/event-bus): variables
- * publish the canonical `variable.updated` topic, so they also reach the unified
- * `/events/stream` endpoint and in-process listeners. The bespoke
- * `GET /variables/events` stream keeps its exact historical wire shape — a
- * `variable_updated` event carrying the raw serialized row — via the
- * `rename`/`envelope:false` options. Public method signatures are unchanged.
+ * Delegates SSE bookkeeping to the shared EventBus (lcyt/event-bus). Each change
+ * is published as a per-variable topic `variable.<name>.changed` carrying the
+ * serialized row (name, value, source, …) — so an external subscriber can watch
+ * one variable (`variable.section.changed`), all variables (`variable.*`), or
+ * receive the content of every change. The bespoke `GET /variables/events`
+ * stream keeps its exact historical wire shape — a `variable_updated` event
+ * carrying the raw serialized row — by subscribing to `variable.*` and
+ * re-emitting under the legacy name via `rename`/`envelope:false`. Public method
+ * signatures are unchanged.
  */
 import { EventBus } from 'lcyt/event-bus';
 
-const VARIABLE_TOPIC = 'variable.updated';
+const VARIABLE_TOPIC_PREFIX = 'variable.';
 const VARIABLE_EVENT = 'variable_updated';
+
+/** Canonical per-variable topic for a change to `name`. */
+export function variableTopic(name) {
+  return `${VARIABLE_TOPIC_PREFIX}${name}.changed`;
+}
 
 export class VariablesBus {
   /**
@@ -25,7 +33,8 @@ export class VariablesBus {
   }
 
   addSubscriber(apiKey, res) {
-    const off = this._bus.subscribeSse(apiKey, [VARIABLE_TOPIC], res, {
+    // Subscribe to every per-variable topic; re-emit the historical event name.
+    const off = this._bus.subscribeSse(apiKey, ['variable.*'], res, {
       envelope: false,
       rename: () => VARIABLE_EVENT,
     });
@@ -45,6 +54,7 @@ export class VariablesBus {
    * @param {{ name: string, value: string, source: string, resolvedAt: string|null }} data
    */
   emitVariableUpdated(apiKey, data) {
-    this._bus.publish(apiKey, VARIABLE_TOPIC, data);
+    // Per-variable topic (variable.<name>.changed); the payload includes the value.
+    if (data?.name) this._bus.publish(apiKey, variableTopic(data.name), data);
   }
 }

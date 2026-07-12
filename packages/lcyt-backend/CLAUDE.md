@@ -117,6 +117,7 @@ DELETE /live              — tear down session (Bearer token)
 POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token); per-caption fileFormats { original|<lang>: 'text'|'youtube'|'vtt' } selects the backend caption-file format per language (default 'youtube' plain text)
 GET  /events              — SSE stream of caption delivery results (Bearer token or ?token=)
 GET  /events/stream       — unified SSE over the shared EventBus; canonical envelopes { topic, projectId, ts, data }; ?topics=dsk.*,cue.fired filter; project-access auth (session/user/project/device JWT or scoped lcytmcp_ token; external tokens need an events:read scope, topics further narrowed by tokenAllowsTopic). Additive — the bespoke per-plugin SSE endpoints are unchanged.
+GET  /events/topics       — public catalog { baseScope, topics } of subscribable event-topic patterns; single source of truth for the Setup Hub scope picker (see routes/events-catalog.js). Includes per-variable topics: variable.<name>.changed (payload carries the new value); variable.* watches all.
 POST /sync                — NTP clock sync (Bearer token)
 GET  /stats               — per-key usage stats (Bearer token)
 DELETE /stats             — GDPR right-to-erasure: anonymise key and delete personal data (Bearer token)

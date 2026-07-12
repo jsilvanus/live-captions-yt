@@ -17,6 +17,7 @@ import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
 import { createEventsStreamRouter } from './routes/events-stream.js';
+import { createEventsCatalogRouter } from './routes/events-catalog.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
@@ -506,6 +507,10 @@ app.use('/mcp-tokens', createMcpTokensRouter(db, projectAuth));
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
 // scope; topics are further narrowed per-token by tokenAllowsTopic.
 app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:read' }), createEventsStreamRouter(eventBus));
+// Public catalog of subscribable event topics — single source of truth for the
+// Setup Hub scope picker (no project data, so no auth). Mounted before the
+// session `/events` router; that router only matches exactly `/events`.
+app.use('/events/topics', createEventsCatalogRouter());
 app.use('/ai/providers', createProjectAiProvidersRouter(db, projectAuth, { bridgeManager: productionBridgeManager }));
 app.use('/ai', createAiRouter(db, projectAuth));
 app.use('/agent', createAgentRouter(db, projectAuth, _agent));
