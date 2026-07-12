@@ -134,6 +134,16 @@ export function StorageIcon() {
   );
 }
 
+export function IconsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="5.5" cy="6" r="1.1" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M2.5 11.5L6 8.5L8.5 10.5L11 7.5L13.5 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 export function ModelsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

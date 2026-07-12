@@ -346,6 +346,22 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_caption_targets_api_key ON caption_targets(api_key)');
 
+  // Additive migration: per-viewer-target icon branding.
+  // icon_id references an icons(id) row (nullable — no icon chosen); icon_enabled
+  // is an explicit show/hide toggle so operators can turn branding off without
+  // losing the selected icon. Only meaningful for type='viewer'.
+  {
+    const captionTargetsCols = new Set(
+      db.prepare('PRAGMA table_info(caption_targets)').all().map(c => c.name)
+    );
+    if (!captionTargetsCols.has('icon_id')) {
+      db.exec('ALTER TABLE caption_targets ADD COLUMN icon_id INTEGER');
+    }
+    if (!captionTargetsCols.has('icon_enabled')) {
+      db.exec('ALTER TABLE caption_targets ADD COLUMN icon_enabled INTEGER NOT NULL DEFAULT 0');
+    }
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS translation_vendor_config (
       api_key        TEXT PRIMARY KEY REFERENCES api_keys(key) ON DELETE CASCADE,

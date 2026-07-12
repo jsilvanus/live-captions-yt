@@ -173,3 +173,55 @@ describe('/targets', () => {
     assert.deepEqual(body.targets, []);
   });
 });
+
+describe('/targets — viewer icon config', () => {
+  it('defaults iconId=null and iconEnabled=false on a new viewer target', async () => {
+    const body = await (await post('/targets', { type: 'viewer', viewerKey: 'icon-default' })).json();
+    assert.equal(body.target.iconId, null);
+    assert.equal(body.target.iconEnabled, false);
+  });
+
+  it('persists iconId + iconEnabled through create', async () => {
+    const body = await (await post('/targets', { type: 'viewer', viewerKey: 'icon-create', iconId: 7, iconEnabled: true })).json();
+    assert.equal(body.target.iconId, 7);
+    assert.equal(body.target.iconEnabled, true);
+  });
+
+  it('round-trips iconId + iconEnabled through GET', async () => {
+    const created = await (await post('/targets', { type: 'viewer', viewerKey: 'icon-get', iconId: 3, iconEnabled: true })).json();
+    const list = await (await get()).json();
+    const found = list.targets.find(t => t.id === created.target.id);
+    assert.equal(found.iconId, 3);
+    assert.equal(found.iconEnabled, true);
+  });
+
+  it('updates iconId + iconEnabled and preserves iconId when only toggling off', async () => {
+    const created = await (await post('/targets', { type: 'viewer', viewerKey: 'icon-update', iconId: 5, iconEnabled: true })).json();
+    const id = created.target.id;
+
+    // Toggle off without sending iconId — the chosen icon must be preserved.
+    let body = await (await put(`/targets/${id}`, { iconEnabled: false })).json();
+    assert.equal(body.target.iconEnabled, false);
+    assert.equal(body.target.iconId, 5);
+
+    // Re-enable and change the icon.
+    body = await (await put(`/targets/${id}`, { iconEnabled: true, iconId: 9 })).json();
+    assert.equal(body.target.iconEnabled, true);
+    assert.equal(body.target.iconId, 9);
+
+    // Clearing the icon.
+    body = await (await put(`/targets/${id}`, { iconId: null })).json();
+    assert.equal(body.target.iconId, null);
+  });
+
+  it('normalizes invalid iconId to null', async () => {
+    const body = await (await post('/targets', { type: 'viewer', viewerKey: 'icon-bad', iconId: 'abc', iconEnabled: true })).json();
+    assert.equal(body.target.iconId, null);
+  });
+
+  it('ignores icon fields on non-viewer targets', async () => {
+    const body = await (await post('/targets', { type: 'youtube', streamKey: 'yt-icon', iconId: 4, iconEnabled: true })).json();
+    assert.equal(body.target.iconId, null);
+    assert.equal(body.target.iconEnabled, false);
+  });
+});

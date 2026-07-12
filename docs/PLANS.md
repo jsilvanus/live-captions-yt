@@ -67,6 +67,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 ### Pending
 | [plan_help.md](plans/plan_help.md) | Help Page Screenshot Capture | Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page. | |
+| [plan_viewer_icons.md](plans/plan_viewer_icons.md) | Viewer Icon Toggle + Icons Setup-Hub Card | Operator-side "show icon" enable/disable toggle plus the existing which-icon picker in Targets → Viewer, persisted server-side by new `caption_targets.icon_id`/`icon_enabled` columns (fixing the current silent drop of `iconId` on the `/targets` path), and a new Setup-Hub "Icons" card wrapping the existing upload/list/delete icon management. Operator-only; no viewer-page end-user control. | |
 
 ### Draft
 

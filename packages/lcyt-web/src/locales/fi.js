@@ -202,6 +202,7 @@ export default {
       viewerQrTitle: 'QR-koodi',
       viewerQrHint: 'Skannaa avataksesi katsojan sivun',
       viewerIcon: 'Kuvake',
+      viewerIconEnabled: 'Näytä kuvake katsojan sivulla',
       viewerIconNone: 'Ei mitään',
       viewerIconHint: 'Valitse kuvake, joka näytetään katsojan sivun oikeassa yläkulmassa. Lataa kuvakkeita Asetukset → Kuvakkeet.',
       noBatch: 'Poista erälähetys käytöstä tässä kohteessa',
