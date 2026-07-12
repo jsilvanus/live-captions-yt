@@ -8,6 +8,7 @@ Published to npm. Dual ESM/CJS package.
 - `config.js` / `config.d.ts` — `loadConfig()`, `saveConfig()`, `buildIngestionUrl()`. Config stored at `~/.lcyt-config.json`.
 - `logger.js` / `logger.d.ts` — Pluggable logger with `info/success/error/warn/debug`. Supports `setCallback()`, `setVerbose()`, `setSilent()`, `setUseStderr()`. Set `LCYT_LOG_STDERR=1` to route logs to stderr (MCP-friendly).
 - `errors.js` / `errors.d.ts` — Typed error hierarchy: `LCYTError` → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`).
+- `event-bus.js` — `EventBus` + `topicMatches()`. One topic-based pub/sub layer (`publish`/`subscribeSse`/`subscribe`/`tap`) shared across the backend and plugins (`plan_pubsub_event_bus.md`). Lives here — not in `lcyt-backend` — because plugins can't depend on `lcyt-backend` but all already import `lcyt/*`; it has no hard Express dependency (only duck-types `res.write`). `DskBus`/`VariablesBus`/`RolesBus` and `SessionStore` all delegate to it. No `.d.ts` (backend-internal utility, not part of the caption-sender typed surface).
 
 TypeScript declaration files (`.d.ts`) are included alongside each source file.
 
@@ -18,6 +19,7 @@ lcyt/backend      → BackendCaptionSender
 lcyt/config       → config utilities
 lcyt/logger       → logger
 lcyt/errors       → error classes
+lcyt/event-bus    → EventBus + topicMatches (shared pub/sub)
 ```
 
 **Build:**

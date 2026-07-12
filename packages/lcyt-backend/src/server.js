@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
+import { EventBus } from 'lcyt/event-bus';
 import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
@@ -15,6 +16,8 @@ import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
+import { createEventsStreamRouter } from './routes/events-stream.js';
+import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
@@ -185,8 +188,16 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
-const store = new SessionStore({ db });
-const dskBus = new DskBus();
+// One shared pub/sub bus for the whole backend. Every per-project SSE registry
+// (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
+// through it, so events also reach the unified /events/stream endpoint and any
+// in-process listeners. See src/event-bus.js (lcyt/event-bus).
+const eventBus = new EventBus();
+// Persist curated topics to the bus_events audit log (insert-only; not a replay
+// buffer). High-frequency topics are excluded by the allowlist in db/bus-events.js.
+attachBusAuditLog(eventBus, db, { log: (m) => console.warn(m) });
+const store = new SessionStore({ db, eventBus });
+const dskBus = new DskBus(eventBus);
 
 // Production control — run DB migrations, start device registry and bridge manager
 const {
@@ -256,7 +267,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
-} = await initAgent(db);
+} = await initAgent(db, { eventBus });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
@@ -293,6 +304,7 @@ const _toolsContext = {
 // (api_connectors, api_requests, api_response_mappings, variables tables).
 const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler } = initConnectors(db, {
   filesControl: { resolveStorage },
+  eventBus,
 });
 // Named Actions plugin — runs its own migration (action_defs table).
 initActions(db);
@@ -490,6 +502,10 @@ app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, projectAuth));
 app.use('/cues', createCueRouter(db, projectAuth, _cueEngine));
 app.use('/mcp-tokens', createMcpTokensRouter(db, projectAuth));
+// Unified external event stream over the shared EventBus (additive; the bespoke
+// per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
+// scope; topics are further narrowed per-token by tokenAllowsTopic.
+app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:read' }), createEventsStreamRouter(eventBus));
 app.use('/ai/providers', createProjectAiProvidersRouter(db, projectAuth, { bridgeManager: productionBridgeManager }));
 app.use('/ai', createAiRouter(db, projectAuth));
 app.use('/agent', createAgentRouter(db, projectAuth, _agent));
@@ -534,4 +550,4 @@ if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };
+export { app, db, store, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };

@@ -14,6 +14,12 @@ import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
  *   caption_error  — YouTube rejected:  { requestId, error, statusCode, [sequence] }
  *   mic_state      — soft mic lock changed: { holder: clientId | null }
  *   session_closed — session was torn down server-side
+ *   <plugin type>  — forwarded plugin events (cue_fired, sound_label, bpm_update, …)
+ *
+ * Delivery is via the shared EventBus: the per-session emitter is mirrored onto
+ * the project bus by SessionStore._bridgeEmitterToBus, and this route subscribes
+ * in-process filtered to its own sessionId. The client-facing event names and
+ * payloads are unchanged from the previous emitter-only implementation.
  *
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
@@ -53,15 +59,6 @@ export function createEventsRouter(store, jwtSecret) {
     // Confirm subscription is live; include current mic holder so latecomers sync immediately
     send('connected', { sessionId, micHolder: session.micHolder ?? null });
 
-    function onResult(data) { send('caption_result', data); }
-    function onError(data) { send('caption_error', data); }
-    function onMicState(data) { send('mic_state', data); }
-    function onClosed() {
-      send('session_closed', {});
-      res.end();
-      cleanup();
-    }
-
     // Heartbeat every 25 s to keep long-lived SSE connections alive through proxies
     // (nginx proxy_read_timeout defaults to 60 s; without this the connection drops
     // during quiet periods with no captions, causing ERR_INCOMPLETE_CHUNKED_ENCODING)
@@ -69,31 +66,38 @@ export function createEventsRouter(store, jwtSecret) {
       try { res.write(': heartbeat\n\n'); } catch { cleanup(); }
     }, 25000);
 
-    // Forward plugin events (cue_fired, sound_label, bpm_update, etc.) to the
-    // SSE stream.  Plugin processors emit on the session emitter as:
-    //   session.emitter.emit('event', { type: 'cue_fired', data: { ... } })
-    // We forward them as named SSE events so the frontend EventSource can
-    // subscribe with es.addEventListener('cue_fired', ...).
-    function onPluginEvent(payload) {
-      if (payload?.type) {
-        send(payload.type, payload.data ?? payload);
-      }
-    }
+    // Consume this session's events from the shared bus (the session emitter is
+    // mirrored onto it by SessionStore._bridgeEmitterToBus). One in-process
+    // subscription filtered to our sessionId replaces the five per-connection
+    // emitter listeners; the client-facing event names and payloads are exactly
+    // as before. `plugin.<type>` topics (cue_fired, sound_label, bpm_update, …)
+    // re-emit under the bare `<type>` so the frontend EventSource keeps working
+    // with es.addEventListener('cue_fired', …).
+    const unsubscribe = session.emitter && store.eventBus
+      ? store.eventBus.subscribe(
+          session.apiKey,
+          ['caption.sent', 'caption.error', 'session.mic_state', 'session.closed', 'plugin.*'],
+          (env) => {
+            if (env.sessionId !== sessionId) return;
+            switch (env.topic) {
+              case 'caption.sent': return send('caption_result', env.data);
+              case 'caption.error': return send('caption_error', env.data);
+              case 'session.mic_state': return send('mic_state', env.data);
+              case 'session.closed':
+                send('session_closed', {});
+                res.end();
+                return cleanup();
+              default:
+                if (env.topic.startsWith('plugin.')) send(env.topic.slice('plugin.'.length), env.data);
+            }
+          },
+        )
+      : () => {};
 
     function cleanup() {
       clearInterval(heartbeat);
-      session.emitter.off('caption_result', onResult);
-      session.emitter.off('caption_error', onError);
-      session.emitter.off('mic_state', onMicState);
-      session.emitter.off('event', onPluginEvent);
-      session.emitter.off('session:closed', onClosed);
+      unsubscribe();
     }
-
-    session.emitter.on('caption_result', onResult);
-    session.emitter.on('caption_error', onError);
-    session.emitter.on('mic_state', onMicState);
-    session.emitter.on('event', onPluginEvent);
-    session.emitter.once('session:closed', onClosed);
 
     // Client closed the connection
     req.on('close', cleanup);

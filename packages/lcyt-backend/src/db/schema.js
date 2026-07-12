@@ -526,6 +526,26 @@ export function initDb(dbPath) {
     if (!mcpTokenCols.has('scopes'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN scopes TEXT');
   }
 
+  // ── Event-bus audit log (plan_pubsub_event_bus) ───────────────────────────
+  // Insert-only, curated-topic history of notable events published on the
+  // shared EventBus. This is a human/debug audit trail, NOT a replay mechanism
+  // for reconnecting subscribers (live delivery is best-effort broadcast) and
+  // deliberately decoupled from AgentEngine's agent_context (prompt-shaping).
+  // Only curated topics are logged — see db/bus-events.js — so high-frequency
+  // topics never put a synchronous write on the hot path. `ts` is epoch ms
+  // (matches the bus envelope's ts).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bus_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id   TEXT,
+      topic        TEXT NOT NULL,
+      ts           INTEGER NOT NULL,
+      payload_json TEXT
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_project ON bus_events(project_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_ts ON bus_events(ts)');
+
   // Back-fill project_features from legacy api_keys columns (idempotent)
   const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];
   const LEGACY_FEATURE_MAP = [

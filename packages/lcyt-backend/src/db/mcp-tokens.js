@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { topicMatches } from 'lcyt/event-bus';
 
 /**
  * External access tokens (formerly MCP access tokens).
@@ -41,6 +42,33 @@ function parseScopes(value) {
     }
   }
   return null;
+}
+
+/**
+ * Does a token's scope set permit subscribing to an event-bus `topic`?
+ *
+ * Distinct from `tokenHasScope` (which matches `resource:verb` scopes): event
+ * topics are dotted (`dsk.graphics_changed`, `cue.fired`), so their scope
+ * patterns are dotted too — an exact topic, a `<domain>.*` wildcard, or a bare
+ * `*`. Semantics:
+ *   - empty / NULL scopes            → full access (all topics), like tokenHasScope
+ *   - scopes with only `resource:verb` entries and no dotted-topic pattern
+ *                                     → no topic restriction declared → allow
+ *   - one or more dotted-topic patterns → allow iff one matches `topic`
+ *
+ * The wildcard matching reuses the bus's own `topicMatches`, so the endpoint and
+ * the bus agree on what `dsk.*` means.
+ * @param {string[]|string|null} scopes
+ * @param {string} topic
+ * @returns {boolean}
+ */
+export function tokenAllowsTopic(scopes, topic) {
+  const normalized = Array.isArray(scopes) ? scopes : parseScopes(scopes);
+  if (!normalized || normalized.length === 0) return true;
+  // A topic pattern is any scope entry that isn't a `resource:verb` scope.
+  const topicPatterns = normalized.filter((s) => !String(s).includes(':'));
+  if (topicPatterns.length === 0) return true;
+  return topicMatches(topicPatterns, topic);
 }
 
 export function tokenHasScope(scopes, scope) {

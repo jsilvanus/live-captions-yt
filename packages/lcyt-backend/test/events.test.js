@@ -465,10 +465,16 @@ describe('GET /events — session_closed ends the stream', () => {
 // Listener cleanup on client disconnect
 // ---------------------------------------------------------------------------
 
-describe('GET /events — listener cleanup on disconnect', () => {
-  it('removes emitter listeners after the SSE client disconnects', async () => {
-    const session = makeSession();
+describe('GET /events — subscription cleanup on disconnect', () => {
+  it('removes the bus subscription after the SSE client disconnects', async () => {
+    // /events now consumes from the shared EventBus (the session emitter is
+    // mirrored onto it by the store); a unique apiKey isolates this connection's
+    // in-process bus listener from the other tests that reuse 'test-api-key'.
+    const session = makeSession({ apiKey: 'events-cleanup-key' });
     const token = makeToken(session.sessionId);
+
+    const countListeners = () => store.eventBus._listeners.get(session.apiKey)?.size ?? 0;
+    assert.equal(countListeners(), 0, 'no bus listener before connecting');
 
     const controller = new AbortController();
     const fetchPromise = fetch(`${baseUrl}/events`, {
@@ -479,8 +485,7 @@ describe('GET /events — listener cleanup on disconnect', () => {
     // Wait for connection to be established
     await new Promise(r => setTimeout(r, SSE_SETTLE_MS * 2));
 
-    const listenersBefore = session.emitter.listenerCount('caption_result');
-    assert.ok(listenersBefore >= 1, 'should have listener before disconnect');
+    assert.ok(countListeners() >= 1, 'should have a bus listener before disconnect');
 
     // Abort the client connection
     controller.abort();
@@ -489,8 +494,7 @@ describe('GET /events — listener cleanup on disconnect', () => {
     // Give the server time to process the close event
     await new Promise(r => setTimeout(r, SSE_SETTLE_MS));
 
-    const listenersAfter = session.emitter.listenerCount('caption_result');
-    assert.equal(listenersAfter, 0, 'all listeners should be removed after client disconnect');
+    assert.equal(countListeners(), 0, 'bus subscription removed after client disconnect');
   });
 });
 

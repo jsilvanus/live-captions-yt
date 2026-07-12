@@ -40,11 +40,11 @@ export { parseValueTtl } from './ttl.js';
 /**
  * Run migrations and wire up the bus + resolution engine.
  * @param {import('better-sqlite3').Database} db
- * @param {{ filesControl?: object }} [opts]
+ * @param {{ filesControl?: object, eventBus?: import('lcyt/event-bus').EventBus }} [opts]
  */
 export function initConnectors(db, opts = {}) {
   runMigrations(db);
-  const bus = new VariablesBus();
+  const bus = new VariablesBus(opts.eventBus);
   const engine = createResolutionEngine({ db, bus, filesControl: opts.filesControl || null });
   const scheduler = createTtlScheduler({ db, bus });
   scheduler.restore();
