@@ -3,15 +3,6 @@
  * lcyt-backend/src/server.js: createRolesRouter + createRolesChatRouter
  * mounted at '/roles', then createProductionAssistantRouter mounted at
  * '/roles/assistant'.
- *
- * This exists because a unit test of createProductionAssistantRouter in
- * isolation (production-assistant-routes.test.js) can't catch an Express
- * routing collision: roles-chat.js's GET /:roleCode/events matches ANY
- * request of the shape /roles/<x>/events, including /roles/assistant/events
- * — and since it's mounted first, it would intercept that request before
- * production-assistant.js's own (now-removed) /events route ever ran. Only
- * mounting both routers together, in the same order server.js uses, proves
- * the real wiring works.
  */
 
 import { describe, it, before, after } from 'node:test';
@@ -80,11 +71,9 @@ after(() => new Promise((resolve) => { db.close(); server.close(resolve); }));
 function bearer(tok = token) { return { Authorization: `Bearer ${tok}` }; }
 
 describe('GET /roles/assistant/events through the real mount stack', () => {
-  it('reaches roles-chat.js\'s generic events route rather than 404ing', async () => {
+  it('is retired and 404s', async () => {
     const res = await fetch(`${baseUrl}/roles/assistant/events`, { headers: bearer() });
-    assert.equal(res.status, 200);
-    assert.match(res.headers.get('content-type'), /^text\/event-stream/);
-    res.body?.cancel?.();
+    assert.equal(res.status, 404);
   });
 
   it('still requires auth', async () => {
@@ -93,16 +82,15 @@ describe('GET /roles/assistant/events through the real mount stack', () => {
   });
 });
 
-describe('GET /roles/setup_assistant/events (a chat-dialog role) still works alongside assistant', () => {
-  it('200s with an event-stream', async () => {
+describe('GET /roles/setup_assistant/events', () => {
+  it('is retired and 404s', async () => {
     const res = await fetch(`${baseUrl}/roles/setup_assistant/events`, { headers: bearer() });
-    assert.equal(res.status, 200);
-    res.body?.cancel?.();
+    assert.equal(res.status, 404);
   });
 });
 
 describe('GET /roles/planner/events', () => {
-  it('404s — Planner never streams', async () => {
+  it('404s', async () => {
     const res = await fetch(`${baseUrl}/roles/planner/events`, { headers: bearer() });
     assert.equal(res.status, 404);
   });
@@ -134,17 +122,14 @@ describe('other assistant routes still reachable under the shared /roles prefix'
 });
 
 describe('vision roles reachable alongside chat-dialog/assistant routes', () => {
-  it('GET /roles/tracker/events reaches roles-chat.js\'s generic events route', async () => {
+  it('GET /roles/tracker/events is retired and 404s', async () => {
     const res = await fetch(`${baseUrl}/roles/tracker/events`, { headers: bearer() });
-    assert.equal(res.status, 200);
-    assert.match(res.headers.get('content-type'), /^text\/event-stream/);
-    res.body?.cancel?.();
+    assert.equal(res.status, 404);
   });
 
-  it('GET /roles/describer/events also works', async () => {
+  it('GET /roles/describer/events is retired and 404s', async () => {
     const res = await fetch(`${baseUrl}/roles/describer/events`, { headers: bearer() });
-    assert.equal(res.status, 200);
-    res.body?.cancel?.();
+    assert.equal(res.status, 404);
   });
 
   it('POST /roles/tracker/start reaches vision-roles.js, not roles-chat.js', async () => {

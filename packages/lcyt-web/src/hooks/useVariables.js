@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEventStream } from './useEventStream.js';
 
 /**
  * Project-scoped {{ }} variable snapshot, backed by lcyt-connectors'
- * GET /variables + GET /variables/events SSE + POST /variables/refresh.
+ * GET /variables + shared GET /events/stream SSE + POST /variables/refresh.
  *
  * See docs/plans/plan_api_connectors_variables.md §5, §6.
  *
@@ -11,9 +12,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 export function useVariables({ backendUrl, connected, getToken }) {
   // name -> { value, source, defaultValue, resolvedAt }
   const [variables, setVariables] = useState({});
-  const esRef = useRef(null);
   const variablesRef = useRef(variables);
   variablesRef.current = variables;
+  const eventStream = useEventStream({ backendUrl, connected, getToken });
 
   useEffect(() => {
     if (!connected || !backendUrl) {
@@ -29,29 +30,27 @@ export function useVariables({ backendUrl, connected, getToken }) {
       .then((data) => { if (!cancelled && data) setVariables(data.variables || {}); })
       .catch(() => {});
 
-    const es = new EventSource(`${backendUrl}/variables/events?token=${encodeURIComponent(token)}`);
-    esRef.current = es;
-    es.addEventListener('variable_updated', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        setVariables((prev) => ({
-          ...prev,
-          [data.name]: {
-            value: data.value,
-            source: data.source,
-            resolvedAt: data.resolvedAt,
-            defaultValue: prev[data.name]?.defaultValue ?? null,
-          },
-        }));
-      } catch { /* ignore malformed event */ }
-    });
-
     return () => {
       cancelled = true;
-      es.close();
-      esRef.current = null;
     };
   }, [backendUrl, connected, getToken]);
+
+  useEffect(() => {
+    if (!connected || !backendUrl) return undefined;
+    return eventStream.on('variable.*', (envelope) => {
+      const data = envelope?.data;
+      if (!data?.name) return;
+      setVariables((prev) => ({
+        ...prev,
+        [data.name]: {
+          value: data.value,
+          source: data.source,
+          resolvedAt: data.resolvedAt,
+          defaultValue: data.defaultValue ?? prev[data.name]?.defaultValue ?? null,
+        },
+      }));
+    });
+  }, [backendUrl, connected, eventStream]);
 
   /** { [name]: value } — the fallback chain (current -> default -> '') already applied server-side. */
   const snapshot = useCallback(() => {

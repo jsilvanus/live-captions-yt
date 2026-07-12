@@ -10,10 +10,8 @@
  * leaking roleCode into the payload. External consumers can subscribe to
  * `role.*` (all roles) or `role.<roleCode>.*` on `/events/stream`.
  *
- * The bespoke `GET /roles/:roleCode/events` stream keeps its exact historical
- * wire shape — the event name is the bare `<event>` and the data is the raw
- * payload — via the `rename`/`envelope:false` options. Public method signatures
- * are unchanged.
+ * Role events are consumed from the unified `/events/stream` surface by
+ * subscribing to `role.<roleCode>.*` topics.
  */
 import { EventBus } from 'lcyt/event-bus';
 

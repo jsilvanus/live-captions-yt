@@ -5,10 +5,8 @@ import { tokenAllowsTopic } from '../db/mcp-tokens.js';
  * Factory for the unified event-stream router.
  *
  * GET /events/stream — one SSE connection carrying every event on the caller's
- * project, topic-filtered. This is the additive external surface over the shared
- * EventBus; the existing bespoke endpoints (/dsk/:apikey/events,
- * /variables/events, /roles/:roleCode/events, /events) keep their exact wire
- * shape and are unaffected.
+ * project, topic-filtered. This is the unified authenticated surface over the
+ * shared EventBus.
  *
  * Unlike those endpoints, this one emits the full canonical envelope
  * `{ topic, projectId, ts, data, … }` under the topic name, so an external
@@ -23,6 +21,9 @@ import { tokenAllowsTopic } from '../db/mcp-tokens.js';
  * Query:
  *   ?topics=dsk.*,cue.fired,variable.updated  — comma-separated topic patterns
  *   (exact, `<domain>.*` wildcard, or `*`). Omitted → all topics.
+ *   ?flat=1                                   — emit all envelopes as
+ *   `event: message` so browser EventSource can consume dynamic topic names
+ *   through `onmessage`.
  *
  * @param {import('lcyt/event-bus').EventBus} eventBus
  * @returns {Router}
@@ -35,6 +36,7 @@ export function createEventsStreamRouter(eventBus) {
     if (!projectId) return res.status(401).json({ error: 'Not authorized for this project' });
 
     const topics = parseTopics(req.query?.topics);
+    const flat = req.query?.flat === '1';
 
     // Scoped external tokens are narrowed per-event so topic scoping holds even
     // when ?topics is omitted (topics=null means "all", which must still be
@@ -51,9 +53,14 @@ export function createEventsStreamRouter(eventBus) {
     res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
     res.flushHeaders();
 
-    res.write(`event: connected\ndata: ${JSON.stringify({ projectId, topics: topics ?? '*' })}\n\n`);
+    const connectedPayload = { projectId, topics: topics ?? '*' };
+    if (req.auth?.sessionId) connectedPayload.sessionId = req.auth.sessionId;
+    res.write(`event: connected\ndata: ${JSON.stringify(connectedPayload)}\n\n`);
 
-    const unsubscribe = eventBus.subscribeSse(projectId, topics, res, { filter });
+    const unsubscribe = eventBus.subscribeSse(projectId, topics, res, {
+      filter,
+      rename: flat ? () => 'message' : null,
+    });
 
     const heartbeat = setInterval(() => {
       try { res.write(': heartbeat\n\n'); } catch { cleanup(); }
