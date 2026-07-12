@@ -1,7 +1,18 @@
 # Plan: Migrate lcyt-web `useVariables` onto `/events/stream`
 
-**Status:** Draft — not yet scheduled
+**Status:** Draft — optional / low-priority (see Reassessment)
 **Date:** 2026-07-12
+
+> **Reassessment (2026-07-12).** After the bus migrations, `/variables/events` is
+> now a **thin wrapper over the EventBus** (it delegates and re-emits
+> `variable_updated`), not duplicate infrastructure — so migrating `useVariables`
+> *alone* is roughly a lateral move (it trades a clean named SSE event for
+> generic `?flat=1` dispatch-by-topic). The mechanism below is still correct, but
+> the real payoff is only realized as part of a **broader consolidation**: point
+> the *whole* web UI at **one** `/events/stream` connection
+> (`topics=variable.*,dsk.*,cue.*,role.*`, flat mode) instead of several bespoke
+> SSE sockets, then retire the bespoke endpoints together — with `useVariables`
+> as the pilot. Treat this as optional cleanup; nothing depends on it.
 **Context:** `plan_pubsub_event_bus.md` added the unified `GET /events/stream` and
 per-variable topics (`variable.<name>.changed`, payload carries the value). The
 `useVariables` hook (`packages/lcyt-web/src/hooks/useVariables.js`) still consumes
