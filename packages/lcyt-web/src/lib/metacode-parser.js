@@ -15,9 +15,7 @@
 //     → timer accepts explicit ms/s/m units (bare number = seconds), shared
 //       with the `=>` TTL vocabulary via parseDuration().
 
-import { parseDuration } from './metacode-ttl.js';
-
-const BOOLEAN_CODES = ['lyrics', 'no-translate'];
+import { RESERVED_METACODES, BOOLEAN_CODES } from './metacode-registry.js';
 const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
 const CUE_DEF_RE = /<!--\s*cue-def\s*:\s*([a-z0-9_-]+)\s*:\s*([\s\S]*?)\s*-->/gi;
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
@@ -374,41 +372,24 @@ export function parseFileContent(rawText) {
     }
 
     // --- Extract ALL metacode comments inline ---
-    // Process key-value pairs from every `<!-- key: value -->` on the line.
-    let audioAction = null;
-    let timerAction = null;
-    let gotoAction = null;
-    let fileSwitchAction = null;
-    let fileSwitchServerAction = null;
+    // Dispatch each `<!-- key: value -->` through the reserved-name registry:
+    // an actionable reserved name fires its `apply()` (one-shot); a dedicated-
+    // lexer name (cue/api) was already handled above and is skipped; every other
+    // name — reserved persistent or custom — is a plain variable assignment.
+    const lineActions = {};
 
     MULTI_META_RE.lastIndex = 0;
     for (const m of lineRaw.matchAll(MULTI_META_RE)) {
       const key = m[1].toLowerCase();
       const value = m[2].trim();
-      if (key === 'cue' || key === 'api') continue; // already handled above
-      if (key === 'audio' && (value === 'start' || value === 'stop')) {
-        audioAction = value;
-      } else if (key === 'timer') {
-        // Accepts a bare number (seconds, back-compat) or an explicit unit
-        // (`5s`, `500ms`, `2m`), shared with the `=>` TTL vocabulary. Stored in
-        // seconds, since the runtime multiplies by 1000.
-        const ms = parseDuration(value, { defaultUnit: 's' });
-        if (ms != null) timerAction = ms / 1000;
-      } else if (key === 'goto') {
-        const lineN = parseInt(value, 10);
-        if (!isNaN(lineN) && lineN > 0) gotoAction = lineN;
-      } else if (key === 'file') {
-        if (value !== '') fileSwitchAction = value;
-      } else if (key === 'file[server]') {
-        if (value !== '') fileSwitchServerAction = value;
-      } else if (value === '') {
+      const entry = RESERVED_METACODES[key];
+      if (entry?.lexer === 'dedicated') continue; // cue/api parsed by their own regex above
+      if (entry?.apply) { entry.apply(value, lineActions); continue; }
+      // Persistent variable assignment (reserved persistent name or custom key).
+      if (value === '') {
         delete currentCodes[key];
       } else {
-        let parsed = value;
-        if (BOOLEAN_CODES.includes(key)) {
-          parsed = value.toLowerCase() === 'true';
-        }
-        currentCodes[key] = parsed;
+        currentCodes[key] = BOOLEAN_CODES.includes(key) ? value.toLowerCase() === 'true' : value;
       }
     }
 
@@ -417,11 +398,11 @@ export function parseFileContent(rawText) {
 
     // Build the codes object for this line
     const codes = { ...currentCodes };
-    if (audioAction) codes.audioCapture = audioAction;
-    if (timerAction !== null) codes.timer = timerAction;
-    if (gotoAction !== null) codes.goto = gotoAction;
-    if (fileSwitchAction !== null) codes.fileSwitch = fileSwitchAction;
-    if (fileSwitchServerAction !== null) codes.fileSwitchServer = fileSwitchServerAction;
+    if (lineActions.audioCapture) codes.audioCapture = lineActions.audioCapture;
+    if (lineActions.timer != null) codes.timer = lineActions.timer;
+    if (lineActions.goto != null) codes.goto = lineActions.goto;
+    if (lineActions.fileSwitch != null) codes.fileSwitch = lineActions.fileSwitch;
+    if (lineActions.fileSwitchServer != null) codes.fileSwitchServer = lineActions.fileSwitchServer;
     if (cuePhrase) { codes.cue = cuePhrase; codes.cueMode = cueMode; codes.cueFuzzy = cueFuzzy; codes.cueSemantic = cueSemantic; codes.cueEvents = cueEvents; codes.cueTree = cueTree; }
     if (apiTriggers) codes.apiTriggers = apiTriggers;
 
