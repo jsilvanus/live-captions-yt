@@ -222,22 +222,11 @@ revert token — it restores the value that was there *before* this assignment:
   actionable one-shot codes (`goto`/`timer`/`audio`/`api`), which have no persisted value to
   revert.
 
-## Variable fetch timing — DECIDED: no load tier (2026-07-12)
-
-The connector-refresh tiers stay exactly three: `!api:` (pointer arrival), `api:`
-(send), `api!:` (prefetch loop while on the line). **There is no dedicated
-load/connect tier, and one is not to be reintroduced.** "Fetch on load" is
-reproduced by placing a pointer-tier trigger on the file's **first line**.
-
-To make that robust, **file open/activation fires the start-of-file pointer
-triggers even when the pointer is restored to a later line** from a previous
-session — the start-line triggers run on open, then the saved pointer position is
-applied. This closes the "reopen the file and it never refreshes" gap (a
-restored non-zero pointer would otherwise skip the line-1 trigger) without adding
-a tier. Settled — do not revisit "on load".
-
-> Note: this is about *refreshing* a variable from a connector. `{{name}}` itself
-> is a pure read, resolved at send (see below); it never fetches.
+> **Variable fetch timing, live variables, and text-block expansion** moved to
+> `plan_live_variables.md` to keep this plan on its implemented core (registry,
+> namespace, TTL). The settled decision there: **no load tier** — a pointer-tier
+> trigger on the file's first line covers "on load" (fired on file open even when
+> the pointer is restored later). Do not revisit "on load" here.
 
 ## Implementation sketch (once the decision above is fixed)
 
