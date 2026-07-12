@@ -1,15 +1,11 @@
 /**
- * VariablesBus — SSE subscriber registry for variable_updated events.
+ * VariablesBus — variable change publisher for EventBus topics.
  *
  * Delegates SSE bookkeeping to the shared EventBus (lcyt/event-bus). Each change
  * is published as a per-variable topic `variable.<name>.changed` carrying the
  * serialized row (name, value, source, …) — so an external subscriber can watch
  * one variable (`variable.section.changed`), all variables (`variable.*`), or
- * receive the content of every change. The bespoke `GET /variables/events`
- * stream keeps its exact historical wire shape — a `variable_updated` event
- * carrying the raw serialized row — by subscribing to `variable.*` and
- * re-emitting under the legacy name via `rename`/`envelope:false`. Public method
- * signatures are unchanged.
+ * receive the content of every change.
  */
 import { EventBus } from 'lcyt/event-bus';
 

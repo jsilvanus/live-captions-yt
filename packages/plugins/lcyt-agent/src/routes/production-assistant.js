@@ -4,7 +4,6 @@
  *   POST /roles/assistant/prompt              — one-off human nudge into Assistant's context
  *   GET  /roles/assistant/suggestions         — pending suggestions (confirm mode)
  *   POST /roles/assistant/suggestions/:id/confirm | /reject
- *   GET  /roles/assistant/events              — SSE: assistant_suggestion, assistant_action
  */
 
 import { Router } from 'express';
@@ -100,12 +99,8 @@ export function createProductionAssistantRouter(db, auth, toolsContext, manager,
     res.json({ ok: true });
   });
 
-  // No GET /events route here — routes/roles-chat.js's generic
-  // GET /:roleCode/events (mounted at the same '/roles' prefix, ahead of
-  // this router) already serves 'assistant' like every other role, off the
-  // same shared RolesBus. Defining a second /events route here would be
-  // unreachable dead code, not a fallback (Express stops at the first
-  // router whose path pattern matches).
+  // No GET /events route here — role events are consumed through the unified
+  // `/events/stream` subscription (`role.assistant.*` topics).
 
   return router;
 }

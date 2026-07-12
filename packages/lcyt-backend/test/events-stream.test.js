@@ -119,6 +119,20 @@ describe('GET /events/stream', () => {
     assert.deepEqual(events[0].data.data, { layers: ['a'] });
   });
 
+  it('flat=1 emits envelopes under constant event name "message"', async () => {
+    const url = `${baseUrl}/events/stream?topics=variable.*&flat=1&token=${memberToken()}`;
+    const { events } = await collectStream(url, {
+      onReady: () => {
+        bus.publish(apiKey, 'variable.section.changed', { name: 'section', value: 'Prayer' });
+      },
+    });
+    assert.equal(events.length, 1);
+    assert.equal(events[0].event, 'message');
+    assert.equal(events[0].data.topic, 'variable.section.changed');
+    assert.equal(events[0].data.projectId, apiKey);
+    assert.deepEqual(events[0].data.data, { name: 'section', value: 'Prayer' });
+  });
+
   it('external token scoped events:read + dsk.* only sees dsk.* (even without ?topics)', async () => {
     const { token } = createMcpToken(db, apiKey, { label: 'dsk-only', scopes: ['events:read', 'dsk.*'] });
     const url = `${baseUrl}/events/stream?token=${token}`;

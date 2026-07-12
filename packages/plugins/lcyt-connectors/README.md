@@ -40,7 +40,6 @@ GET/POST/PUT/DELETE /connectors/:connectorSlug/requests       — nested Request
 GET/POST/PUT/DELETE /connectors/:connectorSlug/requests/:requestSlug/mappings — response mapping CRUD
 
 GET    /variables                — snapshot: { [name]: { value, source, defaultValue, resolvedAt } }
-GET    /variables/events         — SSE: variable_updated { name, value, source, resolvedAt }
 POST   /variables                — create a manual variable { name, value?, defaultValue? } (400 if name starts with '_')
 PUT    /variables/:name          — update a manual variable's value/default
 DELETE /variables/:name          — remove a manual variable

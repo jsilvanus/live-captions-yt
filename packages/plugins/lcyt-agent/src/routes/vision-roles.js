@@ -1,9 +1,7 @@
 /**
  * Vision role routes (Tracker & Describer, plan_ai_roles_framework.md
- * Runtime Shape 1). Events are NOT handled here — routes/roles-chat.js's
- * generic GET /:roleCode/events already serves every registered role off
- * the shared RolesBus (see its module comment for why a second /events
- * route here would be unreachable dead code).
+ * Runtime Shape 1). Events are consumed from the unified `/events/stream`
+ * surface (`role.tracker.*`, `role.describer.*`).
  *
  *   POST /roles/:roleCode/start   { } — start the loop for the session's api_key
  *   POST /roles/:roleCode/stop
