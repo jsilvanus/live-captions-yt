@@ -79,5 +79,27 @@ export function useVariables({ backendUrl, connected, getToken }) {
     }
   }, [backendUrl, getToken]);
 
-  return { variables, snapshot, refresh };
+  /**
+   * Mirror a file metacode assignment into the durable variable store
+   * (source 'file'), with an optional `=>` TTL. Value is string-coerced (the
+   * variable namespace is text; better-sqlite3 won't bind a raw boolean).
+   * Fire-and-forget from the caller's perspective. See namespace unification
+   * (docs/plans/plan_metacode_variable_unification.md).
+   */
+  const writeFileCode = useCallback(async (name, value, ttl) => {
+    const token = getToken?.();
+    if (!token || !backendUrl || !name) return null;
+    try {
+      const res = await fetch(`${backendUrl}/variables/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: value == null ? '' : String(value), ttl: ttl || undefined, source: 'file' }),
+      });
+      return res.ok ? res.json() : null;
+    } catch {
+      return null;
+    }
+  }, [backendUrl, getToken]);
+
+  return { variables, snapshot, refresh, writeFileCode };
 }

@@ -12,6 +12,7 @@ import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLan
 import { parseFileContent } from '../lib/metacode-parser.js';
 import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap, buildInlineCuePayload, checkCueMatch } from '../lib/metacode-runtime.js';
 import { interpolateVariables } from '../lib/metacode-variables.js';
+import { extractPersistentCodes } from '../lib/metacode-registry.js';
 import { useVariables } from '../hooks/useVariables.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
@@ -259,6 +260,21 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     const manualCodes = getActiveCodes();
     const mergedCodes = { ...variables.snapshot(), ...manualCodes, ...lineCodes };
     delete mergedCodes.apiTriggers; // consumed above — not a code to forward
+    delete mergedCodes.codeTtls;    // per-line TTL annotations — synced below, not forwarded
+
+    // Namespace unification (Option A): mirror this line's persistent file codes
+    // into the durable variable store (source 'file'), carrying any `=>` TTL so
+    // {{name}}, GET /variables, and the TTL scheduler all see them. Fire-and-
+    // forget; skip unchanged values, but always re-write a TTL'd one so its
+    // countdown restarts on each send of the line.
+    const persistentCodes = extractPersistentCodes(lineCodes);
+    const codeTtls = lineCodes.codeTtls || {};
+    const varSnap = variables.snapshot();
+    for (const [name, val] of Object.entries(persistentCodes)) {
+      const strVal = val == null ? '' : String(val);
+      const ttl = codeTtls[name];
+      if (ttl || varSnap[name] !== strVal) variables.writeFileCode(name, strVal, ttl);
+    }
     const effectiveLang = mergedCodes.lang || inputLang || null;
     if (effectiveLang) mergedCodes.lang = effectiveLang;
     else delete mergedCodes.lang;

@@ -127,6 +127,14 @@ One request can populate several variables at once (multiple rows in `api_respon
 
 ## 5. Bindings Reconciliation
 
+> **See also `plan_metacode_variable_unification.md`.** That plan carries this section's
+> "codes and variables are one concept" idea further — from unifying the *value source* (below)
+> to unifying the whole *namespace*, with an explicit reserved-name registry in which `api:` is
+> one `kind: 'action'` entry alongside `audio`/`goto`/`graphics`/`cue`. If that plan is adopted,
+> the additive `{ ...resolvedVariables, ...lineCodes }` merge described here is superseded by a
+> single namespace lookup (depth is an open decision there). This plan stands on its own; the
+> unification plan is the wider reframing.
+
 §3's existing finding stands: unify the *value source*, keep the DSK `bindings` SSE transport exactly as-is. Concretely, this plan makes `codes` and `variables` the same concept — every "code" (section, stanza, speaker, …) is itself a variable; the operator manually setting one via `ActionsPanel` is setting a variable with `source: 'manual'`, exactly parallel to a connector-backed one.
 
 **What changes:** `InputBar.jsx:166`'s `manualCodes = getActiveCodes()` becomes a call into the new variables layer — a `useVariables()` hook backed by the `variable_updated` SSE stream plus a local cache — that returns the full current variable snapshot (`{ [name]: value }`, both `manual` and `connector` sourced) instead of only what's in `localStorage`. The merge order is unchanged: `{ ...resolvedVariables, ...lineCodes }`, per-line codes still take priority. The manual set-a-variable UI (`ActionsPanel`, `QuickActionsPopover`) stays exactly as it is today, mechanically — it's simply one more way to set a variable now, alongside a connector.

@@ -8,6 +8,7 @@
 import {
   getConnectorBySlug, getRequestBySlug, listMappings,
   listVariables, setConnectorVariable, getApiKeyOrgId,
+  materializeExpired, serializeVariableRow,
 } from './db.js';
 import { interpolate, interpolatePairs } from './interpolate.js';
 import { evaluateJsonPath } from './json-path.js';
@@ -22,6 +23,9 @@ import { checkUrlAllowed } from './network-guard.js';
 export function createResolutionEngine({ db, bus, filesControl = null }) {
   /** Build a { name: value } snapshot of all variables currently known for a project. */
   function snapshotVariables(apiKey) {
+    // Revert any due TTLs first so interpolation uses the reverted value. The
+    // active scheduler is the primary emit path; this is the lazy fallback.
+    materializeExpired(db, apiKey);
     const rows = listVariables(db, apiKey);
     const snapshot = {};
     for (const row of rows) {
@@ -149,9 +153,7 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
       const contentType = response.headers.get('content-type');
       const updated = await applyMappings(apiKey, request, response, contentType);
       for (const row of updated) {
-        bus.emitVariableUpdated(apiKey, {
-          name: row.name, value: row.current_value, source: row.source, resolvedAt: row.resolved_at,
-        });
+        bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
       }
       return { ok: response.ok, variables: updated, error: response.ok ? undefined : `HTTP ${response.status}` };
     } catch (err) {

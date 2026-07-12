@@ -138,6 +138,26 @@ Any key not in the list above is accepted and forwarded as-is to viewers and plu
 <!-- my-custom-code: value -->
 ```
 
+### Persistent codes are variables (`=>` TTL + namespace)
+
+Every persistent code (`section`, `speaker`, `lyrics`, custom keys, …) is a
+**variable**. At send, its assignment is mirrored into the project's durable
+variable store (`source: 'file'`), so it is readable via `{{name}}`, appears in
+`GET /variables`, and can carry a lifetime with the `=>` annotation:
+
+```
+<!-- section: Prayer => 20s:Hymn -->   section reverts to "Hymn" 20s after send
+<!-- section: Announcement => 30s:~ --> reverts to the previous value
+<!-- lower-third: Live => 5c -->        reverts after 5 captions (enforcement pending)
+```
+
+`=> <count><unit>(:<revert>)?` — units `ms`/`s`/`m`/`c`, revert to **baseline**
+(bare), a **literal**, or the **previous** value (`~`). Spaces around `=>`/`:` are
+optional; a trailing `=>` that isn't a valid duration stays literal text. Which
+names are reserved/actionable vs. plain variables is declared in
+`packages/lcyt-web/src/lib/metacode-registry.js`. See
+`docs/plans/plan_metacode_variable_unification.md`.
+
 ---
 
 ## Stanza Blocks
@@ -193,9 +213,14 @@ line. The timer is an inline marker that coexists with content on the same line.
 ```
 <!-- timer: 5 -->Let us pray
 <!-- timer: 0.5 -->
+<!-- timer: 500ms -->
+<!-- timer: 2m -->
 ```
 
-- Values: positive number (seconds, fractions allowed)
+- Values: a positive number, optionally with a unit — `ms` / `s` / `m`. A bare
+  number means **seconds** (e.g. `timer: 5` = 5 s), fractions allowed. Units are
+  shared with the `=>` variable-TTL vocabulary (`parseDuration`); `timer` has no
+  `c`/captions unit since it is a wall-clock playback delay, not a value lifetime.
 - Effect: sends the line's content after the delay, then moves the pointer forward
 - Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime scheduling in
   `packages/lcyt-web/src/lib/metacode-runtime.js`.

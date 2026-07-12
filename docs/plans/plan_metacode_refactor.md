@@ -1,5 +1,13 @@
 # Metacode Refactor Plan
 
+> **See also `plan_metacode_variable_unification.md`.** This plan is a mechanical relocation of
+> the *existing* scattered metacode handling into dedicated `*metacode*` files, preserving the
+> current `if (key === …)` / per-family-regex dispatch as-is. The unification plan reframes that
+> same dispatch as a registry-driven single variable namespace. If the unification plan is
+> adopted, build the registry *during* these moves rather than relocating the scattered handling
+> first and rewriting it later (touching the same code twice) — treat this plan as folded into
+> that one. Executed standalone, this plan is still valid as a pure clarity refactor.
+
 Scope guardrails:
 - Keep plugin metacode handling as-is, especially `packages/plugins/lcyt-dsk/src/caption-processor.js`.
 - Only clarify core backend and frontend metacode handling by moving logic into dedicated `*metacode*` files with minimal compatibility-preserving edits.

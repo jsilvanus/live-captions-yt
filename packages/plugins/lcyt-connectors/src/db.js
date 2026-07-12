@@ -70,9 +70,23 @@ export function runMigrations(db) {
       source_request_id TEXT REFERENCES api_requests(id) ON DELETE SET NULL,
       resolved_at       TEXT,
       updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+      -- TTL / expiry (plan_metacode_variable_unification.md "Variable TTL / expiry"):
+      expires_at        TEXT,        -- ISO timestamp; time-based revert due (null = no TTL)
+      expires_at_seq    INTEGER,     -- caption-count revert threshold (enforcement is a follow-on send-path hook)
+      revert_mode       TEXT,        -- 'baseline' | 'literal' | 'previous' (null when no TTL pending)
+      revert_value      TEXT,        -- literal to restore when revert_mode='literal'
+      prev_value        TEXT,        -- value captured at assignment, restored when revert_mode='previous'
       PRIMARY KEY (api_key, name)
     )
   `);
+  // Additive column migrations for pre-existing installs (the CREATE above only
+  // applies to fresh DBs). Each ALTER is a no-op-if-present.
+  for (const col of [
+    'expires_at TEXT', 'expires_at_seq INTEGER', 'revert_mode TEXT',
+    'revert_value TEXT', 'prev_value TEXT',
+  ]) {
+    try { db.exec(`ALTER TABLE variables ADD COLUMN ${col}`); } catch { /* column already exists */ }
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS connector_network_rules (
@@ -287,25 +301,116 @@ export function getVariable(db, apiKey, name) {
   return db.prepare('SELECT * FROM variables WHERE api_key = ? AND name = ?').get(apiKey, name);
 }
 
-export function upsertManualVariable(db, apiKey, name, { value, defaultValue }) {
+/**
+ * Compute the five TTL columns for a write. `ttl` is null (clear any pending
+ * expiry — last-write-wins) or { ms, captions, revertMode, revertValue }.
+ * `prevValue` is the variable's value *before* this write, captured for the
+ * 'previous' revert mode.
+ */
+function computeTtlColumns(ttl, prevValue) {
+  if (!ttl || (ttl.ms == null && ttl.captions == null)) {
+    return { expires_at: null, expires_at_seq: null, revert_mode: null, revert_value: null, prev_value: null };
+  }
+  return {
+    expires_at: ttl.ms != null ? new Date(Date.now() + ttl.ms).toISOString() : null,
+    expires_at_seq: ttl.captions != null ? ttl.captions : null,
+    revert_mode: ttl.revertMode || 'baseline',
+    revert_value: ttl.revertMode === 'literal' ? (ttl.revertValue ?? '') : null,
+    prev_value: ttl.revertMode === 'previous' ? (prevValue ?? null) : null,
+  };
+}
+
+export function upsertManualVariable(db, apiKey, name, { value, defaultValue, ttl = null, source = 'manual' } = {}) {
   const existing = getVariable(db, apiKey, name);
+  const nextValue = value !== undefined ? value : (existing ? existing.current_value : null);
+  const nextDefault = defaultValue !== undefined ? defaultValue : (existing ? existing.default_value : null);
+  const resolvedBumped = value !== undefined;
+  const t = computeTtlColumns(ttl, existing ? existing.current_value : null);
+  const src = source === 'file' ? 'file' : 'manual';
+
   if (!existing) {
     db.prepare(`
-      INSERT INTO variables (api_key, name, current_value, default_value, source, resolved_at, updated_at)
-      VALUES (?, ?, ?, ?, 'manual', CASE WHEN ? IS NULL THEN NULL ELSE datetime('now') END, datetime('now'))
-    `).run(apiKey, name, value ?? null, defaultValue ?? null, value ?? null);
+      INSERT INTO variables
+        (api_key, name, current_value, default_value, source, resolved_at, updated_at,
+         expires_at, expires_at_seq, revert_mode, revert_value, prev_value)
+      VALUES (?, ?, ?, ?, ?,
+        CASE WHEN ? THEN datetime('now') ELSE NULL END, datetime('now'),
+        ?, ?, ?, ?, ?)
+    `).run(
+      apiKey, name, nextValue ?? null, nextDefault ?? null, src, resolvedBumped ? 1 : 0,
+      t.expires_at, t.expires_at_seq, t.revert_mode, t.revert_value, t.prev_value,
+    );
     return getVariable(db, apiKey, name);
   }
-  const nextValue = value !== undefined ? value : existing.current_value;
-  const nextDefault = defaultValue !== undefined ? defaultValue : existing.default_value;
   db.prepare(`
     UPDATE variables
-    SET current_value = ?, default_value = ?, source = 'manual',
+    SET current_value = ?, default_value = ?, source = ?,
         resolved_at = CASE WHEN ? THEN datetime('now') ELSE resolved_at END,
-        updated_at = datetime('now')
+        updated_at = datetime('now'),
+        expires_at = ?, expires_at_seq = ?, revert_mode = ?, revert_value = ?, prev_value = ?
     WHERE api_key = ? AND name = ?
-  `).run(nextValue ?? null, nextDefault ?? null, value !== undefined ? 1 : 0, apiKey, name);
+  `).run(
+    nextValue ?? null, nextDefault ?? null, src, resolvedBumped ? 1 : 0,
+    t.expires_at, t.expires_at_seq, t.revert_mode, t.revert_value, t.prev_value,
+    apiKey, name,
+  );
   return getVariable(db, apiKey, name);
+}
+
+/**
+ * Apply a pending TTL revert unconditionally: recompute current_value from the
+ * stored revert_mode and clear all TTL columns. Used by the scheduler at expiry
+ * and by materializeExpired() lazily on read. Returns the updated row (or null).
+ */
+export function applyRevert(db, apiKey, name) {
+  const row = getVariable(db, apiKey, name);
+  if (!row || !row.revert_mode) return null;
+  let reverted;
+  if (row.revert_mode === 'literal') reverted = row.revert_value ?? '';
+  else if (row.revert_mode === 'previous') reverted = row.prev_value ?? null;
+  else reverted = null; // baseline → clear, resolves to default_value → ''
+  db.prepare(`
+    UPDATE variables
+    SET current_value = ?,
+        resolved_at = CASE WHEN ? IS NULL THEN resolved_at ELSE datetime('now') END,
+        updated_at = datetime('now'),
+        expires_at = NULL, expires_at_seq = NULL, revert_mode = NULL, revert_value = NULL, prev_value = NULL
+    WHERE api_key = ? AND name = ?
+  `).run(reverted ?? null, reverted ?? null, apiKey, name);
+  return getVariable(db, apiKey, name);
+}
+
+/**
+ * Lazily revert every variable whose time-based TTL is due at `now` (epoch ms).
+ * Belt-and-braces for a missed/never-scheduled timer (e.g. server restart before
+ * scheduler.restore()). Returns the list of reverted rows so the caller can emit.
+ */
+export function materializeExpired(db, apiKey, now = Date.now()) {
+  const due = db.prepare(
+    'SELECT name FROM variables WHERE api_key = ? AND expires_at IS NOT NULL'
+  ).all(apiKey).filter((r) => {
+    const t = Date.parse(getVariable(db, apiKey, r.name)?.expires_at);
+    return Number.isFinite(t) && t <= now;
+  });
+  const reverted = [];
+  for (const { name } of due) {
+    const row = applyRevert(db, apiKey, name);
+    if (row) reverted.push(row);
+  }
+  return reverted;
+}
+
+/** Serialize a variable row for JSON/SSE — shared by routes, scheduler, engine. */
+export function serializeVariableRow(row) {
+  return {
+    name: row.name,
+    value: resolveVariableValue(row),
+    source: row.source,
+    defaultValue: row.default_value,
+    resolvedAt: row.resolved_at,
+    expiresAt: row.expires_at ?? null,
+    revertMode: row.revert_mode ?? null,
+  };
 }
 
 /** Set a variable's resolved value from a connector call. */
