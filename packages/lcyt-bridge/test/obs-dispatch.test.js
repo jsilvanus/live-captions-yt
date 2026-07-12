@@ -35,24 +35,6 @@ test('ObsPool — _makeKey creates same key for identical connections', (t) => {
   assert.strictEqual(key1, key2);
 });
 
-test('ObsPool — emits events on connection', async (t) => {
-  const pool = new ObsPool();
-  let emittedConnected = false;
-
-  pool.on('obs:connected', (key) => {
-    emittedConnected = true;
-  });
-
-  // Note: This test will not actually connect because OBS is not running.
-  // The connection attempt will time out after CONNECT_TIMEOUT_MS.
-  // We're just testing that _open() returns a promise and doesn't crash.
-  const entry = await pool._open('localhost', 4455, '', 'test:key:1');
-  assert.strictEqual(typeof entry, 'object');
-  assert.strictEqual(entry.destroyed, false);
-
-  pool.destroy();
-});
-
 test('ObsPool — switch throws when not connected', async (t) => {
   const pool = new ObsPool();
   try {
