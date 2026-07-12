@@ -1,6 +1,6 @@
 # Plan: Unified External Control & Automation
 
-**Status:** Draft (umbrella) — Phase 0 shipped; Phases 1–3 pending
+**Status:** Implemented — Phases 1–3 shipped
 **Date:** 2026-07-12
 **Context:** We want the LCYT platform to be controllable and observable from
 outside the browser UI — by scripts, by third-party integrations, and ultimately

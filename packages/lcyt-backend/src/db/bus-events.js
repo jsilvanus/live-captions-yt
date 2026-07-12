@@ -28,6 +28,10 @@ export const AUDITED_TOPICS = [
   'bridge.command_result',
   'target.*',
   'translation.*',
+  'external.*',
+  'mcp.tool_executed',
+  'mcp.tool_staged',
+  'operator.*',
 ];
 
 /**

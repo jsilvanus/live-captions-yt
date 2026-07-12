@@ -303,41 +303,19 @@ still-blocks-with-other-members).)
 
 ---
 
-## `packages/lcyt-tools`'s shared registry isn't wired into an external-facing MCP transport yet
+## ~~`packages/lcyt-tools`'s shared registry isn't wired into an external-facing MCP transport yet~~ (RESOLVED)
 
-**Where:** `packages/lcyt-tools/src/index.js` (new, plan/mcp), vs.
-`packages/lcyt-mcp-http/src/server.js`.
+**Where:** `packages/lcyt-backend/src/routes/mcp-endpoint.js` (new, Phase 1 of
+plan_unified_external_control.md).
 
-**Finding:** `plan_mcp.md` specifies one real MCP `Server` registering the
-shared tool schema, reachable both by external clients (over real MCP
-transport) and by `lcyt-agent` (over an in-process linked transport). This
-pass built the registry (`createToolRegistry`) and the in-process half
-(`createInProcessMcpBridge`, tested end-to-end with a real
-`InMemoryTransport`-connected Client/Server pair) — but did not wire the
-external-transport half into `lcyt-mcp-http`.
+**Resolution:** Implemented as an in-process MCP endpoint (Streamable HTTP
+JSON-RPC) inside `lcyt-backend` at `POST /mcp`, backed by the same
+`_toolRegistry` the composition root builds. Auth via
+`createProjectAccessMiddleware` with `mcp:connect` scope. Per-tool scope
+enforcement, destructive-tool staging for confirmation, rate limiting, and audit.
+Decision taken: in-process in `lcyt-backend`, not a separate process.
 
-**Why skipped:** `lcyt-mcp-http` is a **separate OS process** from
-`lcyt-backend` (`packages/lcyt-mcp-http/src/server.js` runs its own
-`app.listen(PORT)`), connected to the same SQLite file only via `DB_PATH`. It
-has no in-process handle to the live `DeviceRegistry`/`BridgeManager`/
-`AgentEngine` instances the new tools need (`camera.preset`/`mixer.switch`
-need live device/bridge connections; `dsk_template.*` needs a configured
-`AgentEngine`) — those only exist inside the running `lcyt-backend` process.
-Confirmed by inspection: `lcyt-mcp-http`'s *existing* production/graphics
-tools already work around this by proxying HTTP calls back to
-`lcyt-backend` with a static, global `X-Admin-Key`/`X-API-Key` (not the
-per-connection `apiKey` scoping the new registry's handlers assume) — so
-"just register the same tools there" would either require re-implementing
-every new tool as an HTTP proxy (defeating the point of building direct,
-in-process handlers) or exposing a *new* MCP-reachable endpoint inside
-`lcyt-backend` itself (a real, undecided architecture question: new route,
-new auth model for external MCP clients hitting the backend directly) —
-neither of which plan/mcp actually specifies, so building either now would be
-guessing at unspecified product surface rather than executing something
-already designed. Left for whoever picks up wiring the external-client half:
-decide where that MCP endpoint should live before extending it.
-
-(Found during: implementing plan/mcp's shared tool-schema module, 2026-07-07.)
+(Resolved: 2026-07-12, plan_unified_external_control.md Phase 1.)
 
 ---
 
