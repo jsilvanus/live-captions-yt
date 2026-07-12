@@ -34,6 +34,7 @@
     "lcyt-cues": "*",
     "lcyt-agent": "*",
     "lcyt-connectors": "*",
+    "lcyt-actions": "*",
     "lcyt-tools": "*"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",

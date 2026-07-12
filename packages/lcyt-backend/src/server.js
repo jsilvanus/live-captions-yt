@@ -77,6 +77,7 @@ import {
   initConnectors, createConnectorsRouter, createVariablesRouter,
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
+import { initActions, createActionsRouter } from 'lcyt-actions';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
@@ -293,6 +294,8 @@ const _toolsContext = {
 const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler } = initConnectors(db, {
   filesControl: { resolveStorage },
 });
+// Named Actions plugin — runs its own migration (action_defs table).
+initActions(db);
 
 // Wire the agent's embedding capabilities into the CueEngine for
 // fuzzy semantic matching via cue[semantic]:phrase metacodes.
@@ -500,6 +503,7 @@ app.use('/roles/assistant', createProductionAssistantRouter(
 ));
 app.use('/roles/planner', createPlannerRouter(db, projectAuth, _agent));
 app.use('/connectors', createConnectorsRouter(db, projectAuth));
+app.use('/actions', createActionsRouter(db, projectAuth));
 app.use('/variables', createVariablesRouter(db, projectAuth, _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
