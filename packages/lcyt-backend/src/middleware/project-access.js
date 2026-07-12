@@ -66,7 +66,7 @@ function handleTokenAuth(req, res, next, authInfo) {
  * Accepts session JWTs, user/project JWTs, device JWTs, or raw external tokens.
  * `requiredScope` can be used to gate external-token requests to a specific scope.
  */
-export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = null } = {}) {
+export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = null, jwtOnly = false } = {}) {
   return (req, res, next) => {
     const projectId = resolveProjectId(req);
     const token = extractAuthToken(req);
@@ -75,6 +75,11 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
     }
 
     if (token.startsWith('lcytmcp_')) {
+      // `jwtOnly` resources (e.g. /variables) are for browser/CLI members only;
+      // external subscribers use /events/stream instead of the REST snapshot.
+      if (jwtOnly) {
+        return res.status(403).json({ error: 'External tokens are not permitted for this resource' });
+      }
       const external = verifyMcpToken(db, token);
       if (!external) {
         return res.status(401).json({ error: 'Invalid or expired external token' });

@@ -22,14 +22,18 @@ before(() => new Promise((resolve) => {
 
   const projectAuth = createProjectAccessMiddleware(db, JWT_SECRET);
   const scopedAuth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'cue:write' });
+  // jwtOnly gate: external tokens are rejected (our-UI-only resources).
+  const jwtOnlyAuth = createProjectAccessMiddleware(db, JWT_SECRET, { jwtOnly: true });
   const app = express();
   app.use(express.json());
   app.use((req, res, next) => {
     if (req.path === '/scoped') return scopedAuth(req, res, next);
+    if (req.path === '/jwt-only') return jwtOnlyAuth(req, res, next);
     return projectAuth(req, res, next);
   });
   app.get('/check', (req, res) => res.json({ ok: true, auth: req.auth }));
   app.get('/scoped', (req, res) => res.json({ ok: true, auth: req.auth }));
+  app.get('/jwt-only', (req, res) => res.json({ ok: true, auth: req.auth }));
 
   server = createServer(app);
   server.listen(0, () => {
@@ -78,5 +82,23 @@ describe('project access middleware', () => {
       headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey },
     });
     assert.equal(res.status, 403);
+  });
+});
+
+describe('jwtOnly gating (our-UI-only resources)', () => {
+  const H = (token) => ({ headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey } });
+
+  it('rejects any external token, even a full-access one', async () => {
+    const full = createMcpToken(db, projectKey, { label: 'jwtonly-full', userId: 1, projectId: projectKey }).token;
+    const scoped = createMcpToken(db, projectKey, { label: 'jwtonly-scoped', userId: 1, projectId: projectKey, scopes: ['events:read', 'variable.*'] }).token;
+    assert.equal((await fetch(`${baseUrl}/jwt-only`, H(full))).status, 403);
+    assert.equal((await fetch(`${baseUrl}/jwt-only`, H(scoped))).status, 403);
+  });
+
+  it('accepts a project-member JWT', async () => {
+    const token = jwt.sign({ kind: 'project', type: 'user', userId: 1, email: 'project-access@example.com', projectId: projectKey, projectRole: 'member' }, JWT_SECRET, { expiresIn: '1h' });
+    const res = await fetch(`${baseUrl}/jwt-only`, H(token));
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).auth.kind, 'project');
   });
 });

@@ -27,6 +27,9 @@ import { createFilesRouter } from 'lcyt-files';
  */
 export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null } = {}, projectAuth = null) {
   const router = Router();
+  // Project-scoped config routes use the project-access middleware (JWT members
+  // only — external tokens rejected); falls back to session-JWT `auth` when none
+  // is supplied (isolated tests).
   const scopedAuth = projectAuth || auth;
   router.use('/stats',           createStatsRouter(db, auth, store, { resolveStorage }));
   router.use('/usage',           createUsageRouter(db));

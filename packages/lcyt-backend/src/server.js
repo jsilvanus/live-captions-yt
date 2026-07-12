@@ -381,9 +381,14 @@ const app = express();
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
 const userAuth = createUserAuthMiddleware(jwtSecret);
-const projectAuth = createProjectAccessMiddleware(db, jwtSecret);
+// Project-scoped config/CRUD and the legacy per-plugin SSE routes are for our
+// own UI (browser/CLI) — JWT project members only. External `lcytmcp_` tokens
+// are rejected here (403) and use the unified `/events/stream` instead. Session/
+// user/project/device JWTs are accepted as before, so browser/CLI behavior is
+// unchanged.
+const jwtOnlyAuth = createProjectAccessMiddleware(db, jwtSecret, { jwtOnly: true });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, projectAuth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, jwtOnlyAuth, relayManager);
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -500,9 +505,9 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, projectAuth));
-app.use('/cues', createCueRouter(db, projectAuth, _cueEngine));
-app.use('/mcp-tokens', createMcpTokensRouter(db, projectAuth));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, jwtOnlyAuth));
+app.use('/cues', createCueRouter(db, jwtOnlyAuth, _cueEngine));
+app.use('/mcp-tokens', createMcpTokensRouter(db, jwtOnlyAuth));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
 // scope; topics are further narrowed per-token by tokenAllowsTopic.
@@ -511,21 +516,21 @@ app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { require
 // Setup Hub scope picker (no project data, so no auth). Mounted before the
 // session `/events` router; that router only matches exactly `/events`.
 app.use('/events/topics', createEventsCatalogRouter());
-app.use('/ai/providers', createProjectAiProvidersRouter(db, projectAuth, { bridgeManager: productionBridgeManager }));
-app.use('/ai', createAiRouter(db, projectAuth));
-app.use('/agent', createAgentRouter(db, projectAuth, _agent));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, jwtOnlyAuth, { bridgeManager: productionBridgeManager }));
+app.use('/ai', createAiRouter(db, jwtOnlyAuth));
+app.use('/agent', createAgentRouter(db, jwtOnlyAuth, _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, projectAuth));
-app.use('/roles', createRolesChatRouter(db, projectAuth, _toolsContext, _rolesBus));
-app.use('/roles', createVisionRolesRouter(db, projectAuth, _visionRoleManager));
+app.use('/roles', createRolesRouter(db, jwtOnlyAuth));
+app.use('/roles', createRolesChatRouter(db, jwtOnlyAuth, _toolsContext, _rolesBus));
+app.use('/roles', createVisionRolesRouter(db, jwtOnlyAuth, _visionRoleManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
-  db, projectAuth, _toolsContext, _assistantManager, _agent,
+  db, jwtOnlyAuth, _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
-app.use('/roles/planner', createPlannerRouter(db, projectAuth, _agent));
-app.use('/connectors', createConnectorsRouter(db, projectAuth));
-app.use('/actions', createActionsRouter(db, projectAuth));
-app.use('/variables', createVariablesRouter(db, projectAuth, _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
+app.use('/roles/planner', createPlannerRouter(db, jwtOnlyAuth, _agent));
+app.use('/connectors', createConnectorsRouter(db, jwtOnlyAuth));
+app.use('/actions', createActionsRouter(db, jwtOnlyAuth));
+app.use('/variables', createVariablesRouter(db, jwtOnlyAuth, _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {

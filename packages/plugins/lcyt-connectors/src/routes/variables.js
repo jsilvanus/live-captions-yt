@@ -10,35 +10,15 @@
  *   POST   /variables/refresh        — { connectorSlug, requestSlug, waitMs? }
  */
 import { Router } from 'express';
-import { topicMatches } from 'lcyt/event-bus';
 import {
   listVariables, getVariable, upsertManualVariable, deleteVariable,
   materializeExpired, serializeVariableRow,
 } from '../db.js';
-import { variableTopic } from '../variables-bus.js';
 import { parseValueTtl } from '../ttl.js';
 import { requireApiKey, extractSseToken, verifyApiKeyFromToken } from './helpers.js';
 
 function sendEvent(res, eventName, data) {
   res.write(`event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`);
-}
-
-/**
- * Does a caller's scope set permit reading variable `name` in the snapshot?
- *
- * Mirrors lcyt-backend's `tokenAllowsTopic` against this variable's
- * `variable.<name>.changed` topic — kept local because lcyt-connectors can't
- * import lcyt-backend (same import-boundary reason the shared EventBus lives in
- * `lcyt` core). Only external scoped tokens are filtered; full-access tokens and
- * JWT project members (no/empty scopes) see everything, unchanged.
- * @param {string[]|null|undefined} scopes  parsed scope array from req.auth
- * @param {string} name
- */
-function scopeAllowsVariable(scopes, name) {
-  if (!Array.isArray(scopes) || scopes.length === 0) return true; // full access
-  const topicPatterns = scopes.filter((s) => !String(s).includes(':'));
-  if (topicPatterns.length === 0) return true; // resource:verb only → no topic restriction
-  return topicMatches(topicPatterns, variableTopic(name));
 }
 
 /**
@@ -75,14 +55,9 @@ export function createVariablesRouter(db, auth, bus, engine, scheduler, jwtSecre
     for (const row of materializeExpired(db, apiKey)) {
       bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
     }
-    // Scoped external tokens only see the variables their topic scopes allow, so
-    // the snapshot honours the same fine-grained grant as /events/stream (a
-    // token scoped variable.section.changed can't read every variable here).
-    const scopes = req.auth?.kind === 'external' ? req.auth.scopes : null;
     const snapshot = {};
     for (const row of listVariables(db, apiKey)) {
       const { name, ...rest } = serializeVariableRow(row);
-      if (!scopeAllowsVariable(scopes, name)) continue;
       snapshot[name] = rest;
     }
     res.json({ variables: snapshot });
