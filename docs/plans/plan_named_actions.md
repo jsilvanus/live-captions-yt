@@ -137,6 +137,24 @@ A Named Actions manager on `/assets` (`AssetsPage`), from the start:
 `/assets` is the cross-content library view (`plan_dashboard_console_redesign.md`)
 — named actions are a natural asset kind to surface there.
 
+## Implementation status
+
+- **Done:** registry `fires` taxonomy + `action`/`action-def` entries; parser
+  (`ACTION_DEF_RE`/`ACTION_RE` → `lineCodes.actions` + returned `actionDefs`);
+  `metacode-actions.js` (`parseActionItems`/`expandActionItems` cycle guard/
+  `applyAtoms`); `lcyt-actions` backend plugin (`action_defs` + `/actions` CRUD,
+  wired into `lcyt-backend`); `useActions` hook; `useFileStore` surfaces
+  `actionDefs`; `InputBar` send-time expand-and-apply; `NamedActionsManager` CRUD
+  UI on the Assets page. Tests: lcyt-web node 391 + vitest 371, lcyt-actions 4.
+- **v1 scope / follow-ons:** send-fired actions apply **persistent/variable/
+  graphics atoms** (→ codes + durable variables), **`api:`** (→ connector
+  refresh), and **`audio:`**; **pointer/navigation atoms** (`goto`/`file`/
+  `timer`) are parsed but **skipped with a warning** inside a send action (they'd
+  need post-send sequencing). `graphics:` atoms merge into `codes` (best-effort;
+  whether that drives the DSK pipeline the same as an in-text `graphics` metacode
+  is unverified). The Assets editor uses a definition textarea, not yet a visual
+  atom builder. Conditionals remain a future idea (below).
+
 ## Effort estimate
 
 - `lcyt-actions` plugin: schema + CRUD + expand/parse helper (small-medium,
