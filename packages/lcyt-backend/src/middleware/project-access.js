@@ -1,6 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { verifyMcpToken, tokenHasScope } from '../db/mcp-tokens.js';
+
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 import { extractAuthToken, normalizeUserPayload } from './auth.js';
 
 function resolveProjectId(req) {
@@ -66,7 +68,7 @@ function handleTokenAuth(req, res, next, authInfo) {
  * Accepts session JWTs, user/project JWTs, device JWTs, or raw external tokens.
  * `requiredScope` can be used to gate external-token requests to a specific scope.
  */
-export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = null } = {}) {
+export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = null, jwtOnly = false } = {}) {
   return (req, res, next) => {
     const projectId = resolveProjectId(req);
     const token = extractAuthToken(req);
@@ -75,12 +77,26 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
     }
 
     if (token.startsWith('lcytmcp_')) {
+      // `jwtOnly` resources (e.g. /variables) are for browser/CLI members only;
+      // external subscribers use /events/stream instead of the REST snapshot.
+      if (jwtOnly) {
+        return res.status(403).json({ error: 'External tokens are not permitted for this resource' });
+      }
       const external = verifyMcpToken(db, token);
       if (!external) {
         return res.status(401).json({ error: 'Invalid or expired external token' });
       }
-      if (requiredScope && !tokenHasScope(external.scopes, requiredScope)) {
-        return res.status(403).json({ error: 'Insufficient token scope' });
+      if (requiredScope) {
+        // `resource:verb` requiredScope (e.g. 'events:read') is matched exactly;
+        // a bare resource (e.g. 'dsk') infers the verb from the HTTP method, so a
+        // token needs `dsk:read` to GET and `dsk:write` to mutate. Empty/NULL
+        // scopes = full delegation (tokenHasScope returns true).
+        const needed = requiredScope.includes(':')
+          ? requiredScope
+          : `${requiredScope}:${READ_METHODS.has(req.method) ? 'read' : 'write'}`;
+        if (!tokenHasScope(external.scopes, needed)) {
+          return res.status(403).json({ error: 'Insufficient token scope' });
+        }
       }
       return handleTokenAuth(req, res, next, {
         kind: 'external',

@@ -53,9 +53,16 @@ in `packages/shared-styles/tokens.css`.
 
 ---
 
-## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic
+## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic — RESOLVED (2026-07-12)
 
-**Where:** `packages/plugins/lcyt-connectors/src/variables-bus.js` vs.
+**Resolved by** `plan_pubsub_event_bus.md`: the shared `EventBus`
+(`packages/lcyt/src/event-bus.js`, exported as `lcyt/event-bus`) now owns the
+`Map<projectId, Set<...>>` + write-with-prune-on-failure bookkeeping. `DskBus`,
+`VariablesBus`, and `RolesBus` are thin wrappers that publish canonical topics
+through it and keep their exact public signatures + SSE wire shape. The
+duplicated connection-handling code is gone.
+
+**Where (original):** `packages/plugins/lcyt-connectors/src/variables-bus.js` vs.
 `packages/lcyt-backend/src/dsk-bus.js`
 
 **Finding:** `VariablesBus`'s `addSubscriber`/`removeSubscriber`/

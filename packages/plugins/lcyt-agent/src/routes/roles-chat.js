@@ -116,6 +116,11 @@ export function createRolesChatRouter(db, auth, toolsContext, rolesBus) {
   // since Express would otherwise route any /roles/<x>/events request
   // through whichever router is mounted first at the '/roles' prefix.
   router.get('/:roleCode/events', (req, res) => {
+    // Legacy per-role SSE is JWT-only (our UI); external subscribers use the
+    // unified /events/stream (topics role.<roleCode>.*).
+    if (req.auth?.kind === 'external') {
+      return res.status(403).json({ error: 'Use /events/stream for external subscriptions' });
+    }
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;

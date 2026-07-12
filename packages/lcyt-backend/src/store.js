@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { EventBus } from 'lcyt/event-bus';
 import { saveSession, deleteSession, loadSession, incSessionSequence, listSessions } from './db.js';
 
 const DEFAULT_SESSION_TTL = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000; // 2 hours
@@ -36,16 +37,57 @@ export class SessionStore {
   /**
    * @param {{ sessionTtl?: number, cleanupInterval?: number }} [options]
    */
-  constructor({ sessionTtl = DEFAULT_SESSION_TTL, cleanupInterval = DEFAULT_CLEANUP_INTERVAL, db = null } = {}) {
+  constructor({ sessionTtl = DEFAULT_SESSION_TTL, cleanupInterval = DEFAULT_CLEANUP_INTERVAL, db = null, eventBus = null } = {}) {
     /** @type {Map<string, object>} */
     this._sessions = new Map();
     this._sessionTtl = sessionTtl;
     this._cleanupInterval = cleanupInterval;
     this._timer = null;
     this.db = db;
+    /** @type {import('lcyt/event-bus').EventBus} Shared pub/sub bus; every
+     *  session's emitter is mirrored onto it (see _bridgeEmitterToBus). A
+     *  private bus is created when none is injected (keeps isolated tests
+     *  self-contained), mirroring the DskBus/VariablesBus/RolesBus pattern. */
+    this.eventBus = eventBus ?? new EventBus();
     /** @type {((session: object, reason: string) => void)|null} */
     this.onSessionEnd = null;
     this._startCleanup();
+  }
+
+  /**
+   * Mirror a session's per-session EventEmitter onto the shared project bus.
+   *
+   * The emitter stays the plugins' in-process fan-in (captions/mic/stats emit on
+   * it, and the cue engine listens on its generic `event` channel for music
+   * cues); this bridge republishes each event onto the bus keyed by the project
+   * (apiKey), carrying `sessionId` as envelope meta (not in `data`, so the wire
+   * shape a legacy /events client sees is unchanged). This is what lets the
+   * unified /events/stream endpoint, in-process listeners, and the audit log see
+   * caption/mic/close/plugin events without touching any emit site.
+   * @param {object} session
+   */
+  _bridgeEmitterToBus(session) {
+    const bus = this.eventBus;
+    if (!bus) return;
+    const { emitter, apiKey, sessionId } = session;
+    const meta = { sessionId };
+    emitter.on('caption_result', (data) => bus.publish(apiKey, 'caption.sent', data, meta));
+    emitter.on('caption_error', (data) => bus.publish(apiKey, 'caption.error', data, meta));
+    emitter.on('mic_state', (data) => bus.publish(apiKey, 'session.mic_state', data, meta));
+    // Both historical spellings map to one canonical topic. This fixes the
+    // latent mismatch where store.js emits `session:closed` (colon) but
+    // stats.js's GDPR-erasure path emits `session_closed` (underscore): both
+    // now notify the /events stream.
+    const onClosed = () => bus.publish(apiKey, 'session.closed', {}, meta);
+    emitter.on('session:closed', onClosed);
+    emitter.on('session_closed', onClosed);
+    // Generic plugin events `{ type, data }` (cue_fired, sound_label, bpm_update…)
+    // become `plugin.<type>` on the bus; the /events client still receives the
+    // bare `<type>` event name carrying the original data.
+    emitter.on('event', (payload) => {
+      if (!payload?.type) return;
+      bus.publish(apiKey, `plugin.${payload.type}`, payload.data ?? payload, meta);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -88,6 +130,7 @@ export class SessionStore {
       emitter: new EventEmitter(),
       _sendQueue: Promise.resolve(),
     };
+    this._bridgeEmitterToBus(session);
     this._sessions.set(sessionId, session);
     if (this.db) {
       try {

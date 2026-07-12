@@ -13,7 +13,7 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
-import { createMcpToken, listMcpTokens, updateMcpToken, revokeMcpToken, verifyMcpToken } from '../src/db/mcp-tokens.js';
+import { createMcpToken, listMcpTokens, updateMcpToken, revokeMcpToken, verifyMcpToken, tokenAllowsTopic } from '../src/db/mcp-tokens.js';
 import { createUserAuthMiddleware } from '../src/middleware/user-auth.js';
 import { createMcpTokensRouter } from '../src/routes/mcp-tokens.js';
 
@@ -151,6 +151,19 @@ describe('POST /mcp-tokens', () => {
     assert.equal(res.status, 400);
   });
 
+  it('persists a scopes array from the request body', async () => {
+    const res = await fetch(`${baseUrl}/mcp-tokens`, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ label: 'Scoped', scopes: ['events:read', 'dsk.*'] }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    // The token now gates /events/stream: events:read granted, only dsk.* topics.
+    const row = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(body.id);
+    assert.deepEqual(JSON.parse(row.scopes), ['events:read', 'dsk.*']);
+  });
+
   it('requires a user auth token', async () => {
     const res = await fetch(`${baseUrl}/mcp-tokens`, {
       method: 'POST',
@@ -245,5 +258,38 @@ describe('DELETE /mcp-tokens/:id', () => {
     assert.equal(res.status, 404);
     const res2 = await fetch(`${baseUrl}/mcp-tokens/999999`, { method: 'DELETE', headers: headers() });
     assert.equal(res2.status, 404);
+  });
+});
+
+describe('tokenAllowsTopic (event-bus topic scoping)', () => {
+  it('null/empty scopes allow every topic (full access)', () => {
+    assert.equal(tokenAllowsTopic(null, 'dsk.graphics_changed'), true);
+    assert.equal(tokenAllowsTopic([], 'cue.fired'), true);
+  });
+
+  it('scopes with only resource:verb entries impose no topic restriction', () => {
+    assert.equal(tokenAllowsTopic(['events:read'], 'dsk.graphics_changed'), true);
+    assert.equal(tokenAllowsTopic(['events:read', 'dsk:read'], 'anything.at.all'), true);
+  });
+
+  it('a dotted-topic pattern narrows to matching topics', () => {
+    assert.equal(tokenAllowsTopic(['events:read', 'dsk.*'], 'dsk.graphics_changed'), true);
+    assert.equal(tokenAllowsTopic(['events:read', 'dsk.*'], 'dsk.text'), true);
+    assert.equal(tokenAllowsTopic(['events:read', 'dsk.*'], 'cue.fired'), false);
+    assert.equal(tokenAllowsTopic(['events:read', 'dsk.*'], 'dskx.y'), false);
+  });
+
+  it('exact topic pattern matches only that topic', () => {
+    assert.equal(tokenAllowsTopic(['cue.fired'], 'cue.fired'), true);
+    assert.equal(tokenAllowsTopic(['cue.fired'], 'cue.other'), false);
+  });
+
+  it('bare * allows any topic', () => {
+    assert.equal(tokenAllowsTopic(['*'], 'literally.anything'), true);
+  });
+
+  it('accepts a JSON-string scope list (as stored)', () => {
+    assert.equal(tokenAllowsTopic('["events:read","dsk.*"]', 'dsk.text'), true);
+    assert.equal(tokenAllowsTopic('["events:read","dsk.*"]', 'cue.fired'), false);
   });
 });

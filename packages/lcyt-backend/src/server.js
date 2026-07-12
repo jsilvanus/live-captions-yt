@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
+import { EventBus } from 'lcyt/event-bus';
 import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
@@ -15,6 +16,9 @@ import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
+import { createEventsStreamRouter } from './routes/events-stream.js';
+import { createEventsCatalogRouter } from './routes/events-catalog.js';
+import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
@@ -185,8 +189,16 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
-const store = new SessionStore({ db });
-const dskBus = new DskBus();
+// One shared pub/sub bus for the whole backend. Every per-project SSE registry
+// (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
+// through it, so events also reach the unified /events/stream endpoint and any
+// in-process listeners. See src/event-bus.js (lcyt/event-bus).
+const eventBus = new EventBus();
+// Persist curated topics to the bus_events audit log (insert-only; not a replay
+// buffer). High-frequency topics are excluded by the allowlist in db/bus-events.js.
+attachBusAuditLog(eventBus, db, { log: (m) => console.warn(m) });
+const store = new SessionStore({ db, eventBus });
+const dskBus = new DskBus(eventBus);
 
 // Production control — run DB migrations, start device registry and bridge manager
 const {
@@ -256,7 +268,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
-} = await initAgent(db);
+} = await initAgent(db, { eventBus });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
@@ -293,6 +305,7 @@ const _toolsContext = {
 // (api_connectors, api_requests, api_response_mappings, variables tables).
 const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler } = initConnectors(db, {
   filesControl: { resolveStorage },
+  eventBus,
 });
 // Named Actions plugin — runs its own migration (action_defs table).
 initActions(db);
@@ -368,9 +381,17 @@ const app = express();
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
 const userAuth = createUserAuthMiddleware(jwtSecret);
-const projectAuth = createProjectAccessMiddleware(db, jwtSecret);
+// Project-scoped routers are gated by `scopedAuth('<resource>')`. Access = the
+// token's scopes: session/user/project/device JWTs and full-access (NULL-scope)
+// external tokens have full delegation; a scoped external token needs
+// `<resource>:read` to GET and `<resource>:write` to mutate (see
+// createProjectAccessMiddleware). The legacy per-plugin SSE endpoints stay
+// JWT-only — `/variables/events` and `/stt/events` via their own `jwt.verify`,
+// `/roles/:roleCode/events` via an in-handler external-token block — so external
+// subscribers use the unified `/events/stream` instead.
+const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, projectAuth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager);
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -487,24 +508,32 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, projectAuth));
-app.use('/cues', createCueRouter(db, projectAuth, _cueEngine));
-app.use('/mcp-tokens', createMcpTokensRouter(db, projectAuth));
-app.use('/ai/providers', createProjectAiProvidersRouter(db, projectAuth, { bridgeManager: productionBridgeManager }));
-app.use('/ai', createAiRouter(db, projectAuth));
-app.use('/agent', createAgentRouter(db, projectAuth, _agent));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, scopedAuth));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
+app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
+// Unified external event stream over the shared EventBus (additive; the bespoke
+// per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
+// scope; topics are further narrowed per-token by tokenAllowsTopic.
+app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:read' }), createEventsStreamRouter(eventBus));
+// Public catalog of subscribable event topics — single source of truth for the
+// Setup Hub scope picker (no project data, so no auth). Mounted before the
+// session `/events` router; that router only matches exactly `/events`.
+app.use('/events/topics', createEventsCatalogRouter());
+app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), { bridgeManager: productionBridgeManager }));
+app.use('/ai', createAiRouter(db, scopedAuth('ai')));
+app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, projectAuth));
-app.use('/roles', createRolesChatRouter(db, projectAuth, _toolsContext, _rolesBus));
-app.use('/roles', createVisionRolesRouter(db, projectAuth, _visionRoleManager));
+app.use('/roles', createRolesRouter(db, scopedAuth('role')));
+app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus));
+app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
-  db, projectAuth, _toolsContext, _assistantManager, _agent,
+  db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
-app.use('/roles/planner', createPlannerRouter(db, projectAuth, _agent));
-app.use('/connectors', createConnectorsRouter(db, projectAuth));
-app.use('/actions', createActionsRouter(db, projectAuth));
-app.use('/variables', createVariablesRouter(db, projectAuth, _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
+app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent));
+app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector')));
+app.use('/actions', createActionsRouter(db, scopedAuth('action')));
+app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
@@ -534,4 +563,4 @@ if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };
+export { app, db, store, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };
