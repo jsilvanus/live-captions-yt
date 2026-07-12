@@ -197,6 +197,11 @@ revert token — it restores the value that was there *before* this assignment:
 | `<!-- lower-third: Live => 5c -->` | → baseline after 5 captions sent |
 | `<!-- section:Prayer=>20s:Hymn -->` | → same as row 2 — spaces around `=>` / `:` are optional |
 
+### Implementation status
+
+- **Done (time-based TTL, backend):** `lcyt-connectors` — `parseValueTtl` (`ttl.js` + `lcyt-web`'s `metacode-ttl.js`), `variables` TTL columns + `upsertManualVariable(ttl)`/`applyRevert`/`materializeExpired`, the active `TtlScheduler` (revert-on-timer + emit, `restore()` on startup, last-write-wins cancel), and `POST`/`PUT /variables` accepting a structured `ttl` or an inline `=>` value. Manual/connector variables set via the API honour TTL today. Tested (`ttl.test.js`, `ttl-variables.test.js`, routes).
+- **Pending:** caption-based (`c`) enforcement (needs the project caption counter below); the frontend path that parses `=>` in `parseFileContent` and writes file-metacode assignments to `/variables` (part of the namespace-unification phase); the "stale/default" style UI.
+
 ### Backend / DB implications (part of adopting Option A)
 
 - **`variables` gains:** `expires_at TEXT` (ISO, time TTLs) *or* `expires_at_seq INTEGER`

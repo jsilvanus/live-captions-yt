@@ -290,7 +290,7 @@ const _toolsContext = {
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
 // user-defined outbound API connectors. Runs its own DB migrations
 // (api_connectors, api_requests, api_response_mappings, variables tables).
-const { bus: _connectorsBus, engine: _connectorsEngine } = initConnectors(db, {
+const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler } = initConnectors(db, {
   filesControl: { resolveStorage },
 });
 
@@ -500,7 +500,7 @@ app.use('/roles/assistant', createProductionAssistantRouter(
 ));
 app.use('/roles/planner', createPlannerRouter(db, projectAuth, _agent));
 app.use('/connectors', createConnectorsRouter(db, projectAuth));
-app.use('/variables', createVariablesRouter(db, projectAuth, _connectorsBus, _connectorsEngine, jwtSecret));
+app.use('/variables', createVariablesRouter(db, projectAuth, _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {

@@ -28,11 +28,11 @@ describe('lcyt-connectors routes', () => {
 
   before(async () => {
     const db = new Database(':memory:');
-    const { bus, engine } = initConnectors(db, {});
+    const { bus, engine, scheduler } = initConnectors(db, {});
     const app = express();
     app.use(express.json());
     app.use('/connectors', createConnectorsRouter(db, fakeAuth));
-    app.use('/variables', createVariablesRouter(db, fakeAuth, bus, engine, JWT_SECRET));
+    app.use('/variables', createVariablesRouter(db, fakeAuth, bus, engine, scheduler, JWT_SECRET));
     await new Promise((resolve) => {
       server = app.listen(0, () => resolve());
     });
@@ -119,6 +119,26 @@ describe('lcyt-connectors routes', () => {
     assert.equal(res.status, 200);
     res = await json('/variables');
     assert.equal(res.body.variables.greeting, undefined);
+  });
+
+  test('POST /variables parses an inline => TTL off the value', async () => {
+    const res = await json('/variables', {
+      method: 'POST', body: JSON.stringify({ name: 'ttlvar', value: 'Prayer => 20s:Hymn' }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(res.body.variable.value, 'Prayer'); // annotation stripped
+    assert.ok(res.body.variable.expiresAt, 'expiresAt exposed');
+    assert.equal(res.body.variable.revertMode, 'literal');
+  });
+
+  test('PUT /variables without a TTL clears a pending expiry (last-write-wins)', async () => {
+    await json('/variables', { method: 'POST', body: JSON.stringify({ name: 'lww', value: 'Live => 60s' }) });
+    let res = await json('/variables');
+    assert.ok(res.body.variables.lww.expiresAt);
+    await json('/variables/lww', { method: 'PUT', body: JSON.stringify({ value: 'Held' }) });
+    res = await json('/variables');
+    assert.equal(res.body.variables.lww.value, 'Held');
+    assert.equal(res.body.variables.lww.expiresAt, null);
   });
 
   test('POST /variables rejects names starting with underscore', async () => {

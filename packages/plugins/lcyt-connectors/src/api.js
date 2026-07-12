@@ -24,15 +24,18 @@
 import { runMigrations } from './db.js';
 import { VariablesBus } from './variables-bus.js';
 import { createResolutionEngine } from './resolution-engine.js';
+import { createTtlScheduler } from './ttl-scheduler.js';
 
 export { createConnectorsRouter } from './routes/connectors.js';
 export { createVariablesRouter } from './routes/variables.js';
 export { createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter } from './routes/network-rules.js';
 export { VariablesBus } from './variables-bus.js';
 export { createResolutionEngine } from './resolution-engine.js';
+export { createTtlScheduler } from './ttl-scheduler.js';
 export { checkUrlAllowed } from './network-guard.js';
 export * from './db.js';
 export { interpolate, interpolatePairs, extractVariableNames } from './interpolate.js';
+export { parseValueTtl } from './ttl.js';
 
 /**
  * Run migrations and wire up the bus + resolution engine.
@@ -43,5 +46,7 @@ export function initConnectors(db, opts = {}) {
   runMigrations(db);
   const bus = new VariablesBus();
   const engine = createResolutionEngine({ db, bus, filesControl: opts.filesControl || null });
-  return { bus, engine };
+  const scheduler = createTtlScheduler({ db, bus });
+  scheduler.restore();
+  return { bus, engine, scheduler };
 }
