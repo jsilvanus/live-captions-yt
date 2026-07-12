@@ -222,6 +222,46 @@ revert token — it restores the value that was there *before* this assignment:
   actionable one-shot codes (`goto`/`timer`/`audio`/`api`), which have no persisted value to
   revert.
 
+## Variable fetch timing — DECIDED: no load tier (2026-07-12)
+
+The connector-refresh tiers stay exactly three: `!api:` (pointer arrival), `api:`
+(send), `api!:` (prefetch loop while on the line). **There is no dedicated
+load/connect tier, and one is not to be reintroduced.** "Fetch on load" is
+reproduced by placing a pointer-tier trigger on the file's **first line**.
+
+To make that robust, **file open/activation fires the start-of-file pointer
+triggers even when the pointer is restored to a later line** from a previous
+session — the start-line triggers run on open, then the saved pointer position is
+applied. This closes the "reopen the file and it never refreshes" gap (a
+restored non-zero pointer would otherwise skip the line-1 trigger) without adding
+a tier. Settled — do not revisit "on load".
+
+> Note: this is about *refreshing* a variable from a connector. `{{name}}` itself
+> is a pure read, resolved at send (see below); it never fetches.
+
+## Variable-backed text blocks (proposed — design pending)
+
+Distinct from inline `{{name}}` (single value, one line, resolved at send): a
+**block** expands a variable's (long) text into multiple visible, navigable,
+sendable caption lines so the operator can step through them. Use case: an `api:`
+call fetches a long text into a variable, which is normalized (reusing
+`packages/lcyt-web/src/lib/normalizeLines.js`) into caption-width lines.
+
+Decisions still open (recommendations in **bold**):
+1. **Syntax** — **`<!-- lines: name -->`** (structural marker, supports options
+   like `<!-- lines[40]: name -->`) vs. `{{{name}}}`.
+2. **Expansion** — **materialize-on-arrival + freeze while inside** the block
+   (refresh happens before arrival via the pointer tier; lines don't shift under
+   the operator mid-block) vs. live re-expand.
+3. **Not-yet-fetched fallback** — **`loading…` placeholder, expand when the value
+   lands** vs. briefly block.
+
+Hard part (flagged): expanded lines are **virtual** (not in the raw `.txt`), so
+`useFileStore`'s 1:1 `lines[]`/`lineCodes[]`/`lineNumbers[]`/pointer model must
+materialize them at the marker and keep `goto`/gutter line numbers + the pointer
+sane across them, tagging virtual lines so save/serialize skips them. To be
+scheduled after Phase 2 once the three decisions above are fixed.
+
 ## Implementation sketch (once the decision above is fixed)
 
 1. **Registry module** (frontend `packages/lcyt-web/src/lib/metacode-registry.js`; a matching
