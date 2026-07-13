@@ -18,6 +18,10 @@ import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
 import { createEventsStreamRouter } from './routes/events-stream.js';
 import { createEventsCatalogRouter } from './routes/events-catalog.js';
+import { createMcpEndpointRouter } from './routes/mcp-endpoint.js';
+import { createEventsPublishRouter } from './routes/events-publish.js';
+import { createOperatorRouter } from './routes/operator.js';
+import { OperatorManager } from './operator-manager.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
@@ -300,6 +304,13 @@ const _toolsContext = {
   callTool: (name, args, ctx) => _toolBridge.callToolAs(ctx.apiKey, name, args),
 };
 
+// Hosted Operator (Phase 2 — plan_unified_external_control.md).
+// Persistent event-fed agent session that subscribes to the EventBus and reacts
+// autonomously, staging destructive actions for human confirmation.
+const _operatorManager = new OperatorManager({
+  eventBus, db, toolsContext: _toolsContext, assistantManager: _assistantManager,
+});
+
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
 // user-defined outbound API connectors. Runs its own DB migrations
 // (api_connectors, api_requests, api_response_mappings, variables tables).
@@ -519,6 +530,24 @@ app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { require
 // Setup Hub scope picker (no project data, so no auth). Mounted before the
 // session `/events` router; that router only matches exactly `/events`.
 app.use('/events/topics', createEventsCatalogRouter());
+// Phase 3 — External event publishing (POST /events). Fenced to `external.*`
+// namespace; rate/size limited; always audited. `requiredScope: 'events:write'`
+// is enforced for external (`lcytmcp_`) tokens only — per
+// createProjectAccessMiddleware's contract, session/user/project/device JWTs
+// carry their own project-membership authorization and have full delegation,
+// so the scope gate doesn't apply to them (same as every other scopedAuth()
+// router in this file).
+app.use('/events', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:write' }), createEventsPublishRouter(eventBus));
+// Phase 1 — In-process MCP endpoint (Streamable HTTP). Backed by the shared
+// tool registry; scoped per-tool; destructive tools staged for confirmation.
+// `requiredScope: 'mcp:connect'` is likewise enforced for external tokens
+// only — see the note above /events.
+app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'mcp:connect' }), createMcpEndpointRouter({
+  registry: _toolRegistry, eventBus, db, assistantManager: _assistantManager,
+}));
+// Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
+// confirm/reject pending actions.
+app.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
 app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), { bridgeManager: productionBridgeManager }));
 app.use('/ai', createAiRouter(db, scopedAuth('ai')));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
