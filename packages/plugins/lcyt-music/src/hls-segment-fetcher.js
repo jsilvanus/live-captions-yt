@@ -102,7 +102,7 @@ function parsePlaylist(text, baseUrl) {
 export class HlsSegmentFetcher extends EventEmitter {
   /**
    * @param {object} opts
-   * @param {string}  opts.hlsBase     Base URL for MediaMTX HLS output, e.g. "http://127.0.0.1:8888"
+   * @param {string}  opts.hlsBase     Base URL for MediaMTX HLS output, e.g. "http://127.0.0.1:8080"
    * @param {string}  opts.streamKey   MediaMTX stream path / API key
    * @param {number}  [opts.pollIntervalMs]  Playlist poll interval in ms (default: segmentDuration/2, min 1 s)
    * @param {number}  [opts.segmentDuration] Expected segment duration in seconds (used to derive default poll interval)

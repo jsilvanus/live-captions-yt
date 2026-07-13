@@ -218,7 +218,7 @@ On the dedicated `GET /music/:key/live` SSE stream only (not on `GET /events`), 
 | Variable | Purpose | Default |
 |---|---|---|
 | `MUSIC_DETECTION_ACTIVE` | Set to `1` to mount the `/music` routes and allow `MusicManager` to be started for an API key | unset |
-| `MEDIAMTX_HLS_BASE_URL` | Base URL of the MediaMTX HLS server `MusicManager` polls for fMP4 audio segments (`audioSource: 'hls'`; shared with `lcyt-rtmp`'s `HlsManager`/`SttManager`) | `http://127.0.0.1:8888` |
+| `MEDIAMTX_HLS_BASE_URL` | Base URL of the MediaMTX HLS server `MusicManager` polls for fMP4 audio segments (`audioSource: 'hls'`; shared with `lcyt-rtmp`'s `HlsManager`/`SttManager`) | `http://127.0.0.1:8080` |
 | `HLS_LOCAL_RTMP` | Local nginx-rtmp base URL `MusicManager` spawns ffmpeg against (`audioSource: 'rtmp'`; shared with the RTMP relay) | `rtmp://127.0.0.1:1935` |
 | `HLS_RTMP_APP` | RTMP application name for the `rtmp` audio source (shared with the RTMP relay) | `live` |
 | `MUSIC_CLASSIFIER_URL` | Optional external/ML classifier endpoint (Phase 4). When set, `MusicManager` POSTs raw PCM as a WAV body and uses the returned `{ label, confidence }`, falling back to the built-in heuristic on error/timeout | unset (always uses the built-in heuristic) |
