@@ -34,6 +34,7 @@ export const KNOWN_FEATURE_CODES = new Set([
   'device-control',
   'graphics-server',
   'cea-captions',
+  'crop',
 ]);
 
 export const BINARY_ONLY_FEATURES = new Set([
@@ -45,6 +46,7 @@ export const BINARY_ONLY_FEATURES = new Set([
   'device-control',
   'graphics-server',
   'cea-captions',
+  'crop',
 ]);
 
 export const FEATURE_DEPS = {
@@ -53,6 +55,8 @@ export const FEATURE_DEPS = {
   'radio':                 ['ingest'],
   'hls-stream':            ['ingest'],
   'preview':               ['ingest'],
+  // Vertical crop rendition (plan_vertical_crop.md) — cut from the RTMP ingest
+  'crop':                  ['ingest'],
   // File storage modes — each requires the base file-saving capability.
   // At most one storage mode should be enabled at a time per project.
   //   files-local          → save to the server's local filesystem (default)

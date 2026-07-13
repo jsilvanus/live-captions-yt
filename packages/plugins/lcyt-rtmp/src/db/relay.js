@@ -132,6 +132,8 @@ function formatRelayRow(row) {
     fps:          row.fps          ?? null,
     videoBitrate: row.video_bitrate || null,
     audioBitrate: row.audio_bitrate || null,
+    // 'program' (raw ingest, default) or 'crop' ({key}-crop vertical rendition)
+    sourceView:   row.source_view  || 'program',
     createdAt:    row.created_at,
     updatedAt:    row.updated_at,
   };
@@ -191,13 +193,16 @@ export function buildRelayFfmpegUrl(relay) {
  * @param {{ targetName?: string|null, captionMode?: string, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null }} [opts]
  * @returns {object}
  */
-export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', scale = null, fps = null, videoBitrate = null, audioBitrate = null } = {}) {
+export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program' } = {}) {
   if (!Number.isInteger(slot) || slot < 1 || slot > MAX_RELAY_SLOTS) {
     throw new RangeError(`slot must be an integer 1-${MAX_RELAY_SLOTS}, got ${slot}`);
   }
+  if (sourceView !== 'program' && sourceView !== 'crop') {
+    throw new RangeError(`sourceView must be 'program' or 'crop', got ${sourceView}`);
+  }
   db.prepare(`
-    INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode, scale, fps, video_bitrate, audio_bitrate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode, scale, fps, video_bitrate, audio_bitrate, source_view)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(api_key, slot) DO UPDATE SET
       target_url   = excluded.target_url,
       target_name  = excluded.target_name,
@@ -206,8 +211,9 @@ export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, ca
       fps          = excluded.fps,
       video_bitrate = excluded.video_bitrate,
       audio_bitrate = excluded.audio_bitrate,
+      source_view  = excluded.source_view,
       updated_at   = datetime('now')
-  `).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http', scale || null, fps ?? null, videoBitrate || null, audioBitrate || null);
+  `).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http', scale || null, fps ?? null, videoBitrate || null, audioBitrate || null, sourceView);
   return getRelaySlot(db, apiKey, slot);
 }
 

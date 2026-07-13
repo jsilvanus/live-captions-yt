@@ -572,7 +572,7 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
 
 // RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1
 if (process.env.RTMP_RELAY_ACTIVE === '1') {
-  const { rtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter } =
+  const { rtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
     createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains });
   app.use('/rtmp',       rtmpRouter);
   app.use('/ingestion',  ingestionRouter);
@@ -580,6 +580,7 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
   app.use('/stream-hls', streamHlsRouter);
   app.use('/radio',      radioRouter);
   app.use('/preview',    previewRouter);
+  app.use('/crop',       cropRouter);
 }
 
 // Music detection (server-side HLS audio analysis) routes — only mounted when
