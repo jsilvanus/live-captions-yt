@@ -5,6 +5,8 @@
  * added to the user message.
  */
 
+import { invokeModelCall } from '../agentic-turn.js';
+
 /**
  * @param {{ text: string|null, json: object|null, raw: string }} parsed
  */
@@ -20,12 +22,22 @@ function parseOutput(content, outputMode) {
 
 export class OpenAiVisionAdapter {
   /**
-   * @param {{ model: string, apiKey: string, apiUrl: string }} opts
+   * @param {{
+   *   model: string,
+   *   apiKey: string,
+   *   apiUrl: string,
+   *   transport?: string,
+   *   bridgeManager?: object,
+   *   bridgeInstanceId?: string,
+   * }} opts
    */
-  constructor({ model, apiKey, apiUrl }) {
+  constructor({ model, apiKey, apiUrl, transport, bridgeManager, bridgeInstanceId }) {
     this.model = model;
     this.apiKey = apiKey;
     this.apiUrl = (apiUrl || 'https://api.openai.com').replace(/\/$/, '');
+    this.transport = transport;
+    this.bridgeManager = bridgeManager;
+    this.bridgeInstanceId = bridgeInstanceId;
   }
 
   /**
@@ -50,16 +62,15 @@ export class OpenAiVisionAdapter {
       ...(opts.outputMode === 'json' ? { response_format: { type: 'json_object' } } : {}),
     };
 
-    const res = await fetch(`${this.apiUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`OpenAI vision API error ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const data = await res.json();
+    const result = await invokeModelCall({
+      apiUrl: this.apiUrl,
+      apiKey: this.apiKey,
+      model: this.model,
+      transport: this.transport,
+      bridgeManager: this.bridgeManager,
+      bridgeInstanceId: this.bridgeInstanceId,
+    }, body);
+    const data = result.body;
     const message = data?.choices?.[0]?.message?.content;
     if (typeof message !== 'string') throw new Error('Unexpected OpenAI vision response format');
     return parseOutput(message, opts.outputMode);

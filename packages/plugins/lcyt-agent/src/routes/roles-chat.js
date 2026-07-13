@@ -47,7 +47,7 @@ function resolveToolAllowlist(role, harnessConfig, allTools) {
  * @param {import('../roles-bus.js').RolesBus} rolesBus
  * @returns {import('express').Router}
  */
-export function createRolesChatRouter(db, auth, toolsContext, rolesBus) {
+export function createRolesChatRouter(db, auth, toolsContext, rolesBus, bridgeManager = null) {
   const router = Router();
   router.use(auth);
 
@@ -68,8 +68,8 @@ export function createRolesChatRouter(db, auth, toolsContext, rolesBus) {
     if (!config.enabled) return res.status(503).json({ error: 'Role is not enabled for this project' });
 
     const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
-    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName);
-    if (!apiSettings) return res.status(503).json({ error: 'AI provider not configured or unsupported (bridge-relayed and deer providers are not yet supported for agentic_chat)' });
+    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
+    if (!apiSettings) return res.status(503).json({ error: 'AI provider not configured or unsupported' });
 
     const tools = resolveToolAllowlist(role, config.harnessConfig, toolsContext.tools);
     const mode = effectiveMode(config.harnessConfig);

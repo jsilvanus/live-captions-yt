@@ -32,7 +32,7 @@ import { resolveRoleProviderSettings } from '../agentic-turn.js';
  * @param {import('../agent-engine.js').AgentEngine} agent
  * @returns {import('express').Router}
  */
-export function createPlannerRouter(db, auth, agent) {
+export function createPlannerRouter(db, auth, agent, bridgeManager = null) {
   const router = Router();
   router.use(auth);
 
@@ -47,8 +47,8 @@ export function createPlannerRouter(db, auth, agent) {
     if (!config.enabled) return res.status(503).json({ error: 'Role is not enabled for this project' });
 
     const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
-    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName);
-    if (!apiSettings) return res.status(503).json({ error: 'AI provider not configured or unsupported (bridge-relayed and deer providers are not yet supported for agentic_chat)' });
+    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
+    if (!apiSettings) return res.status(503).json({ error: 'AI provider not configured or unsupported' });
 
     const opts = {
       systemPromptOverride: config.harnessConfig.systemPromptOverride,

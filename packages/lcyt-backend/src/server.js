@@ -553,13 +553,13 @@ app.use('/ai', createAiRouter(db, scopedAuth('ai')));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
 app.use('/roles', createRolesRouter(db, scopedAuth('role')));
-app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus));
-app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager));
+app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
+app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
-app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent));
+app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
 app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector')));
 app.use('/actions', createActionsRouter(db, scopedAuth('action')));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
