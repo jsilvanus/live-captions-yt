@@ -33,8 +33,8 @@ export function createTargetsRouter(auth, db) {
   });
 
   router.post('/', auth, (req, res) => {
-    const { id, type, enabled, streamKey, url, headers, viewerKey, noBatch } = req.body || {};
-    const result = createCaptionTarget(db, req.session.apiKey, { id, type, enabled, streamKey, url, headers, viewerKey, noBatch });
+    const { id, type, enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch } = req.body || {};
+    const result = createCaptionTarget(db, req.session.apiKey, { id, type, enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch });
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.status(201).json({ ok: true, target: result.target });
   });
@@ -48,8 +48,8 @@ export function createTargetsRouter(auth, db) {
   });
 
   router.put('/:id', auth, (req, res) => {
-    const { enabled, streamKey, url, headers, viewerKey, noBatch } = req.body || {};
-    const result = updateCaptionTarget(db, req.session.apiKey, req.params.id, { enabled, streamKey, url, headers, viewerKey, noBatch });
+    const { enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch } = req.body || {};
+    const result = updateCaptionTarget(db, req.session.apiKey, req.params.id, { enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, target: result.target });
   });

@@ -10,6 +10,7 @@ import { IngestionSection } from './IngestionSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
 import { CaptionTargetsSection } from './CaptionTargetsSection.jsx';
+import { IconsSection } from './IconsSection.jsx';
 import { LanguagesSection } from './LanguagesSection.jsx';
 import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
@@ -106,6 +107,7 @@ export function SetupHubPage() {
 
         {/* ── Captions & language ── */}
         {isVisible('caption-targets') && <CaptionTargetsSection />}
+        {isVisible('icons') && <IconsSection />}
         {isVisible('languages') && <LanguagesSection />}
 
         {/* ── Speech & storage ── */}

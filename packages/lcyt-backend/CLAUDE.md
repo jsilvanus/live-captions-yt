@@ -31,6 +31,8 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `TRUST_PROXY` | Express `trust proxy` value | `true` |
 | `REVOKED_KEY_TTL_DAYS` | Days before revoked keys are purged | 30 |
 | `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval (ms) | 86400000 (24h) |
+| `EVENT_LOG_RETENTION_DAYS` | Days before `bus_events` audit rows are purged (0 disables) | 30 |
+| `EVENT_LOG_CLEANUP_INTERVAL` | `bus_events` cleanup interval (ms) | 86400000 (24h) |
 | `ALLOWED_DOMAINS` | Comma-separated domains for session CORS filter | `lcyt.fi,www.lcyt.fi,localhost` |
 | `ALLOWED_RTMP_DOMAINS` | Domains allowed to use `/stream` relay endpoints; falls back to `ALLOWED_DOMAINS` | (falls back) |
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
@@ -55,6 +57,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `RTMP_HOST` | RTMP host for RTMP relay | none |
 | `RTMP_APP` / `RTMP_APPLICATION` | RTMP application name for relay | none |
 | `RTMP_RELAY_ACTIVE` | If set to `1`, enables RTMP relay functionality | unset |
+| `MUSIC_DETECTION_ACTIVE` | If set to `1`, mounts the `/music` server-side analysis routes (`lcyt-music`) | unset |
 | `RTMP_CONTROL_URL` | nginx-rtmp control URL (legacy fallback for `dropPublisher`) | none |
 | `MEDIAMTX_API_URL` | MediaMTX v3 REST API base URL; activates MediaMTX `dropPublisher` path when set | none |
 | `MEDIAMTX_API_USER` | Basic-auth username for the MediaMTX API | none |
@@ -112,13 +115,15 @@ POST /auth/change-password — change password (user Bearer token)
 POST /live                — register session → returns session JWT
 GET  /live                — session status (Bearer token)
 DELETE /live              — tear down session (Bearer token)
-POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token)
+POST /captions            — queue caption(s) → 202 { ok, requestId } (Bearer token); per-caption fileFormats { original|<lang>: 'text'|'youtube'|'vtt' } selects the backend caption-file format per language (default 'youtube' plain text)
 GET  /events              — SSE stream of caption delivery results (Bearer token or ?token=)
+GET  /events/stream       — unified SSE over the shared EventBus; canonical envelopes { topic, projectId, ts, data }; ?topics=dsk.*,cue.fired filter; project-access auth (session/user/project/device JWT or scoped lcytmcp_ token; external tokens need an events:read scope, topics further narrowed by tokenAllowsTopic). Additive — the bespoke per-plugin SSE endpoints are unchanged.
+GET  /events/topics       — public catalog { baseScope, topics } of subscribable event-topic patterns; single source of truth for the Setup Hub scope picker (see routes/events-catalog.js). Includes per-variable topics: variable.<name>.changed (payload carries the new value); variable.* watches all.
 POST /sync                — NTP clock sync (Bearer token)
 GET  /stats               — per-key usage stats (Bearer token)
 DELETE /stats             — GDPR right-to-erasure: anonymise key and delete personal data (Bearer token)
 GET  /file                — list caption files saved for the authenticated key (Bearer token)
-GET  /file/:id            — download a caption file (Bearer token or ?token=)
+GET  /file/:id            — download a caption file (Bearer token or ?token=); ?offsetMs=±N shifts VTT cue times on the fly for VOD alignment (vtt files only)
 DELETE /file/:id          — delete a caption file (Bearer token)
 GET  /usage               — per-domain caption stats (public if USAGE_PUBLIC, else X-Admin-Key)
 POST /mic                 — claim/release soft mic lock for collaborative sessions (Bearer token)
@@ -139,7 +144,7 @@ GET  /preview/:key/incoming.jpg — latest RTMP → JPEG thumbnail (public)
 
 GET  /dsk/:apikey/images           — list DSK overlay images for an API key (public)
 GET  /dsk/:apikey/events           — SSE stream of graphics events for DSK page (public)
-GET  /dsk/:apikey/viewports/public — list public viewport definitions (public)
+GET  /dsk/:slugOrKey/viewports/public — list public viewport definitions + projectSlug (public; segment resolves public slug then raw api key)
 GET/POST/PUT/DELETE /dsk/:apikey/templates — DSK template CRUD (JWT Bearer or X-API-Key)
 POST /dsk/:apikey/templates/:id/activate   — activate a template in renderer (JWT Bearer or X-API-Key)
 POST /dsk/:apikey/template         — render a one-off template (JWT Bearer or X-API-Key)
@@ -167,6 +172,9 @@ GET  /production/mixers   — list mixers with connection status
 POST /production/mixers   — create mixer
 PUT/DELETE /production/mixers/:id — update/delete mixer
 POST /production/mixers/:id/switch — switch mixer source
+GET/POST /production/encoders — hardware encoder list/create (Monarch HD/HDX)
+GET/PUT/DELETE /production/encoders/:id — encoder detail/update/delete
+POST /production/encoders/:id/start|stop|test — encoder control (direct, frontend, or bridge-relayed)
 GET  /production/bridge/commands?token=xxx — SSE stream for bridge agents
 POST /production/bridge/status — bridge heartbeat + command result callback
 GET/POST/DELETE /production/bridge/instances — bridge instance CRUD
@@ -178,6 +186,10 @@ GET  /production/device-roles/:code/auth     — device role pin-code authentica
 
 GET  /keys/:key/features — list project feature flags (user Bearer)
 PUT  /keys/:key/features — update project feature flags (user Bearer)
+
+GET  /keys/:key/slug        — current public slug + org-policy required prefix (member or X-Admin-Key)
+GET  /keys/:key/slug/check  — ?slug= availability probe with reason (member or X-Admin-Key)
+PUT  /keys/:key/slug        — { slug: string|null } set/clear public slug; org prefix policy enforced for users, bypassed for X-Admin-Key
 
 GET  /keys/:key/members  — list project members (user Bearer)
 POST /keys/:key/members  — invite member (user Bearer)
@@ -224,7 +236,7 @@ DELETE /agent/context     — clear context window (Bearer token)
 GET  /agent/events        — recent agent events (Bearer token)
 POST /agent/generate-template | /agent/edit-template | /agent/suggest-styles — AI DSK template generation (Bearer token)
 
-POST   /mcp-tokens        — create a personal MCP access token { label } → { id, token } (raw token shown once) (Bearer token)
+POST   /mcp-tokens        — create a personal MCP access token { label, scopes? } → { id, token } (raw token shown once); optional `scopes` array restricts the token (`resource:verb` like `events:read` + dotted event-topic patterns like `dsk.*`); omit/empty = full access (Bearer token). Surfaced in the Setup Hub "MCP access" card's create form.
 GET    /mcp-tokens        — list this project's tokens (label + timestamps, hash/raw never returned) (Bearer token)
 DELETE /mcp-tokens/:id    — revoke a token (Bearer token)
 
@@ -259,12 +271,33 @@ POST   /variables/refresh — fire a connector request; { connectorSlug, request
 GET/POST/DELETE /admin/connector-network-rules[/:id] — global outbound-connector SSRF allow/deny rules (X-Admin-Key or is_admin user)
 GET/POST/DELETE /orgs/:orgId/connector-network-rules[/:id] — per-org SSRF allow/deny rules, enforced (user Bearer token; GET for any org member, write for owner/admin)
 
+GET    /orgs                — list orgs the user belongs to (user Bearer token)
+POST   /orgs                — create org; creator becomes owner (user Bearer token)
+GET    /orgs/:id            — org detail (any member)
+PATCH  /orgs/:id            — update name/slug/projectSlugPolicy ('none'|'prefix': require "<orgslug>-" prefix on project public slugs) (owner only)
+DELETE /orgs/:id            — delete org (owner only); member projects are detached (api_keys.org_id → NULL), never deleted
+GET    /orgs/:id/members    — list members (any member)
+POST   /orgs/:id/members    — invite member by email (owner/admin)
+PATCH  /orgs/:id/members/:userId — change member role; roles: owner/admin/editor/operator/viewer (owner/admin; owner changes owner-only)
+DELETE /orgs/:id/members/:userId — remove member, self-removal allowed, owner cannot be removed (owner/admin)
+GET    /orgs/:id/projects   — list projects attached to the org (any member)
+GET    /orgs/:id/features   — org feature codes (any member)
+PUT    /orgs/:id/features   — update org feature codes (owner/admin)
+
+GET/POST/PATCH/DELETE /ai/models[/:id] — per-key, per-role AI model config CRUD (lcyt-agent; user Bearer token + X-API-Key header or apiKey field)
+
+GET  /music/status          — server-side music analysis session state (Bearer token; mounted only when MUSIC_DETECTION_ACTIVE=1)
+POST /music/start | /music/stop — start/stop server-side HLS audio analysis (Bearer token)
+GET  /music/events/history  — paginated music/speech/silence event history (Bearer token)
+GET  /music/:key/live       — public SSE stream of live sound-label/BPM events (no auth)
+GET/PUT /music/config       — per-key detector settings (Bearer token)
+
 GET    /admin/users                  — list users with search (X-Admin-Key)
 GET    /admin/users/:id              — user detail with projects (X-Admin-Key)
 POST   /admin/users                  — create user (X-Admin-Key)
 PATCH  /admin/users/:id              — update user name/active (X-Admin-Key)
 POST   /admin/users/:id/set-password — admin password reset (X-Admin-Key)
-DELETE /admin/users/:id              — delete user (X-Admin-Key)
+DELETE /admin/users/:id?force=true   — delete user (X-Admin-Key); without force, 409s if the user has active projects or owns an organization; with force, projects are unlinked (user_id → NULL) and owned orgs are transferred to another member or torn down if the user was the sole member (reassignOrDeleteOwnedOrgs)
 GET    /admin/users/:id/features     — list user feature entitlements (X-Admin-Key)
 PATCH  /admin/users/:id/features     — grant/revoke user feature entitlements (X-Admin-Key)
 GET    /admin/projects               — list projects with search (X-Admin-Key)
@@ -273,6 +306,7 @@ PATCH  /admin/projects/:key          — update project (X-Admin-Key)
 PUT    /admin/projects/:key/features — batch update features (X-Admin-Key)
 POST   /admin/batch/users            — batch user operations (X-Admin-Key)
 POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
+GET    /admin/orgs                       — list all orgs with search/pagination (X-Admin-Key)
 GET    /admin/feature-policies                    — list tri-state site feature policies (available/self_service/denied) (X-Admin-Key)
 PUT    /admin/feature-policies/:code              — set a site-wide feature policy mode (X-Admin-Key)
 GET    /admin/orgs/:id/feature-overrides           — list an org's per-feature policy overrides (X-Admin-Key)
@@ -280,9 +314,9 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 ```
 
 **Key internals:**
-- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous). Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK, plus a rotatable `ingest_stream_key` — `plan_selfservice_config_backend.md` §2), `caption_usage`, `session_stats`, `caption_errors`, `sessions`, `caption_targets`/`translation_vendor_config`/`translation_targets` (server-persisted target/translation config — §1). Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup.
-- `src/db/schema.js` — also defines `organizations` and `org_members` (schema-only so far, from `plan_team_org_backend.md` — no org CRUD/membership routes yet, `/team` is still a "Coming soon" placeholder) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
-- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` for SSE routing. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
+- `src/db.js` — Re-exports from `src/db/index.js` (modular). `better-sqlite3` (synchronous) — this install enables `PRAGMA foreign_keys` **by default** (verified: `new Database(':memory:').pragma('foreign_keys', {simple:true})` returns `1`; no explicit pragma statement exists anywhere in the codebase, none is needed), so every `REFERENCES ... ON DELETE CASCADE`/`SET NULL` in `schema.js` is live and enforced, and every plain `REFERENCES` with no `ON DELETE` clause is a real, enforced NO-ACTION constraint — deleting a referenced parent row throws `SQLITE_CONSTRAINT_FOREIGNKEY` if child rows exist. Core tables: `users`, `api_keys` (with `user_id` FK, and now `org_id` FK, plus a rotatable `ingest_stream_key` — `plan_selfservice_config_backend.md` §2), `caption_usage`, `session_stats`, `caption_errors`, `sessions`, `caption_targets`/`translation_vendor_config`/`translation_targets` (server-persisted target/translation config — §1). Additional tables for graphics, radio, HLS, RTMP relay, and production control. Additive migrations run on startup. All `api_keys(key)`-referencing core child tables (`caption_targets`, `translation_vendor_config`, `translation_targets`, `project_features`, `project_members` [→ `project_member_permissions` cascades transitively], `project_device_roles`) declare `ON DELETE CASCADE`, so `deleteKey()` (`src/db/keys.js`) doesn't need to clean them up manually — it does still explicitly delete rows in the tables that key off `api_key` **without** a declared FK at all (`caption_usage`, `session_stats`, `caption_errors`, `auth_events`, `sessions`, `caption_files`, `icons`, `viewer_key_daily_stats`, `mcp_tokens`, plus `rtmp_stream_stats`/`rtmp_relays` when present), inside one `db.transaction(...)`, since those would otherwise silently orphan rather than error.
+- `src/db/schema.js` — also defines `organizations` and `org_members` (from `plan_team_org_backend.md`; served by `src/routes/orgs.js`'s `/orgs` CRUD/membership routes and the lcyt-web `/team` page) and `site_feature_policies`/`org_feature_overrides` (`plan_site_feature_policies.md` — tri-state `available`/`self_service`/`denied` policy per feature code, with per-org overrides; `resolveFeaturePolicy(db, apiKey, featureCode)` in `src/db/project-features.js` implements the baseline-plus-override resolution and is wired into `routes/project-features.js`'s self-service toggle route). Admin management of these lives in `routes/admin.js` (`GET/PUT /admin/feature-policies`, `GET/PUT /admin/orgs/:id/feature-overrides`) — no admin frontend page for it yet.
+- `src/store.js` — In-memory session store. Session = `{ sessionId, apiKey, streamKey, domain, sender, extraTargets, token, startedAt, lastActivity, sequence, syncOffset, emitter, _sendQueue }`. `sender` is null in target-array mode. `extraTargets` holds all targets including `youtube`, `viewer`, and `generic` types. `emitter` is a per-session `EventEmitter` that stays the plugins' in-process fan-in (captions/mic/stats emit on it, the cue engine listens on its generic `event` channel). `SessionStore._bridgeEmitterToBus` mirrors every emitter event onto the shared `EventBus` (`this.eventBus`) keyed by the project, carrying `sessionId` as envelope meta; `/events` consumes from the bus filtered to its `sessionId`, so caption/mic/close/plugin events also reach `/events/stream`, in-process listeners, and the audit log without touching any emit site. `_sendQueue` serialises concurrent YouTube sends so sequence numbers stay monotonic.
 - `src/routes/stt.js` — `createSttRouter(auth, sttManager, db, jwtSecret)`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`. The `?token=`/Bearer SSE auth verifies with `jwt.verify(token, jwtSecret)` (previously an unverified base64 decode of the payload — same class of bug fixed in `lcyt-connectors`' `/variables/events`, see that plugin's `CLAUDE.md`).
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
 - `src/middleware/feature-gate.js` — `createRequireFeature(db, code)` + `createRequireKeyFeature(db, code)`: opt-in feature gate middleware, no-op unless `FEATURE_GATE_ENFORCE=1`.
@@ -291,7 +325,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
 - The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, LLM-based event cue evaluation, the AI model provider registry (`ai_providers`/`ai_provider_models`/`ai_provider_grants`), and the AI Roles Framework (role catalog, the shared `agentic_chat` turn loop, Production Assistant's suggestion queue, Tracker/Describer vision roles). Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings, createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter, createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter, createPlannerRouter } from 'lcyt-agent'` — see that plugin's `CLAUDE.md` for the full composition-root wiring example (it's the only file that holds `lcyt-backend`'s caption-target helpers, `lcyt-production`'s device registry, `lcyt-dsk`'s image helpers, and the running `AgentEngine` all together, needed to build the shared tool registry from `lcyt-tools`).
 - `src/ai/index.js` — Backward-compatible re-exports from `lcyt-agent` so existing imports from `lcyt-backend/src/ai/` continue to work.
-- `src/db/mcp-tokens.js` — Personal MCP access token DB helpers (`mcp_tokens` table, in `db/schema.js`): `createMcpToken`/`listMcpTokens`/`revokeMcpToken`/`verifyMcpToken` (raw token format `lcytmcp_<64 hex>`, only the SHA-256 hash is stored). `verifyMcpToken` is also imported directly by `lcyt-mcp-http` (via `lcyt-backend/db`) so that server's `authenticate()` accepts either a raw `api_keys.key` or an `mcp_tokens`-issued token, resolving to the same per-connection `apiKey` scoping either way.
+- `src/db/mcp-tokens.js` — Personal MCP access token DB helpers (`mcp_tokens` table, in `db/schema.js`): `createMcpToken`/`listMcpTokens`/`revokeMcpToken`/`verifyMcpToken` (raw token format `lcytmcp_<64 hex>`, only the SHA-256 hash is stored). Scope helpers: `tokenHasScope(scopes, 'resource:verb')` gates `/events/stream` on `events:read`; `tokenAllowsTopic(scopes, topic)` narrows which dotted event-bus topics (`dsk.*`, `cue.fired`, `variable.<name>.changed`, `*`) a token receives. Both treat empty/NULL scopes as full access; `tokenAllowsTopic` reuses the bus's `topicMatches`. (External tokens only reach `/events/stream`; the rest of the project surface is JWT-only, so there is no per-resource REST scope helper.) `verifyMcpToken` is also imported directly by `lcyt-mcp-http` (via `lcyt-backend/db`) so that server's `authenticate()` accepts either a raw `api_keys.key` or an `mcp_tokens`-issued token, resolving to the same per-connection `apiKey` scoping either way.
 - `src/routes/mcp-tokens.js` — `createMcpTokensRouter(db, auth)`: the `/mcp-tokens` CRUD routes above.
 - `packages/lcyt-tools` (imported as `lcyt-tools`) — the shared tool-schema/handler registry (`plan/mcp`) consumed by `lcyt-agent`'s `agentic_chat` turn loop over an in-process MCP `Client`/`Server` pair. See its own `CLAUDE.md`.
 - API Connectors & Variables (`lcyt-connectors`) owns the `{{ }}` variable system and outbound API connector CRUD/resolution engine. Imported via `import { initConnectors, createConnectorsRouter, createVariablesRouter } from 'lcyt-connectors'`; `initConnectors(db, { filesControl: { resolveStorage } })` runs its own migrations and returns `{ bus, engine }`.
@@ -299,8 +333,12 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/middleware/cors.js` — Dynamic CORS: only allows registered session domains; never exposes admin routes.
 - `src/middleware/admin.js` — `X-Admin-Key` constant-time comparison.
 - `src/caption-files.js` — Pure caption-text utilities: `composeCaptionText`, `formatVttTime`, `buildVttCue`. File I/O was extracted to `lcyt-files`.
+- `src/caption-file-writer.js` — `createSessionCaptionFileWriter({ db, resolveStorage })` → `(session, { text, translations, fileFormats, timestamp })`: backend caption-file archiving for delivery paths that bypass `POST /captions`. Injected into `lcyt-rtmp`'s `SttManager` via `setDeliveryHelpers` so server-STT transcripts + translations are archived with the same per-language format rules as the captions route.
+- `src/caption-fanout.js` — `createCaptionFanout({ db })` → `fanOutToTargets(session, captions)`: extra-target delivery (YouTube senders, generic webhooks, viewer SSE) with Phase 5 per-target routed composition (`translation_targets.caption_target_id` + per-row `show_original`) and viewer-owner registration. Extracted from `routes/captions.js` and shared with server-STT via `setDeliveryHelpers`; when an entry has no `composedText` it computes the default composition from `captionLang`/`translations`/`showOriginal` (the STT case). Fire-and-forget per target.
 - `src/backup.js` — DB backup utilities.
-- `src/dsk-bus.js` — `DskBus`: DSK graphics SSE subscriber registry and per-key graphics state, extracted from SessionStore so `lcyt-dsk` does not depend on session lifecycle.
+- `src/dsk-bus.js` — `DskBus`: DSK graphics SSE registry + per-key graphics state. The SSE subscriber/broadcast bookkeeping now delegates to the shared `EventBus` (`lcyt/event-bus`, injected from `server.js`); `emitDskEvent`/`addDskSubscriber` publish/subscribe canonical `dsk.*` topics while the bespoke `/dsk/:apikey/events` stream keeps its exact legacy event names + raw payloads via `rename`/`envelope:false`. The graphics-state Map stays local (not SSE plumbing). Same delegation pattern in `lcyt-connectors`' `VariablesBus` and `lcyt-agent`'s `RolesBus`.
+- `src/routes/events-stream.js` — `createEventsStreamRouter(eventBus)`: the unified `GET /events/stream` endpoint (see routes above). Scoped external tokens are narrowed per-event via `tokenAllowsTopic` so topic scoping holds even when `?topics` is omitted.
+- `src/db/bus-events.js` — `bus_events` audit log helpers (`insertBusEvent`/`deleteBusEventsOlderThan`/`listBusEvents`) + `attachBusAuditLog(eventBus, db)` which taps the bus and persists only the curated `AUDITED_TOPICS` allowlist (governance topics `role.assistant.assistant_action`/`_suggestion`, plus `cue.fired`/`dsk.graphics_changed`/`dsk.templates_changed`/`bridge.command_result`/`target.*`/`translation.*`). High-frequency topics (`caption.sent`, `session.mic_state`, `dsk.text`, `variable.updated`, `stt.transcript`) are deliberately excluded. Insert-only; an audit trail, **not** a replay buffer. Retention via `EVENT_LOG_RETENTION_DAYS` (timer in `index.js`).
 - `src/ffmpeg/index.js` — ffmpeg runner factory: selects `local-runner`, `docker-runner`, or `worker-runner` based on `FFMPEG_RUNNER` env var. Exports `createFfmpegRunner()`.
 - `src/ffmpeg/local-runner.js` — Spawns ffmpeg directly via `child_process.spawn`.
 - `src/ffmpeg/docker-runner.js` — Runs ffmpeg inside a Docker container (`FFMPEG_IMAGE`).
@@ -310,6 +348,8 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/device-roles.js` — Device role CRUD + pin-code auth for production devices.
 - `src/routes/project-features.js` — Per-project feature flag CRUD.
 - `src/routes/project-members.js` — Project membership CRUD (invite, role update, remove).
+- `src/routes/orgs.js` — Organization CRUD + membership routes (`/orgs/*`, backed by `src/db/orgs.js`); role hierarchy owner/admin/editor/operator/viewer. `deleteOrganization()` detaches member projects (`api_keys.org_id = NULL`) before deleting the org row — `api_keys.org_id` has no `ON DELETE` action, so under this install's live `PRAGMA foreign_keys` enforcement (see below) a bare `DELETE FROM organizations` would otherwise throw `SQLITE_CONSTRAINT_FOREIGNKEY` whenever the org still has projects. `reassignOrDeleteOwnedOrgs(db, userId)` resolves `organizations.owner_user_id` (NOT NULL, no `ON DELETE` action) ahead of a user delete: promotes another member to owner if one exists, otherwise tears the org down the same way — used by both `deleteUserAccount()` (self-service `DELETE /auth/me`) and `DELETE /admin/users/:id?force=true`.
+- `src/routes/project-slug.js` — `/keys/:key/slug[/check]` public-slug routes (`plan_dsk_viewport_settings` Phase 1). Slug helpers (`validatePublicSlugFormat`, `RESERVED_PUBLIC_SLUGS`, `checkPublicSlugAvailability`, `setPublicSlug`, `resolveKeyByPublicSlug`, `getRequiredSlugPrefix`) live in `src/db/keys.js`; `api_keys.public_slug` is unique-indexed; `PATCH /admin/projects/:key` accepts `publicSlug` with the org prefix policy bypassed.
 - `src/routes/bridge-download.js` — Bridge agent binary download endpoint.
 - `src/routes/account.js` — User account routes (profile, settings).
 - `src/routes/session.js` — Session management routes.
@@ -317,7 +357,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/db/device-roles.js` — Device role DB helpers (`prod_device_roles` table).
 - `src/db/project-features.js` — Project feature flag DB helpers (`project_features` table).
 - `src/db/project-members.js` — Project membership DB helpers (`project_members` table).
-- `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`).
+- `src/db/users.js` — User CRUD (`createUser`, `getUserByEmail`, `getUserById`, `updateUserPassword`). `deleteUserAccount()` (self-service full account deletion) runs, in order: `deleteOwnedProjectsForUser()`, `reassignOrDeleteOwnedOrgs()` (resolves any orgs the user owns — see `src/routes/orgs.js` above), `clearUserReferences()` (nulls the user out of every nullable `invited_by`/`granted_by`/`set_by`/`updated_by` FK column across `org_members`/`project_members`/`project_features`/`user_features`/`site_feature_policies`/`org_feature_overrides`), then deletes `org_members` and the `users` row — this order is load-bearing under live FK enforcement, not stylistic.
 - `src/db/index.js` — DB init + all table migrations (users, api_keys, sessions, etc.); re-exported by `src/db.js`.
 - `src/routes/auth.js` — User registration/login/me/change-password routes.
 - `src/routes/keys.js` — API key CRUD (admin + user project management).
@@ -352,6 +392,10 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 3. **Admin API key** (`X-Admin-Key` header) — server-level; for `/keys` admin routes. Uses constant-time comparison.
 4. **DSK Editor API key** (`X-API-Key` header) — API key auth for DSK template management and image routes (no live session required). Falls through to JWT Bearer if header absent (`editorAuthOrBearer` middleware).
 5. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain` where `streamKey` defaults to `''` in target-array mode.
+6. **Project-access middleware** (`middleware/project-access.js`, `createProjectAccessMiddleware(db, jwtSecret, { requiredScope, jwtOnly })`) gates the project-scoped routers. `req.auth` = `{ kind, projectId, projectRole, scopes?, … }`. **A token's access = its scopes** (session/user/project/device JWTs and full-access/NULL-scope external tokens have full delegation and bypass scope checks; scoped external tokens are limited):
+   - **REST routers** (DSK, connectors/variables/actions, roles, cues, STT/targets/translation, ai/agent, mcp-tokens) are mounted with `scopedAuth('<resource>')` — a colon-less `requiredScope` is checked as `<resource>:<verb>` with the verb inferred from the HTTP method (`GET`→`read`, else `write`). So a scoped external token needs e.g. `variable:read` to `GET /variables`, `dsk:write` to mutate DSK. Event scopes and REST scopes are **independent** — a `dsk.*` topic scope grants no REST access.
+   - **Unified event stream** `GET /events/stream` — external tokens gated on exact `requiredScope: 'events:read'`, topics narrowed by `tokenAllowsTopic`. `GET /events/topics` is public.
+   - **Legacy per-plugin SSE** now only includes `/stt/events` (JWT-only). Variables and role events are consumed via `/events/stream`.
 
 ## User Management
 

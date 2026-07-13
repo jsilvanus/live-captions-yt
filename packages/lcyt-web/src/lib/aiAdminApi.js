@@ -17,17 +17,26 @@ async function requestJson(backendUrl, path, { token, apiKey, method = 'GET', bo
   return data;
 }
 
+// Public catalog of subscribable event topics ({ baseScope, topics }). No auth.
+export async function listEventTopics({ backendUrl }) {
+  return requestJson(backendUrl, '/events/topics', {});
+}
+
 export async function listMcpTokens({ backendUrl, token, apiKey }) {
   const data = await requestJson(backendUrl, '/mcp-tokens', { token, apiKey });
   return data.tokens || [];
 }
 
-export async function createMcpToken({ backendUrl, token, apiKey, label, createdByName, active = true }) {
+export async function createMcpToken({ backendUrl, token, apiKey, label, createdByName, active = true, scopes }) {
+  // Omit `scopes` entirely for full-access tokens (backend treats null/absent as
+  // unscoped = full access); send the array only when the token is restricted.
+  const body = { label, createdByName, active };
+  if (Array.isArray(scopes) && scopes.length) body.scopes = scopes;
   return requestJson(backendUrl, '/mcp-tokens', {
     token,
     apiKey,
     method: 'POST',
-    body: { label, createdByName, active },
+    body,
   });
 }
 

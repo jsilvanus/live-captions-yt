@@ -6,14 +6,12 @@
  *
  *   POST /roles/:roleCode/message  { text, conversationId? }
  *     — runs one shared-turn-loop exchange against the role's tool allowlist
- *   GET  /roles/:roleCode/events   — SSE: tool_call_started, tool_call_result,
- *     staged_action, reply
  *
  * The turn itself runs synchronously inside the POST handler (this repo's
  * chat-completion calls are non-streaming, matching AgentEngine's existing
  * _callChatCompletion) — SSE events are emitted as the turn progresses for
  * any active subscriber, and the POST response also carries the final
- * result directly, so a client doesn't have to be subscribed to get a reply.
+ * result directly, so a client doesn't have to subscribe to receive a reply.
  */
 
 import { Router } from 'express';
@@ -105,28 +103,6 @@ export function createRolesChatRouter(db, auth, toolsContext, rolesBus) {
 
     emit('reply', { reply: result.reply });
     return res.json({ ok: true, reply: result.reply, pendingActions: [], toolCalls: result.toolCalls });
-  });
-
-  // Generic event stream for ANY registered role (chat-dialog, vision,
-  // Assistant) — not restricted to CHAT_DIALOG_ROLES. This is deliberately
-  // the single place GET /:roleCode/events is handled: Planner is the only
-  // role excluded (it never streams — see plan_ai_roles_framework.md), and
-  // every other role's own router (production-assistant.js, the future
-  // vision role router) relies on THIS route rather than defining its own,
-  // since Express would otherwise route any /roles/<x>/events request
-  // through whichever router is mounted first at the '/roles' prefix.
-  router.get('/:roleCode/events', (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
-    const { roleCode } = req.params;
-    if (roleCode === 'planner' || !getRole(db, roleCode)) return res.status(404).json({ error: 'Unknown role' });
-
-    res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
-    res.flushHeaders();
-    res.write('event: connected\ndata: {}\n\n');
-
-    rolesBus.addSubscriber(apiKey, roleCode, res);
-    req.on('close', () => rolesBus.removeSubscriber(apiKey, roleCode, res));
   });
 
   return router;

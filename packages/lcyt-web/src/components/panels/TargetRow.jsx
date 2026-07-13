@@ -61,8 +61,13 @@ export function TargetRow({
   }
 
   const isValidViewerKey = entry.type === 'viewer' && entry.viewerKey && /^[a-zA-Z0-9_-]{3,}$/.test(entry.viewerKey);
+  // Effective "show icon" flag. `iconEnabled` is the explicit toggle; when it's
+  // never been set (legacy configs saved before the toggle existed) fall back to
+  // the old implicit rule "on if an icon is selected" so branding doesn't vanish
+  // on upgrade.
+  const iconOn = entry.iconEnabled ?? (entry.iconId != null);
   const viewerPageUrl = (isValidViewerKey && backendUrl)
-    ? `${window.location.origin}/view/${encodeURIComponent(entry.viewerKey)}?server=${encodeURIComponent(backendUrl)}${entry.iconId ? `&icon=${entry.iconId}` : ''}`
+    ? `${window.location.origin}/view/${encodeURIComponent(entry.viewerKey)}?server=${encodeURIComponent(backendUrl)}${iconOn && entry.iconId ? `&icon=${entry.iconId}` : ''}`
     : null;
   const headersValue = typeof entry.headers === 'string'
     ? entry.headers
@@ -182,11 +187,19 @@ export function TargetRow({
           {viewerKeyError && <span className="settings-field__hint" style={{ color: 'var(--color-error, #c00)' }}>{viewerKeyError}</span>}
           <span className="settings-field__hint">{t('settings.targets.viewerKeyHint')}</span>
 
-          <label className="settings-field__label" style={{ marginTop: 8 }}>{t('settings.targets.viewerIcon')}</label>
+          <label className="settings-field__label" style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={iconOn}
+              onChange={e => onChange({ ...entry, iconEnabled: e.target.checked })}
+            />
+            {t('settings.targets.viewerIconEnabled')}
+          </label>
           <select
             className="settings-field__input"
-            style={{ width: 'auto' }}
+            style={{ width: 'auto', marginTop: 4 }}
             value={entry.iconId || ''}
+            disabled={!iconOn}
             onChange={e => onChange({ ...entry, iconId: e.target.value ? Number(e.target.value) : null })}
           >
             <option value="">{t('settings.targets.viewerIconNone')}</option>

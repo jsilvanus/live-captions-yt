@@ -10,9 +10,9 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 - `App.jsx` — legacy two-panel caption layout (mounted at `/legacy` and `/captions`)
 - `components/` — React JSX components (see routing table below). Key subdirectories: `sidebar/` (Sidebar, TopBar, StatusPopover, QuickActionsPopover), `dashboard/` (DashboardCard, StatusWidget, SentLogWidget, etc.), `broadcast/` (EncoderTab, StreamTab, YouTubeTab), `dsk-editor/` (TemplatePreview, AnimationEditor, LayerPropertyEditor), `dsk-viewports/` (TextLayersEditor, ImageSettingsTable), `panels/` (TargetsPanel, TranslationPanel, RelayPanel, ServicePanel, DetailsPanel, CeaCaptionsPanel, EmbedPanel, SttPanel, VadPanel, ReviewSummary), `production/` (ConnectionDot), `audio/` (AudioLevelMeter)
 - `contexts/` — React context providers: AppProviders, AudioContext, CaptionContext, ConnectionContext, FileContext, LangContext, SentLogContext, SessionApiContext, SessionContext, ToastContext. Notably: `ConnectionContext` (connection state, health, connect/disconnect), `CaptionContext` (send, sendBatch, sequence, syncOffset), `AudioContext` (audio/STT state and controls), `LangContext` (i18n language provider).
-- `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useVariables, useWebSpeech, useWindowEvent. Notably: `useSession` (`BackendCaptionSender` session lifecycle hook; `onConnected` payload includes `token`), `useDashboardConfig` (dashboard panel/layout CRUD, localStorage persistence), `useWebSpeech` (WebSpeech recognition state machine: start, stop, error recovery), `useProjectFeatures` (project feature flag hook), `useUserAuth` (user authentication hook), `useVariables` (`{{ }}` variable snapshot: `GET /variables` + `GET /variables/events` SSE + `POST /variables/refresh`, from `lcyt-connectors`).
+- `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useEventStream, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useVariables, useWebSpeech, useWindowEvent. Notably: `useSession` (`BackendCaptionSender` session lifecycle hook; `onConnected` payload includes `token`), `useDashboardConfig` (dashboard panel/layout CRUD, localStorage persistence), `useWebSpeech` (WebSpeech recognition state machine: start, stop, error recovery), `useProjectFeatures` (project feature flag hook), `useUserAuth` (user authentication hook), `useEventStream` (shared authenticated `/events/stream?flat=1` EventSource multiplexer), `useVariables` (`{{ }}` variable snapshot: `GET /variables` + shared `/events/stream` topic subscription + `POST /variables/refresh`, from `lcyt-connectors`).
 - `lib/` — Utilities: activeCodes.js, api.js, device.js, dskEditorAnimation.js, dskEditorGeometry.js, dskEditorPresets.js, fileUtils.js, formatting.js, googleCredential.js, i18n.js, inputLang.js, normalizeLines.js, plannerUtils.js, relayConfig.js, settings.js, settingsIO.js, storageKeys.js, sttConfig.js, targetConfig.js, translate.js, translationConfig.js, viewerUtils.js, youtubeApi.js, youtubeAuth.js. Notably: `storageKeys.js` (normalized localStorage key registry, `lcyt.{category}.{key}` convention), `settingsIO.js` (settings export/import: `downloadSettings`, `importSettings`), `i18n.js` (i18n framework: locale loading, `useLang` hook).
-- `lib/metacode-*` — Metacode helpers: metacode-parser.js, metacode-active.js, metacode-planner.js, metacode-runtime.js, metacode-variables.js (frontend metacode logic; `fileUtils.js`, `activeCodes.js`, and `plannerUtils.js` keep compatibility re-exports). `metacode-parser.js` also parses the `!api:`/`api:`/`api!:` connector-trigger metacodes into `lineCodes[i].apiTriggers`; `metacode-variables.js` provides `interpolateVariables()` for client-side `{{name}}` insertion. See `packages/plugins/lcyt-connectors/CLAUDE.md`.
+- `lib/metacode-*` — Metacode helpers: metacode-parser.js, metacode-active.js, metacode-planner.js, metacode-runtime.js, metacode-variables.js, metacode-registry.js, metacode-ttl.js (frontend metacode logic; `fileUtils.js`, `activeCodes.js`, and `plannerUtils.js` keep compatibility re-exports). `metacode-registry.js` is the single source of truth for **reserved metacode names** (`RESERVED_METACODES` + `isReservedName`/`isReservedActionable`/`BOOLEAN_CODES`) — the parser dispatches through it instead of hardcoded `if (key === …)` branches; unknown names fall through to a plain variable assignment. `metacode-ttl.js` provides `parseValueTtl` (the `=>` variable-TTL annotation) and `parseDuration` (shared by `timer:` and TTL). `metacode-parser.js` also parses the `!api:`/`api:`/`api!:` connector-trigger metacodes into `lineCodes[i].apiTriggers`; `metacode-variables.js` provides `interpolateVariables()` for client-side `{{name}}` insertion. See `packages/plugins/lcyt-connectors/CLAUDE.md` and `docs/plans/plan_metacode_variable_unification.md`.
 - `locales/` — i18n translation files: en.js, fi.js, sv.js
 - `styles/` — reset.css, layout.css, components.css, dashboard.css
 
@@ -34,12 +34,16 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/production/mixers` | `ProductionMixersPage` | Mixer management |
 | `/production/bridges` | `ProductionBridgesPage` | Bridge instance management |
 | `/production/devices` | `ProductionDevicesPage` | Device role management |
+| `/production/visual` | `ProductionVisualPage` | Video/audio signal-flow diagram of the production setup (Mermaid) |
 | `/planner` | `PlannerPage` | Event/service planner |
 | `/translations` | `TranslationsPage` | Translation management |
 | `/projects` | `ProjectsPage` | User project (API key) management |
+| `/projects/:key` | `ProjectSettingsPage` | Per-project settings page (Summary, Features, Team, Device roles, Danger zone tabs — `ProjectDetailModal` un-nested) |
+| `/assets` | `AssetsPage` | Cross-content library view (DSK template counts are real; other kinds labeled "Not tracked yet") |
+| `/team` | `TeamPage` | Organization/team management (backed by the `/orgs` backend routes: members, roles, org projects) |
 | `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable |
 | `/setup/wizard` | `SetupWizardPage` | Guided one-time setup wizard (superseded by the hub as the default `/setup` destination, still reachable) |
-| `/setup/:card` | `SetupHubPage` | Deep link — same page as `/setup`, with the card whose `id` matches `:card` (e.g. `connectors`, `cameras`, `stt`, `storage`) scrolled into view and highlighted for 10s |
+| `/setup/:card` | `SetupHubPage` | Deep link — same page as `/setup`, with the card whose `id` matches `:card` (e.g. `connectors`, `cameras`, `stt`, `storage`, `icons`) scrolled into view and highlighted for 10s |
 | `/setup/:card/page` | `SetupStandalonePage` | Full-page equivalent of a card (`cameras`\|`mixers`\|`encoders`\|`bridges`\|`viewports`\|`caption-targets` only) with a banner linking back to the hub card — device/config-manager cards render the same manager component non-embedded; `viewports` renders the full `DskViewportsPage` editor (text layers, present-to-screen) since those don't fit the card's item-row model. Cards without a real standalone-page duplicate (Egress — `/broadcast` covers more than just relay targets — Storage, STT, etc.) don't route here. |
 | `/account` | `AccountPage` | Login/register or user profile |
 | `/settings` | `SettingsPage` | Unified settings (General, CC, I/O tabs) |
@@ -48,13 +52,17 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/admin/users/:id` | `AdminUserDetailPage` | User detail, projects, password reset (feature-gated: `admin`) |
 | `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |
 | `/admin/projects/:key` | `AdminProjectDetailPage` | Project detail, features, members (feature-gated: `admin`) |
+| `/admin/audit-log` | `AdminAuditLogPage` | Admin audit log (feature-gated: `admin`; removed from sidebar nav, route still live) |
+| `/admin/ai-models` | `AdminAiModelsPage` | Site-scope AI provider/model management (feature-gated: `admin`) |
+| `/admin/site-features` | `AdminSiteFeaturesPage` | Tri-state site feature policies + per-org overrides (feature-gated: `admin`) |
+| `/admin/teams` | `AdminTeamsPage` | All orgs on the deployment (`GET /admin/orgs`), feature overrides (feature-gated: `admin`) |
 
 #### Standalone routes (no sidebar)
 
 | Path | Component | Notes |
 |---|---|---|
 | `/view/:key` | `ViewerPage` | Full-screen caption viewer (public) |
-| `/dsk/:key` | `DskPage` | DSK green-screen overlay (public, transparent bg) |
+| `/dsk/:slugOrKey[/:viewport]` | `DskPage` | DSK green-screen overlay (public, transparent bg). Path segment is the project public slug (preferred) or raw api key (legacy); viewport from the path or `?viewport=` |
 | `/dsk-control/:key` | `DskControlPage` | DSK control (standalone mode) |
 | `/mcp/:sessionId` | `SpeechCapturePage` | MCP speech session |
 | `/embed/audio` | `EmbedAudioPage` | Mic / STT capture widget |

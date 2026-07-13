@@ -27,6 +27,10 @@
       "import": "./src/logger.js",
       "require": "./dist/logger.cjs"
     },
+    "./event-bus": {
+      "import": "./src/event-bus.js",
+      "require": "./dist/event-bus.cjs"
+    },
     "./backend": {
       "types": "./src/backend-sender.d.ts",
       "import": "./src/backend-sender.js",

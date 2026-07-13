@@ -367,12 +367,39 @@ describe('parseFileContent() — timer metacode', () => {
     assert.equal(resultNeg.lineCodes[0].timer, undefined);
   });
 
+  it('accepts explicit ms/s/m units, normalized to seconds', () => {
+    // codes.timer is stored in seconds (the runtime multiplies by 1000).
+    assert.equal(parseFileContent('<!-- timer: 500ms -->').lineCodes[0].timer, 0.5);
+    assert.equal(parseFileContent('<!-- timer: 5s -->').lineCodes[0].timer, 5);
+    assert.equal(parseFileContent('<!-- timer: 2m -->').lineCodes[0].timer, 120);
+    // bare number still means seconds (back-compat)
+    assert.equal(parseFileContent('<!-- timer: 3 -->').lineCodes[0].timer, 3);
+  });
+
   it('timer action inherits currentCodes', () => {
     const raw = '<!-- lang: fi-FI -->\n<!-- timer: 2 -->\nLine 1';
     const { lineCodes } = parseFileContent(raw);
     // index 0 = lang metadata, index 1 = timer action, index 2 = Line 1
     assert.equal(lineCodes[1].timer, 2);
     assert.equal(lineCodes[1].lang, 'fi-FI');
+  });
+});
+
+describe('parseFileContent() — persistent-code => TTL (namespace unification)', () => {
+  it('strips a valid => annotation off a persistent value and records codeTtls', () => {
+    const { lineCodes } = parseFileContent('<!-- section: Prayer => 20s:Hymn -->\nLine');
+    // value cleaned; original literal annotation gone
+    assert.equal(lineCodes[0].section, 'Prayer');
+    assert.deepEqual(lineCodes[0].codeTtls.section, { ms: 20000, captions: null, revertMode: 'literal', revertValue: 'Hymn' });
+    // TTL is per-line, not persisted forward
+    assert.equal(lineCodes[1].section, 'Prayer');
+    assert.equal(lineCodes[1].codeTtls, undefined);
+  });
+
+  it('leaves a value with no valid => untouched (no codeTtls)', () => {
+    const { lineCodes } = parseFileContent('<!-- section: Prayer for peace -->');
+    assert.equal(lineCodes[0].section, 'Prayer for peace');
+    assert.equal(lineCodes[0].codeTtls, undefined);
   });
 });
 

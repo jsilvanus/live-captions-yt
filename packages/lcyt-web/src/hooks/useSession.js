@@ -3,6 +3,7 @@ import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
 import { createApi } from '../lib/api';
 import { KEYS } from '../lib/storageKeys.js';
+import { useEventStream } from './useEventStream.js';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
@@ -55,9 +56,9 @@ export function useSession({
   });
 
   const senderRef = useRef(null);
-  const esRef = useRef(null);
   // Keep backendUrl in a ref so claimMic/releaseMic always have the current value
   const backendUrlRef = useRef('');
+  const sessionIdRef = useRef(null);
 
   // Reconnect state (all mutable, stored in refs to avoid stale closures in timers)
   const reconnectTimerRef    = useRef(null);
@@ -88,10 +89,10 @@ export function useSession({
   // in their own effect/useCallback deps without those re-running every
   // render just because useSession() returned a new object this time.
   const getSessionToken = useCallback(() => senderRef.current?._token ?? null, []);
+  const eventStream = useEventStream({ backendUrl, connected, getToken: getSessionToken });
 
-  // Close EventSource + cancel reconnect on unmount
+  // Cancel reconnect on unmount
   useEffect(() => () => {
-    esRef.current?.close();
     if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
   }, []);
 
@@ -140,16 +141,14 @@ export function useSession({
   }, []);
 
   // Internal disconnect (does NOT cancel pending reconnect).
-  // Called by session_closed SSE event and by _scheduleReconnect on failure.
+  // Called by session.closed stream events and by _scheduleReconnect on failure.
   const _disconnectInternal = useCallback(async function _disconnectInternal() {
-    esRef.current?.close();
-    esRef.current = null;
-
     if (senderRef.current) {
       try { await senderRef.current.end(); } catch {}
       senderRef.current = null;
     }
     backendUrlRef.current = '';
+    sessionIdRef.current = null;
 
     setConnected(false);
     setSequence(0);
@@ -195,55 +194,52 @@ export function useSession({
   // Keep the refs up to date on every render
   scheduleReconnectRef.current = _scheduleReconnect;
 
-  // ─── SSE ────────────────────────────────────────────────
+  // ─── Unified event stream ───────────────────────────────
 
-  const openEventSource = useCallback(function openEventSource(url, token) {
-    esRef.current?.close();
-    const es = new EventSource(`${url}/events?token=${encodeURIComponent(token)}`);
-    esRef.current = es;
-
-    es.addEventListener('connected', (e) => {
-      const data = JSON.parse(e.data);
-      // Sync mic lock state immediately on SSE connection
-      setMicHolder(data.micHolder ?? null);
+  useEffect(() => {
+    if (!connected) return undefined;
+    return eventStream.onControl('connected', (data) => {
+      if (data?.sessionId) sessionIdRef.current = data.sessionId;
+      if (data?.micHolder !== undefined) setMicHolder(data.micHolder ?? null);
     });
+  }, [connected, eventStream]);
 
-    es.addEventListener('caption_result', (e) => {
-      const data = JSON.parse(e.data);
-      if (import.meta.env.DEV) console.log(`[LCYT] caption_result seq=${data.sequence} status=${data.statusCode}`);
-      setSequence(data.sequence);
-      cbs.current.onCaptionResult?.(data);
+  useEffect(() => {
+    if (!connected) return undefined;
+    return eventStream.on(['caption.*', 'session.*', 'plugin.*'], (env) => {
+      if (!env || typeof env !== 'object') return;
+      if (!sessionIdRef.current || env.sessionId !== sessionIdRef.current) return;
+      switch (env.topic) {
+        case 'caption.sent': {
+          const data = env.data || {};
+          if (import.meta.env.DEV) console.log(`[LCYT] caption_result seq=${data.sequence} status=${data.statusCode}`);
+          setSequence(data.sequence);
+          cbs.current.onCaptionResult?.(data);
+          return;
+        }
+        case 'caption.error': {
+          const data = env.data || {};
+          cbs.current.onCaptionError?.(data);
+          cbs.current.onError?.(data.error || 'Caption delivery failed');
+          return;
+        }
+        case 'session.mic_state':
+          setMicHolder(env.data?.holder ?? null);
+          return;
+        case 'session.closed':
+          _disconnectInternal().then(() => {
+            const cfg = reconnectConfigRef.current;
+            if (cfg) scheduleReconnectRef.current(cfg);
+          });
+          return;
+        default:
+          if (!env.topic?.startsWith('plugin.')) return;
+          const evtName = env.topic.slice('plugin.'.length);
+          const handlers = sseListenersRef.current.get(evtName);
+          if (handlers) handlers.forEach((h) => h(env.data));
+      }
     });
-
-    es.addEventListener('caption_error', (e) => {
-      const data = JSON.parse(e.data);
-      cbs.current.onCaptionError?.(data);
-      cbs.current.onError?.(data.error || 'Caption delivery failed');
-    });
-
-    es.addEventListener('mic_state', (e) => {
-      const data = JSON.parse(e.data);
-      setMicHolder(data.holder ?? null);
-    });
-
-    es.addEventListener('session_closed', () => {
-      // Server terminated the session — disconnect internally then attempt reconnect
-      _disconnectInternal().then(() => {
-        const cfg = reconnectConfigRef.current;
-        if (cfg) scheduleReconnectRef.current(cfg);
-      });
-    });
-
-    // Dispatch plugin SSE events to registered listeners
-    const PLUGIN_SSE_EVENTS = ['sound_label', 'bpm_update', 'cue_fired'];
-    for (const evtName of PLUGIN_SSE_EVENTS) {
-      es.addEventListener(evtName, (e) => {
-        const data = JSON.parse(e.data);
-        const handlers = sseListenersRef.current.get(evtName);
-        if (handlers) handlers.forEach(h => h(data));
-      });
-    }
-  }, [_disconnectInternal]);
+  }, [connected, eventStream, _disconnectInternal]);
 
   // ─── Health check ────────────────────────────────────────
 
@@ -318,6 +314,7 @@ export function useSession({
 
     senderRef.current = sender;
     backendUrlRef.current = url;
+    sessionIdRef.current = null;
 
     // Store config for auto-reconnect (cleared on manual disconnect)
     reconnectConfigRef.current = { backendUrl: url, apiKey: key, streamKey: sk ?? null };
@@ -336,7 +333,6 @@ export function useSession({
     const cfg = { backendUrl: url, apiKey: key };
     if (sk) cfg.streamKey = sk;
     saveConfig(cfg);
-    openEventSource(url, sender._token);
 
     cbs.current.onConnected?.({
       sequence: sender.sequence,
@@ -344,7 +340,7 @@ export function useSession({
       backendUrl: url,
       token: sender._token,
     });
-  }, [_disconnectInternal, openEventSource, saveConfig]);
+  }, [_disconnectInternal, saveConfig]);
 
   // Keep connectRef current for the reconnect timer callback
   connectRef.current = connect;
@@ -454,7 +450,7 @@ export function useSession({
     const tempId = 'q-' + Math.random().toString(36).slice(2);
     const meta = _translationMeta(opts);
     cbs.current.onCaptionSent?.({ requestId: tempId, text, pending: true, ...meta });
-    senderRef.current.construct(text, timestamp);
+    senderRef.current.construct(text, timestamp, opts);
     batchBufferRef.current.push({ text, requestId: tempId });
 
     if (!batchTimerRef.current) {

@@ -224,6 +224,7 @@ export default {
       viewerQrTitle: 'QR code',
       viewerQrHint: 'Scan to open the viewer page',
       viewerIcon: 'Icon',
+      viewerIconEnabled: 'Show icon on viewer page',
       viewerIconNone: 'None',
       viewerIconHint: 'Choose an icon to display in the top-right corner of the viewer page. Upload icons in Settings → Icons.',
       noBatch: 'Disable batch sending for this target',

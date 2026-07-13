@@ -4,10 +4,11 @@ Published to npm. Dual ESM/CJS package.
 
 **Source files (`src/`):**
 - `sender.js` / `sender.d.ts` — `YoutubeLiveCaptionSender` class. HTTP caption ingestion, sequence tracking, NTP-style clock sync, batch send.
-- `backend-sender.js` / `backend-sender.d.ts` — `BackendCaptionSender` class. Routes captions through the relay backend using `fetch()`. **Async delivery:** `send()`/`sendBatch()` return `{ ok, requestId }` immediately (202); the real YouTube outcome arrives on the `GET /events` SSE stream.
+- `backend-sender.js` / `backend-sender.d.ts` — `BackendCaptionSender` class. Routes captions through the relay backend using `fetch()`. **Async delivery:** `send()`/`sendBatch()` return `{ ok, requestId }` immediately (202); the real YouTube outcome arrives on the `GET /events` SSE stream. `send()` and `construct()` share the same `extraOpts` passthrough fields: `translations`, `captionLang`, `showOriginal`, `codes`, `fileFormats` (per-language backend caption-file format, `{ original|<lang>: 'text'|'youtube'|'vtt' }`), so batched captions keep their options (`plan_batch_options.md`). `construct()` stamps omitted timestamps at queue time (ISO, no trailing 'Z') so batched cues keep real spacing instead of collapsing to flush time.
 - `config.js` / `config.d.ts` — `loadConfig()`, `saveConfig()`, `buildIngestionUrl()`. Config stored at `~/.lcyt-config.json`.
 - `logger.js` / `logger.d.ts` — Pluggable logger with `info/success/error/warn/debug`. Supports `setCallback()`, `setVerbose()`, `setSilent()`, `setUseStderr()`. Set `LCYT_LOG_STDERR=1` to route logs to stderr (MCP-friendly).
 - `errors.js` / `errors.d.ts` — Typed error hierarchy: `LCYTError` → `ConfigError`, `NetworkError` (has `statusCode`), `ValidationError` (has `field`).
+- `event-bus.js` — `EventBus` + `topicMatches()`. One topic-based pub/sub layer (`publish`/`subscribeSse`/`subscribe`/`tap`) shared across the backend and plugins (`plan_pubsub_event_bus.md`). Lives here — not in `lcyt-backend` — because plugins can't depend on `lcyt-backend` but all already import `lcyt/*`; it has no hard Express dependency (only duck-types `res.write`). `DskBus`/`VariablesBus`/`RolesBus` and `SessionStore` all delegate to it. No `.d.ts` (backend-internal utility, not part of the caption-sender typed surface).
 
 TypeScript declaration files (`.d.ts`) are included alongside each source file.
 
@@ -18,6 +19,7 @@ lcyt/backend      → BackendCaptionSender
 lcyt/config       → config utilities
 lcyt/logger       → logger
 lcyt/errors       → error classes
+lcyt/event-bus    → EventBus + topicMatches (shared pub/sub)
 ```
 
 **Build:**

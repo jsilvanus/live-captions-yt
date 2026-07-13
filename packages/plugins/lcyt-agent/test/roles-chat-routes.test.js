@@ -1,6 +1,6 @@
 /**
  * Route-level tests for the chat-driven-dialog agentic_chat roles
- * (POST /roles/:roleCode/message, GET /roles/:roleCode/events).
+ * (POST /roles/:roleCode/message).
  */
 
 import { describe, it, before, after, afterEach } from 'node:test';
@@ -201,11 +201,13 @@ describe('POST /roles/:roleCode/message', () => {
 });
 
 describe('GET /roles/:roleCode/events', () => {
-  it('404s for an unknown role and 401s without auth', async () => {
+  it('is retired from this router', async () => {
     await startApp(makeToolsContext());
     const noAuth = await fetch(`${baseUrl}/roles/setup_assistant/events`);
     assert.equal(noAuth.status, 401);
     const badRole = await fetch(`${baseUrl}/roles/not-a-role/events`, { headers: bearer() });
     assert.equal(badRole.status, 404);
+    const knownRole = await fetch(`${baseUrl}/roles/setup_assistant/events`, { headers: bearer() });
+    assert.equal(knownRole.status, 404);
   });
 });

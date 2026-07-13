@@ -177,6 +177,24 @@ export function initDb(dbPath) {
     db.exec('CREATE UNIQUE INDEX idx_api_keys_ingest_stream_key ON api_keys(ingest_stream_key)');
   }
 
+  // User-defined public slug replacing the raw api_key in user-facing URLs
+  // (plan_dsk_viewport_settings Phase 1). NULL = slug URLs not enabled for
+  // this project. Uniqueness via index (NULLs are distinct in SQLite).
+  if (!existingCols.has('public_slug')) db.exec('ALTER TABLE api_keys ADD COLUMN public_slug TEXT');
+  if (!existingApiKeyIndexes.has('idx_api_keys_public_slug')) {
+    db.exec('CREATE UNIQUE INDEX idx_api_keys_public_slug ON api_keys(public_slug)');
+  }
+
+  // Additive migrations for organizations table
+  const existingOrgCols = new Set(
+    db.prepare('PRAGMA table_info(organizations)').all().map(c => c.name)
+  );
+  // 'none' | 'prefix' — when 'prefix', this org's projects must have
+  // public_slugs starting with "<organizations.slug>-" (plan_dsk_viewport_settings Phase 1).
+  if (!existingOrgCols.has('project_slug_policy')) {
+    db.exec("ALTER TABLE organizations ADD COLUMN project_slug_policy TEXT NOT NULL DEFAULT 'none'");
+  }
+
   // Additive migrations for users table
   const existingUserCols = new Set(
     db.prepare('PRAGMA table_info(users)').all().map(c => c.name)
@@ -328,6 +346,22 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_caption_targets_api_key ON caption_targets(api_key)');
 
+  // Additive migration: per-viewer-target icon branding.
+  // icon_id references an icons(id) row (nullable — no icon chosen); icon_enabled
+  // is an explicit show/hide toggle so operators can turn branding off without
+  // losing the selected icon. Only meaningful for type='viewer'.
+  {
+    const captionTargetsCols = new Set(
+      db.prepare('PRAGMA table_info(caption_targets)').all().map(c => c.name)
+    );
+    if (!captionTargetsCols.has('icon_id')) {
+      db.exec('ALTER TABLE caption_targets ADD COLUMN icon_id INTEGER');
+    }
+    if (!captionTargetsCols.has('icon_enabled')) {
+      db.exec('ALTER TABLE caption_targets ADD COLUMN icon_enabled INTEGER NOT NULL DEFAULT 0');
+    }
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS translation_vendor_config (
       api_key        TEXT PRIMARY KEY REFERENCES api_keys(key) ON DELETE CASCADE,
@@ -467,6 +501,9 @@ export function initDb(dbPath) {
       api_key      TEXT NOT NULL,
       label        TEXT NOT NULL,
       token_hash   TEXT NOT NULL UNIQUE,
+      user_id      INTEGER,
+      project_id   TEXT,
+      scopes       TEXT,
       created_at   TEXT NOT NULL DEFAULT (datetime('now')),
       last_used_at TEXT,
       revoked_at   TEXT
@@ -484,7 +521,30 @@ export function initDb(dbPath) {
     if (!mcpTokenCols.has('active'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
     if (!mcpTokenCols.has('created_by_user_id')) db.exec('ALTER TABLE mcp_tokens ADD COLUMN created_by_user_id INTEGER');
     if (!mcpTokenCols.has('created_by_name'))    db.exec("ALTER TABLE mcp_tokens ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''");
+    if (!mcpTokenCols.has('user_id'))            db.exec('ALTER TABLE mcp_tokens ADD COLUMN user_id INTEGER');
+    if (!mcpTokenCols.has('project_id'))         db.exec('ALTER TABLE mcp_tokens ADD COLUMN project_id TEXT');
+    if (!mcpTokenCols.has('scopes'))             db.exec('ALTER TABLE mcp_tokens ADD COLUMN scopes TEXT');
   }
+
+  // ── Event-bus audit log (plan_pubsub_event_bus) ───────────────────────────
+  // Insert-only, curated-topic history of notable events published on the
+  // shared EventBus. This is a human/debug audit trail, NOT a replay mechanism
+  // for reconnecting subscribers (live delivery is best-effort broadcast) and
+  // deliberately decoupled from AgentEngine's agent_context (prompt-shaping).
+  // Only curated topics are logged — see db/bus-events.js — so high-frequency
+  // topics never put a synchronous write on the hot path. `ts` is epoch ms
+  // (matches the bus envelope's ts).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bus_events (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id   TEXT,
+      topic        TEXT NOT NULL,
+      ts           INTEGER NOT NULL,
+      payload_json TEXT
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_project ON bus_events(project_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_ts ON bus_events(ts)');
 
   // Back-fill project_features from legacy api_keys columns (idempotent)
   const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];

@@ -53,9 +53,16 @@ in `packages/shared-styles/tokens.css`.
 
 ---
 
-## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic
+## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic — RESOLVED (2026-07-12)
 
-**Where:** `packages/plugins/lcyt-connectors/src/variables-bus.js` vs.
+**Resolved by** `plan_pubsub_event_bus.md`: the shared `EventBus`
+(`packages/lcyt/src/event-bus.js`, exported as `lcyt/event-bus`) now owns the
+`Map<projectId, Set<...>>` + write-with-prune-on-failure bookkeeping. `DskBus`,
+`VariablesBus`, and `RolesBus` are thin wrappers that publish canonical topics
+through it and keep their exact public signatures + SSE wire shape. The
+duplicated connection-handling code is gone.
+
+**Where (original):** `packages/plugins/lcyt-connectors/src/variables-bus.js` vs.
 `packages/lcyt-backend/src/dsk-bus.js`
 
 **Finding:** `VariablesBus`'s `addSubscriber`/`removeSubscriber`/
@@ -153,43 +160,141 @@ lines added incidentally by a config-CRUD feature.
 
 (Found during: `/code-review` on `claude/selfservice-config-backend-djp52h`, 2026-07-06.)
 
+**Update (2026-07-11): the premise is stale.** The installed `better-sqlite3`
+enables `PRAGMA foreign_keys` **by default** (verified: `new Database(':memory:')`
+reports `foreign_keys = 1`; no explicit pragma exists in the codebase, but none
+is needed). So the `ON DELETE CASCADE` declarations are live, not inert — FK
+constraint errors are real (a test writing `DELETE FROM organizations` before
+`DELETE FROM api_keys` fails with `SQLITE_CONSTRAINT_FOREIGNKEY`). The residual
+concern inverts: rather than orphaned rows, deployments upgraded from an era of
+already-orphaned rows may hit FK violations on writes touching them. Worth a
+short audit pass of `deleteKey()`/permanent-delete against live-FK semantics,
+then this entry can close.
+
+**Update (2026-07-11): RESOLVED.** Ran the audit. Full inventory of every
+`REFERENCES` declaration in `packages/lcyt-backend/src/db/schema.js`:
+
+- **`api_keys(key)` children (core schema):** `caption_targets`,
+  `translation_vendor_config`, `translation_targets`, `project_features`,
+  `project_members` (→ `project_member_permissions` cascades transitively via
+  `member_id`), `project_device_roles` — **every one is `ON DELETE CASCADE`**.
+  So the original finding's premise was doubly stale: not only is FK
+  enforcement live, but there is no NO-ACTION `api_keys(key)` child table in
+  the core schema left for `deleteKey()` to break on. Confirmed empirically —
+  `deleteKey()` on a key with rows in all six tables did not throw.
+- **`users(id)` / `organizations(id)` references — this is where the real
+  breakage was:**
+  - `organizations.owner_user_id` — **NOT NULL, no `ON DELETE` action.**
+    Deleting a user who owns an org threw `SQLITE_CONSTRAINT_FOREIGNKEY`.
+    Reproduced both in the self-service `DELETE /auth/me` flow (a user who is
+    the *sole* member of their own org — the route's existing pre-check only
+    blocked the "owns an org **with other members**" case, so a solo-owned
+    org fell through to `deleteUserAccount()` and threw) and via direct
+    `db/orgs.js` calls.
+  - `api_keys.org_id` — no `ON DELETE` action. Deleting an org with member
+    projects threw the same error; `DELETE /orgs/:id` had no existing test
+    covering this at all.
+  - `org_members.invited_by`, `project_members.invited_by`,
+    `project_features.granted_by`, `user_features.granted_by`,
+    `site_feature_policies.updated_by`, `org_feature_overrides.set_by` — all
+    nullable, no `ON DELETE` action. Lower-severity (audit-trail
+    attribution, not ownership) but still a real, enforced constraint that
+    could block a user delete if that user had ever invited/granted/set
+    anything referenced by one of these columns.
+  - `api_keys.user_id` — nullable, no `ON DELETE` action, but already handled
+    correctly pre-existing (`UPDATE api_keys SET user_id = NULL` in the admin
+    route, and `deleteOwnedProjectsForUser()` deleting the key outright in
+    the self-service path).
+
+  **Fix:** `packages/lcyt-backend/src/db/orgs.js` gained
+  `reassignOrDeleteOwnedOrgs(db, userId)` — for each org the user owns,
+  promotes another member (admin-ranked first, then earliest-joined) to
+  owner, or if the user is the org's sole member, detaches its projects
+  (`api_keys.org_id = NULL`, same semantic as the sibling fix below) and
+  deletes the org outright. `deleteOrganization(db, orgId)` now detaches
+  member projects before deleting the org row (`api_keys.org_id = NULL`,
+  wrapped in `db.transaction`), matching the Caption Target Architecture
+  convention that an org vanishing must never delete or break its projects.
+  `packages/lcyt-backend/src/db/users.js` gained `clearUserReferences(db,
+  userId)` to null out the six audit-trail columns above, and
+  `deleteUserAccount()` (self-service `DELETE /auth/me`) now calls
+  `reassignOrDeleteOwnedOrgs()` + `clearUserReferences()` before deleting
+  `org_members`/`users` rows. `packages/lcyt-backend/src/routes/admin.js`'s
+  `DELETE /admin/users/:id` gained an `ownedOrgs` count to its existing
+  `?force=true` gate (alongside `activeProjects`) and calls the same two
+  helpers on force-delete. `deleteKey()` itself was left functionally
+  unchanged for the CASCADE tables (correctly no-op, the engine already
+  handles them) but was additionally wrapped in `db.transaction` and now
+  explicitly cleans up the **undeclared-FK** `api_key` tables
+  (`caption_usage`, `session_stats`, `caption_errors`, `auth_events`,
+  `sessions`, `caption_files`, `icons`, `viewer_key_daily_stats`,
+  `mcp_tokens`, plus `rtmp_stream_stats`/`rtmp_relays` when present) so a
+  permanent key delete doesn't silently orphan rows there — this part isn't
+  FK-required (no constraint is declared on those columns) but closes the
+  data-hygiene half of the original finding.
+
+  **Chosen semantics (documented for anyone revisiting):** a user's owned
+  *projects* survive a user delete (unlink, don't delete — matches the
+  pre-existing admin-route behavior this audit found already in place); a
+  user's owned *organizations* are transferred to another member when
+  possible, torn down only when the user was the org's sole member; an org's
+  member *projects* always survive an org delete (detach, don't delete).
+
+  **Ambiguity flagged, not resolved:** `DELETE /admin/users/:id?force=true`
+  auto-transfers org ownership to another member without any additional
+  confirmation step (unlike `DELETE /auth/me`, which blocks outright rather
+  than silently reassigning when other members exist). This mirrors the
+  existing `activeProjects` force-unlink behavior's "force means force"
+  posture, but a site admin silently losing visibility into who now owns a
+  team is a real product question or worth a confirmation UI. Not resolved
+  here — flagging for whoever next touches `DELETE /admin/users/:id`.
+
+  **Residual, per-plugin (not fixed here — plugin files are out of scope for
+  this pass):** every plugin table that keys off `api_key` (`lcyt-agent`:
+  `ai_config`, `ai_model_configs`, `project_ai_role_configs`, `agent_events`,
+  `agent_context`, `ai_providers.owner_api_key`, `ai_provider_grants`;
+  `lcyt-connectors`: `api_connectors`, `variables`; `lcyt-cues`: `cue_rules`,
+  `cue_events`; `lcyt-dsk`: `dsk_templates`, `dsk_viewports` (its "images"
+  actually live in `lcyt-backend`'s own `caption_files` table — already
+  covered by `deleteKey()`'s cleanup above); `lcyt-files`:
+  `key_storage_config`; `lcyt-music`: `music_events`, `music_config`;
+  `lcyt-rtmp`: `rtmp_relays` (already cleaned up defensively via the
+  `try/catch` in `deleteKey()`/`cleanRevokedKeys()`, but only when the table
+  exists), `rtmp_stream_stats` (same), `stt_config`, `stt_source_languages`,
+  `radio_config`) declares its `api_key` column with **no FK constraint at
+  all** — same undeclared-reference shape as `lcyt-backend`'s own
+  `caption_usage`/`mcp_tokens`/etc. before this pass. None of them will
+  throw `SQLITE_CONSTRAINT_FOREIGNKEY` on a key delete (no constraint is
+  declared to violate), but none of them get cleaned up by `deleteKey()`
+  either, since `lcyt-backend` doesn't reach into plugin internals (see the
+  Plugin Architecture convention in the root `CLAUDE.md`) — a permanent key
+  delete today orphans rows in all of these. Each plugin's own delete/cleanup
+  path (if any) should audit this on its own
+  schedule.
+
+(Audited 2026-07-11: 888/888 `packages/lcyt-backend` tests pass, including
+new failing-first-then-fixed coverage for all four paths above —
+`test/keys.test.js` (`deleteKey()` cascade + orphan cleanup),
+`test/orgs.test.js` (`DELETE /orgs/:id` with member projects),
+`test/admin.test.js` (`DELETE /admin/users/:id` owned-org block/transfer/
+teardown), `test/auth.test.js` (`DELETE /auth/me` solo-owned-org teardown +
+still-blocks-with-other-members).)
+
 ---
 
-## `packages/lcyt-tools`'s shared registry isn't wired into an external-facing MCP transport yet
+## ~~`packages/lcyt-tools`'s shared registry isn't wired into an external-facing MCP transport yet~~ (RESOLVED)
 
-**Where:** `packages/lcyt-tools/src/index.js` (new, plan/mcp), vs.
-`packages/lcyt-mcp-http/src/server.js`.
+**Where:** `packages/lcyt-backend/src/routes/mcp-endpoint.js` (new, Phase 1 of
+plan_unified_external_control.md).
 
-**Finding:** `plan_mcp.md` specifies one real MCP `Server` registering the
-shared tool schema, reachable both by external clients (over real MCP
-transport) and by `lcyt-agent` (over an in-process linked transport). This
-pass built the registry (`createToolRegistry`) and the in-process half
-(`createInProcessMcpBridge`, tested end-to-end with a real
-`InMemoryTransport`-connected Client/Server pair) — but did not wire the
-external-transport half into `lcyt-mcp-http`.
+**Resolution:** Implemented as an in-process MCP endpoint (Streamable HTTP
+JSON-RPC) inside `lcyt-backend` at `POST /mcp`, backed by the same
+`_toolRegistry` the composition root builds. Auth via
+`createProjectAccessMiddleware` with `mcp:connect` scope. Per-tool scope
+enforcement, destructive-tool staging for confirmation, rate limiting, and audit.
+Decision taken: in-process in `lcyt-backend`, not a separate process.
 
-**Why skipped:** `lcyt-mcp-http` is a **separate OS process** from
-`lcyt-backend` (`packages/lcyt-mcp-http/src/server.js` runs its own
-`app.listen(PORT)`), connected to the same SQLite file only via `DB_PATH`. It
-has no in-process handle to the live `DeviceRegistry`/`BridgeManager`/
-`AgentEngine` instances the new tools need (`camera.preset`/`mixer.switch`
-need live device/bridge connections; `dsk_template.*` needs a configured
-`AgentEngine`) — those only exist inside the running `lcyt-backend` process.
-Confirmed by inspection: `lcyt-mcp-http`'s *existing* production/graphics
-tools already work around this by proxying HTTP calls back to
-`lcyt-backend` with a static, global `X-Admin-Key`/`X-API-Key` (not the
-per-connection `apiKey` scoping the new registry's handlers assume) — so
-"just register the same tools there" would either require re-implementing
-every new tool as an HTTP proxy (defeating the point of building direct,
-in-process handlers) or exposing a *new* MCP-reachable endpoint inside
-`lcyt-backend` itself (a real, undecided architecture question: new route,
-new auth model for external MCP clients hitting the backend directly) —
-neither of which plan/mcp actually specifies, so building either now would be
-guessing at unspecified product surface rather than executing something
-already designed. Left for whoever picks up wiring the external-client half:
-decide where that MCP endpoint should live before extending it.
-
-(Found during: implementing plan/mcp's shared tool-schema module, 2026-07-07.)
+(Resolved: 2026-07-12, plan_unified_external_control.md Phase 1.)
 
 ---
 
@@ -227,3 +332,91 @@ executing something already designed. `deer` is unimplemented everywhere in this
 (Found during: implementing plan_ai_roles_framework.md's `agentic_chat` turn loop and vision
 roles, 2026-07-07.)
 
+---
+
+## Server-STT delivery doesn't compose translated caption text for YouTube/viewer targets
+
+**Where:** `packages/plugins/lcyt-rtmp/src/stt-manager.js` (`_deliverTranscript`)
+
+**Finding:** The server-STT delivery path computes `captionLang` from
+`captions`-target translation rows but never uses it: YouTube targets get
+`sender.send(trimmed, ts)` (original text only) and viewer broadcasts set
+`composedText: trimmed`. The client-driven path (`routes/captions.js`)
+composes via `composeCaptionText(text, captionLang, translations,
+showOriginal)` and does per-target routed composition via
+`translationsByTargetId`, so a "captions"-target translation changes what
+YouTube/viewers see there but not in server-STT mode. Viewers still receive
+the raw `translations` map, so viewer pages can render translations — the gap
+is the composed text (and per-target routing / `show_original` handling).
+
+**Why skipped:** Reproducing `captions.js`'s Phase 5 per-target composition
+(routed `caption_target_id`, per-row `show_original`, `<br>` composition)
+inside `_deliverTranscript` is a real chunk of duplicated logic; the right fix
+is probably extracting the composition/fan-out block from `routes/captions.js`
+into a shared helper (like `caption-file-writer.js` did for archiving) and
+using it from both paths — its own pass, not a side effect of the archiving
+fix that surfaced it.
+
+(Found during: caption/translation pipeline audit after `plan_batch_options`,
+2026-07-10 — the same audit fixed the sibling gap where `_deliverTranscript`
+translated for `backend-file` targets and then dropped the result; archiving
+is now wired via `createSessionCaptionFileWriter` + `setDeliveryHelpers`.)
+
+**Update (2026-07-10): RESOLVED.** The extraction pass ran the same day:
+`src/caption-fanout.js` (`createCaptionFanout({ db })`) now owns the
+extra-target delivery block, `routes/captions.js` calls it (move-not-change —
+route tests unchanged as the regression proof), and `SttManager` receives it
+plus `composeCaptionText` via `setDeliveryHelpers`. Server-STT now composes
+YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
+fallback), honours per-target routing, and registers viewer key owners — a
+stats-attribution miss the extraction also surfaced and fixed. The old
+`broadcastToViewers` injection was removed.
+
+---
+
+## Auth Middleware: 10 Altitude Issues Require Unified Token & Access-Control Model
+
+**Where:** `packages/lcyt-backend/src/middleware/project-access.js` and related route/DB files
+
+**Findings:** `/simplify` review surfaced 10 interrelated altitude issues in the auth refactor (PR #252):
+
+1. **Fragile token-type detection** — Token type is inferred from prefix (`lcytmcp_`) + payload field introspection (`payload.kind`, `payload.type`, etc.) across 4 token branches rather than from a canonical JWT field. Runtime derivation vs. issuance-time validation.
+
+2. **Overly exhaustive project ID resolution** — `resolveProjectId()` searches ~15 locations (headers, route params, body, query) instead of enforcing a single convention (e.g., always `X-Project-Id` header for scoped endpoints, hierarchical route param for others).
+
+3. **Four duplicate resolve+validate+attach patterns** — External/session/user/device token branches each repeat: resolve projectId → check not-null → call accessLevel check → attach context → next(). Fixed with `handleTokenAuth()` factory (commit `8581b2c`), but only locally — the underlying polymorphism remains.
+
+4. **Scope checking only on external tokens** — `requiredScope` validation lives only in the external-token branch, but user/project/device tokens also carry scopes. Inconsistent enforcement.
+
+5. **Session tokens bypass membership verification** — Only user tokens call `getMemberAccessLevel()`; session/external/device tokens are accepted unconditionally. Different access-control standards per token type.
+
+6. **Scattered access-control concerns** — Membership checks happen in middleware, routes, and DB modules independently. Routes re-implement token extraction (`verifyUserToken` duplicated in 4 files — partially fixed in commits `e028e06`/`482b83b`, but keys.js patterns remain) instead of trusting middleware.
+
+7. **Inconsistent request context attachment** — `req.user`, `req.auth`, `req.project`, `req.session` are conditionally set depending on token type. No guaranteed shape across all flows.
+
+8. **Ad-hoc scope serialization** — `serializeScopes()` / `parseScopes()` try JSON.parse with CSV fallback, applied at every read/verification. Suggests scopes aren't normalized at issuance time.
+
+9. **`normalizeUserPayload()` defined but inconsistently used** — Reusable, but `project-access.js` extracts fields inline instead of calling it, and it's not called by device-token branch.
+
+10. **Device-roles router re-implements auth** — `verifyUserToken()` (now using shared `extractAndVerifyUserToken()` after commit `482b83b`) was duplicated in routes instead of relying on middleware to attach context.
+
+**Root cause:** The middleware adds **polymorphism at the middleware layer** (4 token types) without first refactoring the **underlying domain model** (token structure, access-control gate, request context shape). Result: each branch has its own special cases + defensive logic, and routes don't trust the middleware to do auth consistently.
+
+**What fixed:** Commits `e028e06`, `8581b2c`, `482b83b` addressed the **local reuse/simplification issues**:
+- Consolidated `resolveProjectId` loops (29 lines saved)
+- Extracted `handleTokenAuth()` factory (32 lines saved)
+- Unified user-token extraction helper (33 lines saved)
+- Removed dead code + optimized scope parsing (4 lines saved)
+
+**What remains:** The **altitude issues** (10 findings) all point to the same architectural gap: token payloads, membership-check gate, and request context need to be unified *first*, before adding polymorphism. Doing so now would require:
+
+- Redesign all 4 token payloads to have canonical field names (`type` instead of `kind`, etc.)
+- Extract a single membership-check gate that applies after token verification, regardless of type
+- Define a consistent request context object (`req.auth` or `req.context`) with guaranteed shape
+- Establish canonical scope format (e.g., always JSON array in DB), normalized at token creation
+
+These are **design-level changes**, not local refactorings. Worth revisiting after this pass ships, with explicit product/architecture alignment on the unified model.
+
+**Why skipped:** Fixing the altitude issues would mean re-architecting 4 token types + unifying access control across 3+ layers (middleware/routes/DB), then re-testing all auth flows (368 backend tests exist; many would need assertion updates). Out of scope for a focused `/simplify` pass. This pass delivered measurable local cleanup (98 lines saved, 5 reusable helpers extracted), leaving the broader unification for a future architectural pass with its own scope and test coverage.
+
+(Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)

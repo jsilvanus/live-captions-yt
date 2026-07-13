@@ -15,6 +15,29 @@ const DEFAULT_MEDIAMTX_RTMP   = (process.env.MEDIAMTX_RTMP_BASE_URL || 'rtmp://1
 const DEFAULT_DSK_RTMP_APP    = process.env.DSK_RTMP_APP || 'dsk';
 
 /**
+ * Build the `-filter_complex` value that composites a DSK RTMP source (input 1)
+ * over the program video (input 0), with optional chroma-keying
+ * (plan_dsk_viewport_settings Phase 5). RTMP/FLV carries no alpha, so a raw
+ * overlay is opaque full-frame; enabling chromaKey keys out a color first so
+ * the overlay reads as a transparent lower-third.
+ *
+ * @param {{ enabled?: boolean, color?: string, similarity?: number, blend?: number }|null} [chromaKey]
+ * @returns {string}
+ */
+export function buildDskCompositeFilter(chromaKey) {
+  if (!chromaKey?.enabled) {
+    return '[0:v][1:v]overlay=0:0:shortest=1[ovout]';
+  }
+  // ffmpeg colorkey wants a color (0xRRGGBB or a name), a 0–1 similarity, and a 0–1 blend.
+  const raw = typeof chromaKey.color === 'string' ? chromaKey.color.trim() : '#00B140';
+  const color = /^#[0-9a-fA-F]{6}$/.test(raw) ? `0x${raw.slice(1)}` : raw.replace(/[^0-9a-zA-Z]/g, '') || '0x00B140';
+  const clamp01 = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
+  const similarity = clamp01(chromaKey.similarity, 0.3);
+  const blend = clamp01(chromaKey.blend, 0.1);
+  return `[1:v]colorkey=${color}:${similarity}:${blend}[keyed];[0:v][keyed]overlay=0:0:shortest=1[ovout]`;
+}
+
+/**
  * Milliseconds to shift a caption earlier when speechStart is not provided.
  * Can be overridden via the CEA708_OFFSET_MS environment variable.
  */
@@ -432,7 +455,7 @@ export class RtmpRelayManager {
             ? `${DEFAULT_MEDIAMTX_RTSP}/${DEFAULT_DSK_RTMP_APP}/${encodeURIComponent(apiKey)}`
             : dskState.rtmpUrl;
           args = ['-re', '-i', src, '-re', '-i', dskInput];
-          args.push('-filter_complex', '[0:v][1:v]overlay=0:0:shortest=1[ovout]');
+          args.push('-filter_complex', buildDskCompositeFilter(dskState.chromaKey));
         } else {
           // Static image files as DSK source
           args = ['-re', '-i', src];
@@ -967,11 +990,11 @@ export class RtmpRelayManager {
    * @param {string|null} rtmpUrl  Full RTMP URL of the DSK source (e.g. rtmp://127.0.0.1:1935/dsk/mykey)
    * @returns {Promise<void>}
    */
-  async setDskRtmpSource(apiKey, rtmpUrl) {
+  async setDskRtmpSource(apiKey, rtmpUrl, { chromaKey = null } = {}) {
     if (!rtmpUrl) {
       this._dskState.delete(apiKey);
     } else {
-      this._dskState.set(apiKey, { names: ['rtmp-dsk'], imagePaths: [], rtmpUrl });
+      this._dskState.set(apiKey, { names: ['rtmp-dsk'], imagePaths: [], rtmpUrl, chromaKey });
     }
 
     if (this.isRunning(apiKey)) {

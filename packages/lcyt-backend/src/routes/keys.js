@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { join, resolve, basename } from 'node:path';
 import * as fs from 'node:fs';
-import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, getKeysByUserId } from '../db.js';
+import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey, getKeysByUserId } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
 import { addMember, getMemberAccessLevel, getMemberCount } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
+import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
 
@@ -188,7 +189,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
         const imageRows = deleteAllImages(db, req.params.key);
         for (const row of imageRows) {
           try {
-            const safe = row.api_key.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+            const safe = safeApiKey(row.api_key);
             const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
             if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
           } catch (e) {
@@ -209,22 +210,8 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } 
 
 // ── User-scoped handlers ──────────────────────────────────────────────────────
 
-import jwt from 'jsonwebtoken';
-
-function _verifyUserToken(jwtSecret, req) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  try {
-    const payload = jwt.verify(header.slice(7), jwtSecret);
-    if (payload.type !== 'user') return null;
-    return { userId: payload.userId, email: payload.email };
-  } catch {
-    return null;
-  }
-}
-
 function _userListKeys(db, jwtSecret, req, res) {
-  const user = _verifyUserToken(jwtSecret, req);
+  const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   const keys = getKeysByUserId(db, user.userId);
   return res.status(200).json({
@@ -238,7 +225,7 @@ function _userListKeys(db, jwtSecret, req, res) {
 }
 
 function _userCreateKey(db, jwtSecret, req, res) {
-  const user = _verifyUserToken(jwtSecret, req);
+  const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   const { name, features: requestedFeatures, orgId } = req.body || {};
   if (!name || typeof name !== 'string' || !name.trim()) {
@@ -272,7 +259,7 @@ function _userCreateKey(db, jwtSecret, req, res) {
 }
 
 function _userUpdateKey(db, jwtSecret, req, res) {
-  const user = _verifyUserToken(jwtSecret, req);
+  const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   const existing = getKey(db, req.params.key);
   if (!existing) return res.status(404).json({ error: 'API key not found' });
@@ -302,7 +289,7 @@ function _userUpdateKey(db, jwtSecret, req, res) {
 }
 
 function _userDeleteKey(db, jwtSecret, req, res) {
-  const user = _verifyUserToken(jwtSecret, req);
+  const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   const existing = getKey(db, req.params.key);
   if (!existing) return res.status(404).json({ error: 'API key not found' });

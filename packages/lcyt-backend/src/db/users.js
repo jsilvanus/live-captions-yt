@@ -1,4 +1,5 @@
 import { anonymizeKey, deleteKey } from './keys.js';
+import { reassignOrDeleteOwnedOrgs } from './orgs.js';
 
 /**
  * User CRUD operations for the `users` table.
@@ -211,9 +212,45 @@ export function deleteOwnedProjectsForUser(db, userId) {
   return keys.length;
 }
 
+/**
+ * Null out every nullable "who did this" FK column that references
+ * `users(id)` with no ON DELETE action (`invited_by`/`granted_by`/`set_by`/
+ * `updated_by` across org_members, project_members, project_features,
+ * user_features, site_feature_policies, org_feature_overrides). These are
+ * audit-trail-style attributions, not ownership — safe to clear rather than
+ * block a user delete on. `api_keys.user_id` is handled by callers
+ * (deleteOwnedProjectsForUser deletes those keys outright; the admin route
+ * SETs it NULL to keep the project alive) and `organizations.owner_user_id`
+ * is NOT NULL, so it's resolved separately via `reassignOrDeleteOwnedOrgs`.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ */
+export function clearUserReferences(db, userId) {
+  db.prepare('UPDATE org_members SET invited_by = NULL WHERE invited_by = ?').run(userId);
+  db.prepare('UPDATE project_members SET invited_by = NULL WHERE invited_by = ?').run(userId);
+  db.prepare('UPDATE project_features SET granted_by = NULL WHERE granted_by = ?').run(userId);
+  db.prepare('UPDATE user_features SET granted_by = NULL WHERE granted_by = ?').run(userId);
+  db.prepare('UPDATE site_feature_policies SET updated_by = NULL WHERE updated_by = ?').run(userId);
+  db.prepare('UPDATE org_feature_overrides SET set_by = NULL WHERE set_by = ?').run(userId);
+}
+
+/**
+ * Full self-service account deletion (`DELETE /auth/me`). Deletes the user's
+ * owned projects, resolves organizations they own (transfer ownership to
+ * another member, or tear the org down if they're its sole member — see
+ * `reassignOrDeleteOwnedOrgs`), clears their org_members rows and any
+ * dangling invited_by/granted_by/etc. attributions, then deletes the user
+ * row. Order matters under live FK enforcement: organizations.owner_user_id
+ * (NOT NULL, no ON DELETE action) must be resolved before `DELETE FROM users`
+ * or the delete throws SQLITE_CONSTRAINT_FOREIGNKEY.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ */
 export function deleteUserAccount(db, userId) {
   const tx = db.transaction(() => {
     deleteOwnedProjectsForUser(db, userId);
+    reassignOrDeleteOwnedOrgs(db, userId);
+    clearUserReferences(db, userId);
     db.prepare('DELETE FROM org_members WHERE user_id = ?').run(userId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   });

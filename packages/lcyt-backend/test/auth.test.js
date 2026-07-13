@@ -13,6 +13,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
 import { createKey } from '../src/db/keys.js';
+import { addMember } from '../src/db/project-members.js';
 import { createAuthRouter } from '../src/routes/auth.js';
 
 // Reduce bcrypt rounds for speed — override the module-level constant via the
@@ -178,6 +179,46 @@ describe('POST /auth/login', () => {
 // ---------------------------------------------------------------------------
 // GET /auth/me
 // ---------------------------------------------------------------------------
+
+describe('POST /auth/project-token', () => {
+  let userToken;
+  let projectKey;
+
+  before(async () => {
+    const { body } = await register('project-token@example.com', 'password123', 'Project User');
+    userToken = body.token;
+    projectKey = createKey(db, { owner: 'Project User', user_id: body.userId }).key;
+    addMember(db, projectKey, body.userId, 'owner');
+  });
+
+  it('issues a project-scoped token for a project member', async () => {
+    const res = await fetch(`${baseUrl}/auth/project-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ projectId: projectKey, projectRole: 'editor' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.projectId, projectKey);
+    assert.equal(body.projectRole, 'editor');
+    assert.ok(body.token);
+  });
+
+  it('rejects project-scoped token issuance for non-members', async () => {
+    const res = await fetch(`${baseUrl}/auth/project-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({ projectId: 'not-a-project' }),
+    });
+    assert.equal(res.status, 403);
+  });
+});
 
 describe('GET /auth/me', () => {
   let userToken;
@@ -380,6 +421,58 @@ describe('DELETE /auth/me', () => {
     const deleteBody = await res.json();
     assert.equal(deleteBody.deleted, true);
     assert.equal(db.prepare('SELECT id FROM users WHERE email = ?').get('delete-account@example.com'), undefined);
+  });
+
+  // `organizations.owner_user_id` is NOT NULL with no ON DELETE action, so a
+  // user who owns an org (even solo) can't just be deleted out from under it
+  // under live FK enforcement — deleteUserAccount() must resolve ownership
+  // first. This route's own pre-check only blocks the "owns an org WITH
+  // other members" case; a solo-owned org used to fall through to
+  // deleteUserAccount() and throw SQLITE_CONSTRAINT_FOREIGNKEY.
+  it('tears down an org this user solely owns, then deletes the account', async () => {
+    const { body } = await register('solo-org-owner@example.com', 'password123', 'Solo Owner');
+    const userId = body.userId;
+
+    const orgResult = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Solo Org', 'solo-org', userId);
+    const orgId = orgResult.lastInsertRowid;
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, userId, userId);
+    createKey(db, { key: 'solo-org-project', owner: 'Solo Org Project', org_id: orgId });
+
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+
+    assert.equal(res.status, 200);
+    const deleteBody = await res.json();
+    assert.equal(deleteBody.deleted, true);
+    assert.equal(db.prepare('SELECT id FROM users WHERE email = ?').get('solo-org-owner@example.com'), undefined);
+    assert.equal(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
+    // The org's project must survive, just detached — same "an org vanishing
+    // must never delete/break its projects" convention as DELETE /orgs/:id.
+    const project = db.prepare('SELECT org_id, active FROM api_keys WHERE key = ?').get('solo-org-project');
+    assert.ok(project);
+    assert.equal(project.org_id, null);
+  });
+
+  it('still blocks deletion when the user is sole owner of an org that has other members', async () => {
+    const { body } = await register('blocked-org-owner@example.com', 'password123', 'Blocked Owner');
+    const userId = body.userId;
+    const otherUser = await register('other-member@example.com', 'password123', 'Other Member');
+
+    const orgResult = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Shared Org', 'shared-org', userId);
+    const orgId = orgResult.lastInsertRowid;
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, userId, userId);
+    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'viewer', ?)").run(orgId, otherUser.body.userId, userId);
+
+    const res = await fetch(`${baseUrl}/auth/me`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${body.token}` },
+    });
+
+    assert.equal(res.status, 409);
+    assert.ok(db.prepare('SELECT id FROM users WHERE email = ?').get('blocked-org-owner@example.com'));
+    assert.ok(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId));
   });
 });
 

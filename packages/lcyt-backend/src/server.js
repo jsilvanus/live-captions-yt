@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import express from 'express';
+import { EventBus } from 'lcyt/event-bus';
 import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
@@ -15,7 +16,14 @@ import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
-import { setHlsSubsManager, broadcastToViewers } from './routes/viewer.js';
+import { createEventsStreamRouter } from './routes/events-stream.js';
+import { createEventsCatalogRouter } from './routes/events-catalog.js';
+import { createMcpEndpointRouter } from './routes/mcp-endpoint.js';
+import { createEventsPublishRouter } from './routes/events-publish.js';
+import { createOperatorRouter } from './routes/operator.js';
+import { OperatorManager } from './operator-manager.js';
+import { attachBusAuditLog } from './db/bus-events.js';
+import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
   initProductionControl, createProductionRouter,
@@ -77,7 +85,12 @@ import {
   initConnectors, createConnectorsRouter, createVariablesRouter,
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
+import { initActions, createActionsRouter } from 'lcyt-actions';
 import { createAdminMiddleware } from './middleware/admin.js';
+import { createProjectAccessMiddleware } from './middleware/project-access.js';
+import { createSessionCaptionFileWriter } from './caption-file-writer.js';
+import { createCaptionFanout } from './caption-fanout.js';
+import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
 
 // ---------------------------------------------------------------------------
@@ -180,8 +193,16 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
-const store = new SessionStore({ db });
-const dskBus = new DskBus();
+// One shared pub/sub bus for the whole backend. Every per-project SSE registry
+// (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
+// through it, so events also reach the unified /events/stream endpoint and any
+// in-process listeners. See src/event-bus.js (lcyt/event-bus).
+const eventBus = new EventBus();
+// Persist curated topics to the bus_events audit log (insert-only; not a replay
+// buffer). High-frequency topics are excluded by the allowlist in db/bus-events.js.
+attachBusAuditLog(eventBus, db, { log: (m) => console.warn(m) });
+const store = new SessionStore({ db, eventBus });
+const dskBus = new DskBus(eventBus);
 
 // Production control — run DB migrations, start device registry and bridge manager
 const {
@@ -199,11 +220,6 @@ const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
 
-// Inject translation-config + viewer-broadcast helpers into SttManager for
-// transcript delivery (Phase 5: server-side translation, viewer-target
-// fan-out) — sttManager must not import lcyt-backend's own src/ directly,
-// see setDeliveryHelpers()'s doc comment in lcyt-rtmp.
-sttManager?.setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, broadcastToViewers });
 hlsSubsManager.sweepStaleDir().catch(() => {});
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
@@ -217,6 +233,20 @@ if (process.env.GRAPHICS_ENABLED === '1') {
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+
+// Inject translation-config + fan-out + caption-file helpers into SttManager
+// for transcript delivery (Phase 5: server-side translation, per-target
+// routed fan-out via the shared createCaptionFanout, backend caption-file
+// archiving) — sttManager must not import lcyt-backend's own src/ directly,
+// see setDeliveryHelpers()'s doc comment in lcyt-rtmp. Runs after
+// initFilesControl so the writer can close over resolveStorage.
+sttManager?.setDeliveryHelpers({
+  getTranslationVendorConfig,
+  getTranslationTargets,
+  writeBackendCaptionFiles: createSessionCaptionFileWriter({ db, resolveStorage }),
+  composeCaptionText,
+  fanOutToTargets: createCaptionFanout({ db }),
+});
 
 // Music detection plugin — run DB migrations, create the SoundCaptionProcessor, and
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
@@ -242,7 +272,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
-} = await initAgent(db);
+} = await initAgent(db, { eventBus });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
@@ -274,12 +304,22 @@ const _toolsContext = {
   callTool: (name, args, ctx) => _toolBridge.callToolAs(ctx.apiKey, name, args),
 };
 
+// Hosted Operator (Phase 2 — plan_unified_external_control.md).
+// Persistent event-fed agent session that subscribes to the EventBus and reacts
+// autonomously, staging destructive actions for human confirmation.
+const _operatorManager = new OperatorManager({
+  eventBus, db, toolsContext: _toolsContext, assistantManager: _assistantManager,
+});
+
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
 // user-defined outbound API connectors. Runs its own DB migrations
 // (api_connectors, api_requests, api_response_mappings, variables tables).
-const { bus: _connectorsBus, engine: _connectorsEngine } = initConnectors(db, {
+const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler } = initConnectors(db, {
   filesControl: { resolveStorage },
+  eventBus,
 });
+// Named Actions plugin — runs its own migration (action_defs table).
+initActions(db);
 
 // Wire the agent's embedding capabilities into the CueEngine for
 // fuzzy semantic matching via cue[semantic]:phrase metacodes.
@@ -352,8 +392,17 @@ const app = express();
 // global express.json body parser (the icons upload route uses its own 400kb parser).
 const auth = createAuthMiddleware(jwtSecret);
 const userAuth = createUserAuthMiddleware(jwtSecret);
+// Project-scoped routers are gated by `scopedAuth('<resource>')`. Access = the
+// token's scopes: session/user/project/device JWTs and full-access (NULL-scope)
+// external tokens have full delegation; a scoped external token needs
+// `<resource>:read` to GET and `<resource>:write` to mutate (see
+// createProjectAccessMiddleware). The legacy per-plugin SSE endpoints stay
+// JWT-only — `/variables/events` and `/stt/events` via their own `jwt.verify`,
+// `/roles/:roleCode/events` via an in-handler external-token block — so external
+// subscribers use the unified `/events/stream` instead.
+const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, auth, relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager);
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -470,23 +519,50 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }));
-app.use('/cues', createCueRouter(db, auth, _cueEngine));
-app.use('/mcp-tokens', createMcpTokensRouter(db, userAuth));
-app.use('/ai/providers', createProjectAiProvidersRouter(db, auth, { bridgeManager: productionBridgeManager }));
-app.use('/ai', createAiRouter(db, auth));
-app.use('/agent', createAgentRouter(db, auth, _agent));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, scopedAuth));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
+app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
+// Unified external event stream over the shared EventBus (additive; the bespoke
+// per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
+// scope; topics are further narrowed per-token by tokenAllowsTopic.
+app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:read' }), createEventsStreamRouter(eventBus));
+// Public catalog of subscribable event topics — single source of truth for the
+// Setup Hub scope picker (no project data, so no auth). Mounted before the
+// session `/events` router; that router only matches exactly `/events`.
+app.use('/events/topics', createEventsCatalogRouter());
+// Phase 3 — External event publishing (POST /events). Fenced to `external.*`
+// namespace; rate/size limited; always audited. `requiredScope: 'events:write'`
+// is enforced for external (`lcytmcp_`) tokens only — per
+// createProjectAccessMiddleware's contract, session/user/project/device JWTs
+// carry their own project-membership authorization and have full delegation,
+// so the scope gate doesn't apply to them (same as every other scopedAuth()
+// router in this file).
+app.use('/events', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:write' }), createEventsPublishRouter(eventBus));
+// Phase 1 — In-process MCP endpoint (Streamable HTTP). Backed by the shared
+// tool registry; scoped per-tool; destructive tools staged for confirmation.
+// `requiredScope: 'mcp:connect'` is likewise enforced for external tokens
+// only — see the note above /events.
+app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'mcp:connect' }), createMcpEndpointRouter({
+  registry: _toolRegistry, eventBus, db, assistantManager: _assistantManager,
+}));
+// Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
+// confirm/reject pending actions.
+app.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), { bridgeManager: productionBridgeManager }));
+app.use('/ai', createAiRouter(db, scopedAuth('ai')));
+app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, auth));
-app.use('/roles', createRolesChatRouter(db, auth, _toolsContext, _rolesBus));
-app.use('/roles', createVisionRolesRouter(db, auth, _visionRoleManager));
+app.use('/roles', createRolesRouter(db, scopedAuth('role')));
+app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus));
+app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager));
 app.use('/roles/assistant', createProductionAssistantRouter(
-  db, auth, _toolsContext, _assistantManager, _agent,
+  db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
 ));
-app.use('/roles/planner', createPlannerRouter(db, auth, _agent));
-app.use('/connectors', createConnectorsRouter(db, auth));
-app.use('/variables', createVariablesRouter(db, auth, _connectorsBus, _connectorsEngine, jwtSecret));
+app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent));
+app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector')));
+app.use('/actions', createActionsRouter(db, scopedAuth('action')));
+app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
@@ -516,4 +592,4 @@ if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };
+export { app, db, store, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };

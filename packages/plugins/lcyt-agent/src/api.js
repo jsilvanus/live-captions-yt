@@ -128,7 +128,7 @@ export async function initAgent(db, opts = {}) {
   const { RolesBus } = await import('./roles-bus.js');
   const { ProductionAssistantManager } = await import('./production-assistant.js');
   const { VisionRoleManager } = await import('./vision-role-manager.js');
-  const rolesBus = new RolesBus();
+  const rolesBus = new RolesBus(opts.eventBus);
   const assistantManager = new ProductionAssistantManager(db, rolesBus);
   const visionRoleManager = new VisionRoleManager(rolesBus);
 

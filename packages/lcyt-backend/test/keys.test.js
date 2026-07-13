@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import express from 'express';
 import { initDb, createKey } from '../src/db.js';
 import { createKeysRouter } from '../src/routes/keys.js';
+import { deleteKey as deleteKeyDirect } from '../src/db/keys.js';
 
 const ADMIN_KEY = 'test-admin-key-secret';
 
@@ -307,5 +308,68 @@ describe('DELETE /keys/:key', () => {
     // Key should be gone
     const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
     assert.strictEqual(row, undefined);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// deleteKey() under live FK enforcement (CONSIDER.md: "New ON DELETE CASCADE
+// on caption_targets/... is inert" — the premise turned out to be stale;
+// better-sqlite3 enables PRAGMA foreign_keys by default, so these ARE live).
+// ---------------------------------------------------------------------------
+
+describe('deleteKey() under live FK enforcement', () => {
+  it('confirms this better-sqlite3 install enforces foreign_keys by default', () => {
+    assert.strictEqual(db.pragma('foreign_keys', { simple: true }), 1);
+  });
+
+  it('does not throw, and cascades every ON DELETE CASCADE child table without manual cleanup', () => {
+    const { key } = createKey(db, { owner: 'Cascade Test' });
+    db.prepare("INSERT INTO caption_targets (id, api_key, type) VALUES ('ct1', ?, 'youtube')").run(key);
+    db.prepare("INSERT INTO translation_vendor_config (api_key, vendor) VALUES (?, 'mymemory')").run(key);
+    db.prepare("INSERT INTO translation_targets (id, api_key, lang, target) VALUES ('tt1', ?, 'en', 'fi')").run(key);
+    db.prepare("INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'captions', 1)").run(key);
+    db.prepare("INSERT INTO project_device_roles (api_key, role_type, name, pin_hash) VALUES (?, 'camera', 'Cam1', 'hash')").run(key);
+
+    assert.doesNotThrow(() => deleteKeyDirect(db, key));
+
+    for (const table of ['caption_targets', 'translation_vendor_config', 'translation_targets', 'project_features', 'project_device_roles']) {
+      const n = db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE api_key = ?`).get(key).n;
+      assert.strictEqual(n, 0, `${table} should have been cascade-deleted`);
+    }
+  });
+
+  it('cascades project_members and, transitively, project_member_permissions', () => {
+    const { key } = createKey(db, { owner: 'Member Cascade Test' });
+    const userResult = db.prepare("INSERT INTO users (email, password_hash) VALUES ('memcascade@test.com', 'x')").run();
+    const userId = userResult.lastInsertRowid;
+    const memberResult = db.prepare("INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner')").run(key, userId);
+    db.prepare("INSERT INTO project_member_permissions (member_id, permission, granted) VALUES (?, 'edit', 1)").run(memberResult.lastInsertRowid);
+
+    assert.doesNotThrow(() => deleteKeyDirect(db, key));
+
+    assert.strictEqual(db.prepare('SELECT COUNT(*) n FROM project_members WHERE api_key = ?').get(key).n, 0);
+    assert.strictEqual(db.prepare('SELECT COUNT(*) n FROM project_member_permissions WHERE member_id = ?').get(memberResult.lastInsertRowid).n, 0);
+
+    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+  });
+
+  it('cleans up orphaned rows in tables that key off api_key with no declared FK', () => {
+    const { key } = createKey(db, { owner: 'Orphan Test' });
+    db.prepare("INSERT INTO caption_usage (api_key, date, count) VALUES (?, '2026-01-01', 5)").run(key);
+    db.prepare("INSERT INTO session_stats (session_id, api_key, started_at, ended_at, duration_ms) VALUES ('s1', ?, 'x', 'y', 100)").run(key);
+    db.prepare("INSERT INTO caption_errors (api_key, session_id, timestamp) VALUES (?, 's1', 'x')").run(key);
+    db.prepare("INSERT INTO auth_events (api_key, event_type, timestamp) VALUES (?, 'login', 'x')").run(key);
+    db.prepare("INSERT INTO sessions (session_id, api_key) VALUES ('sess-orphan', ?)").run(key);
+    db.prepare("INSERT INTO caption_files (api_key, filename) VALUES (?, 'f.vtt')").run(key);
+    db.prepare("INSERT INTO icons (api_key, filename, disk_filename) VALUES (?, 'a.png', 'a-disk.png')").run(key);
+    db.prepare("INSERT INTO viewer_key_daily_stats (date, api_key, viewer_key, views) VALUES ('2026-01-01', ?, 'vk1', 3)").run(key);
+    db.prepare("INSERT INTO mcp_tokens (api_key, label, token_hash) VALUES (?, 'tok', 'orphan-hash')").run(key);
+
+    deleteKeyDirect(db, key);
+
+    for (const table of ['caption_usage', 'session_stats', 'caption_errors', 'auth_events', 'sessions', 'caption_files', 'icons', 'viewer_key_daily_stats', 'mcp_tokens']) {
+      const n = db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE api_key = ?`).get(key).n;
+      assert.strictEqual(n, 0, `${table} should have no orphaned rows after deleteKey()`);
+    }
   });
 });

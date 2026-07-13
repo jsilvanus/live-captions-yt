@@ -1,5 +1,6 @@
 import { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager } from './server.js';
 import { cleanRevokedKeys } from './db.js';
+import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -46,6 +47,21 @@ if (REVOKED_KEY_TTL_DAYS > 0) {
     if (count > 0) console.log(`[cleanup] Purged ${count} revoked key(s) older than ${REVOKED_KEY_TTL_DAYS} days`);
   }, REVOKED_KEY_CLEANUP_INTERVAL);
   cleanupTimer.unref();
+}
+
+// ---------------------------------------------------------------------------
+// Event-bus audit log retention (mirrors the revoked-key cleanup pattern)
+// ---------------------------------------------------------------------------
+
+const EVENT_LOG_RETENTION_DAYS = Number(process.env.EVENT_LOG_RETENTION_DAYS ?? 30);
+const EVENT_LOG_CLEANUP_INTERVAL = Number(process.env.EVENT_LOG_CLEANUP_INTERVAL ?? 86_400_000);
+
+if (EVENT_LOG_RETENTION_DAYS > 0) {
+  const busEventsTimer = setInterval(() => {
+    const { count } = deleteBusEventsOlderThan(db, EVENT_LOG_RETENTION_DAYS);
+    if (count > 0) console.log(`[cleanup] Purged ${count} bus event(s) older than ${EVENT_LOG_RETENTION_DAYS} days`);
+  }, EVENT_LOG_CLEANUP_INTERVAL);
+  busEventsTimer.unref();
 }
 
 // ---------------------------------------------------------------------------

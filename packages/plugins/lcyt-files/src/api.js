@@ -29,6 +29,7 @@
 
 export { writeToBackendFile, closeFileHandles } from './caption-files.js';
 export { createFilesRouter } from './routes/files.js';
+export { shiftVttContent } from './vtt.js';
 
 import { createStorageAdapter, createStorageResolver } from './storage.js';
 import { runFilesDbMigrations } from './db.js';

@@ -1,6 +1,6 @@
 # Plan: Pub/Sub Event Bus — Unified Internal & External Event Distribution
 
-**Status:** Draft / Exploratory — not yet scheduled
+**Status:** Implemented — shared `EventBus` (`lcyt/event-bus`); `DskBus`/`VariablesBus`/`RolesBus` and the per-session event stream migrated onto it (zero wire-shape change); additive `GET /events/stream` with `events:read` + `tokenAllowsTopic` scoping; in-process `subscribe()` shipped (no product consumer wired yet); insert-only `bus_events` audit log with `EVENT_LOG_RETENTION_DAYS` retention. Fixed a latent `session:closed`/`session_closed` spelling mismatch en route.
 **Date:** 2026-07-08
 **Context:** Companion to `plan_authentication_refactor.md` (this plan depends on it for the external-subscriber auth model) and to `CONSIDER.md`'s "`VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic" finding (2026-07-05) — this plan resolves that duplication by generalizing the deferred extraction into a real event bus rather than a mechanical dedup. Originated from a chat discussion exploring whether `DskBus` was "the" event bus (it isn't — see Background).
 
@@ -77,6 +77,13 @@ export class EventBus {
 This is the generalized version of the `SseSubscriberBus` extraction `CONSIDER.md` already deferred — same connection bookkeeping (`Map<projectId, Set<...>>`, write-with-prune-on-failure) as today's four buses, but topic-aware and usable both over SSE and in-process.
 
 ### Topic taxonomy
+
+> **See also `plan_metacode_variable_unification.md`.** That plan proposes that these topic
+> names be *declared by* the metacode/variable reserved-name registry (each name's `emitsTopic`),
+> so `variable.updated` fires on any plain variable assignment and each reserved actionable name
+> (`graphics`, `cue`, `audio`, …) owns its domain topic. It doesn't change the taxonomy below —
+> it gives it a single authoritative source, and keeps *metacode name ≈ variable name ≈
+> event-bus domain* one vocabulary. This plan (the bus mechanism) is independent of that one.
 
 Namespacing convention: `<domain>.<event>`. Mapping from today's ad hoc event names:
 

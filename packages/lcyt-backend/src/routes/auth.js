@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser, getUserAccountExport, deleteOwnedProjectsForUser, deleteUserAccount } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
+import { getMemberAccessLevel } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { deviceLoginHandler } from './device-roles.js';
 
@@ -14,6 +15,24 @@ function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
     { type: 'user', userId, email, isAdmin: !!isAdmin },
     jwtSecret,
     { expiresIn: `${USER_TOKEN_TTL_DAYS}d` }
+  );
+}
+
+function issueProjectToken(jwtSecret, { userId, email, isAdmin = false, projectId, projectRole = 'member', siteRole = null, scopes = null }) {
+  return jwt.sign(
+    {
+      kind: 'project',
+      type: 'user',
+      userId,
+      email,
+      isAdmin: !!isAdmin,
+      siteRole: siteRole || (isAdmin ? 'admin' : null),
+      projectId,
+      projectRole,
+      scopes,
+    },
+    jwtSecret,
+    { expiresIn: '2h' }
   );
 }
 
@@ -94,6 +113,26 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       console.error('[auth] login error:', err.message);
       res.status(500).json({ error: 'Login failed' });
     }
+  });
+
+  // POST /auth/project-token — exchange a user JWT for a project-scoped access JWT
+  router.post('/project-token', userAuth, (req, res) => {
+    const { projectId, projectRole = 'member', scopes } = req.body || {};
+    if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
+      return res.status(400).json({ error: 'projectId is required' });
+    }
+    const accessLevel = getMemberAccessLevel(db, projectId.trim(), req.user.userId);
+    if (!accessLevel) {
+      return res.status(403).json({ error: 'Not a project member' });
+    }
+    const token = issueProjectToken(jwtSecret, {
+      userId: req.user.userId,
+      email: req.user.email,
+      projectId: projectId.trim(),
+      projectRole: projectRole || accessLevel,
+      scopes,
+    });
+    return res.json({ token, projectId: projectId.trim(), projectRole: projectRole || accessLevel, accessLevel });
   });
 
   // GET /auth/me — requires user token

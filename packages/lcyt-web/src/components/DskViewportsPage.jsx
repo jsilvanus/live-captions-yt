@@ -20,6 +20,7 @@ export function DskViewportsPage() {
   const [screenApiSupported, setScreenApiSupported] = useState(null); // null=unknown
   const [presentBg, setPresentBg] = useState('');
   const [presentTransparent, setPresentTransparent] = useState(false);
+  const [projectSlug, setProjectSlug] = useState(null);
 
   // ── API helpers ──────────────────────────────────────────────────────────
 
@@ -48,6 +49,7 @@ export function DskViewportsPage() {
       if (!res.ok) return;
       const data = await res.json();
       setViewports(data.viewports || []);
+      setProjectSlug(data.projectSlug ?? null);
     } catch {}
   }, [apiKey, serverUrl, apiFetch]);
 
@@ -99,14 +101,44 @@ export function DskViewportsPage() {
   // ── Viewport edit ────────────────────────────────────────────────────────
 
   const [editVp, setEditVp] = useState(null); // draft for editing
+  const [editSettings, setEditSettings] = useState(null); // draft display settings
 
   useEffect(() => {
     if (selectedVp && !selectedVp._builtin) {
       setEditVp({ label: selectedVp.label ?? '', viewportType: selectedVp.viewportType, width: selectedVp.width, height: selectedVp.height });
+      setEditSettings(selectedVp.displaySettings ?? {});
     } else {
       setEditVp(null);
+      setEditSettings(null);
     }
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function saveDisplaySettings(next) {
+    if (!selectedVp || selectedVp._builtin) return;
+    setEditSettings(next);
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/viewports/${encodeURIComponent(selectedVp.name)}`, {
+        method: 'PUT',
+        body:   JSON.stringify({ displaySettings: next }),
+      });
+      if (!res.ok) { flash('Save failed'); return; }
+      await loadViewports();
+      flash('Display settings saved');
+    } catch { flash('Network error'); }
+  }
+
+  async function controlViewportStream(action) {
+    if (!selectedVp || selectedVp._builtin) return;
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/renderer/${action}`, {
+        method: 'POST',
+        body:   JSON.stringify({ viewport: selectedVp.name }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { flash(data.error || `Failed to ${action} stream`); return; }
+      flash(action === 'start' ? 'Viewport stream started' : 'Viewport stream stopped');
+    } catch { flash('Network error'); }
+  }
 
   async function handleSaveVp() {
     if (!selectedVp || selectedVp._builtin || !editVp) return;
@@ -184,9 +216,18 @@ export function DskViewportsPage() {
   }
 
   function getDisplayUrl(vp) {
-    const base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
+    // Prefer the slug form /dsk/<slug>/<viewport> when a project public slug
+    // is set; otherwise fall back to the legacy /dsk/<apikey>?viewport= form.
+    const named = vp && !vp._builtin;
+    let base;
+    if (projectSlug) {
+      base = `${window.location.origin}/dsk/${encodeURIComponent(projectSlug)}`;
+      if (named) base += `/${encodeURIComponent(vp.name)}`;
+    } else {
+      base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
+    }
     const u = new URL(base);
-    if (vp && !vp._builtin) u.searchParams.set('viewport', vp.name);
+    if (!projectSlug && named) u.searchParams.set('viewport', vp.name);
     if (presentTransparent) u.searchParams.set('bg', 'transparent');
     else if (presentBg) u.searchParams.set('bg', presentBg);
     return u.toString();
@@ -374,6 +415,30 @@ export function DskViewportsPage() {
                 </Section>
               )}
 
+              {/* Display Settings — persisted on the viewport, applied by the
+                  display page unless overridden by URL params */}
+              {!selectedVp._builtin && editSettings && (
+                <Section title="Display Settings" style={{ marginBottom: 24 }}>
+                  <DisplaySettingsEditor settings={editSettings} onChange={saveDisplaySettings} />
+                </Section>
+              )}
+
+              {/* Streaming — server-side per-viewport RTMP (Phase 4). The
+                  renderer that consumes this is a later increment; config is
+                  editable now. */}
+              {!selectedVp._builtin && editSettings && (
+                <Section title="Streaming" style={{ marginBottom: 24 }}>
+                  <StreamSettingsEditor settings={editSettings} onChange={saveDisplaySettings} />
+                  {editSettings.stream?.enabled && (
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+                      <button style={btnPrimary} onClick={() => controlViewportStream('start')}>Start stream</button>
+                      <button style={btnSmall} onClick={() => controlViewportStream('stop')}>Stop</button>
+                      <span style={{ fontSize: 11, color: dark.muted }}>Save streaming settings first. Requires the server renderer (GRAPHICS_ENABLED).</span>
+                    </div>
+                  )}
+                </Section>
+              )}
+
               {/* Display URL */}
               <Section title="Display URL" style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 12, color: dark.muted, marginBottom: 8 }}>
@@ -381,6 +446,11 @@ export function DskViewportsPage() {
                   {selectedVp._builtin && ' (Existing landscape DSK behaviour — no change needed.)'}
                 </div>
                 <UrlBlock url={getDisplayUrl(selectedVp)} onCopy={() => flash('Copied')} />
+                {!projectSlug && (
+                  <div style={{ fontSize: 12, color: dark.muted, marginTop: 8 }}>
+                    This URL exposes your API key. Set a <a href="/projects" style={{ color: dark.accent }}>project slug</a> in project settings for a clean, shareable URL.
+                  </div>
+                )}
               </Section>
 
               {/* Present to screen */}
@@ -473,6 +543,167 @@ function Section({ title, children, style }) {
     <div style={{ background: dark.card, border: `1px solid ${dark.border}`, borderRadius: 8, padding: 16, ...style }}>
       <div style={{ fontSize: 12, fontWeight: 'bold', color: dark.muted, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 12 }}>{title}</div>
       {children}
+    </div>
+  );
+}
+
+function DisplaySettingsEditor({ settings, onChange }) {
+  // Background: chroma green preset / transparent / custom hex.
+  const bg = settings.background ?? '#00B140';
+  const bgMode = bg === 'transparent' ? 'transparent' : (bg === '#00B140' ? 'green' : 'custom');
+  const cc = settings.ccStyle ?? {};
+
+  function set(patch) { onChange({ ...settings, ...patch }); }
+  function setCc(patch) {
+    const next = { ...cc, ...patch };
+    for (const k of Object.keys(next)) if (next[k] === '' || next[k] == null) delete next[k];
+    set({ ccStyle: Object.keys(next).length ? next : undefined });
+  }
+
+  const radioRow = { display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', marginBottom: 6 };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Background */}
+      <div>
+        <label style={labelStyle}>Background</label>
+        <div style={radioRow}>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+            <input type="radio" checked={bgMode === 'green'} onChange={() => set({ background: '#00B140' })} /> Chroma green
+          </label>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+            <input type="radio" checked={bgMode === 'transparent'} onChange={() => set({ background: 'transparent' })} /> Transparent
+          </label>
+          <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+            <input type="radio" checked={bgMode === 'custom'} onChange={() => set({ background: bgMode === 'custom' ? bg : '#000000' })} /> Custom
+          </label>
+          {bgMode === 'custom' && (
+            <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(bg) ? bg : '#000000'} onChange={e => set({ background: e.target.value })} />
+          )}
+        </div>
+        <div style={{ fontSize: 11, color: dark.muted }}>Transparent suits OBS browser sources; chroma green suits hardware keyers.</div>
+      </div>
+
+      {/* CC burn-in */}
+      <div>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: dark.text }}>
+          <input type="checkbox" checked={!!settings.ccMode} onChange={e => set({ ccMode: e.target.checked })} />
+          Burn in caption text (CC)
+        </label>
+        {settings.ccMode && (
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8 }}>
+            <div style={{ flex: '0 0 90px' }}>
+              <label style={labelStyle}>Font size</label>
+              <input style={{ ...inputStyle, width: '100%' }} type="number" placeholder="auto"
+                value={cc.fontSize ?? ''} onChange={e => setCc({ fontSize: e.target.value ? parseInt(e.target.value, 10) : '' })} />
+            </div>
+            <div style={{ flex: '0 0 110px' }}>
+              <label style={labelStyle}>Position</label>
+              <select style={{ ...inputStyle, width: '100%' }} value={cc.position ?? 'bottom'} onChange={e => setCc({ position: e.target.value })}>
+                <option value="bottom">Bottom</option>
+                <option value="top">Top</option>
+              </select>
+            </div>
+            <div style={{ flex: '0 0 90px' }}>
+              <label style={labelStyle}>Text color</label>
+              <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(cc.color ?? '') ? cc.color : '#ffffff'} onChange={e => setCc({ color: e.target.value })} />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StreamSettingsEditor({ settings, onChange }) {
+  // Local draft so typing a push URL doesn't fire a PUT per keystroke; commit
+  // the whole stream config with the Save button. Re-seed when the selected
+  // viewport's persisted stream changes.
+  const [stream, setStream_] = useState(settings.stream ?? {});
+  const persisted = JSON.stringify(settings.stream ?? {});
+  useEffect(() => { setStream_(settings.stream ?? {}); }, [persisted]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const pushUrls = Array.isArray(stream.pushUrls) ? stream.pushUrls : [];
+  const chroma = stream.chromaKey ?? {};
+  const dirty = JSON.stringify(stream) !== persisted;
+
+  function setStream(patch) { setStream_(s => ({ ...s, ...patch })); }
+  function setChroma(patch) { setStream_(s => ({ ...s, chromaKey: { ...(s.chromaKey ?? {}), ...patch } })); }
+  function setPush(i, patch) { setStream_(s => ({ ...s, pushUrls: (s.pushUrls ?? []).map((p, idx) => idx === i ? { ...p, ...patch } : p) })); }
+  function addPush() { setStream_(s => ({ ...s, pushUrls: [...(s.pushUrls ?? []), { url: '', enabled: true }] })); }
+  function removePush(i) { setStream_(s => ({ ...s, pushUrls: (s.pushUrls ?? []).filter((_, idx) => idx !== i) })); }
+
+  function save() {
+    // Drop empty push URLs and the whole stream object when nothing meaningful remains.
+    const cleanUrls = pushUrls.filter(p => (p.url || '').trim());
+    const next = { ...stream, ...(cleanUrls.length ? { pushUrls: cleanUrls } : { pushUrls: undefined }) };
+    const meaningful = next.enabled || cleanUrls.length || next.chromaKey?.enabled || next.mode;
+    onChange({ ...settings, stream: meaningful ? next : undefined });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: dark.text }}>
+        <input type="checkbox" checked={!!stream.enabled} onChange={e => setStream({ enabled: e.target.checked })} />
+        Stream this viewport server-side (RTMP)
+      </label>
+
+      {stream.enabled && (
+        <>
+          <div>
+            <label style={labelStyle}>Mode</label>
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+              <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+                <input type="radio" checked={stream.mode === 'composite'} onChange={() => setStream({ mode: 'composite' })} /> Composite onto program
+              </label>
+              <label style={{ display: 'flex', gap: 5, alignItems: 'center', color: dark.text }}>
+                <input type="radio" checked={stream.mode !== 'composite'} onChange={() => setStream({ mode: 'standalone' })} /> Standalone
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: dark.muted }}>Only one viewport can be the program composite; selecting it here demotes any other.</div>
+          </div>
+
+          {/* Chroma key (relevant to composite / keyed output) */}
+          <div>
+            <label style={{ display: 'flex', gap: 6, alignItems: 'center', color: dark.text }}>
+              <input type="checkbox" checked={!!chroma.enabled} onChange={e => setChroma({ enabled: e.target.checked })} />
+              Chroma-key the overlay (key out a color)
+            </label>
+            {chroma.enabled && (
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 8, alignItems: 'flex-end' }}>
+                <div style={{ flex: '0 0 90px' }}>
+                  <label style={labelStyle}>Key color</label>
+                  <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(chroma.color ?? '') ? chroma.color : '#00B140'} onChange={e => setChroma({ color: e.target.value })} />
+                </div>
+                <div style={{ flex: '0 0 110px' }}>
+                  <label style={labelStyle}>Similarity</label>
+                  <input style={{ ...inputStyle, width: '100%' }} type="number" step="0.05" min="0" max="1"
+                    value={chroma.similarity ?? 0.3} onChange={e => setChroma({ similarity: parseFloat(e.target.value) })} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Push targets */}
+          <div>
+            <label style={labelStyle}>Push targets (RTMP)</label>
+            {pushUrls.map((p, i) => (
+              <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                <input type="checkbox" checked={p.enabled !== false} onChange={e => setPush(i, { enabled: e.target.checked })} />
+                <input style={{ ...inputStyle, flex: 1 }} placeholder="rtmp://ingest.example/app/streamkey"
+                  value={p.url} onChange={e => setPush(i, { url: e.target.value })} />
+                <button style={btnSmall} onClick={() => removePush(i)}>Remove</button>
+              </div>
+            ))}
+            <button style={btnSmall} onClick={addPush}>+ Add push target</button>
+            <div style={{ fontSize: 11, color: dark.muted, marginTop: 4 }}>e.g. a vertical viewport → a TikTok / YouTube-vertical ingest URL.</div>
+          </div>
+        </>
+      )}
+
+      <div>
+        <button style={{ ...btnPrimary, opacity: dirty ? 1 : 0.5 }} disabled={!dirty} onClick={save}>Save streaming settings</button>
+      </div>
     </div>
   );
 }

@@ -12,7 +12,6 @@
  */
 
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import { getKey } from '../db/keys.js';
 import { getUserByEmail, getUserById } from '../db/users.js';
 import {
@@ -27,16 +26,7 @@ import {
   getMemberCount,
 } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
-
-function verifyUserToken(jwtSecret, req) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  try {
-    const payload = jwt.verify(header.slice(7), jwtSecret);
-    if (payload.type !== 'user') return null;
-    return { userId: payload.userId, email: payload.email };
-  } catch { return null; }
-}
+import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -50,7 +40,7 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) return adminMiddleware(req, res, () => _listMembers(db, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const level = getMemberAccessLevel(db, req.params.key, user.userId);
     if (!level) return res.status(403).json({ error: 'Not a project member' });
@@ -62,7 +52,7 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) return adminMiddleware(req, res, () => _inviteMember(db, null, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const level = getMemberAccessLevel(db, req.params.key, user.userId);
     if (level !== 'owner' && level !== 'admin') {
@@ -76,7 +66,7 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) return adminMiddleware(req, res, () => _removeMember(db, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const targetId = Number(req.params.userId);
     // Members may remove themselves; admins/owners may remove others
@@ -94,7 +84,7 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) return adminMiddleware(req, res, () => _updateMember(db, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const level = getMemberAccessLevel(db, req.params.key, user.userId);
     if (level !== 'owner' && level !== 'admin') {
@@ -106,7 +96,7 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
   // POST /keys/:key/members/:userId/transfer-ownership
   router.post('/:userId/transfer-ownership', (req, res) => {
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const toUserId = Number(req.params.userId);
     const result = transferOwnership(db, req.params.key, user.userId, toUserId);

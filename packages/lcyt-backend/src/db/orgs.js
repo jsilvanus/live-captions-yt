@@ -52,7 +52,7 @@ export function listOrganizationsForUser(db, userId) {
 
 export function getOrganizationDetails(db, orgId) {
   const org = db.prepare(`
-    SELECT id, name, slug, owner_user_id, created_at
+    SELECT id, name, slug, owner_user_id, project_slug_policy, created_at
     FROM organizations
     WHERE id = ?
   `).get(orgId);
@@ -78,6 +78,7 @@ export function getOrganizationDetails(db, orgId) {
     id: org.id,
     name: org.name,
     slug: org.slug,
+    projectSlugPolicy: org.project_slug_policy ?? 'none',
     ownerUserId: org.owner_user_id,
     createdAt: org.created_at,
     members: members.map(member => ({
@@ -127,14 +128,79 @@ export function updateOrganization(db, orgId, updates) {
     fields.push('slug = ?');
     params.push(updates.slug);
   }
+  if ('projectSlugPolicy' in updates) {
+    fields.push('project_slug_policy = ?');
+    params.push(updates.projectSlugPolicy);
+  }
   if (fields.length === 0) return null;
   params.push(orgId);
   db.prepare(`UPDATE organizations SET ${fields.join(', ')} WHERE id = ?`).run(...params);
-  return db.prepare('SELECT id, name, slug, owner_user_id, created_at FROM organizations WHERE id = ?').get(orgId);
+  return db.prepare('SELECT id, name, slug, owner_user_id, project_slug_policy, created_at FROM organizations WHERE id = ?').get(orgId);
 }
 
+/**
+ * Delete an organization. `api_keys.org_id` has no ON DELETE action (it must
+ * stay usable for projects created before an org existed), so a project
+ * attached to this org would otherwise block the delete under live FK
+ * enforcement — and per the Caption Target Architecture convention, an org
+ * vanishing must never delete or break its projects. Detach them (SET
+ * org_id = NULL) before deleting the org row; org_members/org_feature_overrides
+ * are ON DELETE CASCADE and are cleaned up by the engine.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} orgId
+ * @returns {boolean} true if a row was deleted
+ */
 export function deleteOrganization(db, orgId) {
-  return db.prepare('DELETE FROM organizations WHERE id = ?').run(orgId).changes > 0;
+  return db.transaction(() => {
+    db.prepare('UPDATE api_keys SET org_id = NULL WHERE org_id = ?').run(orgId);
+    return db.prepare('DELETE FROM organizations WHERE id = ?').run(orgId).changes > 0;
+  })();
+}
+
+/**
+ * Resolve every organization owned by `userId` (`organizations.owner_user_id`,
+ * NOT NULL + no ON DELETE action — it can never be left dangling or nulled)
+ * before that user is deleted. For each owned org:
+ *   - if another member exists, promote the highest-ranked one (admin over
+ *     editor/operator/viewer, then earliest-joined) to owner and transfer
+ *     `owner_user_id`;
+ *   - otherwise (the user is the org's sole member) the org has no one left
+ *     to own it, so it is torn down: member projects are detached
+ *     (`api_keys.org_id = NULL`, same semantic as deleteOrganization) and the
+ *     org row is deleted (org_members/org_feature_overrides cascade).
+ * Callers that want to preserve a multi-member org's ownership unchanged
+ * should block/require confirmation *before* calling this (see
+ * `DELETE /auth/me`'s sole-owner check and `DELETE /admin/users/:id`'s
+ * `ownedOrgs` guard) — this function always resolves ownership one way or
+ * the other so the subsequent `DELETE FROM users` never violates the FK.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ * @returns {{ reassigned: Array<{orgId: number, newOwnerUserId: number}>, deleted: number[] }}
+ */
+export function reassignOrDeleteOwnedOrgs(db, userId) {
+  const ownedOrgs = db.prepare('SELECT id FROM organizations WHERE owner_user_id = ?').all(userId);
+  const result = { reassigned: [], deleted: [] };
+
+  for (const { id: orgId } of ownedOrgs) {
+    const nextOwner = db.prepare(`
+      SELECT user_id FROM org_members
+      WHERE org_id = ? AND user_id != ?
+      ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'editor' THEN 1 WHEN 'operator' THEN 2 ELSE 3 END, joined_at ASC
+      LIMIT 1
+    `).get(orgId, userId);
+
+    if (nextOwner) {
+      db.prepare('UPDATE organizations SET owner_user_id = ? WHERE id = ?').run(nextOwner.user_id, orgId);
+      db.prepare("UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?").run(orgId, nextOwner.user_id);
+      result.reassigned.push({ orgId, newOwnerUserId: nextOwner.user_id });
+    } else {
+      db.prepare('UPDATE api_keys SET org_id = NULL WHERE org_id = ?').run(orgId);
+      db.prepare('DELETE FROM organizations WHERE id = ?').run(orgId);
+      result.deleted.push(orgId);
+    }
+  }
+
+  return result;
 }
 
 export function listOrganizationMembers(db, orgId) {

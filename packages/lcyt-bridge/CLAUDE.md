@@ -15,7 +15,11 @@ Standalone agent that connects to the LCYT backend via SSE and relays commands t
 - `index.js` — Entry point. Loads config, starts the Bridge, optionally shows system tray icon.
 - `bridge.js` — `Bridge` class (`EventEmitter`). Connects to `GET /production/bridge/commands?token=xxx` SSE stream. Dispatches `tcp_send`/`atem_switch`/`http_request`/`obs_switch` commands, plus `model_call` (AI inference relay, `plan_ai_model_registry.md`): fetches an optional `sourceUrl` itself (raw image bytes never cross the SSE command channel — the bridge pulls, the backend never pushes binary down the command stream) via `_modelCall()`, then POSTs to a local model `endpoint` (e.g. Ollama's `/api/generate`) with base64 `images`/JSON `format` as appropriate. Reports results via `POST /production/bridge/status`. Exponential-backoff reconnect (5s → 60s max).
 - `tcp-pool.js` — `TcpPool`: manages a pool of named TCP connections. Reconnects on drop.
+- `atem-pool.js` — `AtemPool`: pooled Blackmagic ATEM connections (via the `atem-connection` UDP protocol) for `atem_switch` commands — persistent connections, reconnect logic, program input switching.
+- `obs-pool.js` — `ObsPool`: pooled OBS WebSocket connections for `obs_switch` scene switching, built on the shared `OBSClient` abstraction from `packages/plugins/lcyt-production/src/obs-client.js`.
 - `tray.js` — Optional system tray icon (for packaged desktop use).
+
+`Bridge.status()` includes per-pool state: `tcp`, `atem`, and `obs` connection arrays.
 
 **Build as standalone executable** (using `pkg`):
 ```bash

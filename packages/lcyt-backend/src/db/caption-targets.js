@@ -10,22 +10,36 @@ import { randomUUID } from 'node:crypto';
 const VALID_TYPES = new Set(['youtube', 'generic', 'viewer']);
 
 /**
+ * Normalise an incoming icon id to a positive integer or null.
+ * Accepts numbers or numeric strings; anything else (or <= 0) becomes null.
+ * @param {*} v
+ * @returns {number|null}
+ */
+function normalizeIconId(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
  * @param {object} row
  * @returns {object}
  */
 function formatRow(row) {
   return {
-    id:        row.id,
-    type:      row.type,
-    enabled:   row.enabled === 1,
-    sortOrder: row.sort_order,
-    streamKey: row.stream_key ?? null,
-    url:       row.url ?? null,
-    headers:   row.headers ? JSON.parse(row.headers) : null,
-    viewerKey: row.viewer_key ?? null,
-    noBatch:   row.no_batch === 1,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    id:          row.id,
+    type:        row.type,
+    enabled:     row.enabled === 1,
+    sortOrder:   row.sort_order,
+    streamKey:   row.stream_key ?? null,
+    url:         row.url ?? null,
+    headers:     row.headers ? JSON.parse(row.headers) : null,
+    viewerKey:   row.viewer_key ?? null,
+    iconId:      row.icon_id ?? null,
+    iconEnabled: row.icon_enabled === 1,
+    noBatch:     row.no_batch === 1,
+    createdAt:   row.created_at,
+    updatedAt:   row.updated_at,
   };
 }
 
@@ -87,11 +101,11 @@ function validateTypeFields(type, { streamKey, url, viewerKey }) {
  * Create a caption target for an API key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
- * @param {{ id?: string, type: string, enabled?: boolean, streamKey?: string, url?: string, headers?: object, viewerKey?: string, noBatch?: boolean }} fields
+ * @param {{ id?: string, type: string, enabled?: boolean, streamKey?: string, url?: string, headers?: object, viewerKey?: string, iconId?: number|null, iconEnabled?: boolean, noBatch?: boolean }} fields
  * @returns {{ ok: true, target: object }|{ ok: false, error: string }}
  */
 export function createCaptionTarget(db, apiKey, fields = {}) {
-  const { id = randomUUID(), type, enabled = true, streamKey = null, url = null, headers = null, viewerKey = null, noBatch = false } = fields;
+  const { id = randomUUID(), type, enabled = true, streamKey = null, url = null, headers = null, viewerKey = null, iconId = null, iconEnabled = false, noBatch = false } = fields;
 
   const error = validateTypeFields(type, { streamKey, url, viewerKey });
   if (error) return { ok: false, error };
@@ -99,14 +113,16 @@ export function createCaptionTarget(db, apiKey, fields = {}) {
   const { maxOrder } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS maxOrder FROM caption_targets WHERE api_key = ?').get(apiKey);
 
   db.prepare(`
-    INSERT INTO caption_targets (id, api_key, type, enabled, sort_order, stream_key, url, headers, viewer_key, no_batch)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO caption_targets (id, api_key, type, enabled, sort_order, stream_key, url, headers, viewer_key, icon_id, icon_enabled, no_batch)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, apiKey, type, enabled ? 1 : 0, maxOrder + 1,
     type === 'youtube' ? streamKey.trim() : null,
     type === 'generic' ? url : null,
     type === 'generic' && headers && typeof headers === 'object' ? JSON.stringify(headers) : null,
     type === 'viewer' ? viewerKey : null,
+    type === 'viewer' ? normalizeIconId(iconId) : null,
+    type === 'viewer' && iconEnabled ? 1 : 0,
     noBatch ? 1 : 0,
   );
   return { ok: true, target: getCaptionTarget(db, apiKey, id) };
@@ -117,7 +133,7 @@ export function createCaptionTarget(db, apiKey, fields = {}) {
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {string} id
- * @param {{ enabled?: boolean, streamKey?: string, url?: string, headers?: object, viewerKey?: string, noBatch?: boolean }} patch
+ * @param {{ enabled?: boolean, streamKey?: string, url?: string, headers?: object, viewerKey?: string, iconId?: number|null, iconEnabled?: boolean, noBatch?: boolean }} patch
  * @returns {{ ok: true, target: object }|{ ok: false, error: string, status?: number }}
  */
 export function updateCaptionTarget(db, apiKey, id, patch = {}) {
@@ -135,15 +151,20 @@ export function updateCaptionTarget(db, apiKey, id, patch = {}) {
     ? (patch.headers && typeof patch.headers === 'object' ? JSON.stringify(patch.headers) : null)
     : existing.headers;
 
+  const iconId = patch.iconId !== undefined ? normalizeIconId(patch.iconId) : existing.icon_id;
+  const iconEnabled = patch.iconEnabled !== undefined ? (patch.iconEnabled ? 1 : 0) : existing.icon_enabled;
+
   db.prepare(`
     UPDATE caption_targets SET
-      enabled    = ?,
-      stream_key = ?,
-      url        = ?,
-      headers    = ?,
-      viewer_key = ?,
-      no_batch   = ?,
-      updated_at = datetime('now')
+      enabled      = ?,
+      stream_key   = ?,
+      url          = ?,
+      headers      = ?,
+      viewer_key   = ?,
+      icon_id      = ?,
+      icon_enabled = ?,
+      no_batch     = ?,
+      updated_at   = datetime('now')
     WHERE api_key = ? AND id = ?
   `).run(
     patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled,
@@ -151,6 +172,8 @@ export function updateCaptionTarget(db, apiKey, id, patch = {}) {
     existing.type === 'generic' ? url : null,
     existing.type === 'generic' ? headers : null,
     existing.type === 'viewer' ? viewerKey : null,
+    existing.type === 'viewer' ? iconId : null,
+    existing.type === 'viewer' ? iconEnabled : 0,
     patch.noBatch !== undefined ? (patch.noBatch ? 1 : 0) : existing.no_batch,
     apiKey, id,
   );

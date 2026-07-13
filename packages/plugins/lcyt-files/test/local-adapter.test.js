@@ -301,6 +301,56 @@ describe('writeToBackendFile', () => {
     assert.ok(content.includes('-->'));
   });
 
+  test('VTT cue times are relative to sessionStartMs', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    const db = makeDb();
+    const fileHandles = new Map();
+    const sessionStartMs = new Date('2026-01-01T12:00:00.000Z').getTime();
+    const ctx = { apiKey: 'key1', sessionId: 'sess0001', lang: 'original', format: 'vtt', fileHandles, sessionStartMs };
+
+    // 14s and 74.5s into the session
+    await writeToBackendFile(ctx, 'First', new Date(sessionStartMs + 14_000).toISOString(), db, adapter, buildVttCue);
+    await writeToBackendFile(ctx, 'Second', new Date(sessionStartMs + 74_500).toISOString(), db, adapter, buildVttCue);
+
+    const entry = fileHandles.get('original:vtt');
+    await entry.handle.close();
+    const content = fs.readFileSync(entry.handle.storedKey, 'utf8');
+    assert.ok(content.includes('00:00:14.000 --> 00:00:17.000'));
+    assert.ok(content.includes('00:01:14.500 --> 00:01:17.500'));
+  });
+
+  test('VTT cue times anchor to first caption when sessionStartMs is absent', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    const db = makeDb();
+    const fileHandles = new Map();
+    const firstMs = new Date('2026-01-01T12:00:00.000Z').getTime();
+    const ctx = { apiKey: 'key1', sessionId: 'sess0001', lang: 'original', format: 'vtt', fileHandles };
+
+    await writeToBackendFile(ctx, 'First', new Date(firstMs).toISOString(), db, adapter, buildVttCue);
+    await writeToBackendFile(ctx, 'Second', new Date(firstMs + 5_000).toISOString(), db, adapter, buildVttCue);
+
+    const entry = fileHandles.get('original:vtt');
+    await entry.handle.close();
+    const content = fs.readFileSync(entry.handle.storedKey, 'utf8');
+    assert.ok(content.includes('00:00:00.000 --> 00:00:03.000'));
+    assert.ok(content.includes('00:00:05.000 --> 00:00:08.000'));
+  });
+
+  test('VTT cue time clamps to zero when timestamp precedes sessionStartMs', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    const db = makeDb();
+    const fileHandles = new Map();
+    const sessionStartMs = new Date('2026-01-01T12:00:00.000Z').getTime();
+    const ctx = { apiKey: 'key1', sessionId: 'sess0001', lang: 'original', format: 'vtt', fileHandles, sessionStartMs };
+
+    await writeToBackendFile(ctx, 'Early', new Date(sessionStartMs - 2_000).toISOString(), db, adapter, buildVttCue);
+
+    const entry = fileHandles.get('original:vtt');
+    await entry.handle.close();
+    const content = fs.readFileSync(entry.handle.storedKey, 'utf8');
+    assert.ok(content.includes('00:00:00.000 --> 00:00:03.000'));
+  });
+
   test('increments sequence number', async () => {
     const adapter = createLocalAdapter(baseDir);
     const db = makeDb();

@@ -23,7 +23,106 @@ export function formatKey(row) {
     hlsEnabled:   row.hls_enabled    === 1,
     cea708DelayMs: row.cea708_delay_ms ?? 0,
     embedCors: row.embed_cors ?? '*',
+    publicSlug: row.public_slug ?? null,
   };
+}
+
+// ─── Public slug helpers (plan_dsk_viewport_settings Phase 1) ────────────────
+
+/** 3–40 chars, lowercase alnum + dashes, no leading/trailing dash. */
+export const PUBLIC_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])?$/;
+
+/**
+ * Slugs that can never be assigned: they would collide with route segments
+ * under /dsk/* (and other public prefixes), or are confusing/privileged.
+ * Shared with viewport-name validation in lcyt-dsk (Phase 2).
+ */
+export const RESERVED_PUBLIC_SLUGS = new Set([
+  'events', 'images', 'viewports', 'templates', 'template', 'broadcast',
+  'renderer', 'public', 'admin', 'api', 'auth', 'keys', 'live', 'captions',
+  'viewer', 'video', 'radio', 'preview', 'stream', 'stream-hls', 'dsk',
+  'dsk-rtmp', 'embed', 'static', 'assets', 'health', 'contact',
+]);
+
+/**
+ * Format/reserved-word validation only (no DB access, no org policy).
+ * @param {string} slug
+ * @returns {{ ok: true } | { ok: false, reason: string }}
+ */
+export function validatePublicSlugFormat(slug) {
+  if (typeof slug !== 'string' || !slug) return { ok: false, reason: 'slug is required' };
+  if (slug.length < 3 || slug.length > 40) return { ok: false, reason: 'slug must be 3-40 characters' };
+  if (!PUBLIC_SLUG_RE.test(slug)) return { ok: false, reason: 'slug must be lowercase letters, digits, and dashes (no leading/trailing dash)' };
+  if (slug.includes('--')) return { ok: false, reason: 'slug must not contain consecutive dashes' };
+  if (RESERVED_PUBLIC_SLUGS.has(slug)) return { ok: false, reason: `'${slug}' is a reserved word` };
+  return { ok: true };
+}
+
+/**
+ * The prefix (e.g. "team1-") this project's slug must start with, per its
+ * organization's project_slug_policy. Null when no prefix is required.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @returns {string|null}
+ */
+export function getRequiredSlugPrefix(db, key) {
+  const row = db.prepare(`
+    SELECT o.slug AS org_slug, o.project_slug_policy AS policy
+    FROM api_keys k JOIN organizations o ON o.id = k.org_id
+    WHERE k.key = ?
+  `).get(key);
+  if (!row || row.policy !== 'prefix' || !row.org_slug) return null;
+  return `${row.org_slug}-`;
+}
+
+/**
+ * Full availability check for assigning `slug` to project `key`:
+ * format, reserved words, org prefix policy (unless bypassed), uniqueness.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @param {string} slug
+ * @param {{ bypassPolicy?: boolean }} [opts]  bypassPolicy: site-admin override
+ * @returns {{ available: true } | { available: false, reason: string }}
+ */
+export function checkPublicSlugAvailability(db, key, slug, { bypassPolicy = false } = {}) {
+  const fmt = validatePublicSlugFormat(slug);
+  if (!fmt.ok) return { available: false, reason: fmt.reason };
+
+  if (!bypassPolicy) {
+    const prefix = getRequiredSlugPrefix(db, key);
+    if (prefix && !slug.startsWith(prefix)) {
+      return { available: false, reason: `slug must start with '${prefix}' (organization policy)` };
+    }
+  }
+
+  const taken = db.prepare('SELECT key FROM api_keys WHERE public_slug = ?').get(slug);
+  if (taken && taken.key !== key) return { available: false, reason: 'slug is already taken' };
+
+  return { available: true };
+}
+
+/**
+ * Set (or clear with null) a project's public slug. Callers validate first
+ * via checkPublicSlugAvailability(); the unique index is the last line of
+ * defense against races.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @param {string|null} slug
+ * @returns {boolean} true when a row was updated
+ */
+export function setPublicSlug(db, key, slug) {
+  return db.prepare('UPDATE api_keys SET public_slug = ? WHERE key = ?').run(slug, key).changes > 0;
+}
+
+/**
+ * Resolve a public slug to its api_key. Null when no project has this slug.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} slug
+ * @returns {string|null}
+ */
+export function resolveKeyByPublicSlug(db, slug) {
+  const row = db.prepare('SELECT key FROM api_keys WHERE public_slug = ? AND active = 1').get(slug);
+  return row ? row.key : null;
 }
 
 /**
@@ -220,12 +319,45 @@ export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
 
 /**
  * Permanently delete an API key.
+ *
+ * Every core child table that declares `REFERENCES api_keys(key)` uses
+ * `ON DELETE CASCADE` (caption_targets, translation_vendor_config,
+ * translation_targets, project_features, project_members [which cascades
+ * project_member_permissions in turn], project_device_roles) — under the
+ * live FK enforcement `better-sqlite3` has on by default, the engine cleans
+ * those up automatically and this DELETE alone would not fail even with
+ * child rows present. A handful of other tables key off `api_key` without
+ * ever declaring an FK constraint at all (caption_usage, session_stats,
+ * caption_errors, auth_events, sessions, caption_files, icons,
+ * viewer_key_daily_stats, mcp_tokens) — deleting a key wouldn't error on
+ * these, but would silently orphan their rows, so they're cleaned up
+ * explicitly here too, mirroring cleanRevokedKeys()'s existing pattern for
+ * the subset it already covers.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key
  * @returns {boolean} true if a row was deleted
  */
 export function deleteKey(db, key) {
-  const result = db.prepare('DELETE FROM api_keys WHERE key = ?').run(key);
+  const result = db.transaction(() => {
+    // No declared FK — orphan-row cleanup, not FK-required, but done here so
+    // deleteKey() is a complete teardown of everything keyed on `key`.
+    db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM session_stats WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM sessions WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM icons WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM viewer_key_daily_stats WHERE api_key = ?').run(key);
+    db.prepare('DELETE FROM mcp_tokens WHERE api_key = ?').run(key);
+    try {
+      db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
+      db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
+    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
+    // caption_targets/translation_vendor_config/translation_targets/project_features/
+    // project_members(+permissions)/project_device_roles: ON DELETE CASCADE, left to the engine.
+    return db.prepare('DELETE FROM api_keys WHERE key = ?').run(key);
+  })();
   return result.changes > 0;
 }
 
