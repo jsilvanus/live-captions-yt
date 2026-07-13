@@ -5,8 +5,8 @@
  * fetchThumbnail() — the only method the route calls. The mock reads from
  * a temp directory so tests can control when a preview "exists".
  *
- * The route is mounted at the root (app.use(createPreviewRouter(mock))) because
- * the router registers paths as /preview/:key/incoming[.jpg] internally.
+ * The route is mounted at /preview (app.use('/preview', createPreviewRouter(mock)))
+ * exactly like lcyt-backend's server.js — router paths are relative to the mount.
  */
 
 import { describe, it, before, after } from 'node:test';
@@ -58,7 +58,7 @@ function makeMockPreviewManager(root) {
 }
 
 // ---------------------------------------------------------------------------
-// Test server — router is mounted at root so its /preview/:key/… paths match
+// Test server — router is mounted at /preview, matching lcyt-backend
 // ---------------------------------------------------------------------------
 
 let server, baseUrl;
@@ -67,8 +67,8 @@ const mockPreview = makeMockPreviewManager(PREVIEW_ROOT);
 
 before(() => new Promise((resolve) => {
   const app = express();
-  // Route registers /preview/:key/incoming[.jpg] — mount at root, not /preview
-  app.use(createPreviewRouter(mockPreview));
+  // Route registers /:key/incoming[.jpg] relative to the mount point
+  app.use('/preview', createPreviewRouter(mockPreview));
   server = createServer(app);
   server.listen(0, () => {
     baseUrl = `http://localhost:${server.address().port}`;

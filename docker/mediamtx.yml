@@ -46,16 +46,18 @@ hls: yes
 hlsAddress: :8080
 hlsAlwaysRemux: no
 # hlsVariant controls the HLS segment container format:
-#   lowLatency  — MPEG-TS segments (.ts); default for low-latency playback
-#   fmp4        — fragmented MP4 segments (.mp4); required for server-side STT
-#                 (Google Cloud STT, OpenAI Whisper, and whisper.cpp all accept
-#                  fMP4 directly, so no ffmpeg transcode step is needed)
+#   mpegts      — MPEG-TS segments (.ts); maximum player compatibility
+#   fmp4        — fragmented MP4 segments (init.mp4 + *.mp4); required for
+#                 server-side STT (Google Cloud STT, OpenAI Whisper, and
+#                 whisper.cpp all accept fMP4 directly, no transcode needed)
+#   lowLatency  — Low-Latency HLS; ALSO uses fragmented MP4 parts (*.mp4),
+#                 not .ts — plus LL-HLS partial segments (hlsPartDuration)
 #
 # Switch to fmp4 to enable server-side STT (POST /stt/start):
 #   hlsVariant: fmp4
 #
-# Note: fmp4 and lowLatency are mutually exclusive — fmp4 does not support
-# Low-Latency HLS (LL-HLS) part segments (hlsPartDuration is ignored).
+# Note: the backend HLS proxies (/stream-hls/:key/*, /radio/:key/*) accept
+# .ts, .mp4 and .m4s segment names, so any variant works through them.
 hlsVariant: lowLatency
 hlsSegmentCount: 7
 hlsSegmentDuration: 6s
@@ -67,8 +69,12 @@ hlsAllowOrigins: ["*"]
 # Serve HLS for a path only when there are active readers, to save resources
 hlsEncryption: no
 
-# RTSP (disabled — we use RTMP + HLS only)
-rtsp: no
+# RTSP — required by the RTMP relay fan-out: the runOnPublish hooks that
+# rtmp-manager registers on "{key}", "{key}-out" and "{key}-t{i}" read the
+# stream back via rtsp://127.0.0.1:8554/<path> (MEDIAMTX_RTSP_BASE_URL).
+# Keep the port internal — do not expose :8554 publicly.
+rtsp: yes
+rtspAddress: :8554
 
 # WebRTC (disabled by default; can be enabled for ultra-low-latency preview)
 webrtc: no
@@ -89,8 +95,8 @@ webrtc: no
 #                  and copies to relay targets via runOnPublish
 # {key}-t{i}     — per-slot transcode output for slot i (0-based); each slot fans out
 #                  independently to its own relay target via runOnPublish
-# {key}-dsk      — DSK renderer output pushed by Playwright/ffmpeg; rtmp-manager reads
-#                  it via RTSP when compositing the overlay
+# dsk/{key}      — DSK renderer output pushed by Playwright/ffmpeg (RTMP app "dsk",
+#                  DSK_RTMP_APP); rtmp-manager reads it via RTSP when compositing
 # ─────────────────────────────────────────────────────────────────────────────
 
 paths:

@@ -123,7 +123,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
             relayManager.writeCaption(session.apiKey, caption.text, {
               speechStart: caption.speechStart,
               timestamp:   caption.timestamp,
-            });
+            }).catch(() => {});
           }
         }
 

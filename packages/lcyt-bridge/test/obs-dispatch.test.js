@@ -48,7 +48,9 @@ test('ObsPool — emits events on connection', async (t) => {
   // We're just testing that _open() returns a promise and doesn't crash.
   const entry = await pool._open('localhost', 4455, '', 'test:key:1');
   assert.strictEqual(typeof entry, 'object');
-  assert.strictEqual(entry.destroyed, false);
+  // Pool entries are { client, key } — assert the shape _open actually returns.
+  assert.ok(entry.client, 'entry exposes its OBSClient');
+  assert.strictEqual(entry.key, 'test:key:1');
 
   pool.destroy();
 });

@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
-import { makeFifo } from 'lcyt-backend/ffmpeg/pipe-utils';
+import { makeFifo, createFifoWriter } from 'lcyt-backend/ffmpeg/pipe-utils';
 import * as fs from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
 import logger from 'lcyt/logger';
@@ -85,12 +85,15 @@ function outPathName(apiKey, suffix = 'out') {
 
 /**
  * RTMP URL for the processing ffmpeg to push its single output back into MediaMTX.
+ * MediaMTX uses the full URL path as the path name, so this must NOT include an
+ * RTMP application prefix — otherwise the push lands on "app/{key}-out" while the
+ * runOnPublish fan-out hook is registered on "{key}-out" and never fires.
  * @param {string} apiKey
  * @param {string} [suffix]
  * @returns {string}
  */
 function outRtmpUrl(apiKey, suffix = 'out') {
-  return `${DEFAULT_MEDIAMTX_RTMP}/${DEFAULT_RTMP_APP}/${outPathName(apiKey, suffix)}`;
+  return `${DEFAULT_MEDIAMTX_RTMP}/${outPathName(apiKey, suffix)}`;
 }
 
 /**
@@ -254,7 +257,8 @@ export class RtmpRelayManager {
    */
   async start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
       if (!relays || relays.length === 0) {
-        this._stopProc(apiKey);
+        await this._stopProc(apiKey);
+        await this._stopMediamtxRelay(apiKey);
         return;
       }
 
@@ -264,7 +268,14 @@ export class RtmpRelayManager {
         throw new Error('ffmpeg is not installed or not available in PATH. RTMP relay requires ffmpeg.');
       }
 
-      this._stopProc(apiKey);
+      // Tear down any previous incarnation of this relay — both a local ffmpeg
+      // process and a MediaMTX-managed plain relay. The MediaMTX teardown matters
+      // when switching modes (e.g. plain relay → DSK overlay): the stale
+      // runOnPublish hook on the raw path would otherwise keep forwarding the
+      // unprocessed stream to the same targets in parallel with the new output.
+      // Awaited so the path deletions land before we re-add path configs below.
+      await this._stopProc(apiKey);
+      await this._stopMediamtxRelay(apiKey);
 
       // Determine operating mode.
       // CEA-708: any slot with captionMode='cea708' AND ffmpeg supports libx264+eia608+subrip.
@@ -321,7 +332,7 @@ export class RtmpRelayManager {
           const teeTargets = _buildTeeTargets(relays);
           const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey)} -c copy -f tee "${teeTargets}"`;
           try {
-            await this._mediamtx.addPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
+            await this._upsertPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
           } catch (err) {
             logger.warn(`[rtmp] MediaMTX addPath (cea708 out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -396,7 +407,7 @@ export class RtmpRelayManager {
             }
             const cmd = `ffmpeg -re -i ${outRtspUrl(apiKey, suffix)} -c copy -f flv ${targetUrl}`;
             try {
-              await this._mediamtx.addPath(outPathName(apiKey, suffix), { runOnPublish: cmd, runOnPublishRestart: true });
+              await this._upsertPath(outPathName(apiKey, suffix), { runOnPublish: cmd, runOnPublishRestart: true });
               slotPaths.push(outPathName(apiKey, suffix));
             } catch (err) {
               logger.warn(`[rtmp] MediaMTX addPath (transcode slot ${i}) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -454,7 +465,7 @@ export class RtmpRelayManager {
           const teeTargets = _buildTeeTargets(relays);
           const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey)} -c copy -f tee "${teeTargets}"`;
           try {
-            await this._mediamtx.addPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
+            await this._upsertPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
           } catch (err) {
             logger.warn(`[rtmp] MediaMTX addPath (dsk out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -491,7 +502,7 @@ export class RtmpRelayManager {
         const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${encodeURIComponent(apiKey)} -c copy -f tee "${safeTee}"`;
 
         try {
-          await this._mediamtx.addPath(apiKey, { runOnPublish, runOnPublishRestart: true });
+          await this._upsertPath(apiKey, { runOnPublish, runOnPublishRestart: true });
           logger.info(`[rtmp] Plain relay for ${apiKey.slice(0,8)} configured via MediaMTX (${relays.length} slot(s))`);
         } catch (err) {
           logger.warn(`[rtmp] MediaMTX addPath failed for ${apiKey.slice(0,8)}: ${err.message} — stream may not forward`);
@@ -552,19 +563,16 @@ export class RtmpRelayManager {
       const handle = await runner.start();
 
       const startedAt = new Date();
+      const meta = { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs, fifoPath };
       this._procs.set(apiKey, handle);
-      this._meta.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt, hasCea708, hasDsk, dskNames: dskState?.names ?? [], srtSeq: 0, captionsSent: 0, cea708DelayMs, fifoPath });
+      this._meta.set(apiKey, meta);
 
       // If FIFO requested, create it and a writer stream for caption injection
       if (fifoPath) {
         try {
           await makeFifo(fifoPath);
           try {
-            // createFifoWriter may be async in the new runner API; await it.
-            const { createFifoWriter } = await import('../../../lcyt-backend/src/ffmpeg/pipe-utils.js');
-            const writer = await createFifoWriter(fifoPath, { timeoutMs: 50 });
-            const meta = this._meta.get(apiKey);
-            if (meta) meta._fifoWriter = writer;
+            meta._fifoWriter = createFifoWriter(fifoPath, { timeoutMs: 50 });
           } catch (e) {
             logger.warn(`[rtmp] Failed to open FIFO writer for ${apiKey.slice(0,8)}: ${e.message}`);
           }
@@ -588,39 +596,38 @@ export class RtmpRelayManager {
       // Runner emits 'error' and 'close' events like child process.
       // By this point start() has already returned successfully; these callbacks only
       // handle cleanup and stat recording after the relay process exits.
+      // The map deletions are guarded by identity checks: on restart (e.g. a DSK
+      // update), the OLD process's close event fires after the NEW process has
+      // already been registered under the same key — deleting unconditionally
+      // would wipe the new relay's state.
       runner.on('error', (err) => {
-        this._procs.delete(apiKey);
-        this._meta.delete(apiKey);
+        if (this._procs.get(apiKey) === handle) this._procs.delete(apiKey);
+        if (this._meta.get(apiKey) === meta) this._meta.delete(apiKey);
         logger.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
       });
 
       runner.on('close', (info) => {
-        this._procs.delete(apiKey);
-        const meta = this._meta.get(apiKey);
-        this._meta.delete(apiKey);
+        if (this._procs.get(apiKey) === handle) this._procs.delete(apiKey);
+        if (this._meta.get(apiKey) === meta) this._meta.delete(apiKey);
 
         // Close any FIFO writer
-        if (meta && meta._fifoWriter && typeof meta._fifoWriter.close === 'function') {
+        if (meta._fifoWriter && typeof meta._fifoWriter.close === 'function') {
           try { meta._fifoWriter.close(); } catch (e) {}
         }
 
         const endedAt = new Date();
-        if (meta) {
-          const durationMs = endedAt.getTime() - meta.startedAt.getTime();
-          for (const r of meta.slots) {
-              this._onStreamEnded?.(apiKey, r.slot, {
-                targetUrl:   r.targetUrl,
-                targetName:  r.targetName ?? null,
-                captionMode: r.captionMode ?? 'http',
-                startedAt:   meta.startedAt,
-                endedAt,
-                durationMs,
-                captionsSent: meta.captionsSent ?? 0,
-              });
-            }
-        } else {
-          logger.warn(`[rtmp] Metadata missing on close for key ${apiKey.slice(0, 8)}`);
-        }
+        const durationMs = endedAt.getTime() - meta.startedAt.getTime();
+        for (const r of meta.slots) {
+            this._onStreamEnded?.(apiKey, r.slot, {
+              targetUrl:   r.targetUrl,
+              targetName:  r.targetName ?? null,
+              captionMode: r.captionMode ?? 'http',
+              startedAt:   meta.startedAt,
+              endedAt,
+              durationMs,
+              captionsSent: meta.captionsSent ?? 0,
+            });
+          }
 
         if (info && info.code !== undefined && info.code !== null) {
           logger.warn(`[rtmp] ffmpeg exited with code ${info.code} for key ${apiKey.slice(0, 8)}`);
@@ -651,26 +658,7 @@ export class RtmpRelayManager {
     return (async () => {
       // MediaMTX-managed plain relay
       if (this._mediamtxRelays.has(apiKey)) {
-        const meta = this._mediamtxRelays.get(apiKey);
-        this._mediamtxRelays.delete(apiKey);
-        if (this._mediamtx) {
-          try { await this._mediamtx.deletePath(apiKey); } catch {}
-        }
-        if (meta) {
-          const endedAt = new Date();
-          const durationMs = endedAt.getTime() - meta.startedAt.getTime();
-          for (const r of meta.slots) {
-            this._onStreamEnded?.(apiKey, r.slot, {
-              targetUrl:   r.targetUrl,
-              targetName:  r.targetName ?? null,
-              captionMode: 'http',
-              startedAt:   meta.startedAt,
-              endedAt,
-              durationMs,
-              captionsSent: 0,
-            });
-          }
-        }
+        await this._stopMediamtxRelay(apiKey);
         return;
       }
 
@@ -687,9 +675,55 @@ export class RtmpRelayManager {
           });
         }
       } finally {
-        this._stopProc(apiKey);
+        await this._stopProc(apiKey);
       }
     })();
+  }
+
+  /**
+   * Tear down a MediaMTX-managed plain relay: remove the path config (which
+   * removes the runOnPublish fan-out hook), fire end stats, and forget the
+   * relay. No-op when no plain relay is registered for the key.
+   * @param {string} apiKey
+   * @returns {Promise<void>}
+   */
+  async _stopMediamtxRelay(apiKey) {
+    const meta = this._mediamtxRelays.get(apiKey);
+    if (!meta) return;
+    this._mediamtxRelays.delete(apiKey);
+    if (this._mediamtx) {
+      try { await this._mediamtx.deletePath(apiKey); } catch {}
+    }
+    const endedAt = new Date();
+    const durationMs = endedAt.getTime() - meta.startedAt.getTime();
+    for (const r of meta.slots) {
+      this._onStreamEnded?.(apiKey, r.slot, {
+        targetUrl:   r.targetUrl,
+        targetName:  r.targetName ?? null,
+        captionMode: 'http',
+        startedAt:   meta.startedAt,
+        endedAt,
+        durationMs,
+        captionsSent: 0,
+      });
+    }
+  }
+
+  /**
+   * Add a MediaMTX path config, replacing it if it already exists.
+   * A leftover config from a previous relay run would otherwise make addPath
+   * fail and silently keep the OLD fan-out targets active.
+   * @param {string} name
+   * @param {object} config
+   * @returns {Promise<void>}
+   */
+  async _upsertPath(name, config) {
+    try {
+      await this._mediamtx.addPath(name, config);
+    } catch (err) {
+      if (typeof this._mediamtx.patchPath !== 'function') throw err;
+      await this._mediamtx.patchPath(name, config);
+    }
   }
 
   /**
@@ -910,8 +944,10 @@ export class RtmpRelayManager {
     // Restart the relay with the updated overlay if it is currently running.
     // This will cause a brief (~0.5 s) stream interruption at the DSK change point,
     // which is acceptable — DSK changes happen at known cue points, not continuously.
+    // A MediaMTX-managed plain relay counts as running too — it must be restarted
+    // as a local ffmpeg process for the overlay to be composited.
     if (this.isRunning(apiKey)) {
-      const meta = this._meta.get(apiKey);
+      const meta = this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey);
       if (meta) {
         try {
           await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
@@ -939,7 +975,7 @@ export class RtmpRelayManager {
     }
 
     if (this.isRunning(apiKey)) {
-      const meta = this._meta.get(apiKey);
+      const meta = this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey);
       if (meta) {
         try {
           await this.start(apiKey, meta.slots, { cea708DelayMs: meta.cea708DelayMs ?? 0 });
@@ -1019,27 +1055,33 @@ export class RtmpRelayManager {
   /**
    * Terminate the running ffmpeg process for an API key (SIGTERM then SIGKILL after 3 s).
    * Gracefully closes stdin so ffmpeg can flush any buffered CEA-708 data first.
+   * Returns a promise that resolves once the MediaMTX output-path deletions have
+   * settled — start() awaits it so a restart cannot re-add a path config before
+   * the stale one is removed (which would leave the fan-out pointing at nothing).
    * @param {string} apiKey
+   * @returns {Promise<void>}
    */
-  _stopProc(apiKey) {
+  async _stopProc(apiKey) {
     // Delete MediaMTX output paths first so the fan-out runOnPublish is removed before the
     // processing ffmpeg exits, preventing orphaned pushes to relay targets.
+    const deletions = [];
     const outputPaths = this._outputPaths.get(apiKey);
     if (outputPaths && this._mediamtx) {
       for (const p of outputPaths) {
-        this._mediamtx.deletePath(p).catch(() => {});
+        deletions.push(this._mediamtx.deletePath(p).catch(() => {}));
       }
     }
     this._outputPaths.delete(apiKey);
+    const settled = Promise.all(deletions).then(() => {});
 
     const proc = this._procs.get(apiKey);
-    if (!proc) return;
+    if (!proc) return settled;
     this._procs.delete(apiKey);
     try {
       // Runner handle (new interface) exposes .stop(). Prefer that.
       if (typeof proc.stop === 'function') {
         try { proc.stop().catch(() => {}); } catch (e) {}
-        return;
+        return settled;
       }
       if (proc.stdin && !proc.stdin.destroyed) proc.stdin.end();
     } catch (err) {
@@ -1054,6 +1096,7 @@ export class RtmpRelayManager {
       }, 3000);
       if (timer.unref) timer.unref();
     } catch {}
+    return settled;
   }
 }
 

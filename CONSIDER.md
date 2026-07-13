@@ -304,3 +304,66 @@ buried in an unrelated UI-reconciliation diff.
 building `FeaturePolicyGrid.jsx` required re-deriving the real feature-code
 list from `plan_site_feature_policies.md`, which is what surfaced the
 mismatch.)
+
+## `HlsSegmentFetcher` first poll transcribes the whole playlist window
+
+**Where:** `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` —
+`_fetchAndEmit()` with `_lastSequence = -1`.
+
+**Finding:** On the first successful poll the fetcher emits every segment in
+the current playlist window (MediaMTX default: 7 × 6 s ≈ 42 s). If STT is
+started against a stream that is already live, up to ~42 s of *old* audio is
+transcribed first and those stale captions get delivered to YouTube before
+the live edge catches up. Skipping to the live edge (e.g. emit only the last
+segment on the first poll, or add a `startAtLiveEdge` option defaulting to
+true) would fix it.
+
+**Why skipped:** Behaviour is pinned by `test/hls-segment-fetcher.test.js`
+(the PROGRAM-DATE-TIME test asserts both window segments are emitted on the
+first poll) and the "process the backlog" semantics may be intentional for
+short windows; changing it is a small product decision, not a pure bugfix.
+
+(Found during: video-pipeline survey, 2026-07-13.)
+
+## `NginxManager` segment-cache location only matches `.ts`
+
+**Where:** `packages/plugins/lcyt-rtmp/src/nginx-manager.js` — `_buildConfig()`
+segment `location ~ ^…\.ts$` block.
+
+**Finding:** With MediaMTX's `fmp4`/`lowLatency` HLS variants the segments
+are `*.mp4`/`*.m4s`, which miss the cached `.ts` location and fall through to
+the uncached fallback location. Playback still works, but segments are
+re-proxied on every request. Extending the regex needs care: `init.mp4`
+changes across publisher restarts and must NOT get the 24 h immutable cache.
+
+**Why skipped:** Functional (fallback serves the files); a cache-tuning
+change to generated nginx config deserves its own tested pass.
+
+(Found during: video-pipeline survey, 2026-07-13.)
+
+## `HlsManager.start()` in no-local-rtmp mode never marks the key running
+
+**Where:** `packages/plugins/lcyt-rtmp/src/hls-manager.js` — `start()` final
+branch logs "HLS active (no-local-rtmp)" but adds nothing to `_procs`, so
+`isRunning()` stays false for MediaMTX-served keys.
+
+**Why skipped:** Nothing in the serving path consults `hlsManager.isRunning()`
+today (the proxy route always forwards to MediaMTX), so this is an
+introspection inconsistency, not a user-visible bug.
+
+(Found during: video-pipeline survey, 2026-07-13.)
+
+## `lcyt-rtmp` npm test script skips three test files
+
+**Where:** `packages/plugins/lcyt-rtmp/package.json` — the `test` script
+lists test files explicitly; `preview-route.test.js` (self-running, plain
+asserts — not node:test), `rtmp-manager.unit.test.js`, and
+`mediamtx-runOnPublish.safety.test.js` (placeholder) are not in the list.
+
+**Why skipped:** `preview-route.test.js` would need converting to `node:test`
+style before it can join the script (its tests only run via its `main`
+check); did fix its broken ESM `require()` so `node test/preview-route.test.js`
+passes again. Converting + enrolling the stragglers is a test-hygiene pass of
+its own.
+
+(Found during: video-pipeline survey, 2026-07-13.)

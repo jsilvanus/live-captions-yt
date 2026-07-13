@@ -1,19 +1,20 @@
 import assert from 'assert';
 import http from 'http';
+import { Readable } from 'stream';
 import express from 'express';
 import fetch from 'node-fetch';
 import { createPreviewRouter } from '../src/routes/preview.js';
 
 async function startApp(previewManager) {
   const app = express();
-  app.use(createPreviewRouter(previewManager));
+  // Mount at /preview like lcyt-backend does — router paths are relative.
+  app.use('/preview', createPreviewRouter(previewManager));
   return new Promise((resolve) => {
     const srv = app.listen(0, () => resolve({ app, srv }));
   });
 }
 
 function bufferToStream(buf) {
-  const { Readable } = require('stream');
   return Readable.from(buf);
 }
 
