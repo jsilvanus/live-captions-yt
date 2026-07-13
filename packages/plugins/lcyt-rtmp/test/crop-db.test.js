@@ -207,4 +207,25 @@ describe('source map + resolution', () => {
     assert.equal(deleteCropSourceMapEntry(db, KEY, e.entry.id), true);
     assert.equal(deleteCropSourceMapEntry(db, KEY, e.entry.id), false);
   });
+
+  test('string-typed numeric values (JSON bodies) are coerced on insert and resolve', () => {
+    const p = createCropPreset(db, KEY, { name: 'p' });
+
+    // Stored as strings → normalised to integers
+    const e = createCropSourceMapEntry(db, KEY, { mixerInput: '2', cameraId: 'cam1', cameraPreset: '3', presetId: p.preset.id });
+    assert.equal(e.ok, true);
+    assert.equal(e.entry.mixerInput, 2);
+    assert.equal(e.entry.cameraPreset, 3);
+
+    // Queried as strings → still resolves
+    assert.equal(resolveCropPresetForSource(db, KEY, { mixerInput: '2', cameraId: 'cam1', cameraPreset: '3' })?.id, p.preset.id);
+    // Queried as numbers against string-inserted rows → still resolves
+    assert.equal(resolveCropPresetForSource(db, KEY, { mixerInput: 2, cameraId: 'cam1', cameraPreset: 3 })?.id, p.preset.id);
+  });
+
+  test('non-integer mixerInput/cameraPreset are rejected on insert', () => {
+    const p = createCropPreset(db, KEY, { name: 'p' });
+    assert.equal(createCropSourceMapEntry(db, KEY, { mixerInput: 'abc', presetId: p.preset.id }).ok, false);
+    assert.equal(createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 1.5, presetId: p.preset.id }).ok, false);
+  });
 });

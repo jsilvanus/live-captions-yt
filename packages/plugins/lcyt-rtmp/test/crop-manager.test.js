@@ -138,6 +138,33 @@ describe('CropManager', () => {
     const mgr = makeManager();
     await assert.rejects(() => mgr.applyPosition('nope', { xNorm: 0.5, yNorm: 0 }), /not running/);
   });
+
+  test('fails fast when ffmpeg lacks libx264', async () => {
+    const mgr = new CropManager({
+      ffmpegCaps: { available: true, hasLibx264: false, hasZmq: false },
+      probeResolution: async () => ({ inW: 1920, inH: 1080 }),
+    });
+    await assert.rejects(() => mgr.start('nox264', CONFIG), /libx264/);
+    assert.ok(!mgr.isRunning('nox264'));
+  });
+
+  test('hasZmq without the zeromq module: no zmq filter in the graph, restart mode reported', async () => {
+    // The optional `zeromq` package is not installed in this repo, so the
+    // lazy import fails — the filter must NOT bind a dead port.
+    jobs.length = 0;
+    const mgr = new CropManager({
+      ffmpegCaps: { available: true, hasZmq: true },
+      probeResolution: async () => ({ inW: 1920, inH: 1080 }),
+    });
+    await mgr.start('zmqless', CONFIG);
+
+    const filter = jobs[0].args[jobs[0].args.indexOf('-filter_complex') + 1];
+    assert.ok(!filter.includes('zmq'), `no zmq filter without the client module: ${filter}`);
+    assert.equal(mgr.getStatus('zmqless').repositionMode, 'restart');
+    assert.equal(mgr.repositionMode(), 'restart', 'manager-level mode downgrades once the import has settled');
+
+    await mgr.stop('zmqless');
+  });
 });
 
 describe('RtmpRelayManager — crop-view slots', () => {
