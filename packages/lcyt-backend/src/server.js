@@ -558,6 +558,7 @@ app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleMan
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
+  productionBridgeManager,
 ));
 app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
 app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector')));
