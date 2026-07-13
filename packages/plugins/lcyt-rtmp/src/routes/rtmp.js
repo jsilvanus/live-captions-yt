@@ -28,9 +28,10 @@ import logger from 'lcyt/logger';
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {import('../crop-manager.js').CropManager} [cropManager]
  * @returns {Router}
  */
-export function createRtmpRouter(db, relayManager) {
+export function createRtmpRouter(db, relayManager, cropManager = null) {
   const router = Router();
 
   // Parse application/x-www-form-urlencoded bodies (nginx-rtmp format)
@@ -85,6 +86,14 @@ export function createRtmpRouter(db, relayManager) {
         logger.info(`[rtmp] Relay not active for ${apiKey.slice(0, 8)}…; accepting stream but not fanning out`);
       }
 
+      if (cropManager) {
+        try {
+          await cropManager.start(apiKey);
+        } catch (err) {
+          logger.error(`[crop] Failed to start crop renderer for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        }
+      }
+
       // Always 200 to allow the publish (relay fan-out is best-effort)
       return res.status(200).send('ok');
     }
@@ -96,6 +105,13 @@ export function createRtmpRouter(db, relayManager) {
         await relayManager.stopKey(apiKey);
       } catch (err) {
         logger.error(`[rtmp] Failed to stop relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
+      }
+      if (cropManager) {
+        try {
+          await cropManager.stop(apiKey);
+        } catch (err) {
+          logger.error(`[crop] Failed to stop crop renderer for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        }
       }
       return res.status(200).send('ok');
     }

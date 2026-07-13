@@ -7,9 +7,11 @@
  * @param {import('better-sqlite3').Database} db
  */
 import { runRadioMigrations } from './db/radio.js';
+import { runCropMigrations } from './db/crop.js';
 
 export function runMigrations(db) {
   runRadioMigrations(db);
+  runCropMigrations(db);
   // ── api_keys additive columns ──────────────────────────────────────────────
   const existingCols = new Set(
     db.prepare('PRAGMA table_info(api_keys)').all().map(c => c.name)

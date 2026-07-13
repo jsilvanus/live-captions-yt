@@ -51,10 +51,14 @@ import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { createRadioRouter } from './routes/radio.js';
 import { createPreviewRouter } from './routes/preview.js';
+import { createCropRouter } from './routes/crop.js';
+import { CropManager } from './crop-manager.js';
 import { NginxManager } from './nginx-manager.js';
 import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { NginxManager } from './nginx-manager.js';
+export { CropManager } from './crop-manager.js';
+export { createCropRouter } from './routes/crop.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
 
@@ -143,6 +147,7 @@ export async function initRtmpControl(db, store = null) {
   const hlsSubsManager = new HlsSubsManager();
   const previewManager = new PreviewManager({ mediamtxClient });
   const sttManager     = new SttManager(store, db);
+  const cropManager    = new CropManager({ db });
 
   if (nginxManager.isEnabled) {
     logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
@@ -158,10 +163,11 @@ export async function initRtmpControl(db, store = null) {
       radioManager.stopAll(),
       previewManager.stopAll(),
       sttManager.stopAll(),
+      cropManager.stopAll(),
     ]);
   }
 
-  return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, stop };
+  return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, cropManager, stop };
 }
 
 /**
@@ -182,13 +188,14 @@ export async function initRtmpControl(db, store = null) {
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager }, { allowedRtmpDomains } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager }, { allowedRtmpDomains } = {}) {
   return {
-    rtmpRouter:      createRtmpRouter(db, relayManager),
+    rtmpRouter:      createRtmpRouter(db, relayManager, cropManager),
     ingestionRouter: createIngestionRouter(db, auth, relayManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager),
     radioRouter:     createRadioRouter(db, radioManager, sttManager, auth),
     previewRouter:   createPreviewRouter(previewManager),
+    cropRouter:      createCropRouter(db, auth, cropManager),
   };
 }

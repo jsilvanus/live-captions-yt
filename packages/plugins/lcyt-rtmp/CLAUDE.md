@@ -30,6 +30,8 @@ await rtmp.stop();
 **Source files (`src/`):**
 - `api.js` — `initRtmpControl(db, store?)` + `createRtmpRouters(db, auth, managers, opts)`. Returns all manager instances and a `stop()` function.
 - `rtmp-manager.js` — `RtmpRelayManager`: manages RTMP relay sessions; calls `probeFfmpeg()` on startup. Fires `onStreamStarted`/`onStreamEnded` callbacks for DB stat tracking. Server-side DSK RTMP composite (`setDskRtmpSource(apiKey, rtmpUrl, { chromaKey })`) optionally chroma-keys the overlay via the exported pure `buildDskCompositeFilter(chromaKey)` (`plan_dsk_viewport_settings` Phase 5) — no chromaKey = today's opaque full-frame overlay; the composite viewport's `stream.chromaKey` is passed in by `lcyt-dsk`'s `on_publish`.
+- `crop-manager.js` — `CropManager`: starts/stops a per-key crop renderer, persists crop config and position state, and reuses the same ffmpeg runner abstraction as the relay manager.
+- `routes/crop.js` — `/crop/*` session-authenticated CRUD API for crop config, presets, preset sets, and live position updates.
 - `hls-manager.js` — `HlsManager`: manages MediaMTX-based RTMP → video+audio HLS (no ffmpeg in hot path).
 - `radio-manager.js` — `RadioManager`: dual-mode audio-only HLS. **ffmpeg mode** (default): spawns ffmpeg RTMP → AAC HLS. **mediamtx mode**: no ffmpeg; MediaMTX serves HLS, `NginxManager` writes slug-based nginx proxy locations.
 - `nginx-manager.js` — `NginxManager`: writes nginx `location` blocks for MediaMTX radio streams. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
