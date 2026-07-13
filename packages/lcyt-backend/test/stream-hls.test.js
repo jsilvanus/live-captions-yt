@@ -390,6 +390,30 @@ describe('GET /stream-hls/:key/:segment', () => {
     assert.ok(res.headers.get('content-type')?.includes('mp2t'));
     assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
   });
+
+  it('serves fMP4 media segments (hlsVariant: fmp4/lowLatency) as video/mp4, cacheable', async () => {
+    const key = 'segtest';
+    const dir = join(tmpRoot, key);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'seg7.mp4'), 'fake fmp4 data');
+
+    const res = await getJson(appServer, `/stream-hls/${key}/seg7.mp4`);
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.headers.get('content-type')?.includes('video/mp4'));
+    assert.ok(res.headers.get('cache-control')?.includes('immutable'));
+  });
+
+  it('serves init.mp4 uncached (its content changes across publisher restarts)', async () => {
+    const key = 'segtest';
+    const dir = join(tmpRoot, key);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(join(dir, 'init.mp4'), 'fake init data');
+
+    const res = await getJson(appServer, `/stream-hls/${key}/init.mp4`);
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.headers.get('content-type')?.includes('video/mp4'));
+    assert.ok(res.headers.get('cache-control')?.includes('no-cache'));
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -479,8 +503,8 @@ describe('GET /preview/:key/incoming.jpg', () => {
 
     const mockMgr = makeMockPreviewMgr(previewTmpRoot);
     const app = express();
-    // Route registers /preview/:key/incoming[.jpg] — mount at root
-    app.use(createPreviewRouter(mockMgr));
+    // Route registers /:key/incoming[.jpg] relative to the mount point
+    app.use('/preview', createPreviewRouter(mockMgr));
 
     await new Promise(resolve => {
       previewServer = createServer(app).listen(0, '127.0.0.1', resolve);

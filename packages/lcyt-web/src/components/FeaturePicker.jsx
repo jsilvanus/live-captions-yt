@@ -52,7 +52,7 @@ const FEATURE_GROUPS = [
       { code: 'radio',           label: 'Radio/audio HLS',   desc: 'Audio-only HLS stream output' },
       { code: 'hls-stream',      label: 'HLS video stream',  desc: 'Video + audio HLS stream output' },
       { code: 'preview',         label: 'Preview thumbnail', desc: 'Live JPEG thumbnail from RTMP ingest' },
-      { code: 'restream-fanout', label: 'Restream fanout',   desc: 'Generic HTTP POST targets alongside YouTube' },
+      { code: 'restream', label: 'Restream fanout',   desc: 'Generic HTTP POST targets alongside YouTube' },
       { code: 'cea-captions',    label: 'CEA-608/708',       desc: 'Broadcast-standard caption encoding' },
     ],
   },

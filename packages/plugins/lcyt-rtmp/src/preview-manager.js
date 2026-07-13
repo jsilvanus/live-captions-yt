@@ -120,4 +120,17 @@ export class PreviewManager {
   getWebRtcUrl(key) {
     return `${this._webrtcBase}/${encodeURIComponent(key)}`;
   }
+
+  /**
+   * WebRTC preview info consumed by GET /preview/:key/webrtc.
+   * Includes the live-preview page URL and the WHEP endpoint MediaMTX exposes
+   * for the same path, plus whether the key is currently marked active.
+   *
+   * @param {string} key
+   * @returns {Promise<{ url: string, whepUrl: string, active: boolean }>}
+   */
+  async fetchWebRtcInfo(key) {
+    const url = this.getWebRtcUrl(key);
+    return { url, whepUrl: `${url}/whep`, active: this.isRunning(key) };
+  }
 }

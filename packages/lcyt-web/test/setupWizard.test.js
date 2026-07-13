@@ -157,7 +157,7 @@ const DRAFT_KEY = 'lcyt.wizard.draft';
 const ALL_FEATURE_CODES = [
   'captions', 'viewer-target', 'translations', 'ingest', 'cea-captions',
   'embed', 'stt-server', 'radio', 'hls-stream', 'preview', 'graphics-client',
-  'graphics-server', 'restream-fanout', 'file-saving', 'mic-lock', 'stats',
+  'graphics-server', 'restream', 'file-saving', 'mic-lock', 'stats',
   'collaboration', 'device-control', 'planning',
 ];
 

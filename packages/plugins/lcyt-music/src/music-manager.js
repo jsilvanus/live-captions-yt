@@ -47,7 +47,9 @@ import { classifyExternal } from './analyser/external-classifier.js';
 import { detectBpm, createBpmSmoother } from './analyser/bpm-detector.js';
 import { getMusicConfig } from './db.js';
 
-const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8888';
+// Matches the repo-wide MediaMTX HLS convention (PORTS.md, docker/mediamtx.yml
+// hlsAddress :8080) — override with MEDIAMTX_HLS_BASE_URL.
+const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8080';
 const SAMPLE_RATE = 22050;
 const BPM_CHANGE_THRESHOLD = 2;
 // RTMP path has no natural segment boundary, so PCM is windowed at the same

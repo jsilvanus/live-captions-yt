@@ -60,11 +60,14 @@ export function createPreviewRouter(previewManager, opts = {}) {
     }
   }
 
-  router.get('/preview/:key/incoming', limiter, handleIncoming);
+  // Paths are relative to the mount point — lcyt-backend mounts this router at
+  // /preview (app.use('/preview', previewRouter)), so the public URLs are
+  // /preview/:key/incoming[.jpg] and /preview/:key/webrtc.
+  router.get('/:key/incoming', limiter, handleIncoming);
   // Keep legacy alias for backwards compatibility
-  router.get('/preview/:key/incoming.jpg', limiter, handleIncoming);
+  router.get('/:key/incoming.jpg', limiter, handleIncoming);
 
-  router.options('/preview/:key/incoming', (req, res) => {
+  router.options('/:key/incoming', (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -72,7 +75,7 @@ export function createPreviewRouter(previewManager, opts = {}) {
   });
 
   // Minimal JSON /webrtc route kept (delegates to manager)
-  router.get('/preview/:key/webrtc', async (req, res) => {
+  router.get('/:key/webrtc', async (req, res) => {
     try {
       const info = await previewManager.fetchWebRtcInfo(req.params.key);
       if (!info) return res.status(404).end();

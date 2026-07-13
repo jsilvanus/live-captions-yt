@@ -106,11 +106,6 @@ export function AdminProjectDetailPage() {
 
   async function handleRevoke() {
     if (!confirm('Revoke this project?')) return;
-    const res = await adminFetch(backendUrl, `/admin/projects/${projectKey}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ owner: project.owner }), // no-op for owner, triggers revoke separately
-    });
-    // Use batch with revoke action
     const revokeRes = await adminFetch(backendUrl, '/admin/batch/projects', {
       method: 'POST',
       body: JSON.stringify({ keys: [projectKey], action: 'revoke' }),

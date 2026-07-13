@@ -106,27 +106,6 @@ a feature diff that doesn't otherwise touch `useSession`'s public shape.
 
 ---
 
-## `SetupHubPage`'s "Run setup wizard" link nests an `<a>` inside wouter's `<Link>`
-
-**Where:** `packages/lcyt-web/src/components/setup-hub/SetupHubPage.jsx` —
-`<Link href="/setup/wizard"><a className="btn btn--ghost btn--sm">...</a></Link>`
-
-**Finding:** React logs a `validateDOMNesting` warning (`<a> cannot appear as
-a descendant of <a>`) on every `/setup` render. The wouter version in use
-already renders an `<a>` itself for `<Link>`, so wrapping a second `<a>`
-inside it is the pre-v3 wouter idiom and no longer needed — `<Link
-className="btn btn--ghost btn--sm">🧙 Run setup wizard</Link>` (no nested
-`<a>`) is the fix.
-
-**Why skipped:** Noticed incidentally while testing the Setup Hub card
-redesign (icons/grid/dialogs); unrelated to that diff and not the only place
-in the codebase that may use the older `<Link><a>` pattern — worth a repo-wide
-sweep for the same idiom rather than a one-off fix here.
-
-(Found during: Setup Hub card redesign pass, 2026-07-06.)
-
----
-
 ## `db.js`'s three `update*` functions repeat the same coalesce-with-fallback shape
 
 **Where:** `packages/plugins/lcyt-connectors/src/db.js` — `updateConnector`,
@@ -355,61 +334,6 @@ roles, 2026-07-07.)
 
 ---
 
-## `AdminProjectDetailPage.jsx`'s revoke flow sends a vestigial no-op `PATCH`
-
-**Where:** `packages/lcyt-web/src/components/AdminProjectDetailPage.jsx`,
-`handleRevoke()`
-
-**Finding:** Before calling the real `POST /admin/batch/projects` with
-`action: 'revoke'`, the handler first fires
-`adminFetch(backendUrl, '/admin/projects/:key', { method: 'PATCH', body:
-JSON.stringify({ owner: project.owner }) })` — its own inline comment admits
-this is `// no-op for owner, triggers revoke separately`. The response isn't
-even checked (`res` is unused). This looks like leftover code from an earlier
-implementation that used `PATCH` directly for the status change before the
-batch-action route existed.
-
-**Why skipped:** Found while reconciling the Admin pages against the Claude
-Design mockup (Profile/Team/Admin session) — fixing it (delete the dead
-`PATCH` call) is a one-line, zero-risk cleanup, but it's unrelated to that
-session's UI-reconciliation scope and touching a `handleRevoke` fetch call
-felt worth a deliberate look (e.g. confirm nothing server-side relies on that
-PATCH's audit-log side effect) rather than a drive-by delete.
-
-(Found during: Profile/Team/Admin Claude Design reconciliation, 2026-07-08.)
-
----
-
-## `FeaturePicker.jsx`'s "Restream fanout" toggle uses the wrong feature code
-
-**Where:** `packages/lcyt-web/src/components/FeaturePicker.jsx` —
-`{ code: 'restream-fanout', label: 'Restream fanout', ... }`
-
-**Finding:** The real backend feature code is `restream` (see
-`FEATURE_DEPS` in `packages/lcyt-backend/src/db/project-features.js` and
-`FEATURE_LABELS` in `AdminUserDetailPage.jsx`/`AdminProjectDetailPage.jsx`,
-both of which correctly use `restream`). `FeaturePicker.jsx` has always used
-`restream-fanout` instead — a code that doesn't exist anywhere server-side —
-so toggling "Restream fanout" in any `FeaturePicker` consumer (project
-creation, org team defaults) silently sets a feature flag the backend never
-checks, while the real `restream` flag stays whatever it defaulted to. The
-new `FeaturePolicyGrid.jsx` (built this session for Admin Site Features/Team
-overrides) uses the correct `restream` code — this bug is isolated to
-`FeaturePicker.jsx`.
-
-**Why skipped:** Real bug, but `FeaturePicker` is consumed by
-`ProjectsPage.jsx` (create-project form), `TeamPage.jsx` (team feature
-defaults), and others — fixing the code string is one line, but verifying no
-stored feature sets anywhere already depend on the wrong string (unlikely
-given it never matched a real backend code, but worth a quick grep/data check
-first) felt like it deserved its own small pass rather than a side-effect fix
-buried in an unrelated UI-reconciliation diff.
-
-(Found during: Profile/Team/Admin Claude Design reconciliation, 2026-07-08 —
-building `FeaturePolicyGrid.jsx` required re-deriving the real feature-code
-list from `plan_site_feature_policies.md`, which is what surfaced the
-mismatch.)
-
 ## Server-STT delivery doesn't compose translated caption text for YouTube/viewer targets
 
 **Where:** `packages/plugins/lcyt-rtmp/src/stt-manager.js` (`_deliverTranscript`)
@@ -447,26 +371,6 @@ YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
 fallback), honours per-target routing, and registers viewer key owners — a
 stats-attribution miss the extraction also surfaced and fixed. The old
 `broadcastToViewers` injection was removed.
-
-## `lcyt-rtmp`'s `test/rtmp-manager.unit.test.js` is not in the package's test script and has bit-rotted
-
-**Where:** `packages/plugins/lcyt-rtmp/package.json` `test` script vs.
-`packages/plugins/lcyt-rtmp/test/rtmp-manager.unit.test.js`.
-
-**Finding:** The rtmp `test` script lists test files explicitly and omits
-`rtmp-manager.unit.test.js` — so it has never run in CI. Adding it surfaces
-one failing case ("awaits runner.start and writeCaption returns false when no
-fifo writer"), i.e. the test has drifted from the current `RtmpRelayManager`
-behavior. Same class of gap as `lcyt-dsk`'s `test/index.js` (which was
-silently skipping `dsk-slug-routes.test.js`, fixed in Phase 2/3).
-
-**Why skipped:** Out of scope for the Phase 5 colorkey change that surfaced it
-— fixing means either repairing the stale assertions against current behavior
-or deleting the file, which deserves its own look at what it was meant to
-cover. Left the rtmp `test` script listing my new `dsk-composite-filter.test.js`
-but not `rtmp-manager.unit.test.js`.
-
-(Found during: plan_dsk_viewport_settings Phase 5, 2026-07-11.)
 
 ---
 
@@ -516,4 +420,3 @@ These are **design-level changes**, not local refactorings. Worth revisiting aft
 **Why skipped:** Fixing the altitude issues would mean re-architecting 4 token types + unifying access control across 3+ layers (middleware/routes/DB), then re-testing all auth flows (368 backend tests exist; many would need assertion updates). Out of scope for a focused `/simplify` pass. This pass delivered measurable local cleanup (98 lines saved, 5 reusable helpers extracted), leaving the broader unification for a future architectural pass with its own scope and test coverage.
 
 (Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)
-

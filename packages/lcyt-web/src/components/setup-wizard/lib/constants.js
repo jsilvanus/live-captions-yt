@@ -5,7 +5,7 @@ export const MAX_RELAY_SLOTS = 8;
 export const ALL_FEATURE_CODES = [
   'captions', 'viewer-target', 'translations', 'ingest', 'cea-captions',
   'embed', 'stt-server', 'radio', 'hls-stream', 'preview', 'graphics-client',
-  'graphics-server', 'restream-fanout', 'file-saving', 'mic-lock', 'stats',
+  'graphics-server', 'restream', 'file-saving', 'mic-lock', 'stats',
   'collaboration', 'device-control', 'planning',
 ];
 
@@ -22,7 +22,7 @@ export const FEATURE_LABELS = {
   'preview':          'Preview thumbnail',
   'graphics-client':  'Graphics viewer',
   'graphics-server':  'Graphics server',
-  'restream-fanout':  'Restream fanout',
+  'restream':  'Restream fanout',
   'file-saving':      'Caption file saving',
   'mic-lock':         'Mic lock',
   'stats':            'Stats',

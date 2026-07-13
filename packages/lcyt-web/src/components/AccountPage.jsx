@@ -16,12 +16,8 @@ function AnonymousPanel() {
         Sign in to manage your projects and API keys, or create a new account.
       </p>
       <div className="account-page__anon-actions">
-        <Link href="/login">
-          <a className="btn btn--primary">Sign in</a>
-        </Link>
-        <Link href="/register">
-          <a className="btn btn--ghost">Create account</a>
-        </Link>
+        <Link href="/login" className="btn btn--primary">Sign in</Link>
+        <Link href="/register" className="btn btn--ghost">Create account</Link>
       </div>
     </div>
   );

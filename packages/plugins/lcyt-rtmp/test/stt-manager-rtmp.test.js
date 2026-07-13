@@ -164,21 +164,21 @@ describe('SttManager RTMP path', () => {
     assert.ok(rtmpCall.proc.killed, 'ffmpeg process should be killed on stop()');
   });
 
-  test('whep uses mediamtx /whep URL', async () => {
-    const origBase = process.env.MEDIAMTX_HLS_BASE_URL;
-    process.env.MEDIAMTX_HLS_BASE_URL = 'http://127.0.0.1:8888';
+  test('whep uses mediamtx WebRTC-port /whep URL', async () => {
+    const origBase = process.env.MEDIAMTX_WEBRTC_BASE_URL;
+    process.env.MEDIAMTX_WEBRTC_BASE_URL = 'http://127.0.0.1:9889';
 
     const mgr = new SttManager(null);
     await mgr.start('key4', { provider: 'google', audioSource: 'whep', streamKey: 'mypath' });
 
-    if (origBase === undefined) delete process.env.MEDIAMTX_HLS_BASE_URL;
-    else process.env.MEDIAMTX_HLS_BASE_URL = origBase;
+    if (origBase === undefined) delete process.env.MEDIAMTX_WEBRTC_BASE_URL;
+    else process.env.MEDIAMTX_WEBRTC_BASE_URL = origBase;
 
     const inputArg = spawnCalls
       .flatMap(c => c.args ?? [])
       .find(a => typeof a === 'string' && a.includes('/whep'));
     assert.ok(inputArg, `expected WHEP URL, got: ${spawnCalls.flatMap(c => c.args ?? [])}`);
-    assert.ok(inputArg.includes('mypath/whep'), `expected stream key in WHEP URL: ${inputArg}`);
+    assert.ok(inputArg.includes('9889/mypath/whep'), `expected WebRTC base + stream key in WHEP URL: ${inputArg}`);
 
     await mgr.stopAll();
   });

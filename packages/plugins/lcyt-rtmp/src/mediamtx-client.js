@@ -132,6 +132,19 @@ export class MediaMtxClient {
   }
 
   /**
+   * Replace the configuration of an existing dynamically-added path.
+   * Used as the "update" half of add-or-update: addPath fails when the path
+   * config already exists (e.g. left over from a previous relay run).
+   *
+   * @param {string} name
+   * @param {object} [config]  MediaMTX path options
+   * @returns {Promise<void>}
+   */
+  async patchPath(name, config = {}) {
+    await this._request('PATCH', `/v3/config/paths/patch/${encodeURIComponent(name)}`, config);
+  }
+
+  /**
    * Fetch a JPEG thumbnail snapshot for the named path.
    *
    * Returns the raw fetch Response so the caller can pipe the body directly

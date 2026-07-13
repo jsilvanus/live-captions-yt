@@ -152,11 +152,13 @@ export async function initRtmpControl(db, store = null) {
   }
 
   async function stop() {
-    relayManager.stopAll();
-    hlsManager.stopAll();
-    radioManager.stopAll();
-    previewManager.stopAll();
-    await sttManager.stopAll();
+    await Promise.allSettled([
+      relayManager.stopAll(),
+      hlsManager.stopAll(),
+      radioManager.stopAll(),
+      previewManager.stopAll(),
+      sttManager.stopAll(),
+    ]);
   }
 
   return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, stop };

@@ -101,7 +101,7 @@ describe('HlsSegmentFetcher', () => {
     assert.ok(Buffer.isBuffer(segments[0].buffer));
   });
 
-  test('derives timestamps from EXT-X-PROGRAM-DATE-TIME', async () => {
+  test('derives timestamps from EXT-X-PROGRAM-DATE-TIME (full window, startAtLiveEdge off)', async () => {
     const baseTime = new Date('2026-03-01T12:00:00.000Z');
     const playlist = makePlaylist({
       mediaSequence: 5,
@@ -118,6 +118,7 @@ describe('HlsSegmentFetcher', () => {
       hlsBase: 'http://localhost:8888',
       streamKey: 'testkey',
       pollIntervalMs: 10000,
+      startAtLiveEdge: false,
     });
 
     const segments = [];
@@ -130,6 +131,49 @@ describe('HlsSegmentFetcher', () => {
     assert.equal(segments[1].timestamp.getTime(), baseTime.getTime() + 6000);
     assert.equal(segments[0].index, 5);
     assert.equal(segments[1].index, 6);
+  });
+
+  test('default startAtLiveEdge skips the backlog on the first poll, then continues normally', async () => {
+    const playlist1 = makePlaylist({
+      mediaSequence: 5,
+      segments: [
+        { duration: 6, name: 'seg005.mp4' },
+        { duration: 6, name: 'seg006.mp4' },
+        { duration: 6, name: 'seg007.mp4' },
+      ],
+    });
+
+    globalThis.fetch = makeFetch({ playlistText: playlist1 });
+
+    const fetcher = new HlsSegmentFetcher({
+      hlsBase: 'http://localhost:8888',
+      streamKey: 'testkey',
+      pollIntervalMs: 10000,
+    });
+
+    const segments = [];
+    fetcher.on('segment', s => segments.push(s));
+
+    await fetcher._fetchAndEmit();
+
+    // Only the newest segment of the initial window is emitted
+    assert.equal(segments.length, 1);
+    assert.equal(segments[0].index, 7);
+
+    // Window advances by one — only the genuinely new segment is emitted
+    const playlist2 = makePlaylist({
+      mediaSequence: 6,
+      segments: [
+        { duration: 6, name: 'seg006.mp4' },
+        { duration: 6, name: 'seg007.mp4' },
+        { duration: 6, name: 'seg008.mp4' },
+      ],
+    });
+    globalThis.fetch = makeFetch({ playlistText: playlist2 });
+
+    await fetcher._fetchAndEmit();
+    assert.equal(segments.length, 2);
+    assert.equal(segments[1].index, 8);
   });
 
   test('skips already-seen segments based on mediaSequence', async () => {

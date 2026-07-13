@@ -18,7 +18,7 @@
     "packages/plugins/*"
   ],
   "scripts": {
-    "test": "npm test --workspaces",
+    "test": "npm test --workspaces --if-present",
     "build": "npm run build -w packages/lcyt",
     "start": "npm start -w packages/lcyt-cli",
     "start:backend": "npm start -w packages/lcyt-backend",

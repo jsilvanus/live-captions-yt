@@ -86,6 +86,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_mixer_feed_sources.md](plans/plan_mixer_feed_sources.md) | Mixer Feed Sources — Encoder & File Sources, Low-Latency Preview Tiles | Generalizes software mixer program bus beyond video to include encoder/file sources. |
 | [plan_postgres_option.md](plans/plan_postgres_option.md) | PostgreSQL as an Optional Backend | Adds PostgreSQL as optional backend for Node.js backend and plugin-owned DB layers. |
 | [plan_metacode_refactor.md](plans/plan_metacode_refactor.md) | Metacode Refactor Plan | Mechanical relocation of scattered metacode handling into dedicated files (clarity refactor). |
+| [plan_vertical_crop.md](plans/plan_vertical_crop.md) | Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop | Per-project 9:16 crop rendition cut at incoming resolution (`{key}-crop` MediaMTX path, relay `sourceView: 'crop'`); preset positions in switchable sets (banks) with per-set editing UI, shifted live via ffmpeg `zmq` filter commands (no restart/black gap) and following mixer/PTZ switches via `crop_source_map`. |
 
 ### Reference
 

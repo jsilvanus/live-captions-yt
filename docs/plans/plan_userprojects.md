@@ -44,7 +44,7 @@ This plan adds:
 | Streaming | `radio` | Audio-only HLS stream output |
 | Streaming | `hls-stream` | Video + audio HLS stream output |
 | Streaming | `preview` | Live JPEG thumbnail from RTMP ingest |
-| Streaming | `restream-fanout` | Generic HTTP POST targets alongside YouTube |
+| Streaming | `restream` | Generic HTTP POST targets alongside YouTube |
 | Streaming | `cea-captions` | CEA-608/708 broadcast-standard caption encoding |
 | Intelligence | `stt-server` | Server-side automatic speech-to-text |
 | Production | `device-control` | Cameras, mixers, **and bridge instances** (bridge creation = device-control write right) |

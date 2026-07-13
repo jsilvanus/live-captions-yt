@@ -336,8 +336,10 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
 
   // GET /radio/:key/:file — proxy HLS playlist and segments to MediaMTX.
   // Used as fallback when nginx is not active. Supports:
-  //   index.m3u8  — HLS playlist
-  //   *.ts        — MPEG-TS segment
+  //   *.m3u8         — HLS playlist
+  //   *.ts           — MPEG-TS segment (hlsVariant: mpegts)
+  //   *.mp4 / *.m4s  — fMP4 init + media segments (hlsVariant: fmp4 / lowLatency,
+  //                    which is what docker/mediamtx.yml ships)
   router.get('/:key/:file', hlsRateLimit, async (req, res) => {
     const { key, file } = req.params;
 
@@ -345,12 +347,14 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
       return res.status(400).json({ error: 'Invalid radio key format' });
     }
 
-    // Accept playlist and TS segment filenames only
-    if (file !== 'index.m3u8' && !/^[a-zA-Z0-9_-]+\.ts$/.test(file)) {
+    if (!/^[a-zA-Z0-9_-]+\.(m3u8|ts|mp4|m4s)$/.test(file)) {
       return res.status(400).json({ error: 'Invalid file name' });
     }
 
-    const upstreamUrl = `${radioManager.getInternalHlsUrl(key)}/${file}`;
+    // Preserve the query string — LL-HLS playlist reloads use _HLS_msn/_HLS_part.
+    const qIdx = req.originalUrl.indexOf('?');
+    const query = qIdx === -1 ? '' : req.originalUrl.slice(qIdx);
+    const upstreamUrl = `${radioManager.getInternalHlsUrl(key)}/${file}${query}`;
 
     let upstream;
     try {
@@ -368,8 +372,13 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
 
     const cors = getEmbedCors(db, key);
     setCorsHeaders(res, cors);
-    res.setHeader('Cache-Control', file.endsWith('.m3u8') ? 'no-cache, no-store' : 'public, max-age=86400, immutable');
-    res.setHeader('Content-Type', file.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'video/mp2t');
+    const isPlaylist = file.endsWith('.m3u8');
+    // init.mp4 changes when the publisher restarts with different codec params,
+    // so only media segments get the immutable cache treatment.
+    const cacheable = !isPlaylist && !file.startsWith('init');
+    res.setHeader('Cache-Control', cacheable ? 'public, max-age=86400, immutable' : 'no-cache, no-store');
+    res.setHeader('Content-Type', isPlaylist ? 'application/vnd.apple.mpegurl'
+      : file.endsWith('.ts') ? 'video/mp2t' : 'video/mp4');
 
     Readable.fromWeb(upstream.body)
       .on('error', () => { if (!res.writableEnded) res.end(); })

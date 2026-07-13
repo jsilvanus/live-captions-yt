@@ -35,7 +35,7 @@ await rtmp.stop();
 - `nginx-manager.js` — `NginxManager`: writes nginx `location` blocks for MediaMTX radio streams. Atomic file write + `nginx -t && nginx -s reload`. No-op when `NGINX_RADIO_CONFIG_PATH` is unset.
 - `preview-manager.js` — `PreviewManager`: manages MediaMTX API or ffmpeg for RTMP → JPEG thumbnail generation.
 - `hls-subs-manager.js` — `HlsSubsManager`: rolling WebVTT segment writer for subtitle sidecars.
-- `mediamtx-client.js` — `MediaMtxClient`: REST API client for MediaMTX v3 (drop publisher, list streams, etc.).
+- `mediamtx-client.js` — `MediaMtxClient`: REST API client for MediaMTX v3 (drop publisher, list streams, `addPath`/`patchPath`/`deletePath`; the relay manager uses add-then-patch upsert so reconfiguring a relay replaces a leftover path config instead of failing).
 - `hls-segment-fetcher.js` — `HlsSegmentFetcher`: polls a MediaMTX fMP4 HLS playlist, detects new segments, emits `segment` events with `{ buffer, timestamp, duration, url, index }`. Used by `SttManager`.
 - `stt-manager.js` — `SttManager` (`EventEmitter`): manages one STT session per API key. Wires `HlsSegmentFetcher` → STT adapter → transcript → `session._sendQueue` for delivery. Supports `hls`, `rtmp`, `whep` audio sources. **Events:** `transcript`, `error`, `stopped`. `setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets, writeBackendCaptionFiles, composeCaptionText, fanOutToTargets })` injects the lcyt-backend helpers used by `_deliverTranscript`: Phase 5 server-side translation, backend caption-file archiving (`createSessionCaptionFileWriter`), default composition (`composeCaptionText`, using the captions-target row's `show_original` with the vendor-config flag as fallback), and extra-target delivery via the shared `createCaptionFanout` — same per-target routed composition and viewer-owner registration as `POST /captions`. Without injected helpers, transcripts go only to the legacy primary sender (uncomposed).
 - `stt-adapters/google-stt.js` — `GoogleSttAdapter`: posts fMP4 segments to Google Cloud Speech-to-Text REST API or streams via gRPC (`GOOGLE_STT_MODE=grpc`). Emits `normalisePunctuation`-cleaned transcripts.
@@ -60,9 +60,9 @@ Server-side speech-to-text transcription converts an incoming RTMP/HLS/WHEP audi
 **Audio sources:**
 | Source | How it works |
 |---|---|
-| `hls` | `HlsSegmentFetcher` polls MediaMTX fMP4 HLS playlist; segments sent to STT adapter |
+| `hls` | `HlsSegmentFetcher` polls MediaMTX fMP4 HLS playlist (`MEDIAMTX_HLS_BASE_URL`, default `http://127.0.0.1:8080`); segments sent to STT adapter |
 | `rtmp` | ffmpeg reads RTMP stream and writes PCM/WAV frames to the adapter's stdin |
-| `whep` | ffmpeg reads WHEP (WebRTC-HTTP Egress Protocol) stream and writes PCM frames |
+| `whep` | ffmpeg reads WHEP (WebRTC-HTTP Egress Protocol) stream from MediaMTX's WebRTC port (`MEDIAMTX_WEBRTC_BASE_URL`, default `http://127.0.0.1:8889`) and writes PCM frames |
 
 **Providers:**
 | Provider | Class | Notes |

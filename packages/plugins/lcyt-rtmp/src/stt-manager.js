@@ -23,7 +23,11 @@ import { translateText, isSameLanguage } from './translate-server.js';
 import { getSttConfig } from './db.js';
 import logger from 'lcyt/logger';
 
-const DEFAULT_MEDIAMTX_HLS_BASE = 'http://127.0.0.1:8888';
+// Matches the repo-wide MediaMTX HLS convention (PORTS.md, docker/mediamtx.yml
+// hlsAddress :8080) — override with MEDIAMTX_HLS_BASE_URL.
+const DEFAULT_MEDIAMTX_HLS_BASE    = 'http://127.0.0.1:8080';
+// MediaMTX serves WHEP on its WebRTC HTTP port, not the HLS port.
+const DEFAULT_MEDIAMTX_WEBRTC_BASE = 'http://127.0.0.1:8889';
 
 // ── ffmpeg version probe ────────────────────────────────────────────────────
 
@@ -351,8 +355,8 @@ export class SttManager extends EventEmitter {
       const rtmpApp  = process.env.HLS_RTMP_APP || 'live';
       return `${rtmpBase}/${rtmpApp}/${streamKey}`;
     }
-    // whep
-    const mediamtxBase = (process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE).replace(/\/$/, '');
+    // whep — served by MediaMTX's WebRTC HTTP server (default :8889), not the HLS port
+    const mediamtxBase = (process.env.MEDIAMTX_WEBRTC_BASE_URL || DEFAULT_MEDIAMTX_WEBRTC_BASE).replace(/\/$/, '');
     return `${mediamtxBase}/${streamKey}/whep`;
   }
 
