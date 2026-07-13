@@ -1,7 +1,7 @@
 ---
 id: plan/vertical-crop
 title: "Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop"
-status: draft
+status: in-progress
 summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 → 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) — with dedicated UI for editing positions per set (set selector, sources×sets overview grid, activate-set control) — shifted live via runtime ffmpeg filter commands (zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 → camera 2 → camera 1/preset 2, each with its own crop position)."
 ---
 
@@ -317,13 +317,21 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
 
 ## Phases
 
-1. **Static crop rendition** — schema (`crop_config`, `crop_presets`,
-   `crop_preset_sets`), CropManager start/stop at publish, `{key}-crop` path, relay
-   `source_view`, `/crop/config` + preset/set CRUD routes. Position changes restart
-   the renderer (correct, not yet gapless).
-2. **Live reposition** — `hasZmq` probe, zmq command client, `applyPosition` with
-   clamped instant + eased transitions, `overridePublisher` double-run fallback,
-   `/crop/position`, `/crop/presets/:id/activate`, `/crop/status`.
+1. **Static crop rendition** ✅ (implemented 2026-07-13) — schema (`crop_config`,
+   `crop_presets`, `crop_preset_sets`, `crop_source_map` in
+   `packages/plugins/lcyt-rtmp/src/db/crop.js`), CropManager
+   (`src/crop-manager.js`) started/stopped from the `/rtmp` publish callbacks,
+   `{key}-crop` path, relay `source_view` column + crop-slot fan-out in
+   `rtmp-manager.js`, `/crop` router (`src/routes/crop.js`) mounted by
+   lcyt-backend, `crop` feature code (dep: `ingest`).
+2. **Live reposition** ✅ core (implemented 2026-07-13) — `hasZmq` probe in
+   `probeFfmpeg()`, lazy-imported `zeromq` REQ client (optional dep — absence
+   downgrades to restart mode), `applyPosition` with clamped instant moves +
+   eased transitions, restart fallback (position carried across the swap),
+   `/crop/position`, `/crop/presets/:id/activate`, `/crop/sets/:id/activate`
+   (re-applies the same-named preset from the new set), `/crop/status`.
+   Remaining from this phase: the `overridePublisher` pre-config on the
+   `{key}-crop` path for a cleaner splice in restart mode.
 3. **Web UI** — settings card, draggable preset editor, preset switcher, the
    preset-set UI (set selector, duplicate-set, sources×sets overview grid,
    operate-surface "Activate set" control), vertical monitor tile.

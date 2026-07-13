@@ -52,13 +52,24 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
   }
 
   function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode, scale, fps, videoBitrate, audioBitrate } = req.body || {};
+    const { targetUrl, targetName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
     }
     const validModes = ['http', 'cea708'];
     const resolvedMode = validModes.includes(captionMode) ? captionMode : 'http';
+
+    // Which rendition this slot forwards (plan_vertical_crop.md): the raw
+    // program feed (default) or the {key}-crop vertical rendition.
+    let resolvedSourceView = 'program';
+    if (sourceView !== undefined && sourceView !== null && sourceView !== '') {
+      if (sourceView !== 'program' && sourceView !== 'crop') {
+        res.status(400).json({ error: "sourceView must be 'program' or 'crop'" });
+        return null;
+      }
+      resolvedSourceView = sourceView;
+    }
 
     // Validate optional per-slot transcode options
     let resolvedScale = null;
@@ -89,6 +100,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
       fps:          resolvedFps,
       videoBitrate: resolvedVideoBitrate,
       audioBitrate: resolvedAudioBitrate,
+      sourceView:   resolvedSourceView,
     };
   }
 
@@ -124,6 +136,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         fps:          fields.fps,
         videoBitrate: fields.videoBitrate,
         audioBitrate: fields.audioBitrate,
+        sourceView:   fields.sourceView,
       });
       return res.status(201).json({ ok: true, relay });
     } catch (err) {
@@ -207,6 +220,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         fps:          fields.fps,
         videoBitrate: fields.videoBitrate,
         audioBitrate: fields.audioBitrate,
+        sourceView:   fields.sourceView,
       });
       return res.status(200).json({ ok: true, relay });
     } catch (err) {

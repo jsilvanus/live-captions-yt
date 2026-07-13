@@ -45,7 +45,9 @@ import { RadioManager } from './radio-manager.js';
 import { PreviewManager } from './preview-manager.js';
 import { HlsSubsManager } from './hls-subs-manager.js';
 import { SttManager } from './stt-manager.js';
+import { CropManager } from './crop-manager.js';
 import { createRtmpRouter } from './routes/rtmp.js';
+import { createCropRouter } from './routes/crop.js';
 import { createIngestionRouter } from './routes/ingestion.js';
 import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
@@ -88,7 +90,7 @@ export async function initRtmpControl(db, store = null) {
 
   const ffmpegCaps = process.env.RTMP_RELAY_ACTIVE === '1'
     ? probeFfmpeg()
-    : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
+    : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
 
   // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
   const _rtmpStatIds = new Map();
@@ -147,7 +149,11 @@ export async function initRtmpControl(db, store = null) {
   const hlsSubsManager = new HlsSubsManager();
   const previewManager = new PreviewManager({ mediamtxClient });
   const sttManager     = new SttManager(store, db);
+<<<<<<< HEAD
   const cropManager    = new CropManager({ db });
+=======
+  const cropManager    = new CropManager({ ffmpegCaps, mediamtxClient });
+>>>>>>> origin/main
 
   if (nginxManager.isEnabled) {
     logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
@@ -196,6 +202,10 @@ export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioMan
     streamHlsRouter: createStreamHlsRouter(db, hlsManager),
     radioRouter:     createRadioRouter(db, radioManager, sttManager, auth),
     previewRouter:   createPreviewRouter(previewManager),
+<<<<<<< HEAD
     cropRouter:      createCropRouter(db, auth, cropManager),
+=======
+    cropRouter:      createCropRouter(db, auth, cropManager, relayManager),
+>>>>>>> origin/main
   };
 }

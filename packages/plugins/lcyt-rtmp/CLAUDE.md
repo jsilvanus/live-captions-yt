@@ -45,10 +45,13 @@ await rtmp.stop();
 - `stt-adapters/openai.js` — `OpenAiAdapter`: sends audio to OpenAI-compatible STT endpoint.
 - `stt-adapters/pcm-buffer.js` — `PcmSilenceBuffer`: accumulates PCM frames and detects silence; `buildWav()` helper constructs WAV from raw PCM bytes.
 - `db/relay.js` — RTMP relay DB helpers: `isRelayAllowed()`, `isRadioEnabled()`, `resolveApiKeyFromIngestStreamKey()` (resolves a rotated ingest stream key back to its owning api_key, falling back to treating the name as the literal api_key — `plan_selfservice_config_backend.md` §2), per-key relay config CRUD.
+- `crop-manager.js` — `CropManager`: vertical-crop rendition (plan_vertical_crop.md) — one long-running ffmpeg per key reads the raw ingest via RTSP, cuts a `crop@vcrop` window at incoming resolution, publishes to the `{key}-crop` MediaMTX path. Live repositioning via zmq runtime filter commands when `ffmpegCaps.hasZmq` AND the optional `zeromq` npm package import succeeds (not a declared dependency — its absence downgrades to restart-mode repositioning, position carried across the swap). Exports pure geometry helpers (`computeCropGeometry`, `normToPixels`, `buildEaseSteps`).
+- `db/crop.js` — crop migrations + helpers: `crop_config` (aspect/output/transition/active set), `crop_preset_sets` (banks), `crop_presets` (normalised 0..1 positions), `crop_source_map` + `resolveCropPresetForSource()` (most-specific wins: camera+PTZ-preset > camera > mixer input; scoped to the active set). Manual delete cascades (FK enforcement is off repo-wide).
+- `routes/crop.js` — `/crop` router (session Bearer; feature-gated on `crop` when `FEATURE_GATE_ENFORCE=1`): config, status, free `POST /position`, preset CRUD + `POST /presets/:id/activate`, set CRUD + `POST /sets/:id/activate` (re-applies the same-named preset from the new set live), source-map CRUD.
 - `db/radio.js` — `runRadioMigrations()` + `getRadioConfig()`/`setRadioConfig()`: Web Radio metadata (`radio_config` table — title/description/coverImageUrl/autoplay, plus `radio_enabled` surfaced read-only as `enabled`) — §3.
 - `routes/rtmp.js` — `POST /rtmp` — nginx-rtmp `on_publish`/`on_publish_done` callback for the primary video app. Resolves the incoming stream name through `resolveApiKeyFromIngestStreamKey()` before treating it as an api_key.
 - `routes/ingestion.js` — `GET/PATCH /ingestion/config`, `POST /ingestion/config/rotate` — self-service ingest status/enable/rotate (session Bearer). Nested `{ video, dsk }` shape: `video.enabled` flips `relay_allowed` (feature-gated on `ingest` when `FEATURE_GATE_ENFORCE=1`); `dsk.enabled` is read-only (`graphics_enabled`) and `PATCH .../dsk` is `501` until a real DSK-ingest gate exists (§2/§2a).
-- `routes/stream.js` — `GET/POST/PUT/DELETE /stream` — RTMP relay egress slot management (domain allowlist enforced).
+- `routes/stream.js` — `GET/POST/PUT/DELETE /stream` — RTMP relay egress slot management (domain allowlist enforced). Slots carry `sourceView: 'program'|'crop'` — crop-view slots fan out the `{key}-crop` vertical rendition via a MediaMTX runOnPublish hook on that path instead of the raw ingest (never part of CEA-708/transcode/DSK modes).
 - `routes/stream-hls.js` — `GET /stream-hls/:key/*` — HLS video+audio proxy (public, rate-limited).
 - `routes/radio.js` — `GET /radio/:key/*` — audio-only HLS proxy (public, rate-limited); `GET/PUT /radio/config` — self-service Web Radio metadata (session Bearer, §3/§3a); resolves nginx-rtmp callback stream names through `resolveApiKeyFromIngestStreamKey()`.
 - `routes/preview.js` — `GET /preview/:key/incoming.jpg` — RTMP → JPEG thumbnail serving (public).
@@ -93,6 +96,10 @@ The HTTP routes for STT (`/stt/*`) live in `packages/lcyt-backend/src/routes/stt
 - `test/stt-manager.test.js` — `SttManager`: session lifecycle (start/stop), transcript routing to session send queue.
 - `test/stt-manager-rtmp.test.js` — `SttManager` RTMP/WHEP audio source paths (ffmpeg-based).
 - `test/hetzner.integration.test.js` — Hetzner client integration test (uses mock HTTP server).
+- `test/crop-geometry.test.js` — pure crop geometry: window derivation, even rounding, clamping, ease steps.
+- `test/crop-db.test.js` — crop config/presets/sets (incl. clone)/source-map helpers + follow-resolution specificity.
+- `test/crop-manager.test.js` — CropManager lifecycle with mock worker daemon; restart-mode repositioning; crop-slot fan-out registration in RtmpRelayManager.
+- `test/crop-routes.test.js` — /crop router CRUD, activate flows, feature gate.
 
 **Gaps (Medium):**
 - gRPC streaming path in `GoogleSttAdapter` (requires `@google-cloud/speech` to be installed).

@@ -68,6 +68,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_viewer_icons.md](plans/plan_viewer_icons.md) | Viewer Icon Toggle + Icons Setup-Hub Card | Operator-side icon enable/disable toggle and Setup Hub card for icon configuration. |
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory: server-side translation to close STT and CLI translation gap. |
 | [TODO_plan.md](plans/TODO_plan.md) | Implement TODO.md items | Python stderr logging, MCP auto-sync + time field, docs reorganisation. |
+| [plan_vertical_crop.md](plans/plan_vertical_crop.md) | Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop | Phases 1–2 implemented (schema, CropManager + {key}-crop path, /crop routes, relay sourceView, zmq live reposition with restart fallback); UI + production-follow phases remain. |
 
 ### Pending
 
@@ -86,7 +87,6 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_mixer_feed_sources.md](plans/plan_mixer_feed_sources.md) | Mixer Feed Sources — Encoder & File Sources, Low-Latency Preview Tiles | Generalizes software mixer program bus beyond video to include encoder/file sources. |
 | [plan_postgres_option.md](plans/plan_postgres_option.md) | PostgreSQL as an Optional Backend | Adds PostgreSQL as optional backend for Node.js backend and plugin-owned DB layers. |
 | [plan_metacode_refactor.md](plans/plan_metacode_refactor.md) | Metacode Refactor Plan | Mechanical relocation of scattered metacode handling into dedicated files (clarity refactor). |
-| [plan_vertical_crop.md](plans/plan_vertical_crop.md) | Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop | Per-project 9:16 crop rendition cut at incoming resolution (`{key}-crop` MediaMTX path, relay `sourceView: 'crop'`); preset positions in switchable sets (banks) with per-set editing UI, shifted live via ffmpeg `zmq` filter commands (no restart/black gap) and following mixer/PTZ switches via `crop_source_map`. |
 
 ### Reference
 
