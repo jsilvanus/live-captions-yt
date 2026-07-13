@@ -531,10 +531,17 @@ app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { require
 // session `/events` router; that router only matches exactly `/events`.
 app.use('/events/topics', createEventsCatalogRouter());
 // Phase 3 — External event publishing (POST /events). Fenced to `external.*`
-// namespace; gated on `events:write` scope; rate/size limited; always audited.
+// namespace; rate/size limited; always audited. `requiredScope: 'events:write'`
+// is enforced for external (`lcytmcp_`) tokens only — per
+// createProjectAccessMiddleware's contract, session/user/project/device JWTs
+// carry their own project-membership authorization and have full delegation,
+// so the scope gate doesn't apply to them (same as every other scopedAuth()
+// router in this file).
 app.use('/events', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:write' }), createEventsPublishRouter(eventBus));
 // Phase 1 — In-process MCP endpoint (Streamable HTTP). Backed by the shared
 // tool registry; scoped per-tool; destructive tools staged for confirmation.
+// `requiredScope: 'mcp:connect'` is likewise enforced for external tokens
+// only — see the note above /events.
 app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'mcp:connect' }), createMcpEndpointRouter({
   registry: _toolRegistry, eventBus, db, assistantManager: _assistantManager,
 }));

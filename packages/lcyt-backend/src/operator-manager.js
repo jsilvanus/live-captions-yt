@@ -64,7 +64,9 @@ export class OperatorManager {
       return { ok: false, error: 'Operator already running for this project' };
     }
 
-    const topics = config.topics || DEFAULT_TOPICS;
+    const topics = Array.isArray(config.topics) && config.topics.length > 0 && config.topics.every((t) => typeof t === 'string')
+      ? config.topics
+      : DEFAULT_TOPICS;
     const mode = config.mode || 'confirm';
     const cooldownMs = config.cooldownMs ?? DEFAULT_COOLDOWN_MS;
     const systemPrompt = config.systemPrompt || 'You are an autonomous production operator. Monitor events and take action when appropriate using the available tools.';
@@ -78,6 +80,7 @@ export class OperatorManager {
       unsubscribe: null,
       startedAt: Date.now(),
       lastActionAt: 0,
+      evaluating: false,
       config: { mode, cooldownMs, systemPrompt, topics },
       /** @type {Array<{ id, tool, args, reasoning, ts }>} */
       pendingActions: [],
@@ -209,16 +212,26 @@ export class OperatorManager {
       return;
     }
 
+    // In-flight guard — don't start a new evaluation cycle while one is
+    // still running, to avoid concurrent evaluations staging/executing
+    // overlapping actions off overlapping context.
+    if (session.evaluating) return;
+    session.evaluating = true;
+
     // Queue evaluation (non-blocking). The actual LLM call happens in
     // _evaluate, which is async. We don't await it here to avoid blocking
     // event delivery.
-    this._evaluate(projectId, session).catch((err) => {
-      session.context.push({
-        role: 'system',
-        content: `Operator evaluation error: ${err.message}`,
-        ts: Date.now(),
+    this._evaluate(projectId, session)
+      .catch((err) => {
+        session.context.push({
+          role: 'system',
+          content: `Operator evaluation error: ${err.message}`,
+          ts: Date.now(),
+        });
+      })
+      .finally(() => {
+        session.evaluating = false;
       });
-    });
   }
 
   /**

@@ -104,14 +104,17 @@ export function createEventsPublishRouter(eventBus) {
       return res.status(403).json({ error: `Token not authorized for topic: "${topic}"` });
     }
 
-    // Size limit
-    const payloadSize = JSON.stringify(data ?? null).length;
+    // Size limit — measured in actual bytes, not UTF-16 code units, so the
+    // 4KB limit is enforced correctly for multi-byte payloads.
+    const payloadSize = Buffer.byteLength(JSON.stringify(data ?? null), 'utf8');
     if (payloadSize > MAX_PAYLOAD_BYTES) {
       return res.status(413).json({ error: `Payload exceeds ${MAX_PAYLOAD_BYTES} byte limit` });
     }
 
-    // Rate limit
-    if (tokenId && !rateLimiter.check(tokenId)) {
+    // Rate limit — every authenticated caller is bounded, keyed by tokenId
+    // when present (external tokens) or projectId otherwise (session/user/
+    // device JWTs, which carry no tokenId).
+    if (!rateLimiter.check(tokenId ?? projectId)) {
       return res.status(429).json({ error: 'Rate limit exceeded (60 events/min)', retryAfter: 60 });
     }
 

@@ -49,6 +49,17 @@ export class ProductionAssistantManager {
     this._suggestions.get(apiKey).set(suggestion.id, suggestion);
   }
 
+  /**
+   * Public entry point for external callers (e.g. the MCP endpoint) to stage
+   * a suggestion for human confirmation, without reaching into the
+   * underscore-prefixed internal queue directly.
+   * @param {string} apiKey
+   * @param {{ id: string, tool: string, args: object, reasoning?: string, ts?: number }} suggestion
+   */
+  stageSuggestion(apiKey, suggestion) {
+    this._addSuggestion(apiKey, suggestion);
+  }
+
   _takeSuggestion(apiKey, id) {
     const map = this._suggestions.get(apiKey);
     const suggestion = map?.get(id);

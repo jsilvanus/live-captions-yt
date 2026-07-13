@@ -78,16 +78,16 @@ const RATE_MAX_CALLS = 120; // 120 tool calls per minute per token
 
 class RateLimiter {
   constructor() {
-    /** @type {Map<number, { count: number, windowStart: number }>} */
+    /** @type {Map<string, { count: number, windowStart: number }>} */
     this._windows = new Map();
   }
 
-  check(tokenId) {
+  check(key) {
     const now = Date.now();
-    let entry = this._windows.get(tokenId);
+    let entry = this._windows.get(key);
     if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
       entry = { count: 0, windowStart: now };
-      this._windows.set(tokenId, entry);
+      this._windows.set(key, entry);
     }
     entry.count++;
     return entry.count <= RATE_MAX_CALLS;
@@ -115,8 +115,12 @@ export function createMcpEndpointRouter({ registry, eventBus, db, assistantManag
       return res.status(400).json(jsonRpcError(null, -32700, 'Parse error'));
     }
 
-    // Support batch requests (array) or single request
+    // Support batch requests (array) or single request. Per the JSON-RPC 2.0
+    // spec, a batch must be a non-empty array.
     const isBatch = Array.isArray(body);
+    if (isBatch && body.length === 0) {
+      return res.status(400).json(jsonRpcError(null, -32600, 'Invalid Request'));
+    }
     const requests = isBatch ? body : [body];
     const results = [];
 
@@ -218,8 +222,10 @@ export function createMcpEndpointRouter({ registry, eventBus, db, assistantManag
           return isNotification ? null : jsonRpcError(id, INVALID_PARAMS, 'Missing tool name');
         }
 
-        // Rate limit
-        if (tokenId && !rateLimiter.check(tokenId)) {
+        // Rate limit — every authenticated caller is bounded, keyed by
+        // tokenId when present (external tokens) or projectId otherwise
+        // (session/user/device JWTs, which carry no tokenId).
+        if (!rateLimiter.check(tokenId ?? projectId)) {
           return isNotification ? null : jsonRpcError(id, -32000, 'Rate limit exceeded', { retryAfter: 60 });
         }
 
@@ -235,13 +241,17 @@ export function createMcpEndpointRouter({ registry, eventBus, db, assistantManag
         }
 
         // Safety gate: destructive tools are staged for confirmation
-        // unless the token has full delegation (null scopes)
+        // unless the caller is an external token with full delegation
+        // (null/empty scopes). Session/user/device JWTs carry no tokenId
+        // and always go through staging, even though their `scopes` field
+        // is also empty/absent — "full delegation" is a property of scoped
+        // external tokens, not of JWT callers in general.
         const isDestructive = tool.annotations?.destructiveHint === true;
-        const hasFullDelegation = !scopes || scopes.length === 0;
+        const hasFullDelegation = Boolean(tokenId) && (!scopes || scopes.length === 0);
 
         if (isDestructive && !hasFullDelegation && assistantManager) {
           // Stage as a suggestion for human confirmation via the assistant
-          // manager's public _addSuggestion interface (matches the pattern
+          // manager's public stageSuggestion interface (matches the pattern
           // used by ProductionAssistantManager.runTrigger)
           const suggestion = {
             id: randomUUID(),
@@ -252,7 +262,7 @@ export function createMcpEndpointRouter({ registry, eventBus, db, assistantManag
             source: 'mcp',
             tokenId,
           };
-          assistantManager._addSuggestion(projectId, suggestion);
+          assistantManager.stageSuggestion(projectId, suggestion);
 
           // Emit event for the UI
           eventBus.publish(projectId, 'mcp.tool_staged', {
