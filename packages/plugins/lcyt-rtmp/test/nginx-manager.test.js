@@ -149,14 +149,28 @@ describe('NginxManager._buildConfig()', () => {
     }
   });
 
-  test('multiple streams produce multiple location blocks (3 per stream: playlist, segment, fallback)', async () => {
+  test('multiple streams produce multiple location blocks (4 per stream: playlist, init, segment, fallback)', async () => {
     const mgr = new NginxManager({ enabled: false });
     await mgr.addStream('keyA');
     await mgr.addStream('keyB');
     const cfg = mgr._buildConfig();
     const locationCount = (cfg.match(/^\s+location /mg) || []).length;
-    // Each stream generates 3 location blocks: m3u8 (no-cache), .ts (immutable), fallback
-    assert.equal(locationCount, 6);
+    // Each stream generates 4 location blocks:
+    // m3u8 (no-cache), init*.mp4 (no-cache), segments (immutable), fallback
+    assert.equal(locationCount, 8);
+  });
+
+  test('segment location caches .ts, .mp4 and .m4s; init.mp4 has its own no-cache block first', async () => {
+    const mgr = new NginxManager({ enabled: false });
+    await mgr.addStream('mykey');
+    const cfg = mgr._buildConfig();
+
+    assert.ok(cfg.includes('\\.(ts|mp4|m4s)$'), 'segment regex covers ts/mp4/m4s');
+    const initIdx = cfg.indexOf('/init[^/]*\\.mp4$');
+    const segIdx  = cfg.indexOf('\\.(ts|mp4|m4s)$');
+    assert.ok(initIdx !== -1, 'init location present');
+    // nginx picks the FIRST matching regex location — init must precede segments
+    assert.ok(initIdx < segIdx, 'init no-cache block must come before the cached segment block');
   });
 
   test('includes CORS headers in proxy block', async () => {

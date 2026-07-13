@@ -10,6 +10,8 @@ export class HlsManager {
     this._app = rtmpApp;
     this._mediamtx = mediamtxClient;
     this._procs = new Map();
+    /** Keys started in MediaMTX / no-local-rtmp mode (no local ffmpeg process). */
+    this._active = new Set();
   }
 
   hlsDir(hlsKey) {
@@ -17,14 +19,14 @@ export class HlsManager {
   }
 
   isRunning(hlsKey) {
-    return this._procs.has(hlsKey);
+    return this._procs.has(hlsKey) || this._active.has(hlsKey);
   }
 
   async start(hlsKey) {
     const tag = `[hls:${String(hlsKey).slice(0,8)}]`;
 
     // If already running, stop first
-    if (this._procs.has(hlsKey)) {
+    if (this.isRunning(hlsKey)) {
       await this.stop(hlsKey);
     }
 
@@ -86,21 +88,25 @@ export class HlsManager {
       });
     }
 
-    // No ffmpeg spawned — still mark active (directory created)
+    // No ffmpeg spawned — MediaMTX serves the HLS; track for isRunning()
+    this._active.add(hlsKey);
     logger.info(`${tag} HLS active (no-local-rtmp)`);
     return;
   }
 
   async stop(hlsKey) {
-    if (!this._procs.has(hlsKey)) return;
+    if (!this._procs.has(hlsKey) && !this._active.has(hlsKey)) return;
+    this._active.delete(hlsKey);
     const tag = `[hls:${String(hlsKey).slice(0,8)}]`;
     const proc = this._procs.get(hlsKey);
-    try {
-      proc.kill('SIGTERM');
-    } catch (err) {
-      logger.warn(`${tag} kill warning: ${err?.message || err}`);
+    if (proc) {
+      try {
+        proc.kill('SIGTERM');
+      } catch (err) {
+        logger.warn(`${tag} kill warning: ${err?.message || err}`);
+      }
+      this._procs.delete(hlsKey);
     }
-    this._procs.delete(hlsKey);
 
     const dir = this.hlsDir(hlsKey);
     try {
@@ -113,7 +119,8 @@ export class HlsManager {
   }
 
   async stopAll() {
-    await Promise.all([...this._procs.keys()].map(k => this.stop(k)));
+    const keys = new Set([...this._procs.keys(), ...this._active]);
+    await Promise.all([...keys].map(k => this.stop(k)));
   }
 
   // Backwards-compatible helper used by stream-hls route

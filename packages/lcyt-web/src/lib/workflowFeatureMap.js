@@ -14,7 +14,7 @@
 export const FEATURE_TO_CARD_IDS = {
   captions:         ['caption-targets'],
   'viewer-target':  ['caption-targets'],
-  'restream-fanout': ['caption-targets'],
+  'restream': ['caption-targets'],
   translations:     ['languages'],
   'file-saving':          ['storage'],
   'files-local':          ['storage'],

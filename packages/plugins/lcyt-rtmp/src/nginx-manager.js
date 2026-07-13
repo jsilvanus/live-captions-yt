@@ -232,10 +232,32 @@ export class NginxManager {
         ``,
       );
 
+      // ── Init segment (fMP4) — no cache: its content changes when the
+      //    publisher restarts with different codec parameters ──────────────
+      lines.push(
+        `  # HLS radio — fMP4 init segment (no cache) — public slug: ${slug}`,
+        `  location ~ ^${prefix}/init[^/]*\\.mp4$ {`,
+        `    proxy_pass ${internalPath};`,
+        `    proxy_http_version 1.1;`,
+        `    proxy_set_header Host $host;`,
+        `    proxy_set_header X-Real-IP $remote_addr;`,
+        `    proxy_buffering off;`,
+        `    proxy_cache off;`,
+        `    add_header Access-Control-Allow-Origin "*" always;`,
+        `    add_header Access-Control-Allow-Methods "GET, OPTIONS" always;`,
+        `    add_header Access-Control-Allow-Headers "Accept, Range" always;`,
+        `    add_header Cache-Control "no-cache" always;`,
+        `  }`,
+        ``,
+      );
+
       // ── Segment location (immutable — cache aggressively) ─────────────────
+      // .ts (mpegts variant) and .mp4/.m4s media segments (fmp4/lowLatency).
+      // init*.mp4 is matched by the block above — nginx picks the FIRST
+      // matching regex location in file order.
       lines.push(
         `  # HLS radio — segments (immutable, cache 24 h) — public slug: ${slug}`,
-        `  location ~ ^${prefix}/.*\\.ts$ {`,
+        `  location ~ ^${prefix}/.*\\.(ts|mp4|m4s)$ {`,
         `    proxy_pass ${internalPath};`,
         `    proxy_http_version 1.1;`,
         `    proxy_set_header Host $host;`,
@@ -252,7 +274,7 @@ export class NginxManager {
         ``,
       );
 
-      // ── Fallback location (init segments, manifests with other extensions) ─
+      // ── Fallback location (manifests/files with other extensions) ─────────
       lines.push(
         `  # HLS radio — fallback (other files) — public slug: ${slug}`,
         `  location ${prefix}/ {`,

@@ -97,15 +97,19 @@ function parsePlaylist(text, baseUrl) {
 export class HlsSegmentFetcher extends EventEmitter {
   /**
    * @param {object} opts
-   * @param {string}  opts.hlsBase     Base URL for MediaMTX HLS output, e.g. "http://127.0.0.1:8888"
+   * @param {string}  opts.hlsBase     Base URL for MediaMTX HLS output, e.g. "http://127.0.0.1:8080"
    * @param {string}  opts.streamKey   MediaMTX stream path / API key
    * @param {number}  [opts.pollIntervalMs]  Playlist poll interval in ms (default: segmentDuration/2, min 1 s)
    * @param {number}  [opts.segmentDuration] Expected segment duration in seconds (used to derive default poll interval)
+   * @param {boolean} [opts.startAtLiveEdge=true]  On the first poll, skip the playlist backlog and emit only the
+   *                  newest segment. A live stream's window holds ~40 s of old audio (MediaMTX default 7 × 6 s);
+   *                  transcribing it at STT start would deliver stale captions. Set false to process the full window.
    */
-  constructor({ hlsBase, streamKey, pollIntervalMs, segmentDuration = 6 }) {
+  constructor({ hlsBase, streamKey, pollIntervalMs, segmentDuration = 6, startAtLiveEdge = true }) {
     super();
     this._hlsBase   = hlsBase.replace(/\/$/, '');
     this._streamKey = streamKey;
+    this._startAtLiveEdge = startAtLiveEdge;
     this._pollInterval = Math.max(
       MIN_POLL_INTERVAL_MS,
       pollIntervalMs ?? Math.round((segmentDuration / 2) * 1000),
@@ -183,6 +187,12 @@ export class HlsSegmentFetcher extends EventEmitter {
     const { mediaSequence, segments } = parsePlaylist(playlistText, playlistUrl);
 
     if (segments.length === 0) return;
+
+    // First poll of an already-live stream: skip the window backlog so we
+    // start at the live edge (emit only the newest segment).
+    if (this._lastSequence === -1 && this._startAtLiveEdge && segments.length > 1) {
+      this._lastSequence = mediaSequence + segments.length - 2;
+    }
 
     // Determine which segments are new.
     // Each HLS segment has a global index = mediaSequence + its position in the window.

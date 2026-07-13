@@ -35,7 +35,7 @@ describe('cardIdsForEnabledFeatures()', () => {
     const result = cardIdsForEnabledFeatures([
       { code: 'captions', enabled: true },
       { code: 'viewer-target', enabled: true },
-      { code: 'restream-fanout', enabled: true },
+      { code: 'restream', enabled: true },
     ]);
     assert.deepEqual([...result], ['caption-targets']);
   });
