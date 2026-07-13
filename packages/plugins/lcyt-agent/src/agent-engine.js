@@ -672,7 +672,11 @@ export class AgentEngine {
         break;
       } catch (err) {
         lastErr = err;
-        if (attempt >= MAX_RETRIES) throw err;
+        // Only retry transient failures: network errors, 5xx, 429 rate-limit
+        const statusMatch = err.message?.match(/Chat API error (\d+)/);
+        const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : null;
+        const isRetriable = statusCode === null || statusCode === 429 || statusCode >= 500;
+        if (attempt >= MAX_RETRIES || !isRetriable) throw err;
         attempt++;
         await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
       }
