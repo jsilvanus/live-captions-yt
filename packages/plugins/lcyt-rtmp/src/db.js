@@ -7,9 +7,11 @@
  * @param {import('better-sqlite3').Database} db
  */
 import { runRadioMigrations } from './db/radio.js';
+import { runCropMigrations } from './db/crop.js';
 
 export function runMigrations(db) {
   runRadioMigrations(db);
+  runCropMigrations(db);
   // ── api_keys additive columns ──────────────────────────────────────────────
   const existingCols = new Set(
     db.prepare('PRAGMA table_info(api_keys)').all().map(c => c.name)
@@ -84,6 +86,9 @@ export function runMigrations(db) {
       if (!latestCols.has('fps'))           db.exec('ALTER TABLE rtmp_relays ADD COLUMN fps INTEGER');
       if (!latestCols.has('video_bitrate')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN video_bitrate TEXT');
       if (!latestCols.has('audio_bitrate')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN audio_bitrate TEXT');
+      // Which rendition this slot forwards: 'program' (raw ingest, default)
+      // or 'crop' (the {key}-crop vertical rendition — plan_vertical_crop.md)
+      if (!latestCols.has('source_view'))   db.exec("ALTER TABLE rtmp_relays ADD COLUMN source_view TEXT NOT NULL DEFAULT 'program'");
     }
   }
 
@@ -323,3 +328,4 @@ export function deleteSttSourceLanguage(db, apiKey, id) {
 
 export * from './db/relay.js';
 export * from './db/radio.js';
+export * from './db/crop.js';

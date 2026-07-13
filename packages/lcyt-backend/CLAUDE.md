@@ -63,6 +63,8 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `MEDIAMTX_API_USER` | Basic-auth username for the MediaMTX API | none |
 | `MEDIAMTX_API_PASSWORD` | Basic-auth password for the MediaMTX API | none |
 | `MEDIAMTX_WEBRTC_BASE_URL` | MediaMTX WebRTC HTTP base URL (WHEP audio source for STT, WebRTC preview) | `http://127.0.0.1:8889` |
+| `CROP_ZMQ_PORT_BASE` | First 127.0.0.1 port for per-process zmq binds (vertical-crop live repositioning) | `5560` |
+| `CROP_OUTPUT_DEFAULT` | Vertical-crop delivery size when crop_config out_w/out_h are NULL | `1080x1920` |
 | `PREVIEW_ROOT` | Directory for JPEG thumbnail files | `/tmp/previews` |
 | `PREVIEW_INTERVAL_S` | Seconds between thumbnail updates | `5` |
 | `GRAPHICS_DIR` | Image storage directory for DSK overlays | `/data/images` |
@@ -141,6 +143,16 @@ GET  /radio/:key/*        — audio-only HLS segments and playlist (public, rate
 GET  /radio/config        — Web Radio self-service metadata: { title, description, coverImageUrl, autoplay, enabled, live } (Bearer token)
 PUT  /radio/config        — update title/description/coverImageUrl/autoplay (Bearer token)
 GET  /preview/:key/incoming.jpg — latest RTMP → JPEG thumbnail (public)
+
+GET  /crop/config         — vertical-crop config + renderer status (Bearer token; RTMP_RELAY_ACTIVE=1)
+PUT  /crop/config         — update aspect/output/bitrate/transition/follow; starts/stops renderer mid-publish (Bearer token)
+GET  /crop/status         — renderer state, active position/preset, repositionMode live|restart (Bearer token)
+POST /crop/position       — { xNorm, yNorm, transitionMs? } free crop positioning (Bearer token)
+GET/POST/PUT/DELETE /crop/presets[/:id] — crop preset CRUD; ?setId= filter (Bearer token)
+POST /crop/presets/:id/activate — apply a preset live (Bearer token)
+GET/POST/PUT/DELETE /crop/sets[/:id]    — preset-set (bank) CRUD; POST supports cloneFromSetId (Bearer token)
+POST /crop/sets/:id/activate    — switch active set; re-applies same-named preset live (Bearer token)
+GET/POST/DELETE /crop/source-map[/:id]  — production-follow mapping CRUD (Bearer token)
 
 GET  /dsk/:apikey/images           — list DSK overlay images for an API key (public)
 GET  /dsk/:apikey/events           — SSE stream of graphics events for DSK page (public)

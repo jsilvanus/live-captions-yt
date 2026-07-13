@@ -211,6 +211,15 @@ export class RtmpRelayManager {
     this._mediamtxRelays = new Map();
 
     /**
+     * Crop-view relay fan-outs: slots forwarding the {key}-crop vertical
+     * rendition via a MediaMTX runOnPublish hook on that path
+     * (plan_vertical_crop.md). No local ffmpeg process here either — the
+     * crop renderer itself is owned by CropManager.
+     * @type {Map<string, { slots: Array, startedAt: Date }>}
+     */
+    this._cropRelays = new Map();
+
+    /**
      * Per-key metadata: { slots, startedAt, hasCea708, srtSeq }
      * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number, cea708DelayMs: number }>}
      */
@@ -279,9 +288,18 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   async start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
-      if (!relays || relays.length === 0) {
+      // Crop-view slots (sourceView: 'crop') forward the {key}-crop vertical
+      // rendition instead of the raw ingest — they are fanned out by MediaMTX
+      // from that path and never participate in the CEA-708/transcode/DSK
+      // process modes below (the crop renderer already re-encodes).
+      const allSlots = relays ?? [];
+      const cropSlots = allSlots.filter(r => r.sourceView === 'crop');
+      relays = allSlots.filter(r => r.sourceView !== 'crop');
+
+      if (allSlots.length === 0) {
         await this._stopProc(apiKey);
         await this._stopMediamtxRelay(apiKey);
+        await this._stopCropRelay(apiKey);
         return;
       }
 
@@ -299,6 +317,12 @@ export class RtmpRelayManager {
       // Awaited so the path deletions land before we re-add path configs below.
       await this._stopProc(apiKey);
       await this._stopMediamtxRelay(apiKey);
+      await this._stopCropRelay(apiKey);
+
+      if (cropSlots.length > 0) {
+        await this._startCropRelay(apiKey, cropSlots);
+      }
+      if (relays.length === 0) return;
 
       // Determine operating mode.
       // CEA-708: any slot with captionMode='cea708' AND ffmpeg supports libx264+eia608+subrip.
@@ -679,6 +703,9 @@ export class RtmpRelayManager {
    */
   stop(apiKey) {
     return (async () => {
+      // Crop-view fan-out (may coexist with either mode below)
+      await this._stopCropRelay(apiKey);
+
       // MediaMTX-managed plain relay
       if (this._mediamtxRelays.has(apiKey)) {
         await this._stopMediamtxRelay(apiKey);
@@ -701,6 +728,75 @@ export class RtmpRelayManager {
         await this._stopProc(apiKey);
       }
     })();
+  }
+
+  /**
+   * Register the fan-out for crop-view slots: a runOnPublish hook on the
+   * {key}-crop path that tees the crop rendition to the slot targets. Fires
+   * when CropManager's renderer publishes. Requires a MediaMTX client — the
+   * crop rendition only exists inside MediaMTX.
+   * @param {string} apiKey
+   * @param {Array} cropSlots
+   * @returns {Promise<void>}
+   */
+  async _startCropRelay(apiKey, cropSlots) {
+    if (!this._mediamtx) {
+      logger.warn(`[rtmp] ${cropSlots.length} crop-view slot(s) configured for ${apiKey.slice(0, 8)} but no MediaMTX client — skipping (vertical crop requires MediaMTX)`);
+      return;
+    }
+    const cropPath = `${apiKey}-crop`;
+    if (!SAFE_NAME_RE.test(apiKey)) {
+      throw new Error('API key contains unsafe characters for MediaMTX runOnPublish');
+    }
+    const teeTargets = _buildTeeTargets(cropSlots);
+    const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${cropPath} -c copy -f tee "${teeTargets}"`;
+    try {
+      await this._upsertPath(cropPath, { runOnPublish, runOnPublishRestart: true });
+      logger.info(`[rtmp] Crop relay for ${apiKey.slice(0, 8)} configured via MediaMTX (${cropSlots.length} slot(s))`);
+    } catch (err) {
+      logger.warn(`[rtmp] MediaMTX addPath (crop relay) failed for ${apiKey.slice(0, 8)}: ${err.message} — crop slots may not forward`);
+    }
+    // Kick any current publisher so the hook fires immediately for a
+    // renderer that is already mid-publish.
+    this._mediamtx.kickPath(cropPath).catch(() => {});
+
+    const startedAt = new Date();
+    this._cropRelays.set(apiKey, { slots: cropSlots.map(r => ({ ...r })), startedAt });
+    for (const r of cropSlots) {
+      this._onStreamStarted?.(apiKey, r.slot, {
+        targetUrl:   r.targetUrl,
+        targetName:  r.targetName ?? null,
+        captionMode: 'http',
+        startedAt,
+      });
+    }
+  }
+
+  /**
+   * Tear down the crop-view fan-out. No-op when none is registered.
+   * @param {string} apiKey
+   * @returns {Promise<void>}
+   */
+  async _stopCropRelay(apiKey) {
+    const meta = this._cropRelays.get(apiKey);
+    if (!meta) return;
+    this._cropRelays.delete(apiKey);
+    if (this._mediamtx) {
+      try { await this._mediamtx.deletePath(`${apiKey}-crop`); } catch {}
+    }
+    const endedAt = new Date();
+    const durationMs = endedAt.getTime() - meta.startedAt.getTime();
+    for (const r of meta.slots) {
+      this._onStreamEnded?.(apiKey, r.slot, {
+        targetUrl:   r.targetUrl,
+        targetName:  r.targetName ?? null,
+        captionMode: 'http',
+        startedAt:   meta.startedAt,
+        endedAt,
+        durationMs,
+        captionsSent: 0,
+      });
+    }
   }
 
   /**
@@ -763,7 +859,7 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   async stopAll() {
-    const keys = new Set([...this._procs.keys(), ...this._mediamtxRelays.keys()]);
+    const keys = new Set([...this._procs.keys(), ...this._mediamtxRelays.keys(), ...this._cropRelays.keys()]);
     await Promise.all([...keys].map(k => this.stop(k)));
   }
 
@@ -885,7 +981,7 @@ export class RtmpRelayManager {
    * @returns {boolean}
    */
   isRunning(apiKey) {
-    return this._procs.has(apiKey) || this._mediamtxRelays.has(apiKey);
+    return this._procs.has(apiKey) || this._mediamtxRelays.has(apiKey) || this._cropRelays.has(apiKey);
   }
 
   /**
@@ -896,7 +992,9 @@ export class RtmpRelayManager {
    */
   isSlotRunning(apiKey, slot) {
     const meta = this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey);
-    return !!meta && meta.slots.some(s => s.slot === slot);
+    if (meta && meta.slots.some(s => s.slot === slot)) return true;
+    const crop = this._cropRelays.get(apiKey);
+    return !!crop && crop.slots.some(s => s.slot === slot);
   }
 
   /**
@@ -906,8 +1004,12 @@ export class RtmpRelayManager {
    */
   runningSlots(apiKey) {
     const meta = this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey);
-    if (!meta) return [];
-    return meta.slots.map(s => s.slot).sort((a, b) => a - b);
+    const crop = this._cropRelays.get(apiKey);
+    const slots = [
+      ...(meta ? meta.slots.map(s => s.slot) : []),
+      ...(crop ? crop.slots.map(s => s.slot) : []),
+    ];
+    return slots.sort((a, b) => a - b);
   }
 
   /**
@@ -916,7 +1018,7 @@ export class RtmpRelayManager {
    * @returns {Date|null}
    */
   startedAt(apiKey) {
-    return (this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey))?.startedAt ?? null;
+    return (this._meta.get(apiKey) ?? this._mediamtxRelays.get(apiKey) ?? this._cropRelays.get(apiKey))?.startedAt ?? null;
   }
 
   /**
@@ -1138,31 +1240,39 @@ export function probeFfmpeg() {
     } else {
       logger.warn('⚠ ffmpeg probe failed:', which.error.message);
     }
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
   }
 
   try {
     const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
     const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
     const demux = spawnSync('ffmpeg', ['-hide_banner', '-demuxers'], { encoding: 'utf8', timeout: 3000 });
+    const filters = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8', timeout: 3000 });
 
     const encOut = (enc.stdout || '') + (enc.stderr || '');
     const fmtsOut = (fmts.stdout || '') + (fmts.stderr || '');
     const demuxOut = (demux.stdout || '') + (demux.stderr || '');
+    const filtersOut = (filters.stdout || '') + (filters.stderr || '');
 
     const hasLibx264 = /libx264/i.test(encOut);
     const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
     const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
+    // zmq filter (--enable-libzmq builds) — enables live crop repositioning
+    // via runtime filter commands (plan_vertical_crop.md).
+    const hasZmq = /\szmq\s/.test(filtersOut);
 
     logger.info('✓ ffmpeg found — RTMP relay is available.');
 
     if (!hasLibx264) {
       logger.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
     }
+    if (!hasZmq) {
+      logger.info('  [i] ffmpeg: zmq filter not detected -- vertical-crop position changes will restart the renderer (build ffmpeg with --enable-libzmq for gapless repositioning).');
+    }
 
-    return { available: true, hasLibx264, hasEia608, hasSubrip };
+    return { available: true, hasLibx264, hasEia608, hasSubrip, hasZmq };
   } catch (err) {
     logger.warn('⚠ ffmpeg probe failed:', err.message);
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
   }
 }
