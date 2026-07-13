@@ -29,6 +29,11 @@ describe('resolveCaptureDimensions', () => {
     assert.deepEqual(resolveCaptureDimensions(null), { width: 1920, height: 1080 });
     assert.deepEqual(resolveCaptureDimensions({ width: 0, height: -5 }), { width: 1920, height: 1080 });
   });
+
+  test('prefers explicit output dimensions when present', () => {
+    assert.deepEqual(resolveCaptureDimensions({ width: 1920, height: 1080 }, { width: 720, height: 1280 }), { width: 720, height: 1280 });
+    assert.deepEqual(resolveCaptureDimensions({ width: 1920, height: 1080 }, { width: 720 }), { width: 720, height: 1080 });
+  });
 });
 
 describe('resolveCaptureBackground', () => {

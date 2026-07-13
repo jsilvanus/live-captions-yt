@@ -25,14 +25,29 @@ export function viewportPageUrl({ slug, apiKey, viewport, baseUrl = DEFAULT_PAGE
 }
 
 /**
- * Capture dimensions for a viewport, falling back to 1920x1080.
+ * Capture dimensions for a viewport, falling back to 1920x1080. When an
+ * explicit output-dimension override is provided, it wins for the streamed
+ * output; otherwise the viewport's own dimensions are used.
  * @param {{ width?: number, height?: number }|null} viewport
+ * @param {{ width?: number, height?: number }|null} outputViewport
  * @returns {{ width: number, height: number }}
  */
-export function resolveCaptureDimensions(viewport) {
-  const width = Number(viewport?.width) > 0 ? Math.round(Number(viewport.width)) : 1920;
-  const height = Number(viewport?.height) > 0 ? Math.round(Number(viewport.height)) : 1080;
+export function resolveCaptureDimensions(viewport, outputViewport = null) {
+  const fallback = parseDimensionPair(viewport);
+  const output = parseDimensionPair(outputViewport);
+  const width = output?.width ?? fallback?.width ?? 1920;
+  const height = output?.height ?? fallback?.height ?? 1080;
   return { width, height };
+}
+
+function parseDimensionPair(viewport) {
+  if (!viewport || typeof viewport !== 'object') return {};
+  const parsed = {};
+  const width = Number(viewport.width);
+  const height = Number(viewport.height);
+  if (Number.isFinite(width) && width > 0) parsed.width = Math.round(width);
+  if (Number.isFinite(height) && height > 0) parsed.height = Math.round(height);
+  return parsed;
 }
 
 /**

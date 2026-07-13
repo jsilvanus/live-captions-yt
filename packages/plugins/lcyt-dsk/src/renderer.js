@@ -610,7 +610,7 @@ export async function startViewportStream(apiKey, opts) {
   let state = _keys.get(key);
   if (state?.capturing) return; // already streaming
 
-  const { width, height } = resolveCaptureDimensions(opts.dimensions);
+  const { width, height } = resolveCaptureDimensions(opts.dimensions, displaySettings?.stream?.outputDimensions);
   const { background, warnTransparent } = resolveCaptureBackground(displaySettings);
   if (warnTransparent) logger.warn(`[dsk-renderer:${key}] transparent background without chroma-key will render black over RTMP`);
 
