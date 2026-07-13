@@ -145,6 +145,27 @@ export class CropManager {
      */
     this._sessions = new Map();
     this._nextZmqOffset = 0;
+
+    /** null = not checked yet; boolean once the lazy import has settled. */
+    this._zmqModuleAvailable = null;
+    this._zmqLoad = undefined;
+  }
+
+  /**
+   * Lazily import the optional `zeromq` package (memoized). Resolves the
+   * module or null when it is not installed.
+   */
+  _loadZmqModule() {
+    if (this._zmqLoad === undefined) {
+      this._zmqLoad = import('zeromq')
+        .then(m => { this._zmqModuleAvailable = true; return m; })
+        .catch(() => {
+          this._zmqModuleAvailable = false;
+          logger.warn('[crop] optional dependency "zeromq" not installed — position changes will restart the renderer');
+          return null;
+        });
+    }
+    return this._zmqLoad;
   }
 
   /** MediaMTX path name of the crop rendition. */
@@ -154,10 +175,11 @@ export class CropManager {
 
   /**
    * `'live'` when position changes go over runtime filter commands,
-   * `'restart'` when they need a process swap.
+   * `'restart'` when they need a process swap. Optimistically 'live' until
+   * the lazy `zeromq` import has settled (first start() resolves it).
    */
   repositionMode() {
-    return this._ffmpegCaps?.hasZmq ? 'live' : 'restart';
+    return this._ffmpegCaps?.hasZmq && this._zmqModuleAvailable !== false ? 'live' : 'restart';
   }
 
   getStatus(apiKey) {
@@ -187,6 +209,11 @@ export class CropManager {
   async start(apiKey, config, { position, activePresetId = null } = {}) {
     if (this._ffmpegCaps?.available === false) {
       throw new Error('ffmpeg is not installed or not available in PATH. Vertical crop requires ffmpeg.');
+    }
+    // The renderer always re-encodes with libx264 — fail fast with a clear
+    // error instead of spawning an ffmpeg that exits immediately.
+    if (this._ffmpegCaps?.hasLibx264 === false) {
+      throw new Error('ffmpeg lacks the libx264 encoder. Vertical crop requires an ffmpeg build with libx264.');
     }
     const previous = this._sessions.get(apiKey);
     // Carry the last position across restarts unless explicitly overridden.
@@ -219,8 +246,11 @@ export class CropManager {
     const outH = config.outH ?? Number((process.env.CROP_OUTPUT_DEFAULT || '1080x1920').split('x')[1]);
 
     // zmq lands in the graph only when both the ffmpeg build and the node
-    // client side are available — a bind without a client is dead weight.
-    const zmqPort = this._ffmpegCaps?.hasZmq ? ZMQ_PORT_BASE + (this._nextZmqOffset++ % 1000) : null;
+    // client side are available — a bind without a client would be dead
+    // weight (and a pointless port allocation), so resolve the optional
+    // `zeromq` import BEFORE deciding whether to insert the filter.
+    const zmqMod = this._ffmpegCaps?.hasZmq ? await this._loadZmqModule() : null;
+    const zmqPort = zmqMod ? ZMQ_PORT_BASE + (this._nextZmqOffset++ % 1000) : null;
     let filter = `[0:v]crop@vcrop=${geometry.cropW}:${geometry.cropH}:${x}:${y},scale=${outW}:${outH}`;
     // Args go through spawn (no shell); only the filtergraph parser needs the
     // ':' inside the bind address escaped, so a single literal backslash.
@@ -262,7 +292,7 @@ export class CropManager {
     this._sessions.set(apiKey, session);
 
     if (zmqPort) {
-      session.zmq = await this._openZmq(apiKey, zmqPort);
+      session.zmq = this._openZmq(apiKey, zmqMod, zmqPort);
     }
 
     if (handle?.stderr) handle.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
@@ -360,17 +390,10 @@ export class CropManager {
 
   /**
    * Open a ZeroMQ REQ socket to the process's zmq filter. Returns null (and
-   * downgrades the session to restart mode) when the optional `zeromq`
-   * package is not installed.
+   * downgrades the session to restart mode) when socket setup fails.
+   * The module itself was already resolved by start() via _loadZmqModule().
    */
-  async _openZmq(apiKey, port) {
-    let zmqMod;
-    try {
-      zmqMod = await import('zeromq');
-    } catch {
-      logger.warn(`[crop:${apiKey.slice(0, 8)}] optional dependency "zeromq" not installed — falling back to restart-based repositioning`);
-      return null;
-    }
+  _openZmq(apiKey, zmqMod, port) {
     try {
       const socket = new zmqMod.Request({ sendTimeout: 500, receiveTimeout: 500 });
       socket.connect(`tcp://127.0.0.1:${port}`);

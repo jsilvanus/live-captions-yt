@@ -78,6 +78,19 @@ export function runCropMigrations(db) {
 
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
 
+/**
+ * Coerce a mixer-input / camera-preset value to an integer or null.
+ * JSON bodies and env-derived values often carry these as strings; the
+ * source-map resolver compares with strict equality, so both the stored and
+ * the queried values must be normalised to the same type.
+ * Returns NaN for values that are set but not integer-coercible.
+ */
+function toIntOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isInteger(n) ? n : NaN;
+}
+
 function formatConfig(row) {
   return {
     enabled:       row.enabled === 1,
@@ -339,14 +352,22 @@ export function createCropSourceMapEntry(db, apiKey, { mixerId = null, mixerInpu
   if (!presetId) return { ok: false, error: 'presetId is required' };
   const preset = db.prepare('SELECT id FROM crop_presets WHERE api_key = ? AND id = ?').get(apiKey, presetId);
   if (!preset) return { ok: false, error: 'presetId does not reference one of this project\'s presets' };
-  const hasMixer = mixerId !== null || mixerInput !== null;
-  const hasCamera = cameraId !== null;
+
+  const normMixerInput   = toIntOrNull(mixerInput);
+  const normCameraPreset = toIntOrNull(cameraPreset);
+  if (Number.isNaN(normMixerInput))   return { ok: false, error: 'mixerInput must be an integer' };
+  if (Number.isNaN(normCameraPreset)) return { ok: false, error: 'cameraPreset must be an integer' };
+  const normMixerId  = mixerId  != null && mixerId  !== '' ? String(mixerId)  : null;
+  const normCameraId = cameraId != null && cameraId !== '' ? String(cameraId) : null;
+
+  const hasMixer = normMixerId !== null || normMixerInput !== null;
+  const hasCamera = normCameraId !== null;
   if (!hasMixer && !hasCamera) {
     return { ok: false, error: 'At least one of mixerId/mixerInput or cameraId must be set' };
   }
   const id = randomUUID();
   db.prepare('INSERT INTO crop_source_map (id, api_key, mixer_id, mixer_input, camera_id, camera_preset, preset_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, apiKey, mixerId, mixerInput, cameraId, cameraPreset, presetId);
+    .run(id, apiKey, normMixerId, normMixerInput, normCameraId, normCameraPreset, presetId);
   return { ok: true, entry: formatMapRow(db.prepare('SELECT * FROM crop_source_map WHERE id = ?').get(id)) };
 }
 
@@ -365,6 +386,15 @@ export function deleteCropSourceMapEntry(db, apiKey, id) {
  * @returns {object|null} the winning preset (formatPreset shape) or null
  */
 export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
+  // Normalise caller-provided values (JSON bodies often carry numbers as
+  // strings) so the strict comparisons below match the normalised DB values.
+  mixerInput   = toIntOrNull(mixerInput);
+  cameraPreset = toIntOrNull(cameraPreset);
+  if (Number.isNaN(mixerInput))   mixerInput = null;
+  if (Number.isNaN(cameraPreset)) cameraPreset = null;
+  mixerId  = mixerId  != null && mixerId  !== '' ? String(mixerId)  : null;
+  cameraId = cameraId != null && cameraId !== '' ? String(cameraId) : null;
+
   const activeSetId = getCropConfig(db, apiKey).activeSetId;
   const rows = db.prepare('SELECT * FROM crop_source_map WHERE api_key = ?').all(apiKey);
 
