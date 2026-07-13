@@ -615,6 +615,29 @@ function DisplaySettingsEditor({ settings, onChange }) {
   );
 }
 
+function normalizeOutputDimensions(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  const width = Number(raw.width);
+  const height = Number(raw.height);
+  if (Number.isFinite(width) && width > 0) out.width = Math.round(width);
+  if (Number.isFinite(height) && height > 0) out.height = Math.round(height);
+  return out;
+}
+
+function applyOutputDimensionPatch(raw, patch) {
+  const next = { ...(raw || {}) };
+  for (const [k, v] of Object.entries(patch || {})) {
+    if (v === '' || v == null) delete next[k];
+    else {
+      const num = Number(v);
+      if (Number.isFinite(num) && num > 0) next[k] = Math.round(num);
+      else delete next[k];
+    }
+  }
+  return next;
+}
+
 function StreamSettingsEditor({ settings, onChange }) {
   // Local draft so typing a push URL doesn't fire a PUT per keystroke; commit
   // the whole stream config with the Save button. Re-seed when the selected
@@ -625,10 +648,21 @@ function StreamSettingsEditor({ settings, onChange }) {
 
   const pushUrls = Array.isArray(stream.pushUrls) ? stream.pushUrls : [];
   const chroma = stream.chromaKey ?? {};
+  const output = stream.outputDimensions ?? {};
   const dirty = JSON.stringify(stream) !== persisted;
 
   function setStream(patch) { setStream_(s => ({ ...s, ...patch })); }
   function setChroma(patch) { setStream_(s => ({ ...s, chromaKey: { ...(s.chromaKey ?? {}), ...patch } })); }
+  function setOutputDimensions(patch) {
+    setStream_(s => {
+      const next = applyOutputDimensionPatch(s.outputDimensions, patch);
+      if (Object.keys(next).length === 0) {
+        const { outputDimensions, ...rest } = s;
+        return rest;
+      }
+      return { ...s, outputDimensions: next };
+    });
+  }
   function setPush(i, patch) { setStream_(s => ({ ...s, pushUrls: (s.pushUrls ?? []).map((p, idx) => idx === i ? { ...p, ...patch } : p) })); }
   function addPush() { setStream_(s => ({ ...s, pushUrls: [...(s.pushUrls ?? []), { url: '', enabled: true }] })); }
   function removePush(i) { setStream_(s => ({ ...s, pushUrls: (s.pushUrls ?? []).filter((_, idx) => idx !== i) })); }
@@ -636,8 +670,13 @@ function StreamSettingsEditor({ settings, onChange }) {
   function save() {
     // Drop empty push URLs and the whole stream object when nothing meaningful remains.
     const cleanUrls = pushUrls.filter(p => (p.url || '').trim());
-    const next = { ...stream, ...(cleanUrls.length ? { pushUrls: cleanUrls } : { pushUrls: undefined }) };
-    const meaningful = next.enabled || cleanUrls.length || next.chromaKey?.enabled || next.mode;
+    const outputDims = normalizeOutputDimensions(output);
+    const next = {
+      ...stream,
+      ...(cleanUrls.length ? { pushUrls: cleanUrls } : { pushUrls: undefined }),
+      ...(Object.keys(outputDims).length ? { outputDimensions: outputDims } : { outputDimensions: undefined }),
+    };
+    const meaningful = next.enabled || cleanUrls.length || next.chromaKey?.enabled || next.mode || next.outputDimensions;
     onChange({ ...settings, stream: meaningful ? next : undefined });
   }
 
@@ -661,6 +700,23 @@ function StreamSettingsEditor({ settings, onChange }) {
               </label>
             </div>
             <div style={{ fontSize: 11, color: dark.muted }}>Only one viewport can be the program composite; selecting it here demotes any other.</div>
+          </div>
+
+          <div>
+            <label style={labelStyle}>Output dimensions (px)</label>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ flex: '0 0 110px' }}>
+                <label style={labelStyle}>Width</label>
+                <input style={{ ...inputStyle, width: '100%' }} type="number" min="1"
+                  value={output.width ?? ''} onChange={e => setOutputDimensions({ width: e.target.value })} />
+              </div>
+              <div style={{ flex: '0 0 110px' }}>
+                <label style={labelStyle}>Height</label>
+                <input style={{ ...inputStyle, width: '100%' }} type="number" min="1"
+                  value={output.height ?? ''} onChange={e => setOutputDimensions({ height: e.target.value })} />
+              </div>
+            </div>
+            <div style={{ fontSize: 11, color: dark.muted, marginTop: 4 }}>Leave blank to use the viewport’s input dimensions. Useful for vertical clips or alternate output sizes.</div>
           </div>
 
           {/* Chroma key (relevant to composite / keyed output) */}

@@ -174,6 +174,8 @@ function parseJsonObject(str) {
  * publicly. The `stream` sub-object (Phase 4 — renderer/relay config) is
  * server-side only and MUST be stripped before public exposure via
  * `publicDisplaySettings()`, since `stream.pushUrls` can embed stream keys.
+ * The optional `stream.outputDimensions` field is also server-side only and
+ * lives entirely within the renderer config.
  */
 export function sanitizeDisplaySettings(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -228,6 +230,14 @@ function sanitizeStreamConfig(raw) {
     if (Number.isFinite(Number(c.similarity))) ck.similarity = Math.max(0, Math.min(1, Number(c.similarity)));
     if (Number.isFinite(Number(c.blend))) ck.blend = Math.max(0, Math.min(1, Number(c.blend)));
     out.chromaKey = ck;
+  }
+
+  if (raw.outputDimensions && typeof raw.outputDimensions === 'object') {
+    const od = raw.outputDimensions;
+    const dims = {};
+    if (Number.isFinite(Number(od.width))) dims.width = Math.max(1, Math.round(Number(od.width)));
+    if (Number.isFinite(Number(od.height))) dims.height = Math.max(1, Math.round(Number(od.height)));
+    if (Object.keys(dims).length > 0) out.outputDimensions = dims;
   }
 
   return Object.keys(out).length > 0 ? out : null;

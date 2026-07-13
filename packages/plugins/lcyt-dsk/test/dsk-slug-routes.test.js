@@ -236,6 +236,7 @@ describe('stream config sanitize + public stripping', () => {
     const out = sanitizeDisplaySettings({
       stream: {
         enabled: 1, mode: 'composite',
+        outputDimensions: { width: 1080, height: 1920 },
         pushUrls: [
           { url: 'rtmp://a.example/live/key1', enabled: true },
           { url: 'https://evil.example/x' },       // not rtmp → dropped
@@ -246,6 +247,8 @@ describe('stream config sanitize + public stripping', () => {
     });
     assert.equal(out.stream.enabled, true);
     assert.equal(out.stream.mode, 'composite');
+    assert.equal(out.stream.outputDimensions.width, 1080);
+    assert.equal(out.stream.outputDimensions.height, 1920);
     assert.equal(out.stream.pushUrls.length, 2);
     assert.equal(out.stream.pushUrls[1].enabled, false);
     assert.equal(out.stream.chromaKey.similarity, 1); // clamped
