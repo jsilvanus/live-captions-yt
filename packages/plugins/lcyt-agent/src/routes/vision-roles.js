@@ -46,7 +46,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     const { apiKey, roleCode, config, providerRow } = loaded;
     const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
     if (!apiSettings) {
-      return res.status(503).json({ ok: false, error: 'AI provider not configured or unsupported' });
+      return res.status(503).json({ error: 'AI provider not configured or unsupported' });
     }
     const result = manager.start(apiKey, roleCode, {
       apiSettings,
