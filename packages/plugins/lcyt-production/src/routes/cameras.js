@@ -1,13 +1,29 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import * as fs from 'node:fs';
 import { parseCamera } from '../registry.js';
+import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
 
 const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile'];
 const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
 
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {
   const mediamtxClient = opts.mediamtxClient ?? null;
+  const cameraThumbnailOpts = opts.cameraThumbnail ?? {};
   const router = Router();
+
+  /**
+   * Build the computed thumbnailUrl field for a parsed camera row.
+   * @param {object} camera  parseCamera() output
+   * @param {import('express').Request} req
+   */
+  function withThumbnailUrl(camera, req) {
+    const origin = `${req.protocol}://${req.get('host')}`;
+    return {
+      ...camera,
+      thumbnailUrl: camera.thumbnailCapturedAt ? `${origin}/production/cameras/${camera.id}/thumbnail` : null,
+    };
+  }
 
   // -------------------------------------------------------------------------
   // Text body parser for WHIP SDP routes (must come before route definitions)
@@ -29,11 +45,11 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   );
 
   // GET /production/cameras — list all cameras
-  router.get('/', (_req, res) => {
+  router.get('/', (req, res) => {
     const rows = db
       .prepare('SELECT * FROM prod_cameras ORDER BY sort_order, created_at')
       .all()
-      .map(parseCamera);
+      .map(row => withThumbnailUrl(parseCamera(row), req));
     res.json(rows);
   });
 
@@ -41,7 +57,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.get('/:id', (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Camera not found' });
-    res.json(parseCamera(row));
+    res.json(withThumbnailUrl(parseCamera(row), req));
   });
 
   // POST /production/cameras — create camera
@@ -114,8 +130,41 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
     db.prepare('DELETE FROM prod_cameras WHERE id = ?').run(id);
     registry.removeCamera(id).catch(() => {});
+    deleteCameraThumbnailFile(id, cameraThumbnailOpts.thumbnailsDir);
     res.status(204).end();
   });
+
+  // POST /production/cameras/:id/thumbnail/capture — capture a still frame as this camera's thumbnail
+  router.post('/:id/thumbnail/capture', async (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Camera not found' });
+
+    const camera = parseCamera(row);
+    const { apiKey, mixerId } = req.body ?? {};
+    const result = await captureCameraThumbnail(db, camera, registry, {
+      apiKey, mixerId, ...cameraThumbnailOpts,
+    });
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    res.json({ ok: true, thumbnailCapturedAt: result.thumbnailCapturedAt, sizeBytes: result.sizeBytes });
+  });
+
+  // GET /production/cameras/:id/thumbnail(.jpg) — serve the saved thumbnail
+  function serveThumbnail(req, res) {
+    const row = db.prepare('SELECT thumbnail_captured_at FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !row.thumbnail_captured_at) {
+      return res.status(404).json({ error: 'No thumbnail captured for this camera' });
+    }
+
+    const filepath = thumbnailPath(req.params.id, cameraThumbnailOpts.thumbnailsDir);
+    if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Thumbnail file not found on disk' });
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    try { res.setHeader('Content-Length', fs.statSync(filepath).size); } catch { /* ignore */ }
+    fs.createReadStream(filepath).pipe(res);
+  }
+  router.get('/:id/thumbnail', serveThumbnail);
+  router.get('/:id/thumbnail.jpg', serveThumbnail);
 
   // POST /production/cameras/:id/preset/:presetId — trigger preset
   router.post('/:id/preset/:presetId', async (req, res) => {

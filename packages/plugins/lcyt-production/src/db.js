@@ -78,6 +78,12 @@ export function runMigrations(db) {
   if (!mixerCols2.includes('output_key')) {
     db.exec('ALTER TABLE prod_mixers ADD COLUMN output_key TEXT');
   }
+
+  // thumbnail_captured_at: ISO timestamp of the last successful still-frame capture
+  const cameraCols3 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols3.includes('thumbnail_captured_at')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN thumbnail_captured_at TEXT');
+  }
 }
 
 /**

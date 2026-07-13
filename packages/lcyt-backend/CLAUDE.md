@@ -168,6 +168,8 @@ GET  /production/cameras  — list cameras (admin key)
 POST /production/cameras  — create camera
 PUT/DELETE /production/cameras/:id — update/delete camera
 POST /production/cameras/:id/preset/:preset — trigger camera PTZ preset
+POST /production/cameras/:id/thumbnail/capture — capture a still frame as this camera's thumbnail (webcam/mobile: from its own feed; amx/visca-ip: from the mixer program feed while this camera is live, body { apiKey, mixerId? })
+GET  /production/cameras/:id/thumbnail[.jpg] — serve the saved thumbnail JPEG
 GET  /production/mixers   — list mixers with connection status
 POST /production/mixers   — create mixer
 PUT/DELETE /production/mixers/:id — update/delete mixer

@@ -53,13 +53,14 @@ export async function initProductionControl(db) {
  * @param {object} [opts]
  * @param {string} [opts.publicUrl]      Server's public URL for .env generation
  * @param {MediaMtxClient} [opts.mediamtxClient]  MediaMTX REST client (optional)
+ * @param {object} [opts.cameraThumbnail]  Overrides for camera-thumbnail.js's defaults (thumbnailsDir/previewBaseUrl) — tests only, env vars suffice in production
  * @returns {import('express').Router}
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   const router = Router();
   const mediamtxClient = opts.mediamtxClient ?? null;
 
-  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient }));
+  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: opts.cameraThumbnail }));
   router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient }));
   router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl));
   router.use('/encoders', createEncodersRouter(db, bridgeManager));

@@ -267,6 +267,7 @@ export function parseCamera(row) {
     bridgeInstanceId: row.bridge_instance_id,
     sortOrder:        row.sort_order,
     cameraKey:        row.camera_key ?? null,
+    thumbnailCapturedAt: row.thumbnail_captured_at ?? null,
     createdAt:        row.created_at,
   };
 }
