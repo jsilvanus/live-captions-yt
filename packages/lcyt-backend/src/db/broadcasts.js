@@ -9,6 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { getCaptionFile } from './files.js';
 
 export const BROADCAST_STATUSES = new Set([
   'draft', 'scheduled', 'live', 'completed', 'archived',
@@ -58,6 +59,20 @@ function formatAsset(row) {
   };
 }
 
+function formatBroadcastFile(row) {
+  return {
+    id:        row.link_id,
+    fileId:    row.file_id,
+    filename:  row.filename,
+    lang:      row.lang ?? null,
+    format:    row.format,
+    type:      row.type,
+    sizeBytes: row.size_bytes ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
 /**
  * List broadcasts for a project.
  * @param {import('better-sqlite3').Database} db
@@ -103,7 +118,14 @@ export function getBroadcast(db, apiKey, id) {
   const assets = db.prepare(
     'SELECT * FROM broadcast_assets WHERE broadcast_id = ? ORDER BY sort_order, id'
   ).all(id).map(formatAsset);
-  return { ...formatRow(row), assets };
+  const files = db.prepare(`
+    SELECT bf.id AS link_id, bf.file_id, cf.filename, cf.lang, cf.format, cf.type, cf.size_bytes, cf.created_at, cf.updated_at
+    FROM broadcast_files bf
+    JOIN caption_files cf ON cf.id = bf.file_id
+    WHERE bf.broadcast_id = ? AND cf.api_key = ?
+    ORDER BY bf.created_at DESC, bf.id DESC
+  `).all(id, apiKey).map(formatBroadcastFile);
+  return { ...formatRow(row), assets, files };
 }
 
 /**
@@ -247,6 +269,73 @@ export function deleteBroadcast(db, apiKey, id) {
 // ── Asset linkage ──────────────────────────────────────────────────────────
 
 /**
+ * List files linked to a broadcast.
+ * @returns {object[]|null} null if the broadcast does not exist for this project.
+ */
+export function listBroadcastFiles(db, apiKey, id) {
+  const existing = getRow(db, apiKey, id);
+  if (!existing) return null;
+  return db.prepare(`
+    SELECT bf.id AS link_id, bf.file_id, cf.filename, cf.lang, cf.format, cf.type, cf.size_bytes, cf.created_at, cf.updated_at
+    FROM broadcast_files bf
+    JOIN caption_files cf ON cf.id = bf.file_id
+    WHERE bf.broadcast_id = ? AND cf.api_key = ?
+    ORDER BY bf.created_at DESC, bf.id DESC
+  `).all(id, apiKey).map(formatBroadcastFile);
+}
+
+/**
+ * Link a file to a broadcast.
+ * @returns {{ ok: true, file: object }|{ ok: false, error: string, status?: number }}
+ */
+export function linkBroadcastFile(db, apiKey, id, fileId) {
+  const existing = getRow(db, apiKey, id);
+  if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
+
+  const parsedFileId = Number(fileId);
+  if (!Number.isInteger(parsedFileId) || parsedFileId <= 0) {
+    return { ok: false, error: 'fileId must be a positive integer', status: 400 };
+  }
+
+  const file = getCaptionFile(db, parsedFileId, apiKey);
+  if (!file) return { ok: false, error: 'File not found', status: 404 };
+
+  try {
+    db.prepare('INSERT INTO broadcast_files (broadcast_id, file_id) VALUES (?, ?)').run(id, parsedFileId);
+    const row = db.prepare(`
+      SELECT bf.id AS link_id, bf.file_id, cf.filename, cf.lang, cf.format, cf.type, cf.size_bytes, cf.created_at, cf.updated_at
+      FROM broadcast_files bf
+      JOIN caption_files cf ON cf.id = bf.file_id
+      WHERE bf.broadcast_id = ? AND bf.file_id = ?
+    `).get(id, parsedFileId);
+    return { ok: true, file: formatBroadcastFile(row) };
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) {
+      return { ok: false, error: 'File already linked to this broadcast', status: 409 };
+    }
+    throw e;
+  }
+}
+
+/**
+ * Unlink a file from a broadcast.
+ * @returns {{ ok: true }|{ ok: false, error: string, status?: number }}
+ */
+export function unlinkBroadcastFile(db, apiKey, id, fileId) {
+  const existing = getRow(db, apiKey, id);
+  if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
+
+  const parsedFileId = Number(fileId);
+  if (!Number.isInteger(parsedFileId) || parsedFileId <= 0) {
+    return { ok: false, error: 'fileId must be a positive integer', status: 400 };
+  }
+
+  const result = db.prepare('DELETE FROM broadcast_files WHERE broadcast_id = ? AND file_id = ?').run(id, parsedFileId);
+  if (result.changes === 0) return { ok: false, error: 'Linked file not found', status: 404 };
+  return { ok: true };
+}
+
+/**
  * Link a reusable asset to a broadcast.
  * @returns {{ ok: true, asset: object }|{ ok: false, error: string, status?: number }}
  */
@@ -313,6 +402,10 @@ export function duplicateBroadcast(db, apiKey, id) {
     const links = db.prepare('SELECT asset_type, asset_ref, sort_order FROM broadcast_assets WHERE broadcast_id = ?').all(id);
     const ins = db.prepare('INSERT INTO broadcast_assets (broadcast_id, asset_type, asset_ref, sort_order) VALUES (?, ?, ?, ?)');
     for (const l of links) ins.run(newId, l.asset_type, l.asset_ref, l.sort_order);
+
+    const fileLinks = db.prepare('SELECT file_id FROM broadcast_files WHERE broadcast_id = ?').all(id);
+    const insFile = db.prepare('INSERT INTO broadcast_files (broadcast_id, file_id) VALUES (?, ?)');
+    for (const l of fileLinks) insFile.run(newId, l.file_id);
   });
   tx();
   return { ok: true, broadcast: getBroadcast(db, apiKey, newId) };

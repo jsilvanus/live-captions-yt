@@ -564,7 +564,24 @@ function PlannerOutline({ filename, totalLines, dirty, outline, onJumpTo, onNew,
 
 // ─── Toolbar ──────────────────────────────────────────────────────────────────
 
-function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, onEditingFilename, onNormalize, onToDashboard, onInsert }) {
+function PlannerToolbar({
+  filename,
+  editingFilename,
+  dirty,
+  onFilenameChange,
+  onEditingFilename,
+  onNormalize,
+  onToDashboard,
+  onInsert,
+  projectReady,
+  projectSaving,
+  projectLoading,
+  serverRundowns,
+  selectedServerRundownId,
+  onSelectedServerRundownChange,
+  onSaveToProject,
+  onOpenFromProject,
+}) {
   return (
     <div className="planner-toolbar">
       <div className="planner-toolbar__top">
@@ -594,6 +611,29 @@ function PlannerToolbar({ filename, editingFilename, dirty, onFilenameChange, on
           <button className="btn btn--secondary btn--sm" onClick={onNormalize}>Normalize</button>
           <button className="btn btn--primary btn--sm" onClick={onToDashboard}>→ Dashboard</button>
         </div>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', marginTop: 8 }}>
+        <select
+          value={selectedServerRundownId || ''}
+          onChange={e => onSelectedServerRundownChange(e.target.value)}
+          disabled={!projectReady || serverRundowns.length === 0}
+          style={{ minWidth: 180, padding: '4px 6px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface-elevated)', color: 'var(--color-text)' }}
+          aria-label="Saved project rundowns"
+        >
+          {serverRundowns.length === 0 ? (
+            <option value="">No saved rundowns</option>
+          ) : (
+            serverRundowns.map(item => (
+              <option key={item.id} value={item.id}>{item.displayName || item.filename || `Rundown ${item.id}`}</option>
+            ))
+          )}
+        </select>
+        <button className="btn btn--secondary btn--sm" onClick={onOpenFromProject} disabled={!projectReady || !selectedServerRundownId || projectLoading}>
+          {projectLoading ? 'Opening…' : 'Open from project'}
+        </button>
+        <button className="btn btn--primary btn--sm" onClick={onSaveToProject} disabled={!projectReady || !filename.trim() || projectSaving}>
+          {projectSaving ? 'Saving…' : 'Save to project'}
+        </button>
       </div>
       <div className="planner-insert-bar" role="toolbar" aria-label="Insert block">
         <span className="planner-insert-bar__label">Insert:</span>
@@ -686,6 +726,10 @@ export function PlannerPage() {
   const [editingFilename, setEditingFilename] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [showNormalizeModal, setShowNormalizeModal] = useState(false);
+  const [serverRundowns, setServerRundowns] = useState([]);
+  const [selectedServerRundownId, setSelectedServerRundownId] = useState('');
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [projectLoading, setProjectLoading] = useState(false);
   // blockId → parsed blocks from an included file (session-only, not persisted/exported)
   const [includeContents, setIncludeContents] = useState({});
 
@@ -698,6 +742,31 @@ export function PlannerPage() {
 
   const saveTimer = useRef(null);
 
+  const loadServerRundowns = useCallback(async () => {
+    if (!backendUrl || !sessionToken) {
+      setServerRundowns([]);
+      setSelectedServerRundownId('');
+      return;
+    }
+    try {
+      const res = await fetch(`${backendUrl}/file?type=rundown`, {
+        headers: { Authorization: 'Bearer ' + sessionToken },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const list = Array.isArray(data.files) ? data.files : [];
+      setServerRundowns(list);
+      if (list.length === 0) {
+        setSelectedServerRundownId('');
+      } else if (!list.some(item => String(item.id) === String(selectedServerRundownId))) {
+        setSelectedServerRundownId(String(list[0].id));
+      }
+    } catch {
+      setServerRundowns([]);
+      setSelectedServerRundownId('');
+    }
+  }, [backendUrl, sessionToken, selectedServerRundownId]);
+
   useEffect(() => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -709,6 +778,10 @@ export function PlannerPage() {
   useEffect(() => {
     try { localStorage.setItem(PLANNER_FILENAME_KEY, filename); } catch {}
   }, [filename]);
+
+  useEffect(() => {
+    loadServerRundowns();
+  }, [loadServerRundowns]);
 
   function updateBlock(id, patch) {
     setBlocks(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
@@ -798,6 +871,78 @@ export function PlannerPage() {
     URL.revokeObjectURL(url);
     setDirty(false);
     showToast('Exported!', 'success');
+  }
+
+  function extensionForFormat(format) {
+    if (format === 'txt') return '.txt';
+    if (format === 'vtt') return '.vtt';
+    return '.md';
+  }
+
+  function normalizeProjectFilename(name, format = 'md') {
+    const trimmed = (name || '').trim();
+    const extension = extensionForFormat(format);
+    if (!trimmed) return `rundown${extension}`;
+    return new RegExp(`${extension.replace('.', '\\.')}$`, 'i').test(trimmed)
+      ? trimmed
+      : `${trimmed}${extension}`;
+  }
+
+  async function handleSaveToProject() {
+    if (!backendUrl || !sessionToken) return;
+    setProjectSaving(true);
+    try {
+      const text = serializePlan(blocks);
+      const targetName = normalizeProjectFilename(filename, 'md');
+      const method = selectedServerRundownId ? 'PUT' : 'POST';
+      const url = `${backendUrl}/file${selectedServerRundownId ? `/${selectedServerRundownId}` : ''}`;
+      const res = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + sessionToken,
+        },
+        body: JSON.stringify({ filename: targetName, content: text, type: 'rundown', format: 'md' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      const item = data.file;
+      if (item?.id) {
+        setSelectedServerRundownId(String(item.id));
+        setServerRundowns(prev => {
+          const next = prev.filter(existing => String(existing.id) !== String(item.id));
+          return [{ id: item.id, filename: item.filename, displayName: item.displayName || targetName, type: item.type, format: item.format }, ...next];
+        });
+      }
+      setDirty(false);
+      showToast(`Saved to project as ${targetName}`, 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to save rundown to project', 'error');
+    } finally {
+      setProjectSaving(false);
+    }
+  }
+
+  async function handleOpenFromProject() {
+    if (!backendUrl || !sessionToken || !selectedServerRundownId) return;
+    setProjectLoading(true);
+    try {
+      const id = Number(selectedServerRundownId);
+      const res = await fetch(`${backendUrl}/file/${id}`, {
+        headers: { Authorization: 'Bearer ' + sessionToken },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const text = await res.text();
+      const selected = serverRundowns.find(item => String(item.id) === String(id)) || null;
+      setBlocks(deserializePlan(text));
+      setFilename(normalizeProjectFilename(selected?.displayName || selected?.filename || filename));
+      setDirty(false);
+      showToast('Opened rundown from project', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to open rundown from project', 'error');
+    } finally {
+      setProjectLoading(false);
+    }
   }
 
   function handleToDashboard() {
@@ -923,6 +1068,14 @@ export function PlannerPage() {
         onInsert={type => {
           insertBlock(null, makeBlock(type));
         }}
+        projectReady={Boolean(backendUrl && sessionToken)}
+        projectSaving={projectSaving}
+        projectLoading={projectLoading}
+        serverRundowns={serverRundowns}
+        selectedServerRundownId={selectedServerRundownId}
+        onSelectedServerRundownChange={setSelectedServerRundownId}
+        onSaveToProject={handleSaveToProject}
+        onOpenFromProject={handleOpenFromProject}
       />
       {showNormalizeModal && (
         <NormalizeLinesModal

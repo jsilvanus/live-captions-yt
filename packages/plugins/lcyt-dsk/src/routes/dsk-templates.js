@@ -29,6 +29,10 @@
  * @param {object} relayManager
  */
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import {
   saveTemplate,
   listTemplates,
@@ -37,7 +41,8 @@ import {
   findTemplatesWithAnyElementIds,
   autoRenameConflictingIds,
 } from '../db/dsk-templates.js';
-import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus, startViewportStream, stopViewportStream } from '../renderer.js';
+import { createThumbnail, deleteThumbnail, getThumbnail, listThumbnails, updateThumbnail } from '../db/thumbnails.js';
+import { updateTemplate, startRtmpStream, stopRtmpStream, broadcastData, getStatus, startViewportStream, stopViewportStream, renderTemplateToPng } from '../renderer.js';
 import { getViewport } from '../db/viewports.js';
 import logger from 'lcyt/logger';
 import { editorAuthOrBearer } from '../middleware/editor-auth.js';
@@ -47,6 +52,32 @@ const LOCAL_RTMP_BASE = process.env.DSK_LOCAL_RTMP || process.env.RADIO_LOCAL_RT
 const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
+const THUMBNAIL_ROOT = process.env.DSK_THUMBNAILS_DIR || resolve(process.cwd(), 'data', 'dsk-thumbnails');
+const DSK_LOCAL_SERVER = (process.env.DSK_LOCAL_SERVER || process.env.DSK_PAGE_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const thumbnailRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many thumbnail requests' },
+});
+
+function thumbnailStorageDir(apiKey) {
+  const dir = join(THUMBNAIL_ROOT, String(apiKey || 'default').replace(/[^a-zA-Z0-9._-]+/g, '_'));
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function slugify(value) {
+  return String(value || 'thumbnail')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'thumbnail';
+}
+
+function makeThumbnailFilename(name) {
+  return `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
+}
 
 export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus) {
   const router = Router();
@@ -241,6 +272,129 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       logger.error(`[dsk-templates] broadcast error:`, err.message);
       res.status(500).json({ error: 'Failed to broadcast data' });
     }
+  });
+
+  // GET /dsk/:apikey/thumbnails — list cached thumbnails for this key
+  router.get('/:apikey/thumbnails', combinedAuth, thumbnailRateLimit, (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const rows = listThumbnails(db, req.params.apikey);
+    const thumbnails = rows.map(({ storage_path, ...rest }) => rest);
+    res.json({ thumbnails });
+  });
+
+  // POST /dsk/:apikey/thumbnails — render a template to a cached PNG thumbnail
+  router.post('/:apikey/thumbnails', combinedAuth, thumbnailRateLimit, async (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const { name, template, templateId, width, height } = req.body || {};
+    const apiKey = req.params.apikey;
+    const widthPx = Number(width) || 1920;
+    const heightPx = Number(height) || 1080;
+
+    let templatePayload = template;
+    let resolvedTemplateId = templateId != null ? Number(templateId) : null;
+    if (!Number.isInteger(resolvedTemplateId)) resolvedTemplateId = null;
+
+    if (resolvedTemplateId != null) {
+      const row = getTemplate(db, resolvedTemplateId, apiKey);
+      if (!row) return res.status(404).json({ error: 'Template not found' });
+      templatePayload = row.templateJson;
+    }
+
+    if (!templatePayload || typeof templatePayload !== 'object') {
+      return res.status(400).json({ error: 'template must be a JSON object' });
+    }
+
+    try {
+      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: widthPx, height: heightPx });
+      const dir = thumbnailStorageDir(apiKey);
+      const fileName = makeThumbnailFilename(name);
+      const fullPath = join(dir, fileName);
+      writeFileSync(fullPath, png);
+      const id = createThumbnail(db, {
+        apiKey,
+        templateId: resolvedTemplateId,
+        name: name || 'thumbnail',
+        storagePath: fullPath,
+        width: widthPx,
+        height: heightPx,
+        sizeBytes: png.byteLength,
+      });
+      res.status(201).json({ ok: true, thumbnail: { id, name: name || 'thumbnail', width: widthPx, height: heightPx, sizeBytes: png.byteLength } });
+    } catch (err) {
+      logger.error('[dsk-templates] thumbnail render error:', err.message);
+      res.status(500).json({ error: 'Failed to create thumbnail' });
+    }
+  });
+
+  // GET /dsk/:apikey/thumbnails/:id — fetch thumbnail metadata or image bytes
+  router.get('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+    const row = getThumbnail(db, id, req.params.apikey);
+    if (!row) return res.status(404).json({ error: 'Thumbnail not found' });
+    if (req.query.meta === '1' || req.query.meta === 'true') {
+      const { storage_path, ...safe } = row;
+      return res.json({ thumbnail: safe });
+    }
+    if (!existsSync(row.storage_path)) return res.status(404).json({ error: 'Thumbnail file not found' });
+    res.set('Content-Type', 'image/png');
+    res.sendFile(row.storage_path);
+  });
+
+  // PUT /dsk/:apikey/thumbnails/:id — refresh a thumbnail from the current template
+  router.put('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, async (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+    const existing = getThumbnail(db, id, req.params.apikey);
+    if (!existing) return res.status(404).json({ error: 'Thumbnail not found' });
+    const { name, template, templateId, width, height } = req.body || {};
+    const apiKey = req.params.apikey;
+
+    let templatePayload = template;
+    let resolvedTemplateId = templateId != null ? Number(templateId) : existing.template_id;
+    if (resolvedTemplateId != null && Number.isInteger(resolvedTemplateId)) {
+      const row = getTemplate(db, resolvedTemplateId, apiKey);
+      if (!row) return res.status(404).json({ error: 'Template not found' });
+      templatePayload = row.templateJson;
+    }
+    if (!templatePayload || typeof templatePayload !== 'object') {
+      return res.status(400).json({ error: 'template must be a JSON object' });
+    }
+
+    try {
+      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
+      const dir = thumbnailStorageDir(apiKey);
+      const fileName = makeThumbnailFilename(name || existing.name || 'thumbnail');
+      const fullPath = join(dir, fileName);
+      writeFileSync(fullPath, png);
+      if (existsSync(existing.storage_path)) unlinkSync(existing.storage_path);
+      updateThumbnail(db, id, apiKey, {
+        name: name || existing.name || 'thumbnail',
+        templateId: resolvedTemplateId,
+        width: Number(width) || existing.width || 1920,
+        height: Number(height) || existing.height || 1080,
+        sizeBytes: png.byteLength,
+        storagePath: fullPath,
+      });
+      res.json({ ok: true, thumbnail: { id, name: name || existing.name || 'thumbnail', width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080, sizeBytes: png.byteLength } });
+    } catch (err) {
+      logger.error('[dsk-templates] thumbnail update error:', err.message);
+      res.status(500).json({ error: 'Failed to update thumbnail' });
+    }
+  });
+
+  // DELETE /dsk/:apikey/thumbnails/:id — remove a cached thumbnail
+  router.delete('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, (req, res) => {
+    if (!checkOwner(req, res, req.params.apikey)) return;
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
+    const row = getThumbnail(db, id, req.params.apikey);
+    if (!row) return res.status(404).json({ error: 'Thumbnail not found' });
+    if (row.storage_path && existsSync(row.storage_path)) unlinkSync(row.storage_path);
+    deleteThumbnail(db, id, req.params.apikey);
+    res.json({ ok: true });
   });
 
   // GET /dsk/:apikey/renderer/status — health check: is the renderer running for this key?

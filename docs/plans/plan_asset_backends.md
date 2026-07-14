@@ -1,7 +1,7 @@
 ---
 id: plan/asset_backends
 title: "Asset Backends — Server-Side Rundowns + Graphics-Editor Thumbnails"
-status: draft
+status: implemented
 summary: "Gives real backends to two of the Assets page's placeholder cards. (1) Rundowns are caption files: stored in caption_files with type='rundown' (same serialized format the planner produces and the player reads via file-include), backed by a new user-facing file authoring/edit API since caption files are currently created only as a session side-effect. The planner gains Save/Open-from-project; editing is overwrite-in-place. (2) Thumbnails are created and edited in the graphics editor: a thumbnail is a still-PNG render of a DSK template (reusing renderTemplateToHtml + Playwright screenshot), stored in a new thumbnails table that keeps both the source template reference (so it stays re-editable) and the cached PNG. The third placeholder, Stored videos, is a full recording pipeline specced separately in plan_recording_vod.md."
 related: plan/assets_page, plan/broadcasts, plan/recording_vod
 ---
