@@ -31,6 +31,7 @@ export default defineConfig({
     ]
   },
   server: {
+    port: 5174,
     headers: {
       'Permissions-Policy': 'on-device-speech-recognition=*',
       'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',

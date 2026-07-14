@@ -123,6 +123,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
   //   2. Otherwise, if the user is authenticated (user auth or minimal-mode config) or the
   //      user previously enabled "auto-connect", reload the persisted config so the session
   //      survives a page refresh.
+  //   3. If user is authenticated but has no API key, try to get/create one automatically.
   useEffect(() => {
     const persisted = session.getPersistedConfig();
     const shouldConnectFromPersisted = !!(persisted?.backendUrl && hasProjectSessionConfig(persisted) && (session.getAutoConnect() || hasAuthenticatedSession()));
