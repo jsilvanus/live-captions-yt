@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { Redirect } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
+import { hasProjectSessionConfig } from '../lib/projectSession.js';
 
 // Mirrors main.jsx's lazyImport() chunk-reload-on-stale-deploy behavior,
 // duplicated locally (rather than imported from main.jsx) so this module has
@@ -37,9 +38,9 @@ const LiveTab             = lazyImport(() => import('./broadcast/LiveTab.jsx').t
  *     directly, since there's no multi-project concept to summarize.
  */
 export function RootRoute() {
-  const { connected, apiKey, backendFeatures } = useSessionContext();
+  const { connected, apiKey, projectId, backendFeatures } = useSessionContext();
 
-  if (connected && apiKey) {
+  if (connected && (apiKey || projectId)) {
     return (
       <Suspense fallback={null}>
         <ProjectSettingsPage implicitKey />

@@ -151,7 +151,7 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
 }
 
 export function ProjectsPage() {
-  const { user, token, backendUrl, loading: authLoading, logout } = useUserAuth();
+  const { user, token, backendUrl, loading: authLoading, logout, requestProjectAccessToken } = useUserAuth();
   const [, navigate] = useLocation();
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
@@ -191,8 +191,20 @@ export function ProjectsPage() {
     navigate(`/projects/${project.key}`);
   }
 
-  function handleUseProject(project) {
-    activateProject(backendUrl, project.key);
+  async function handleUseProject(project) {
+    if (!backendUrl || !token) return;
+    try {
+      if (typeof requestProjectAccessToken === 'function') {
+        const data = await requestProjectAccessToken(project.key);
+        activateProject(backendUrl, project.key, data.projectAccessToken, {
+          projectRole: data.projectRole || null,
+        });
+        return;
+      }
+      activateProject(backendUrl, project.key, null);
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   if (authLoading) {
