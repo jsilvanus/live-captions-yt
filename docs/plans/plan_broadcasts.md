@@ -2,7 +2,7 @@
 id: plan/broadcasts
 title: "Broadcasts — First-Class Intra-Project Broadcast Entity (Schedule + Asset Linkage)"
 status: draft
-summary: "Introduces Broadcast as a first-class entity inside a project — an interface to the project's YouTube Live schedule and a place to gather the assets for one cast. Today a 'broadcast' exists only ephemerally as a live session plus a historical session_stats row, with every asset keyed flat by api_key and nothing grouping a single casting occasion. This plan adds a broadcasts table (a project has many), a lifecycle (draft → scheduled → live → completed → archived), calendar scheduling from the start, a broadcast_assets join linking reusable assets (graphics/cues/actions/icons/targets/rundown), and a nullable broadcast_id on sessions/session_stats/caption_files so produced content and YouTube casts attach to the broadcast that made them (strictly one session per broadcast; ad-hoc sessions auto-create a broadcast). Broadcasts can be duplicated (and duplicated across projects) without copying produced content. Delete archives (retained indefinitely, never auto-purged); a second delete permanently removes an archived broadcast only once it has been archived past a cooling-off window (default 30d). Supersedes plan_assets_page.md's youtube_video_ids-on-session_stats delta (the ids live on the broadcast instead) and upgrades that page's Broadcasts card from a raw session_stats list into real broadcast records. Later gains two-way sync with YouTube Live scheduling (liveBroadcasts)."
+summary: "Introduces Broadcast as a first-class entity inside a project — an interface to the project's YouTube Live schedule and a place to gather the assets for one cast. Today a 'broadcast' exists only ephemerally as a live session plus a historical session_stats row, with every asset keyed flat by api_key and nothing grouping a single casting occasion. This plan adds a broadcasts table (a project has many), a lifecycle (draft → scheduled → live → completed → archived), calendar scheduling from the start, a broadcast_assets join linking reusable assets (graphics/cues/actions/icons/targets/rundown), and a nullable broadcast_id on sessions/session_stats/caption_files so produced content and YouTube casts attach to the broadcast that made them (strictly one session per broadcast; ad-hoc sessions auto-create a broadcast). Broadcasts can be duplicated (and duplicated across projects, deep-copying the linked reusable assets into the target project via per-asset-type copy routines) without ever copying produced content. Delete archives (retained indefinitely, never auto-purged); a second delete permanently removes an archived broadcast only once it has been archived past a cooling-off window (default 30d). Supersedes plan_assets_page.md's youtube_video_ids-on-session_stats delta (the ids live on the broadcast instead) and upgrades that page's Broadcasts card from a raw session_stats list into real broadcast records. Later gains two-way sync with YouTube Live scheduling (liveBroadcasts)."
 related: plan/assets_page, plan/dashboard_console_redesign, plan/ai_roles_framework, plan/selfservice_config_backend, plan/captions
 ---
 
@@ -172,10 +172,11 @@ has a bound live session rejects a second bind. `POST /live` gains an optional
   transitions to `live`, `actual_start` set. Reject (409) if that broadcast is
   already `live`.
 - **Omitted (ad-hoc / test cast)** → **auto-create** a broadcast for this
-  session (decision) — a `live` row titled from the session/timestamp — so every
-  session always has exactly one broadcast and produced content always attaches.
-  These land as ordinary broadcasts the user can rename, edit, or delete (archive)
-  afterward; junk/test casts are cleaned up the same way as any other.
+  session (decision) — a `live` row with a **timestamp title** (e.g.
+  `"Broadcast 2026-07-14 18:00"`, editable) — so every session always has exactly
+  one broadcast and produced content always attaches. These land as ordinary
+  broadcasts the user can rename, edit, or delete (archive) afterward; junk/test
+  casts are cleaned up the same way as any other.
 
 On session end (`store.onSessionEnd`, `packages/lcyt-backend/src/server.js`):
 `session_stats.broadcast_id` is written, the broadcast → `completed`,
@@ -217,19 +218,30 @@ and duplication **never copies produced content.**
   - **Does NOT copy:** `youtube_video_ids`, `youtube_broadcast_id`,
     `actual_start`/`actual_end`, `session_stats`, or any `caption_files`
     (the produced content). The clone starts `draft`, unbound, with no history.
-  - **Cross-project (`targetApiKey`):** the same rules, plus the linked
-    `asset_ref`s must resolve in the target project. Reusable assets that don't
-    exist there are dropped from the clone (reported in the response), since a
-    graphic/cue id is project-scoped. (Deep-copying the referenced assets
-    themselves into the target project is out of scope here — that belongs to a
-    broader "duplicate project" capability; see below.)
+  - **Cross-project (`targetApiKey`): deep-copy the linked assets (decision).**
+    A reusable `asset_ref` is project-scoped, so for each linked asset that
+    doesn't already exist in the target project, the referenced row is **copied
+    into the target project** (a new row under `targetApiKey`) and the clone's
+    `broadcast_assets` link points at the new id. This needs a per-type copy
+    routine:
+    | `asset_type` | Copy action |
+    |---|---|
+    | `graphic` | Insert a new `dsk_templates` row (new id, `api_key=target`) |
+    | `cue` | Insert a new `cue_rules` row |
+    | `action` | Insert a new `action_defs` row |
+    | `icon` | Insert a new `icons` row **and copy the stored image blob/file** to the target's storage segment |
+    | `target` | Insert a new `caption_targets` row (config only; no live secrets copied beyond what a normal target export carries) |
+    | `rundown` | Copy the referenced `caption_files` (`type='rundown'`) row + its stored content |
+    De-dupe: if an identical asset already exists in the target (same
+    type/name/content hash where cheaply checkable), link the existing one
+    instead of creating a duplicate. Produced content is still **never** copied.
 - **Project duplicate** — cloning a whole project (its config + broadcasts,
-  excluding produced content) is a broader, adjacent capability that reuses the
-  same "copy config, never copy produced" rule and this endpoint's per-broadcast
-  logic. It is **noted here, specced elsewhere** (a projects-level plan), so the
-  broadcast duplication logic is designed to compose into it (a project-duplicate
-  walks the source project's broadcasts and calls the same clone routine with the
-  new `targetApiKey`).
+  excluding produced content) is a broader, adjacent capability. It **reuses
+  exactly the per-type copy routines above** plus this endpoint's per-broadcast
+  clone logic (walk the source project's broadcasts, clone each with the new
+  `targetApiKey`). It is **noted here, specced elsewhere** (a projects-level
+  plan); building the deep-copy routines here is what makes that composition
+  possible.
 
 ## Frontend
 
@@ -300,13 +312,13 @@ direction, delivered in phases so v1 doesn't block on it:
    ships a calendar view (+ agenda/list toggle), not just a sorted list.
    Recurrence (weekly service) is still deferred, but the calendar UI is not.
 
-### Still open (smaller)
-
-- **Auto-created broadcast title** — timestamp (`"Broadcast 2026-07-14 18:00"`),
-  or blank/"Untitled" for the user to fill? (Lean: timestamp, editable.)
-- **Cross-project duplicate with missing assets** — drop unresolved reusable
-  links silently-but-reported (current spec), or block the duplicate until the
-  target project has them? (Lean: drop + report.)
+5. **Auto-created broadcast title → timestamp, editable** (e.g.
+   `"Broadcast 2026-07-14 18:00"`).
+6. **Cross-project duplicate → deep-copy the linked assets.** Missing reusable
+   assets are copied into the target project (per-type copy routines above), not
+   dropped or blocked. This deliberately brings the per-asset-type copy logic
+   into this plan, so the future "duplicate project" capability composes on top
+   of it. Produced content is still never copied.
 
 ## Out of scope (v1)
 
