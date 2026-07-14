@@ -9,22 +9,46 @@ related: plan/assets_page, plan/broadcasts, plan/asset_backends, plan/mediamtx, 
 # Recording & VOD Pipeline — Stored Videos from Broadcasts
 
 Backs the third placeholder card from `plan_assets_page.md` (Stored videos) with
-a real recording/VOD pipeline. This is the largest of the missing-backend pieces
-and is deliberately its own plan.
+a real recording/VOD pipeline. This is the largest missing backend piece for the
+Assets experience and is deliberately its own plan.
+
+## Motivation
+
+Today the platform can produce live captions and stream them, but it has no
+persisted, user-accessible record of a completed broadcast. That means a project
+cannot:
+
+- opt a specific broadcast into recording,
+- keep a post-broadcast VOD for later playback,
+- browse stored recordings from the Assets page,
+- or tie a recording back to the broadcast that generated it.
+
+This plan closes that gap by adding a storage-backed recording pipeline that is
+opt-in per broadcast, works with no S3 configuration, and exposes recordings as
+first-class assets.
+
+## Scope
+
+- Add a per-broadcast recording toggle (`record_enabled`) on broadcasts.
+- Start recording for opted-in broadcasts via MediaMTX native recording.
+- Persist recording metadata in a new `videos` table.
+- Serve HLS VOD playlists and segments through the backend, with local storage as
+the default and S3 as an optional transport.
+- Surface recordings in the Assets page and on the broadcast detail view.
 
 ## Decisions (locked)
 
 - **Recorder → MediaMTX native recording first**; worker-daemon ffmpeg recorder
-  a **later stage**. Both sit behind one swappable recorder interface.
+  is a **later stage**. Both sit behind one swappable recorder interface.
 - **Trigger → opt-in per broadcast.** Recording happens only for broadcasts that
   enabled it — no storing every ad-hoc/test cast.
 - **Output → HLS VOD** (segmented fMP4 + playlist), streamable in-browser.
 - **Storage → S3 when configured, local-disk fallback otherwise.** Recordings
   are **not** hard-tied to S3: MediaMTX always writes segments to a local record
   dir first; if S3 is configured they upload there, and if it isn't they stay on
-  local disk and the backend serves them. Same "local is the default, S3 is
-  opt-in" behaviour the file storage already has (`FILE_STORAGE` defaults to
-  `local`) — so the platform records and plays back with no S3 configured.
+  local disk and the backend serves them. This matches the existing file-storage
+  default (`FILE_STORAGE` defaults to `local`) so recording works with no S3
+  configured.
 
 ## Architecture
 
@@ -61,8 +85,8 @@ config patch, not new transport code:
     (e.g. `RECORDINGS_DIR`, defaulting like `FILES_DIR`); the backend serves the
     playlist + segments directly. `videos.storage_type='local'`, `storage_prefix`
     is the local path.
-  This selection reuses the **same storage-adapter abstraction as `lcyt-files`**
-  (local/s3), so "record without S3" is the default, not a special case.
+    This selection reuses the **same storage-adapter abstraction as `lcyt-files`**
+    (local/s3), so "record without S3" is the default, not a special case.
 - On session **end**, finalize: stop recording (patch path back), ensure the last
   segments are uploaded (S3) or flushed (local), write the `videos` row
   (`status='ready'`, duration, size).
@@ -136,14 +160,51 @@ recordings valid, though with broadcast auto-create every recording has one.
 - **Broadcast detail** (`plan_broadcasts.md`) — shows the broadcast's recording
   inline, and a **Record this broadcast** toggle writing `record_enabled`.
 
-## Phasing
+## Implementation milestones
 
 1. **Phase 1 (this plan's core):** MediaMTX recorder + S3 VOD upload + `videos`
    index + `record_enabled` opt-in + playback + Assets card.
 2. **Phase 2 (later):** worker-daemon ffmpeg recorder behind the same interface.
-3. Deferred: in-browser trimming/clipping, automatic transcodes/renditions,
+3. **Deferred:** in-browser trimming/clipping, automatic transcodes/renditions,
    thumbnails-from-video (thumbnails come from the graphics editor — see
    `plan_asset_backends.md`).
+
+## Repository touchpoints
+
+- `packages/plugins/lcyt-rtmp/src/mediamtx-client.js` — patch path config for
+  native recording.
+- `packages/lcyt-backend/src/routes/live.js` — start/stop recording when a
+  broadcast transitions live/completes.
+- `packages/lcyt-backend/src/routes/videos.js` and `src/db/videos.js` — new
+  recording metadata and playlist endpoints.
+- `packages/lcyt-backend/src/db/schema.js` — `videos` table migration and
+  `broadcasts.record_enabled` column.
+- `docker/mediamtx.yml` — recording defaults and output path configuration.
+- `packages/lcyt-web/src/components/AssetsPage.jsx` and broadcast detail UI —
+  render the stored-video card and recording toggle.
+- `packages/lcyt-worker-daemon/` — phase-2 ffmpeg-based recorder implementation.
+
+## Open questions
+
+- Should deletion of a broadcast archive the recording as well, or should the
+  recording retain an independent lifecycle? The current decision is to keep the
+  recording and null its link to the deleted broadcast.
+- For local fallback playback, should the backend stream segments directly or use
+  a small static-file route with caching headers? The plan assumes the backend
+  serves them directly for now.
+- Should the initial UI include a per-video status badge for `processing` while
+  MediaMTX finalizes and uploads segments? A visible badge is likely useful even
+  if the backend can expose a simple `status` field.
+
+## Testing and acceptance criteria
+
+- A broadcast with `record_enabled=1` starts recording when it becomes live.
+- A completed recording produces a `videos` row with `status='ready'`, a playlist
+  path, and a non-zero duration/size when the stream contains content.
+- Local storage mode works without S3 configured; S3 mode uploads segments and
+  playlist to the configured prefix.
+- The Assets page lists the recording row and can open an HLS player for it.
+- The broadcast detail view can toggle recording for the current broadcast.
 
 ## Cross-plan alignment
 
