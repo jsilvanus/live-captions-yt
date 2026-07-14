@@ -5,7 +5,12 @@ import { SttServiceIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
 import { SttPanel } from '../panels/SttPanel.jsx';
 
-const PROVIDER_LABELS = { google: 'Google Cloud Speech-to-Text', whisper_http: 'Whisper (HTTP)', openai: 'OpenAI Whisper' };
+const PROVIDER_LABELS = {
+  webspeech: 'Web Speech API (browser)',
+  google: 'Google Cloud Speech-to-Text',
+  whisper_http: 'Whisper (HTTP)',
+  openai: 'OpenAI Whisper'
+};
 
 /**
  * SttSection — embeds the real (session-scoped) server-side STT config panel,

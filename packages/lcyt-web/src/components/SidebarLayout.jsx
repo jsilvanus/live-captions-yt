@@ -33,9 +33,14 @@ function MobileDrawer({ open, onClose }) {
 
 function ReconnectBanner() {
   const { reconnecting, reconnectNow } = useSessionContext();
-  if (!reconnecting) return null;
   return (
-    <div className="reconnect-banner" role="alert" aria-live="polite">
+    <div
+      className="reconnect-banner"
+      role="alert"
+      aria-live="polite"
+      aria-hidden={!reconnecting}
+      style={{ opacity: reconnecting ? 1 : 0, pointerEvents: reconnecting ? 'auto' : 'none' }}
+    >
       <span className="reconnect-banner__icon" aria-hidden="true">🔄</span>
       <span className="reconnect-banner__msg">Session disconnected — reconnecting…</span>
       <button className="reconnect-banner__btn" onClick={reconnectNow}>Reconnect now</button>

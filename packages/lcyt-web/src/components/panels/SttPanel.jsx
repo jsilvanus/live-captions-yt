@@ -6,6 +6,7 @@
  *   onChange: (config) => void
  */
 const PROVIDERS = [
+  { value: 'webspeech',    label: 'Web Speech API (browser, no server needed)' },
   { value: 'google',       label: 'Google Cloud Speech-to-Text' },
   { value: 'whisper_http', label: 'Whisper (HTTP)' },
   { value: 'openai',       label: 'OpenAI Whisper' },
@@ -25,6 +26,8 @@ export function SttPanel({ config = {}, onChange }) {
     confidenceThreshold = 0,
   } = config;
 
+  const isWebSpeech = provider === 'webspeech';
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
@@ -39,6 +42,11 @@ export function SttPanel({ config = {}, onChange }) {
             <option key={p.value} value={p.value}>{p.label}</option>
           ))}
         </select>
+        {isWebSpeech && (
+          <p className="settings-field__hint" style={{ marginTop: 4, color: 'var(--color-success)' }}>
+            Uses your browser's built-in speech recognition (no server configuration needed).
+          </p>
+        )}
       </div>
 
       <div>
@@ -53,38 +61,42 @@ export function SttPanel({ config = {}, onChange }) {
         />
       </div>
 
-      <div>
-        <label className="settings-field__label">Audio source</label>
-        <select
-          className="settings-field__input"
-          value={audioSource}
-          onChange={e => onChange({ ...config, audioSource: e.target.value })}
-          style={{ width: '100%' }}
-        >
-          {AUDIO_SOURCES.map(s => (
-            <option key={s.value} value={s.value}>{s.label}</option>
-          ))}
-        </select>
-      </div>
+      {!isWebSpeech && (
+        <>
+          <div>
+            <label className="settings-field__label">Audio source</label>
+            <select
+              className="settings-field__input"
+              value={audioSource}
+              onChange={e => onChange({ ...config, audioSource: e.target.value })}
+              style={{ width: '100%' }}
+            >
+              {AUDIO_SOURCES.map(s => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
 
-      <div>
-        <label className="settings-field__label">
-          Confidence threshold: {(confidenceThreshold * 100).toFixed(0)}%
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={1}
-          step={0.05}
-          value={confidenceThreshold}
-          onChange={e => onChange({ ...config, confidenceThreshold: parseFloat(e.target.value) })}
-          style={{ width: '100%' }}
-        />
-        <p className="settings-field__hint" style={{ marginTop: 4 }}>
-          Transcripts below this confidence score are silently discarded.
-          Set to 0 to accept all transcripts.
-        </p>
-      </div>
+          <div>
+            <label className="settings-field__label">
+              Confidence threshold: {(confidenceThreshold * 100).toFixed(0)}%
+            </label>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={confidenceThreshold}
+              onChange={e => onChange({ ...config, confidenceThreshold: parseFloat(e.target.value) })}
+              style={{ width: '100%' }}
+            />
+            <p className="settings-field__hint" style={{ marginTop: 4 }}>
+              Transcripts below this confidence score are silently discarded.
+              Set to 0 to accept all transcripts.
+            </p>
+          </div>
+        </>
+      )}
     </div>
   );
 }
