@@ -62,10 +62,11 @@ export function createCorsMiddleware(store) {
       method === 'OPTIONS';
 
     if (isPermissive) {
+      // For permissive routes, always set CORS headers to allow any origin (API key is the real gate)
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
+      res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
       if (origin) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-        res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
-        res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
         res.setHeader('Access-Control-Allow-Credentials', 'true');
       }
       if (method === 'OPTIONS') {
