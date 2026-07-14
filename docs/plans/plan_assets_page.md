@@ -8,6 +8,15 @@ related: plan/dashboard_console_redesign, plan/ai_roles_framework, plan/cues, pl
 
 # Assets Page — Content Library of Project Assets
 
+> **Superseded in part by `plan_broadcasts.md`:** that plan makes Broadcast a
+> first-class entity. Its YouTube ids and identity live on the `broadcasts`
+> table, not on `session_stats` — so this plan's `session_stats.youtube_video_ids`
+> delta (below) is superseded once broadcasts land, and the Broadcasts card
+> lists real broadcast records instead of raw session summaries. If this page
+> ships first, implement the column as written and migrate the ids onto
+> `broadcasts` later; if broadcasts ship first, the card reads `broadcasts`
+> directly and the column is never added.
+
 ## Motivation
 
 `/assets` (`packages/lcyt-web/src/components/AssetsPage.jsx`) is today a
