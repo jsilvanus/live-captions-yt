@@ -192,7 +192,7 @@ export function buildRelayFfmpegUrl(relay) {
  * @param {string} apiKey
  * @param {number} slot  1-4
  * @param {string} targetUrl
- * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null }} [opts]
+ * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop' }} [opts]
  * @returns {object}
  */
 export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program' } = {}) {

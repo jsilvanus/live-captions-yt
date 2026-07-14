@@ -124,7 +124,8 @@ async function startSessionRecording(db, session, { mediamtxClient }) {
   });
   if (!videoResult.ok) return videoResult;
   session.recordingVideoId = videoResult.video.id;
-  const recordingPathName = session.streamKey || session.apiKey;
+  const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(session.apiKey);
+  const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
   const recordingVideoDir = getVideoStorageDir(session.apiKey, videoResult.video.id);
   await configureMediaMtxRecording(mediamtxClient, {
     pathName: recordingPathName,
@@ -147,8 +148,10 @@ async function stopSessionRecording(db, session, { mediamtxClient }) {
     endedAt,
     durationMs: Math.max(0, Date.now() - startedAtMs),
   });
+  const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(session.apiKey);
+  const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
   await configureMediaMtxRecording(mediamtxClient, {
-    pathName: session.streamKey || session.apiKey,
+    pathName: recordingPathName,
     videoDir: getVideoStorageDir(session.apiKey, recordingVideoId),
     enabled: false,
   });
@@ -334,7 +337,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
       });
       if (videoResult.ok) {
         recordingVideo = videoResult.video;
-        const recordingPathName = streamKey || apiKey;
+        const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(apiKey);
+        const recordingPathName = keyRow?.ingest_stream_key || apiKey;
         const recordingVideoDir = getVideoStorageDir(apiKey, recordingVideo.id);
         await configureMediaMtxRecording(mediamtxClient, {
           pathName: recordingPathName,
@@ -538,8 +542,10 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
             endedAt,
             durationMs: Math.max(0, Date.now() - startedAtMs),
           });
+          const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(removed.apiKey);
+          const recordingPathName = keyRow?.ingest_stream_key || removed.apiKey;
           await configureMediaMtxRecording(mediamtxClient, {
-            pathName: removed.streamKey || removed.apiKey,
+            pathName: recordingPathName,
             videoDir: getVideoStorageDir(removed.apiKey, removed.recordingVideoId),
             enabled: false,
           });

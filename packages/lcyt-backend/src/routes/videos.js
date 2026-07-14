@@ -40,6 +40,10 @@ async function streamVideoAsset(req, res, video, relativePath = 'playlist.m3u8')
         const assetBaseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}/${video.id}`;
         return res.send(rewritePlaylistReferences(body, assetBaseUrl));
       }
+      if (assetRes.body) {
+        const { Readable } = await import('node:stream');
+        return Readable.fromWeb(assetRes.body).pipe(res);
+      }
       const buffer = Buffer.from(await assetRes.arrayBuffer());
       return res.send(buffer);
     } catch (err) {
@@ -64,12 +68,10 @@ export function createVideosRouter(auth, db) {
   });
 
   router.post('/', auth, (req, res) => {
-    const { broadcastId, title, status } = req.body || {};
-    const normalizedStatus = status === 'completed' ? 'completed' : 'recording';
+    const { broadcastId, title } = req.body || {};
     const result = startVideoRecording(db, req.session.apiKey, {
       broadcastId: broadcastId || null,
       title: title || undefined,
-      status: normalizedStatus,
       storageType: isS3Enabled() ? 's3' : 'local',
     });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
