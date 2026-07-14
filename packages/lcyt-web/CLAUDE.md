@@ -8,7 +8,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 **Source (`src/`):**
 - `main.jsx` — React entry point; wouter-based routing for sidebar pages and standalone pages
 - `App.jsx` — legacy two-panel caption layout (mounted at `/legacy` and `/captions`)
-- `components/` — React JSX components (see routing table below). Key subdirectories: `sidebar/` (Sidebar, TopBar, StatusPopover, QuickActionsPopover), `dashboard/` (DashboardCard, StatusWidget, SentLogWidget, etc.), `broadcast/` (EncoderTab, StreamTab, YouTubeTab), `dsk-editor/` (TemplatePreview, AnimationEditor, LayerPropertyEditor), `dsk-viewports/` (TextLayersEditor, ImageSettingsTable), `panels/` (TargetsPanel, TranslationPanel, RelayPanel, ServicePanel, DetailsPanel, CeaCaptionsPanel, EmbedPanel, SttPanel, VadPanel, ReviewSummary), `production/` (ConnectionDot), `audio/` (AudioLevelMeter)
+- `components/` — React JSX components (see routing table below). Key subdirectories: `sidebar/` (Sidebar, TopBar, StatusPopover, QuickActionsPopover), `dashboard/` (DashboardCard, StatusWidget, SentLogWidget, etc.), `broadcast/` (EncoderTab, StreamTab, YouTubeTab), `dsk-editor/` (TemplatePreview, AnimationEditor, LayerPropertyEditor), `dsk-viewports/` (TextLayersEditor, ImageSettingsTable), `panels/` (TargetsPanel, TranslationPanel, RelayPanel, ServicePanel, DetailsPanel, CeaCaptionsPanel, EmbedPanel, SttPanel, VadPanel, ReviewSummary), `production/` (ConnectionDot + `workspace/` — the `/production` tileable operator console: `layout.js` pure view/column/row/pane engine + localStorage persistence, `useWorkspaceLayout.js` state/resize hook, `useProductionData.js` real-backend data+actions hook, `Chrome.jsx` header/pills, `WorkspaceGrid.jsx`, and `panes/` for all 14 pane types — cameras/thumbnails/mixer/mixerbtns/monitors/program/youtube/ytpreview/ytmonitor/sent/rundown/chat/controls/lowerthirds — wired to `production/cameras`+`production/mixers`, DSK templates+broadcast, `/cues/rules`, STT, RTMP relay, sent-log, and the `/roles/assistant` prompt), `audio/` (AudioLevelMeter)
 - `contexts/` — React context providers: AppProviders, AudioContext, CaptionContext, ConnectionContext, FileContext, LangContext, SentLogContext, SessionApiContext, SessionContext, ToastContext. Notably: `ConnectionContext` (connection state, health, connect/disconnect), `CaptionContext` (send, sendBatch, sequence, syncOffset), `AudioContext` (audio/STT state and controls), `LangContext` (i18n language provider).
 - `hooks/` — Custom React hooks: useBrowserFileSaving, useDashboardConfig, useEscapeKey, useEventStream, useFileStore, useProjectFeatures, useSentLog, useSession, useToast, useUserAuth, useVariables, useWebSpeech, useWindowEvent. Notably: `useSession` (`BackendCaptionSender` session lifecycle hook; `onConnected` payload includes `token`), `useDashboardConfig` (dashboard panel/layout CRUD, localStorage persistence), `useWebSpeech` (WebSpeech recognition state machine: start, stop, error recovery), `useProjectFeatures` (project feature flag hook), `useUserAuth` (user authentication hook), `useEventStream` (shared authenticated `/events/stream?flat=1` EventSource multiplexer), `useVariables` (`{{ }}` variable snapshot: `GET /variables` + shared `/events/stream` topic subscription + `POST /variables/refresh`, from `lcyt-connectors`).
 - `lib/` — Utilities: activeCodes.js, api.js, device.js, dskEditorAnimation.js, dskEditorGeometry.js, dskEditorPresets.js, fileUtils.js, formatting.js, googleCredential.js, i18n.js, inputLang.js, normalizeLines.js, plannerUtils.js, relayConfig.js, settings.js, settingsIO.js, storageKeys.js, sttConfig.js, targetConfig.js, translate.js, translationConfig.js, viewerUtils.js, youtubeApi.js, youtubeAuth.js. Notably: `storageKeys.js` (normalized localStorage key registry, `lcyt.{category}.{key}` convention), `settingsIO.js` (settings export/import: `downloadSettings`, `importSettings`), `i18n.js` (i18n framework: locale loading, `useLang` hook).
@@ -29,7 +29,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/graphics/editor` | `DskEditorPage` | Visual DSK template editor |
 | `/graphics/control` | `DskControlPage` | DSK broadcast control panel |
 | `/graphics/viewports` | `DskViewportsPage` | DSK viewport management |
-| `/production` | `ProductionOperatorPage` | Production operator control surface |
+| `/production` | `ProductionOperatorPage` | Tileable operator console (`components/production/workspace/`) — Pre-flight/Live Relay/Live Mixer/Captions + custom views |
 | `/production/cameras` | `ProductionCamerasPage` | Camera management |
 | `/production/mixers` | `ProductionMixersPage` | Mixer management |
 | `/production/bridges` | `ProductionBridgesPage` | Bridge instance management |
@@ -157,7 +157,7 @@ Embed pages that own a session (`/embed/audio`, `/embed/input`, `/embed/file-dro
 **Gaps (Low):**
 - **React components** — 30+ leaf components (App, panels, modals, all pages) have no tests.
 - **Embed pages** — BroadcastChannel cross-iframe caption coordination.
-- **Production pages** — `/production/*` operator control surface.
+- **Production pages** — `/production/*` device-manager pages. The `/production` operator console's pure layout engine is covered by `test/production-layout.test.js`; its data hook and pane components are not yet unit-tested.
 
 ---
 
