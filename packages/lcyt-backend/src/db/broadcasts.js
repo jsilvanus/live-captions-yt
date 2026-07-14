@@ -75,8 +75,8 @@ export function listBroadcasts(db, apiKey, { status, includeArchived = false, fr
     clauses.push("status != 'archived'");
   }
   // Calendar range filter on the scheduled window (overlap semantics).
-  if (from) { clauses.push('(scheduled_start IS NULL OR scheduled_start >= ?)'); params.push(from); }
-  if (to)   { clauses.push('(scheduled_start IS NULL OR scheduled_start <= ?)'); params.push(to); }
+  if (from) { clauses.push('(scheduled_start IS NOT NULL AND COALESCE(scheduled_end, scheduled_start) >= ?)'); params.push(from); }
+  if (to)   { clauses.push('(scheduled_start IS NOT NULL AND scheduled_start <= ?)'); params.push(to); }
 
   const rows = db.prepare(
     `SELECT * FROM broadcasts WHERE ${clauses.join(' AND ')}
