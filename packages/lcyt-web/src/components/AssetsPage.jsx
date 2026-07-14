@@ -1,13 +1,12 @@
 /**
  * AssetsPage — `/assets`. A library view across the production assets a project
  * stores and reuses: graphics, global cues/actions, uploaded icons, caption
- * files, and broadcast history.
+ * files, and broadcast history. Uses the same flat card grid layout as SetupHubPage.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { SetupCard, SetupItemRow } from './setup-hub/SetupCard.jsx';
-import { NamedActionsManager } from './NamedActionsManager.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -214,29 +213,20 @@ export function AssetsPage() {
       color: 'accent',
       status: connected ? (loading.actions ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.actions ? 'Loading…' : `${actions.length} action${actions.length === 1 ? '' : 's'}`) : 'Connect',
-      body: (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {!connected ? (
-            <p className="setup-card__empty">Connect to a project to manage named actions.</p>
-          ) : loading.actions ? (
-            <p className="setup-card__empty">Loading…</p>
-          ) : actions.length === 0 ? (
-            <p className="setup-card__empty">No named actions yet.</p>
-          ) : (
-            actions.slice(0, 4).map(action => (
-              <SetupItemRow
-                key={action.slug}
-                name={action.name}
-                meta={`@${action.slug}`}
-                badge={action.definition ? 'macro' : 'empty'}
-              />
-            ))
-          )}
-          <div style={{ marginTop: 4 }}>
-            <NamedActionsManager />
-          </div>
-        </div>
-      ),
+      body: !connected ? (
+        <p className="setup-card__empty">Connect to a project to manage named actions.</p>
+      ) : loading.actions ? (
+        <p className="setup-card__empty">Loading…</p>
+      ) : actions.length === 0 ? (
+        <p className="setup-card__empty">No named actions yet.</p>
+      ) : actions.slice(0, 4).map(action => (
+        <SetupItemRow
+          key={action.slug}
+          name={action.name}
+          meta={`@${action.slug}`}
+          badge={action.definition ? 'macro' : 'empty'}
+        />
+      )),
     },
     {
       key: 'icons',
@@ -367,20 +357,14 @@ export function AssetsPage() {
     },
   ].filter(card => filter === 'all' || card.section === filter);
 
-  const sections = [
-    { id: 'reusable', title: 'Reusable', cards: visibleCards.filter(card => card.section === 'reusable') },
-    { id: 'produced', title: 'Produced', cards: visibleCards.filter(card => card.section === 'produced') },
-    { id: 'placeholder', title: 'Not tracked yet', cards: visibleCards.filter(card => card.section === 'placeholder') },
-  ].filter(section => section.cards.length > 0);
-
   return (
     <div className="setup-hub-page">
       <div className="setup-hub-page__header">
         <h1 className="setup-hub-page__title">Assets</h1>
       </div>
       <p className="setup-hub-page__desc">
-        A library view of the content this project has accumulated, with reusable
-        assets in one place and produced content in another.
+        A library view of the content this project has accumulated across reusable
+        and produced assets.
       </p>
 
       <div className="setup-hub-page__pills">
@@ -396,29 +380,24 @@ export function AssetsPage() {
         ))}
       </div>
 
-      {sections.map(section => (
-        <section key={section.id} style={{ marginTop: 24 }}>
-          <h2 style={{ margin: '0 0 12px', fontSize: 16, fontWeight: 600 }}>{section.title}</h2>
-          <div className="setup-hub-page__grid">
-            {section.cards.map(card => (
-              <SetupCard
-                key={card.key}
-                id={card.key}
-                icon={card.icon}
-                color={card.color}
-                title={card.title}
-                description={card.description}
-                status={card.status}
-                statusLabel={card.statusLabel}
-                placeholder={card.placeholder}
-                headerAction={card.headerAction}
-              >
-                {card.body}
-              </SetupCard>
-            ))}
-          </div>
-        </section>
-      ))}
+      <div className="setup-hub-page__grid">
+        {visibleCards.map(card => (
+          <SetupCard
+            key={card.key}
+            id={card.key}
+            icon={card.icon}
+            color={card.color}
+            title={card.title}
+            description={card.description}
+            status={card.status}
+            statusLabel={card.statusLabel}
+            placeholder={card.placeholder}
+            headerAction={card.headerAction}
+          >
+            {card.body}
+          </SetupCard>
+        ))}
+      </div>
 
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 20 }}>
         Looking for device/service configuration instead? See <Link href="/setup">Setup</Link>.

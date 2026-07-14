@@ -29,15 +29,18 @@ export function createApi(senderRef, backendUrlRef) {
     });
 
     if (!res.ok) {
+      let errorMessage = `Request failed (${res.status})`;
       if (parseErrorBody) {
         try {
           const err = await res.json();
-          throw new Error(err.error || `Request failed (${res.status})`);
-        } catch (parseErr) {
-          throw new Error(`Request failed (${res.status})`);
+          if (err.error) {
+            errorMessage = err.error;
+          }
+        } catch {
+          // JSON parsing failed, keep generic message
         }
       }
-      throw new Error(`Request failed (${res.status})`);
+      throw new Error(errorMessage);
     }
 
     try {
