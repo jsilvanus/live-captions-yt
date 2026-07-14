@@ -185,6 +185,8 @@ export function DskEditorPage() {
   const [aspectLock, setAspectLock]   = useState(true);
   const [status, setStatus]           = useState('');
   const [loading, setLoading]         = useState(false);
+  const [thumbnails, setThumbnails]   = useState([]);
+  const [thumbnailLoading, setThumbnailLoading] = useState(false);
 
   // ── Responsive layout ──────────────────────────────────────────────────────
   // Below this width the three-column layout (templates | canvas | properties)
@@ -428,7 +430,20 @@ export function DskEditorPage() {
     } catch (err) { setStatus(`Error loading templates: ${err.message}`); }
   }, [serverUrl, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
+  const fetchThumbnails = useCallback(async () => {
+    if (!serverUrl || !apiKey) return;
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/thumbnails`);
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setThumbnails(data.thumbnails || []);
+    } catch (err) {
+      setThumbnails([]);
+      setStatus(prev => prev ? prev : `Error loading thumbnails: ${err.message}`);
+    }
+  }, [serverUrl, apiKey]);
+
+  useEffect(() => { fetchTemplates(); fetchThumbnails(); }, [fetchTemplates, fetchThumbnails]);
 
   const loadImages = useCallback(async () => {
     if (!serverUrl || !apiKey) return;
@@ -563,9 +578,68 @@ export function DskEditorPage() {
       } else {
         isDirty.current = false; setStatus('Saved.');
       }
-      await fetchTemplates();
+      await Promise.all([fetchTemplates(), fetchThumbnails()]);
     } catch (err) { setStatus(`Save error: ${err.message}`);
     } finally { setLoading(false); }
+  }
+
+  async function createThumbnailFromCurrentTemplate() {
+    const name = window.prompt('Thumbnail name', templateName.trim() || 'thumbnail');
+    if (!name || !name.trim()) return;
+    setThumbnailLoading(true); setStatus('Rendering thumbnail…');
+    try {
+      if (selectedId && isDirty.current) {
+        await saveTemplate();
+      }
+      const payload = selectedId ? { name: name.trim(), templateId: selectedId } : { name: name.trim(), template };
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/thumbnails`, {
+        method: 'POST', body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      await fetchThumbnails();
+      setStatus(`Thumbnail created: ${data.thumbnail?.name || name.trim()}`);
+    } catch (err) {
+      setStatus(`Thumbnail error: ${err.message}`);
+    } finally {
+      setThumbnailLoading(false);
+    }
+  }
+
+  async function refreshThumbnail(id) {
+    if (!window.confirm('Re-render this thumbnail from the current template?')) return;
+    setThumbnailLoading(true); setStatus('Refreshing thumbnail…');
+    try {
+      if (selectedId && isDirty.current) {
+        await saveTemplate();
+      }
+      const payload = selectedId ? { templateId: selectedId } : { template };
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/thumbnails/${id}`, {
+        method: 'PUT', body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await fetchThumbnails();
+      setStatus('Thumbnail refreshed.');
+    } catch (err) {
+      setStatus(`Thumbnail error: ${err.message}`);
+    } finally {
+      setThumbnailLoading(false);
+    }
+  }
+
+  async function deleteThumbnailById(id, name) {
+    if (!window.confirm(`Delete thumbnail "${name}"?`)) return;
+    setThumbnailLoading(true); setStatus('Deleting thumbnail…');
+    try {
+      const res = await apiFetch(`/dsk/${encodeURIComponent(apiKey)}/thumbnails/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(await res.text());
+      setThumbnails(prev => prev.filter(item => item.id !== id));
+      setStatus('Thumbnail deleted.');
+    } catch (err) {
+      setStatus(`Thumbnail error: ${err.message}`);
+    } finally {
+      setThumbnailLoading(false);
+    }
   }
 
   async function duplicateTemplate() {
@@ -1124,6 +1198,37 @@ export function DskEditorPage() {
           {status && <span style={{ fontSize: 12, color: status.startsWith('Error') || status.startsWith('Save error') ? 'var(--color-error)' : 'var(--color-success)' }}>{status}</span>}
           <button onClick={duplicateTemplate} disabled={loading} style={btnStyle} title="Save as a new copy with a different name">Duplicate</button>
           <button onClick={saveTemplate} disabled={loading} style={btnPrimaryStyle}>{loading ? 'Saving…' : 'Save'}</button>
+        </div>
+
+        <div style={{ padding: '8px 12px', borderBottom: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'var(--color-text)', fontWeight: 'bold' }}>Thumbnails</span>
+            <button onClick={createThumbnailFromCurrentTemplate} disabled={thumbnailLoading || loading} style={btnPrimaryStyle}>
+              {thumbnailLoading ? 'Rendering…' : 'Create thumbnail'}
+            </button>
+          </div>
+          {thumbnails.length === 0 ? (
+            <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>No thumbnails yet for this project.</div>
+          ) : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {thumbnails.map(item => (
+                <div key={item.id} style={{ border: '1px solid var(--color-border)', borderRadius: 6, padding: 8, minWidth: 220 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{item.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--color-text-muted)', marginBottom: 4 }}>
+                    {item.width}×{item.height} · {item.size_bytes ? `${Math.round(item.size_bytes / 1024)} KB` : '—'}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <button onClick={() => refreshThumbnail(item.id)} disabled={thumbnailLoading || loading} style={btnStyle}>
+                      Refresh
+                    </button>
+                    <button onClick={() => deleteThumbnailById(item.id, item.name)} disabled={thumbnailLoading || loading} style={btnDangerStyle}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Content area */}

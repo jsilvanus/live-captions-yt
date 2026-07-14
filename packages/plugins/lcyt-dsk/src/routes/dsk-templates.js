@@ -52,6 +52,7 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 const THUMBNAIL_ROOT = process.env.DSK_THUMBNAILS_DIR || resolve(process.cwd(), 'data', 'dsk-thumbnails');
+const DSK_LOCAL_SERVER = (process.env.DSK_LOCAL_SERVER || process.env.DSK_PAGE_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 
 function thumbnailStorageDir(apiKey) {
   const dir = join(THUMBNAIL_ROOT, String(apiKey || 'default').replace(/[^a-zA-Z0-9._-]+/g, '_'));
@@ -290,7 +291,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     }
 
     try {
-      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: 'http://localhost:3000', width: widthPx, height: heightPx });
+      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: widthPx, height: heightPx });
       const dir = thumbnailStorageDir(apiKey);
       const fileName = `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
       const fullPath = join(dir, fileName);
@@ -348,7 +349,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     }
 
     try {
-      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: 'http://localhost:3000', width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
+      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
       const dir = thumbnailStorageDir(apiKey);
       const fileName = `${slugify(name || existing.name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
       const fullPath = join(dir, fileName);

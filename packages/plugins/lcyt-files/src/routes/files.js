@@ -11,6 +11,7 @@
  */
 
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
@@ -35,10 +36,21 @@ function contentTypeForFormat(format) {
   return 'text/plain';
 }
 
+function displayNameForStoredKey(storedKey) {
+  const raw = String(storedKey || '').trim();
+  if (!raw) return '';
+  const base = raw.split(/[\\/]/).pop() || raw;
+  return base.replace(/^\d+-/, '').replace(/\.(md|txt|vtt)$/i, '');
+}
+
 function makeStorageKey(filename, fallbackType) {
   const raw = String(filename || '').trim();
   const base = raw ? raw.replace(/[^a-zA-Z0-9._-]+/g, '_') : `${fallbackType || 'file'}`;
-  return `${Date.now()}-${base}`;
+  return `${Date.now()}-${randomUUID()}-${base}`;
+}
+
+function storageKeyTypeFor(type) {
+  return type === 'rundown' ? 'rundown' : 'file';
 }
 
 // Rate limiter: max 60 requests per minute per IP for file operations
@@ -171,21 +183,142 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const session = store.get(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
-    const files = listCaptionFiles(db, session.apiKey).map(row => ({
-      id: row.id,
-      filename: basename(row.filename),   // strip path/prefix for display
-      lang: row.lang,
-      format: row.format,
-      type: row.type,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-      sizeBytes: row.size_bytes,
-    }));
+    const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim() : '';
+    const files = listCaptionFiles(db, session.apiKey)
+      .filter(row => !typeFilter || row.type === typeFilter)
+      .map(row => ({
+        id: row.id,
+        filename: basename(row.filename),   // strip path/prefix for display
+        displayName: displayNameForStoredKey(row.filename),
+        lang: row.lang,
+        format: row.format,
+        type: row.type,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        sizeBytes: row.size_bytes,
+      }));
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ files });
   });
 
-  // GET /file/:id — Download a file (supports Bearer or ?token=)
+  // POST /file — Create a new caption/rundown file with full content
+  router.post('/', fileRateLimit, auth, async (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const { filename, content, format = 'md', type = 'captions', lang } = req.body || {};
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: 'content must be a string' });
+    }
+
+    const requestedName = typeof filename === 'string' && filename.trim()
+      ? filename.trim()
+      : (type === 'rundown' ? 'rundown.md' : 'captions.txt');
+    const storageKey = makeStorageKey(requestedName, storageKeyTypeFor(type));
+    const buffer = Buffer.from(content, 'utf8');
+    const storage = await _resolve(session.apiKey).catch(() => null);
+    const contentType = contentTypeForFormat(format);
+
+    try {
+      if (storage?.putObject) {
+        await storage.putObject(session.apiKey, storageKey, buffer, contentType);
+      } else if (storage?.openAppend) {
+        const handle = storage.openAppend(session.apiKey, storageKey);
+        await handle.write(buffer);
+        await handle.close();
+      } else {
+        throw new Error('Storage adapter does not support object writes');
+      }
+
+      const id = registerCaptionFile(db, {
+        apiKey: session.apiKey,
+        sessionId: session.sessionId ?? null,
+        filename: storageKey,
+        lang: lang ?? null,
+        format,
+        type,
+      });
+      updateCaptionFileSize(db, id, buffer.byteLength);
+      return res.status(201).json({
+        ok: true,
+        file: {
+          id,
+          filename: storageKey,
+          displayName: displayNameForStoredKey(storageKey),
+          type,
+          format,
+          sizeBytes: buffer.byteLength,
+        },
+      });
+    } catch (err) {
+      logger.error('[file] Failed to create caption file:', err.message);
+      return res.status(500).json({ error: 'Failed to save file' });
+    }
+  });
+
+  // PUT /file/:id — Overwrite an existing caption file with full content
+  router.put('/:id', fileRateLimit, auth, async (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
+
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid file id' });
+
+    const row = getCaptionFile(db, id, session.apiKey);
+    if (!row) return res.status(404).json({ error: 'File not found' });
+
+    const { filename, content, format = row.format || 'md', type = row.type || 'captions', lang } = req.body || {};
+    if (typeof content !== 'string') {
+      return res.status(400).json({ error: 'content must be a string' });
+    }
+
+    const requestedName = typeof filename === 'string' && filename.trim()
+      ? filename.trim()
+      : displayNameForStoredKey(row.filename) || 'rundown.md';
+    const storageKey = makeStorageKey(requestedName, storageKeyTypeFor(type));
+    const buffer = Buffer.from(content, 'utf8');
+    const storage = await _resolve(session.apiKey).catch(() => null);
+    const contentType = contentTypeForFormat(format);
+
+    try {
+      if (storage?.putObject) {
+        await storage.putObject(session.apiKey, storageKey, buffer, contentType);
+      } else if (storage?.openAppend) {
+        const handle = storage.openAppend(session.apiKey, storageKey);
+        await handle.write(buffer);
+        await handle.close();
+      } else {
+        throw new Error('Storage adapter does not support object writes');
+      }
+
+      if (storage?.deleteFile && row.filename && row.filename !== storageKey) {
+        await storage.deleteFile(session.apiKey, row.filename).catch(() => {});
+      }
+
+      db.prepare(
+        'UPDATE caption_files SET filename = ?, lang = ?, format = ?, type = ?, updated_at = datetime(\'now\') WHERE id = ? AND api_key = ?'
+      ).run(storageKey, lang ?? row.lang ?? null, format, type, id, session.apiKey);
+      updateCaptionFileSize(db, id, buffer.byteLength);
+      return res.json({
+        ok: true,
+        file: {
+          id,
+          filename: storageKey,
+          displayName: displayNameForStoredKey(storageKey),
+          type,
+          format,
+          sizeBytes: buffer.byteLength,
+        },
+      });
+    } catch (err) {
+      logger.error('[file] Failed to overwrite caption file:', err.message);
+      return res.status(500).json({ error: 'Failed to update file' });
+    }
+  });
+
+  // GET /file/:id — Download a file (****** or ?token=)
   router.get('/:id', fileRateLimit, async (req, res) => {
     // Accept token via Authorization header or ?token= query param (for direct download links)
     let apiKey = null;
