@@ -2,7 +2,7 @@
 id: plan/broadcasts
 title: "Broadcasts — First-Class Intra-Project Broadcast Entity (Schedule + Asset Linkage)"
 status: draft
-summary: "Introduces Broadcast as a first-class entity inside a project — an interface to the project's YouTube Live schedule and a place to gather the assets for one cast. Today a 'broadcast' exists only ephemerally as a live session plus a historical session_stats row, with every asset keyed flat by api_key and nothing grouping a single casting occasion. This plan adds a broadcasts table (a project has many), a lifecycle (draft → scheduled → live → completed → archived), calendar scheduling from the start, a broadcast_assets join linking reusable assets (graphics/cues/actions/icons/targets/rundown), and a nullable broadcast_id on sessions/session_stats/caption_files so produced content and YouTube casts attach to the broadcast that made them (strictly one session per broadcast; ad-hoc sessions auto-create a broadcast). Broadcasts can be duplicated (and duplicated across projects) without copying produced content. Delete archives; archived rows are hard-purged after a retention window (default 30d) by a periodic sweep. Supersedes plan_assets_page.md's youtube_video_ids-on-session_stats delta (the ids live on the broadcast instead) and upgrades that page's Broadcasts card from a raw session_stats list into real broadcast records. Later gains two-way sync with YouTube Live scheduling (liveBroadcasts)."
+summary: "Introduces Broadcast as a first-class entity inside a project — an interface to the project's YouTube Live schedule and a place to gather the assets for one cast. Today a 'broadcast' exists only ephemerally as a live session plus a historical session_stats row, with every asset keyed flat by api_key and nothing grouping a single casting occasion. This plan adds a broadcasts table (a project has many), a lifecycle (draft → scheduled → live → completed → archived), calendar scheduling from the start, a broadcast_assets join linking reusable assets (graphics/cues/actions/icons/targets/rundown), and a nullable broadcast_id on sessions/session_stats/caption_files so produced content and YouTube casts attach to the broadcast that made them (strictly one session per broadcast; ad-hoc sessions auto-create a broadcast). Broadcasts can be duplicated (and duplicated across projects) without copying produced content. Delete archives (retained indefinitely, never auto-purged); a second delete permanently removes an archived broadcast only once it has been archived past a cooling-off window (default 30d). Supersedes plan_assets_page.md's youtube_video_ids-on-session_stats delta (the ids live on the broadcast instead) and upgrades that page's Broadcasts card from a raw session_stats list into real broadcast records. Later gains two-way sync with YouTube Live scheduling (liveBroadcasts)."
 related: plan/assets_page, plan/dashboard_console_redesign, plan/ai_roles_framework, plan/selfservice_config_backend, plan/captions
 ---
 
@@ -76,26 +76,31 @@ draft ──▶ scheduled ──▶ live ──▶ completed ──▶ archived
 - **scheduled** — has a planned start (and optional end); appears on the calendar.
 - **live** — the (single) session bound to it is running.
 - **completed** — the session ended; produced assets + stats + YouTube ids attached.
-- **archived** — soft-deleted: hidden from default lists, retained for a window,
-  then hard-purged (see below).
+- **archived** — soft-deleted: hidden from default lists, retained indefinitely.
+  Never auto-purged; only a manual delete after a cooling-off window removes it
+  (see below).
 
 Transitions are explicit API calls except `live`/`completed`, which are driven
 by the session lifecycle (see "Binding a session" below).
 
-### Delete = archive; archived is purged after retention
+### Delete = archive; hard-delete blocked until archived long enough
 
-Per decision, **`DELETE` archives** rather than hard-deleting (so an accidental
-delete of a real broadcast is recoverable, and test/ad-hoc broadcasts can be
-cleaned up without losing history immediately). An archived broadcast is
-**hard-purged after a retention window** — default **30 days**
-(`BROADCAST_ARCHIVE_RETENTION_DAYS`, env-overridable) — measured from
-`archived_at`. Purge is done by a periodic sweep following the existing
-`SessionStore._sweep()` pattern (`packages/lcyt-backend/src/store.js`): on each
-tick, hard-delete `broadcasts` where `status='archived'` and
-`archived_at < now - retention`. Cascade drops its `broadcast_assets`; the
-nullable `broadcast_id` on produced rows (`session_stats`, `caption_files`) is
-set `NULL` (the produced content itself is *not* deleted — it reverts to the
-"unassigned" bucket).
+Per decision, deletion is two-stage and **nothing is auto-purged** — archived
+broadcasts are retained indefinitely until a human explicitly hard-deletes them:
+
+1. **`DELETE` on a live/scheduled/completed broadcast → archives it**
+   (`status='archived'`, `archived_at=now`). Recoverable via `POST .../restore`.
+2. **`DELETE` on an already-archived broadcast → hard-delete, but only if it has
+   been archived long enough.** The permanent delete is **blocked** (409) until
+   `archived_at < now - BROADCAST_ARCHIVE_MIN_AGE_DAYS` (default **30 days**,
+   env-overridable) — a cooling-off period so history can't be wiped on impulse.
+   Once past the threshold, the hard delete succeeds: cascade drops its
+   `broadcast_assets`, and the nullable `broadcast_id` on produced rows
+   (`session_stats`, `caption_files`) is set `NULL` (the produced content itself
+   is *not* deleted — it reverts to the "unassigned" bucket).
+
+There is **no periodic sweep and no automatic purge**; an archived broadcast
+sits archived forever unless someone deletes it after the cooling-off window.
 
 ## Schema
 
@@ -190,8 +195,8 @@ effectively always set going forward; pre-existing rows stay `NULL` (unassigned)
 | `POST` | `/broadcasts` | Create (draft) |
 | `GET` | `/broadcasts/:id` | One broadcast + linked assets + produced content refs |
 | `PUT` | `/broadcasts/:id` | Edit title/desc/schedule/status |
-| `DELETE` | `/broadcasts/:id` | **Archive** (sets `status='archived'`, `archived_at=now`); purged later by the retention sweep |
-| `POST` | `/broadcasts/:id/restore` | Un-archive (back to `draft`/`scheduled`) while still within retention |
+| `DELETE` | `/broadcasts/:id` | Not-yet-archived → **archive** (`status='archived'`, `archived_at=now`). Already-archived → **hard-delete**, but 409 unless archived ≥ `BROADCAST_ARCHIVE_MIN_AGE_DAYS` (default 30) |
+| `POST` | `/broadcasts/:id/restore` | Un-archive (back to `draft`/`scheduled`) — available any time while archived |
 | `POST` | `/broadcasts/:id/duplicate` | Clone this broadcast (optionally into another project) — config only, no produced content (see below) |
 | `POST` | `/broadcasts/:id/assets` | Link a reusable asset (`{ asset_type, asset_ref }`) |
 | `DELETE` | `/broadcasts/:id/assets/:assetRowId` | Unlink |
@@ -285,10 +290,12 @@ direction, delivered in phases so v1 doesn't block on it:
    `live` broadcast is rejected. Instead of reusing a broadcast, users
    **duplicate** it (or duplicate across projects) — duplication copies config +
    linked reusable assets, never produced content.
-3. **Delete = archive; archived is purged after retention.** `DELETE` sets
-   `archived`/`archived_at`; a periodic sweep hard-deletes archived rows older
-   than `BROADCAST_ARCHIVE_RETENTION_DAYS` (default 30). `POST .../restore`
-   un-archives within the window.
+3. **Delete = archive; hard-delete blocked until archived long enough — never
+   auto-purged.** First `DELETE` archives (`archived_at`); a second `DELETE` on
+   an archived broadcast permanently deletes it, but only once it has been
+   archived ≥ `BROADCAST_ARCHIVE_MIN_AGE_DAYS` (default 30), else 409. No
+   periodic sweep — archived rows persist indefinitely until manually deleted.
+   `POST .../restore` un-archives at any time.
 4. **Calendar from the start.** Scheduling ahead is a primary flow; `/broadcasts`
    ships a calendar view (+ agenda/list toggle), not just a sorted list.
    Recurrence (weekly service) is still deferred, but the calendar UI is not.
