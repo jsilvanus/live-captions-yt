@@ -270,6 +270,14 @@ export class SessionStore {
   }
 
   /**
+   * Return an iterable of all [sessionId, session] pairs.
+   * @returns {IterableIterator<[string, object]>}
+   */
+  entries() {
+    return this._sessions.entries();
+  }
+
+  /**
    * Update lastActivityAt for a session.
    * @param {string} sessionId
    */
