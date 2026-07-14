@@ -324,6 +324,7 @@ export function initDb(dbPath) {
       youtube_video_ids    TEXT,
       youtube_broadcast_id TEXT,
       rundown_file_id      INTEGER,
+      record_enabled       INTEGER NOT NULL DEFAULT 0,
       archived_at          TEXT,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -331,6 +332,26 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_broadcasts_api_key ON broadcasts(api_key)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_broadcasts_status  ON broadcasts(api_key, status)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS videos (
+      id            TEXT PRIMARY KEY,
+      api_key       TEXT NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      broadcast_id  TEXT,
+      title         TEXT NOT NULL DEFAULT '',
+      status        TEXT NOT NULL DEFAULT 'recording',
+      storage_type  TEXT NOT NULL DEFAULT 'local',
+      storage_key   TEXT,
+      duration_ms   INTEGER,
+      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      started_at    TEXT,
+      ended_at      TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_videos_api_key ON videos(api_key)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_videos_broadcast_id ON videos(broadcast_id)');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS broadcast_assets (
@@ -355,6 +376,9 @@ export function initDb(dbPath) {
   if (!sessionStatsCols.has('broadcast_id')) db.exec('ALTER TABLE session_stats ADD COLUMN broadcast_id TEXT');
   const captionFilesCols = new Set(db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name));
   if (!captionFilesCols.has('broadcast_id')) db.exec('ALTER TABLE caption_files ADD COLUMN broadcast_id TEXT');
+
+  const broadcastCols = new Set(db.prepare('PRAGMA table_info(broadcasts)').all().map(c => c.name));
+  if (!broadcastCols.has('record_enabled')) db.exec('ALTER TABLE broadcasts ADD COLUMN record_enabled INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS viewer_key_daily_stats (

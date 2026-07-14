@@ -1,10 +1,12 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
+import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
+import { startVideoRecording, finishVideoRecording } from '../db/videos.js';
 
 /**
  * Validate and build the extraTargets array from the client-supplied targets list.
@@ -43,7 +45,7 @@ async function buildExtraTargets(targets, { db, apiKey } = {}) {
       if (!target.streamKey || typeof target.streamKey !== 'string') continue;
       const sender = new YoutubeLiveCaptionSender({ streamKey: target.streamKey.trim() });
       try { sender.start(); } catch (err) {
-        console.warn(`[live] Failed to start extra YouTube target ${target.id}: ${err?.message}`);
+        logger.warn(`[live] Failed to start extra YouTube target ${target.id}: ${err?.message}`);
       }
       extraTargets.push({ id: target.id, type: 'youtube', sender });
 
@@ -97,7 +99,7 @@ export function createLiveRouter(db, store, jwtSecret) {
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
-    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId } = req.body || {};
+    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId, recordEnabled } = req.body || {};
 
     // Validate required fields (streamKey is optional — targets array supersedes it)
     if (!apiKey || !domain) {
@@ -228,12 +230,24 @@ export function createLiveRouter(db, store, jwtSecret) {
     // omitting it auto-creates a fresh `live` broadcast so every session always
     // has exactly one and produced content attaches back to it.
     let boundBroadcastId = null;
+    let recordingVideo = null;
     if (broadcastId) {
-      const bind = bindSessionStart(db, apiKey, broadcastId);
+      const bind = bindSessionStart(db, apiKey, broadcastId, { recordEnabled });
       if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
       boundBroadcastId = broadcastId;
     } else {
-      boundBroadcastId = autoCreateForSession(db, apiKey, {}).id;
+      boundBroadcastId = autoCreateForSession(db, apiKey, { recordEnabled }).id;
+    }
+
+    const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
+    const shouldRecord = Boolean(recordEnabled) || Boolean(broadcast?.recordEnabled);
+    if (shouldRecord) {
+      const videoResult = startVideoRecording(db, apiKey, {
+        broadcastId: boundBroadcastId,
+        title: broadcast?.title || 'Recorded broadcast',
+        startedAt: new Date().toISOString(),
+      });
+      if (videoResult.ok) recordingVideo = videoResult.video;
     }
 
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
@@ -252,6 +266,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       extraTargets,
     });
     session.broadcastId = boundBroadcastId;
+    session.recordingVideoId = recordingVideo?.id ?? null;
 
     incrementDomainHourlySessionStart(db, domain, store.size());
 
@@ -331,7 +346,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       for (const t of (session.extraTargets || [])) {
         if (t.type === 'youtube' && t.sender) {
           t.sender.end().catch(err => {
-            console.warn(`[live] Failed to end extra YouTube target ${t.id} during PATCH: ${err?.message}`);
+            logger.warn(`[live] Failed to end extra YouTube target ${t.id} during PATCH: ${err?.message}`);
           });
         }
       }
@@ -385,6 +400,19 @@ export function createLiveRouter(db, store, jwtSecret) {
         endedBy: 'client',
         broadcastId: removed.broadcastId ?? null,
       });
+      if (removed.recordingVideoId) {
+        try {
+          const startedAtMs = Number.isFinite(Number(removed.startedAt))
+            ? Number(removed.startedAt)
+            : Date.parse(removed.startedAt);
+          finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
+            endedAt,
+            durationMs: Math.max(0, Date.now() - startedAtMs),
+          });
+        } catch (err) {
+          logger.warn(`[videos] finishVideoRecording failed (videoId=${removed.recordingVideoId})`, err);
+        }
+      }
       // Transition the bound broadcast to completed (plan/broadcasts).
       if (removed.broadcastId) {
         try {
@@ -393,7 +421,7 @@ export function createLiveRouter(db, store, jwtSecret) {
             endedAt,
           });
         } catch (err) {
-          console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
+          logger.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
         }
       }
       incrementDomainHourlySessionEnd(db, removed.domain, durationMs);

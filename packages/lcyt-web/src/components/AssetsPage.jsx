@@ -18,6 +18,7 @@ const TILES = [
   { id: 'graphics',      icon: '🖼️', title: 'Graphics',      href: '/graphics/editor', tracked: true, key: 'graphics' },
   { id: 'translations',  icon: '🌐', title: 'Translations',  href: '/translations',tracked: false },
   { id: 'broadcasts',    icon: '📡', title: 'Broadcasts',    href: '/broadcast',   tracked: true, key: 'broadcasts' },
+  { id: 'videos',        icon: '🎥', title: 'Recordings',    href: '/broadcast',   tracked: true, key: 'videos' },
   { id: 'thumbnails',    icon: '🖼️', title: 'Thumbnails',    href: '/broadcast',   tracked: false },
 ];
 
@@ -32,7 +33,7 @@ export function AssetsPage() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl || !apiKey) return;
-    const token = session.getSessionToken?.();
+    const token = session?.getSessionToken?.() ?? null;
 
     // Graphics: GET /dsk/:apikey/templates (JWT Bearer or X-API-Key)
     try {
@@ -62,6 +63,20 @@ export function AssetsPage() {
         }
       } catch {
         setErrors(e => ({ ...e, broadcasts: true }));
+      }
+    }
+
+    if (token) {
+      try {
+        const r = await fetch(`${backendUrl}/videos`, { headers: { Authorization: 'Bearer ' + token } });
+        if (r.ok) {
+          const data = await r.json();
+          setCounts(c => ({ ...c, videos: (data.videos || []).length }));
+        } else {
+          setErrors(e => ({ ...e, videos: true }));
+        }
+      } catch {
+        setErrors(e => ({ ...e, videos: true }));
       }
     }
   }, [connected, backendUrl, apiKey, session]);

@@ -42,6 +42,7 @@ function formatRow(row) {
     youtubeVideoIds:    row.youtube_video_ids ? JSON.parse(row.youtube_video_ids) : [],
     youtubeBroadcastId: row.youtube_broadcast_id ?? null,
     rundownFileId:      row.rundown_file_id ?? null,
+    recordEnabled:      Boolean(row.record_enabled),
     archivedAt:         row.archived_at ?? null,
     createdAt:          row.created_at,
     updatedAt:          row.updated_at,
@@ -117,7 +118,7 @@ export function createBroadcast(db, apiKey, fields = {}) {
     title = '', description = null,
     status = 'draft',
     scheduledStart = null, scheduledEnd = null, actualStart = null,
-    youtubeBroadcastId = null, rundownFileId = null,
+    youtubeBroadcastId = null, rundownFileId = null, recordEnabled = false,
   } = fields;
 
   if (!BROADCAST_STATUSES.has(status)) {
@@ -126,12 +127,12 @@ export function createBroadcast(db, apiKey, fields = {}) {
 
   db.prepare(`
     INSERT INTO broadcasts
-      (id, api_key, title, description, status, scheduled_start, scheduled_end, actual_start, youtube_broadcast_id, rundown_file_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, api_key, title, description, status, scheduled_start, scheduled_end, actual_start, youtube_broadcast_id, rundown_file_id, record_enabled)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, apiKey, title, description, status,
     scheduledStart, scheduledEnd, actualStart,
-    youtubeBroadcastId, rundownFileId,
+    youtubeBroadcastId, rundownFileId, recordEnabled ? 1 : 0,
   );
   return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
 }
@@ -144,6 +145,7 @@ const UPDATABLE = {
   scheduledEnd:       'scheduled_end',
   youtubeBroadcastId: 'youtube_broadcast_id',
   rundownFileId:      'rundown_file_id',
+  recordEnabled:      'record_enabled',
 };
 
 /**
@@ -163,7 +165,7 @@ export function updateBroadcast(db, apiKey, id, patch = {}) {
   for (const [key, col] of Object.entries(UPDATABLE)) {
     if (patch[key] !== undefined) {
       sets.push(`${col} = ?`);
-      params.push(patch[key]);
+      params.push(key === 'recordEnabled' ? (patch[key] ? 1 : 0) : patch[key]);
     }
   }
   if (sets.length === 0) return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
@@ -325,14 +327,14 @@ export function duplicateBroadcast(db, apiKey, id) {
  * broadcastId). Title is a timestamp (editable later).
  * @returns {object} the created broadcast (formatted)
  */
-export function autoCreateForSession(db, apiKey, { startedAt } = {}) {
+export function autoCreateForSession(db, apiKey, { startedAt, recordEnabled = false } = {}) {
   const id = randomUUID();
   const when = startedAt ? new Date(startedAt) : new Date();
   const title = `Broadcast ${when.toISOString().slice(0, 16).replace('T', ' ')}`;
   db.prepare(`
-    INSERT INTO broadcasts (id, api_key, title, status, actual_start)
-    VALUES (?, ?, ?, 'live', ?)
-  `).run(id, apiKey, title, when.toISOString());
+    INSERT INTO broadcasts (id, api_key, title, status, actual_start, record_enabled)
+    VALUES (?, ?, ?, 'live', ?, ?)
+  `).run(id, apiKey, title, when.toISOString(), recordEnabled ? 1 : 0);
   return getBroadcast(db, apiKey, id);
 }
 
@@ -341,7 +343,7 @@ export function autoCreateForSession(db, apiKey, { startedAt } = {}) {
  * stamp actual_start. Rejects if the broadcast is already live (1:1 per run).
  * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
  */
-export function bindSessionStart(db, apiKey, id, { startedAt } = {}) {
+export function bindSessionStart(db, apiKey, id, { startedAt, recordEnabled } = {}) {
   const existing = getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
   if (existing.status === 'live') {
@@ -350,11 +352,14 @@ export function bindSessionStart(db, apiKey, id, { startedAt } = {}) {
   if (existing.status !== 'draft' && existing.status !== 'scheduled') {
     return { ok: false, error: `Cannot bind a session to a ${existing.status} broadcast`, status: 409 };
   }
-  db.prepare(`
-    UPDATE broadcasts
-    SET status = 'live', actual_start = COALESCE(actual_start, ?), updated_at = datetime('now')
-    WHERE api_key = ? AND id = ?
-  `).run((startedAt ? new Date(startedAt) : new Date()).toISOString(), apiKey, id);
+  const sets = ["status = 'live'", "actual_start = COALESCE(actual_start, ?)", "updated_at = datetime('now')"];
+  const params = [(startedAt ? new Date(startedAt) : new Date()).toISOString()];
+  if (recordEnabled !== undefined) {
+    sets.push('record_enabled = ?');
+    params.push(recordEnabled ? 1 : 0);
+  }
+  params.push(apiKey, id);
+  db.prepare(`UPDATE broadcasts SET ${sets.join(', ')} WHERE api_key = ? AND id = ?`).run(...params);
   return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
 }
 
