@@ -43,6 +43,21 @@ export function runMigrations(db) {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dsk_thumbnails (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      api_key       TEXT    NOT NULL,
+      template_id   INTEGER,
+      name          TEXT    NOT NULL,
+      storage_path  TEXT    NOT NULL,
+      width         INTEGER NOT NULL,
+      height        INTEGER NOT NULL,
+      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
   // Additive columns on caption_files for image metadata (DSK images are stored there)
   const filesCols = new Set(
     db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name)

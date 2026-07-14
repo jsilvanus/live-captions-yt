@@ -19,6 +19,8 @@ import {
   getCaptionFile,
   deleteCaptionFile,
   hasFeature,
+  registerCaptionFile,
+  updateCaptionFileSize,
 } from 'lcyt-backend/db';
 import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
 import { shiftVttContent } from '../vtt.js';
@@ -26,6 +28,18 @@ import logger from 'lcyt/logger';
 
 // Sanity bound for ?offsetMs= on VTT downloads: ±24h
 const MAX_OFFSET_MS = 86_400_000;
+
+function contentTypeForFormat(format) {
+  if (format === 'vtt') return 'text/vtt';
+  if (format === 'md' || format === 'markdown' || format === 'mdx') return 'text/markdown';
+  return 'text/plain';
+}
+
+function makeStorageKey(filename, fallbackType) {
+  const raw = String(filename || '').trim();
+  const base = raw ? raw.replace(/[^a-zA-Z0-9._-]+/g, '_') : `${fallbackType || 'file'}`;
+  return `${Date.now()}-${base}`;
+}
 
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({

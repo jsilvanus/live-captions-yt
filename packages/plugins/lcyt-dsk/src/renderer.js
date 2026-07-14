@@ -396,6 +396,29 @@ const DSK_LOCAL_SERVER = process.env.DSK_LOCAL_SERVER
   || `http://localhost:${process.env.PORT || 3000}`;
 
 /**
+ * Render a template to a PNG buffer for one-off thumbnails or exports.
+ * Opens a temporary page, sets the viewport, captures a screenshot, then closes it.
+ *
+ * @param {object} templateJson
+ * @param {{ apiKey?: string, serverUrl?: string, width?: number, height?: number }} [opts]
+ * @returns {Promise<Buffer>}
+ */
+export async function renderTemplateToPng(templateJson, opts = {}) {
+  _ensureBrowser();
+  const page = await _browser.newPage();
+  try {
+    const width = Number(opts.width) || 1920;
+    const height = Number(opts.height) || 1080;
+    await page.setViewportSize({ width, height });
+    const html = renderTemplateToHtml(templateJson, { apiKey: opts.apiKey, serverUrl: opts.serverUrl ?? DSK_LOCAL_SERVER });
+    await page.setContent(html, { waitUntil: 'load' });
+    return Buffer.from(await page.screenshot({ type: 'png' }));
+  } finally {
+    await page.close().catch(() => {});
+  }
+}
+
+/**
  * Render a new template for an API key.  Replaces the page content fully.
  * Any ongoing capture loop will pick up the new visuals automatically.
  */
