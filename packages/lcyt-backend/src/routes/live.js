@@ -1,10 +1,15 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
+import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
+import { startVideoRecording, finishVideoRecording, getVideoStorageDir } from '../db/videos.js';
+import { isS3Enabled } from '../storage/s3.js';
+import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
 
 /**
  * Validate and build the extraTargets array from the client-supplied targets list.
@@ -43,7 +48,7 @@ async function buildExtraTargets(targets, { db, apiKey } = {}) {
       if (!target.streamKey || typeof target.streamKey !== 'string') continue;
       const sender = new YoutubeLiveCaptionSender({ streamKey: target.streamKey.trim() });
       try { sender.start(); } catch (err) {
-        console.warn(`[live] Failed to start extra YouTube target ${target.id}: ${err?.message}`);
+        logger.warn(`[live] Failed to start extra YouTube target ${target.id}: ${err?.message}`);
       }
       extraTargets.push({ id: target.id, type: 'youtube', sender });
 
@@ -78,6 +83,82 @@ async function buildExtraTargets(targets, { db, apiKey } = {}) {
   return { ok: true, extraTargets };
 }
 
+async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, enabled }) {
+  if (!mediamtxClient || !pathName) return;
+  const config = enabled
+    ? {
+        record: 'yes',
+        recordFormat: 'fmp4',
+        recordPath: videoDir,
+        recordSegmentDuration: '4s',
+        recordDeleteAfter: 0,
+      }
+    : { record: 'no' };
+
+  try {
+    try {
+      await mediamtxClient.addPath(pathName, { source: 'publisher' });
+    } catch (err) {
+      if (err?.statusCode && [400, 404, 409, 422].includes(err.statusCode)) {
+        // Path already exists or is not yet configured; continue to patch it.
+      } else {
+        throw err;
+      }
+    }
+    await mediamtxClient.patchPath(pathName, config);
+  } catch (err) {
+    logger.warn(`[videos] MediaMTX recording ${enabled ? 'start' : 'stop'} failed for ${pathName}: ${err?.message}`);
+  }
+}
+
+async function startSessionRecording(db, session, { mediamtxClient }) {
+  if (!session?.apiKey) return { ok: false, status: 400, error: 'apiKey missing' };
+  if (session.recordingVideoId) {
+    return { ok: true, active: true };
+  }
+  const videoResult = startVideoRecording(db, session.apiKey, {
+    broadcastId: session.broadcastId || null,
+    title: 'Recorded broadcast',
+    startedAt: new Date().toISOString(),
+    storageType: isS3Enabled() ? 's3' : 'local',
+  });
+  if (!videoResult.ok) return videoResult;
+  session.recordingVideoId = videoResult.video.id;
+  const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(session.apiKey);
+  const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
+  const recordingVideoDir = getVideoStorageDir(session.apiKey, videoResult.video.id);
+  await configureMediaMtxRecording(mediamtxClient, {
+    pathName: recordingPathName,
+    videoDir: recordingVideoDir,
+    enabled: true,
+  });
+  return { ok: true, active: true, video: videoResult.video };
+}
+
+async function stopSessionRecording(db, session, { mediamtxClient }) {
+  if (!session?.recordingVideoId) {
+    return { ok: true, active: false };
+  }
+  const recordingVideoId = session.recordingVideoId;
+  const endedAt = new Date().toISOString();
+  const startedAtMs = Number.isFinite(Number(session.startedAt))
+    ? Number(session.startedAt)
+    : Date.parse(session.startedAt || new Date().toISOString());
+  finishVideoRecording(db, session.apiKey, recordingVideoId, {
+    endedAt,
+    durationMs: Math.max(0, Date.now() - startedAtMs),
+  });
+  const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(session.apiKey);
+  const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
+  await configureMediaMtxRecording(mediamtxClient, {
+    pathName: recordingPathName,
+    videoDir: getVideoStorageDir(session.apiKey, recordingVideoId),
+    enabled: false,
+  });
+  session.recordingVideoId = null;
+  return { ok: true, active: false };
+}
+
 /**
  * Factory for the /live router.
  *
@@ -89,15 +170,22 @@ async function buildExtraTargets(targets, { db, apiKey } = {}) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
+ * @param {{ mediamtxClient?: object | null }} [opts]
  * @returns {Router}
  */
-export function createLiveRouter(db, store, jwtSecret) {
+export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null } = {}) {
   const router = Router();
   const auth = createAuthMiddleware(jwtSecret);
+  const recordingLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
-    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId } = req.body || {};
+    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId, recordEnabled: broadcastRecordEnabled } = req.body || {};
 
     // Validate required fields (streamKey is optional — targets array supersedes it)
     if (!apiKey || !domain) {
@@ -228,12 +316,36 @@ export function createLiveRouter(db, store, jwtSecret) {
     // omitting it auto-creates a fresh `live` broadcast so every session always
     // has exactly one and produced content attaches back to it.
     let boundBroadcastId = null;
+    let recordingVideo = null;
     if (broadcastId) {
-      const bind = bindSessionStart(db, apiKey, broadcastId);
+      const bind = bindSessionStart(db, apiKey, broadcastId, { recordEnabled: broadcastRecordEnabled });
       if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
       boundBroadcastId = broadcastId;
     } else {
-      boundBroadcastId = autoCreateForSession(db, apiKey, {}).id;
+      boundBroadcastId = autoCreateForSession(db, apiKey, { recordEnabled: broadcastRecordEnabled }).id;
+    }
+
+    const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
+    const relaySlots = getRelaySlots(db, apiKey);
+    const shouldRecord = Boolean(broadcastRecordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
+    if (shouldRecord) {
+      const videoResult = startVideoRecording(db, apiKey, {
+        broadcastId: boundBroadcastId,
+        title: broadcast?.title || 'Recorded broadcast',
+        startedAt: new Date().toISOString(),
+        storageType: isS3Enabled() ? 's3' : 'local',
+      });
+      if (videoResult.ok) {
+        recordingVideo = videoResult.video;
+        const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(apiKey);
+        const recordingPathName = keyRow?.ingest_stream_key || apiKey;
+        const recordingVideoDir = getVideoStorageDir(apiKey, recordingVideo.id);
+        await configureMediaMtxRecording(mediamtxClient, {
+          pathName: recordingPathName,
+          videoDir: recordingVideoDir,
+          enabled: true,
+        });
+      }
     }
 
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
@@ -252,6 +364,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       extraTargets,
     });
     session.broadcastId = boundBroadcastId;
+    session.recordingVideoId = recordingVideo?.id ?? null;
 
     incrementDomainHourlySessionStart(db, domain, store.size());
 
@@ -265,6 +378,41 @@ export function createLiveRouter(db, store, jwtSecret) {
       broadcastId: boundBroadcastId,
       graphicsEnabled: isGraphicsEnabled(db, apiKey),
     });
+  });
+
+  // POST /live/recording — Start/stop recording for this session.
+  router.post('/recording', recordingLimiter, auth, async (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const { enabled, slot } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+    const slotNumber = slot === undefined ? undefined : Number(slot);
+    if (slot !== undefined && (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > 4)) {
+      return res.status(400).json({ error: 'slot must be an integer between 1 and 4' });
+    }
+    const relaySlots = getRelaySlots(db, session.apiKey);
+    const matchingSlot = slotNumber === undefined
+      ? relaySlots.find(item => item.recordOnButton)
+      : relaySlots.find(item => item.slot === slotNumber);
+    if (!matchingSlot) {
+      return res.status(400).json({ error: 'No relay slot is configured for manual recording' });
+    }
+    if (!matchingSlot.recordOnButton) {
+      return res.status(400).json({ error: 'This relay slot is not configured for manual recording' });
+    }
+    if (enabled) {
+      const result = await startSessionRecording(db, session, { mediamtxClient });
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to start recording' });
+      return res.status(200).json({ ok: true, recording: true });
+    }
+    const result = await stopSessionRecording(db, session, { mediamtxClient });
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to stop recording' });
+    return res.status(200).json({ ok: true, recording: false });
   });
 
   // GET /live — Session status
@@ -331,7 +479,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       for (const t of (session.extraTargets || [])) {
         if (t.type === 'youtube' && t.sender) {
           t.sender.end().catch(err => {
-            console.warn(`[live] Failed to end extra YouTube target ${t.id} during PATCH: ${err?.message}`);
+            logger.warn(`[live] Failed to end extra YouTube target ${t.id} during PATCH: ${err?.message}`);
           });
         }
       }
@@ -385,6 +533,26 @@ export function createLiveRouter(db, store, jwtSecret) {
         endedBy: 'client',
         broadcastId: removed.broadcastId ?? null,
       });
+      if (removed.recordingVideoId) {
+        try {
+          const startedAtMs = Number.isFinite(Number(removed.startedAt))
+            ? Number(removed.startedAt)
+            : Date.parse(removed.startedAt);
+          finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
+            endedAt,
+            durationMs: Math.max(0, Date.now() - startedAtMs),
+          });
+          const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(removed.apiKey);
+          const recordingPathName = keyRow?.ingest_stream_key || removed.apiKey;
+          await configureMediaMtxRecording(mediamtxClient, {
+            pathName: recordingPathName,
+            videoDir: getVideoStorageDir(removed.apiKey, removed.recordingVideoId),
+            enabled: false,
+          });
+        } catch (err) {
+          logger.warn(`[videos] finishVideoRecording failed (videoId=${removed.recordingVideoId})`, err);
+        }
+      }
       // Transition the bound broadcast to completed (plan/broadcasts).
       if (removed.broadcastId) {
         try {
@@ -393,7 +561,7 @@ export function createLiveRouter(db, store, jwtSecret) {
             endedAt,
           });
         } catch (err) {
-          console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
+          logger.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
         }
       }
       incrementDomainHourlySessionEnd(db, removed.domain, durationMs);

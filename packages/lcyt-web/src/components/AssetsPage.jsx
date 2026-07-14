@@ -15,7 +15,8 @@ const TILES = [
   { id: 'graphics',      icon: '🖼️', title: 'Graphics',      href: '/graphics/editor', tracked: true, key: 'graphics' },
   { id: 'translations',  icon: '🌐', title: 'Translations',  href: '/translations',tracked: false },
   { id: 'broadcasts',    icon: '📡', title: 'Broadcasts',    href: '/broadcast',   tracked: true, key: 'broadcasts' },
-  { id: 'thumbnails',    icon: '🖼️', title: 'Thumbnails',    href: '/graphics/editor', tracked: true, key: 'thumbnails' },
+  { id: 'videos',        icon: '🎥', title: 'Recordings',    href: '/broadcast',   tracked: true, key: 'videos' },
+  { id: 'thumbnails',    icon: '🖼️', title: 'Thumbnails',    href: '/broadcast',   tracked: false },
 ];
 
 export function AssetsPage() {
@@ -29,12 +30,11 @@ export function AssetsPage() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl || !apiKey) return;
-    const token = session.getSessionToken?.();
-    const authHeaders = token ? { Authorization: 'Bearer ' + token } : { 'X-API-Key': apiKey };
+    const token = session?.getSessionToken?.() ?? null;
 
     // Graphics: GET /dsk/:apikey/templates (****** X-API-Key)
     try {
-      const r = await fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/templates`, { headers: authHeaders });
+      const r = await fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/templates`, { headers: (/ });
       if (r.ok) {
         const data = await r.json();
         const list = Array.isArray(data) ? data : (data.templates || []);
@@ -88,6 +88,20 @@ export function AssetsPage() {
         }
       } catch {
         setErrors(e => ({ ...e, broadcasts: true }));
+      }
+    }
+
+    if (token) {
+      try {
+        const r = await fetch(`${backendUrl}/videos`, { headers: { Authorization: 'Bearer ' + token } });
+        if (r.ok) {
+          const data = await r.json();
+          setCounts(c => ({ ...c, videos: (data.videos || []).length }));
+        } else {
+          setErrors(e => ({ ...e, videos: true }));
+        }
+      } catch {
+        setErrors(e => ({ ...e, videos: true }));
       }
     }
   }, [connected, backendUrl, apiKey, session]);

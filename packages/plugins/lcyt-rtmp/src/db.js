@@ -32,6 +32,8 @@ export function runMigrations(db) {
       target_url   TEXT    NOT NULL,
       target_name  TEXT,
       caption_mode TEXT    NOT NULL DEFAULT 'http',
+      record_on_start INTEGER NOT NULL DEFAULT 0,
+      record_on_button INTEGER NOT NULL DEFAULT 0,
       created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE(api_key, slot)
@@ -55,6 +57,8 @@ export function runMigrations(db) {
             target_url   TEXT    NOT NULL,
             target_name  TEXT,
             caption_mode TEXT    NOT NULL DEFAULT 'http',
+            record_on_start INTEGER NOT NULL DEFAULT 0,
+            record_on_button INTEGER NOT NULL DEFAULT 0,
             created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
             updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
             UNIQUE(api_key, slot)
@@ -89,6 +93,8 @@ export function runMigrations(db) {
       // Which rendition this slot forwards: 'program' (raw ingest, default)
       // or 'crop' (the {key}-crop vertical rendition — plan_vertical_crop.md)
       if (!latestCols.has('source_view'))   db.exec("ALTER TABLE rtmp_relays ADD COLUMN source_view TEXT NOT NULL DEFAULT 'program'");
+      if (!latestCols.has('record_on_start')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN record_on_start INTEGER NOT NULL DEFAULT 0');
+      if (!latestCols.has('record_on_button')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN record_on_button INTEGER NOT NULL DEFAULT 0');
     }
   }
 

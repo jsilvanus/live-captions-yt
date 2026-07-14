@@ -14,7 +14,7 @@ import { useLang } from '../../contexts/LangContext.jsx';
 export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
   const { t } = useLang();
   const [showAdvanced, setShowAdvanced] = useState(
-    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
+    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708' || entry.recordOnStart || entry.recordOnButton)
   );
   const isRunning = runningSlots.includes(entry.slot);
 
@@ -90,6 +90,25 @@ export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
       {/* Advanced options */}
       {showAdvanced && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
+          {/* Recording controls */}
+          <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 4 }}>
+            <label className="settings-checkbox" style={{ marginBottom: 0 }}>
+              <input
+                type="checkbox"
+                checked={!!entry.recordOnStart}
+                onChange={e => onChange({ ...entry, recordOnStart: e.target.checked })}
+              />
+              Record automatically when the session starts
+            </label>
+            <label className="settings-checkbox" style={{ marginBottom: 0 }}>
+              <input
+                type="checkbox"
+                checked={!!entry.recordOnButton}
+                onChange={e => onChange({ ...entry, recordOnButton: e.target.checked })}
+              />
+              Enable manual recording from this egress
+            </label>
+          </div>
           {/* Caption mode */}
           <div style={{ gridColumn: '1 / -1' }}>
             <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotCaptionMode')}</label>

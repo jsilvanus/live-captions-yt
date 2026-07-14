@@ -52,7 +52,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
   }
 
   function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView } = req.body || {};
+    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
@@ -91,11 +91,15 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
     }
     const resolvedVideoBitrate = (typeof videoBitrate === 'string' && videoBitrate.trim()) ? videoBitrate.trim() : null;
     const resolvedAudioBitrate = (typeof audioBitrate === 'string' && audioBitrate.trim()) ? audioBitrate.trim() : null;
+    const resolvedRecordOnStart = typeof recordOnStart === 'boolean' ? recordOnStart : false;
+    const resolvedRecordOnButton = typeof recordOnButton === 'boolean' ? recordOnButton : false;
 
     return {
       targetUrl:    targetUrl.trim(),
       targetName:   (typeof targetName === 'string' && targetName.trim()) ? targetName.trim() : null,
       captionMode:  resolvedMode,
+      recordOnStart: resolvedRecordOnStart,
+      recordOnButton: resolvedRecordOnButton,
       scale:        resolvedScale,
       fps:          resolvedFps,
       videoBitrate: resolvedVideoBitrate,
@@ -130,13 +134,15 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
 
     try {
       const relay = upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
-        targetName:   fields.targetName,
-        captionMode:  fields.captionMode,
-        scale:        fields.scale,
-        fps:          fields.fps,
-        videoBitrate: fields.videoBitrate,
-        audioBitrate: fields.audioBitrate,
-        sourceView:   fields.sourceView,
+        targetName:    fields.targetName,
+        captionMode:   fields.captionMode,
+        recordOnStart: fields.recordOnStart,
+        recordOnButton: fields.recordOnButton,
+        scale:         fields.scale,
+        fps:           fields.fps,
+        videoBitrate:  fields.videoBitrate,
+        audioBitrate:  fields.audioBitrate,
+        sourceView:    fields.sourceView,
       });
       return res.status(201).json({ ok: true, relay });
     } catch (err) {
@@ -214,13 +220,15 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
     if (!fields) return;
     try {
       const relay = upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
-        targetName:   fields.targetName,
-        captionMode:  fields.captionMode,
-        scale:        fields.scale,
-        fps:          fields.fps,
-        videoBitrate: fields.videoBitrate,
-        audioBitrate: fields.audioBitrate,
-        sourceView:   fields.sourceView,
+        targetName:    fields.targetName,
+        captionMode:   fields.captionMode,
+        recordOnStart: fields.recordOnStart,
+        recordOnButton: fields.recordOnButton,
+        scale:         fields.scale,
+        fps:           fields.fps,
+        videoBitrate:  fields.videoBitrate,
+        audioBitrate:  fields.audioBitrate,
+        sourceView:    fields.sourceView,
       });
       return res.status(200).json({ ok: true, relay });
     } catch (err) {

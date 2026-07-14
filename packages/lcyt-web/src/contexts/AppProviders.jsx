@@ -232,6 +232,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     getRelayStatus:   session.getRelayStatus,
     getRelayHistory:  session.getRelayHistory,
     setRelayActive:   session.setRelayActive,
+    toggleRecording: session.toggleRecording,
     getYouTubeConfig: session.getYouTubeConfig,
     getMusicEventsHistory: session.getMusicEventsHistory,
   }), []); // eslint-disable-line react-hooks/exhaustive-deps -- all methods are stable

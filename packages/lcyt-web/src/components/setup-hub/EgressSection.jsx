@@ -8,6 +8,7 @@ import {
   MAX_RELAY_SLOTS,
   setSlotTargetType, setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
+  setSlotRecordOnStart, setSlotRecordOnButton,
   clearSlot, buildInitialRelayList,
 } from '../../lib/relayConfig.js';
 
@@ -61,18 +62,56 @@ export function EgressSection() {
     if (updated.fps          !== undefined) setSlotFps(slot, updated.fps ?? null);
     if (updated.videoBitrate !== undefined) setSlotVideoBitrate(slot, updated.videoBitrate ?? '');
     if (updated.audioBitrate !== undefined) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
+    if (updated.recordOnStart !== undefined) setSlotRecordOnStart(slot, !!updated.recordOnStart);
+    if (updated.recordOnButton !== undefined) setSlotRecordOnButton(slot, !!updated.recordOnButton);
+  }
+
+  async function persistRelayToBackend(entry) {
+    if (!session?.connected) return;
+    const targetType = entry.targetType || 'youtube';
+    let targetUrl = null;
+    let targetName = null;
+    if (targetType === 'youtube') {
+      targetUrl = 'rtmp://a.rtmp.youtube.com/live2';
+      targetName = (entry.youtubeKey || '').trim() || null;
+    } else {
+      targetUrl = (entry.genericUrl || '').trim() || null;
+      targetName = (entry.genericName || '').trim() || null;
+    }
+    if (!targetUrl) return;
+    try {
+      await session.configureRelay({
+        slot: entry.slot,
+        targetUrl,
+        targetName,
+        captionMode: entry.captionMode || 'http',
+        recordOnStart: !!entry.recordOnStart,
+        recordOnButton: !!entry.recordOnButton,
+        scale: entry.scale || undefined,
+        fps: entry.fps ?? undefined,
+        videoBitrate: entry.videoBitrate || undefined,
+        audioBitrate: entry.audioBitrate || undefined,
+      });
+    } catch { /* ignore */ }
   }
 
   function updateSlot(slot, updated) {
-    setRelayList(list => list.map(r => r.slot === slot ? { ...r, ...updated } : r));
-    persistSlot(slot, updated);
+    setRelayList(list => {
+      const next = list.map(r => r.slot === slot ? { ...r, ...updated } : r);
+      const entry = next.find(r => r.slot === slot);
+      if (entry) {
+        persistSlot(slot, entry);
+        void persistRelayToBackend(entry);
+      }
+      return next;
+    });
   }
 
   function addSlot() {
     const used = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!used.includes(s)) {
-        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' };
+        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false };
         setRelayList(list => [...list, entry]);
         setEditingSlot(s);
         return;

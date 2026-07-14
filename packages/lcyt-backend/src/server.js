@@ -523,7 +523,7 @@ app.get('/contact', (req, res) => {
   res.status(200).json(_contactInfo);
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage, mediamtxClient: productionMediamtxClient }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
 app.use('/ai/models', createAiModelsRouter(db, userAuth));
