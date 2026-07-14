@@ -307,6 +307,55 @@ export function initDb(dbPath) {
     )
   `);
 
+  // ── Broadcasts: first-class intra-project casting occasion ───────────────
+  // (plan/broadcasts — a project casts many times; groups scheduling + linked
+  // reusable assets, and produced content attaches back via broadcast_id.)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS broadcasts (
+      id                   TEXT    PRIMARY KEY,
+      api_key              TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
+      title                TEXT    NOT NULL DEFAULT '',
+      description          TEXT,
+      status               TEXT    NOT NULL DEFAULT 'draft',
+      scheduled_start      TEXT,
+      scheduled_end        TEXT,
+      actual_start         TEXT,
+      actual_end           TEXT,
+      youtube_video_ids    TEXT,
+      youtube_broadcast_id TEXT,
+      rundown_file_id      INTEGER,
+      archived_at          TEXT,
+      created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
+      updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_broadcasts_api_key ON broadcasts(api_key)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_broadcasts_status  ON broadcasts(api_key, status)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS broadcast_assets (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      broadcast_id  TEXT    NOT NULL REFERENCES broadcasts(id) ON DELETE CASCADE,
+      asset_type    TEXT    NOT NULL,
+      asset_ref     TEXT    NOT NULL,
+      sort_order    INTEGER NOT NULL DEFAULT 0,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(broadcast_id, asset_type, asset_ref)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_broadcast_assets_bid ON broadcast_assets(broadcast_id)');
+
+  // Additive: nullable broadcast_id on produced-content tables so a session,
+  // its stats, and its caption files attach to the broadcast that made them.
+  // (No FK — SQLite ALTER TABLE ADD COLUMN cannot add one; the delete helper
+  // nulls these manually to keep produced content when a broadcast is removed.)
+  const sessionsCols = new Set(db.prepare('PRAGMA table_info(sessions)').all().map(c => c.name));
+  if (!sessionsCols.has('broadcast_id')) db.exec('ALTER TABLE sessions ADD COLUMN broadcast_id TEXT');
+  const sessionStatsCols = new Set(db.prepare('PRAGMA table_info(session_stats)').all().map(c => c.name));
+  if (!sessionStatsCols.has('broadcast_id')) db.exec('ALTER TABLE session_stats ADD COLUMN broadcast_id TEXT');
+  const captionFilesCols = new Set(db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name));
+  if (!captionFilesCols.has('broadcast_id')) db.exec('ALTER TABLE caption_files ADD COLUMN broadcast_id TEXT');
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS viewer_key_daily_stats (
       date        TEXT    NOT NULL,

@@ -230,6 +230,16 @@ PUT    /targets/:id       — update a target (Bearer token)
 DELETE /targets/:id       — delete a target (Bearer token)
 PUT    /targets/reorder   — persist a new sort order in one call, body { order: string[] } (Bearer token)
 
+GET    /broadcasts              — list broadcasts (?status=, ?from=, ?to= calendar range, ?includeArchived=1) (plan/broadcasts; Bearer token)
+POST   /broadcasts              — create a broadcast (draft) (Bearer token)
+GET    /broadcasts/:id          — one broadcast + linked reusable assets (Bearer token)
+PUT    /broadcasts/:id          — edit title/description/schedule/status (Bearer token)
+DELETE /broadcasts/:id          — first call archives (202); a second call on an already-archived broadcast hard-deletes it, but 409s until archived ≥ BROADCAST_ARCHIVE_MIN_AGE_DAYS (default 30). Hard delete nulls broadcast_id on produced rows (Bearer token)
+POST   /broadcasts/:id/restore  — un-archive (Bearer token)
+POST   /broadcasts/:id/duplicate — clone (title + reusable-asset links, never produced content); cross-project targetApiKey is 501 (deep-copy TODO) (Bearer token)
+POST   /broadcasts/:id/assets            — link a reusable asset { assetType, assetRef, sortOrder? } (Bearer token)
+DELETE /broadcasts/:id/assets/:rowId     — unlink a reusable asset (Bearer token)
+
 GET    /translation/config              — combined read: { vendor, targets } (Bearer token)
 PUT    /translation/config/vendor       — update vendor + credentials (Bearer token)
 POST   /translation/config/targets      — create a language/destination translation target (Bearer token)
@@ -380,6 +390,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/targets.js` — Server-persisted caption delivery target CRUD (`caption_targets` table; `/targets/*`).
 - `src/routes/translation.js` — Server-persisted translation vendor + language config CRUD (`translation_vendor_config`/`translation_targets` tables; `/translation/config*`).
 - `src/db/caption-targets.js` — Caption target DB helpers (`caption_targets` table).
+- `src/db/broadcasts.js` — Broadcast entity DB helpers (`broadcasts` + `broadcast_assets` tables; plan/broadcasts): CRUD, calendar/status list, archive/restore, cooling-off hard-delete (`BROADCAST_ARCHIVE_MIN_AGE_DAYS`, default 30), same-project `duplicateBroadcast`, and session-lifecycle binding (`autoCreateForSession`/`bindSessionStart`/`completeBroadcast`). Produced-content tables (`sessions`/`session_stats`/`caption_files`) carry a nullable `broadcast_id`; `POST /live`'s optional `broadcastId` binds a session (1:1 per run) or auto-creates a `live` broadcast, and the session-end paths write `session_stats.broadcast_id` + call `completeBroadcast`. `src/routes/broadcasts.js` mounts the routes (in `content.js` under `scoped('broadcast')`).
 - `src/db/translation-config.js` — Translation vendor + target DB helpers (`translation_vendor_config`/`translation_targets` tables).
 - `src/routes/stream-hls.js` — Video+audio HLS streaming (public, rate-limited).
 - `src/routes/preview.js` — RTMP → JPEG thumbnail serving (public).

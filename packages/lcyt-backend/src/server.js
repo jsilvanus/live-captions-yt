@@ -5,6 +5,7 @@ import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
+  completeBroadcast,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -345,18 +346,29 @@ store.onSessionEnd = async (session) => {
   // Some persisted sessions may lack an apiKey (nullable in older DBs);
   // avoid writing a session_stats row when apiKey is missing to prevent NOT NULL errors.
   if (session.apiKey) {
+    const endedAt = new Date().toISOString();
     writeSessionStat(db, {
       sessionId: session.sessionId,
       apiKey: session.apiKey,
       domain: session.domain,
       startedAt: new Date(session.startedAt).toISOString(),
-      endedAt: new Date().toISOString(),
+      endedAt,
       durationMs,
       captionsSent: session.captionsSent,
       captionsFailed: session.captionsFailed,
       finalSequence: session.sequence,
       endedBy: 'ttl',
+      broadcastId: session.broadcastId ?? null,
     });
+    // Transition the bound broadcast to completed (plan/broadcasts).
+    if (session.broadcastId) {
+      try {
+        completeBroadcast(db, session.broadcastId, {
+          youtubeVideoIds: session.youtubeVideoIds,
+          endedAt,
+        });
+      } catch { /* non-fatal */ }
+    }
   } else {
     console.warn(`[store] session ended without apiKey (sessionId=${session.sessionId}) — skipping session_stats write`);
   }
