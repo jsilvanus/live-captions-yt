@@ -2,7 +2,7 @@
 id: plan/assets_page
 title: "Assets Page — Content Library of Project Assets"
 status: draft
-summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit button opening the relevant editor/dialog, and clickable rows. v1 ships six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. The one backend addition is persisting YouTube video id(s) per session so the Broadcasts card can link out to the cast(s) on YouTube."
+summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit button opening the relevant editor/dialog, and clickable rows. v1 ships six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. Broadcasts now use the dedicated /broadcasts system rather than session_stats, VODs remain a future system that is still placeholder-only, and thumbnail generation is now part of the graphics pipeline rather than a separate tracked asset."
 related: plan/dashboard_console_redesign, plan/ai_roles_framework, plan/cues, plan/selfservice_config_backend
 ---
 
@@ -137,6 +137,7 @@ contained backend change (the only backend work in v1):
 
 ```
 Assets
+  [All] [Reusable] [Produced]
   Reusable
     [Graphics]         [Global cues]      [Global actions]   [Icons]
   Produced
@@ -145,10 +146,10 @@ Assets
     [Stored videos]    [Thumbnails]       [Rundowns]   (dashed placeholders)
 ```
 
-Same `repeat(auto-fill, minmax(340px, 1fr))` grid as `/setup`. The two group
-headings ("Reusable" / "Produced" / "Not tracked yet") are lightweight section
-labels above sub-grids — matching how `SetupHubPage` comments group its cards,
-made visible here.
+Same `repeat(auto-fill, minmax(340px, 1fr))` grid as `/setup`. The filter pills
+(`All`, `Reusable`, `Produced`) sit above the card groups and switch which cards
+are shown; the group headings ("Reusable" / "Produced" / "Not tracked yet")
+remain lightweight section labels above the visible cards.
 
 ## Implementation steps
 
