@@ -4,6 +4,7 @@ import { AnthropicVisionAdapter } from './anthropic-vision.js';
 
 const ADAPTERS = {
   openai: OpenAiVisionAdapter,
+  ollama: OpenAiVisionAdapter,
   google: GoogleVisionAdapter,
   anthropic: AnthropicVisionAdapter,
   // 'custom' providers are most often OpenAI-wire-compatible deployments

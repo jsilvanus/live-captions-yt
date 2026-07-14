@@ -43,7 +43,7 @@ function buildSystemPrompt(harnessConfig, production) {
  * @param {{ listCameras?, listMixers?, registry?, db? }} [production]
  * @returns {import('express').Router}
  */
-export function createProductionAssistantRouter(db, auth, toolsContext, manager, agent, production) {
+export function createProductionAssistantRouter(db, auth, toolsContext, manager, agent, production, bridgeManager = null) {
   const router = Router();
   router.use(auth);
 
@@ -54,7 +54,7 @@ export function createProductionAssistantRouter(db, auth, toolsContext, manager,
     const config = getRoleConfig(db, apiKey, 'assistant');
     if (!config.enabled) { res.status(503).json({ error: 'Role is not enabled for this project' }); return null; }
     const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
-    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName);
+    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
     if (!apiSettings) { res.status(503).json({ error: 'AI provider not configured or unsupported' }); return null; }
     return { apiKey, role, config, apiSettings };
   }

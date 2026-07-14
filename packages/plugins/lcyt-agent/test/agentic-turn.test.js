@@ -2,7 +2,7 @@ import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   toOpenAiToolSchema, runAgenticTurn, defaultShouldExecute, makeDialogShouldExecute,
-  resolveRoleProviderSettings,
+  resolveRoleProviderSettings, invokeModelCall,
 } from '../src/agentic-turn.js';
 
 const realFetch = global.fetch;
@@ -13,6 +13,12 @@ const TOOLS = [
   { name: 'camera.preset', description: 'Trigger preset', inputSchema: { type: 'object', properties: { cameraId: { type: 'string' } } }, annotations: { destructiveHint: true } },
   { name: 'caption_target.create', description: 'Create target', inputSchema: { type: 'object', properties: {} }, annotations: {} },
 ];
+
+function createMockBridgeManager() {
+  return {
+    sendCommand: async () => ({ ok: true, status: 200, body: { choices: [{ message: { content: 'ok' } }] } }),
+  };
+}
 
 function mockChatSequence(responses) {
   let call = 0;
@@ -71,12 +77,43 @@ describe('resolveRoleProviderSettings', () => {
     assert.equal(resolveRoleProviderSettings({ enabled: 0, base_url: 'https://x' }, 'm'), null);
   });
 
-  test('returns null for a bridge-relayed provider (not yet supported by the turn loop)', () => {
+  test('resolves a bridge-relayed provider with bridge transport metadata', () => {
+    const bridgeManager = createMockBridgeManager();
     const settings = resolveRoleProviderSettings(
       { enabled: 1, bridge_instance_id: 'bridge-1', kind: 'ollama', base_url: 'http://ollama:11434' },
       'llama3.1:8b',
+      { bridgeManager },
     );
-    assert.equal(settings, null);
+    assert.deepEqual(settings, {
+      apiUrl: 'http://ollama:11434',
+      apiKey: '',
+      model: 'llama3.1:8b',
+      transport: 'bridge',
+      bridgeManager,
+      bridgeInstanceId: 'bridge-1',
+    });
+  });
+
+  test('invokeModelCall forwards bridge requests through the bridge manager', async () => {
+    const sent = [];
+    const bridgeManager = createMockBridgeManager();
+    bridgeManager.sendCommand = async (instanceId, command) => {
+      sent.push({ instanceId, command });
+      return { ok: true, status: 200, body: { choices: [{ message: { content: 'ok' } }] } };
+    };
+    const settings = resolveRoleProviderSettings(
+      { enabled: 1, bridge_instance_id: 'bridge-2', kind: 'ollama', base_url: 'http://ollama:11434' },
+      'llama3.1:8b',
+      { bridgeManager },
+    );
+    const result = await invokeModelCall(settings, { model: 'llama3.1:8b', messages: [] });
+    assert.equal(result.body.choices[0].message.content, 'ok');
+    assert.deepEqual(sent[0].command, {
+      type: 'model_call',
+      endpoint: 'http://ollama:11434/v1/chat/completions',
+      headers: { 'Content-Type': 'application/json' },
+      payload: { model: 'llama3.1:8b', messages: [] },
+    });
   });
 
   test("returns null for a 'deer'-kind provider (not yet supported)", () => {

@@ -179,9 +179,9 @@ export class Bridge extends EventEmitter {
       // image (if any) from the backend ourselves — raw image bytes never
       // travel down the SSE command channel — then POST to the local model
       // endpoint (e.g. an Ollama /api/generate on this bridge's network).
-      const { requestId, sourceUrl, endpoint, model, prompt, outputMode, headers = {} } = cmd;
+      const { requestId, sourceUrl, endpoint, model, prompt, outputMode, headers = {}, payload } = cmd;
       try {
-        const result = await this._modelCall({ sourceUrl, endpoint, model, prompt, outputMode, headers });
+        const result = await this._modelCall({ sourceUrl, endpoint, model, prompt, outputMode, headers, payload });
         await this._postStatus({ requestId, ok: true, status: result.status, body: result.body });
         this.emit('command:ok', { type: 'model_call', endpoint, status: result.status });
       } catch (err) {
@@ -246,7 +246,7 @@ export class Bridge extends EventEmitter {
    * @param {{ sourceUrl?: string, endpoint: string, model?: string, prompt?: string, outputMode?: string, headers?: object }} opts
    * @returns {Promise<{ status: number, body: any }>}
    */
-  async _modelCall({ sourceUrl, endpoint, model, prompt, outputMode, headers = {} }) {
+  async _modelCall({ sourceUrl, endpoint, model, prompt, outputMode, headers = {}, payload: payloadOverride }) {
     if (!endpoint) throw new Error('model_call requires an endpoint');
 
     let images;
@@ -257,7 +257,7 @@ export class Bridge extends EventEmitter {
       images = [buf.toString('base64')];
     }
 
-    const payload = {
+    const body = payloadOverride ?? {
       ...(model ? { model } : {}),
       ...(prompt !== undefined ? { prompt } : {}),
       stream: false,
@@ -268,7 +268,7 @@ export class Bridge extends EventEmitter {
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(body),
     });
     const text = await response.text().catch(() => '');
     let parsed;

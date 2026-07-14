@@ -14,6 +14,7 @@
 
 import { getAiConfigRaw, runAiMigrations } from './ai-config.js';
 import { computeEmbeddings, cosineSimilarity, isServerEmbeddingAvailable } from './embeddings.js';
+import { invokeModelCall } from './agentic-turn.js';
 import logger from 'lcyt/logger';
 
 function parseAssistantJson(text) {
@@ -646,16 +647,10 @@ export class AgentEngine {
    * @returns {Promise<string>} — the assistant's message content
    */
   async _callChatCompletion(settings, systemPrompt, userPrompt, opts = {}) {
-    const url = `${settings.apiUrl.replace(/\/$/, '')}/v1/chat/completions`;
-    const headers = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.apiKey}`,
-    };
-
     const temperature = typeof opts.temperature === 'number' ? opts.temperature : 0.1;
     const maxTokens = typeof opts.maxTokens === 'number' ? opts.maxTokens : 200;
 
-    const body = JSON.stringify({
+    const payload = {
       model: settings.model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -664,35 +659,29 @@ export class AgentEngine {
       // Temperature and max tokens can be overridden by opts
       temperature: temperature,
       max_tokens: maxTokens,
-    });
+    };
 
     // Retry on transient failures (network / 5xx / rate-limit)
     const MAX_RETRIES = 2;
     let attempt = 0;
-    let res = null;
     let lastErr = null;
+    let response;
     while (attempt <= MAX_RETRIES) {
       try {
-        res = await fetch(url, { method: 'POST', headers, body });
-        if (res.ok) break;
-        const status = res.status;
-        const errText = await res.text().catch(() => '');
-        if (status === 429 || status >= 500) {
-          lastErr = new Error(`Chat API error ${status}: ${errText.slice(0,200)}`);
-          attempt++;
-          await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
-          continue;
-        }
-        throw new Error(`Chat API error ${status}: ${errText.slice(0,200)}`);
+        response = await invokeModelCall(settings, payload);
+        break;
       } catch (err) {
         lastErr = err;
-        if (attempt >= MAX_RETRIES) throw err;
+        // Only retry transient failures: network errors, 5xx, 429 rate-limit
+        const statusMatch = err.message?.match(/Chat API error (\d+)/);
+        const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : null;
+        const isRetriable = statusCode === null || statusCode === 429 || statusCode >= 500;
+        if (attempt >= MAX_RETRIES || !isRetriable) throw err;
         attempt++;
         await new Promise(r => setTimeout(r, 250 * Math.pow(2, attempt)));
       }
     }
-    if (!res || !res.ok) throw lastErr || new Error('Chat API request failed');
-    const data = await res.json();
+    const data = response?.body;
     const message = data?.choices?.[0]?.message?.content;
     if (typeof message !== 'string') {
       throw new Error('Unexpected chat API response format');

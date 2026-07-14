@@ -11,6 +11,7 @@
 import { Router } from 'express';
 import { getRole, getRoleConfig } from '../ai-roles.js';
 import { getProvider } from '../provider-registry.js';
+import { resolveRoleProviderSettings } from '../agentic-turn.js';
 
 const VISION_ROLES = new Set(['tracker', 'describer']);
 
@@ -20,7 +21,7 @@ const VISION_ROLES = new Set(['tracker', 'describer']);
  * @param {import('../vision-role-manager.js').VisionRoleManager} manager
  * @returns {import('express').Router}
  */
-export function createVisionRolesRouter(db, auth, manager) {
+export function createVisionRolesRouter(db, auth, manager, bridgeManager = null) {
   const router = Router();
   router.use(auth);
 
@@ -32,8 +33,8 @@ export function createVisionRolesRouter(db, auth, manager) {
     const config = getRoleConfig(db, apiKey, roleCode);
     if (!config.enabled) { res.status(503).json({ error: 'Role is not enabled for this project' }); return null; }
     const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
-    if (!providerRow || !providerRow.enabled || providerRow.bridge_instance_id || providerRow.kind === 'deer') {
-      res.status(503).json({ error: 'AI provider not configured or unsupported (bridge-relayed and deer providers are not yet supported for vision roles)' });
+    if (!providerRow || !providerRow.enabled || providerRow.kind === 'deer') {
+      res.status(503).json({ error: 'AI provider not configured or unsupported' });
       return null;
     }
     return { apiKey, roleCode, config, providerRow };
@@ -43,8 +44,12 @@ export function createVisionRolesRouter(db, auth, manager) {
     const loaded = loadConfigOr503(req, res);
     if (!loaded) return;
     const { apiKey, roleCode, config, providerRow } = loaded;
+    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
+    if (!apiSettings) {
+      return res.status(503).json({ error: 'AI provider not configured or unsupported' });
+    }
     const result = manager.start(apiKey, roleCode, {
-      apiSettings: { apiUrl: providerRow.base_url, apiKey: providerRow.api_key_ref || '', model: config.modelName },
+      apiSettings,
       vendor: providerRow.vendor,
       harnessConfig: config.harnessConfig,
     });

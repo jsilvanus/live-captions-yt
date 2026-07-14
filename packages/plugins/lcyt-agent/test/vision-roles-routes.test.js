@@ -55,11 +55,11 @@ afterEach(() => {
   if (server) { server.close(); server = null; }
 });
 
-function startApp() {
+function startApp(bridgeManager = null) {
   manager = new VisionRoleManager(new RolesBus());
   const app = express();
   app.use(express.json());
-  app.use('/roles', createVisionRolesRouter(db, sessionAuth, manager));
+  app.use('/roles', createVisionRolesRouter(db, sessionAuth, manager, bridgeManager));
   return new Promise((resolve) => {
     server = createServer(app);
     server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
@@ -105,6 +105,20 @@ describe('POST /roles/:roleCode/start', () => {
     await startApp();
     const res = await fetch(`${baseUrl}/roles/describer/start`, { method: 'POST', headers: bearer() });
     assert.equal(res.status, 503);
+  });
+
+  it('starts the loop for a bridge-relayed provider when the router receives a bridge manager', async () => {
+    const bridgeManager = {
+      sendCommand: async () => ({ ok: true, status: 200, body: { choices: [{ message: { content: 'ok' } }] } }),
+    };
+    const bridgeProviderId = createProvider(db, {
+      scope: 'site', kind: 'ollama', vendor: 'ollama', name: 'Bridge Ollama', baseUrl: 'http://ollama:11434', bridgeInstanceId: 'bridge-2',
+    }).id;
+    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId: bridgeProviderId, modelName: 'llava' });
+    mockPreview();
+    await startApp(bridgeManager);
+    const res = await fetch(`${baseUrl}/roles/tracker/start`, { method: 'POST', headers: bearer() });
+    assert.equal(res.status, 200);
   });
 
   it('starts the loop when enabled with a direct provider', async () => {
