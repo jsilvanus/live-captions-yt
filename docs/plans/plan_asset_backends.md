@@ -48,6 +48,13 @@ New routes in `packages/plugins/lcyt-files/src/routes/files.js`:
   Data-access/write helpers follow the repo convention (in the plugin's own
   `db.js`/`caption-files.js`, routes stay thin).
 - **Per-key storage** is respected via the existing `resolveStorage(apiKey)`.
+- **S3 fallback: already handled — no work needed.** `createStorageAdapter()`
+  defaults to the **local** adapter (`FILES_DIR`) unless `FILE_STORAGE=s3` is
+  explicitly set (which errors loudly if `S3_BUCKET` is missing rather than
+  silently breaking). So rundowns and caption files authored via this API write
+  to local disk with no S3 configured, and light up S3/WebDAV only when the
+  operator opts in. The recording pipeline mirrors this default in
+  `plan_recording_vod.md`.
 
 ### Planner wiring
 

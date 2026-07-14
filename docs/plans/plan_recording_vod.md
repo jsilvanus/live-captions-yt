@@ -2,7 +2,7 @@
 id: plan/recording_vod
 title: "Recording & VOD Pipeline — Stored Videos from Broadcasts"
 status: draft
-summary: "Backs the Assets page's 'Stored videos' card with a real recording pipeline. A broadcast can opt in to recording; when it goes live, its MediaMTX stream path is patched to record (MediaMtxClient.patchPath) to HLS VOD (fMP4), whose segments land on S3, and a videos table indexes the result keyed to the broadcast. Playback is HLS in-browser. MediaMTX native recording is the phase-1 recorder (chosen as the first step); the worker-daemon ffmpeg recorder (which already does ffmpeg + S3 upload) is a phase-2 alternative behind a swappable recorder interface. Opt-in per broadcast via a record_enabled flag on the broadcasts table (additive to plan_broadcasts.md)."
+summary: "Backs the Assets page's 'Stored videos' card with a real recording pipeline. A broadcast can opt in to recording; when it goes live, its MediaMTX stream path is patched to record (MediaMtxClient.patchPath) to HLS VOD (fMP4), whose segments land on S3 when configured or on local disk as a fallback (same local-default behaviour as lcyt-files, so recording works with no S3), and a videos table indexes the result keyed to the broadcast. Playback is HLS in-browser. MediaMTX native recording is the phase-1 recorder (chosen as the first step); the worker-daemon ffmpeg recorder (which already does ffmpeg + S3 upload) is a phase-2 alternative behind a swappable recorder interface. Opt-in per broadcast via a record_enabled flag on the broadcasts table (additive to plan_broadcasts.md)."
 related: plan/assets_page, plan/broadcasts, plan/asset_backends, plan/mediamtx, plan/hls_sidecar, plan/cloudfleet
 ---
 
@@ -18,8 +18,13 @@ and is deliberately its own plan.
   a **later stage**. Both sit behind one swappable recorder interface.
 - **Trigger → opt-in per broadcast.** Recording happens only for broadcasts that
   enabled it — no storing every ad-hoc/test cast.
-- **Output/storage → HLS VOD on S3.** Segmented fMP4 + playlist, streamable
-  in-browser, reusing the existing HLS + S3 machinery.
+- **Output → HLS VOD** (segmented fMP4 + playlist), streamable in-browser.
+- **Storage → S3 when configured, local-disk fallback otherwise.** Recordings
+  are **not** hard-tied to S3: MediaMTX always writes segments to a local record
+  dir first; if S3 is configured they upload there, and if it isn't they stay on
+  local disk and the backend serves them. Same "local is the default, S3 is
+  opt-in" behaviour the file storage already has (`FILE_STORAGE` defaults to
+  `local`) — so the platform records and plays back with no S3 configured.
 
 ## Architecture
 
@@ -46,12 +51,21 @@ config patch, not new transport code:
   `record: yes`, `recordFormat: fmp4`, `recordPath`, `recordSegmentDuration`,
   `recordDeleteAfter` (0 = keep). `docker/mediamtx.yml` gains recording defaults
   (off globally; enabled per-path at runtime).
-- Segments are written to the record path and **uploaded to S3** as an HLS VOD
-  prefix. Reuse the existing S3 upload path (the worker-daemon's `createUploader`
-  / `createS3UploadFn`, or the `lcyt-files` S3 adapter) to watch the record dir
-  and push segments + a generated VOD playlist.
+- Segments are written to the local record path. **Destination depends on
+  storage config:**
+  - **S3 configured** → watch the record dir and **upload** segments + a
+    generated VOD playlist to an S3 HLS-VOD prefix (reuse the worker-daemon's
+    `createUploader` / `createS3UploadFn`, or the `lcyt-files` S3 adapter).
+    `videos.storage_type='s3'`, `storage_prefix`/`playlist_key` point at S3.
+  - **No S3 (fallback)** → leave the VOD on local disk under a recordings dir
+    (e.g. `RECORDINGS_DIR`, defaulting like `FILES_DIR`); the backend serves the
+    playlist + segments directly. `videos.storage_type='local'`, `storage_prefix`
+    is the local path.
+  This selection reuses the **same storage-adapter abstraction as `lcyt-files`**
+  (local/s3), so "record without S3" is the default, not a special case.
 - On session **end**, finalize: stop recording (patch path back), ensure the last
-  segments upload, write the `videos` row (`status='ready'`, duration, size).
+  segments are uploaded (S3) or flushed (local), write the `videos` row
+  (`status='ready'`, duration, size).
 
 ### Recorder (phase 2: worker-daemon ffmpeg) — later
 
@@ -79,9 +93,9 @@ CREATE TABLE IF NOT EXISTS videos (
   broadcast_id  TEXT,                             -- FK broadcasts.id (nullable; with autocreate, effectively always set)
   title         TEXT NOT NULL DEFAULT '',
   status        TEXT NOT NULL DEFAULT 'recording',-- recording|processing|ready|failed
-  storage_type  TEXT NOT NULL DEFAULT 's3',
-  storage_prefix TEXT,                            -- S3 prefix of the HLS VOD
-  playlist_key  TEXT,                             -- object key of the VOD .m3u8
+  storage_type  TEXT NOT NULL DEFAULT 'local',    -- local|s3 (matches lcyt-files default: local unless S3 configured)
+  storage_prefix TEXT,                            -- S3 prefix, or local dir path, of the HLS VOD
+  playlist_key  TEXT,                             -- object key / relative path of the VOD .m3u8
   duration_ms   INTEGER,
   size_bytes    INTEGER NOT NULL DEFAULT 0,
   started_at    TEXT,
@@ -112,7 +126,7 @@ recordings valid, though with broadcast auto-create every recording has one.
 | `GET` | `/videos` | List (filter `?broadcastId=`, `?status=`) |
 | `GET` | `/videos/:id` | Metadata + playback URL |
 | `GET` | `/videos/:id/playlist.m3u8` | VOD playlist via backend; its segment URLs are direct signed S3/CDN links (decided) |
-| `DELETE` | `/videos/:id` | Delete row + S3 objects under `storage_prefix` |
+| `DELETE` | `/videos/:id` | Delete row + underlying VOD (S3 objects, or local files, under `storage_prefix`) |
 
 ## Frontend
 
@@ -144,11 +158,13 @@ recordings valid, though with broadcast auto-create every recording has one.
 
 ## Resolved (smaller) decisions
 
-1. **Playback URL → signed S3 segments + backend playlist.** The VOD `.m3u8`
-   playlist is served via the backend (`GET /videos/:id/playlist.m3u8`, uniform
-   auth), and the segment URLs it references are **direct signed S3/CDN links**.
-   Low backend load, works with private buckets, and recordings stay
-   access-controlled (no public objects).
+1. **Playback URL → backend playlist, storage-aware segments.** The VOD `.m3u8`
+   playlist is always served via the backend (`GET /videos/:id/playlist.m3u8`,
+   uniform auth). The segment URLs it references depend on `storage_type`:
+   **S3** → **direct signed S3/CDN links** (low backend load, private-bucket
+   safe); **local (fallback)** → backend-served segment files
+   (`GET /videos/:id/seg/:name`, same auth). Either way recordings stay
+   access-controlled — no public objects required.
 2. **Retention → keep until manually deleted.** No auto-expiry/TTL and no
    periodic sweep — recordings live until a user deletes them, which removes the
    S3 objects. Consistent with the Broadcasts "no auto-purge" decision.
