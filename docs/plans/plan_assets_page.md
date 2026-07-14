@@ -2,7 +2,7 @@
 id: plan/assets_page
 title: "Assets Page — Content Library of Project Assets"
 status: draft
-summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit button opening the relevant editor/dialog, and clickable rows. v1 ships six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. Broadcasts now use the dedicated /broadcasts system rather than session_stats, VODs remain a future system that is still placeholder-only, and thumbnail generation is now part of the graphics pipeline rather than a separate tracked asset."
+summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit affordance opening the relevant editor/dialog, and clickable rows. v1 ships six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. Broadcasts are now a first-class /broadcasts system, VODs are a future dedicated system that stays placeholder-only, and thumbnail generation is part of the graphics pipeline rather than a separate tracked asset."
 related: plan/dashboard_console_redesign, plan/ai_roles_framework, plan/cues, plan/selfservice_config_backend
 ---
 
@@ -26,6 +26,8 @@ library that mirrors the `/setup` hub's card idiom but for **content** rather
 than **infrastructure**.
 
 ### Setup vs. Assets
+
+The page now exposes the new filter pills (`All`, `Reusable`, `Produced`) above the card groups so the content library can be browsed by asset type without losing the section labels for reusable/produced/not-tracked-yet assets.
 
 The dividing line, stated by the project owner:
 
@@ -71,9 +73,9 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 | **Global actions** | Reusable | `action_defs` | actions route | Named-actions dialog (already on page) | ✅ |
 | **Icons** | Reusable | `icons` | icons route | `/setup/icons` | ✅ |
 | **Caption / rundown files** | Produced | `caption_files` | `GET /file` | `/captions` | ✅ (a translation is a file with a `lang` badge — decision 2) |
-| **Broadcasts** | Produced | `session_stats` | `GET /stats` | read-only + Watch-on-YouTube link | ✅ (+ small backend delta, below) |
-| **Stored videos** | Produced | `videos` table (recording pipeline) | `GET /videos` | HLS player | 🔜 backend in `plan_recording_vod.md` |
-| **Thumbnails** | Reusable | `thumbnails` table (DSK render) | `GET /:key/thumbnails` | `/graphics/editor` | 🔜 backend in `plan_asset_backends.md` |
+| **Broadcasts** | Produced | `broadcasts` | `GET /broadcasts` | read-only + Watch-on-YouTube link | ✅ |
+| **Stored videos** | Produced | `videos` table (recording pipeline) | `GET /videos` | HLS player | 🔜 backend in `plan_recording_vod.md` (dedicated VOD system) |
+| **Thumbnails** | Reusable | `thumbnails` table (DSK render) | `GET /:key/thumbnails` | `/graphics/editor` | 🔜 backend in `plan_asset_backends.md` (thumbnail generation is now part of the graphics pipeline) |
 | **Rundowns** | Produced | `caption_files` (`type='rundown'`) | `GET /file?type=rundown` | `/planner` | 🔜 backend in `plan_asset_backends.md` (folds into the Caption/rundown files card) |
 
 > **Update:** the three "placeholder" cards below now have accepted backend

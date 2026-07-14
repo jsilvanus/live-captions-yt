@@ -45,7 +45,7 @@ describe('AssetsPage', () => {
         return Promise.resolve({ ok: true, json: async () => ({ files: [{ id: 'f-1', filename: 'caption.vtt', type: 'caption', lang: 'en', sizeBytes: 111 }] }) });
       }
       if (url.includes('/broadcasts')) {
-        return Promise.resolve({ ok: true, json: async () => ({ broadcasts: [{ id: 'b-1', title: 'Show', createdAt: '2024-06-01T00:00:00.000Z', status: 'completed' }] }) });
+        return Promise.resolve({ ok: true, json: async () => ({ broadcasts: [{ id: 'b-1', title: 'Show', createdAt: '2024-06-01T00:00:00.000Z', scheduledStart: '2024-06-01T00:00:00.000Z', status: 'completed', youtubeVideoIds: ['abc123'] }] }) });
       }
       return Promise.resolve({ ok: false, json: async () => ({ error: 'Unexpected' }) });
     });
@@ -62,6 +62,7 @@ describe('AssetsPage', () => {
     expect(screen.getByText('logo.png')).toBeInTheDocument();
     expect(screen.getByText('caption.vtt')).toBeInTheDocument();
     expect(screen.getByText('Show')).toBeInTheDocument();
+    expect(screen.getByText('Watch on YouTube ↗')).toHaveAttribute('href', 'https://www.youtube.com/watch?v=abc123');
   });
 
   it('switches the visible card groups when the filter pills change', async () => {

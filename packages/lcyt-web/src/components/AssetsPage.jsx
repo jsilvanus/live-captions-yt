@@ -84,7 +84,7 @@ export function AssetsPage() {
     setLoading({ graphics: true, cues: true, actions: true, icons: true, files: true, broadcasts: true });
 
     try {
-      const graphicsData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/templates`);
+      const graphicsData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/templates`, authHeaders);
       setGraphics(Array.isArray(graphicsData?.templates) ? graphicsData.templates : []);
       setErrors(prev => ({ ...prev, graphics: false }));
     } catch {
@@ -95,7 +95,7 @@ export function AssetsPage() {
     }
 
     try {
-      const cueData = await fetchJson(`${backendUrl}/cues/rules`, token ? { Authorization: `Bearer ${token}` } : authHeaders);
+      const cueData = await fetchJson(`${backendUrl}/cues/rules`, authHeaders);
       setCueRules(Array.isArray(cueData?.rules) ? cueData.rules : []);
       setErrors(prev => ({ ...prev, cues: false }));
     } catch {
@@ -106,7 +106,7 @@ export function AssetsPage() {
     }
 
     try {
-      const actionData = await fetchJson(`${backendUrl}/actions`, token ? { Authorization: `Bearer ${token}` } : authHeaders);
+      const actionData = await fetchJson(`${backendUrl}/actions`, authHeaders);
       setActions(Array.isArray(actionData?.actions) ? actionData.actions : []);
       setErrors(prev => ({ ...prev, actions: false }));
     } catch {
@@ -117,7 +117,7 @@ export function AssetsPage() {
     }
 
     try {
-      const iconData = await fetchJson(`${backendUrl}/icons`, token ? { Authorization: `Bearer ${token}` } : authHeaders);
+      const iconData = await fetchJson(`${backendUrl}/icons`, authHeaders);
       setIcons(Array.isArray(iconData?.icons) ? iconData.icons : []);
       setErrors(prev => ({ ...prev, icons: false }));
     } catch {
@@ -128,7 +128,7 @@ export function AssetsPage() {
     }
 
     try {
-      const fileData = await fetchJson(`${backendUrl}/file`, token ? { Authorization: `Bearer ${token}` } : authHeaders);
+      const fileData = await fetchJson(`${backendUrl}/file`, authHeaders);
       setFiles(Array.isArray(fileData?.files) ? fileData.files : []);
       setErrors(prev => ({ ...prev, files: false }));
     } catch {
@@ -139,7 +139,7 @@ export function AssetsPage() {
     }
 
     try {
-      const broadcastData = await fetchJson(`${backendUrl}/broadcasts`, token ? { Authorization: `Bearer ${token}` } : authHeaders);
+      const broadcastData = await fetchJson(`${backendUrl}/broadcasts`, authHeaders);
       setBroadcasts(Array.isArray(broadcastData?.broadcasts) ? broadcastData.broadcasts : []);
       setErrors(prev => ({ ...prev, broadcasts: false }));
     } catch {
@@ -175,6 +175,7 @@ export function AssetsPage() {
           name={template.name || `Template ${template.id}`}
           meta={template.updated_at ? `Updated ${formatDate(template.updated_at)}` : 'Template'}
           badge="template"
+          href="/graphics/editor"
         />
       )),
     },
@@ -200,6 +201,7 @@ export function AssetsPage() {
           name={rule.name || 'Cue rule'}
           meta={rule.match_type || 'phrase'}
           badge={rule.enabled === false ? 'disabled' : 'active'}
+          href="/planner"
         />
       )),
     },
@@ -258,6 +260,7 @@ export function AssetsPage() {
           name={icon.filename}
           meta={icon.mimeType || 'image'}
           badge={formatBytes(icon.sizeBytes)}
+          href="/setup/icons"
         />
       )),
     },
@@ -284,6 +287,7 @@ export function AssetsPage() {
           meta={file.type || 'file'}
           badge={file.lang ? `lang: ${file.lang}` : null}
           extra={file.sizeBytes ? <span className="setup-item-row__meta">{formatBytes(file.sizeBytes)}</span> : null}
+          href="/captions"
         />
       )),
     },
@@ -303,14 +307,30 @@ export function AssetsPage() {
         <p className="setup-card__empty">Loading…</p>
       ) : broadcasts.length === 0 ? (
         <p className="setup-card__empty">No broadcasts recorded yet.</p>
-      ) : broadcasts.slice(0, 4).map(broadcast => (
-        <SetupItemRow
-          key={broadcast.id}
-          name={broadcast.title || `Broadcast ${broadcast.id.slice(0, 6)}`}
-          meta={`Created ${formatDate(broadcast.createdAt)}`}
-          badge={broadcast.status || 'draft'}
-        />
-      )),
+      ) : broadcasts.slice(0, 4).map((broadcast) => {
+        const watchLinks = Array.from(new Set([...(broadcast.youtubeVideoIds || []), broadcast.youtubeBroadcastId].filter(Boolean)));
+        return (
+          <SetupItemRow
+            key={broadcast.id}
+            name={broadcast.title || `Broadcast ${broadcast.id.slice(0, 6)}`}
+            meta={`Scheduled ${formatDate(broadcast.scheduledStart || broadcast.actualStart || broadcast.createdAt)}`}
+            badge={(broadcast.status || 'draft').toUpperCase()}
+            href="/broadcast"
+            extra={watchLinks.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                {watchLinks.map((watchId) => {
+                  const watchUrl = watchId.startsWith('http') ? watchId : `https://www.youtube.com/watch?v=${watchId}`;
+                  return (
+                    <a key={watchUrl} href={watchUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--color-accent)', textDecoration: 'none' }}>
+                      Watch on YouTube ↗
+                    </a>
+                  );
+                })}
+              </div>
+            ) : null}
+          />
+        );
+      }),
     },
     {
       key: 'stored-videos',
@@ -345,7 +365,7 @@ export function AssetsPage() {
       status: 'soon',
       statusLabel: 'Planned',
     },
-  ].filter(card => filter === 'all' || card.section === filter || (filter === 'reusable' ? card.section === 'reusable' : card.section === 'produced'));
+  ].filter(card => filter === 'all' || card.section === filter);
 
   const sections = [
     { id: 'reusable', title: 'Reusable', cards: visibleCards.filter(card => card.section === 'reusable') },

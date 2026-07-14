@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useRoute } from 'wouter';
+import { useLocation, useRoute } from 'wouter';
 import { CATEGORY_COLORS, PencilIcon, PlusIcon, StarIcon, TrashIcon } from './icons.jsx';
 import { useCardFavorites } from '../../lib/cardFavorites.js';
 
@@ -132,9 +132,29 @@ const STATUS_LABELS = {
 export function SetupItemRow({
   name, meta, badge, statusDot, faded = false,
   toggleOn, onToggle, onSettings, onDelete, extra,
+  href,
 }) {
-  return (
-    <div className={`setup-item-row${faded ? ' setup-item-row--faded' : ''}`}>
+  const [, setLocation] = useLocation();
+  const hasActions = Boolean(onToggle || onSettings || onDelete);
+  const interactiveSelector = 'a,button,input,select,textarea,summary,[role="button"]';
+
+  const handleRowClick = (event) => {
+    if (!href || hasActions) return;
+    if (event.target instanceof Element && event.target.closest(interactiveSelector)) return;
+    event.preventDefault();
+    setLocation(href);
+  };
+
+  const handleRowKeyDown = (event) => {
+    if (!href || hasActions) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      setLocation(href);
+    }
+  };
+
+  const content = (
+    <>
       {statusDot && <span className="setup-item-row__dot" style={{ background: statusDot }} />}
       <div className="setup-item-row__text">
         <p className="setup-item-row__name">{name}</p>
@@ -167,6 +187,28 @@ export function SetupItemRow({
           <TrashIcon />
         </button>
       )}
+    </>
+  );
+
+  if (href && !hasActions) {
+    return (
+      <div
+        className={`setup-item-row${faded ? ' setup-item-row--faded' : ''}`}
+        role="link"
+        tabIndex={0}
+        aria-label={`Open ${name}`}
+        onClick={handleRowClick}
+        onKeyDown={handleRowKeyDown}
+        style={{ cursor: 'pointer' }}
+      >
+        {content}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`setup-item-row${faded ? ' setup-item-row--faded' : ''}`}>
+      {content}
     </div>
   );
 }
