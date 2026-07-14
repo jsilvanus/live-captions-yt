@@ -367,7 +367,9 @@ store.onSessionEnd = async (session) => {
           youtubeVideoIds: session.youtubeVideoIds,
           endedAt,
         });
-      } catch { /* non-fatal */ }
+      } catch (err) {
+        console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${session.broadcastId})`, err);
+      }
     }
   } else {
     console.warn(`[store] session ended without apiKey (sessionId=${session.sessionId}) — skipping session_stats write`);

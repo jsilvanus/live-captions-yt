@@ -18,7 +18,7 @@
 import { Router } from 'express';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
-  archiveBroadcast, restoreBroadcast, deleteBroadcast,
+  restoreBroadcast, deleteBroadcast,
   duplicateBroadcast, linkAsset, unlinkAsset,
 } from '../db/broadcasts.js';
 

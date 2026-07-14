@@ -392,7 +392,9 @@ export function createLiveRouter(db, store, jwtSecret) {
             youtubeVideoIds: removed.youtubeVideoIds,
             endedAt,
           });
-        } catch { /* non-fatal */ }
+        } catch (err) {
+          console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
+        }
       }
       incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
     }

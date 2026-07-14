@@ -347,8 +347,8 @@ export function bindSessionStart(db, apiKey, id, { startedAt } = {}) {
   if (existing.status === 'live') {
     return { ok: false, error: 'Broadcast already has a live session', status: 409 };
   }
-  if (existing.status === 'archived') {
-    return { ok: false, error: 'Cannot bind a session to an archived broadcast', status: 409 };
+  if (existing.status !== 'draft' && existing.status !== 'scheduled') {
+    return { ok: false, error: `Cannot bind a session to a ${existing.status} broadcast`, status: 409 };
   }
   db.prepare(`
     UPDATE broadcasts
