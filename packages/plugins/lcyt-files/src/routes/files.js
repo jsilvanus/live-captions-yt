@@ -54,7 +54,7 @@ function displayNameForStoredKey(storedKey) {
   const raw = String(storedKey || '').trim();
   if (!raw) return '';
   const base = raw.split(/[\\/]/).pop() || raw;
-  return base.replace(/^\d+-/, '').replace(/\.(md|txt|vtt)$/i, '');
+  return base.replace(/^\d{10,}-[0-9a-f-]{36}-/i, '').replace(/\.(md|txt|vtt)$/i, '');
 }
 
 function makeStorageKey(filename, fallbackType) {

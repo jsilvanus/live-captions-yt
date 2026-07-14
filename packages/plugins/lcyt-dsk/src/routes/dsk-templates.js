@@ -278,7 +278,8 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   router.get('/:apikey/thumbnails', combinedAuth, thumbnailRateLimit, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const rows = listThumbnails(db, req.params.apikey);
-    res.json({ thumbnails: rows });
+    const thumbnails = rows.map(({ storage_path, ...rest }) => rest);
+    res.json({ thumbnails });
   });
 
   // POST /dsk/:apikey/thumbnails — render a template to a cached PNG thumbnail
@@ -291,8 +292,9 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
 
     let templatePayload = template;
     let resolvedTemplateId = templateId != null ? Number(templateId) : null;
+    if (!Number.isInteger(resolvedTemplateId)) resolvedTemplateId = null;
 
-    if (resolvedTemplateId != null && Number.isInteger(resolvedTemplateId)) {
+    if (resolvedTemplateId != null) {
       const row = getTemplate(db, resolvedTemplateId, apiKey);
       if (!row) return res.status(404).json({ error: 'Template not found' });
       templatePayload = row.templateJson;
@@ -317,7 +319,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
         height: heightPx,
         sizeBytes: png.byteLength,
       });
-      res.status(201).json({ ok: true, thumbnail: { id, name: name || 'thumbnail', width: widthPx, height: heightPx, storagePath: fullPath, sizeBytes: png.byteLength } });
+      res.status(201).json({ ok: true, thumbnail: { id, name: name || 'thumbnail', width: widthPx, height: heightPx, sizeBytes: png.byteLength } });
     } catch (err) {
       logger.error('[dsk-templates] thumbnail render error:', err.message);
       res.status(500).json({ error: 'Failed to create thumbnail' });
@@ -332,7 +334,8 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     const row = getThumbnail(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Thumbnail not found' });
     if (req.query.meta === '1' || req.query.meta === 'true') {
-      return res.json({ thumbnail: row });
+      const { storage_path, ...safe } = row;
+      return res.json({ thumbnail: safe });
     }
     if (!existsSync(row.storage_path)) return res.status(404).json({ error: 'Thumbnail file not found' });
     res.set('Content-Type', 'image/png');
@@ -375,7 +378,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
         sizeBytes: png.byteLength,
         storagePath: fullPath,
       });
-      res.json({ ok: true, thumbnail: { id, name: name || existing.name || 'thumbnail', width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080, storagePath: fullPath, sizeBytes: png.byteLength } });
+      res.json({ ok: true, thumbnail: { id, name: name || existing.name || 'thumbnail', width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080, sizeBytes: png.byteLength } });
     } catch (err) {
       logger.error('[dsk-templates] thumbnail update error:', err.message);
       res.status(500).json({ error: 'Failed to update thumbnail' });
