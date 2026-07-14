@@ -15,6 +15,7 @@ COPY packages/plugins/lcyt-cues/package.json packages/plugins/lcyt-cues/
 COPY packages/plugins/lcyt-agent/package.json packages/plugins/lcyt-agent/
 COPY packages/plugins/lcyt-connectors/package.json packages/plugins/lcyt-connectors/
 COPY packages/plugins/lcyt-music/package.json packages/plugins/lcyt-music/
+COPY packages/plugins/lcyt-actions/package.json packages/plugins/lcyt-actions/
 
 # Install workspace dependencies.
 RUN npm ci \
@@ -24,7 +25,8 @@ RUN npm ci \
   --workspace=packages/plugins/lcyt-production \
   --workspace=packages/plugins/lcyt-dsk \
   --workspace=packages/plugins/lcyt-rtmp \
-  --workspace=packages/plugins/lcyt-files
+  --workspace=packages/plugins/lcyt-files \
+  --workspace=packages/plugins/lcyt-actions
 
 # Copy source
 COPY packages/lcyt/ packages/lcyt/
@@ -39,6 +41,7 @@ COPY packages/plugins/lcyt-cues/ packages/plugins/lcyt-cues/
 COPY packages/plugins/lcyt-agent/ packages/plugins/lcyt-agent/
 COPY packages/plugins/lcyt-connectors/ packages/plugins/lcyt-connectors/
 COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
+COPY packages/plugins/lcyt-actions/ packages/plugins/lcyt-actions/
 
 FROM node:20-slim
 WORKDIR /app
