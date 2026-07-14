@@ -31,10 +31,11 @@ export function AssetsPage() {
   const load = useCallback(async () => {
     if (!connected || !backendUrl || !apiKey) return;
     const token = session?.getSessionToken?.() ?? null;
+    const authHeaders = { token: token }; // NEEDS TO BE FIXED!
 
     // Graphics: GET /dsk/:apikey/templates (****** X-API-Key)
     try {
-      const r = await fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/templates`, { headers: (/ });
+      const r = await fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/templates`, { headers: authHeaders});
       if (r.ok) {
         const data = await r.json();
         const list = Array.isArray(data) ? data : (data.templates || []);
