@@ -12,6 +12,7 @@ import { createVideoRouter } from './video.js';
 import { createYouTubeRouter } from './youtube.js';
 import { createSttRouter } from './stt.js';
 import { createTargetsRouter } from './targets.js';
+import { createBroadcastsRouter } from './broadcasts.js';
 import { createTranslationRouter } from './translation.js';
 import { createBridgeDownloadRouter } from './bridge-download.js';
 import { createFilesRouter } from 'lcyt-files';
@@ -38,6 +39,7 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   router.use('/youtube',         createYouTubeRouter(auth));
   router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret));
   router.use('/targets',         createTargetsRouter(scoped('target'), db));
+  router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
   router.use('/translation',     createTranslationRouter(scoped('translation'), db));
   router.use('/bridge-download', createBridgeDownloadRouter());
   return router;

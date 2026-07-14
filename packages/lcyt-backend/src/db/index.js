@@ -19,6 +19,7 @@ export * from './project-features.js';
 export * from './project-members.js';
 export * from './device-roles.js';
 export * from './caption-targets.js';
+export * from './broadcasts.js';
 export * from './translation-config.js';
 export * from './mcp-tokens.js';
 

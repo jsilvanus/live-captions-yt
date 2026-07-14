@@ -1,12 +1,12 @@
 /**
  * Write a completed session summary to session_stats.
  * @param {import('better-sqlite3').Database} db
- * @param {{ sessionId: string, apiKey: string, domain: string, startedAt: string, endedAt: string, durationMs: number, captionsSent: number, captionsFailed: number, finalSequence: number, endedBy: string }} data
+ * @param {{ sessionId: string, apiKey: string, domain: string, startedAt: string, endedAt: string, durationMs: number, captionsSent: number, captionsFailed: number, finalSequence: number, endedBy: string, broadcastId?: string|null }} data
  */
-export function writeSessionStat(db, { sessionId, apiKey, domain, startedAt, endedAt, durationMs, captionsSent, captionsFailed, finalSequence, endedBy }) {
+export function writeSessionStat(db, { sessionId, apiKey, domain, startedAt, endedAt, durationMs, captionsSent, captionsFailed, finalSequence, endedBy, broadcastId }) {
   db.prepare(
-    'INSERT INTO session_stats (session_id, api_key, domain, started_at, ended_at, duration_ms, captions_sent, captions_failed, final_sequence, ended_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(sessionId, apiKey, domain ?? null, startedAt, endedAt, durationMs, captionsSent ?? 0, captionsFailed ?? 0, finalSequence ?? 0, endedBy ?? 'client');
+    'INSERT INTO session_stats (session_id, api_key, domain, started_at, ended_at, duration_ms, captions_sent, captions_failed, final_sequence, ended_by, broadcast_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(sessionId, apiKey, domain ?? null, startedAt, endedAt, durationMs, captionsSent ?? 0, captionsFailed ?? 0, finalSequence ?? 0, endedBy ?? 'client', broadcastId ?? null);
 }
 
 /**
@@ -39,7 +39,7 @@ export function writeAuthEvent(db, { apiKey, eventType, domain }) {
  */
 export function getKeyStats(db, apiKey) {
   const sessions = db.prepare(
-    'SELECT session_id AS sessionId, domain, started_at AS startedAt, ended_at AS endedAt, duration_ms AS durationMs, captions_sent AS captionsSent, captions_failed AS captionsFailed, final_sequence AS finalSequence, ended_by AS endedBy FROM session_stats WHERE api_key = ? ORDER BY id DESC LIMIT 100'
+    'SELECT session_id AS sessionId, domain, started_at AS startedAt, ended_at AS endedAt, duration_ms AS durationMs, captions_sent AS captionsSent, captions_failed AS captionsFailed, final_sequence AS finalSequence, ended_by AS endedBy, broadcast_id AS broadcastId FROM session_stats WHERE api_key = ? ORDER BY id DESC LIMIT 100'
   ).all(apiKey);
 
   const captionErrors = db.prepare(

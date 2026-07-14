@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
@@ -97,7 +97,7 @@ export function createLiveRouter(db, store, jwtSecret) {
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
-    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets } = req.body || {};
+    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId } = req.body || {};
 
     // Validate required fields (streamKey is optional — targets array supersedes it)
     if (!apiKey || !domain) {
@@ -223,6 +223,19 @@ export function createLiveRouter(db, store, jwtSecret) {
       }
     }
 
+    // Bind this session to a broadcast (plan/broadcasts). An explicit broadcastId
+    // binds an existing broadcast (rejected if it already has a live session);
+    // omitting it auto-creates a fresh `live` broadcast so every session always
+    // has exactly one and produced content attaches back to it.
+    let boundBroadcastId = null;
+    if (broadcastId) {
+      const bind = bindSessionStart(db, apiKey, broadcastId);
+      if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
+      boundBroadcastId = broadcastId;
+    } else {
+      boundBroadcastId = autoCreateForSession(db, apiKey, {}).id;
+    }
+
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
     const sessionTtlMs = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000;
     const token = jwt.sign({ sessionId, apiKey }, jwtSecret, { expiresIn: Math.floor(sessionTtlMs / 1000) });
@@ -238,6 +251,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       sender,
       extraTargets,
     });
+    session.broadcastId = boundBroadcastId;
 
     incrementDomainHourlySessionStart(db, domain, store.size());
 
@@ -248,6 +262,7 @@ export function createLiveRouter(db, store, jwtSecret) {
       sequence: session.sequence,
       syncOffset: session.syncOffset,
       startedAt: session.startedAt,
+      broadcastId: boundBroadcastId,
       graphicsEnabled: isGraphicsEnabled(db, apiKey),
     });
   });
@@ -356,18 +371,31 @@ export function createLiveRouter(db, store, jwtSecret) {
     const removed = store.remove(sessionId);
     if (removed) {
       const durationMs = Date.now() - removed.startedAt;
+      const endedAt = new Date().toISOString();
       writeSessionStat(db, {
         sessionId: removed.sessionId,
         apiKey: removed.apiKey,
         domain: removed.domain,
         startedAt: new Date(removed.startedAt).toISOString(),
-        endedAt: new Date().toISOString(),
+        endedAt,
         durationMs,
         captionsSent: removed.captionsSent,
         captionsFailed: removed.captionsFailed,
         finalSequence: removed.sequence,
         endedBy: 'client',
+        broadcastId: removed.broadcastId ?? null,
       });
+      // Transition the bound broadcast to completed (plan/broadcasts).
+      if (removed.broadcastId) {
+        try {
+          completeBroadcast(db, removed.broadcastId, {
+            youtubeVideoIds: removed.youtubeVideoIds,
+            endedAt,
+          });
+        } catch (err) {
+          console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
+        }
+      }
       incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
     }
     return res.status(200).json({ removed: true, sessionId });
