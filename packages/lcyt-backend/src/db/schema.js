@@ -345,6 +345,18 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_broadcast_assets_bid ON broadcast_assets(broadcast_id)');
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS broadcast_files (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      broadcast_id  TEXT    NOT NULL REFERENCES broadcasts(id) ON DELETE CASCADE,
+      file_id       INTEGER NOT NULL REFERENCES caption_files(id) ON DELETE CASCADE,
+      created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(broadcast_id, file_id)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_broadcast_files_bid ON broadcast_files(broadcast_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_broadcast_files_fid ON broadcast_files(file_id)');
+
   // Additive: nullable broadcast_id on produced-content tables so a session,
   // its stats, and its caption files attach to the broadcast that made them.
   // (No FK — SQLite ALTER TABLE ADD COLUMN cannot add one; the delete helper

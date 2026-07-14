@@ -29,6 +29,7 @@
  * @param {object} relayManager
  */
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -53,6 +54,13 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 const THUMBNAIL_ROOT = process.env.DSK_THUMBNAILS_DIR || resolve(process.cwd(), 'data', 'dsk-thumbnails');
 const DSK_LOCAL_SERVER = (process.env.DSK_LOCAL_SERVER || process.env.DSK_PAGE_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const thumbnailRateLimit = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many thumbnail requests' },
+});
 
 function thumbnailStorageDir(apiKey) {
   const dir = join(THUMBNAIL_ROOT, String(apiKey || 'default').replace(/[^a-zA-Z0-9._-]+/g, '_'));
@@ -65,6 +73,10 @@ function slugify(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '') || 'thumbnail';
+}
+
+function makeThumbnailFilename(name) {
+  return `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
 }
 
 export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus) {
@@ -263,14 +275,14 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // GET /dsk/:apikey/thumbnails — list cached thumbnails for this key
-  router.get('/:apikey/thumbnails', combinedAuth, (req, res) => {
+  router.get('/:apikey/thumbnails', combinedAuth, thumbnailRateLimit, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const rows = listThumbnails(db, req.params.apikey);
     res.json({ thumbnails: rows });
   });
 
   // POST /dsk/:apikey/thumbnails — render a template to a cached PNG thumbnail
-  router.post('/:apikey/thumbnails', combinedAuth, async (req, res) => {
+  router.post('/:apikey/thumbnails', combinedAuth, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name, template, templateId, width, height } = req.body || {};
     const apiKey = req.params.apikey;
@@ -293,7 +305,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     try {
       const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: widthPx, height: heightPx });
       const dir = thumbnailStorageDir(apiKey);
-      const fileName = `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
+      const fileName = makeThumbnailFilename(name);
       const fullPath = join(dir, fileName);
       writeFileSync(fullPath, png);
       const id = createThumbnail(db, {
@@ -313,7 +325,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // GET /dsk/:apikey/thumbnails/:id — fetch thumbnail metadata or image bytes
-  router.get('/:apikey/thumbnails/:id', combinedAuth, (req, res) => {
+  router.get('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -328,7 +340,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // PUT /dsk/:apikey/thumbnails/:id — refresh a thumbnail from the current template
-  router.put('/:apikey/thumbnails/:id', combinedAuth, async (req, res) => {
+  router.put('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -351,7 +363,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     try {
       const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
       const dir = thumbnailStorageDir(apiKey);
-      const fileName = `${slugify(name || existing.name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
+      const fileName = makeThumbnailFilename(name || existing.name || 'thumbnail');
       const fullPath = join(dir, fileName);
       writeFileSync(fullPath, png);
       if (existsSync(existing.storage_path)) unlinkSync(existing.storage_path);
@@ -371,7 +383,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // DELETE /dsk/:apikey/thumbnails/:id — remove a cached thumbnail
-  router.delete('/:apikey/thumbnails/:id', combinedAuth, (req, res) => {
+  router.delete('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });

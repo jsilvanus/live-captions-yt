@@ -11,6 +11,9 @@
  *   DELETE /broadcasts/:id                — archive, or hard-delete if already archived past cooling-off
  *   POST   /broadcasts/:id/restore        — un-archive
  *   POST   /broadcasts/:id/duplicate      — clone (config + asset links, no produced content)
+ *   GET    /broadcasts/:id/files          — list files linked to this broadcast
+ *   POST   /broadcasts/:id/files          — link a file to this broadcast
+ *   DELETE /broadcasts/:id/files/:fileId  — unlink a file from this broadcast
  *   POST   /broadcasts/:id/assets         — link a reusable asset
  *   DELETE /broadcasts/:id/assets/:rowId  — unlink
  */
@@ -19,7 +22,8 @@ import { Router } from 'express';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
   restoreBroadcast, deleteBroadcast,
-  duplicateBroadcast, linkAsset, unlinkAsset,
+  duplicateBroadcast, listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
+  linkAsset, unlinkAsset,
 } from '../db/broadcasts.js';
 
 /**
@@ -92,13 +96,32 @@ export function createBroadcastsRouter(auth, db) {
     res.status(201).json({ ok: true, broadcast: result.broadcast });
   });
 
+  router.get('/:id/files', auth, (req, res) => {
+    const files = listBroadcastFiles(db, req.session.apiKey, req.params.id);
+    if (files === null) return res.status(404).json({ error: 'Broadcast not found' });
+    res.json({ files });
+  });
+
+  router.post('/:id/files', auth, (req, res) => {
+    const { fileId } = req.body || {};
+    const result = linkBroadcastFile(db, req.session.apiKey, req.params.id, fileId);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.status(201).json({ ok: true, file: result.file });
+  });
+
+  router.delete('/:id/files/:fileId', auth, (req, res) => {
+    const result = unlinkBroadcastFile(db, req.session.apiKey, req.params.id, req.params.fileId);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json({ ok: true });
+  });
+
   router.post('/:id/assets', auth, (req, res) => {
     const { assetType, assetRef, sortOrder } = req.body || {};
     const result = linkAsset(db, req.session.apiKey, req.params.id, { assetType, assetRef, sortOrder });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json({ ok: true, asset: result.asset });
   });
-
+ 
   router.delete('/:id/assets/:rowId', auth, (req, res) => {
     const result = unlinkAsset(db, req.session.apiKey, req.params.id, req.params.rowId);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });

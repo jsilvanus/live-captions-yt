@@ -15,6 +15,20 @@ import { randomUUID } from 'node:crypto';
 import { basename } from 'node:path';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
+
+async function writeFileContent(storage, apiKey, storageKey, buffer, contentType) {
+  if (storage?.putObject) {
+    await storage.putObject(apiKey, storageKey, buffer, contentType);
+    return;
+  }
+  if (storage?.openAppend) {
+    const handle = storage.openAppend(apiKey, storageKey);
+    await handle.write(buffer);
+    await handle.close();
+    return;
+  }
+  throw new Error('Storage adapter does not support object writes');
+}
 import {
   listCaptionFiles,
   getCaptionFile,
@@ -221,15 +235,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const contentType = contentTypeForFormat(format);
 
     try {
-      if (storage?.putObject) {
-        await storage.putObject(session.apiKey, storageKey, buffer, contentType);
-      } else if (storage?.openAppend) {
-        const handle = storage.openAppend(session.apiKey, storageKey);
-        await handle.write(buffer);
-        await handle.close();
-      } else {
-        throw new Error('Storage adapter does not support object writes');
-      }
+      await writeFileContent(storage, session.apiKey, storageKey, buffer, contentType);
 
       const id = registerCaptionFile(db, {
         apiKey: session.apiKey,
@@ -283,15 +289,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const contentType = contentTypeForFormat(format);
 
     try {
-      if (storage?.putObject) {
-        await storage.putObject(session.apiKey, storageKey, buffer, contentType);
-      } else if (storage?.openAppend) {
-        const handle = storage.openAppend(session.apiKey, storageKey);
-        await handle.write(buffer);
-        await handle.close();
-      } else {
-        throw new Error('Storage adapter does not support object writes');
-      }
+      await writeFileContent(storage, session.apiKey, storageKey, buffer, contentType);
 
       if (storage?.deleteFile && row.filename && row.filename !== storageKey) {
         await storage.deleteFile(session.apiKey, row.filename).catch(() => {});
@@ -318,7 +316,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     }
   });
 
-  // GET /file/:id — Download a file (****** or ?token=)
+  // GET /file/:id — Download a file (****** or ?token= query param)
   router.get('/:id', fileRateLimit, async (req, res) => {
     // Accept token via Authorization header or ?token= query param (for direct download links)
     let apiKey = null;

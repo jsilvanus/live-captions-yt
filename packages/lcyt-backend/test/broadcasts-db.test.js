@@ -9,7 +9,8 @@ import { initDb } from '../src/db.js';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
   archiveBroadcast, restoreBroadcast, deleteBroadcast,
-  duplicateBroadcast, linkAsset, unlinkAsset,
+  duplicateBroadcast, listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
+  linkAsset, unlinkAsset,
   autoCreateForSession, bindSessionStart, completeBroadcast,
 } from '../src/db/broadcasts.js';
 
@@ -23,6 +24,9 @@ before(() => {
 after(() => db.close());
 
 beforeEach(() => {
+  db.prepare('DELETE FROM broadcast_assets').run();
+  db.prepare('DELETE FROM broadcast_files').run();
+  db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(KEY);
   db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(KEY);
 });
 
@@ -163,10 +167,43 @@ describe('asset linkage', () => {
   });
 });
 
+describe('file linkage', () => {
+  it('links, lists, rejects dup, and unlinks files for a broadcast', () => {
+    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
+    const fileId = db.prepare(
+      'INSERT INTO caption_files (api_key, session_id, filename, lang, format, type) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(KEY, 's1', 'rundown.md', 'en', 'md', 'rundown').lastInsertRowid;
+
+    const link = linkBroadcastFile(db, KEY, b.id, fileId);
+    assert.equal(link.ok, true);
+    assert.equal(link.file.fileId, fileId);
+
+    const listed = listBroadcastFiles(db, KEY, b.id);
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].fileId, fileId);
+
+    const withFiles = getBroadcast(db, KEY, b.id);
+    assert.equal(withFiles.files.length, 1);
+    assert.equal(withFiles.files[0].fileId, fileId);
+
+    const dup = linkBroadcastFile(db, KEY, b.id, fileId);
+    assert.equal(dup.ok, false);
+    assert.equal(dup.status, 409);
+
+    const un = unlinkBroadcastFile(db, KEY, b.id, fileId);
+    assert.equal(un.ok, true);
+    assert.equal(listBroadcastFiles(db, KEY, b.id).length, 0);
+  });
+});
+
 describe('duplicateBroadcast (same project)', () => {
   it('copies title+links, not produced content, and starts as fresh draft', () => {
     const b = createBroadcast(db, KEY, { title: 'Original', status: 'scheduled', scheduledStart: '2026-08-01T10:00:00' }).broadcast;
     linkAsset(db, KEY, b.id, { assetType: 'cue', assetRef: 'c1' });
+    const fileId = db.prepare(
+      'INSERT INTO caption_files (api_key, session_id, filename, lang, format, type) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(KEY, 's1', 'rundown.md', 'en', 'md', 'rundown').lastInsertRowid;
+    linkBroadcastFile(db, KEY, b.id, fileId);
     // Simulate produced content on the source
     completeBroadcast(db, b.id, { youtubeVideoIds: ['vid123'] });
 
@@ -178,6 +215,8 @@ describe('duplicateBroadcast (same project)', () => {
     assert.equal(dup.broadcast.scheduledStart, null);
     assert.equal(dup.broadcast.assets.length, 1);
     assert.equal(dup.broadcast.assets[0].assetRef, 'c1');
+    assert.equal(dup.broadcast.files.length, 1);
+    assert.equal(dup.broadcast.files[0].fileId, fileId);
   });
 });
 

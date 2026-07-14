@@ -873,10 +873,19 @@ export function PlannerPage() {
     showToast('Exported!', 'success');
   }
 
-  function normalizeProjectFilename(name) {
+  function extensionForFormat(format) {
+    if (format === 'txt') return '.txt';
+    if (format === 'vtt') return '.vtt';
+    return '.md';
+  }
+
+  function normalizeProjectFilename(name, format = 'md') {
     const trimmed = (name || '').trim();
-    if (!trimmed) return 'rundown.md';
-    return /\.md$/i.test(trimmed) ? trimmed : `${trimmed}.md`;
+    const extension = extensionForFormat(format);
+    if (!trimmed) return `rundown${extension}`;
+    return new RegExp(`${extension.replace('.', '\\.')}$`, 'i').test(trimmed)
+      ? trimmed
+      : `${trimmed}${extension}`;
   }
 
   async function handleSaveToProject() {
@@ -884,7 +893,7 @@ export function PlannerPage() {
     setProjectSaving(true);
     try {
       const text = serializePlan(blocks);
-      const targetName = normalizeProjectFilename(filename);
+      const targetName = normalizeProjectFilename(filename, 'md');
       const method = selectedServerRundownId ? 'PUT' : 'POST';
       const url = `${backendUrl}/file${selectedServerRundownId ? `/${selectedServerRundownId}` : ''}`;
       const res = await fetch(url, {
