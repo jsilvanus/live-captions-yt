@@ -72,9 +72,16 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 | **Icons** | Reusable | `icons` | icons route | `/setup/icons` | ✅ |
 | **Caption / rundown files** | Produced | `caption_files` | `GET /file` | `/captions` | ✅ (a translation is a file with a `lang` badge — decision 2) |
 | **Broadcasts** | Produced | `session_stats` | `GET /stats` | read-only + Watch-on-YouTube link | ✅ (+ small backend delta, below) |
-| **Stored videos** | Placeholder | — (live HLS only; no VOD store) | — | — | ❌ placeholder card |
-| **Thumbnails** | Placeholder | — | — | — | ❌ placeholder card |
-| **Rundowns** | Placeholder | — (planner is client-side today) | — | `/planner` | ❌ placeholder card |
+| **Stored videos** | Produced | `videos` table (recording pipeline) | `GET /videos` | HLS player | 🔜 backend in `plan_recording_vod.md` |
+| **Thumbnails** | Reusable | `thumbnails` table (DSK render) | `GET /:key/thumbnails` | `/graphics/editor` | 🔜 backend in `plan_asset_backends.md` |
+| **Rundowns** | Produced | `caption_files` (`type='rundown'`) | `GET /file?type=rundown` | `/planner` | 🔜 backend in `plan_asset_backends.md` (folds into the Caption/rundown files card) |
+
+> **Update:** the three "placeholder" cards below now have accepted backend
+> plans — `plan_asset_backends.md` (Rundowns, Thumbnails) and
+> `plan_recording_vod.md` (Stored videos). They ship as dashed placeholders in
+> the Assets page v1 per decision 1a, and light up as those plans land. Rundowns
+> fold into the existing "Caption / rundown files" card rather than being their
+> own card.
 
 Notes from tracing the code:
 
