@@ -15,6 +15,11 @@ function safeSlug(value) {
   return slug.replace(/-+/g, '-').replace(/^-|-$/g, '') || 'project';
 }
 
+export function buildVideoStorageKey(apiKey, videoId, storageKey = null) {
+  if (storageKey) return storageKey;
+  return `${safeSlug(apiKey)}/${videoId}`;
+}
+
 export function getVideosStorageRoot() {
   return process.env.VIDEOS_STORAGE_DIR || join(process.cwd(), 'recordings');
 }
@@ -88,6 +93,8 @@ export function createVideo(db, apiKey, fields = {}) {
     endedAt = null,
   } = fields;
 
+  const resolvedStorageKey = storageKey ?? (storageType === 's3' ? buildVideoStorageKey(apiKey, id) : null);
+
   ensureVideoArtifacts(apiKey, id);
   db.prepare(`
     INSERT INTO videos (
@@ -101,7 +108,7 @@ export function createVideo(db, apiKey, fields = {}) {
     title,
     status,
     storageType,
-    storageKey,
+    resolvedStorageKey,
     durationMs,
     sizeBytes,
     startedAt,

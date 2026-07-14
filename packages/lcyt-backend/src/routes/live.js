@@ -6,7 +6,8 @@ import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourly
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
-import { startVideoRecording, finishVideoRecording } from '../db/videos.js';
+import { startVideoRecording, finishVideoRecording, getVideoStorageDir } from '../db/videos.js';
+import { isS3Enabled } from '../storage/s3.js';
 
 /**
  * Validate and build the extraTargets array from the client-supplied targets list.
@@ -80,6 +81,34 @@ async function buildExtraTargets(targets, { db, apiKey } = {}) {
   return { ok: true, extraTargets };
 }
 
+async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, enabled }) {
+  if (!mediamtxClient || !pathName) return;
+  const config = enabled
+    ? {
+        record: 'yes',
+        recordFormat: 'fmp4',
+        recordPath: videoDir,
+        recordSegmentDuration: '4s',
+        recordDeleteAfter: 0,
+      }
+    : { record: 'no' };
+
+  try {
+    try {
+      await mediamtxClient.addPath(pathName, { source: 'publisher' });
+    } catch (err) {
+      if (err?.statusCode && [400, 404, 409, 422].includes(err.statusCode)) {
+        // Path already exists or is not yet configured; continue to patch it.
+      } else {
+        throw err;
+      }
+    }
+    await mediamtxClient.patchPath(pathName, config);
+  } catch (err) {
+    logger.warn(`[videos] MediaMTX recording ${enabled ? 'start' : 'stop'} failed for ${pathName}: ${err?.message}`);
+  }
+}
+
 /**
  * Factory for the /live router.
  *
@@ -91,9 +120,10 @@ async function buildExtraTargets(targets, { db, apiKey } = {}) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
+ * @param {{ mediamtxClient?: object | null }} [opts]
  * @returns {Router}
  */
-export function createLiveRouter(db, store, jwtSecret) {
+export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null } = {}) {
   const router = Router();
   const auth = createAuthMiddleware(jwtSecret);
 
@@ -246,8 +276,18 @@ export function createLiveRouter(db, store, jwtSecret) {
         broadcastId: boundBroadcastId,
         title: broadcast?.title || 'Recorded broadcast',
         startedAt: new Date().toISOString(),
+        storageType: isS3Enabled() ? 's3' : 'local',
       });
-      if (videoResult.ok) recordingVideo = videoResult.video;
+      if (videoResult.ok) {
+        recordingVideo = videoResult.video;
+        const recordingPathName = streamKey || apiKey;
+        const recordingVideoDir = getVideoStorageDir(apiKey, recordingVideo.id);
+        await configureMediaMtxRecording(mediamtxClient, {
+          pathName: recordingPathName,
+          videoDir: recordingVideoDir,
+          enabled: true,
+        });
+      }
     }
 
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
@@ -408,6 +448,11 @@ export function createLiveRouter(db, store, jwtSecret) {
           finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
             endedAt,
             durationMs: Math.max(0, Date.now() - startedAtMs),
+          });
+          await configureMediaMtxRecording(mediamtxClient, {
+            pathName: removed.streamKey || removed.apiKey,
+            videoDir: getVideoStorageDir(removed.apiKey, removed.recordingVideoId),
+            enabled: false,
           });
         } catch (err) {
           logger.warn(`[videos] finishVideoRecording failed (videoId=${removed.recordingVideoId})`, err);

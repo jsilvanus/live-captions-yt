@@ -1,6 +1,9 @@
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { createServer } from 'node:http';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey, createCaptionTarget } from '../src/db.js';
@@ -15,13 +18,13 @@ const JWT_SECRET = 'test-live-secret';
 
 let server, baseUrl, db, store;
 
-function makeTestApp() {
-  const testDb = initDb(':memory:');
-  const testStore = new SessionStore({ cleanupInterval: 0 });
+function makeTestApp({ db: customDb, store: customStore, mediamtxClient } = {}) {
+  const testDb = customDb ?? initDb(':memory:');
+  const testStore = customStore ?? new SessionStore({ cleanupInterval: 0 });
 
   const app = express();
   app.use(express.json({ limit: '64kb' }));
-  app.use('/live', createLiveRouter(testDb, testStore, JWT_SECRET));
+  app.use('/live', createLiveRouter(testDb, testStore, JWT_SECRET, { mediamtxClient }));
 
   return { app, db: testDb, store: testStore };
 }
@@ -162,6 +165,54 @@ describe('POST /live', () => {
     assert.strictEqual(res.status, 200);
     assert.ok(data.token, 'should have token');
     assert.ok(data.sessionId, 'should have sessionId');
+  });
+
+  it('should start and stop MediaMTX recording when recording is enabled', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'lcyt-live-recording-'));
+    process.env.VIDEOS_STORAGE_DIR = join(tempDir, 'recordings');
+    try {
+      const { key } = createKey(db, { owner: 'Recording User' });
+      const calls = [];
+      const mediamtxClient = {
+        async addPath(name, config) { calls.push(['add', name, config]); },
+        async patchPath(name, config) { calls.push(['patch', name, config]); },
+      };
+
+      const { app } = makeTestApp({ db, store, mediamtxClient });
+      const testServer = createServer(app);
+      await new Promise((resolve) => testServer.listen(0, resolve));
+      const address = testServer.address();
+      const testBaseUrl = `http://localhost:${address.port}`;
+
+      try {
+        const startRes = await fetch(`${testBaseUrl}/live`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: key, streamKey: 'recording-key', domain: 'https://recording.test', recordEnabled: true }),
+        });
+        assert.strictEqual(startRes.status, 200);
+        const startBody = await startRes.json();
+        const startPatch = calls.filter(([op, , config]) => op === 'patch' && config?.record === 'yes');
+        assert.strictEqual(startPatch.length, 1);
+        assert.strictEqual(startPatch[0][1], 'recording-key');
+        assert.strictEqual(startPatch[0][2].record, 'yes');
+        assert.strictEqual(startPatch[0][2].recordFormat, 'fmp4');
+        assert.ok(startPatch[0][2].recordPath);
+
+        const stopRes = await fetch(`${testBaseUrl}/live`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${startBody.token}` },
+        });
+        assert.strictEqual(stopRes.status, 200);
+        const stopPatch = calls.filter(([op, , config]) => op === 'patch' && config?.record === 'no');
+        assert.strictEqual(stopPatch.length, 1);
+      } finally {
+        await new Promise((resolve) => testServer.close(resolve));
+      }
+    } finally {
+      delete process.env.VIDEOS_STORAGE_DIR;
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it('should store the session in the store (target-array mode)', async () => {

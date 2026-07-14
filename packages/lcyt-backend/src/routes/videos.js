@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { existsSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
 import { listVideos, getVideo, deleteVideo, startVideoRecording, resolveVideoAssetPath } from '../db/videos.js';
+import { buildS3Url, isS3Enabled } from '../storage/s3.js';
 
 function withPlaybackUrl(req, video) {
   if (!video) return video;
@@ -10,6 +11,46 @@ function withPlaybackUrl(req, video) {
     ...video,
     playbackUrl: `${req.baseUrl}/${video.id}/playlist.m3u8`,
   };
+}
+
+export function rewritePlaylistReferences(text, baseUrl) {
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return text.split(/\r?\n/).map((line) => {
+    if (!line || line.startsWith('#')) return line;
+    if (/^(https?:)?\/\//.test(line) || line.startsWith('/')) return line;
+    return `${normalizedBase}${line.replace(/^\.\//, '')}`;
+  }).join('\n');
+}
+
+async function streamVideoAsset(req, res, video, relativePath = 'playlist.m3u8') {
+  const apiKey = req.session?.apiKey;
+  const safeRelativePath = String(relativePath || 'playlist.m3u8').replace(/^\/+/, '');
+
+  if (video.storageType === 's3' && isS3Enabled()) {
+    const storagePrefix = video.storageKey || video.id;
+    const bucketKey = `${storagePrefix}/${safeRelativePath}`;
+    try {
+      const url = buildS3Url(bucketKey);
+      const assetRes = await fetch(url, { headers: { Accept: '*/*' } });
+      if (!assetRes.ok) return res.status(assetRes.status || 502).json({ error: 'Asset not found' });
+      const contentType = assetRes.headers.get('content-type') || (safeRelativePath.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'application/octet-stream');
+      res.setHeader('Content-Type', contentType);
+      if (safeRelativePath.endsWith('.m3u8')) {
+        const body = await assetRes.text();
+        const assetBaseUrl = `${req.protocol}://${req.get('host')}${req.baseUrl}/${video.id}`;
+        return res.send(rewritePlaylistReferences(body, assetBaseUrl));
+      }
+      const buffer = Buffer.from(await assetRes.arrayBuffer());
+      return res.send(buffer);
+    } catch (err) {
+      return res.status(502).json({ error: 'S3 asset fetch failed' });
+    }
+  }
+
+  const assetPath = resolveVideoAssetPath(apiKey, video.id, safeRelativePath);
+  if (!assetPath || !existsSync(assetPath)) return res.status(404).json({ error: 'Asset not found' });
+  res.setHeader('Content-Type', safeRelativePath.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'application/octet-stream');
+  createReadStream(assetPath).pipe(res);
 }
 
 export function createVideosRouter(auth, db) {
@@ -29,6 +70,7 @@ export function createVideosRouter(auth, db) {
       broadcastId: broadcastId || null,
       title: title || undefined,
       status: normalizedStatus,
+      storageType: isS3Enabled() ? 's3' : 'local',
     });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json({ ok: true, video: withPlaybackUrl(req, result.video) });
@@ -40,13 +82,17 @@ export function createVideosRouter(auth, db) {
     res.json({ video: withPlaybackUrl(req, video) });
   });
 
-  router.get('/:id/playlist.m3u8', auth, (req, res) => {
+  router.get('/:id/playlist.m3u8', auth, async (req, res) => {
     const video = getVideo(db, req.session.apiKey, req.params.id);
     if (!video) return res.status(404).json({ error: 'Video not found' });
-    const assetPath = resolveVideoAssetPath(req.session.apiKey, video.id, 'playlist.m3u8');
-    if (!assetPath || !existsSync(assetPath)) return res.status(404).json({ error: 'Playlist not found' });
-    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-    createReadStream(assetPath).pipe(res);
+    await streamVideoAsset(req, res, video, 'playlist.m3u8');
+  });
+
+  router.get('/:id/*', auth, async (req, res) => {
+    const video = getVideo(db, req.session.apiKey, req.params.id);
+    if (!video) return res.status(404).json({ error: 'Video not found' });
+    const relativePath = req.params[0] || 'playlist.m3u8';
+    await streamVideoAsset(req, res, video, relativePath);
   });
 
   router.delete('/:id', auth, (req, res) => {
