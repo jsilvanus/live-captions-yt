@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
@@ -172,10 +173,16 @@ async function stopSessionRecording(db, session, { mediamtxClient }) {
 export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null } = {}) {
   const router = Router();
   const auth = createAuthMiddleware(jwtSecret);
+  const recordingLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false,
+  });
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
-    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId, recordEnabled } = req.body || {};
+    const { apiKey, streamKey, domain, sequence: startSeqRaw, targets, broadcastId, recordEnabled: broadcastRecordEnabled } = req.body || {};
 
     // Validate required fields (streamKey is optional — targets array supersedes it)
     if (!apiKey || !domain) {
@@ -308,16 +315,16 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     let boundBroadcastId = null;
     let recordingVideo = null;
     if (broadcastId) {
-      const bind = bindSessionStart(db, apiKey, broadcastId, { recordEnabled });
+      const bind = bindSessionStart(db, apiKey, broadcastId, { recordEnabled: broadcastRecordEnabled });
       if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
       boundBroadcastId = broadcastId;
     } else {
-      boundBroadcastId = autoCreateForSession(db, apiKey, { recordEnabled }).id;
+      boundBroadcastId = autoCreateForSession(db, apiKey, { recordEnabled: broadcastRecordEnabled }).id;
     }
 
     const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
     const relaySlots = getRelaySlots(db, apiKey);
-    const shouldRecord = Boolean(recordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
+    const shouldRecord = Boolean(broadcastRecordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
     if (shouldRecord) {
       const videoResult = startVideoRecording(db, apiKey, {
         broadcastId: boundBroadcastId,
@@ -370,7 +377,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
   });
 
   // POST /live/recording — Start/stop recording for this session.
-  router.post('/recording', auth, async (req, res) => {
+  router.post('/recording', recordingLimiter, auth, async (req, res) => {
     const { sessionId } = req.session;
     const session = store.get(sessionId);
     if (!session) {

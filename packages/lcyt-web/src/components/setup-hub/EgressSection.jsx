@@ -99,8 +99,10 @@ export function EgressSection() {
     setRelayList(list => {
       const next = list.map(r => r.slot === slot ? { ...r, ...updated } : r);
       const entry = next.find(r => r.slot === slot);
-      if (entry) persistSlot(slot, entry);
-      if (entry) { void persistRelayToBackend(entry); }
+      if (entry) {
+        persistSlot(slot, entry);
+        void persistRelayToBackend(entry);
+      }
       return next;
     });
   }

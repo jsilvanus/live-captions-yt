@@ -98,7 +98,7 @@ export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
                 checked={!!entry.recordOnStart}
                 onChange={e => onChange({ ...entry, recordOnStart: e.target.checked })}
               />
-              Start when we start
+              Record automatically when the session starts
             </label>
             <label className="settings-checkbox" style={{ marginBottom: 0 }}>
               <input
@@ -106,7 +106,7 @@ export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
                 checked={!!entry.recordOnButton}
                 onChange={e => onChange({ ...entry, recordOnButton: e.target.checked })}
               />
-              Start when we press this button
+              Enable manual recording from this egress
             </label>
           </div>
           {/* Caption mode */}

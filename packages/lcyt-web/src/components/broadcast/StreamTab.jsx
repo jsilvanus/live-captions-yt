@@ -44,6 +44,7 @@ export function StreamTab() {
   const [relayActive, setRelayActiveState] = useState(false);
   const [relayError, setRelayError] = useState('');
   const [rtmpIngest, setRtmpIngest] = useState(null);
+  const [manualRecording, setManualRecording] = useState(false);
 
   async function persistRelaySlot(entry) {
     if (!session?.connected) return;
@@ -110,6 +111,20 @@ export function StreamTab() {
     }
   }
 
+  async function handleManualRecordingToggle() {
+    const slot = relayList.find(r => r.recordOnButton)?.slot;
+    if (!session.connected || slot == null) return;
+    try {
+      setRelayError('');
+      const res = await session.toggleRecording({ enabled: !manualRecording, slot });
+      setManualRecording(!!res?.recording);
+    } catch (err) {
+      const msg = err.message || 'Failed to toggle manual recording';
+      setRelayError(msg);
+      showToast(msg, 'error');
+    }
+  }
+
   const backendUrl = session.backendUrl;
   const apiKey = session.apiKey;
 
@@ -171,6 +186,22 @@ export function StreamTab() {
             />
             {relayActive ? 'Active — will fan-out when stream arrives' : 'Inactive — incoming stream accepted but not relayed'}
           </label>
+        </div>
+      )}
+
+      {session.connected && relayList.some(r => r.recordOnButton) && (
+        <div className="settings-field">
+          <label className="settings-field__label">Manual recording</label>
+          <button
+            type="button"
+            className="btn btn--secondary btn--sm"
+            onClick={handleManualRecordingToggle}
+          >
+            {manualRecording ? 'Stop manual recording' : 'Start manual recording'}
+          </button>
+          <span className="settings-field__hint">
+            Uses the first egress marked “Enable manual recording from this egress”.
+          </span>
         </div>
       )}
     </div>

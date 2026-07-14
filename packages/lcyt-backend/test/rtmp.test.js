@@ -197,10 +197,10 @@ describe('rtmp_relays DB helpers (fan-out)', () => {
       recordOnStart: true,
       recordOnButton: true,
     });
-    assert.strictEqual(relay.recordOnStart, 1);
-    assert.strictEqual(relay.recordOnButton, 1);
-    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnStart, 1);
-    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnButton, 1);
+    assert.strictEqual(relay.recordOnStart, true);
+    assert.strictEqual(relay.recordOnButton, true);
+    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnStart, true);
+    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnButton, true);
   });
 });
 
