@@ -1,6 +1,7 @@
 import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
@@ -461,5 +462,6 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
 
 /** ProductionCamerasPage — standalone route wrapper around CamerasManager. */
 export function ProductionCamerasPage() {
+  useProjectRequired();
   return <CamerasManager />;
 }

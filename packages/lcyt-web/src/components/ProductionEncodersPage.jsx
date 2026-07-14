@@ -1,6 +1,7 @@
 import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 
@@ -376,6 +377,7 @@ export const EncodersManager = forwardRef(function EncodersManager({ embedded = 
 
 /** ProductionEncodersPage — standalone route wrapper around EncodersManager. */
 export function ProductionEncodersPage() {
+  useProjectRequired();
   return <EncodersManager />;
 }
 

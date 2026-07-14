@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { LiveTab } from './broadcast/LiveTab.jsx';
 import { SettingsTab } from './broadcast/SettingsTab.jsx';
 
@@ -15,6 +16,7 @@ const TABS = [
  * config (formerly `BroadcastModal`).
  */
 export function BroadcastPage() {
+  useProjectRequired();
   const [activeTab, setActiveTab] = useState('live');
 
   return (

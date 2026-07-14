@@ -21,6 +21,7 @@ import { useCardFavorites } from '../../lib/cardFavorites.js';
 import { useUserAuth } from '../../hooks/useUserAuth.js';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useProjectFeatures } from '../../hooks/useProjectFeatures.js';
+import { useProjectRequired } from '../../hooks/useProjectRequired.js';
 import { cardIdsForEnabledFeatures } from '../../lib/workflowFeatureMap.js';
 
 const FILTERS = [
@@ -54,6 +55,7 @@ const FILTERS = [
  * card below has an `id` for this reason.
  */
 export function SetupHubPage() {
+  useProjectRequired();
   const [filter, setFilter] = useState('all');
   const { favorites } = useCardFavorites();
 

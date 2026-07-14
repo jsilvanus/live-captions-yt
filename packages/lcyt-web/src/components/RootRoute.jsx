@@ -30,7 +30,7 @@ const LiveTab             = lazyImport(() => import('./broadcast/LiveTab.jsx').t
 /**
  * RootRoute — resolves what `/` shows (see
  * docs/plans/plan_dashboard_console_redesign.md "Routing model"):
- *   - An active/connected project         → that project's summary view
+ *   - An active project (connected OR persisted)   → that project's summary view
  *     (ProjectSettingsPage, implicit key, Summary tab by default).
  *   - No active project + `login` feature → redirect to /projects (pick one).
  *   - No active project + no `login` feature (minimal-mode backend, or
@@ -38,9 +38,12 @@ const LiveTab             = lazyImport(() => import('./broadcast/LiveTab.jsx').t
  *     directly, since there's no multi-project concept to summarize.
  */
 export function RootRoute() {
-  const { connected, apiKey, projectId, backendFeatures } = useSessionContext();
+  const { connected, apiKey, projectId, backendFeatures, getPersistedConfig } = useSessionContext();
+  const persistedCfg = getPersistedConfig();
+  const hasPersistedProject = hasProjectSessionConfig(persistedCfg);
 
-  if (connected && (apiKey || projectId)) {
+  // Show project summary if connected OR if a project is persisted (auto-connect pending).
+  if ((connected || hasPersistedProject) && (apiKey || projectId)) {
     return (
       <Suspense fallback={null}>
         <ProjectSettingsPage implicitKey />

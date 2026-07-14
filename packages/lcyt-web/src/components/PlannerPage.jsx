@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback, useContext } from 'react';
 import { useFileContext } from '../contexts/FileContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { usePageThemeOverride } from '../hooks/usePageThemeOverride.js';
+import { useProjectRequired } from '../hooks/useProjectRequired.js';
 import { KEYS } from '../lib/storageKeys.js';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
@@ -699,6 +700,7 @@ function useIsNarrow() {
 }
 
 export function PlannerPage() {
+  useProjectRequired();
   usePageThemeOverride(KEYS.ui.plannerTheme);
   const fileStore = useFileContext();
   const { showToast } = useToastContext();

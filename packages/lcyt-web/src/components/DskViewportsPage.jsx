@@ -1,5 +1,6 @@
 import { useContext, useEffect, useState, useCallback, useId } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { dark, btnPrimary, btnDanger, btnSmall, inputStyle, labelStyle } from './dsk-viewports/styles.js';
 import { TextLayersEditor } from './dsk-viewports/TextLayersEditor.jsx';
 import { ImageSettingsTable } from './dsk-viewports/ImageSettingsTable.jsx';
@@ -7,6 +8,7 @@ import { ImageSettingsTable } from './dsk-viewports/ImageSettingsTable.jsx';
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export function DskViewportsPage() {
+  useProjectRequired();
   const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
   const serverUrl = (session?.backendUrl || params.get('server') || window.location.origin).replace(/\/$/, '');

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 
 const PROVIDERS = [
   { value: 'none',   label: 'Disabled' },
@@ -10,6 +11,7 @@ const PROVIDERS = [
 ];
 
 export function AiSettingsPage() {
+  useProjectRequired();
   const { t } = useLang();
   const session = useSessionContext();
   const [config, setConfig] = useState(null);

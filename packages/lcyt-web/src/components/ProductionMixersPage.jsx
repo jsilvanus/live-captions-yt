@@ -1,6 +1,7 @@
 import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
@@ -488,5 +489,6 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
 
 /** ProductionMixersPage — standalone route wrapper around MixersManager. */
 export function ProductionMixersPage() {
+  useProjectRequired();
   return <MixersManager />;
 }

@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { usePageThemeOverride } from '../hooks/usePageThemeOverride.js';
+import { useProjectRequired } from '../hooks/useProjectRequired.js';
 import { useResizableColumn } from '../hooks/useResizableColumn.js';
 import { KEYS } from '../lib/storageKeys.js';
 import { templateSlug } from '../lib/formatting.js';
@@ -166,6 +167,7 @@ function newGroupId()     { _groupCounter += 1; return `grp-${_groupCounter}`; }
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function DskEditorPage() {
+  useProjectRequired();
   usePageThemeOverride(KEYS.ui.editorTheme);
   const session   = useContext(SessionContext);
   const params    = new URLSearchParams(window.location.search);
