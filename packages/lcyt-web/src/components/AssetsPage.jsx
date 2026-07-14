@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { SetupCard, SetupItemRow } from './setup-hub/SetupCard.jsx';
 
 const FILTERS = [
@@ -40,6 +41,7 @@ function formatBytes(bytes) {
 }
 
 export function AssetsPage() {
+  useProjectRequired();
   const session = useSessionContext();
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;

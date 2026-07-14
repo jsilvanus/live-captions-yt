@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAudioContext } from '../contexts/AudioContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { LanguagePicker } from './LanguagePicker';
 import { readInputLang, writeInputLang, INPUT_LANG_EVENT } from '../lib/inputLang';
 import { formatTime } from '../lib/formatting';
@@ -36,6 +37,7 @@ function MiniSentLog() {
 }
 
 export function AudioPage() {
+  useProjectRequired();
   const audio = useAudioContext();
   const [lang, setLang] = useState(readInputLang);
   const [utteranceEnd, setUtteranceEnd] = useState(

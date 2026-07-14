@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { SettingsModal } from './SettingsModal';
 import { CCModal } from './CCModal';
 import { useSessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { downloadSettings, importSettings } from '../lib/settingsIO.js';
 
 /**
@@ -26,6 +27,7 @@ const TOP_TABS = [
 ];
 
 export function SettingsPage() {
+  useProjectRequired();
   const [activeTab, setActiveTab] = useState('general');
   const { connected } = useSessionContext();
   const [importResult, setImportResult] = useState(null);

@@ -1,6 +1,7 @@
 import { KEYS } from '../lib/storageKeys.js';
 import { useState, useEffect, useCallback, useContext, forwardRef, useImperativeHandle } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 
@@ -474,5 +475,6 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
 
 /** ProductionBridgesPage — standalone route wrapper around BridgesManager. */
 export function ProductionBridgesPage() {
+  useProjectRequired();
   return <BridgesManager />;
 }

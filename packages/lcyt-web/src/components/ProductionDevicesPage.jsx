@@ -1,9 +1,11 @@
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { ProductionCamerasPage } from './ProductionCamerasPage';
 import { ProductionMixersPage } from './ProductionMixersPage';
 import { ProductionBridgesPage } from './ProductionBridgesPage';
 import { ProductionEncodersPage } from './ProductionEncodersPage';
 
 export function ProductionDevicesPage() {
+  useProjectRequired();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div style={{

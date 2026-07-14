@@ -1,3 +1,4 @@
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { MermaidChart } from './MermaidChart.jsx';
 
 const VIDEO_SIGNAL_FLOW = `
@@ -159,6 +160,7 @@ function Section({ title, description, chart }) {
 }
 
 export function ProductionVisualPage() {
+  useProjectRequired();
   return (
     <div style={{ padding: '20px 24px', maxWidth: 1100 }}>
       <div style={{ marginBottom: 24 }}>

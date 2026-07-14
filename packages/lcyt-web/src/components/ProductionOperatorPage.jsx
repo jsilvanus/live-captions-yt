@@ -1,3 +1,4 @@
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { useProductionData } from './production/workspace/useProductionData.js';
 import { useWorkspaceLayout } from './production/workspace/useWorkspaceLayout.js';
 import { ProductionHeader, ViewPills } from './production/workspace/Chrome.jsx';
@@ -13,6 +14,7 @@ import { C } from './production/workspace/theme.js';
 // Ported from the Claude Design mockup (project 9919ac53, "Production Page").
 
 export function ProductionOperatorPage() {
+  useProjectRequired();
   const D = useProductionData();
   const wl = useWorkspaceLayout(D.creds.apiKey || 'default');
 

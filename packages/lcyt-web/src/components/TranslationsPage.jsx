@@ -1,3 +1,4 @@
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { LanguagesManager } from './LanguagesPage.jsx';
 
 /**
@@ -8,5 +9,6 @@ import { LanguagesManager } from './LanguagesPage.jsx';
  * logic here anymore.
  */
 export function TranslationsPage() {
+  useProjectRequired();
   return <LanguagesManager />;
 }

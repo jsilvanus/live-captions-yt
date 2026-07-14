@@ -1,5 +1,6 @@
 import { useCallback, useContext, useEffect, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { useProjectRequired } from '../hooks/useProjectRequired';
 import { templateSlug } from '../lib/formatting.js';
 
 /**
@@ -76,6 +77,10 @@ const inputStyle = {
 };
 
 export function DskControlPage() {
+  // Only require project when in sidebar mode (/graphics/control), not in standalone mode (/dsk-control/:key)
+  const isStandalone = window.location.pathname.startsWith('/dsk-control/');
+  if (!isStandalone) useProjectRequired();
+
   const session = useContext(SessionContext);
   const pathParts = window.location.pathname.split('/');
   // /dsk-control/:apikey (standalone) or /graphics/control (sidebar) — context takes priority
