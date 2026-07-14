@@ -370,7 +370,7 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
-  const apiKey     = params.get('apikey') || '';
+  const token      = params.get('token') || session?.projectAccessToken || '';
 
   const [mixers,        setMixers]        = useState([]);
   const [bridges,       setBridges]       = useState([]);
@@ -379,7 +379,10 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
   const [editing,       setEditing]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const headers = { 'Content-Type': 'application/json', ...(apiKey ? { 'X-Admin-Key': apiKey } : {}) };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -398,7 +401,7 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, apiKey]);
+  }, [backendUrl, token]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 

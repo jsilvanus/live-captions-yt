@@ -321,7 +321,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
-  const apiKey     = params.get('apikey') || '';
+  const token      = params.get('token') || session?.projectAccessToken || '';
 
   const [bridges, setBridges] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -331,7 +331,10 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
   const [confirmDelete, setConfirmDelete] = useState(null); // { bridge, cameras, mixers }
   const [sendCommand, setSendCommand] = useState(null);  // { bridge, type: 'tcp'|'http' }
 
-  const headers = { 'Content-Type': 'application/json', ...(apiKey ? { 'X-Admin-Key': apiKey } : {}) };
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+  };
 
   const fetchBridges = useCallback(async () => {
     setLoading(true);
@@ -345,7 +348,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, apiKey]);
+  }, [backendUrl, token]);
 
   useEffect(() => { fetchBridges(); }, [fetchBridges]);
 
