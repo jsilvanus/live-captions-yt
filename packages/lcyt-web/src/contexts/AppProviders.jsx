@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo } from 'react';
 import { useSentLog } from '../hooks/useSentLog';
+import { hasProjectSessionConfig } from '../lib/projectSession.js';
 import { SessionContext } from './SessionContext';
 import { ConnectionContext } from './ConnectionContext';
 import { CaptionContext } from './CaptionContext';
@@ -25,7 +26,7 @@ function hasAuthenticatedSession() {
       const features = JSON.parse(featuresRaw);
       if (Array.isArray(features) && !features.includes('login')) {
         const cfg = JSON.parse(localStorage.getItem('lcyt.session.config') || '{}');
-        if (cfg.backendUrl && cfg.apiKey) return true;
+        if (hasProjectSessionConfig(cfg)) return true;
       }
     }
   } catch {
@@ -124,9 +125,9 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
   //      survives a page refresh.
   useEffect(() => {
     const persisted = session.getPersistedConfig();
-    const shouldConnectFromPersisted = !!(persisted?.backendUrl && persisted?.apiKey && (session.getAutoConnect() || hasAuthenticatedSession()));
+    const shouldConnectFromPersisted = !!(persisted?.backendUrl && hasProjectSessionConfig(persisted) && (session.getAutoConnect() || hasAuthenticatedSession()));
 
-    if (autoConnect && initConfig?.backendUrl && initConfig?.apiKey) {
+    if (autoConnect && initConfig?.backendUrl && (initConfig?.projectAccessToken || initConfig?.apiKey || initConfig?.projectId)) {
       session.connect(initConfig).catch(() => {});
     } else if (shouldConnectFromPersisted) {
       session.connect(persisted).catch(() => {});
@@ -162,6 +163,8 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     connected:       session.connected,
     backendUrl:      session.backendUrl,
     apiKey:          session.apiKey,
+    projectId:       session.projectId,
+    projectAccessToken: session.projectAccessToken,
     streamKey:       session.streamKey,
     startedAt:       session.startedAt,
     micHolder:       session.micHolder,
@@ -183,7 +186,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     setAutoConnect:       session.setAutoConnect,
     clearPersistedConfig: session.clearPersistedConfig,
   }), [ // eslint-disable-line react-hooks/exhaustive-deps
-    session.connected, session.backendUrl, session.apiKey, session.streamKey,
+    session.connected, session.backendUrl, session.apiKey, session.projectId, session.projectAccessToken, session.streamKey,
     session.startedAt, session.micHolder, session.graphicsEnabled,
     session.healthStatus, session.latencyMs, session.reconnecting,
     session.backendFeatures,

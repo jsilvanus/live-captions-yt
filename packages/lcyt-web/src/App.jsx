@@ -16,6 +16,7 @@ import { InputBar } from './components/InputBar';
 import { AudioPanel } from './components/AudioPanel';
 import { ToastContainer } from './components/ToastContainer';
 import { MobileAudioBar } from './components/MobileAudioBar';
+import { hasProjectSessionConfig } from './lib/projectSession';
 
 // Persistent banner shown when the backend cannot be reached
 function NetworkBanner({ privacyPending }) {
@@ -25,7 +26,7 @@ function NetworkBanner({ privacyPending }) {
   const retry = useCallback(async () => {
     const cfg = getPersistedConfig();
     const ok = await checkHealth(cfg.backendUrl);
-    if (ok && getAutoConnect() && cfg.backendUrl && cfg.apiKey) {
+    if (ok && getAutoConnect() && cfg.backendUrl && hasProjectSessionConfig(cfg)) {
       connect(cfg).catch(() => {});
     }
   }, [checkHealth, getAutoConnect, getPersistedConfig, connect]);
@@ -184,7 +185,7 @@ export function AppLayout({ standalone = true }) {
     const cfg = session.getPersistedConfig();
     if (!cfg.backendUrl) return;
     session.checkHealth(cfg.backendUrl).then(ok => {
-      if (ok && session.getAutoConnect() && cfg.apiKey) {
+      if (ok && session.getAutoConnect() && hasProjectSessionConfig(cfg)) {
         session.connect(cfg).catch(() => {});
       }
     });

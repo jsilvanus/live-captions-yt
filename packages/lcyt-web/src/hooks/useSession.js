@@ -3,6 +3,7 @@ import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
 import { createApi } from '../lib/api';
 import { KEYS } from '../lib/storageKeys.js';
+import { readPersistedSessionConfig, savePersistedSessionConfig } from '../lib/projectSession.js';
 import { useEventStream } from './useEventStream.js';
 
 // Stable per-tab client ID for the soft mic lock
@@ -38,6 +39,8 @@ export function useSession({
   const [syncOffset, setSyncOffset] = useState(0);
   const [backendUrl, setBackendUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [projectId, setProjectId] = useState('');
+  const [projectAccessToken, setProjectAccessToken] = useState('');
   const [streamKey, setStreamKey] = useState('');
   const [startedAt, setStartedAt] = useState(null);
   const [micHolder, setMicHolder] = useState(null);
@@ -106,14 +109,11 @@ export function useSession({
   // ─── Persistence ────────────────────────────────────────
 
   const getPersistedConfig = useCallback(function getPersistedConfig() {
-    try {
-      const raw = localStorage.getItem(CONFIG_KEY);
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
+    return readPersistedSessionConfig();
   }, []);
 
   const saveConfig = useCallback(function saveConfig(cfg) {
-    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg)); } catch {}
+    savePersistedSessionConfig(cfg);
   }, []);
 
   const getAutoConnect = useCallback(function getAutoConnect() {
@@ -279,12 +279,22 @@ export function useSession({
 
   // ─── Connect / Disconnect ───────────────────────────────
 
-  const connect = useCallback(async function connect({ backendUrl: url, apiKey: key, streamKey: sk } = {}) {
+  const connect = useCallback(async function connect({ backendUrl: url, apiKey: key, projectId: projectKey, projectAccessToken: accessToken, streamKey: sk } = {}) {
     // Disconnect any existing session (internally, without canceling reconnect state)
     if (senderRef.current) await _disconnectInternal();
 
+    // Prefer an explicit project ID for the new project-scoped flow, but keep the
+    // legacy apiKey field as a fallback when the caller only provided a minimal-mode key.
+    const resolvedApiKey = key || projectKey || '';
+    const resolvedProjectId = projectKey || key || '';
+
     // streamKey is optional in the new target-array architecture.
-    const sender = new BackendCaptionSender({ backendUrl: url, apiKey: key, streamKey: sk ?? null });
+    const sender = new BackendCaptionSender({
+      backendUrl: url,
+      apiKey: resolvedApiKey,
+      authToken: accessToken || null,
+      streamKey: sk ?? null,
+    });
 
     // Build the targets list
     const rawTargets = getEnabledTargets();
@@ -317,20 +327,33 @@ export function useSession({
     sessionIdRef.current = null;
 
     // Store config for auto-reconnect (cleared on manual disconnect)
-    reconnectConfigRef.current = { backendUrl: url, apiKey: key, streamKey: sk ?? null };
+    reconnectConfigRef.current = {
+      backendUrl: url,
+      apiKey: resolvedApiKey,
+      projectId: resolvedProjectId,
+      projectAccessToken: accessToken || null,
+      streamKey: sk ?? null,
+    };
 
     setConnected(true);
     setReconnecting(false);
     setHealthStatus('ok');
     setBackendUrl(url);
-    setApiKey(key);
+    setApiKey(resolvedApiKey);
+    setProjectId(resolvedProjectId);
+    setProjectAccessToken(accessToken || '');
     setStreamKey(sk || '');
     setSequence(sender.sequence);
     setSyncOffset(sender.syncOffset);
     setStartedAt(sender.startedAt);
     setGraphicsEnabled(sender.graphicsEnabled === true);
 
-    const cfg = { backendUrl: url, apiKey: key };
+    const cfg = {
+      backendUrl: url,
+      apiKey: resolvedApiKey,
+      projectId: resolvedProjectId,
+      projectAccessToken: accessToken || null,
+    };
     if (sk) cfg.streamKey = sk;
     saveConfig(cfg);
 
@@ -729,7 +752,7 @@ export function useSession({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
-    connected, sequence, syncOffset, backendUrl, apiKey, streamKey, startedAt,
+    connected, sequence, syncOffset, backendUrl, apiKey, projectId, projectAccessToken, streamKey, startedAt,
     micHolder, clientId: CLIENT_ID, graphicsEnabled,
     healthStatus, latencyMs, checkHealth,
     reconnecting, reconnectNow,

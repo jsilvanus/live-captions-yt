@@ -15,7 +15,7 @@ export function createApi(senderRef, backendUrlRef) {
    * thrown Error.
    */
   async function request(path, { method = 'GET', body, parseErrorBody = false } = {}) {
-    const token = senderRef.current?._token;
+    const token = senderRef.current?.authToken || senderRef.current?._token;
     if (!token) throw new Error('Not connected');
     const url = backendUrlRef.current;
 

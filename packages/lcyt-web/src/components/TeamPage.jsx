@@ -402,7 +402,7 @@ function ProjectsTab({ projects, backendUrl }) {
           <ProjectRow
             key={project.key}
             project={project}
-            onUse={() => activateProject(backendUrl, project.key)}
+            onUse={() => handleUseProject(project)}
             onManage={() => window.location.assign(`/projects/${project.key}`)}
           />
         ))}
@@ -456,7 +456,7 @@ function SetupTab({ features, loading, saving, error, onChange, onSave }) {
 // ─── Main page ───────────────────────────────────────────────────────────────
 
 export function TeamPage() {
-  const { user, token, backendUrl, loading: authLoading } = useUserAuth();
+  const { user, token, backendUrl, loading: authLoading, requestProjectAccessToken } = useUserAuth();
   const [orgs, setOrgs] = useState([]);
   const [activeOrgId, setActiveOrgId] = useState(null);
   const [activeOrg, setActiveOrg] = useState(null);
@@ -551,6 +551,22 @@ export function TeamPage() {
   useEffect(() => {
     if (tab === 'setup' && !canManage) setTab('members');
   }, [canManage, tab]);
+
+  async function handleUseProject(project) {
+    if (!backendUrl || !token) return;
+    try {
+      if (typeof requestProjectAccessToken === 'function') {
+        const data = await requestProjectAccessToken(project.key);
+        activateProject(backendUrl, project.key, data.projectAccessToken, {
+          projectRole: data.projectRole || null,
+        });
+        return;
+      }
+      activateProject(backendUrl, project.key, null);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function handleCreateTeam(name) {
     const res = await fetch(`${backendUrl}/orgs`, {

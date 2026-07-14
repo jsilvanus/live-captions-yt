@@ -127,7 +127,13 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(backendUrl, email.trim(), password);
-      setStep(3);
+      try {
+        localStorage.removeItem(KEYS.session.config);
+        localStorage.removeItem(KEYS.session.autoConnect);
+      } catch {
+        // Ignore cleanup failures; storage may be unavailable in private browsing.
+      }
+      window.location.assign('/projects');
     } catch (err) {
       setError(err.message);
     } finally {

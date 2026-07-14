@@ -4,6 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { MusicChip } from './MusicChip';
+import { hasProjectSessionConfig } from '../lib/projectSession.js';
 
 const STT_POLL_INTERVAL_MS = 10_000;
 
@@ -41,7 +42,7 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
       return;
     }
     const cfg = session.getPersistedConfig();
-    if (!cfg.backendUrl || !cfg.apiKey) {
+    if (!cfg.backendUrl || !hasProjectSessionConfig(cfg)) {
       if (onSettingsOpen) onSettingsOpen();
       else navigate('/settings');
       return;

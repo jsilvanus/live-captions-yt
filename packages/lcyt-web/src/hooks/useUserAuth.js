@@ -100,6 +100,29 @@ export function useUserAuth() {
     setUser(null);
   }, []);
 
+  const requestProjectAccessToken = useCallback(async (projectId) => {
+    if (!token || !backendUrl) throw new Error('Not logged in');
+    const base = backendUrl.replace(/\/$/, '');
+    const res = await fetch(`${base}/auth/project-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + token,
+      },
+      body: JSON.stringify({ projectId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Could not create project access token');
+    const projectAccessToken = data.projectAccessToken || data.accessToken || data.token;
+    if (!projectAccessToken) throw new Error('Project access token was not returned by the server');
+    return {
+      ...data,
+      projectId: data.projectId || projectId,
+      projectAccessToken,
+      projectRole: data.projectRole || data.role || null,
+    };
+  }, [token, backendUrl]);
+
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     if (!token || !backendUrl) throw new Error('Not logged in');
     const res = await fetch(`${backendUrl}/auth/change-password`, {
@@ -170,6 +193,6 @@ export function useUserAuth() {
 
   return {
     user, token, backendUrl, loading, login, register, logout, changePassword,
-    updateProfile, exportData, removeData, deleteAccount,
+    updateProfile, exportData, removeData, deleteAccount, requestProjectAccessToken,
   };
 }
