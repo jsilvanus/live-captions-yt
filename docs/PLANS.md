@@ -78,6 +78,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary |
 |---|---|---|
+| [plan_assets_page.md](plans/plan_assets_page.md) | Assets Page — Content Library of Project Assets | Rebuilds `/assets` into a SetupCard-style content library (Graphics, Global cues, Global actions, Icons, Caption files, Broadcasts) distinct from Setup infra; persists YouTube video id(s) per session for Broadcast → cast links. |
 | [plan_web_ui_event_stream_consolidation.md](plans/plan_web_ui_event_stream_consolidation.md) | Consolidate the Operator Web UI onto one `/events/stream` | Collapse the UI's authenticated and unauthenticated SSE streams into one unified stream. |
 | [plan_unified_external_control.md](plans/plan_unified_external_control.md) | Unified External Control & Automation (umbrella) | Ties event bus, shared tool registry, token scope model, and MCP integration together. |
 | [plan_metacode_variable_unification.md](plans/plan_metacode_variable_unification.md) | Metacode ↔ Variable Unification — One Namespace, Reserved-Name Registry | Reframes every metacode into one unified namespace with reserved-name registry. |
