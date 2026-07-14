@@ -651,9 +651,9 @@ export function useSession({
 
   // ─── RTMP relay ─────────────────────────────────────────
 
-  const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', scale, fps, videoBitrate, audioBitrate } = {}) {
+  const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    const body = { slot, targetUrl, targetName, captionMode };
+    const body = { slot, targetUrl, targetName, captionMode, recordOnStart, recordOnButton };
     if (scale) body.scale = scale;
     if (fps != null) body.fps = fps;
     if (videoBitrate) body.videoBitrate = videoBitrate;
@@ -661,9 +661,9 @@ export function useSession({
     return api.post('/stream', body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', scale, fps, videoBitrate, audioBitrate } = {}) {
+  const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
-    const body = { targetUrl, targetName, captionMode };
+    const body = { targetUrl, targetName, captionMode, recordOnStart, recordOnButton };
     if (scale) body.scale = scale;
     if (fps != null) body.fps = fps;
     if (videoBitrate) body.videoBitrate = videoBitrate;
@@ -693,6 +693,10 @@ export function useSession({
 
   const setRelayActive = useCallback(async function setRelayActive(active) {
     return api.put('/stream/active', { active });
+  }, []);
+
+  const toggleRecording = useCallback(async function toggleRecording({ enabled, slot } = {}) {
+    return api.post('/live/recording', { enabled, slot });
   }, []);
 
   const getSttStatus = useCallback(function getSttStatus() {
@@ -738,7 +742,7 @@ export function useSession({
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
     updateImageSettings,
     listIcons, uploadIcon, deleteIcon,
-    configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive,
+    configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive, toggleRecording,
     getYouTubeConfig,
     getSttStatus, getSttConfig, updateSttConfig, startStt, stopStt,
     getMusicEventsHistory,

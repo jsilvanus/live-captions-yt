@@ -191,6 +191,17 @@ describe('rtmp_relays DB helpers (fan-out)', () => {
     assert.strictEqual(relay.targetName, 'sk');
     assert.strictEqual(relay.captionMode, 'cea708');
   });
+
+  it('upsertRelay stores recordOnStart and recordOnButton', () => {
+    const relay = upsertRelay(db, 'key-8', 1, 'rtmp://recording.example.com/live', {
+      recordOnStart: true,
+      recordOnButton: true,
+    });
+    assert.strictEqual(relay.recordOnStart, 1);
+    assert.strictEqual(relay.recordOnButton, 1);
+    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnStart, 1);
+    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnButton, 1);
+  });
 });
 
 // ---------------------------------------------------------------------------

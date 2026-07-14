@@ -8,6 +8,7 @@ import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
 import { startVideoRecording, finishVideoRecording, getVideoStorageDir } from '../db/videos.js';
 import { isS3Enabled } from '../storage/s3.js';
+import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
 
 /**
  * Validate and build the extraTargets array from the client-supplied targets list.
@@ -107,6 +108,51 @@ async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, 
   } catch (err) {
     logger.warn(`[videos] MediaMTX recording ${enabled ? 'start' : 'stop'} failed for ${pathName}: ${err?.message}`);
   }
+}
+
+async function startSessionRecording(db, session, { mediamtxClient }) {
+  if (!session?.apiKey) return { ok: false, status: 400, error: 'apiKey missing' };
+  if (session.recordingVideoId) {
+    return { ok: true, active: true };
+  }
+  const videoResult = startVideoRecording(db, session.apiKey, {
+    broadcastId: session.broadcastId || null,
+    title: 'Recorded broadcast',
+    startedAt: new Date().toISOString(),
+    storageType: isS3Enabled() ? 's3' : 'local',
+  });
+  if (!videoResult.ok) return videoResult;
+  session.recordingVideoId = videoResult.video.id;
+  const recordingPathName = session.streamKey || session.apiKey;
+  const recordingVideoDir = getVideoStorageDir(session.apiKey, videoResult.video.id);
+  await configureMediaMtxRecording(mediamtxClient, {
+    pathName: recordingPathName,
+    videoDir: recordingVideoDir,
+    enabled: true,
+  });
+  return { ok: true, active: true, video: videoResult.video };
+}
+
+async function stopSessionRecording(db, session, { mediamtxClient }) {
+  if (!session?.recordingVideoId) {
+    return { ok: true, active: false };
+  }
+  const recordingVideoId = session.recordingVideoId;
+  const endedAt = new Date().toISOString();
+  const startedAtMs = Number.isFinite(Number(session.startedAt))
+    ? Number(session.startedAt)
+    : Date.parse(session.startedAt || new Date().toISOString());
+  finishVideoRecording(db, session.apiKey, recordingVideoId, {
+    endedAt,
+    durationMs: Math.max(0, Date.now() - startedAtMs),
+  });
+  await configureMediaMtxRecording(mediamtxClient, {
+    pathName: session.streamKey || session.apiKey,
+    videoDir: getVideoStorageDir(session.apiKey, recordingVideoId),
+    enabled: false,
+  });
+  session.recordingVideoId = null;
+  return { ok: true, active: false };
 }
 
 /**
@@ -270,7 +316,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     }
 
     const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
-    const shouldRecord = Boolean(recordEnabled) || Boolean(broadcast?.recordEnabled);
+    const relaySlots = getRelaySlots(db, apiKey);
+    const shouldRecord = Boolean(recordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
     if (shouldRecord) {
       const videoResult = startVideoRecording(db, apiKey, {
         broadcastId: boundBroadcastId,
@@ -320,6 +367,41 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
       broadcastId: boundBroadcastId,
       graphicsEnabled: isGraphicsEnabled(db, apiKey),
     });
+  });
+
+  // POST /live/recording — Start/stop recording for this session.
+  router.post('/recording', auth, async (req, res) => {
+    const { sessionId } = req.session;
+    const session = store.get(sessionId);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    const { enabled, slot } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'enabled must be a boolean' });
+    }
+    const slotNumber = slot === undefined ? undefined : Number(slot);
+    if (slot !== undefined && (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > 4)) {
+      return res.status(400).json({ error: 'slot must be an integer between 1 and 4' });
+    }
+    const relaySlots = getRelaySlots(db, session.apiKey);
+    const matchingSlot = slotNumber === undefined
+      ? relaySlots.find(item => item.recordOnButton)
+      : relaySlots.find(item => item.slot === slotNumber);
+    if (!matchingSlot) {
+      return res.status(400).json({ error: 'No relay slot is configured for manual recording' });
+    }
+    if (!matchingSlot.recordOnButton) {
+      return res.status(400).json({ error: 'This relay slot is not configured for manual recording' });
+    }
+    if (enabled) {
+      const result = await startSessionRecording(db, session, { mediamtxClient });
+      if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to start recording' });
+      return res.status(200).json({ ok: true, recording: true });
+    }
+    const result = await stopSessionRecording(db, session, { mediamtxClient });
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to stop recording' });
+    return res.status(200).json({ ok: true, recording: false });
   });
 
   // GET /live — Session status

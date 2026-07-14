@@ -125,12 +125,38 @@ export function setSlotAudioBitrate(slot, bitrate) {
   } catch {}
 }
 
+/** @param {number} slot */
+export function getSlotRecordOnStart(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'recordOnStart')) === 'true'; } catch { return false; }
+}
+
+/** @param {number} slot @param {boolean} enabled */
+export function setSlotRecordOnStart(slot, enabled) {
+  try {
+    if (enabled) { localStorage.setItem(slotKey(slot, 'recordOnStart'), 'true'); }
+    else { localStorage.removeItem(slotKey(slot, 'recordOnStart')); }
+  } catch {}
+}
+
+/** @param {number} slot */
+export function getSlotRecordOnButton(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'recordOnButton')) === 'true'; } catch { return false; }
+}
+
+/** @param {number} slot @param {boolean} enabled */
+export function setSlotRecordOnButton(slot, enabled) {
+  try {
+    if (enabled) { localStorage.setItem(slotKey(slot, 'recordOnButton'), 'true'); }
+    else { localStorage.removeItem(slotKey(slot, 'recordOnButton')); }
+  } catch {}
+}
+
 /** Remove all localStorage keys for a slot. */
 export function clearSlot(slot) {
   try {
     ['type', 'ytKey', 'genericUrl', 'genericName', 'captionMode']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
-    ['scale', 'fps', 'videoBitrate', 'audioBitrate']
+    ['scale', 'fps', 'videoBitrate', 'audioBitrate', 'recordOnStart', 'recordOnButton']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
   } catch {}
 }
@@ -170,15 +196,17 @@ export const MAX_RELAY_SLOTS = 4;
 export function getSlotConfig(slot) {
   return {
     slot,
-    targetType:   getSlotTargetType(slot),
-    youtubeKey:   getSlotYoutubeKey(slot),
-    genericUrl:   getSlotGenericUrl(slot),
-    genericName:  getSlotGenericName(slot),
-    captionMode:  getSlotCaptionMode(slot),
-    scale:        getSlotScale(slot),
-    fps:          getSlotFps(slot),
-    videoBitrate: getSlotVideoBitrate(slot),
-    audioBitrate: getSlotAudioBitrate(slot),
+    targetType:      getSlotTargetType(slot),
+    youtubeKey:      getSlotYoutubeKey(slot),
+    genericUrl:      getSlotGenericUrl(slot),
+    genericName:     getSlotGenericName(slot),
+    captionMode:     getSlotCaptionMode(slot),
+    scale:           getSlotScale(slot),
+    fps:             getSlotFps(slot),
+    videoBitrate:    getSlotVideoBitrate(slot),
+    audioBitrate:    getSlotAudioBitrate(slot),
+    recordOnStart:   getSlotRecordOnStart(slot),
+    recordOnButton:  getSlotRecordOnButton(slot),
   };
 }
 

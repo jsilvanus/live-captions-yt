@@ -6,6 +6,7 @@ import {
   setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
+  setSlotRecordOnStart, setSlotRecordOnButton,
   clearSlot,
   buildInitialRelayList,
 } from '../../lib/relayConfig.js';
@@ -43,6 +44,39 @@ export function StreamTab() {
   const [relayActive, setRelayActiveState] = useState(false);
   const [relayError, setRelayError] = useState('');
   const [rtmpIngest, setRtmpIngest] = useState(null);
+
+  async function persistRelaySlot(entry) {
+    if (!session?.connected) return;
+    const targetType = entry.targetType || 'youtube';
+    let targetUrl = null;
+    let targetName = null;
+    if (targetType === 'youtube') {
+      targetUrl = 'rtmp://a.rtmp.youtube.com/live2';
+      targetName = (entry.youtubeKey || '').trim() || null;
+    } else {
+      targetUrl = (entry.genericUrl || '').trim() || null;
+      targetName = (entry.genericName || '').trim() || null;
+    }
+    if (!targetUrl) return;
+    try {
+      await session.configureRelay({
+        slot: entry.slot,
+        targetUrl,
+        targetName,
+        captionMode: entry.captionMode || 'http',
+        recordOnStart: !!entry.recordOnStart,
+        recordOnButton: !!entry.recordOnButton,
+        scale: entry.scale || undefined,
+        fps: entry.fps ?? undefined,
+        videoBitrate: entry.videoBitrate || undefined,
+        audioBitrate: entry.audioBitrate || undefined,
+      });
+    } catch (err) {
+      const msg = err?.message || 'Failed to sync relay settings';
+      setRelayError(msg);
+      showToast(msg, 'error');
+    }
+  }
 
   // Fetch RTMP ingest info from health endpoint
   useEffect(() => {
@@ -110,6 +144,9 @@ export function StreamTab() {
             if (!prev || r.fps          !== prev.fps)          setSlotFps(r.slot, r.fps ?? null);
             if (!prev || r.videoBitrate !== prev.videoBitrate) setSlotVideoBitrate(r.slot, r.videoBitrate ?? '');
             if (!prev || r.audioBitrate !== prev.audioBitrate) setSlotAudioBitrate(r.slot, r.audioBitrate ?? '');
+            if (!prev || r.recordOnStart !== prev.recordOnStart) setSlotRecordOnStart(r.slot, !!r.recordOnStart);
+            if (!prev || r.recordOnButton !== prev.recordOnButton) setSlotRecordOnButton(r.slot, !!r.recordOnButton);
+            void persistRelaySlot(r);
           });
           const newSlots = new Set(next.map(r => r.slot));
           relayList.filter(r => !newSlots.has(r.slot)).forEach(r => clearSlot(r.slot));

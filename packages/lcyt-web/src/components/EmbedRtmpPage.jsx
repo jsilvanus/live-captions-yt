@@ -32,6 +32,7 @@ import {
   setSlotTargetType,
   setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
+  setSlotRecordOnStart, setSlotRecordOnButton,
   clearSlot,
   MAX_RELAY_SLOTS,
   buildInitialRelayList,
@@ -41,7 +42,7 @@ import {
 
 function RelayRow({ entry, onChange, onRemove, t }) {
   const [showAdvanced, setShowAdvanced] = useState(
-    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708')
+    Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708' || entry.recordOnStart || entry.recordOnButton)
   );
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -98,6 +99,24 @@ function RelayRow({ entry, onChange, onRemove, t }) {
       )}
       {showAdvanced && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 10px', borderTop: '1px solid var(--color-border)', paddingTop: 6, marginTop: 2 }}>
+          <div style={{ gridColumn: '1 / -1', display: 'grid', gap: 4 }}>
+            <label className="settings-checkbox" style={{ marginBottom: 0 }}>
+              <input
+                type="checkbox"
+                checked={!!entry.recordOnStart}
+                onChange={e => onChange({ ...entry, recordOnStart: e.target.checked })}
+              />
+              Start when we start
+            </label>
+            <label className="settings-checkbox" style={{ marginBottom: 0 }}>
+              <input
+                type="checkbox"
+                checked={!!entry.recordOnButton}
+                onChange={e => onChange({ ...entry, recordOnButton: e.target.checked })}
+              />
+              Start when we press this button
+            </label>
+          </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.slotCaptionMode')}</label>
             <select
@@ -223,7 +242,7 @@ function RelayPanel({ backendUrl, apiKey }) {
     const usedSlots = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!usedSlots.includes(s)) {
-        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' }]);
+        setRelayList(prev => [...prev, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false }]);
         return;
       }
     }
@@ -239,6 +258,8 @@ function RelayPanel({ backendUrl, apiKey }) {
     if ('fps'          in updated) setSlotFps(slot, updated.fps ?? null);
     if ('videoBitrate' in updated) setSlotVideoBitrate(slot, updated.videoBitrate ?? '');
     if ('audioBitrate' in updated) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
+    if ('recordOnStart' in updated) setSlotRecordOnStart(slot, !!updated.recordOnStart);
+    if ('recordOnButton' in updated) setSlotRecordOnButton(slot, !!updated.recordOnButton);
     setRelayList(prev => prev.map(r => r.slot === slot ? { ...r, ...updated } : r));
   }
 

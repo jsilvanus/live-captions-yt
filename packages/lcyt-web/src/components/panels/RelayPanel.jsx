@@ -24,7 +24,7 @@ export function RelayPanel({ relayList = [], onRelayListChange, relayStatus = nu
     const usedSlots = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!usedSlots.includes(s)) {
-        onRelayListChange([...relayList, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '' }]);
+        onRelayListChange([...relayList, { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false }]);
         return;
       }
     }
