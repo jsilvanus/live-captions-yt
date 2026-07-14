@@ -2,7 +2,7 @@
 id: plan/broadcasts
 title: "Broadcasts — First-Class Intra-Project Broadcast Entity (Schedule + Asset Linkage)"
 status: draft
-summary: "Introduces Broadcast as a first-class entity inside a project. Today a 'broadcast' exists only ephemerally as a live session plus a historical session_stats row, with every asset keyed flat by api_key and nothing grouping a single casting occasion. This plan adds a broadcasts table (a project has many), a lifecycle (draft → scheduled → live → completed → archived), scheduling fields, a broadcast_assets join linking reusable assets (graphics/cues/actions/icons/targets/rundown) to a broadcast, and a nullable broadcast_id on sessions/session_stats/caption_files so produced content and YouTube casts attach to the broadcast that made them. Supersedes plan_assets_page.md's youtube_video_ids-on-session_stats delta (the ids live on the broadcast instead) and upgrades that page's Broadcasts card from a raw session_stats list into real broadcast records."
+summary: "Introduces Broadcast as a first-class entity inside a project — an interface to the project's YouTube Live schedule and a place to gather the assets for one cast. Today a 'broadcast' exists only ephemerally as a live session plus a historical session_stats row, with every asset keyed flat by api_key and nothing grouping a single casting occasion. This plan adds a broadcasts table (a project has many), a lifecycle (draft → scheduled → live → completed → archived), calendar scheduling from the start, a broadcast_assets join linking reusable assets (graphics/cues/actions/icons/targets/rundown), and a nullable broadcast_id on sessions/session_stats/caption_files so produced content and YouTube casts attach to the broadcast that made them (strictly one session per broadcast; ad-hoc sessions auto-create a broadcast). Broadcasts can be duplicated (and duplicated across projects) without copying produced content. Delete archives; archived rows are hard-purged after a retention window (default 30d) by a periodic sweep. Supersedes plan_assets_page.md's youtube_video_ids-on-session_stats delta (the ids live on the broadcast instead) and upgrades that page's Broadcasts card from a raw session_stats list into real broadcast records. Later gains two-way sync with YouTube Live scheduling (liveBroadcasts)."
 related: plan/assets_page, plan/dashboard_console_redesign, plan/ai_roles_framework, plan/selfservice_config_backend, plan/captions
 ---
 
@@ -27,6 +27,21 @@ this rundown are for Sunday's service", see a broadcast's produced caption files
 and YouTube link in one place, or tell two casts of the same project apart
 beyond a timestamp. This plan makes **Broadcast** a real, persisted,
 intra-project entity that ties those together.
+
+### What a Broadcast *is*, framed
+
+Two things, primarily:
+
+1. **An interface to the project's YouTube Live schedule.** A broadcast maps to
+   a scheduled (or past) YouTube live cast. v1 stores the schedule and the
+   resulting `youtube_video_ids` locally; a later phase syncs two-way with
+   YouTube's `liveBroadcasts` API (create/read scheduled casts, reconcile
+   status). The lifecycle vocabulary below is chosen to map cleanly onto
+   YouTube's own (`created`/`ready`/`testing`/`live`/`complete`).
+2. **A place to gather the assets for one cast** — link the graphics, cues,
+   actions, rundown, and caption targets a specific broadcast will use.
+
+Everything else (produced content attachment, stats) follows from those two.
 
 ## Relationship to the Assets page plan
 
@@ -57,14 +72,30 @@ draft ──▶ scheduled ──▶ live ──▶ completed ──▶ archived
 ```
 
 - **draft** — created, not yet scheduled. Assets can be linked, rundown drafted.
-- **scheduled** — has a planned start (and optional end); appears on the schedule.
-- **live** — a session is currently bound to it (set when a session starts
-  against this broadcast, cleared on session end).
+  Ad-hoc/test casts that auto-created a broadcast land here.
+- **scheduled** — has a planned start (and optional end); appears on the calendar.
+- **live** — the (single) session bound to it is running.
 - **completed** — the session ended; produced assets + stats + YouTube ids attached.
-- **archived** — hidden from default lists, retained.
+- **archived** — soft-deleted: hidden from default lists, retained for a window,
+  then hard-purged (see below).
 
 Transitions are explicit API calls except `live`/`completed`, which are driven
 by the session lifecycle (see "Binding a session" below).
+
+### Delete = archive; archived is purged after retention
+
+Per decision, **`DELETE` archives** rather than hard-deleting (so an accidental
+delete of a real broadcast is recoverable, and test/ad-hoc broadcasts can be
+cleaned up without losing history immediately). An archived broadcast is
+**hard-purged after a retention window** — default **30 days**
+(`BROADCAST_ARCHIVE_RETENTION_DAYS`, env-overridable) — measured from
+`archived_at`. Purge is done by a periodic sweep following the existing
+`SessionStore._sweep()` pattern (`packages/lcyt-backend/src/store.js`): on each
+tick, hard-delete `broadcasts` where `status='archived'` and
+`archived_at < now - retention`. Cascade drops its `broadcast_assets`; the
+nullable `broadcast_id` on produced rows (`session_stats`, `caption_files`) is
+set `NULL` (the produced content itself is *not* deleted — it reverts to the
+"unassigned" bucket).
 
 ## Schema
 
@@ -81,10 +112,12 @@ CREATE TABLE IF NOT EXISTS broadcasts (
   status            TEXT NOT NULL DEFAULT 'draft', -- draft|scheduled|live|completed|archived
   scheduled_start   TEXT,                          -- ISO, nullable
   scheduled_end     TEXT,                          -- ISO, nullable
-  actual_start      TEXT,                          -- set when first session binds
-  actual_end        TEXT,                          -- set when last session ends
+  actual_start      TEXT,                          -- set when the session binds
+  actual_end        TEXT,                          -- set when the session ends
   youtube_video_ids TEXT,                          -- JSON array (target-array mode → multiple casts)
+  youtube_broadcast_id TEXT,                        -- reserved: YouTube liveBroadcasts id for future two-way sync
   rundown_file_id   INTEGER,                       -- optional FK into caption_files (type='rundown') or planner doc ref
+  archived_at       TEXT,                          -- set when soft-deleted; retention purge measures from here
   created_at        TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -126,19 +159,26 @@ force everything through a heavier join.
 
 ## Binding a session to a broadcast
 
-`POST /live` gains an optional `broadcastId`:
+**Strictly one session per broadcast** (1:1 per run). A broadcast that already
+has a bound live session rejects a second bind. `POST /live` gains an optional
+`broadcastId`:
 
 - **Provided** → `store.create()` stamps `session.broadcastId`; the broadcast
-  transitions to `live`, `actual_start` set if first bind.
-- **Omitted (ad-hoc cast)** → per the decision below, either auto-create a
-  `draft`/`live` broadcast for this session, or leave `broadcast_id NULL`
-  (unassigned) and allow assigning it to a broadcast afterward.
+  transitions to `live`, `actual_start` set. Reject (409) if that broadcast is
+  already `live`.
+- **Omitted (ad-hoc / test cast)** → **auto-create** a broadcast for this
+  session (decision) — a `live` row titled from the session/timestamp — so every
+  session always has exactly one broadcast and produced content always attaches.
+  These land as ordinary broadcasts the user can rename, edit, or delete (archive)
+  afterward; junk/test casts are cleaned up the same way as any other.
 
 On session end (`store.onSessionEnd`, `packages/lcyt-backend/src/server.js`):
 `session_stats.broadcast_id` is written, the broadcast → `completed`,
 `actual_end` + `youtube_video_ids` recorded. `caption_files` written during the
 session inherit `broadcast_id` from `session.broadcastId`
-(`packages/lcyt-backend/src/routes/captions.js` write path).
+(`packages/lcyt-backend/src/routes/captions.js` write path). Because binding is
+always present (provided or auto-created), `broadcast_id` on produced rows is
+effectively always set going forward; pre-existing rows stay `NULL` (unassigned).
 
 ## API surface
 
@@ -146,24 +186,57 @@ session inherit `broadcast_id` from `session.broadcastId`
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/broadcasts` | List (filter `?status=`, default excludes `archived`) |
+| `GET` | `/broadcasts` | List (filter `?status=`, `?from=`/`?to=` for calendar range; default excludes `archived`) |
 | `POST` | `/broadcasts` | Create (draft) |
 | `GET` | `/broadcasts/:id` | One broadcast + linked assets + produced content refs |
 | `PUT` | `/broadcasts/:id` | Edit title/desc/schedule/status |
-| `DELETE` | `/broadcasts/:id` | Delete (or archive) |
+| `DELETE` | `/broadcasts/:id` | **Archive** (sets `status='archived'`, `archived_at=now`); purged later by the retention sweep |
+| `POST` | `/broadcasts/:id/restore` | Un-archive (back to `draft`/`scheduled`) while still within retention |
+| `POST` | `/broadcasts/:id/duplicate` | Clone this broadcast (optionally into another project) — config only, no produced content (see below) |
 | `POST` | `/broadcasts/:id/assets` | Link a reusable asset (`{ asset_type, asset_ref }`) |
 | `DELETE` | `/broadcasts/:id/assets/:assetRowId` | Unlink |
 
 Data-access logic in `src/db/broadcasts.js`; routes stay thin per the repo
 convention.
 
+## Duplication
+
+Per decision, a broadcast can be **duplicated**, including **across projects**,
+and duplication **never copies produced content.**
+
+- **`POST /broadcasts/:id/duplicate`** with optional `{ targetApiKey }`:
+  - **Copies:** title (suffixed "(copy)"), description, `broadcast_assets`
+    links (the reusable graphics/cues/actions/icons/targets/rundown references),
+    and — when duplicating within the same project — the schedule if the caller
+    keeps it (otherwise cleared to `draft`).
+  - **Does NOT copy:** `youtube_video_ids`, `youtube_broadcast_id`,
+    `actual_start`/`actual_end`, `session_stats`, or any `caption_files`
+    (the produced content). The clone starts `draft`, unbound, with no history.
+  - **Cross-project (`targetApiKey`):** the same rules, plus the linked
+    `asset_ref`s must resolve in the target project. Reusable assets that don't
+    exist there are dropped from the clone (reported in the response), since a
+    graphic/cue id is project-scoped. (Deep-copying the referenced assets
+    themselves into the target project is out of scope here — that belongs to a
+    broader "duplicate project" capability; see below.)
+- **Project duplicate** — cloning a whole project (its config + broadcasts,
+  excluding produced content) is a broader, adjacent capability that reuses the
+  same "copy config, never copy produced" rule and this endpoint's per-broadcast
+  logic. It is **noted here, specced elsewhere** (a projects-level plan), so the
+  broadcast duplication logic is designed to compose into it (a project-duplicate
+  walks the source project's broadcasts and calls the same clone routine with the
+  new `targetApiKey`).
+
 ## Frontend
 
-- **Broadcasts list + detail** — a `/broadcasts` route (list of scheduled +
-  past) and `/broadcasts/:id` detail (schedule, linked assets, produced caption
-  files/translations, Watch-on-YouTube link(s), the bound/past session stats).
-  A schedule/calendar view is a natural later addition; v1 can be a sorted list
-  grouped by upcoming vs. past.
+- **Broadcasts calendar + detail** — a `/broadcasts` route with a **calendar
+  view from the start** (decision): scheduled broadcasts render on a month/week
+  calendar keyed off `scheduled_start`/`scheduled_end`, with a list/agenda toggle
+  for upcoming vs. past. `GET /broadcasts?from=&to=` feeds the visible range.
+  Scheduling a broadcast ahead of time (create → set schedule → `scheduled`) is a
+  primary flow, not an afterthought. `/broadcasts/:id` detail shows the schedule,
+  linked assets, produced caption files/translations, Watch-on-YouTube link(s),
+  and the bound/past session stats. Creating/duplicating and drag-to-reschedule
+  live here.
 - **Assets page** — its Broadcasts card lists `broadcasts` records (this plan)
   rather than `session_stats` rows; each row links to the detail page.
 - **Asset linking** — from a reusable asset (graphic/cue/action) or from the
@@ -172,6 +245,25 @@ convention.
   planner-produced rundown; the planner (`PlannerPage.jsx`) can "attach this
   rundown to a broadcast." (Rundown persistence itself is still the placeholder
   from `plan_assets_page.md`; this plan only reserves the FK.)
+
+## YouTube Live schedule integration (phased)
+
+The framing "a broadcast is an interface to the YouTube Live schedule" is the
+direction, delivered in phases so v1 doesn't block on it:
+
+- **v1 (this plan):** local schedule (`scheduled_start`/`end`) + captured
+  `youtube_video_ids` on completion. `youtube_broadcast_id` column reserved.
+- **Phase 2 (two-way sync):** using the existing YouTube auth already in
+  `packages/lcyt-web/src/lib/youtubeApi.js` / `youtubeAuth.js`, reconcile a
+  broadcast with a real `liveBroadcasts` resource — list the channel's scheduled
+  broadcasts, link/create one for an LCYT broadcast (store
+  `youtube_broadcast_id`), and mirror `scheduledStartTime`/lifecycle. Our status
+  vocabulary was chosen to map onto YouTube's (`created`→draft, `ready`→scheduled,
+  `testing`/`live`→live, `complete`→completed), so the reconciliation is a status
+  map, not a redesign.
+- Phase 2 is **out of scope for this plan's implementation** but its data hooks
+  (`youtube_broadcast_id`, status vocabulary, `youtube_video_ids`) are laid down
+  now so it's additive.
 
 ## Cross-plan alignment
 
@@ -184,24 +276,39 @@ convention.
   project-level config; a broadcast may *reference* a subset via
   `broadcast_assets` (`asset_type='target'`) without moving the source of truth.
 
-## Open design questions
+## Resolved decisions
 
-1. **Ad-hoc sessions** — when `POST /live` omits `broadcastId`, auto-create a
-   broadcast per session, or leave the session unassigned (assignable later)?
-   (Recommendation: leave `NULL` = unassigned; offer "assign to broadcast" after
-   the fact, so casual users aren't forced into the entity.)
-2. **One session ⇄ one broadcast, always?** Can two concurrent sessions belong
-   to one broadcast (multi-operator), or is it strictly 1:1 per run? Schema
-   allows N sessions → 1 broadcast; confirm the product intent.
-3. **Delete vs. archive** — hard delete a broadcast (cascade unlinks, produced
-   `broadcast_id`s null out), or archive-only to preserve history?
-4. **Scheduling depth (v1)** — plain start/end fields + a sorted list, or a
-   calendar/recurrence model (weekly service, etc.) from the start?
-   (Recommendation: start/end + list in v1; recurrence later.)
+1. **Ad-hoc sessions → auto-create.** `POST /live` without `broadcastId`
+   auto-creates a `live` broadcast; every session always has exactly one. Test/
+   junk casts are edited or deleted (archived) afterward like any other broadcast.
+2. **Strictly one session per broadcast (1:1 per run).** A second bind to a
+   `live` broadcast is rejected. Instead of reusing a broadcast, users
+   **duplicate** it (or duplicate across projects) — duplication copies config +
+   linked reusable assets, never produced content.
+3. **Delete = archive; archived is purged after retention.** `DELETE` sets
+   `archived`/`archived_at`; a periodic sweep hard-deletes archived rows older
+   than `BROADCAST_ARCHIVE_RETENTION_DAYS` (default 30). `POST .../restore`
+   un-archives within the window.
+4. **Calendar from the start.** Scheduling ahead is a primary flow; `/broadcasts`
+   ships a calendar view (+ agenda/list toggle), not just a sorted list.
+   Recurrence (weekly service) is still deferred, but the calendar UI is not.
+
+### Still open (smaller)
+
+- **Auto-created broadcast title** — timestamp (`"Broadcast 2026-07-14 18:00"`),
+  or blank/"Untitled" for the user to fill? (Lean: timestamp, editable.)
+- **Cross-project duplicate with missing assets** — drop unresolved reusable
+  links silently-but-reported (current spec), or block the duplicate until the
+  target project has them? (Lean: drop + report.)
 
 ## Out of scope (v1)
 
-- Recurrence / calendar UI (plain scheduled_start/end first).
+- **Recurrence** (weekly service, RRULE) — the calendar view ships, but
+  repeating broadcasts do not.
+- **YouTube Live two-way sync** (Phase 2 above) — data hooks laid down, sync not
+  built.
+- **Project duplicate** — the whole-project clone is specced elsewhere; this
+  plan only makes per-broadcast duplication compose into it.
 - Rundown backend persistence (reserved FK only; store designed elsewhere).
 - Automated pre-broadcast checks ("all linked assets present") — a natural
   follow-on once linkage exists.
