@@ -4,6 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { TopBar, Sidebar } from './sidebar/Sidebar.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp.jsx';
+import { ConnectionStatusMonitor } from './ConnectionStatusMonitor.jsx';
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -100,6 +101,7 @@ export function SidebarLayout({ children }) {
         onOpenShortcuts={() => setShortcutsOpen(true)}
       />
       <ReconnectBanner />
+      <ConnectionStatusMonitor />
       <div className="sidebar-body">
         <Sidebar onNavigate={path => navigate(path)} />
         <MobileDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)} />

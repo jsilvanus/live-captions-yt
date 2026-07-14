@@ -353,8 +353,21 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
       ]);
       if (!camRes.ok)    throw new Error(`cameras: HTTP ${camRes.status}`);
       if (!bridgeRes.ok) throw new Error(`bridges: HTTP ${bridgeRes.status}`);
-      setCameras(await camRes.json());
-      setBridges(await bridgeRes.json());
+
+      let cameras, bridges;
+      try {
+        cameras = await camRes.json();
+      } catch (e) {
+        throw new Error('Failed to parse cameras response - backend may be unreachable');
+      }
+      try {
+        bridges = await bridgeRes.json();
+      } catch (e) {
+        throw new Error('Failed to parse bridges response - backend may be unreachable');
+      }
+
+      setCameras(cameras);
+      setBridges(bridges);
     } catch (e) {
       setError(e.message);
     } finally {

@@ -31,7 +31,7 @@ export function AssetsPage() {
   const load = useCallback(async () => {
     if (!connected || !backendUrl || !apiKey) return;
     const token = session?.getSessionToken?.() ?? null;
-    const authHeaders = { token: token }; // NEEDS TO BE FIXED!
+    const authHeaders = token ? { Authorization: 'Bearer ' + token } : {};
 
     // Graphics: GET /dsk/:apikey/templates (****** X-API-Key)
     try {

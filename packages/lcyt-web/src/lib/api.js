@@ -30,13 +30,25 @@ export function createApi(senderRef, backendUrlRef) {
 
     if (!res.ok) {
       if (parseErrorBody) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Request failed (${res.status})`);
+        try {
+          const err = await res.json();
+          throw new Error(err.error || `Request failed (${res.status})`);
+        } catch (parseErr) {
+          throw new Error(`Request failed (${res.status})`);
+        }
       }
       throw new Error(`Request failed (${res.status})`);
     }
 
-    return res.json();
+    try {
+      return await res.json();
+    } catch (parseErr) {
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        throw new Error(`Invalid response from server: expected JSON but got ${contentType || 'HTML'}`);
+      }
+      throw new Error('Failed to parse server response as JSON');
+    }
   }
 
   /** @type {Map<string, { data: unknown, fetchedAt: number }>} */
