@@ -111,7 +111,7 @@ recordings valid, though with broadcast auto-create every recording has one.
 |---|---|---|
 | `GET` | `/videos` | List (filter `?broadcastId=`, `?status=`) |
 | `GET` | `/videos/:id` | Metadata + playback URL |
-| `GET` | `/videos/:id/playlist.m3u8` | VOD playlist (proxied) — or a direct/signed S3 URL (see open) |
+| `GET` | `/videos/:id/playlist.m3u8` | VOD playlist via backend; its segment URLs are direct signed S3/CDN links (decided) |
 | `DELETE` | `/videos/:id` | Delete row + S3 objects under `storage_prefix` |
 
 ## Frontend
@@ -142,19 +142,21 @@ recordings valid, though with broadcast auto-create every recording has one.
   the HLS + S3 segment machinery those plans established.
 - **`plan_cloudfleet.md` / worker-daemon** — the phase-2 recorder path.
 
-## Open questions (smaller)
+## Resolved (smaller) decisions
 
-1. **Playback URL** — proxy the VOD playlist through the backend (uniform auth,
-   more load) or hand out a direct/signed S3/CDN URL (less load, needs signing
-   for private buckets)? (Lean: signed direct URL for the segments, playlist via
-   backend.)
-2. **Retention** — keep recordings until manually deleted (consistent with the
-   broadcasts "no auto-purge" decision), or an opt-in TTL? (Lean: keep until
-   deleted; deleting removes S3 objects.)
-3. **Broadcast delete vs. its videos** — when a broadcast is permanently deleted
-   (after its cooling-off window), null the video's `broadcast_id` (keep the
-   video) or cascade-delete the video + S3 objects? (Lean: keep the video, null
-   the link — same "produced content survives" rule as caption files.)
+1. **Playback URL → signed S3 segments + backend playlist.** The VOD `.m3u8`
+   playlist is served via the backend (`GET /videos/:id/playlist.m3u8`, uniform
+   auth), and the segment URLs it references are **direct signed S3/CDN links**.
+   Low backend load, works with private buckets, and recordings stay
+   access-controlled (no public objects).
+2. **Retention → keep until manually deleted.** No auto-expiry/TTL and no
+   periodic sweep — recordings live until a user deletes them, which removes the
+   S3 objects. Consistent with the Broadcasts "no auto-purge" decision.
+3. **Broadcast delete vs. its videos → keep the video, null the link.** When a
+   broadcast is permanently deleted (after its cooling-off window), its
+   `videos.broadcast_id` is set `NULL` (the recording survives, unassigned) —
+   the same "produced content survives" rule as caption files. The recording is
+   only removed by an explicit `DELETE /videos/:id`.
 
 ## Out of scope
 

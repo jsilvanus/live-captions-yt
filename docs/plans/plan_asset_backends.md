@@ -71,9 +71,10 @@ rundown rows open in the planner (`/planner?file=:id`), caption rows in
 
 - **Editing model:** overwrite-in-place, **no version history** (matches the
   planner's single-draft model; versioning is out of scope).
-- *(small)* **Filename uniqueness** — id-keyed rows, `filename` is a display
-  label, duplicates allowed (lean). Confirm if you'd rather enforce unique names
-  per project.
+- **Filename uniqueness (decided):** rows are **id-keyed**; `filename` is a
+  display label and **duplicates are allowed** — no `(api_key, filename)`
+  constraint. Matches how session-produced files already behave; "Open from
+  project" lists by id, showing the name as a label.
 
 ## Part B — Thumbnails from the graphics editor
 
