@@ -6,6 +6,8 @@ import { Router } from 'express';
  * POST /sync — Trigger an NTP-style clock sync for the session's sender.
  * Requires JWT auth (passed as middleware).
  *
+ * Accepts both session JWTs (with sessionId) and project-scoped JWTs (with apiKey).
+ *
  * @param {import('../store.js').SessionStore} store
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @returns {Router}
@@ -15,8 +17,27 @@ export function createSyncRouter(store, auth) {
 
   // POST /sync — Clock synchronization (auth required)
   router.post('/', auth, async (req, res) => {
-    const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const { sessionId, apiKey, projectId } = req.session;
+
+    // Resolve session: prefer sessionId if available (session JWT),
+    // otherwise try apiKey or projectId (project-scoped JWT)
+    const resolvedSessionId = sessionId || apiKey || projectId;
+    let session = null;
+
+    if (sessionId) {
+      // Direct session lookup using sessionId from session JWT
+      session = store.get(sessionId);
+    } else if (apiKey || projectId) {
+      // Project-scoped JWT: find a session for this project/apiKey
+      // Search through all sessions to find one matching the apiKey
+      const projectKey = apiKey || projectId;
+      for (const [sid, sess] of store.entries()) {
+        if (sess.apiKey === projectKey) {
+          session = sess;
+          break;
+        }
+      }
+    }
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
