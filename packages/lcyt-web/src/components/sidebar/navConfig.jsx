@@ -75,7 +75,7 @@ const ProjectsIcon = () => (
 );
 
 // Order mirrors the Claude Design mockup's project nav (Setup, Assets,
-// Planner, Graphics, Broadcast) — see HIDDEN.md at the repo root for pages
+// Planner, Graphics, Production) — see HIDDEN.md at the repo root for pages
 // that were dropped from this list because they have no design counterpart
 // yet.
 export const NAV_ITEMS = [
@@ -83,7 +83,7 @@ export const NAV_ITEMS = [
   { id: 'assets',    icon: <AssetsIcon />,    label: 'Assets',    path: '/assets',         feature: 'login' },
   { id: 'planner',   icon: <PlannerIcon />,   label: 'Planner',   path: '/planner' },
   { id: 'graphics',  icon: <GraphicsIcon />,  label: 'Graphics',  path: '/graphics/editor', feature: 'graphics' },
-  { id: 'broadcast', icon: <BroadcastIcon />, label: 'Broadcast', path: '/broadcast' },
+  { id: 'production', icon: <BroadcastIcon />, label: 'Production', path: '/production' },
 ];
 
 // No sidebar groups remain — Graphics and Admin collapsed to single items
