@@ -4,7 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { MusicChip } from './MusicChip';
-import { hasProjectSessionConfig } from '../lib/projectSession.js';
+import { readPersistedSessionConfig, savePersistedSessionConfig } from '../lib/projectSession.js';
 
 const STT_POLL_INTERVAL_MS = 10_000;
 
@@ -13,7 +13,6 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
   const session = useSessionContext();
   const { showToast } = useToastContext();
   const { t } = useLang();
-  const [connecting, setConnecting] = useState(false);
   const [sttStatus, setSttStatus] = useState(null);
 
   // Poll /stt/status while connected
@@ -36,32 +35,24 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
     return () => { cancelled = true; clearInterval(id); };
   }, [session.connected, session.getSttStatus]);
 
-  async function handleConnectClick() {
-    if (session.connected) {
-      await session.disconnect();
-      return;
-    }
-    const cfg = session.getPersistedConfig();
-    if (!cfg.backendUrl || !hasProjectSessionConfig(cfg)) {
-      if (onSettingsOpen) onSettingsOpen();
-      else navigate('/settings');
-      return;
-    }
-    setConnecting(true);
-    try {
-      await session.connect(cfg);
-    } catch (err) {
-      showToast(err?.message || 'Connection failed', 'error');
-    } finally {
-      setConnecting(false);
-    }
+  async function handleLeaveProject() {
+    await session.disconnect();
+    const cfg = readPersistedSessionConfig();
+    const next = { ...cfg };
+    delete next.projectAccessToken;
+    delete next.projectId;
+    delete next.apiKey;
+    savePersistedSessionConfig(next);
+    showToast('Left project', 'info');
+    navigate('/');
   }
 
-  const connectBtnClass = [
-    'status-bar__btn',
-    session.connected ? 'status-bar__btn--connected' : '',
-    connecting ? 'status-bar__btn--connecting' : '',
-  ].filter(Boolean).join(' ');
+  async function handleLogOut() {
+    await session.disconnect();
+    session.clearPersistedConfig();
+    showToast('Logged out', 'info');
+    navigate('/');
+  }
 
   const sttChipLabel = sttStatus?.running
     ? `STT: ${sttStatus.provider}${sttStatus.mode ? `/${sttStatus.mode}` : ''} / ${sttStatus.language}`
@@ -82,18 +73,8 @@ export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCO
       <MusicChip onClick={onCCOpen ?? (() => navigate('/settings?tab=cc'))} />
       <span className="status-bar__spacer" />
       <div className="status-bar__actions">
-        <button className="status-bar__btn status-bar__btn--icon" onClick={() => navigate('/broadcast')} title="Broadcast">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <path d="M21 3H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h5v2h8v-2h5c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 14H3V5h18v12z"/>
-          </svg>
-        </button>
-        <button className={connectBtnClass} onClick={handleConnectClick} disabled={connecting} title={session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}>
-          {connecting ? t('settings.footer.connecting') : session.connected ? t('statusBar.disconnect') : t('statusBar.connect')}
-        </button>
-        <button className="status-bar__btn" onClick={onSettingsOpen ?? (() => navigate('/settings'))} title="Settings">{t('statusBar.settings')}</button>
-        <button className="status-bar__btn" onClick={onCCOpen ?? (() => navigate('/settings?tab=cc'))} title="CC">{t('statusBar.cc')}</button>
-        <button className="status-bar__btn" onClick={onControlsOpen} title="Controls">{t('statusBar.controls')}</button>
-        <button className="status-bar__btn" onClick={onPrivacyOpen} title="Privacy">{t('statusBar.privacy')}</button>
+        <button className="status-bar__btn" onClick={handleLeaveProject} title="Leave project">Leave</button>
+        <button className="status-bar__btn" onClick={handleLogOut} title="Log out">Log out</button>
       </div>
     </header>
   );
