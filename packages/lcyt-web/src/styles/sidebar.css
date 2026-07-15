@@ -394,6 +394,12 @@
   flex-direction: column;
 }
 
+@media (max-width: 768px) {
+  .dashboard-page {
+    padding: 12px 12px;
+  }
+}
+
 .dashboard-page__header {
   display: flex;
   align-items: center;
@@ -1136,6 +1142,12 @@
   padding: 16px;
 }
 
+@media (max-width: 768px) {
+  .audio-page {
+    padding: 12px;
+  }
+}
+
 .audio-page__inner {
   max-width: 680px;
   width: 100%;
@@ -1358,6 +1370,12 @@
   overflow-y: auto;
   padding: 24px;
   max-width: 520px;
+}
+
+@media (max-width: 768px) {
+  .account-page {
+    padding: 16px 12px;
+  }
 }
 
 .account-page--loading {
@@ -2027,6 +2045,12 @@
   width: 100%;
 }
 
+@media (max-width: 768px) {
+  .setup-hub-page {
+    padding: 16px 12px;
+  }
+}
+
 .setup-hub-page__header {
   display: flex;
   align-items: center;
@@ -2339,6 +2363,12 @@
   max-width: 720px;
   margin: 0 auto;
   width: 100%;
+}
+
+@media (max-width: 768px) {
+  .projects-page {
+    padding: 20px 12px;
+  }
 }
 
 .projects-page__header {
