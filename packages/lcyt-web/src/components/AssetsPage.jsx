@@ -54,6 +54,8 @@ export function AssetsPage() {
   const [icons, setIcons] = useState([]);
   const [files, setFiles] = useState([]);
   const [broadcasts, setBroadcasts] = useState([]);
+  const [thumbnails, setThumbnails] = useState([]);
+  const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
 
@@ -67,6 +69,8 @@ export function AssetsPage() {
       setIcons([]);
       setFiles([]);
       setBroadcasts([]);
+      setThumbnails([]);
+      setVideos([]);
       setLoading({});
       setErrors({});
       return;
@@ -82,7 +86,7 @@ export function AssetsPage() {
       return response.json();
     };
 
-    setLoading({ graphics: true, cues: true, actions: true, icons: true, files: true, broadcasts: true });
+    setLoading({ graphics: true, cues: true, actions: true, icons: true, files: true, broadcasts: true, thumbnails: true, videos: true });
 
     try {
       const graphicsData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/templates`, authHeaders);
@@ -148,6 +152,28 @@ export function AssetsPage() {
       setErrors(prev => ({ ...prev, broadcasts: true }));
     } finally {
       setLoading(prev => ({ ...prev, broadcasts: false }));
+    }
+
+    try {
+      const thumbnailData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/thumbnails`, authHeaders);
+      setThumbnails(Array.isArray(thumbnailData?.thumbnails) ? thumbnailData.thumbnails : []);
+      setErrors(prev => ({ ...prev, thumbnails: false }));
+    } catch {
+      setThumbnails([]);
+      setErrors(prev => ({ ...prev, thumbnails: true }));
+    } finally {
+      setLoading(prev => ({ ...prev, thumbnails: false }));
+    }
+
+    try {
+      const videoData = await fetchJson(`${backendUrl}/videos`, authHeaders);
+      setVideos(Array.isArray(videoData?.videos) ? videoData.videos : []);
+      setErrors(prev => ({ ...prev, videos: false }));
+    } catch {
+      setVideos([]);
+      setErrors(prev => ({ ...prev, videos: true }));
+    } finally {
+      setLoading(prev => ({ ...prev, videos: false }));
     }
   }, [connected, backendUrl, apiKey, token]);
 
@@ -326,25 +352,57 @@ export function AssetsPage() {
     },
     {
       key: 'stored-videos',
-      section: 'placeholder',
+      section: 'produced',
       title: 'Stored videos',
-      description: 'VOD and recording storage for archived streams.',
+      description: 'Recorded broadcast playback and management.',
       icon: emojiIcon('🎥'),
-      color: 'muted',
-      placeholder: true,
-      status: 'soon',
-      statusLabel: 'Planned',
+      color: 'green',
+      status: connected ? (loading.videos ? 'partial' : 'ready') : 'partial',
+      statusLabel: connected ? (loading.videos ? 'Loading…' : `${videos.length} video${videos.length === 1 ? '' : 's'}`) : 'Connect',
+      headerAction: { label: 'Open', href: '/videos' },
+      body: !connected ? (
+        <p className="setup-card__empty">Connect to a project to browse recorded broadcasts.</p>
+      ) : loading.videos ? (
+        <p className="setup-card__empty">Loading…</p>
+      ) : videos.length === 0 ? (
+        <p className="setup-card__empty">No recorded broadcasts yet.</p>
+      ) : videos.slice(0, 4).map(video => (
+        <SetupItemRow
+          key={video.id}
+          name={video.title || `Video ${video.id.slice(0, 6)}`}
+          meta={`${video.status || 'recording'} · ${video.durationMs ? `${Math.floor(video.durationMs / 60000)}:${String(Math.floor((video.durationMs % 60000) / 1000)).padStart(2, '0')}` : '—'}`}
+          badge={(video.status || 'recording').toUpperCase()}
+          extra={video.sizeBytes ? <span className="setup-item-row__meta">{formatBytes(video.sizeBytes)}</span> : null}
+          href="/videos"
+        />
+      )),
     },
     {
       key: 'thumbnails',
-      section: 'placeholder',
+      section: 'reusable',
       title: 'Thumbnails',
-      description: 'Auto-generated previews for graphics and broadcasts.',
+      description: 'Still-image previews created from graphics templates.',
       icon: emojiIcon('🖼️'),
-      color: 'muted',
-      placeholder: true,
-      status: 'soon',
-      statusLabel: 'Planned',
+      color: 'purple',
+      status: connected ? (loading.thumbnails ? 'partial' : 'ready') : 'partial',
+      statusLabel: connected ? (loading.thumbnails ? 'Loading…' : `${thumbnails.length} thumbnail${thumbnails.length === 1 ? '' : 's'}`) : 'Connect',
+      headerAction: { label: 'Create', href: '/graphics/editor' },
+      body: !connected ? (
+        <p className="setup-card__empty">Connect to a project to create thumbnails.</p>
+      ) : loading.thumbnails ? (
+        <p className="setup-card__empty">Loading…</p>
+      ) : thumbnails.length === 0 ? (
+        <p className="setup-card__empty">No thumbnails yet — create one from the graphics editor.</p>
+      ) : thumbnails.slice(0, 4).map(thumbnail => (
+        <SetupItemRow
+          key={thumbnail.id}
+          name={thumbnail.name || `Thumbnail ${thumbnail.id}`}
+          meta={`${thumbnail.width}×${thumbnail.height}`}
+          badge={thumbnail.template_id ? 'from-template' : 'orphaned'}
+          extra={thumbnail.updated_at ? <span className="setup-item-row__meta">{formatDate(thumbnail.updated_at)}</span> : null}
+          href="/graphics/editor"
+        />
+      )),
     },
     {
       key: 'rundowns',
