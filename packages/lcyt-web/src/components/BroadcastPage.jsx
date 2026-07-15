@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { LiveTab } from './broadcast/LiveTab.jsx';
 import { SettingsTab } from './broadcast/SettingsTab.jsx';
+import { ScheduleTab } from './broadcast/ScheduleTab.jsx';
 
 const TABS = [
   { id: 'live',     label: 'Live' },
+  { id: 'schedule', label: 'Schedule' },
   { id: 'settings', label: 'Settings' },
 ];
 
@@ -34,6 +36,7 @@ export function BroadcastPage() {
       </div>
       <div className="broadcast-page__body">
         {activeTab === 'live'     && <LiveTab />}
+        {activeTab === 'schedule' && <ScheduleTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </div>
     </div>
