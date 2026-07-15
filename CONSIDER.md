@@ -420,3 +420,26 @@ These are **design-level changes**, not local refactorings. Worth revisiting aft
 **Why skipped:** Fixing the altitude issues would mean re-architecting 4 token types + unifying access control across 3+ layers (middleware/routes/DB), then re-testing all auth flows (368 backend tests exist; many would need assertion updates). Out of scope for a focused `/simplify` pass. This pass delivered measurable local cleanup (98 lines saved, 5 reusable helpers extracted), leaving the broader unification for a future architectural pass with its own scope and test coverage.
 
 (Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)
+
+---
+
+## `/legacy` route broken — remove in favor of `/captions`
+
+**Where:** `packages/lcyt-web/src/main.jsx` (lines 90, 136, 163)
+
+**Finding:** The `/legacy` route renders the caption editor as a standalone page (`<App />`), parallel to `/captions` which renders it embedded in the sidebar. However, the routing logic uses a static `path` variable captured at module load time:
+
+```javascript
+const path = window.location.pathname;  // evaluated once
+function getStandalonePage() {
+  if (path.startsWith('/legacy'))  page = <App />;  // uses stale path
+}
+```
+
+**Why broken:** Client-side navigation to `/legacy` from a sidebar page (e.g., clicking the "Legacy" nav item added 2026-07-15) doesn't update the static `path` variable. The router never realizes you've navigated to a standalone page and renders the wrong component. The route only works via direct URL navigation or page reload.
+
+**Why skipped:** Now that `/captions` provides the same caption editor functionality and is properly routed through wouter (dynamic), `/legacy` is redundant. Rather than fix the static-path routing architecture (a broader refactoring), just remove `/legacy` entirely and rely on `/captions` + the sidebar toggle.
+
+**Recommendation:** Delete `/legacy` from `isStandalonePath()`, remove the check from `getStandalonePage()`, and remove the hardcoded legacy link from `Sidebar.jsx`'s main section (already done as part of the Legacy nav item refactor, 2026-07-15). Keep `/captions` as the canonical caption editor route (embedded in sidebar, accessible via legacy nav toggle).
+
+(Found during: routing consolidation pass, 2026-07-15.)
