@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, Link } from 'wouter';
 import { useSessionContext } from '../../contexts/SessionContext';
+import { useUserAuth } from '../../hooks/useUserAuth';
 import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.jsx';
@@ -232,9 +233,11 @@ function SidebarGroup({ group, onNavigate }) {
 export function Sidebar({ onNavigate }) {
   const [showAdvanced, setShowAdvancedState] = useState(getShowAdvanced);
   const session = useSessionContext();
+  const { user } = useUserAuth();
   const features = session.backendFeatures;
+  const isUserAdmin = !!user?.isAdmin;
 
-  // Filter nav items/groups based on backend features
+  // Filter nav items/groups based on backend features and admin status
   const visibleItems = useMemo(() => {
     if (!features) return NAV_ITEMS;
     return NAV_ITEMS.filter(item => !item.feature || features.includes(item.feature));
@@ -246,9 +249,14 @@ export function Sidebar({ onNavigate }) {
   }, [features]);
 
   const visibleBottom = useMemo(() => {
-    if (!features) return NAV_BOTTOM;
-    return NAV_BOTTOM.filter(item => !item.feature || features.includes(item.feature));
-  }, [features]);
+    if (!features && !isUserAdmin) return NAV_BOTTOM;
+    return NAV_BOTTOM.filter(item => {
+      // Admin items: show if feature is present OR user is admin
+      if (item.feature === 'admin') return features?.includes('admin') || isUserAdmin;
+      // Other items: show if feature is not required or is present
+      return !item.feature || features?.includes(item.feature);
+    });
+  }, [features, isUserAdmin]);
 
   function toggleAdvanced() {
     const next = !showAdvanced;
