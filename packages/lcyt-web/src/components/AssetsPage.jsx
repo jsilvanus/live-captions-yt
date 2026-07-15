@@ -287,12 +287,12 @@ export function AssetsPage() {
       key: 'broadcasts',
       section: 'produced',
       title: 'Broadcasts',
-      description: 'Recorded broadcast history and linked YouTube casts.',
+      description: 'Schedule, manage, and view broadcast history with linked YouTube casts.',
       icon: emojiIcon('📡'),
       color: 'accent',
       status: connected ? (loading.broadcasts ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.broadcasts ? 'Loading…' : `${broadcasts.length} broadcast${broadcasts.length === 1 ? '' : 's'}`) : 'Connect',
-      headerAction: { label: 'Open', href: '/broadcast' },
+      headerAction: { label: 'Open', href: '/broadcasts' },
       body: !connected ? (
         <p className="setup-card__empty">Connect to a project to browse broadcast history.</p>
       ) : loading.broadcasts ? (
