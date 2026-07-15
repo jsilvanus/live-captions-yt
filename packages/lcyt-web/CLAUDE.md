@@ -40,6 +40,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/projects` | `ProjectsPage` | User project (API key) management |
 | `/projects/:key` | `ProjectSettingsPage` | Per-project settings page (Summary, Features, Team, Device roles, Danger zone tabs — `ProjectDetailModal` un-nested) |
 | `/assets` | `AssetsPage` | Cross-content library view (DSK template counts are real; other kinds labeled "Not tracked yet") |
+| `/broadcasts` | `BroadcastsManager` | Broadcast scheduler & manager — plan/schedule broadcasts, set metadata (title, description, thumbnail URL), link YouTube, enable recording |
 | `/team` | `TeamPage` | Organization/team management (backed by the `/orgs` backend routes: members, roles, org projects) |
 | `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable |
 | `/setup/wizard` | `SetupWizardPage` | Guided one-time setup wizard (superseded by the hub as the default `/setup` destination, still reachable) |
