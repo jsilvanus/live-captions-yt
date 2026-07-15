@@ -199,9 +199,11 @@ export function ProjectsPage() {
         activateProject(backendUrl, project.key, data.projectAccessToken, {
           projectRole: data.projectRole || null,
         });
-        return;
+      } else {
+        activateProject(backendUrl, project.key, null);
       }
-      activateProject(backendUrl, project.key, null);
+      // Navigate to project summary after activation
+      navigate(`/projects/${project.key}`);
     } catch (err) {
       setError(err.message);
     }
