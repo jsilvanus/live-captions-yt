@@ -42,8 +42,11 @@ export function RootRoute() {
   const persistedCfg = getPersistedConfig();
   const hasPersistedProject = hasProjectSessionConfig(persistedCfg);
 
+  // Check both session state and persisted config for credentials
+  const hasCredentials = (apiKey || projectId) || (persistedCfg?.apiKey || persistedCfg?.projectId);
+
   // Show project summary if connected OR if a project is persisted (auto-connect pending).
-  if ((connected || hasPersistedProject) && (apiKey || projectId)) {
+  if ((connected || hasPersistedProject) && hasCredentials) {
     return (
       <Suspense fallback={null}>
         <ProjectSettingsPage implicitKey />
