@@ -8,6 +8,7 @@ import { Link } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { SetupCard, SetupItemRow } from './setup-hub/SetupCard.jsx';
+import { CATEGORY_COLORS } from './setup-hub/icons.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -15,10 +16,94 @@ const FILTERS = [
   { id: 'produced', label: 'Produced' },
 ];
 
-function emojiIcon(label) {
-  return function EmojiIcon() {
-    return <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>{label}</span>;
+function styledIcon(Icon, color) {
+  const cat = CATEGORY_COLORS[color] || CATEGORY_COLORS.accent;
+  return function StyledIcon() {
+    return (
+      <div style={{ width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: cat.bg, color: cat.fg, flexShrink: 0 }}>
+        <Icon />
+      </div>
+    );
   };
+}
+
+function GraphicsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 3.5C2 2.67 2.67 2 3.5 2H12.5C13.33 2 14 2.67 14 3.5V12C14 12.83 13.33 13.5 12.5 13.5H3.5C2.67 13.5 2 12.83 2 12V3.5Z" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="4.5" cy="5.5" r="1" fill="currentColor" />
+      <path d="M2 10.5L5.5 7L9.5 11L14 6.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CuesIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M8 2L11 6H5L8 2Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <circle cx="8" cy="10" r="3.5" stroke="currentColor" strokeWidth="1.3" />
+    </svg>
+  );
+}
+
+function ActionsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M8 5V8L10.5 10" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconsCardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="2" y="2.5" width="12" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="5.5" cy="6" r="1.1" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M2.5 11.5L6 8.5L8.5 10.5L11 7.5L13.5 10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function FilesCardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 3.5C2 2.67 2.67 2 3.5 2H9L14 7V12.5C14 13.33 13.33 14 12.5 14H3.5C2.67 14 2 13.33 2 12.5V3.5Z" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M4 8.5H12M4 10.5H12M4 12.5H10" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function BroadcastsCardIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="9" r="1.5" fill="currentColor" />
+      <path d="M5.5 7C5.5 7 4.5 7.8 4.5 9C4.5 10.2 5.5 11 5.5 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M10.5 7C10.5 7 11.5 7.8 11.5 9C11.5 10.2 10.5 11 10.5 11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <line x1="8" y1="7.5" x2="8" y2="3" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function VideosIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 4.5C2 3.67 2.67 3 3.5 3H11.5C12.33 3 13 3.67 13 4.5V10C13 10.83 12.33 11.5 11.5 11.5H3.5C2.67 11.5 2 10.83 2 10V4.5Z" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6 6.5L10 8.5L6 10.5V6.5Z" fill="currentColor" />
+      <path d="M13 6L15 4.5V12L13 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function ThumbnailsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1.5" y="2" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="8.5" y="2" width="6" height="6" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="1.5" y="9" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="8.5" y="9" width="6" height="5" rx="1" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
 }
 
 function formatDate(value) {
@@ -185,7 +270,7 @@ export function AssetsPage() {
       section: 'reusable',
       title: 'Graphics',
       description: 'Reusable DSK graphics templates.',
-      icon: emojiIcon('🖼️'),
+      icon: styledIcon(GraphicsIcon, 'purple'),
       color: 'purple',
       status: connected ? (loading.graphics ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.graphics ? 'Loading…' : `${graphics.length} template${graphics.length === 1 ? '' : 's'}`) : 'Connect',
@@ -211,7 +296,7 @@ export function AssetsPage() {
       section: 'reusable',
       title: 'Global cues',
       description: 'Reusable cue rules that trigger actions from captions.',
-      icon: emojiIcon('🎯'),
+      icon: styledIcon(CuesIcon, 'cyan'),
       color: 'cyan',
       status: connected ? (loading.cues ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.cues ? 'Loading…' : `${cueRules.length} rule${cueRules.length === 1 ? '' : 's'}`) : 'Connect',
@@ -237,7 +322,7 @@ export function AssetsPage() {
       section: 'reusable',
       title: 'Global actions',
       description: 'Reusable named action macros for caption-driven workflows.',
-      icon: emojiIcon('⚙️'),
+      icon: styledIcon(ActionsIcon, 'accent'),
       color: 'accent',
       status: connected ? (loading.actions ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.actions ? 'Loading…' : `${actions.length} action${actions.length === 1 ? '' : 's'}`) : 'Connect',
@@ -261,7 +346,7 @@ export function AssetsPage() {
       section: 'reusable',
       title: 'Icons',
       description: 'Branding icons for viewer pages and overlays.',
-      icon: emojiIcon('🖍️'),
+      icon: styledIcon(IconsCardIcon, 'teal'),
       color: 'teal',
       status: connected ? (loading.icons ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.icons ? 'Loading…' : `${icons.length} icon${icons.length === 1 ? '' : 's'}`) : 'Connect',
@@ -287,7 +372,7 @@ export function AssetsPage() {
       section: 'produced',
       title: 'Caption / rundown files',
       description: 'Passed-through caption files and rundown exports.',
-      icon: emojiIcon('🗂️'),
+      icon: styledIcon(FilesCardIcon, 'green'),
       color: 'green',
       status: connected ? (loading.files ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.files ? 'Loading…' : `${files.length} file${files.length === 1 ? '' : 's'}`) : 'Connect',
@@ -314,7 +399,7 @@ export function AssetsPage() {
       section: 'produced',
       title: 'Broadcasts',
       description: 'Schedule, manage, and view broadcast history with linked YouTube casts.',
-      icon: emojiIcon('📡'),
+      icon: styledIcon(BroadcastsCardIcon, 'accent'),
       color: 'accent',
       status: connected ? (loading.broadcasts ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.broadcasts ? 'Loading…' : `${broadcasts.length} broadcast${broadcasts.length === 1 ? '' : 's'}`) : 'Connect',
@@ -355,7 +440,7 @@ export function AssetsPage() {
       section: 'produced',
       title: 'Stored videos',
       description: 'Recorded broadcast playback and management.',
-      icon: emojiIcon('🎥'),
+      icon: styledIcon(VideosIcon, 'green'),
       color: 'green',
       status: connected ? (loading.videos ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.videos ? 'Loading…' : `${videos.length} video${videos.length === 1 ? '' : 's'}`) : 'Connect',
@@ -382,7 +467,7 @@ export function AssetsPage() {
       section: 'reusable',
       title: 'Thumbnails',
       description: 'Still-image previews created from graphics templates.',
-      icon: emojiIcon('🖼️'),
+      icon: styledIcon(ThumbnailsIcon, 'purple'),
       color: 'purple',
       status: connected ? (loading.thumbnails ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.thumbnails ? 'Loading…' : `${thumbnails.length} thumbnail${thumbnails.length === 1 ? '' : 's'}`) : 'Connect',
@@ -403,17 +488,6 @@ export function AssetsPage() {
           href="/graphics/editor"
         />
       )),
-    },
-    {
-      key: 'rundowns',
-      section: 'placeholder',
-      title: 'Rundowns',
-      description: 'Structured show rundowns linked to the planner.',
-      icon: emojiIcon('📋'),
-      color: 'muted',
-      placeholder: true,
-      status: 'soon',
-      statusLabel: 'Planned',
     },
   ].filter(card => filter === 'all' || card.section === filter);
 
