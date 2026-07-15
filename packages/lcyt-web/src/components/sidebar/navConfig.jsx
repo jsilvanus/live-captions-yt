@@ -65,6 +65,15 @@ const AccountIcon = () => (
   </svg>
 );
 
+const ProjectIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <rect x="2" y="3" width="12" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.3" />
+    <path d="M2 6H14M5 3V6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    <circle cx="6" cy="9.5" r="1.5" fill="currentColor" />
+    <path d="M10 9.5H12" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+  </svg>
+);
+
 const ProjectsIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" />
@@ -73,6 +82,9 @@ const ProjectsIcon = () => (
     <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" />
   </svg>
 );
+
+// Export ProjectIcon for use in Sidebar when a project is active
+export { ProjectIcon };
 
 // Order mirrors the Claude Design mockup's project nav (Setup, Assets,
 // Planner, Graphics, Production) — see HIDDEN.md at the repo root for pages

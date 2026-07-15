@@ -4,7 +4,7 @@ import { useSessionContext } from '../../contexts/SessionContext';
 import { useUserAuth } from '../../hooks/useUserAuth';
 import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
-import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM } from './navConfig.jsx';
+import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM, ProjectIcon } from './navConfig.jsx';
 import { KEYS } from '../../lib/storageKeys.js';
 import { readInputLang, INPUT_LANG_EVENT } from '../../lib/inputLang.js';
 
@@ -267,6 +267,14 @@ export function Sidebar({ onNavigate }) {
   return (
     <nav className="sidebar" aria-label="Main navigation">
       <div className="sidebar__main">
+        {session.projectId && (
+          <SidebarItem
+            icon={<ProjectIcon />}
+            label="Project"
+            path={`/projects/${session.projectId}`}
+            onClick={onNavigate ? () => onNavigate(`/projects/${session.projectId}`) : undefined}
+          />
+        )}
         {visibleItems.map(item => (
           <SidebarItem key={item.id} {...item} onClick={onNavigate ? () => onNavigate(item.path) : undefined} />
         ))}
