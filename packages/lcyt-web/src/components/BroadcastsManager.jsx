@@ -66,7 +66,13 @@ export function BroadcastsManager() {
         `${backendUrl}/broadcasts?${params}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Backend error (${response.status}): ${text.slice(0, 100)}`);
+      }
       if (!response.ok) throw new Error(data.error || 'Failed to load broadcasts');
       setBroadcasts(Array.isArray(data.broadcasts) ? data.broadcasts : []);
     } catch (err) {
@@ -89,7 +95,13 @@ export function BroadcastsManager() {
           body: JSON.stringify(payload),
         }
       );
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Backend error (${response.status}): ${text.slice(0, 100)}`);
+      }
       if (!response.ok) throw new Error(data.error || 'Failed to create broadcast');
       setIsCreating(false);
       load();
@@ -109,7 +121,13 @@ export function BroadcastsManager() {
           body: JSON.stringify(payload),
         }
       );
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Backend error (${response.status}): ${text.slice(0, 100)}`);
+      }
       if (!response.ok) throw new Error(data.error || 'Failed to update broadcast');
       setEditingBroadcast(null);
       load();
@@ -125,7 +143,13 @@ export function BroadcastsManager() {
         `${backendUrl}/broadcasts/${id}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
       );
-      const data = await response.json();
+      const text = await response.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`Backend error (${response.status}): ${text.slice(0, 100)}`);
+      }
       if (!response.ok) throw new Error(data.error || 'Failed to delete broadcast');
       load();
     } catch (err) {
