@@ -202,8 +202,8 @@ export function ProjectsPage() {
       } else {
         activateProject(backendUrl, project.key, null);
       }
-      // Navigate to project summary after activation
-      navigate(`/projects/${project.key}`);
+      // Navigate to project summary (root route shows ProjectSettingsPage when project is active)
+      navigate('/');
     } catch (err) {
       setError(err.message);
     }
