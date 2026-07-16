@@ -24,6 +24,7 @@ export function formatKey(row) {
     cea708DelayMs: row.cea708_delay_ms ?? 0,
     embedCors: row.embed_cors ?? '*',
     publicSlug: row.public_slug ?? null,
+    activeBroadcastId: row.active_broadcast_id ?? null,
   };
 }
 
@@ -112,6 +113,28 @@ export function checkPublicSlugAvailability(db, key, slug, { bypassPolicy = fals
  */
 export function setPublicSlug(db, key, slug) {
   return db.prepare('UPDATE api_keys SET public_slug = ? WHERE key = ?').run(slug, key).changes > 0;
+}
+
+/**
+ * Read the currently-active broadcast pointer for a project.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @returns {string|null}
+ */
+export function getActiveBroadcastId(db, key) {
+  const row = db.prepare('SELECT active_broadcast_id FROM api_keys WHERE key = ?').get(key);
+  return row?.active_broadcast_id ?? null;
+}
+
+/**
+ * Set the currently-active broadcast pointer for a project.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @param {string|null} broadcastId
+ * @returns {boolean}
+ */
+export function setActiveBroadcastId(db, key, broadcastId) {
+  return db.prepare('UPDATE api_keys SET active_broadcast_id = ? WHERE key = ?').run(broadcastId, key).changes > 0;
 }
 
 /**

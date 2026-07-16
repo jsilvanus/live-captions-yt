@@ -6,6 +6,8 @@
  * Routes:
  *   GET    /broadcasts                    — list (?status=, ?from=, ?to=, ?includeArchived=1)
  *   POST   /broadcasts                    — create (draft)
+ *   GET    /broadcasts/active             — current active broadcast pointer
+ *   DELETE /broadcasts/active             — clear active broadcast pointer
  *   GET    /broadcasts/:id                — one broadcast + linked assets
  *   PUT    /broadcasts/:id                — edit title/desc/schedule/status
  *   DELETE /broadcasts/:id                — archive, or hard-delete if already archived past cooling-off
@@ -22,7 +24,8 @@ import { Router } from 'express';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
   restoreBroadcast, deleteBroadcast,
-  duplicateBroadcast, listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
+  duplicateBroadcast, getActiveBroadcast, activateBroadcast, deactivateBroadcast,
+  listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
   linkAsset, unlinkAsset,
 } from '../db/broadcasts.js';
 
