@@ -20,6 +20,7 @@ import { InviteMemberForm } from './InviteMemberForm';
 import { DeviceRoleRow } from './DeviceRoleRow';
 import { CreateDeviceRoleForm } from './CreateDeviceRoleForm';
 import { useProjectFeatures } from '../hooks/useProjectFeatures';
+import { BroadcastsSection } from './BroadcastsSection';
 
 const TABS = ['Summary', 'Features', 'Team', 'Device roles', 'Danger zone'];
 
@@ -138,7 +139,7 @@ function PublicSlugSection({ project, backendUrl, token }) {
 
 // ── Summary tab ─────────────────────────────────────────────────────────────
 
-function SummaryTab({ project, isActiveSession, backendUrl, token }) {
+function SummaryTab({ project, isActiveSession, backendUrl, token, onProjectRefresh }) {
   const [showKey, setShowKey] = useState(false);
 
   return (
@@ -188,6 +189,8 @@ function SummaryTab({ project, isActiveSession, backendUrl, token }) {
       </div>
 
       <PublicSlugSection project={project} backendUrl={backendUrl} token={token} />
+
+      <BroadcastsSection project={project} backendUrl={backendUrl} token={token} onActivated={onProjectRefresh} />
 
       <div>
         <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Quick links</div>
@@ -578,7 +581,7 @@ export function ProjectSettingsPage({ implicitKey = false } = {}) {
         ))}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-        {tab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} backendUrl={backendUrl} token={token} />}
+        {tab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} backendUrl={backendUrl} token={token} onProjectRefresh={load} />}
         {tab === 'Features'     && <FeaturesTab project={project} backendUrl={backendUrl} token={token} />}
         {tab === 'Team'         && <TeamTab project={project} backendUrl={backendUrl} token={token} />}
         {tab === 'Device roles' && <DeviceRolesTab project={project} backendUrl={backendUrl} token={token} />}

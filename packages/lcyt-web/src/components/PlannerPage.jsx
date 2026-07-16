@@ -3,12 +3,14 @@ import { useFileContext } from '../contexts/FileContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { usePageThemeOverride } from '../hooks/usePageThemeOverride.js';
 import { useProjectRequired } from '../hooks/useProjectRequired.js';
+import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
 import { SessionContext } from '../contexts/SessionContext';
 import { AgentChatPanel, useAgentChat } from './agent/AgentChatPanel.jsx';
 import { SwipeablePages } from './SwipeablePages.jsx';
+import { PlannerBroadcastFilePanel } from './PlannerBroadcastFilePanel.jsx';
 export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 
 function makeBlock(type) {
@@ -709,6 +711,7 @@ export function PlannerPage() {
   const isNarrow = useIsNarrow();
 
   const session = useContext(SessionContext);
+  const { token: userToken } = useUserAuth();
   const backendUrl = (session?.backendUrl || '').replace(/\/$/, '');
   const sessionToken = session?.getSessionToken?.();
 
@@ -1046,6 +1049,12 @@ export function PlannerPage() {
     }
   }
 
+  const broadcastScopePanel = (
+    <div style={{ padding: isNarrow ? 12 : 0 }}>
+      <PlannerBroadcastFilePanel backendUrl={backendUrl} token={userToken} projectKey={session?.apiKey} serverRundowns={serverRundowns} />
+    </div>
+  );
+
   // On mobile, use swipeable pages for the three main sections
   if (isNarrow) {
     const pages = [
@@ -1053,7 +1062,6 @@ export function PlannerPage() {
         label: 'Files',
         content: (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* File management stub */}
             <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: 8 }}>File</div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1061,6 +1069,9 @@ export function PlannerPage() {
                 <button onClick={handleImport} style={{ fontSize: 12, padding: '4px 10px', background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-text)' }}>Import</button>
                 <button onClick={handleExport} style={{ fontSize: 12, padding: '4px 10px', background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-text)' }}>Export</button>
               </div>
+            </div>
+            <div style={{ padding: 12, borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+              {broadcastScopePanel}
             </div>
             {/* Structure outline */}
             <PlannerOutline
@@ -1207,26 +1218,29 @@ export function PlannerPage() {
         isNarrow={isNarrow}
       />
       <div className="planner-main">
-      <PlannerToolbar
-        filename={filename}
-        editingFilename={editingFilename}
-        dirty={dirty}
-        onFilenameChange={setFilename}
-        onEditingFilename={setEditingFilename}
-        onNormalize={() => setShowNormalizeModal(true)}
-        onToDashboard={handleToDashboard}
-        onInsert={type => {
-          insertBlock(null, makeBlock(type));
-        }}
-        projectReady={Boolean(backendUrl && sessionToken)}
-        projectSaving={projectSaving}
-        projectLoading={projectLoading}
-        serverRundowns={serverRundowns}
-        selectedServerRundownId={selectedServerRundownId}
-        onSelectedServerRundownChange={setSelectedServerRundownId}
-        onSaveToProject={handleSaveToProject}
-        onOpenFromProject={handleOpenFromProject}
-      />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <PlannerToolbar
+          filename={filename}
+          editingFilename={editingFilename}
+          dirty={dirty}
+          onFilenameChange={setFilename}
+          onEditingFilename={setEditingFilename}
+          onNormalize={() => setShowNormalizeModal(true)}
+          onToDashboard={handleToDashboard}
+          onInsert={type => {
+            insertBlock(null, makeBlock(type));
+          }}
+          projectReady={Boolean(backendUrl && sessionToken)}
+          projectSaving={projectSaving}
+          projectLoading={projectLoading}
+          serverRundowns={serverRundowns}
+          selectedServerRundownId={selectedServerRundownId}
+          onSelectedServerRundownChange={setSelectedServerRundownId}
+          onSaveToProject={handleSaveToProject}
+          onOpenFromProject={handleOpenFromProject}
+        />
+        {broadcastScopePanel}
+      </div>
       {showNormalizeModal && (
         <NormalizeLinesModal
           fileName={filename}

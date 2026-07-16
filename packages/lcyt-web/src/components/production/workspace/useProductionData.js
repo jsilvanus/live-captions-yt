@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { SessionContext } from '../../../contexts/SessionContext';
 import { SentLogContext } from '../../../contexts/SentLogContext';
 import { KEYS } from '../../../lib/storageKeys.js';
+import { ACTIVE_BROADCAST_EVENT, notifyActiveBroadcastChanged } from '../../../hooks/useActiveBroadcast.js';
 
 // ---------------------------------------------------------------------------
 // useProductionData — single source of truth for the Production workspace.
@@ -64,6 +65,7 @@ export function useProductionData() {
   const [templates, setTemplates] = useState([]);
   const [cueRules, setCueRules] = useState([]);
   const [relay, setRelay] = useState(null);      // relay-slot status → YouTube pane
+  const [broadcast, setBroadcast] = useState(null); // active broadcast (plan/broadcasts_next E)
   const [thumbTick, setThumbTick] = useState(0); // cache-buster for thumbnails
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(null);
@@ -115,8 +117,20 @@ export function useProductionData() {
     try { setRelay(await getRelayStatus()); } catch { /* ignore */ }
   }, [getRelayStatus]);
 
+  const loadBroadcast = useCallback(async () => {
+    if (!backendUrl || !token) return;
+    try {
+      const r = await jfetch('/broadcasts/active');
+      if (r.ok) { const d = await r.json(); setBroadcast(d.broadcast ?? null); }
+    } catch { /* ignore */ }
+  }, [backendUrl, token, jfetch]);
+
   useEffect(() => { loadCore(); }, [loadCore]);
-  useEffect(() => { loadTemplates(); loadCues(); loadRelay(); }, [loadTemplates, loadCues, loadRelay]);
+  useEffect(() => { loadTemplates(); loadCues(); loadRelay(); loadBroadcast(); }, [loadTemplates, loadCues, loadRelay, loadBroadcast]);
+  useEffect(() => {
+    window.addEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
+    return () => window.removeEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
+  }, [loadBroadcast]);
   useEffect(() => {
     const id = setInterval(() => { pollMixers(); loadRelay(); }, POLL_MS);
     return () => clearInterval(id);
@@ -301,6 +315,24 @@ export function useProductionData() {
     }
   }, [jfetch, patch]);
 
+  // ─── Broadcast status (plan/broadcasts_next Feature E) ────────────────
+  const setBroadcastStatus = useCallback(async (status) => {
+    if (!broadcast?.id) return;
+    const prev = broadcast;
+    setBroadcast({ ...broadcast, status }); // optimistic
+    try {
+      const r = await jfetch(`/broadcasts/${encodeURIComponent(broadcast.id)}`, {
+        method: 'PUT', body: JSON.stringify({ status }),
+      });
+      if (!r.ok) { setBroadcast(prev); return; }
+      const d = await r.json().catch(() => ({}));
+      setBroadcast(d.broadcast ?? { ...prev, status });
+      notifyActiveBroadcastChanged();
+    } catch {
+      setBroadcast(prev);
+    }
+  }, [broadcast, jfetch]);
+
   // ─── Cue creation (rundown "+ Cue") ───────────────────────────────────
   const addCueRule = useCallback(async ({ name, pattern }) => {
     if (!name || !token) return;
@@ -318,7 +350,7 @@ export function useProductionData() {
   return {
     creds, connected,
     loaded, error,
-    cameras, mixers, primaryMixer, templates, cueRules, relay, thumbTick,
+    cameras, mixers, primaryMixer, templates, cueRules, relay, broadcast, thumbTick,
     sentEntries: sentLog?.entries || [],
     activeInput, previewCam, programCam, camById,
     ui, patch,
@@ -326,7 +358,7 @@ export function useProductionData() {
     actions: {
       setPreview, recallPreset, captureThumbnail, switchTo, cut,
       toggleCaptioning, stageGraphic, setGraphicField, cutGraphicLive, clearGraphicLive,
-      sendChat, addCueRule,
+      sendChat, addCueRule, setBroadcastStatus,
     },
     youtube: {
       getConfig: getYouTubeConfig,
