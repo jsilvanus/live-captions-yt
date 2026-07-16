@@ -10,6 +10,7 @@ import { isAllowedDomain } from '../lib/allowed-domains.js';
 import { startVideoRecording, finishVideoRecording, getVideoStorageDir } from '../db/videos.js';
 import { isS3Enabled } from '../storage/s3.js';
 import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
+import { getMetricsInstance } from '../metrics.js';
 
 /**
  * Validate and build the extraTargets array from the client-supplied targets list.
@@ -367,6 +368,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     session.recordingVideoId = recordingVideo?.id ?? null;
 
     incrementDomainHourlySessionStart(db, domain, store.size());
+    const metrics = getMetricsInstance();
+    metrics?.count('sessions.count', 1, { project: apiKey });
+    metrics?.max('sessions.peak_concurrent', store.size(), { project: apiKey });
 
     res.setHeader('Access-Control-Allow-Origin', domain);
     return res.status(200).json({
@@ -565,6 +569,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
         }
       }
       incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
+      const metrics = getMetricsInstance();
+      metrics?.count('sessions.seconds', Math.max(0, durationMs / 1000), { project: removed.apiKey });
+      metrics?.max('sessions.peak_concurrent', Math.max(0, store.size()), { project: removed.apiKey });
     }
     return res.status(200).json({ removed: true, sessionId });
   });

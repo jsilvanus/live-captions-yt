@@ -93,6 +93,8 @@ import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
+import { createWriteAuditMiddleware } from './middleware/write-audit.js';
+import { createMetrics, setMetricsInstance } from './metrics.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -194,6 +196,8 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
+const metrics = createMetrics(db);
+setMetricsInstance(metrics);
 // One shared pub/sub bus for the whole backend. Every per-project SSE registry
 // (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
 // through it, so events also reach the unified /events/stream endpoint and any
@@ -429,6 +433,8 @@ app.use('/icons', createIconRouter(db, auth, store));
 // NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
 app.use(express.json({ limit: '64kb' }));
 
+app.use(createWriteAuditMiddleware(db));
+
 // Request logging middleware
 app.use((req, res, next) => {
   if (req.path === '/health') {
@@ -470,6 +476,19 @@ if (process.env.STATIC_DIR) {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+// Metrics endpoint — optional auth gate
+app.get('/metrics', async (req, res) => {
+  if (!process.env.METRICS_TOKEN) {
+    return res.status(404).json({ error: 'Metrics endpoint disabled' });
+  }
+  const suppliedToken = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+  if (suppliedToken !== process.env.METRICS_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  res.set('Content-Type', metrics.registry.contentType);
+  res.send(await metrics.getMetricsText());
+});
 
 // Health check — no auth required
 app.get('/health', (req, res) => {

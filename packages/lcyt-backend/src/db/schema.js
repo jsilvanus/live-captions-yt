@@ -211,6 +211,61 @@ export function initDb(dbPath) {
   `);
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS usage_rollups (
+      api_key      TEXT NOT NULL,
+      period_start TEXT NOT NULL,
+      grain        TEXT NOT NULL DEFAULT 'hour',
+      metric       TEXT NOT NULL,
+      value        REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (api_key, metric, grain, period_start)
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_usage_rollups_period ON usage_rollups(period_start)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_usage_rollups_metric ON usage_rollups(metric, period_start)');
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      actor       TEXT NOT NULL,
+      actor_kind  TEXT NOT NULL,
+      actor_id    TEXT,
+      user_id     INTEGER,
+      api_key     TEXT,
+      org_id      INTEGER,
+      action      TEXT NOT NULL,
+      target_type TEXT,
+      target_id   TEXT,
+      details     TEXT,
+      ip          TEXT
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_created ON audit_log(created_at)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_project ON audit_log(api_key, id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_org ON audit_log(org_id, id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)');
+
+  const adminAuditTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'").get();
+  if (adminAuditTableExists) {
+    const legacyRows = db.prepare(`
+      SELECT actor, action, target_type, target_id, details, ip, created_at
+      FROM admin_audit_log
+    `).all();
+    if (legacyRows.length > 0) {
+      const insertLegacy = db.prepare(`
+        INSERT INTO audit_log (created_at, actor, actor_kind, action, target_type, target_id, details, ip)
+        VALUES (?, ?, 'admin', ?, ?, ?, ?, ?)
+      `);
+      db.transaction(() => {
+        for (const row of legacyRows) {
+          insertLegacy.run(row.created_at || null, row.actor || 'admin', row.action, row.target_type, row.target_id, row.details, row.ip);
+        }
+      })();
+    }
+    db.exec('DROP TABLE admin_audit_log');
+  }
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS session_stats (
       id              INTEGER PRIMARY KEY AUTOINCREMENT,
       session_id      TEXT NOT NULL,
