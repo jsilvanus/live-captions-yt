@@ -4,6 +4,16 @@
 > **Scope:** `lcyt-backend`, `lcyt-rtmp`, `lcyt-dsk`, `lcyt-agent`, `lcyt-orchestrator`, `lcyt-worker-daemon`, `lcyt-web`, compose files, `PORTS.md`
 > **Decided with user 2026-07-16.** Design discussion resolved: project-level attribution, DB-first metering, wall-clock × purpose compute, Prometheus server in compose (no Grafana), unified audit log with `admin_audit_log` migration, in-app Admin/Team views as primary consumers.
 
+## Spec coverage checklist
+
+This plan is scoped to the requested metering/audit work and explicitly covers:
+
+- [x] DB-first project-attributed usage rollups (`usage_rollups`) with hourly→daily compaction and retention.
+- [x] ffmpeg/process/egrss/compute accounting hooks across backend, RTMP, orchestrator, and worker-daemon paths.
+- [x] Prometheus exposition for backend/orchestrator/worker, including compose-based deployment and a dedicated metrics token gate.
+- [x] A unified `audit_log` model with middleware-backed write auditing, auth-semantic events, and migration from `admin_audit_log`.
+- [x] Admin metrics/audit views and Team usage surfaces in the web UI, plus explicit verification steps for each phase.
+
 ## 1. Context & goals
 
 LCYT currently has no coherent observability layer:
