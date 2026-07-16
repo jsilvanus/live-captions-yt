@@ -57,6 +57,22 @@ export function createBroadcastsRouter(auth, db) {
     res.status(201).json({ ok: true, broadcast: result.broadcast });
   });
 
+  router.get('/active', auth, (req, res) => {
+    const broadcast = getActiveBroadcast(db, req.session.apiKey);
+    res.json({ activeBroadcastId: broadcast?.id ?? null, broadcast });
+  });
+
+  router.delete('/active', auth, (req, res) => {
+    deactivateBroadcast(db, req.session.apiKey);
+    res.json({ ok: true, activeBroadcastId: null });
+  });
+
+  router.post('/:id/activate', auth, (req, res) => {
+    const result = activateBroadcast(db, req.session.apiKey, req.params.id);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json({ ok: true, activeBroadcastId: result.broadcast.id, broadcast: result.broadcast });
+  });
+
   router.get('/:id', auth, (req, res) => {
     const broadcast = getBroadcast(db, req.session.apiKey, req.params.id);
     if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });

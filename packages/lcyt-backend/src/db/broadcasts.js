@@ -75,6 +75,10 @@ function formatBroadcastFile(row) {
   };
 }
 
+function clearActiveBroadcastIfMatches(db, apiKey, id) {
+  if (getActiveBroadcastId(db, apiKey) === id) setActiveBroadcastId(db, apiKey, null);
+}
+
 /**
  * List broadcasts for a project.
  * @param {import('better-sqlite3').Database} db
@@ -212,7 +216,7 @@ export function archiveBroadcast(db, apiKey, id) {
   db.prepare(
     "UPDATE broadcasts SET status = 'archived', archived_at = datetime('now'), updated_at = datetime('now') WHERE api_key = ? AND id = ?"
   ).run(apiKey, id);
-  if (getActiveBroadcastId(db, apiKey) === id) setActiveBroadcastId(db, apiKey, null);
+  clearActiveBroadcastIfMatches(db, apiKey, id);
   return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
 }
 
@@ -261,7 +265,7 @@ export function deleteBroadcast(db, apiKey, id) {
   }
 
   const tx = db.transaction(() => {
-    if (getActiveBroadcastId(db, apiKey) === id) setActiveBroadcastId(db, apiKey, null);
+    clearActiveBroadcastIfMatches(db, apiKey, id);
     db.prepare('UPDATE sessions       SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
     db.prepare('UPDATE session_stats  SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
     db.prepare('UPDATE caption_files  SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
