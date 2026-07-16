@@ -32,6 +32,7 @@ class BackendCaptionSender {
    * @param {object} options
    * @param {string} options.backendUrl - Base URL of the lcyt-backend server (e.g. "https://captions.example.com")
    * @param {string} options.apiKey - API key registered in the backend's SQLite database
+   * @param {string} [options.authToken] - Project-scoped JWT used for authenticated project requests
    * @param {string} [options.streamKey] - YouTube stream key (optional; superseded by the `targets` array in `start()`)
    * @param {string} [options.domain] - CORS origin. Defaults to location.origin in browsers or 'http://localhost' in Node.
    * @param {number} [options.sequence=0] - Starting sequence number (overridden by backend response on start())
@@ -40,6 +41,7 @@ class BackendCaptionSender {
   constructor({
     backendUrl,
     apiKey,
+    authToken,
     streamKey,
     domain,
     sequence = 0,
@@ -47,6 +49,7 @@ class BackendCaptionSender {
   } = {}) {
     this.backendUrl = backendUrl;
     this.apiKey = apiKey;
+    this.authToken = authToken || null;
     this.streamKey = streamKey;
     this.domain = domain ||
       (typeof globalThis.location !== 'undefined' ? globalThis.location.origin : 'http://localhost');
@@ -76,10 +79,16 @@ class BackendCaptionSender {
    * @returns {Promise<object>} Parsed JSON response
    * @throws {NetworkError} On non-2xx response or network failure
    */
+  _getAuthToken(auth = true) {
+    if (!auth) return null;
+    return this.authToken || this._token || null;
+  }
+
   async _fetch(path, { method = 'GET', body, auth = true } = {}) {
     const headers = { 'Content-Type': 'application/json' };
-    if (auth && this._token) {
-      headers['Authorization'] = `Bearer ${this._token}`;
+    const token = this._getAuthToken(auth);
+    if (token) {
+      headers['Authorization'] = 'Bearer ' + token;
     }
 
     const res = await fetch(`${this.backendUrl}${path}`, {
@@ -124,7 +133,7 @@ class BackendCaptionSender {
     const data = await this._fetch('/live', {
       method: 'POST',
       body,
-      auth: false
+      auth: true
     });
 
     this._token = data.token;

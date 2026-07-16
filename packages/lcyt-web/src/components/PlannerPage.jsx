@@ -8,6 +8,7 @@ import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
 import { SessionContext } from '../contexts/SessionContext';
 import { AgentChatPanel, useAgentChat } from './agent/AgentChatPanel.jsx';
+import { SwipeablePages } from './SwipeablePages.jsx';
 export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 
 function makeBlock(type) {
@@ -1045,6 +1046,153 @@ export function PlannerPage() {
     }
   }
 
+  // On mobile, use swipeable pages for the three main sections
+  if (isNarrow) {
+    const pages = [
+      {
+        label: 'Files',
+        content: (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* File management stub */}
+            <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 'bold', color: 'var(--color-text-muted)', marginBottom: 8 }}>File</div>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button onClick={handleNew} style={{ fontSize: 12, padding: '4px 10px', background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-text)' }}>New</button>
+                <button onClick={handleImport} style={{ fontSize: 12, padding: '4px 10px', background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-text)' }}>Import</button>
+                <button onClick={handleExport} style={{ fontSize: 12, padding: '4px 10px', background: 'var(--color-surface-elevated)', border: '1px solid var(--color-border)', borderRadius: 4, cursor: 'pointer', color: 'var(--color-text)' }}>Export</button>
+              </div>
+            </div>
+            {/* Structure outline */}
+            <PlannerOutline
+              filename={filename}
+              totalLines={totalLines}
+              dirty={dirty}
+              outline={outline}
+              onJumpTo={jumpToHeading}
+              onNew={handleNew}
+              onImport={handleImport}
+              onExport={handleExport}
+              isNarrow={isNarrow}
+            />
+          </div>
+        ),
+      },
+      {
+        label: 'Script',
+        content: (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <PlannerToolbar
+              filename={filename}
+              editingFilename={editingFilename}
+              dirty={dirty}
+              onFilenameChange={setFilename}
+              onEditingFilename={setEditingFilename}
+              onNormalize={() => setShowNormalizeModal(true)}
+              onToDashboard={handleToDashboard}
+              onInsert={type => {
+                insertBlock(null, makeBlock(type));
+              }}
+              projectReady={Boolean(backendUrl && sessionToken)}
+              projectSaving={projectSaving}
+              projectLoading={projectLoading}
+              serverRundowns={serverRundowns}
+              selectedServerRundownId={selectedServerRundownId}
+              onSelectedServerRundownChange={setSelectedServerRundownId}
+              onSaveToProject={handleSaveToProject}
+              onOpenFromProject={handleOpenFromProject}
+            />
+            {showNormalizeModal && (
+              <NormalizeLinesModal
+                fileName={filename}
+                rawLines={serializePlan(blocks).split('\n')}
+                onConfirm={handleNormalizeConfirm}
+                onSkip={() => setShowNormalizeModal(false)}
+              />
+            )}
+            <div className="planner-body" style={{ flex: 1 }}>
+              <div className="planner-editor" ref={editorRef}>
+                {blocks.length === 0 && (
+                  <div className="planner-empty-state">
+                    <div className="planner-empty-state__icon" aria-hidden="true">📋</div>
+                    <p className="planner-empty-state__text">No script yet.<br />Use the Insert buttons above to add lines, or Import a file.</p>
+                  </div>
+                )}
+                {blocks.map(block => {
+                  if (block.type === 'caption' || block.type === 'empty-send') lineNum++;
+                  const num = (block.type === 'caption' || block.type === 'empty-send') ? lineNum : null;
+                  return (
+                    <PlannerRow
+                      key={block.id}
+                      block={block}
+                      lineNum={num}
+                      onUpdate={patch => updateBlock(block.id, patch)}
+                      onDelete={() => deleteBlock(block.id)}
+                      onInsertAfter={type => insertBlock(block.id, makeBlock(type))}
+                      onDragStart={() => onDragStart(block.id)}
+                      onDrop={() => onDrop(block.id)}
+                      includedBlocks={includeContents[block.id]}
+                      onLoadInclude={() => loadInclude(block.id)}
+                    />
+                  );
+                })}
+                <PlannerQuickAdd onAdd={handleQuickAdd} />
+              </div>
+            </div>
+          </div>
+        ),
+      },
+      {
+        label: 'Cues & AI',
+        content: (
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            {/* Cues and Actions tabs stub */}
+            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
+              <button
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 0, border: 'none', background: 'transparent', color: 'var(--color-text-muted)',
+                  fontSize: 12, fontWeight: '500', cursor: 'pointer', borderBottom: '2px solid var(--color-border)',
+                }}
+              >
+                📋 Cues
+              </button>
+              <button
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 0, border: 'none', background: 'transparent', color: 'var(--color-text-muted)',
+                  fontSize: 12, fontWeight: '500', cursor: 'pointer', borderBottom: '2px solid var(--color-border)',
+                }}
+              >
+                ⚡ Actions
+              </button>
+            </div>
+            <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-muted)' }}>
+              Cues and Actions panels coming soon
+            </div>
+            {/* AI Chat */}
+            <AgentChatPanel
+              title="Planner Assistant"
+              subtitle="Describe the event to draft a rundown, or describe a change to make to the one you have."
+              messages={chatMessages}
+              onSend={handleChatSend}
+              loading={aiLoading}
+              error={aiError}
+              disabled={!sessionToken}
+              quickActions={blocks.length === 0 ? RUNDOWN_STARTERS.map(t => ({
+                label: t.label,
+                onClick: () => handleChatSend(t.prompt),
+              })) : undefined}
+              isNarrow={isNarrow}
+            />
+          </div>
+        ),
+      },
+    ];
+
+    return (
+      <SwipeablePages pages={pages} isNarrow={true} />
+    );
+  }
+
+  // Desktop layout: three columns side-by-side
   return (
     <div className="planner-page">
       <PlannerOutline

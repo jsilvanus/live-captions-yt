@@ -8,6 +8,7 @@ import { KEYS } from '../lib/storageKeys.js';
 import { templateSlug } from '../lib/formatting.js';
 import { ImageSettingsTable } from './DskViewportsPage';
 import { AgentChatPanel, useAgentChat } from './agent/AgentChatPanel.jsx';
+import { SwipeablePages } from './SwipeablePages.jsx';
 
 /**
  * DSK Graphics Template Editor
