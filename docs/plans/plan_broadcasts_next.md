@@ -2,7 +2,7 @@
 id: plan/broadcasts_next
 title: "Broadcasts — "
 status: draft
-summary: "Next step after broadcasts entity: Activatable broadcast + unified Planner file-management panel"
+summary: "Next step after broadcasts entity: Activatable broadcast + unified Planner file-management panel + DSK graphics browser, header context, production status controls"
 related: plan/broadcasts
 ---
 
@@ -149,6 +149,30 @@ Remove `showActions` state and the `planner-outline__actions-wrap` block (lines 
 
 ---
 
+## Feature C — DSK broadcast-scoped graphics browser
+
+Mirror of Feature B for graphics: the DSK Control page gets a panel showing which templates are pinned to the active broadcast, with pin/unpin toggles.
+
+- **No new tables/routes** — reuses `broadcast_assets` (`assetType: 'graphic'`, `assetRef: String(templateId)`) via the existing `POST /broadcasts/:id/assets` and `DELETE /broadcasts/:id/assets/:rowId`. Pinned state and asset row ids come from `GET /broadcasts/active` (its `broadcast.assets` array — `getBroadcast()` embeds them).
+- **New component** `packages/lcyt-web/src/components/DskBroadcastAssetPanel.jsx`, rendered in `DskControlPage.jsx` above the template grid. Shows: active broadcast title (or empty state), each template row with pinned status + Pin/Unpin button.
+- **Auth caveat:** `/broadcasts/*` requires a Bearer JWT (session/user/device) — raw `X-API-Key` is not enough. The panel therefore renders only when `session?.getSessionToken?.()` is available (sidebar mode `/graphics/control`); standalone `/dsk-control/:key` shows nothing extra.
+
+## Feature D — Project + broadcast names in the header
+
+- **Backend:** `GET /broadcasts/active` additionally returns `projectName` (`api_keys.owner` — the field the Projects UI already displays as the project name). New helper `getProjectName(db, key)` in `db/keys.js`.
+- **Shared hook** `packages/lcyt-web/src/hooks/useActiveBroadcast.js`: fetches `/broadcasts/active` given `{ backendUrl, token, projectKey? }`, exposes `{ broadcast, activeBroadcastId, projectName, loading, reload }`, and re-fetches on a `lcyt:active-broadcast-changed` window event (exported `notifyActiveBroadcastChanged()` fired by every mutation site: Summary-tab toggle, production status control, DSK/planner pin panels don't need it — they don't change the pointer).
+- **UI:** `TopBar` (`sidebar/Sidebar.jsx`) renders `projectName · broadcastTitle` (+ status badge) next to the brand when a session is connected. New `top-bar__context*` classes in `styles/sidebar.css`.
+
+## Feature E — Broadcast status controls in the Production view
+
+- `useProductionData.js`: load `GET /broadcasts/active` alongside the other auth-gated extras; expose `broadcast` and a `setBroadcastStatus(status)` action → `PUT /broadcasts/:id { status }`, then reload + `notifyActiveBroadcastChanged()`.
+- `Chrome.jsx` `ProductionHeader`: broadcast chip (title) + a status `<select>` (draft / scheduled / live / completed; archived shown read-only if current — archiving stays in the Broadcasts manager). Status colors: live = red family, scheduled = blue, completed = grey.
+
+## Fixes to the initial PR implementation
+
+- `PlannerBroadcastFilePanel.jsx` builds `pinnedFileIds` from `file.id` — the `broadcast_files` join-row id — instead of `file.fileId` (the `caption_files` id), so pinned files never display as pinned (the §B1 bug this plan explicitly warned about). Fix to `file.fileId`.
+- The Summary-tab activate/deactivate toggle should fire `notifyActiveBroadcastChanged()` so the header, planner panel, DSK panel, and production header refresh without a reload.
+
 ## Build order
 1. A1 → A2 → A3 → A4 (backend; testable standalone via curl before touching the frontend).
 2. A5 (client plumbing).
@@ -158,6 +182,11 @@ Remove `showActions` state and the `planner-outline__actions-wrap` block (lines 
 6. B5/B6 (trim PlannerToolbar/PlannerOutline).
 7. B7 (wire into PlannerPage's render, desktop + mobile).
 8. B8 (icons — can run in parallel with B1 once the component shell exists).
+9. Backend `projectName` on `GET /broadcasts/active` + `useActiveBroadcast` hook (D).
+10. TopBar context label (D).
+11. `useProductionData` broadcast state + `setBroadcastStatus`, `ProductionHeader` controls (E).
+12. `DskBroadcastAssetPanel` + `DskControlPage` wiring (C).
+13. PR fixes: planner `fileId` bug, `notifyActiveBroadcastChanged()` wiring.
 
 ## Verification
 - Backend: after A1-A4, manually curl `POST /broadcasts/:id/activate`, `GET /broadcasts/active`, `DELETE /broadcasts/active`, and `POST /auth/project-token` to confirm `activeBroadcastId` round-trips through the JWT payload (decode with `jwt.io` or a throwaway script) and the plain JSON response.

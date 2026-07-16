@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { notifyActiveBroadcastChanged } from '../hooks/useActiveBroadcast.js';
 
 export function BroadcastsSection({ project, backendUrl, token, onActivated }) {
   const [broadcasts, setBroadcasts] = useState([]);
@@ -61,6 +62,7 @@ export function BroadcastsSection({ project, backendUrl, token, onActivated }) {
       const nextActiveId = isActive ? null : (data.activeBroadcastId ?? broadcast.id);
       setActiveBroadcastId(nextActiveId);
       setBroadcasts(prev => prev.map(item => ({ ...item, active: String(item.id) === String(nextActiveId) })));
+      notifyActiveBroadcastChanged();
       onActivated?.(data);
     } catch (err) {
       setError(err.message || 'Failed to update active broadcast');

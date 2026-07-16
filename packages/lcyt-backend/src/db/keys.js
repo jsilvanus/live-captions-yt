@@ -138,6 +138,17 @@ export function setActiveBroadcastId(db, key, broadcastId) {
 }
 
 /**
+ * Read the project's display name (the `owner` field the Projects UI shows).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} key
+ * @returns {string|null}
+ */
+export function getProjectName(db, key) {
+  const row = db.prepare('SELECT owner FROM api_keys WHERE key = ?').get(key);
+  return row?.owner ?? null;
+}
+
+/**
  * Resolve a public slug to its api_key. Null when no project has this slug.
  * @param {import('better-sqlite3').Database} db
  * @param {string} slug

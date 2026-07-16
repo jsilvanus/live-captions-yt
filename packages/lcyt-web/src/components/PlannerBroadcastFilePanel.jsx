@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ACTIVE_BROADCAST_EVENT } from '../hooks/useActiveBroadcast.js';
 
 export function PlannerBroadcastFilePanel({ backendUrl, token, projectKey, serverRundowns = [] }) {
   const [broadcasts, setBroadcasts] = useState([]);
@@ -43,7 +44,9 @@ export function PlannerBroadcastFilePanel({ backendUrl, token, projectKey, serve
         const filesRes = await fetch(`${backendUrl}/broadcasts/${encodeURIComponent(nextActiveId)}/files`, { headers });
         const filesData = await filesRes.json().catch(() => ({}));
         if (!filesRes.ok) throw new Error(filesData.error || `HTTP ${filesRes.status}`);
-        const ids = new Set((filesData.files || []).map(file => String(file.id)));
+        // Rows are broadcast_files join rows: `.id` is the link-row id, `.fileId`
+        // is the caption_files id that matches serverRundowns[].id.
+        const ids = new Set((filesData.files || []).map(file => String(file.fileId ?? file.id)));
         setPinnedFileIds(ids);
       }
     } catch (err) {
@@ -55,6 +58,11 @@ export function PlannerBroadcastFilePanel({ backendUrl, token, projectKey, serve
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    window.addEventListener(ACTIVE_BROADCAST_EVENT, load);
+    return () => window.removeEventListener(ACTIVE_BROADCAST_EVENT, load);
   }, [load]);
 
   async function toggleFile(file) {

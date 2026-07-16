@@ -7,6 +7,7 @@ import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM, ProjectIcon } from './navConfig.jsx';
 import { KEYS } from '../../lib/storageKeys.js';
 import { readInputLang, INPUT_LANG_EVENT } from '../../lib/inputLang.js';
+import { useActiveBroadcast } from '../../hooks/useActiveBroadcast.js';
 
 // ── localStorage helpers ────────────────────────────────────────────────────
 
@@ -131,6 +132,40 @@ function TopBarBadges() {
   );
 }
 
+// ── TopBarContext ───────────────────────────────────────────────────────────
+// Project name + active broadcast title/status (plan/broadcasts_next Feature D).
+
+function TopBarContext() {
+  const session = useSessionContext();
+  const backendUrl = (session.backendUrl || '').replace(/\/$/, '');
+  const token = session.connected ? session.getSessionToken?.() : null;
+  const { broadcast, projectName } = useActiveBroadcast({
+    backendUrl,
+    token,
+    enabled: session.connected,
+  });
+
+  if (!session.connected || (!projectName && !broadcast)) return null;
+
+  const status = broadcast?.status || null;
+  return (
+    <span className="top-bar__context" title={[projectName, broadcast?.title].filter(Boolean).join(' — ')}>
+      {projectName && <span className="top-bar__context-project">{projectName}</span>}
+      {broadcast && (
+        <>
+          {projectName && <span aria-hidden="true">·</span>}
+          <span className="top-bar__context-broadcast">{broadcast.title || `Broadcast ${broadcast.id}`}</span>
+          {status && (
+            <span className={`top-bar__context-status${status === 'live' ? ' top-bar__context-status--live' : ''}`}>
+              {status}
+            </span>
+          )}
+        </>
+      )}
+    </span>
+  );
+}
+
 // ── TopBar ──────────────────────────────────────────────────────────────────
 
 export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
@@ -156,6 +191,7 @@ export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
         </button>
         <HealthDot inline />
       </div>
+      <TopBarContext />
       <TopBarBadges />
       <span className="top-bar__spacer" />
       <QuickActionsPopover />

@@ -28,6 +28,7 @@ import {
   listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
   linkAsset, unlinkAsset,
 } from '../db/broadcasts.js';
+import { getProjectName } from '../db/keys.js';
 
 /**
  * @param {import('express').RequestHandler} auth  project-access / session Bearer middleware
@@ -59,7 +60,11 @@ export function createBroadcastsRouter(auth, db) {
 
   router.get('/active', auth, (req, res) => {
     const broadcast = getActiveBroadcast(db, req.session.apiKey);
-    res.json({ activeBroadcastId: broadcast?.id ?? null, broadcast });
+    res.json({
+      activeBroadcastId: broadcast?.id ?? null,
+      broadcast,
+      projectName: getProjectName(db, req.session.apiKey),
+    });
   });
 
   router.delete('/active', auth, (req, res) => {
