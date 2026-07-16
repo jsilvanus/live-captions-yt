@@ -73,7 +73,9 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 ### Pending
 
-(None at this time)
+| File | Title | Summary |
+|---|---|---|
+| [plan_metering_audit.md](plans/plan_metering_audit.md) | Metering, Prometheus Metrics & Unified Audit Log | DB-first usage rollups (`usage_rollups`, hourly→daily) attributed per project, ffmpeg wall-clock × purpose compute accounting, MediaMTX/Node egress metering, prom-client `/metrics` on backend/orchestrator/worker + Prometheus in compose (no Grafana), unified `audit_log` (write-audit middleware + login events, migrates `admin_audit_log`), Admin metrics/audit views + Team usage tab. |
 
 ### Draft
 

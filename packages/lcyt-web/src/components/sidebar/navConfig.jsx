@@ -58,6 +58,14 @@ const AdminIcon = () => (
   </svg>
 );
 
+const LegacyIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+    <path d="M3 2H13C13.5523 2 14 2.44772 14 3V13C14 13.5523 13.5523 14 13 14H3C2.44772 14 2 13.5523 2 13V3C2 2.44772 2.44772 2 3 2Z" stroke="currentColor" strokeWidth="1.3" />
+    <path d="M4 5L8 8L12 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    <line x1="4" y1="11" x2="12" y2="11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+  </svg>
+);
+
 const AccountIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <circle cx="8" cy="5.5" r="2.5" stroke="currentColor" strokeWidth="1.4" />
@@ -106,6 +114,7 @@ export const NAV_GROUPS = [];
 // with Projects (the mockup's separate "no project selected" nav) placed
 // above them.
 export const NAV_BOTTOM = [
+  { id: 'legacy',   icon: <LegacyIcon />,   label: 'Legacy',   path: '/captions',    hideable: true },
   { id: 'projects', icon: <ProjectsIcon />, label: 'Projects', path: '/projects',    feature: 'login' },
   { id: 'team',     icon: <TeamIcon />,     label: 'Team',     path: '/team',        feature: 'login' },
   { id: 'admin',    icon: <AdminIcon />,    label: 'Admin',    path: '/admin/users', feature: 'admin' },

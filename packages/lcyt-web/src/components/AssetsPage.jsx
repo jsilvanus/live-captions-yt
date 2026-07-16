@@ -376,7 +376,7 @@ export function AssetsPage() {
       color: 'green',
       status: connected ? (loading.files ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.files ? 'Loading…' : `${files.length} file${files.length === 1 ? '' : 's'}`) : 'Connect',
-      headerAction: { label: 'Open', href: '/captions' },
+      headerAction: { label: 'Open', href: '/planner' },
       body: !connected ? (
         <p className="setup-card__empty">Connect to a project to browse caption files.</p>
       ) : loading.files ? (
@@ -390,7 +390,7 @@ export function AssetsPage() {
           meta={file.type || 'file'}
           badge={file.lang ? `lang: ${file.lang}` : null}
           extra={file.sizeBytes ? <span className="setup-item-row__meta">{formatBytes(file.sizeBytes)}</span> : null}
-          href="/captions"
+          href="/planner"
         />
       )),
     },

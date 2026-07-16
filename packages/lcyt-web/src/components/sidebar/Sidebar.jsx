@@ -251,12 +251,14 @@ export function Sidebar({ onNavigate }) {
   const visibleBottom = useMemo(() => {
     if (!features && !isUserAdmin) return NAV_BOTTOM;
     return NAV_BOTTOM.filter(item => {
-      // Admin items: show only if user is admin (user-level gated, not feature-flagged)
-      if (item.feature === 'admin') return isUserAdmin;
+      // Admin items: show if feature is present OR user is admin
+      if (item.feature === 'admin') return (features?.includes('admin') || isUserAdmin) && (!item.hideable || showAdvanced);
+      // Hideable items: show only if showAdvanced is true
+      if (item.hideable) return showAdvanced;
       // Other items: show if feature is not required or is present
       return !item.feature || features?.includes(item.feature);
     });
-  }, [features, isUserAdmin]);
+  }, [features, isUserAdmin, showAdvanced]);
 
   function toggleAdvanced() {
     const next = !showAdvanced;
@@ -281,15 +283,6 @@ export function Sidebar({ onNavigate }) {
         {visibleGroups.map(group => (
           <SidebarGroup key={group.id} group={group} onNavigate={onNavigate} />
         ))}
-        {showAdvanced && (
-          <a
-            href="/legacy"
-            className="sidebar__item"
-            title="Legacy"
-          >
-            <span className="sidebar__item-icon" aria-hidden="true">⏮</span>
-          </a>
-        )}
       </div>
       <div className="sidebar__divider" role="separator" />
       <div className="sidebar__bottom">
