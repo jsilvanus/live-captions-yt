@@ -6,14 +6,16 @@
  */
 
 import { spawn } from 'node:child_process';
+import { reportFfmpegRun } from './ffmpeg-accounting.js';
 
 /**
  * @param {Buffer} segmentBuffer - raw fMP4 segment bytes
  * @param {object} [opts]
  * @param {number} [opts.sampleRate=22050]
+ * @param {string} [opts.apiKey=''] - project attribution for ffmpeg accounting
  * @returns {Promise<Float32Array>} mono PCM, normalised to [-1, 1]
  */
-export function extractPcm(segmentBuffer, { sampleRate = 22050 } = {}) {
+export function extractPcm(segmentBuffer, { sampleRate = 22050, apiKey = '' } = {}) {
   return new Promise((resolve, reject) => {
     let proc;
     try {
@@ -28,6 +30,20 @@ export function extractPcm(segmentBuffer, { sampleRate = 22050 } = {}) {
     } catch (err) {
       reject(new Error(`extractPcm: failed to spawn ffmpeg: ${err.message}`));
       return;
+    }
+
+    // ffmpeg compute accounting (plan_metering_audit §4.1) — short per-segment
+    // runs, reported through the sink set by initMusicControl.
+    {
+      const ffmpegStartedAt = Date.now();
+      let accounted = false;
+      const account = () => {
+        if (accounted) return;
+        accounted = true;
+        reportFfmpegRun({ purpose: 'pcm', apiKey, seconds: (Date.now() - ffmpegStartedAt) / 1000 });
+      };
+      proc.once('close', account);
+      proc.once('error', account);
     }
 
     const chunks = [];

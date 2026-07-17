@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { incrementViewerKeyStat, incrementViewerAnonStat } from '../db.js';
+import { getMetricsInstance } from '../metrics/index.js';
 
 /**
  * In-memory map of viewerKey → Set of active SSE client objects.
@@ -9,6 +10,16 @@ import { incrementViewerKeyStat, incrementViewerAnonStat } from '../db.js';
  * without needing a shared store object.
  */
 const viewerSubs = new Map();
+
+// Lazily-read connection gauge for /metrics and the /admin/metrics/live panel.
+// Registered on first router creation; getMetricsInstance() is null in tests.
+function registerViewerSseGauge() {
+  getMetricsInstance()?.setSseGauge('viewer', () => {
+    let total = 0;
+    for (const clients of viewerSubs.values()) total += clients.size;
+    return total;
+  });
+}
 
 /**
  * Optional HlsSubsManager instance.
@@ -73,6 +84,7 @@ export function broadcastToViewers(viewerKey, data) {
  */
 export function createViewerRouter(db) {
   const router = Router();
+  registerViewerSseGauge();
 
   // CORS preflight for the viewer endpoint (all origins allowed)
   router.options('/:key', (req, res) => {
@@ -123,6 +135,15 @@ export function createViewerRouter(db) {
     const client = { res };
     if (!viewerSubs.has(key)) viewerSubs.set(key, new Set());
     viewerSubs.get(key).add(client);
+
+    {
+      const metrics = getMetricsInstance();
+      const ownerKey = viewerKeyOwners.get(key) || '';
+      metrics?.count('viewer.views', 1, { project: ownerKey });
+      let totalViewers = 0;
+      for (const clients of viewerSubs.values()) totalViewers += clients.size;
+      metrics?.max('viewer.peak_concurrent', totalViewers, { project: ownerKey });
+    }
 
     // Periodic heartbeat to keep the connection alive through proxies
     const heartbeat = setInterval(() => {

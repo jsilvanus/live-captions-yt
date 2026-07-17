@@ -5,7 +5,6 @@ import { composeCaptionText, buildVttCue } from '../caption-files.js';
 import { applyMetacodeProcessors } from '../metacode.js';
 import { writeToBackendFile } from 'lcyt-files';
 import { createCaptionFanout } from '../caption-fanout.js';
-import { getMetricsInstance } from '../metrics.js';
 
 /**
  * Factory for the /captions router.
@@ -25,7 +24,6 @@ import { getMetricsInstance } from '../metrics.js';
 export function createCaptionsRouter(store, auth, db, relayManager = null, dskProcessor = null, resolveStorage = null, soundProcessor = null, cueProcessor = null) {
   const router = Router();
   const fanOutToTargets = createCaptionFanout({ db });
-  const metrics = getMetricsInstance();
 
   // POST /captions — Send captions (auth required)
   router.post('/', auth, async (req, res) => {
@@ -175,7 +173,6 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         if (result.statusCode >= 200 && result.statusCode < 300) {
           session.captionsSent++;
           incrementDomainHourlyCaptions(db, session.domain, { sent: 1, batches: isBatch ? 1 : 0 });
-          metrics?.count('captions.sent', 1, { project: session.apiKey });
           session.emitter.emit('caption_result', {
             requestId,
             sequence: result.sequence,
@@ -186,7 +183,6 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         } else {
           session.captionsFailed++;
           incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
-          metrics?.count('captions.failed', 1, { project: session.apiKey });
           writeCaptionError(db, {
             apiKey: session.apiKey,
             sessionId,
@@ -204,7 +200,6 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
       } catch (err) {
         session.captionsFailed++;
         incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
-        metrics?.count('captions.failed', 1, { project: session.apiKey });
         writeCaptionError(db, {
           apiKey: session.apiKey,
           sessionId,

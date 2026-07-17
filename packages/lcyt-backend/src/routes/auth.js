@@ -7,19 +7,26 @@ import { provisionDefaultUserFeatures } from '../db/project-features.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { writeAuditLog } from '../db/audit-log.js';
-import { getMetricsInstance } from '../metrics.js';
+import { getMetricsInstance } from '../metrics/index.js';
 import { deviceLoginHandler } from './device-roles.js';
 
 const BCRYPT_ROUNDS = 12;
 const USER_TOKEN_TTL_DAYS = 30;
 const FAILED_LOGIN_AUDIT_THROTTLE_MS = 10_000;
-const LOGIN_RATE_LIMIT = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many login attempts' },
-});
+// Brute-force guard on /auth/login + /auth/register: only failed attempts
+// count toward the limit, so normal traffic (and the test suite) is unaffected.
+// LOGIN_RATE_LIMIT_MAX=0 disables.
+const LOGIN_RATE_LIMIT_MAX = Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 50);
+const LOGIN_RATE_LIMIT = LOGIN_RATE_LIMIT_MAX > 0
+  ? rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: LOGIN_RATE_LIMIT_MAX,
+      skipSuccessfulRequests: true,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too many login attempts' },
+    })
+  : (req, res, next) => next();
 
 function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
   return jwt.sign(

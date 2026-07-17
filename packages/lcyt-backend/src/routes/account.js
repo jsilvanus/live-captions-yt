@@ -12,6 +12,7 @@ import { createProjectFeaturesRouter } from './project-features.js';
 import { createProjectMembersRouter } from './project-members.js';
 import { createProjectSlugRouter } from './project-slug.js';
 import { createDeviceRolesRouter } from './device-roles.js';
+import { createProjectObservabilityRouter } from './project-observability.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -27,6 +28,8 @@ export function createAccountRouters(db, jwtSecret, { loginEnabled = true } = {}
   router.use('/keys/:key/features', createProjectFeaturesRouter(db, { loginEnabled, jwtSecret }));
   router.use('/keys/:key/members',  createProjectMembersRouter(db, { loginEnabled, jwtSecret }));
   router.use('/keys/:key/slug',     createProjectSlugRouter(db, { loginEnabled, jwtSecret }));
+  // Project audit trail + usage rollups (plan_metering_audit §5.5, §6.1)
+  router.use('/keys/:key',          createProjectObservabilityRouter(db, { loginEnabled, jwtSecret }));
   router.use('/keys/:key',          createDeviceRolesRouter(db, { loginEnabled, jwtSecret }));
   return router;
 }

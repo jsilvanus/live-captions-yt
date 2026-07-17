@@ -120,6 +120,13 @@ export async function initAgent(db, opts = {}) {
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);
 
+  // ai.calls accounting (plan_metering_audit §3.2): every model call routed
+  // through invokeModelCall is counted when the backend injects `metrics`.
+  if (opts.metrics) {
+    const { setAiCallSink } = await import('./agentic-turn.js');
+    setAiCallSink((project) => opts.metrics.count('ai.calls', 1, { project: project || '' }));
+  }
+
   // Agentic chat roles' shared SSE bus + Production Assistant's suggestion
   // queue. Both only need `db`; the tool registry itself (which needs
   // cross-plugin deps: lcyt-production, lcyt-dsk) is built by the

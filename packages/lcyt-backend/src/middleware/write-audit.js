@@ -1,7 +1,23 @@
 import { writeAuditLog } from '../db/audit-log.js';
 
 const REDACT_KEYS = new Set(['password', 'pin', 'token', 'secret', 'key', 'apikey', 'credentials', 'auth_config', 'authorization']);
-const SKIP_PATH_PREFIXES = ['/captions', '/sync', '/mic', '/live', '/variables/refresh', '/dsk-rtmp', '/production/bridge/status'];
+
+// High-frequency or already-covered paths (plan_metering_audit §5.2). /admin
+// is excluded because routes/admin.js writes richer semantic entries itself —
+// auditing it here as well would duplicate every admin action.
+const SKIP_PATTERNS = [
+  /^\/captions(\/|$)/,
+  /^\/sync(\/|$)/,
+  /^\/mic(\/|$)/,
+  /^\/live(\/|$)/,
+  /^\/variables\/refresh(\/|$)/,
+  /^\/dsk\/[^/]+\/broadcast(\/|$)/,
+  /^\/events(\/|$)/,
+  /^\/production\/bridge\/status(\/|$)/,
+  /^\/dsk-rtmp(\/|$)/,
+  /^\/roles\/[^/]+\/message(\/|$)/,
+  /^\/admin(\/|$)/,
+];
 
 function sanitizeValue(value, depth = 0) {
   if (value == null || typeof value !== 'object') return value;
@@ -31,28 +47,24 @@ function summarizeBody(body) {
 function shouldSkip(req) {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return true;
   const requestPath = `${req.baseUrl}${req.path}`;
-  if (req.method === 'POST' && requestPath.startsWith('/captions')) return true;
-  return SKIP_PATH_PREFIXES.some(prefix => requestPath.startsWith(prefix));
+  return SKIP_PATTERNS.some(pattern => pattern.test(requestPath));
 }
 
 function resolveActor(req) {
-  if (req.adminUser) return `user:${req.adminUser.email || req.adminUser.id || 'admin'}`;
   if (req.user?.email) return `user:${req.user.email}`;
   if (req.auth?.kind) return `${req.auth.kind}:${req.auth.projectId || req.auth.tokenId || 'unknown'}`;
   return 'session';
 }
 
 function resolveActorKind(req) {
-  if (req.adminUser) return 'admin';
   if (req.auth?.kind === 'device') return 'device';
   if (req.auth?.kind === 'external') return 'external';
-  if (req.auth?.kind === 'session') return 'session';
-  if (req.user?.userId != null) return 'user';
+  if (req.user?.userId != null || req.auth?.kind === 'user' || req.auth?.kind === 'project') return 'user';
   return 'session';
 }
 
 function resolveTargetType(req) {
-  const [first] = (req.path || '').split('/').filter(Boolean);
+  const [first] = (`${req.baseUrl}${req.path}` || '').split('/').filter(Boolean);
   return first || null;
 }
 
@@ -61,32 +73,38 @@ function resolveTargetId(req) {
   return values.find(value => typeof value === 'string' && value.trim()) || null;
 }
 
-function resolveIp(req) {
+export function resolveIp(req) {
   return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
 }
 
+/**
+ * Generic write-audit middleware (plan_metering_audit §5.2). Mounted once at
+ * app level before the scoped routers; it only registers a finish listener,
+ * and by finish time the router-level auth middlewares have populated
+ * req.auth / req.user, so one mount covers every scoped router.
+ */
 export function createWriteAuditMiddleware(db) {
   return function writeAuditMiddleware(req, res, next) {
     if (shouldSkip(req)) return next();
 
     res.on('finish', () => {
       if (res.statusCode < 200 || res.statusCode >= 300) return;
-      if (!req.auth && !req.user && !req.adminUser) return;
+      if (!req.auth && !req.user) return;
 
-      const actionPath = req.route?.path || req.path || '/';
-      const action = `${req.method} ${req.baseUrl}${actionPath}`.replace(/\/+/g, '/');
-      const details = summarizeBody(req.body);
+      // Route template, not the concrete URL — bounded action-name cardinality.
+      const actionPath = req.route?.path && req.route.path !== '/' ? req.route.path : req.path;
+      const action = `${req.method} ${req.baseUrl}${actionPath === '/' ? '' : actionPath}`.replace(/\/+/g, '/');
       writeAuditLog(db, {
         actor: resolveActor(req),
         actorKind: resolveActorKind(req),
-        actorId: req.auth?.tokenId || req.user?.email || req.adminUser?.email || null,
-        userId: req.user?.userId ?? null,
-        apiKey: req.session?.apiKey || req.auth?.projectId || req.project?.projectId || null,
+        actorId: req.user?.email || req.auth?.tokenId || null,
+        userId: req.user?.userId ?? req.auth?.userId ?? null,
+        apiKey: req.auth?.projectId || req.project?.projectId || req.session?.apiKey || null,
         orgId: req.auth?.orgId ?? null,
         action,
         targetType: resolveTargetType(req),
         targetId: resolveTargetId(req),
-        details,
+        details: summarizeBody(req.body),
         ip: resolveIp(req),
       });
     });

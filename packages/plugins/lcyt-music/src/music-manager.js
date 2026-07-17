@@ -46,6 +46,7 @@ import { classify } from './analyser/spectral-detector.js';
 import { classifyExternal } from './analyser/external-classifier.js';
 import { detectBpm, createBpmSmoother } from './analyser/bpm-detector.js';
 import { getMusicConfig } from './db.js';
+import { reportFfmpegRun } from './ffmpeg-accounting.js';
 
 // Matches the repo-wide MediaMTX HLS convention (PORTS.md, docker/mediamtx.yml
 // hlsAddress :8080) — override with MEDIAMTX_HLS_BASE_URL.
@@ -217,6 +218,20 @@ export class MusicManager extends EventEmitter {
 
     session.ffmpegProc = proc;
 
+    // ffmpeg compute accounting (plan_metering_audit §4.1) — manual timing,
+    // reported through the sink set by initMusicControl.
+    {
+      const ffmpegStartedAt = Date.now();
+      let accounted = false;
+      const account = () => {
+        if (accounted) return;
+        accounted = true;
+        reportFfmpegRun({ purpose: 'music', apiKey, seconds: (Date.now() - ffmpegStartedAt) / 1000 });
+      };
+      proc.once('close', account);
+      proc.once('error', account);
+    }
+
     proc.stdout.on('data', (chunk) => {
       const sess = this._sessions.get(apiKey);
       if (!sess) return;
@@ -309,7 +324,7 @@ export class MusicManager extends EventEmitter {
 
     session.segmentsProcessed++;
 
-    const pcm = await extractPcm(segmentBuffer, { sampleRate: SAMPLE_RATE });
+    const pcm = await extractPcm(segmentBuffer, { sampleRate: SAMPLE_RATE, apiKey });
     if (pcm.length === 0) return;
 
     await this._analysePcm(apiKey, session, pcm);

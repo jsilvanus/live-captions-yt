@@ -245,6 +245,8 @@ export function initDb(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_org ON audit_log(org_id, id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)');
 
+  // One-time migration: fold the legacy admin-only audit trail into the
+  // unified audit_log, then drop it (plan_metering_audit §5.4).
   const adminAuditTableExists = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_audit_log'").get();
   if (adminAuditTableExists) {
     const legacyRows = db.prepare(`
@@ -258,7 +260,12 @@ export function initDb(dbPath) {
       `);
       db.transaction(() => {
         for (const row of legacyRows) {
-          insertLegacy.run(row.created_at || null, row.actor || 'admin', row.action, row.target_type, row.target_id, row.details, row.ip);
+          // Legacy datetime('now') format is 'YYYY-MM-DD HH:MM:SS' — normalise
+          // to the audit_log ISO shape so sorting and range filters stay sane.
+          const createdAt = row.created_at
+            ? (row.created_at.includes('T') ? row.created_at : `${row.created_at.replace(' ', 'T')}Z`)
+            : new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+          insertLegacy.run(createdAt, row.actor || 'admin', row.action, row.target_type, row.target_id, row.details, row.ip);
         }
       })();
     }
@@ -611,23 +618,6 @@ export function initDb(dbPath) {
     )
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_device_roles_key ON project_device_roles(api_key)');
-
-  // ── Admin audit log ───────────────────────────────────────────────────────
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS admin_audit_log (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      actor       TEXT    NOT NULL,
-      action      TEXT    NOT NULL,
-      target_type TEXT    NOT NULL,
-      target_id   TEXT,
-      details     TEXT,
-      ip          TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_created ON admin_audit_log(created_at)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_admin_audit_actor ON admin_audit_log(actor)');
 
   // ── Personal MCP access tokens (plan/mcp) ─────────────────────────────────
   // Named, individually-revocable bearer tokens for external MCP clients

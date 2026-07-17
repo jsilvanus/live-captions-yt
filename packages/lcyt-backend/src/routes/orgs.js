@@ -17,6 +17,8 @@ import {
   updateOrganizationMemberRole,
 } from '../db/orgs.js';
 import { getUserByEmail } from '../db/users.js';
+import { queryAuditLog } from '../db/audit-log.js';
+import { queryRollupSeries } from '../db/usage-rollups.js';
 
 const ROLE_ORDER = ['owner', 'admin', 'editor', 'operator', 'viewer'];
 
@@ -61,6 +63,57 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     const details = getOrganizationDetails(db, orgId);
     return res.json({ organization: details, role: membership.role });
+  });
+
+  // GET /orgs/:id/audit — org audit trail (owner/admin only; plan_metering_audit §5.5)
+  router.get('/:id/audit', (req, res) => {
+    const orgId = Number(req.params.id);
+    if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
+    const membership = getOrgMembership(db, orgId, req.user.userId);
+    if (!membership) return res.status(404).json({ error: 'Organization not found' });
+    if (!canManageMembers(membership.role)) return res.status(403).json({ error: 'owner or admin required' });
+
+    const limit  = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+    const { rows, total } = queryAuditLog(db, {
+      orgId,
+      q:      (req.query.q      || '').trim(),
+      action: (req.query.action || '').trim(),
+      apiKey: (req.query.apiKey || '').trim(),
+      from:   (req.query.from   || '').trim(),
+      to:     (req.query.to     || '').trim(),
+      limit,
+      offset,
+    });
+    const entries = rows.map(r => {
+      let details = null;
+      try { if (r.details) details = JSON.parse(r.details); } catch {}
+      return { ...r, details };
+    });
+    return res.json({ entries, total, limit, offset });
+  });
+
+  // GET /orgs/:id/usage — usage rollups for the org's projects
+  // (plan_metering_audit §6.1): any member; per-project breakdown for
+  // owner/admin, aggregated totals otherwise.
+  router.get('/:id/usage', (req, res) => {
+    const orgId = Number(req.params.id);
+    if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
+    const membership = getOrgMembership(db, orgId, req.user.userId);
+    if (!membership) return res.status(404).json({ error: 'Organization not found' });
+
+    const grain = req.query.grain === 'day' ? 'day' : 'hour';
+    const metricsFilter = (req.query.metrics || '').split(',').map(s => s.trim()).filter(Boolean);
+    const groupBy = canManageMembers(membership.role) && req.query.groupBy === 'project' ? 'project' : 'metric';
+    const series = queryRollupSeries(db, {
+      from: (req.query.from || '').trim(),
+      to: (req.query.to || '').trim(),
+      grain,
+      metrics: metricsFilter,
+      orgId,
+      groupBy,
+    });
+    return res.json({ series, groupBy });
   });
 
   router.patch('/:id', (req, res) => {

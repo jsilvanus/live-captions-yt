@@ -1,0 +1,38 @@
+# Prometheus scrape config for the LCYT stack (plan_metering_audit §7).
+#
+# Used by docker-compose.monitoring.yml. Targets use host.docker.internal
+# because the LCYT services publish their ports on the host's loopback.
+#
+# The backend's /metrics is gated by METRICS_TOKEN (404 when unset on the
+# backend). Prometheus cannot read environment variables in this file —
+# replace REPLACE_WITH_METRICS_TOKEN below with the same value you set as
+# METRICS_TOKEN on lcyt-backend (or switch to `credentials_file` and mount a
+# secret).
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: lcyt-backend
+    metrics_path: /metrics
+    authorization:
+      type: Bearer
+      credentials: REPLACE_WITH_METRICS_TOKEN
+    static_configs:
+      - targets: ["host.docker.internal:3000"]
+
+  - job_name: lcyt-orchestrator
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:4000"]
+
+  - job_name: lcyt-worker-daemon
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:5000"]
+
+  - job_name: mediamtx
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["host.docker.internal:9998"]

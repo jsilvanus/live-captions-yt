@@ -34,6 +34,7 @@ import { getKey } from '../db/keys.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
+import { writeAuditLog } from '../db/audit-log.js';
 
 const BCRYPT_ROUNDS = 10;
 
@@ -209,8 +210,11 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
     return res.status(400).json({ error: 'deviceCode and pin are required' });
   }
 
+  const deviceLoginIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
+
   const keyRow = getKeyByDeviceCode(db, deviceCode);
   if (!keyRow) {
+    writeAuditLog(db, { actor: `device:${deviceCode}`, actorKind: 'device', action: 'auth.device_login_failed', targetType: 'device', details: { reason: 'invalid device code' }, ip: deviceLoginIp });
     return res.status(401).json({ error: 'Invalid device code' });
   }
 
@@ -225,6 +229,7 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
   }
 
   if (!matchedRole) {
+    writeAuditLog(db, { actor: `device:${deviceCode}`, actorKind: 'device', apiKey: keyRow.key, action: 'auth.device_login_failed', targetType: 'device', details: { reason: 'invalid pin' }, ip: deviceLoginIp });
     return res.status(401).json({ error: 'Invalid PIN' });
   }
 
@@ -247,6 +252,18 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
     jwtSecret,
     { expiresIn: '1h' },
   );
+
+  writeAuditLog(db, {
+    actor: `device:${matchedRole.role_type}:${matchedRole.name}`,
+    actorKind: 'device',
+    actorId: String(matchedRole.id),
+    apiKey: keyRow.key,
+    action: 'auth.device_login',
+    targetType: 'device',
+    targetId: String(matchedRole.id),
+    details: { roleType: matchedRole.role_type, name: matchedRole.name },
+    ip: deviceLoginIp,
+  });
 
   return res.json({
     token,

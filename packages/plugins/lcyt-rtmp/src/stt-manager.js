@@ -15,6 +15,7 @@
 
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
+import { reportFfmpegRun } from 'lcyt-backend/ffmpeg';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
@@ -250,6 +251,20 @@ export class SttManager extends EventEmitter {
 
       session.ffmpegProc = proc;
 
+      // ffmpeg compute accounting (plan_metering_audit §4.1) — manual timing,
+      // same sink the runner factory feeds.
+      {
+        const ffmpegStartedAt = Date.now();
+        let accounted = false;
+        const account = () => {
+          if (accounted) return;
+          accounted = true;
+          reportFfmpegRun({ purpose: 'stt', apiKey, seconds: (Date.now() - ffmpegStartedAt) / 1000 });
+        };
+        proc.once('close', account);
+        proc.once('error', account);
+      }
+
       proc.stdout.on('data', chunk => {
         if (!this._sessions.has(apiKey)) return;
         session.segmentsSent++;
@@ -294,7 +309,8 @@ export class SttManager extends EventEmitter {
     if (session.ffmpegProc) try { session.ffmpegProc.kill('SIGTERM'); } catch {}
     try { await session.adapter.stop(); } catch {}
 
-    this.emit('stopped', { apiKey });
+    const durationMs = session.startedAt ? Math.max(0, Date.now() - session.startedAt.getTime()) : 0;
+    this.emit('stopped', { apiKey, durationMs });
     logger.info(`[stt] Stopped for key ${apiKey.slice(0, 8)}…`);
   }
 

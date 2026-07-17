@@ -1,15 +1,17 @@
 import { useLocation } from 'wouter';
 
-// Matches the Claude Design mockup's Admin tab bar exactly (Site Features,
-// Teams, Projects, Users — in this order). Audit Log and AI Models have no
-// counterpart there; they keep their routes/components but are no longer
-// part of this visible tab bar (still reachable by direct URL — see
-// HIDDEN.md), same convention as every other page removed from sidebar nav.
+// Base order (Site Features, Teams, Projects, Users) matches the Claude
+// Design mockup's Admin tab bar. Metrics and Audit Log were added by
+// plan_metering_audit (§2 decision 9: admin sub-navigation, not standalone
+// sidebar items). AI Models keeps its route but stays out of the visible bar
+// (reachable by direct URL — see HIDDEN.md).
 const TABS = [
   { id: 'site-features', label: 'Site Features', path: '/admin/site-features' },
   { id: 'teams',         label: 'Teams',         path: '/admin/teams' },
   { id: 'projects',      label: 'Projects',      path: '/admin/projects' },
   { id: 'users',         label: 'Users',         path: '/admin/users' },
+  { id: 'metrics',       label: 'Metrics',       path: '/admin/metrics' },
+  { id: 'audit-log',     label: 'Audit Log',     path: '/admin/audit-log' },
 ];
 
 /**

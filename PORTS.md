@@ -11,6 +11,10 @@
 | **8554** | RTSP | MediaMTX — RTSP output | internal | `MEDIAMTX_RTSP_BASE_URL` |
 | **8889** | HTTP/WS | MediaMTX — WebRTC preview | inbound (browsers) | `MEDIAMTX_WEBRTC_BASE_URL` |
 | **9997** | HTTP | MediaMTX — REST API | internal | `MEDIAMTX_API_URL` |
+| **9998** | HTTP | MediaMTX — Prometheus metrics | internal | — (`docker/mediamtx.yml` `metricsAddress`) |
+| **4000** | HTTP | lcyt-orchestrator | internal | `PORT` |
+| **5000** | HTTP | lcyt-worker-daemon | internal | `PORT` |
+| **9090** | HTTP | Prometheus (docker-compose.monitoring.yml) | internal | — |
 | **80 / 443** | HTTP/HTTPS | nginx reverse proxy | inbound (public) | — |
 
 ---
@@ -101,9 +105,13 @@ TCP  8889  MediaMTX WebRTC
 
 # Internal — loopback / private network only
 TCP  3000  lcyt-backend
+TCP  4000  lcyt-orchestrator
+TCP  5000  lcyt-worker-daemon
 TCP  8080  MediaMTX HLS
 TCP  8554  MediaMTX RTSP
+TCP  9090  Prometheus (docker-compose.monitoring.yml)
 TCP  9997  MediaMTX REST API
+TCP  9998  MediaMTX Prometheus metrics
 ```
 
 ---

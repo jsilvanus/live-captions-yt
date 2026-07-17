@@ -54,11 +54,28 @@ export async function initProductionControl(db) {
  * @param {string} [opts.publicUrl]      Server's public URL for .env generation
  * @param {MediaMtxClient} [opts.mediamtxClient]  MediaMTX REST client (optional)
  * @param {object} [opts.cameraThumbnail]  Overrides for camera-thumbnail.js's defaults (thumbnailsDir/previewBaseUrl) — tests only, env vars suffice in production
+ * @param {object} [opts.metrics]  Optional backend metrics handle (plan_metering_audit §3.2: production.commands)
  * @returns {import('express').Router}
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   const router = Router();
   const mediamtxClient = opts.mediamtxClient ?? null;
+  const metrics = opts.metrics ?? null;
+
+  // Single choke point for the production.commands counter: every mutating
+  // command endpoint (camera preset, mixer switch, encoder start/stop/test)
+  // passes through here. CRUD (create/update/delete device) is excluded —
+  // that's configuration, covered by the write-audit middleware instead.
+  router.use((req, res, next) => {
+    if (req.method === 'POST' && /\/(preset|switch|start|stop|test|command)(\/|$)/.test(req.path)) {
+      res.on('finish', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          metrics?.count('production.commands', 1, { project: req.auth?.projectId || req.session?.apiKey || '' });
+        }
+      });
+    }
+    next();
+  });
 
   router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: opts.cameraThumbnail }));
   router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient }));

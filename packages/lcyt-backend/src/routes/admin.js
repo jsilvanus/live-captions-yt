@@ -48,7 +48,6 @@ import {
 } from '../db/project-features.js';
 import { getMembers } from '../db/project-members.js';
 import { writeAuditLog, queryAuditLog } from '../db/audit-log.js';
-import { queryUsageRollups } from '../db/usage-rollups.js';
 
 const BCRYPT_ROUNDS = 12;
 const featurePolicyRateLimit = rateLimit({
@@ -794,8 +793,8 @@ export function createAdminRouter(db, jwtSecret) {
   // -----------------------------------------------------------------------
 
   /**
-   * GET /admin/audit-log?q=&action=&targetType=&actor=&from=&to=&limit=&offset=
-   * Query the admin audit log.
+   * GET /admin/audit-log?q=&action=&targetType=&actor=&actorKind=&apiKey=&orgId=&from=&to=&limit=&offset=
+   * Query the unified audit log.
    */
   router.get('/audit-log', (req, res) => {
     const limit  = Math.min(Math.max(Number(req.query.limit)  || 50, 1), 200);
@@ -806,6 +805,9 @@ export function createAdminRouter(db, jwtSecret) {
       action:     (req.query.action     || '').trim(),
       targetType: (req.query.targetType || '').trim(),
       actor:      (req.query.actor      || '').trim(),
+      actorKind:  (req.query.actorKind  || '').trim(),
+      apiKey:     (req.query.apiKey     || '').trim(),
+      orgId:      (req.query.orgId      || '').trim(),
       from:       (req.query.from       || '').trim(),
       to:         (req.query.to         || '').trim(),
       limit,
@@ -819,27 +821,6 @@ export function createAdminRouter(db, jwtSecret) {
     });
 
     res.json({ entries, total, limit, offset });
-  });
-
-  // -----------------------------------------------------------------------
-  // Usage rollups
-  // -----------------------------------------------------------------------
-
-  /**
-   * GET /admin/usage/rollups?metric=&from=&to=&limit=&offset=
-   * Query usage rollups for Admin/Team views.
-   */
-  router.get('/usage/rollups', (req, res) => {
-    const limit  = Math.min(Math.max(Number(req.query.limit)  || 50, 1), 200);
-    const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const { rows, total } = queryUsageRollups(db, {
-      metric: (req.query.metric || '').trim(),
-      from: (req.query.from || '').trim(),
-      to: (req.query.to || '').trim(),
-      limit,
-      offset,
-    });
-    res.json({ rows, total, limit, offset });
   });
 
   // -----------------------------------------------------------------------

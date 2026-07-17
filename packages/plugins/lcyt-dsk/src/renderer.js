@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import logger from 'lcyt/logger';
 import { viewportPageUrl, resolveCaptureDimensions, resolveCaptureBackground, buildViewportOutputs } from './renderer-helpers.js';
+import { reportFfmpegRun } from './ffmpeg-accounting.js';
 
 // ---------------------------------------------------------------------------
 // Chromium executable
@@ -510,7 +511,9 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
     }
   });
 
+  const ffmpegStartedAt = Date.now();
   ffmpeg.on('exit', (code, signal) => {
+    reportFfmpegRun({ purpose: 'dsk', apiKey, seconds: (Date.now() - ffmpegStartedAt) / 1000 });
     if (state.capturing) {
       logger.warn(`[dsk-renderer:${apiKey}] ffmpeg exited unexpectedly (code=${code}, signal=${signal})`);
     }
@@ -665,7 +668,9 @@ export async function startViewportStream(apiKey, opts) {
     const msg = buf.toString().trim();
     if (/error|warning/i.test(msg)) logger.error(`[dsk-renderer:${key}] ffmpeg: ${msg}`);
   });
+  const ffmpegStartedAt = Date.now();
   ffmpeg.on('exit', (code, signal) => {
+    reportFfmpegRun({ purpose: 'dsk', apiKey, seconds: (Date.now() - ffmpegStartedAt) / 1000 });
     if (state.capturing) logger.warn(`[dsk-renderer:${key}] ffmpeg exited (code=${code}, signal=${signal})`);
     const s = _keys.get(key);
     if (s?.ffmpeg === ffmpeg) { s.ffmpeg = null; s.capturing = false; }

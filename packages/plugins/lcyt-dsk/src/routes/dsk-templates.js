@@ -79,7 +79,7 @@ function makeThumbnailFilename(name) {
   return `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
 }
 
-export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus) {
+export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics = null) {
   const router = Router();
   const combinedAuth = editorAuthOrBearer(auth, editorAuth);
 
@@ -192,6 +192,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     // Update server-side renderer — non-fatal if renderer has not been started
     let rendererOk = true;
     try { await updateTemplate(req.params.apikey, row.templateJson); } catch { rendererOk = false; }
+    metrics?.count('dsk.template_activations', 1, { project: req.params.apikey });
     res.json({ ok: true, id, name: row.name, rendererOk });
   });
 
@@ -208,6 +209,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     // Update server-side renderer — non-fatal if renderer has not been started
     let rendererOk = true;
     try { await updateTemplate(req.params.apikey, row.templateJson); } catch { rendererOk = false; }
+    metrics?.count('dsk.template_activations', 1, { project: req.params.apikey });
     res.json({ ok: true, id, name: row.name, rendererOk });
   });
 
@@ -267,6 +269,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     }
     try {
       if (items.length > 0) await broadcastData(req.params.apikey, items);
+      metrics?.count('dsk.broadcasts', 1, { project: req.params.apikey });
       res.json({ ok: true, updated: items.length, templates: idList.length });
     } catch (err) {
       logger.error(`[dsk-templates] broadcast error:`, err.message);

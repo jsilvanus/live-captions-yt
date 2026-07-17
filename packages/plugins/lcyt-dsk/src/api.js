@@ -47,8 +47,12 @@ export { deleteAllImages, listImages, getImageByKey, updateImageSettings, delete
  * @param {object|null} relayManager  — RtmpRelayManager instance (or null if relay inactive)
  * @returns {Promise<{ captionProcessor: Function, stop: Function }>}
  */
-export async function initDskControl(db, dskBus, relayManager) {
+export async function initDskControl(db, dskBus, relayManager, { metrics = null } = {}) {
   runMigrations(db);
+  if (metrics) {
+    const { setFfmpegAccountingSink } = await import('./ffmpeg-accounting.js');
+    setFfmpegAccountingSink((entry) => metrics.ffmpeg(entry));
+  }
   await startRenderer();
   const captionProcessor = createDskCaptionProcessor({ db, dskBus, relayManager });
   return { captionProcessor, stop: stopRenderer };
@@ -61,15 +65,17 @@ export async function initDskControl(db, dskBus, relayManager) {
  * @param {object} dskBus  — DskBus instance
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager
+ * @param {{ metrics?: object }} [opts] — optional backend metrics handle
+ *   (plan_metering_audit §3.2: dsk.template_activations / dsk.broadcasts)
  * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
-export function createDskRouters(db, dskBus, auth, relayManager) {
+export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null } = {}) {
   const editorAuth = createEditorAuth(db);
   return {
     /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, dskBus),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics),
     /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
     dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth)),
     /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */
