@@ -12,6 +12,25 @@ import { isS3Enabled } from '../storage/s3.js';
 import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
 
 /**
+ * Relay-slot lookup used only for the `recordOnStart` check (plan/broadcasts).
+ * Must never make session start or the recording-toggle route fail just
+ * because the RTMP plugin's tables aren't present — e.g. RTMP_RELAY_ACTIVE
+ * was never enabled on this deployment, or a test harness builds this router
+ * without also running `initRtmpControl`/`runMigrations`. A synchronous throw
+ * here (uncaught) previously became an unhandled rejection in the async route
+ * handler — Express 4 never awaits the handler, so no response was ever sent
+ * and the client's request hung indefinitely instead of erroring.
+ */
+function safeGetRelaySlots(db, apiKey) {
+  try {
+    return getRelaySlots(db, apiKey);
+  } catch (err) {
+    logger.warn(`[live] getRelaySlots failed for ${apiKey}: ${err?.message}`);
+    return [];
+  }
+}
+
+/**
  * Validate and build the extraTargets array from the client-supplied targets list.
  * Returns { ok: true, extraTargets } or { ok: false, error }.
  *
@@ -326,7 +345,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     }
 
     const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
-    const relaySlots = getRelaySlots(db, apiKey);
+    const relaySlots = safeGetRelaySlots(db, apiKey);
     const shouldRecord = Boolean(broadcastRecordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
     if (shouldRecord) {
       const videoResult = startVideoRecording(db, apiKey, {
@@ -395,7 +414,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     if (slot !== undefined && (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > 4)) {
       return res.status(400).json({ error: 'slot must be an integer between 1 and 4' });
     }
-    const relaySlots = getRelaySlots(db, session.apiKey);
+    const relaySlots = safeGetRelaySlots(db, session.apiKey);
     const matchingSlot = slotNumber === undefined
       ? relaySlots.find(item => item.recordOnButton)
       : relaySlots.find(item => item.slot === slotNumber);
