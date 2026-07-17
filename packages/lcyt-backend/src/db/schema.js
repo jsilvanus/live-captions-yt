@@ -139,6 +139,7 @@ export function initDb(dbPath) {
   if (!existingCols.has('daily_limit'))    db.exec('ALTER TABLE api_keys ADD COLUMN daily_limit INTEGER');
   if (!existingCols.has('lifetime_limit')) db.exec('ALTER TABLE api_keys ADD COLUMN lifetime_limit INTEGER');
   if (!existingCols.has('lifetime_used'))  db.exec('ALTER TABLE api_keys ADD COLUMN lifetime_used INTEGER NOT NULL DEFAULT 0');
+  if (!existingCols.has('active_broadcast_id')) db.exec('ALTER TABLE api_keys ADD COLUMN active_broadcast_id TEXT');
   if (!existingCols.has('revoked_at')) {
     db.exec('ALTER TABLE api_keys ADD COLUMN revoked_at TEXT');
     db.exec("UPDATE api_keys SET revoked_at = datetime('now') WHERE active = 0");

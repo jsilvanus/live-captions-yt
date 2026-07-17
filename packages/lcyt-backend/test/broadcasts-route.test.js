@@ -41,6 +41,7 @@ after(() => new Promise((resolve) => {
 }));
 
 beforeEach(() => {
+  db.prepare('UPDATE api_keys SET active_broadcast_id = NULL WHERE key = ?').run(KEY);
   db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(KEY);
 });
 
@@ -121,5 +122,41 @@ describe('/broadcasts assets + duplicate', () => {
     const id = created.body.broadcast.id;
     const dup = await api(`/${id}/duplicate`, { method: 'POST', body: JSON.stringify({ targetApiKey: 'other-key' }) });
     assert.equal(dup.status, 501);
+  });
+});
+
+describe('/broadcasts active pointer', () => {
+  it('GET /active is empty by default and carries projectName', async () => {
+    const res = await api('/active');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.activeBroadcastId, null);
+    assert.equal(res.body.broadcast, null);
+    assert.equal(res.body.projectName, 'Owner');
+  });
+
+  it('activate → read → deactivate round-trip', async () => {
+    const created = await api('/', { method: 'POST', body: JSON.stringify({ title: 'Sunday Service' }) });
+    const id = created.body.broadcast.id;
+
+    const act = await api(`/${id}/activate`, { method: 'POST' });
+    assert.equal(act.status, 200);
+    assert.equal(act.body.activeBroadcastId, id);
+
+    const active = await api('/active');
+    assert.equal(active.body.activeBroadcastId, id);
+    assert.equal(active.body.broadcast.title, 'Sunday Service');
+    assert.equal(active.body.projectName, 'Owner');
+
+    const cleared = await api('/active', { method: 'DELETE' });
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.activeBroadcastId, null);
+
+    const after = await api('/active');
+    assert.equal(after.body.activeBroadcastId, null);
+  });
+
+  it('activating an unknown broadcast 404s', async () => {
+    const res = await api('/nope/activate', { method: 'POST' });
+    assert.equal(res.status, 404);
   });
 });

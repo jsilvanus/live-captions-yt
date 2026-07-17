@@ -6,6 +6,8 @@
  * Routes:
  *   GET    /broadcasts                    — list (?status=, ?from=, ?to=, ?includeArchived=1)
  *   POST   /broadcasts                    — create (draft)
+ *   GET    /broadcasts/active             — current active broadcast pointer
+ *   DELETE /broadcasts/active             — clear active broadcast pointer
  *   GET    /broadcasts/:id                — one broadcast + linked assets
  *   PUT    /broadcasts/:id                — edit title/desc/schedule/status
  *   DELETE /broadcasts/:id                — archive, or hard-delete if already archived past cooling-off
@@ -22,9 +24,11 @@ import { Router } from 'express';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
   restoreBroadcast, deleteBroadcast,
-  duplicateBroadcast, listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
+  duplicateBroadcast, getActiveBroadcast, activateBroadcast, deactivateBroadcast,
+  listBroadcastFiles, linkBroadcastFile, unlinkBroadcastFile,
   linkAsset, unlinkAsset,
 } from '../db/broadcasts.js';
+import { getProjectName } from '../db/keys.js';
 
 /**
  * @param {import('express').RequestHandler} auth  project-access / session Bearer middleware
@@ -52,6 +56,26 @@ export function createBroadcastsRouter(auth, db) {
     });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json({ ok: true, broadcast: result.broadcast });
+  });
+
+  router.get('/active', auth, (req, res) => {
+    const broadcast = getActiveBroadcast(db, req.session.apiKey);
+    res.json({
+      activeBroadcastId: broadcast?.id ?? null,
+      broadcast,
+      projectName: getProjectName(db, req.session.apiKey),
+    });
+  });
+
+  router.delete('/active', auth, (req, res) => {
+    deactivateBroadcast(db, req.session.apiKey);
+    res.json({ ok: true, activeBroadcastId: null });
+  });
+
+  router.post('/:id/activate', auth, (req, res) => {
+    const result = activateBroadcast(db, req.session.apiKey, req.params.id);
+    if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+    res.json({ ok: true, activeBroadcastId: result.broadcast.id, broadcast: result.broadcast });
   });
 
   router.get('/:id', auth, (req, res) => {

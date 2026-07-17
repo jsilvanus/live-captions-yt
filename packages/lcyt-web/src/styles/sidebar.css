@@ -1720,6 +1720,50 @@
 .top-bar__badge--lang   { color: var(--color-accent); border-color: var(--color-accent); background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
 .top-bar__badge--batch  { color: var(--color-warning); border-color: color-mix(in srgb, var(--color-warning) 40%, transparent); }
 
+/* Project · broadcast context label (plan/broadcasts_next Feature D) */
+
+.top-bar__context {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-shrink: 1;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.top-bar__context-project {
+  color: var(--color-text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.top-bar__context-broadcast {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.top-bar__context-status {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-dim);
+  flex-shrink: 0;
+}
+
+.top-bar__context-status--live {
+  color: #fff;
+  background: #cc0022;
+  border-color: #cc0022;
+}
+
 /* Small icon button in topbar (⌘ / ?) */
 
 .top-bar__icon-btn {

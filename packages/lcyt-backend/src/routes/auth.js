@@ -8,6 +8,7 @@ import { getMemberAccessLevel } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { writeAuditLog } from '../db/audit-log.js';
 import { getMetricsInstance } from '../metrics/index.js';
+import { getActiveBroadcastId } from '../db/keys.js';
 import { deviceLoginHandler } from './device-roles.js';
 
 const BCRYPT_ROUNDS = 12;
@@ -36,7 +37,7 @@ function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
   );
 }
 
-function issueProjectToken(jwtSecret, { userId, email, isAdmin = false, projectId, projectRole = 'member', siteRole = null, scopes = null }) {
+function issueProjectToken(jwtSecret, { userId, email, isAdmin = false, projectId, projectRole = 'member', siteRole = null, scopes = null, activeBroadcastId = null }) {
   return jwt.sign(
     {
       kind: 'project',
@@ -48,6 +49,7 @@ function issueProjectToken(jwtSecret, { userId, email, isAdmin = false, projectI
       projectId,
       projectRole,
       scopes,
+      activeBroadcastId,
     },
     jwtSecret,
     { expiresIn: '2h' }
@@ -170,14 +172,16 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     if (!accessLevel) {
       return res.status(403).json({ error: 'Not a project member' });
     }
+    const activeBroadcastId = getActiveBroadcastId(db, projectId.trim());
     const token = issueProjectToken(jwtSecret, {
       userId: req.user.userId,
       email: req.user.email,
       projectId: projectId.trim(),
       projectRole: projectRole || accessLevel,
       scopes,
+      activeBroadcastId,
     });
-    return res.json({ token, projectId: projectId.trim(), projectRole: projectRole || accessLevel, accessLevel });
+    return res.json({ token, projectId: projectId.trim(), projectRole: projectRole || accessLevel, accessLevel, activeBroadcastId });
   });
 
   // GET /auth/me — requires user token

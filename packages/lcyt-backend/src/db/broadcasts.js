@@ -10,6 +10,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { getCaptionFile } from './files.js';
+import { getActiveBroadcastId, setActiveBroadcastId } from './keys.js';
 
 export const BROADCAST_STATUSES = new Set([
   'draft', 'scheduled', 'live', 'completed', 'archived',
@@ -72,6 +73,10 @@ function formatBroadcastFile(row) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function clearActiveBroadcastIfMatches(db, apiKey, id) {
+  if (getActiveBroadcastId(db, apiKey) === id) setActiveBroadcastId(db, apiKey, null);
 }
 
 /**
@@ -211,6 +216,7 @@ export function archiveBroadcast(db, apiKey, id) {
   db.prepare(
     "UPDATE broadcasts SET status = 'archived', archived_at = datetime('now'), updated_at = datetime('now') WHERE api_key = ? AND id = ?"
   ).run(apiKey, id);
+  clearActiveBroadcastIfMatches(db, apiKey, id);
   return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
 }
 
@@ -259,6 +265,7 @@ export function deleteBroadcast(db, apiKey, id) {
   }
 
   const tx = db.transaction(() => {
+    clearActiveBroadcastIfMatches(db, apiKey, id);
     db.prepare('UPDATE sessions       SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
     db.prepare('UPDATE session_stats  SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
     db.prepare('UPDATE caption_files  SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
@@ -390,6 +397,24 @@ export function unlinkAsset(db, apiKey, id, assetRowId) {
  * follow-up — see plan_broadcasts.md.
  * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
  */
+export function getActiveBroadcast(db, apiKey) {
+  const id = getActiveBroadcastId(db, apiKey);
+  return id ? getBroadcast(db, apiKey, id) : null;
+}
+
+export function activateBroadcast(db, apiKey, id) {
+  const existing = getRow(db, apiKey, id);
+  if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
+  if (existing.status === 'archived') return { ok: false, error: 'Cannot activate an archived broadcast', status: 409 };
+  setActiveBroadcastId(db, apiKey, id);
+  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+}
+
+export function deactivateBroadcast(db, apiKey) {
+  setActiveBroadcastId(db, apiKey, null);
+  return { ok: true };
+}
+
 export function duplicateBroadcast(db, apiKey, id) {
   const source = getRow(db, apiKey, id);
   if (!source) return { ok: false, error: 'Broadcast not found', status: 404 };

@@ -2,6 +2,7 @@ import { useCallback, useContext, useEffect, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { templateSlug } from '../lib/formatting.js';
+import { DskBroadcastAssetPanel } from './DskBroadcastAssetPanel.jsx';
 
 /**
  * DSK Broadcast Control Panel
@@ -88,6 +89,8 @@ export function DskControlPage() {
     || (window.location.pathname.startsWith('/dsk-control/') ? (pathParts[2] || '') : '');
   const params = new URLSearchParams(window.location.search);
   const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
+  // /broadcasts routes need a Bearer JWT — only available in sidebar mode
+  const sessionToken = session?.getSessionToken?.() || null;
 
   const [templates, setTemplates]         = useState([]);  // { id, name, updated_at, templateJson? }
   const [activeIds, setActiveIds]         = useState([]);  // selected template ids (multi-select)
@@ -382,6 +385,10 @@ export function DskControlPage() {
 
         {/* Template grid */}
         <div style={{ flex: 1, padding: 16, overflowY: 'auto' }}>
+          {sessionToken && (
+            <DskBroadcastAssetPanel serverUrl={serverUrl} token={sessionToken} templates={templates} />
+          )}
+
           <div style={{ fontSize: 12, color: '#666', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 }}>
             Templates — click to select, Broadcast to publish
           </div>

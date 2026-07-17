@@ -12,7 +12,7 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
-import { createKey } from '../src/db/keys.js';
+import { createKey, setActiveBroadcastId } from '../src/db/keys.js';
 import { addMember } from '../src/db/project-members.js';
 import { createAuthRouter } from '../src/routes/auth.js';
 
@@ -189,6 +189,7 @@ describe('POST /auth/project-token', () => {
     userToken = body.token;
     projectKey = createKey(db, { owner: 'Project User', user_id: body.userId }).key;
     addMember(db, projectKey, body.userId, 'owner');
+    setActiveBroadcastId(db, projectKey, 'broadcast-123');
   });
 
   it('issues a project-scoped token for a project member', async () => {
@@ -204,7 +205,10 @@ describe('POST /auth/project-token', () => {
     const body = await res.json();
     assert.equal(body.projectId, projectKey);
     assert.equal(body.projectRole, 'editor');
+    assert.equal(body.activeBroadcastId, 'broadcast-123');
     assert.ok(body.token);
+    const payload = jwt.verify(body.token, JWT_SECRET);
+    assert.equal(payload.activeBroadcastId, 'broadcast-123');
   });
 
   it('rejects project-scoped token issuance for non-members', async () => {

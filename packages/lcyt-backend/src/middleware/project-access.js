@@ -41,7 +41,11 @@ function normalizeProjectRole(projectRole) {
 function attachProjectContext(req, authInfo) {
   req.user = req.user || {};
   req.auth = authInfo;
-  req.project = { projectId: authInfo.projectId, projectRole: authInfo.projectRole || authInfo.deviceRole || 'member' };
+  req.project = {
+    projectId: authInfo.projectId,
+    projectRole: authInfo.projectRole || authInfo.deviceRole || 'member',
+    activeBroadcastId: authInfo.activeBroadcastId ?? null,
+  };
   req.session = req.session || {};
   req.session.apiKey = authInfo.projectId;
   req.session.projectId = authInfo.projectId;
@@ -146,6 +150,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           projectId: resolvedProjectId,
           projectRole: accessLevel,
           scopes: payload.scopes || null,
+          activeBroadcastId: payload.activeBroadcastId ?? null,
         });
       }
 
