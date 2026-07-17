@@ -9,6 +9,7 @@ import jwt from 'jsonwebtoken';
 import { initDb, createKey, createCaptionTarget } from '../src/db.js';
 import { SessionStore, makeSessionId } from '../src/store.js';
 import { createLiveRouter } from '../src/routes/live.js';
+import { runMigrations as runRtmpMigrations } from 'lcyt-rtmp/src/db.js';
 
 const JWT_SECRET = 'test-live-secret';
 
@@ -20,6 +21,7 @@ let server, baseUrl, db, store;
 
 function makeTestApp({ db: customDb, store: customStore, mediamtxClient } = {}) {
   const testDb = customDb ?? initDb(':memory:');
+  runRtmpMigrations(testDb); // POST /live checks rtmp_relays for the recordOnStart flag; idempotent
   const testStore = customStore ?? new SessionStore({ cleanupInterval: 0 });
 
   const app = express();
