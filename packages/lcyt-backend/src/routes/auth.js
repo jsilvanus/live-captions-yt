@@ -1,15 +1,33 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser, getUserAccountExport, deleteOwnedProjectsForUser, deleteUserAccount } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
+import { writeAuditLog } from '../db/audit-log.js';
+import { getMetricsInstance } from '../metrics/index.js';
 import { getActiveBroadcastId } from '../db/keys.js';
 import { deviceLoginHandler } from './device-roles.js';
 
 const BCRYPT_ROUNDS = 12;
 const USER_TOKEN_TTL_DAYS = 30;
+const FAILED_LOGIN_AUDIT_THROTTLE_MS = 10_000;
+// Brute-force guard on /auth/login + /auth/register: only failed attempts
+// count toward the limit, so normal traffic (and the test suite) is unaffected.
+// LOGIN_RATE_LIMIT_MAX=0 disables.
+const LOGIN_RATE_LIMIT_MAX = Number(process.env.LOGIN_RATE_LIMIT_MAX ?? 50);
+const LOGIN_RATE_LIMIT = LOGIN_RATE_LIMIT_MAX > 0
+  ? rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: LOGIN_RATE_LIMIT_MAX,
+      skipSuccessfulRequests: true,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { error: 'Too many login attempts' },
+    })
+  : (req, res, next) => next();
 
 function issueUserToken(jwtSecret, { userId, email, isAdmin = false }) {
   return jwt.sign(
@@ -49,6 +67,24 @@ function issueProjectToken(jwtSecret, { userId, email, isAdmin = false, projectI
 export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   const router = Router();
   const userAuth = createUserAuthMiddleware(jwtSecret);
+  const metrics = getMetricsInstance();
+  const recentFailedLogins = new Map();
+
+  function resolveIp(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
+  }
+
+  function shouldRecordFailedLogin(req, email) {
+    const ip = resolveIp(req);
+    const key = `${String(email || '').toLowerCase()}::${ip || 'unknown'}`;
+    const now = Date.now();
+    const previous = recentFailedLogins.get(key);
+    if (previous && now - previous < FAILED_LOGIN_AUDIT_THROTTLE_MS) {
+      return false;
+    }
+    recentFailedLogins.set(key, now);
+    return true;
+  }
 
   // POST /auth/device-login — always available regardless of loginEnabled
   router.post('/device-login', async (req, res) => {
@@ -69,7 +105,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // POST /auth/register
-  router.post('/register', async (req, res) => {
+  router.post('/register', LOGIN_RATE_LIMIT, async (req, res) => {
     const { email, password, name } = req.body || {};
     if (!email || typeof email !== 'string') {
       return res.status(400).json({ error: 'email is required' });
@@ -87,6 +123,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       const user = createUser(db, { email, passwordHash, name: name || null });
       provisionDefaultUserFeatures(db, user.id);
       const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false });
+      writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.register', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
       res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false });
     } catch (err) {
       console.error('[auth] register error:', err.message);
@@ -95,21 +132,29 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // POST /auth/login
-  router.post('/login', async (req, res) => {
+  router.post('/login', LOGIN_RATE_LIMIT, async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'email and password are required' });
     }
+    metrics?.count('auth.logins', 1, { project: 'system' });
     const user = getUserByEmail(db, email);
     if (!user) {
+      if (shouldRecordFailedLogin(req, email)) {
+        writeAuditLog(db, { actor: String(email), actorKind: 'user', actorId: String(email), action: 'auth.login_failed', targetType: 'user', details: { email }, ip: resolveIp(req) });
+      }
       return res.status(401).json({ error: 'Invalid email or password' });
     }
     try {
       const match = await bcrypt.compare(password, user.password_hash);
       if (!match) {
+        if (shouldRecordFailedLogin(req, email)) {
+          writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.login_failed', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
+        }
         return res.status(401).json({ error: 'Invalid email or password' });
       }
       const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin });
+      writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.login', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
       res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin });
     } catch (err) {
       console.error('[auth] login error:', err.message);

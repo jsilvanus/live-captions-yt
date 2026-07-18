@@ -44,6 +44,7 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 | [plan_dsk.md](plans/plan_dsk.md) | DSK Graphics Editor — Phases 2–4 | Phases 1–4 implemented: editable shapes, multi-select, undo/redo, media library, layer styling. |
 | [plan_files3.md](plans/plan_files3.md) | `lcyt-files` Plugin — Storage-Adapter Caption & Stream File I/O | Fully implemented: local FS, S3, WebDAV adapters; three storage modes; per-key storage isolation. |
 | [plan_admin.md](plans/plan_admin.md) | Admin Panel — Web-based User & Project Management | Phases 1 & 2 implemented: feature-gated admin section with user/project CRUD, search. |
+| [plan_metering_audit.md](plans/plan_metering_audit.md) | Metering, Prometheus Metrics & Unified Audit Log | DB-first usage rollups (`usage_rollups`, hourly→daily) attributed per project, ffmpeg wall-clock × purpose compute accounting, MediaMTX/Node egress metering, prom-client `/metrics` on backend/orchestrator/worker + Prometheus in compose (no Grafana), unified `audit_log` (write-audit middleware + login events, migrates `admin_audit_log`), Admin metrics/audit views + Team usage tab. |
 | [plan_ui.md](plans/plan_ui.md) | Frontend & UI Plans | All planned items implemented: v4 two-phase login, feature-based UI, setup wizard, empty states. |
 | [plan_dock_ffmpeg.md](plans/plan_dock_ffmpeg.md) | FFmpeg Compute Containers → Distributed Hetzner Architecture | All phases implemented: `DockerFfmpegRunner` abstraction, Hetzner provisioning, autoscaling. |
 | [plan_team_org_backend.md](plans/plan_team_org_backend.md) | Team/Org Data Model — Backend Design | `organizations`/`org_members`/`api_keys.org_id` schema; full org CRUD + membership routes. |
@@ -75,7 +76,6 @@ All planning documents live in [`docs/plans/`](plans/). This index lists each pl
 
 | File | Title | Summary |
 |---|---|---|
-| [plan_metering_audit.md](plans/plan_metering_audit.md) | Metering, Prometheus Metrics & Unified Audit Log | DB-first usage rollups (`usage_rollups`, hourly→daily) attributed per project, ffmpeg wall-clock × purpose compute accounting, MediaMTX/Node egress metering, prom-client `/metrics` on backend/orchestrator/worker + Prometheus in compose (no Grafana), unified `audit_log` (write-audit middleware + login events, migrates `admin_audit_log`), Admin metrics/audit views + Team usage tab. |
 
 ### Draft
 

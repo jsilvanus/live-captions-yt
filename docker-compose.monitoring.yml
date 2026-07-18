@@ -1,0 +1,32 @@
+# Optional monitoring stack (plan_metering_audit §7) — a single Prometheus
+# server scraping the LCYT services. No Grafana; the in-app Admin metrics page
+# is the primary consumer, Prometheus is the ops-grade secondary view.
+#
+# Usage:
+#   METRICS_TOKEN=... docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up
+#   (or with docker-compose.orchestrator.yml for the full worker stack)
+#
+# Retention defaults to 30 days; override with PROM_RETENTION (e.g. 90d).
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lcyt-prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.retention.time=${PROM_RETENTION:-30d}"
+    environment:
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+    extra_hosts:
+      # Reach services published on the host's loopback (backend :3000,
+      # orchestrator :4000, worker :5000, mediamtx :9998).
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  prometheus-data: {}

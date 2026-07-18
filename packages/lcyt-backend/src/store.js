@@ -78,7 +78,9 @@ export class SessionStore {
     // latent mismatch where store.js emits `session:closed` (colon) but
     // stats.js's GDPR-erasure path emits `session_closed` (underscore): both
     // now notify the /events stream.
-    const onClosed = () => bus.publish(apiKey, 'session.closed', {}, meta);
+    const onClosed = () => bus.publish(apiKey, 'session.closed', {
+      durationMs: Math.max(0, Date.now() - (session.startedAt || Date.now())),
+    }, meta);
     emitter.on('session:closed', onClosed);
     emitter.on('session_closed', onClosed);
     // Generic plugin events `{ type, data }` (cue_fired, sound_label, bpm_update…)

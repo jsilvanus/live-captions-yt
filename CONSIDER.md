@@ -443,3 +443,34 @@ function getStandalonePage() {
 **Recommendation:** Delete `/legacy` from `isStandalonePath()`, remove the check from `getStandalonePage()`, and remove the hardcoded legacy link from `Sidebar.jsx`'s main section (already done as part of the Legacy nav item refactor, 2026-07-15). Keep `/captions` as the canonical caption editor route (embedded in sidebar, accessible via legacy nav toggle).
 
 (Found during: routing consolidation pass, 2026-07-15.)
+
+## Direct-spawn ffmpeg sites not migrated onto the runner factory
+
+**Where:** `packages/plugins/lcyt-rtmp/src/{hls-manager,stt-manager}.js`,
+`packages/plugins/lcyt-music/src/{music-manager,pcm-extractor}.js`,
+`packages/plugins/lcyt-dsk/src/renderer.js`
+
+**Finding:** plan_metering_audit §4.1 called for migrating these direct
+`spawn('ffmpeg', …)` sites onto `createFfmpegRunner()`. They instead use the
+plan's pre-approved fallback (manual start/close timing into the same
+accounting sink) because the runner handle's API differs from a raw
+`ChildProcess` (`stop()` instead of `.kill()`, object-arg `'close'`, no
+`.stdin` passthrough on all backends) and each manager has tests/behaviour
+sensitive to exact process semantics. Accounting is identical either way; the
+migration would only buy uniformity (and `FFMPEG_RUNNER=docker/worker` support
+for these auxiliary pipelines). Revisit if these paths ever need non-local
+runners.
+
+## Per-plugin SSE registries not individually gauged
+
+**Where:** `packages/lcyt-backend/src/metrics/index.js` (`setSseGauge`),
+`src/routes/stt.js`, `src/routes/mcp-endpoint.js`,
+`packages/plugins/lcyt-production/src/bridge-manager.js`
+
+**Finding:** plan_metering_audit §4.4 listed 8 SSE registries for connection
+gauges. Implemented: `viewer` (viewerSubs) and one `event-bus` gauge covering
+every bus-backed subscription (events-stream, DskBus, VariablesBus, RolesBus)
+via `EventBus.sseSubscriberCount()`. The remaining bespoke registries (STT
+per-connection listeners, MCP endpoint sessions, bridge-manager SSE channels)
+would each need their own size accessor threaded through; skipped as low-value
+for the live panel v1.

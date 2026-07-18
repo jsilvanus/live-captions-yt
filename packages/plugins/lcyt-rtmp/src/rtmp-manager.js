@@ -603,6 +603,8 @@ export class RtmpRelayManager {
         args,
         name: tag,
         stdin: stdinMode,
+        purpose: 'relay',
+        apiKey,
       };
 
       const runner = createFfmpegRunner(runnerOpts);

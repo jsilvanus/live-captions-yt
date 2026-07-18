@@ -1,6 +1,7 @@
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { getMetricsInstance } from '../metrics/index.js';
 
 function safeSlug(value) {
   const input = String(value || 'project').toLowerCase();
@@ -114,6 +115,7 @@ export function createVideo(db, apiKey, fields = {}) {
     startedAt,
     endedAt,
   );
+  getMetricsInstance()?.count('videos.created', 1, { project: apiKey });
   return { ok: true, video: getVideo(db, apiKey, id) };
 }
 
@@ -169,6 +171,8 @@ export function startVideoRecording(db, apiKey, fields = {}) {
 }
 
 export function finishVideoRecording(db, apiKey, id, fields = {}) {
+  const sizeBytes = Number(fields.sizeBytes ?? 0);
+  if (sizeBytes > 0) getMetricsInstance()?.count('videos.bytes', sizeBytes, { project: apiKey });
   return updateVideo(db, apiKey, id, {
     status: fields.status || 'completed',
     endedAt: fields.endedAt || new Date().toISOString(),

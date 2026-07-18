@@ -33,6 +33,15 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval (ms) | 86400000 (24h) |
 | `EVENT_LOG_RETENTION_DAYS` | Days before `bus_events` audit rows are purged (0 disables) | 30 |
 | `EVENT_LOG_CLEANUP_INTERVAL` | `bus_events` cleanup interval (ms) | 86400000 (24h) |
+| `METRICS_TOKEN` | Bearer token for `GET /metrics` (Prometheus scrape); endpoint 404s when unset | unset (disabled) |
+| `METRICS_PROJECT_LABELS` | Set to `0` to drop the per-project label on Prometheus business series (bounded cardinality opt-out) | enabled |
+| `USAGE_FLUSH_INTERVAL_MS` | Usage-rollup buffer flush interval (ms) | 15000 |
+| `USAGE_ROLLUP_HOURLY_RETENTION_DAYS` | Days before hourly `usage_rollups` rows are compacted into daily rows (0 disables) | 90 |
+| `AUDIT_LOG_RETENTION_DAYS` | Days before `audit_log` rows are purged (0 disables) | 365 |
+| `STATS_RETENTION_DAYS` | Opt-in sweep of historical stats tables (`session_stats`, `caption_errors`, … — never `caption_usage`); 0 = keep forever | 0 (disabled) |
+| `ROLLUP_MAINTENANCE_INTERVAL` | Compaction/retention sweep interval (ms) | 86400000 (24h) |
+| `ORCHESTRATOR_URL` | Orchestrator base URL for the burst-VM accounting poller (`/compute/burst/history`) | unset (poller off) |
+| `LOGIN_RATE_LIMIT_MAX` | Max **failed** `/auth/login`+`/auth/register` attempts per IP per 15 min (0 disables) | 50 |
 | `ALLOWED_DOMAINS` | Comma-separated domains for session CORS filter | `lcyt.fi,www.lcyt.fi,localhost` |
 | `ALLOWED_RTMP_DOMAINS` | Domains allowed to use `/stream` relay endpoints; falls back to `ALLOWED_DOMAINS` | (falls back) |
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |

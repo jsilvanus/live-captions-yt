@@ -71,6 +71,9 @@ export { getRadioConfig, setRadioConfig } from './db.js';
  * @param {import('../../lcyt-backend/src/store.js').SessionStore} [store]
  *   Optional session store — injected into SttManager for transcript delivery.
  *   Pass after the store is created in server.js.
+ * @param {{ metrics?: { count: Function, gauge: Function, max: Function } }} [opts]
+ *   Optional backend metrics handle (plan_metering_audit §4.1) — bumps
+ *   rtmp.streams / rtmp.stream_seconds usage counters on stream end.
  * @returns {Promise<{
  *   relayManager: RtmpRelayManager,
  *   hlsManager: HlsManager,
@@ -81,7 +84,7 @@ export { getRadioConfig, setRadioConfig } from './db.js';
  *   stop: () => Promise<void>
  * }>}
  */
-export async function initRtmpControl(db, store = null) {
+export async function initRtmpControl(db, store = null, { metrics = null } = {}) {
   runMigrations(db);
 
   const ffmpegCaps = process.env.RTMP_RELAY_ACTIVE === '1'
@@ -129,6 +132,8 @@ export async function initRtmpControl(db, store = null) {
           });
         }
         incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
+        metrics?.count('rtmp.streams', 1, { project: apiKey });
+        if (durationMs > 0) metrics?.count('rtmp.stream_seconds', durationMs / 1000, { project: apiKey });
       } catch (err) {
         logger.error(`[rtmp] Failed to write stream end stat: ${err.message}`);
       }
@@ -176,7 +181,7 @@ export async function initRtmpControl(db, store = null) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
  * @param {{ relayManager: RtmpRelayManager, hlsManager: HlsManager, radioManager: RadioManager, previewManager: PreviewManager }} managers
- * @param {{ allowedRtmpDomains?: string }} [opts]
+ * @param {{ allowedRtmpDomains?: string, metrics?: object }} [opts]
  * @returns {{
  *   rtmpRouter: import('express').Router,
  *   ingestionRouter: import('express').Router,
@@ -186,13 +191,13 @@ export async function initRtmpControl(db, store = null) {
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager }, { allowedRtmpDomains } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager }, { allowedRtmpDomains, metrics = null } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager, cropManager),
     ingestionRouter: createIngestionRouter(db, auth, relayManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
-    streamHlsRouter: createStreamHlsRouter(db, hlsManager),
-    radioRouter:     createRadioRouter(db, radioManager, sttManager, auth),
+    streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),
+    radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics),
     previewRouter:   createPreviewRouter(previewManager),
     cropRouter:      createCropRouter(db, auth, cropManager, relayManager),
   };

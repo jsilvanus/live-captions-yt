@@ -16,6 +16,7 @@ import { createOrganizationsRouter } from './routes/orgs.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
+import { createAdminMetricsRouter } from './routes/metrics.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
 import { createEventsStreamRouter } from './routes/events-stream.js';
 import { createEventsCatalogRouter } from './routes/events-catalog.js';
@@ -93,6 +94,11 @@ import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
+import { createWriteAuditMiddleware } from './middleware/write-audit.js';
+import { createMetrics, setMetricsInstance } from './metrics/index.js';
+import { attachBusMetrics } from './metrics/bus-tap.js';
+import { setFfmpegAccountingSink } from './ffmpeg/index.js';
+import { startMetricsPollers } from './metrics/pollers.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -194,6 +200,8 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
+const metrics = createMetrics(db);
+setMetricsInstance(metrics);
 // One shared pub/sub bus for the whole backend. Every per-project SSE registry
 // (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
 // through it, so events also reach the unified /events/stream endpoint and any
@@ -202,6 +210,15 @@ const eventBus = new EventBus();
 // Persist curated topics to the bus_events audit log (insert-only; not a replay
 // buffer). High-frequency topics are excluded by the allowlist in db/bus-events.js.
 attachBusAuditLog(eventBus, db, { log: (m) => console.warn(m) });
+// Project the same bus traffic onto usage counters (captions, sessions, cues,
+// bridge commands, connector refreshes) — see src/metrics/bus-tap.js.
+attachBusMetrics(eventBus, metrics);
+// Every ffmpeg process started through the runner factory reports wall-clock
+// seconds × purpose here on close (plan_metering_audit §4.1).
+setFfmpegAccountingSink(({ purpose, apiKey, seconds }) => metrics.ffmpeg({ purpose, apiKey, seconds }));
+// All bus-backed SSE subscriptions (events-stream, DskBus, VariablesBus,
+// RolesBus) in one lazily-read gauge; the viewer registry adds its own.
+metrics.setSseGauge('event-bus', () => eventBus.sseSubscriberCount());
 const store = new SessionStore({ db, eventBus });
 const dskBus = new DskBus(eventBus);
 
@@ -215,7 +232,7 @@ const {
 // RTMP plugin — run DB migrations, create all manager instances.
 // Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
-const rtmp = await initRtmpControl(db, store);
+const rtmp = await initRtmpControl(db, store, { metrics });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
@@ -228,12 +245,21 @@ hlsSubsManager.sweepStaleDir().catch(() => {});
 let _dskCaptionProcessor = null;
 let stopDsk = async () => {};
 if (process.env.GRAPHICS_ENABLED === '1') {
-  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager));
+  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics }));
 }
 
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+
+// Background metric pollers: storage gauges, MediaMTX egress deltas, and
+// orchestrator burst-VM accounting (plan_metering_audit §4.2–4.3).
+const metricsPollers = startMetricsPollers({
+  db,
+  metrics,
+  mediamtxClient: productionMediamtxClient,
+  orchestratorUrl: process.env.ORCHESTRATOR_URL || '',
+});
 
 // Inject translation-config + fan-out + caption-file helpers into SttManager
 // for transcript delivery (Phase 5: server-side translation, per-target
@@ -253,7 +279,7 @@ sttManager?.setDeliveryHelpers({
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
 // The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
-const { musicManager } = await initMusicControl(db, store);
+const { musicManager } = await initMusicControl(db, store, { metrics });
 const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 
 // Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.
@@ -273,7 +299,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
-} = await initAgent(db, { eventBus });
+} = await initAgent(db, { eventBus, metrics });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
@@ -416,7 +442,7 @@ const userAuth = createUserAuthMiddleware(jwtSecret);
 // subscribers use the unified `/events/stream` instead.
 const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager);
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, { metrics });
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -428,6 +454,8 @@ app.use('/icons', createIconRouter(db, auth, store));
 // JSON body parser — 64KB limit prevents abuse
 // NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
 app.use(express.json({ limit: '64kb' }));
+
+app.use(createWriteAuditMiddleware(db));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -470,6 +498,19 @@ if (process.env.STATIC_DIR) {
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
+
+// Metrics endpoint — optional auth gate
+app.get('/metrics', async (req, res) => {
+  if (!process.env.METRICS_TOKEN) {
+    return res.status(404).json({ error: 'Metrics endpoint disabled' });
+  }
+  const suppliedToken = req.get('authorization')?.replace(/^Bearer\s+/i, '');
+  if (suppliedToken !== process.env.METRICS_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  res.set('Content-Type', metrics.promRegistry.contentType);
+  res.send(await metrics.getMetricsText());
+});
 
 // Health check — no auth required
 app.get('/health', (req, res) => {
@@ -528,6 +569,9 @@ app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
 app.use('/ai/models', createAiModelsRouter(db, userAuth));
 app.use('/admin', createAdminRouter(db, jwtSecret));
+// Admin metrics: rollup time series + "right now" live panel
+// (plan_metering_audit §6.1). Same admin auth as the /admin router.
+app.use('/admin/metrics', createAdminMiddleware(db, jwtSecret), createAdminMetricsRouter(db, { store, metrics, metricsPollers }));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
@@ -583,12 +627,13 @@ app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,
+  metrics,
 }));
 
 // RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1
 if (process.env.RTMP_RELAY_ACTIVE === '1') {
   const { rtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
-    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains });
+    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains, metrics });
   app.use('/rtmp',       rtmpRouter);
   app.use('/ingestion',  ingestionRouter);
   app.use('/stream',     streamRouter);
@@ -608,4 +653,4 @@ if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager };
+export { app, db, store, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics };

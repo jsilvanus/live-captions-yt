@@ -27,6 +27,7 @@
 import { Router } from 'express';
 import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from 'lcyt-rtmp';
 import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
+import { getMetricsInstance } from '../metrics/index.js';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
 const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
@@ -44,6 +45,13 @@ function sendEvent(res, eventName, data) {
  */
 export function createSttRouter(auth, sttManager, db, jwtSecret) {
   const router = Router();
+
+  // Meter STT wall-clock time per project (plan_metering_audit §3.2). One
+  // module-level subscription — the per-connection SSE listeners below are
+  // per-client and would multiply the count.
+  sttManager.on('stopped', ({ apiKey, durationMs = 0 }) => {
+    if (durationMs > 0) getMetricsInstance()?.count('stt.seconds', durationMs / 1000, { project: apiKey });
+  });
 
   // ── GET /stt/status ────────────────────────────────────────────────────────
 

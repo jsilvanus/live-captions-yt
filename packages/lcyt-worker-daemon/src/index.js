@@ -1,5 +1,6 @@
 import os from 'os';
 import express from 'express';
+import { Registry, Counter, Gauge, Histogram, collectDefaultMetrics } from 'prom-client';
 import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
 import { makeFifo, createFifoWriter } from 'lcyt-backend/ffmpeg/pipe-utils';
 
@@ -160,8 +161,37 @@ export function createApp() {
     return next();
   }
 
-  // In-memory jobs map: jobId -> { id, plan, status, createdAt, proc?, captions: [] }
+  // In-memory jobs map: jobId -> { id, plan, status, createdAt, startedAt, finishedAt, durationMs, proc?, captions: [] }
   const jobs = new Map();
+
+  // Prometheus metrics (plan_metering_audit §4.3). Per-app registry so tests
+  // creating multiple apps don't collide on metric registration.
+  const promRegistry = new Registry();
+  collectDefaultMetrics({ register: promRegistry });
+  const jobsRunningGauge = new Gauge({
+    name: 'worker_jobs_running',
+    help: 'Jobs currently running',
+    registers: [promRegistry],
+    collect() {
+      this.set(Array.from(jobs.values()).filter(j => j.status === 'running').length);
+    },
+  });
+  void jobsRunningGauge;
+  const jobsTotal = new Counter({ name: 'worker_jobs_total', help: 'Jobs by terminal status', labelNames: ['status'], registers: [promRegistry] });
+  const jobDuration = new Histogram({
+    name: 'worker_job_duration_seconds',
+    help: 'Job wall-clock duration',
+    buckets: [1, 10, 60, 300, 900, 3600, 14400],
+    registers: [promRegistry],
+  });
+
+  function finishJob(record, status) {
+    if (record.finishedAt) return; // already accounted
+    record.finishedAt = Date.now();
+    record.durationMs = record.finishedAt - (record.startedAt || record.createdAt);
+    jobsTotal.inc({ status });
+    jobDuration.observe(record.durationMs / 1000);
+  }
 
   function makeJobId() {
     return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
@@ -184,6 +214,9 @@ export function createApp() {
       plan,
       status: 'starting',
       createdAt: Date.now(),
+      startedAt: null,
+      finishedAt: null,
+      durationMs: null,
       captions: [],
       workerId: WORKER_ID
     };
@@ -192,6 +225,7 @@ export function createApp() {
     // If in test mode, don't spawn a real process
     if (process.env.NODE_ENV === 'test') {
       record.status = 'running';
+      record.startedAt = Date.now();
       return res.json({ jobId, workerId: WORKER_ID });
     }
 
@@ -207,15 +241,18 @@ export function createApp() {
       record.handle = handle;
       record.pid = handle && handle.proc ? handle.proc.pid : null;
       record.status = 'running';
+      record.startedAt = Date.now();
 
       runner.on('error', (err) => {
         record.status = 'error';
         record.error = err && err.message;
+        finishJob(record, 'error');
         console.error(`job ${jobId} ffmpeg error:`, err && err.message);
       });
       runner.on('close', (info) => {
         record.status = 'stopped';
         record.exitInfo = info;
+        finishJob(record, 'stopped');
       });
     } catch (err) {
       record.status = 'error';
@@ -255,6 +292,7 @@ export function createApp() {
 
     if (record._uploader && typeof record._uploader.stop === "function") { try { record._uploader.stop(); } catch (e) {} }
     record.status = 'stopped';
+    finishJob(record, 'stopped');
     jobs.delete(id);
     return res.json({ ok: true });
   });
@@ -291,6 +329,11 @@ export function createApp() {
 
   app.get('/health', (req, res) => {
     res.json({ status: 'ok', workerId: WORKER_ID, time: new Date().toISOString() });
+  });
+
+  app.get('/metrics', async (req, res) => {
+    res.set('Content-Type', promRegistry.contentType);
+    res.send(await promRegistry.metrics());
   });
 
   // Expose jobs - for debugging; not required but useful in tests

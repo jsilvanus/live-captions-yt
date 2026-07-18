@@ -414,6 +414,137 @@ function ProjectsTab({ projects, backendUrl }) {
   );
 }
 
+// ─── Usage tab (plan_metering_audit §6.2) ───────────────────────────────────
+
+const USAGE_RANGES = [
+  { id: '7d',  label: '7 d',  days: 7,  grain: 'hour' },
+  { id: '30d', label: '30 d', days: 30, grain: 'day' },
+  { id: '90d', label: '90 d', days: 90, grain: 'day' },
+];
+
+function formatUsageValue(metric, value) {
+  if (metric.includes('bytes')) {
+    if (value >= 1e9) return `${(value / 1e9).toFixed(1)} GB`;
+    if (value >= 1e6) return `${(value / 1e6).toFixed(1)} MB`;
+    if (value >= 1e3) return `${(value / 1e3).toFixed(1)} kB`;
+    return `${Math.round(value)} B`;
+  }
+  if (metric.includes('seconds')) {
+    if (value >= 3600) return `${(value / 3600).toFixed(1)} h`;
+    if (value >= 60) return `${(value / 60).toFixed(1)} min`;
+    return `${Math.round(value)} s`;
+  }
+  if (value >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
+  if (value >= 1e3) return `${(value / 1e3).toFixed(1)}k`;
+  return String(Math.round(value * 100) / 100);
+}
+
+function UsageTab({ orgId, backendUrl, token, canManage }) {
+  const [rangeId, setRangeId] = useState('30d');
+  const [series, setSeries] = useState([]);
+  const [byProject, setByProject] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [usageError, setUsageError] = useState('');
+
+  const range = USAGE_RANGES.find(r => r.id === rangeId) || USAGE_RANGES[1];
+
+  useEffect(() => {
+    if (!orgId || !token || !backendUrl) return;
+    let stopped = false;
+    (async () => {
+      setLoading(true);
+      setUsageError('');
+      try {
+        const from = new Date(Date.now() - range.days * 86_400_000);
+        const fromStr = range.grain === 'day' ? from.toISOString().slice(0, 10) : `${from.toISOString().slice(0, 13)}:00:00Z`;
+        const params = new URLSearchParams({ grain: range.grain, from: fromStr });
+        const res = await fetch(`${backendUrl}/orgs/${orgId}/usage?${params}`, { headers: authHeaders(token) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Could not load usage');
+        if (stopped) return;
+        setSeries(data.series || []);
+        if (canManage) {
+          const projRes = await fetch(`${backendUrl}/orgs/${orgId}/usage?${params}&groupBy=project&metrics=captions.sent`, { headers: authHeaders(token) });
+          const projData = await projRes.json();
+          if (projRes.ok && !stopped) {
+            setByProject((projData.series || []).map(s => ({
+              key: s.key,
+              total: s.points.reduce((sum, [, v]) => sum + v, 0),
+            })).sort((a, b) => b.total - a.total));
+          }
+        }
+      } catch (err) {
+        if (!stopped) setUsageError(err.message);
+      } finally {
+        if (!stopped) setLoading(false);
+      }
+    })();
+    return () => { stopped = true; };
+  }, [orgId, backendUrl, token, rangeId, canManage]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totals = series.map(s => ({
+    metric: s.metric,
+    total: s.points.reduce((sum, [, v]) => sum + v, 0),
+  })).filter(t => t.total > 0).sort((a, b) => a.metric.localeCompare(b.metric));
+
+  return (
+    <div style={{ paddingTop: 8, maxWidth: 780 }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 16 }}>
+        <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>Range:</span>
+        {USAGE_RANGES.map(r => (
+          <button key={r.id} type="button" onClick={() => setRangeId(r.id)}
+            style={{
+              padding: '0.28rem 0.7rem', borderRadius: 20, fontSize: 12, fontWeight: 500,
+              border: `1.5px solid ${rangeId === r.id ? 'var(--color-primary)' : 'var(--color-border)'}`,
+              background: rangeId === r.id ? 'var(--color-primary-tint, rgba(46,95,163,0.1))' : 'transparent',
+              color: rangeId === r.id ? 'var(--color-primary)' : 'var(--color-text-muted)',
+            }}>
+            {r.label}
+          </button>
+        ))}
+        {loading && <span style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>⏳</span>}
+      </div>
+
+      {usageError && <div style={{ color: 'var(--color-error)', fontSize: 13, marginBottom: 12 }}>{usageError}</div>}
+
+      {totals.length === 0 && !loading ? (
+        <p style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No usage recorded for this team's projects in this range.</p>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 10, marginBottom: 24 }}>
+          {totals.map(t => (
+            <div key={t.metric} style={{ padding: '10px 14px', background: 'var(--color-surface)', border: '1.5px solid var(--color-border)', borderRadius: 10 }}>
+              <div style={{ fontSize: 20, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{formatUsageValue(t.metric, t.total)}</div>
+              <div style={{ fontSize: 11, color: 'var(--color-text-muted)' }}>{t.metric}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {canManage && byProject.length > 0 && (
+        <>
+          <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--color-text-muted)', marginBottom: 10 }}>
+            Captions sent by project
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {byProject.map(p => {
+              const max = byProject[0].total || 1;
+              return (
+                <div key={p.key} style={{ display: 'grid', gridTemplateColumns: 'minmax(100px, 200px) 1fr 70px', gap: 8, alignItems: 'center', fontSize: 12 }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: 'monospace' }}>{p.key || '(system)'}</span>
+                  <div style={{ background: 'color-mix(in srgb, var(--color-border) 40%, transparent)', borderRadius: 4, height: 12 }}>
+                    <div style={{ width: `${Math.max(2, (p.total / max) * 100)}%`, height: '100%', background: 'var(--color-primary)', borderRadius: 4 }} />
+                  </div>
+                  <span style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatUsageValue('captions.sent', p.total)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── General Setup tab (scoped to existing feature-flag defaults) ──────────
 
 function SetupTab({ features, loading, saving, error, onChange, onSave }) {
@@ -635,8 +766,8 @@ export function TeamPage() {
   if (!user) return null;
 
   const TABS = canManage
-    ? [['members', 'Members'], ['projects', 'Projects'], ['setup', 'General Setup']]
-    : [['members', 'Members'], ['projects', 'Projects']];
+    ? [['members', 'Members'], ['projects', 'Projects'], ['usage', 'Usage'], ['setup', 'General Setup']]
+    : [['members', 'Members'], ['projects', 'Projects'], ['usage', 'Usage']];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
@@ -679,6 +810,9 @@ export function TeamPage() {
               <MembersTab org={activeOrg} members={members} canManage={canManage} onChangeRole={handleChangeRole} onRemoveMember={handleRemoveMember} />
             )}
             {tab === 'projects' && <ProjectsTab projects={projects} backendUrl={backendUrl} />}
+            {tab === 'usage' && (
+              <UsageTab orgId={activeOrgId} backendUrl={backendUrl} token={token} canManage={canManage} />
+            )}
             {tab === 'setup' && canManage && (
               <SetupTab
                 features={features}

@@ -169,6 +169,7 @@ services:
       - "127.0.0.1:1936:1935"   # RTMP (use :1935 externally if not running nginx-rtmp)
       - "127.0.0.1:8080:8080"   # HLS + metrics
       - "127.0.0.1:9997:9997"   # REST API (internal only)
+      - "127.0.0.1:9998:9998"   # Prometheus metrics (docker/mediamtx.yml: metricsAddress)
     volumes:
       - ./docker/mediamtx.yml:/mediamtx.yml:ro
     environment:

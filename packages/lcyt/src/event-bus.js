@@ -141,6 +141,13 @@ export class EventBus {
     };
   }
 
+  /** Total open SSE subscriptions across all projects (metrics gauge). */
+  sseSubscriberCount() {
+    let total = 0;
+    for (const set of this._subscribers.values()) total += set.size;
+    return total;
+  }
+
   /**
    * Register an in-process listener for one project. No HTTP — this is how a
    * plugin reacts to another plugin's events. The handler receives the full

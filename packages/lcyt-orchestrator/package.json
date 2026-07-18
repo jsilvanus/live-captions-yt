@@ -9,6 +9,7 @@
     "test": "node test/hetzner.mock.test.js && node test/integration.basic.test.js && node test/hetzner.integration.test.js"
   },
   "dependencies": {
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "prom-client": "^15.1.3"
   }
 }

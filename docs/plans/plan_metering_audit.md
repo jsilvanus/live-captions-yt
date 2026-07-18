@@ -1,8 +1,14 @@
 # Plan: Metering, Prometheus Metrics & Unified Audit Log
 
-> **Status:** pending
+> **Status:** implemented (PR #279)
 > **Scope:** `lcyt-backend`, `lcyt-rtmp`, `lcyt-dsk`, `lcyt-agent`, `lcyt-orchestrator`, `lcyt-worker-daemon`, `lcyt-web`, compose files, `PORTS.md`
 > **Decided with user 2026-07-16.** Design discussion resolved: project-level attribution, DB-first metering, wall-clock × purpose compute, Prometheus server in compose (no Grafana), unified audit log with `admin_audit_log` migration, in-app Admin/Team views as primary consumers.
+>
+> **Implementation deviations** (see CONSIDER.md for follow-ups):
+> - The direct-spawn ffmpeg sites (`hls-manager`, `stt-manager`, `music-manager`, `pcm-extractor`, DSK renderer) use the pre-approved manual start/close timing into the same accounting sink instead of migrating onto the runner factory — the factory handle's API (`stop()`, object-arg `close`) differs enough from raw `ChildProcess` that migration risked five working pipelines for no accounting gain.
+> - `connectors.refreshes` counts only `variable.*.changed` bus events (no additional direct hook on `POST /variables/refresh`), so a refresh that changes a variable is never double-counted; a refresh with an unchanged value goes unmetered.
+> - SSE connection gauges: the shared EventBus registries are covered by one `event-bus` gauge (`EventBus.sseSubscriberCount()`) plus a dedicated `viewer` gauge; the remaining bespoke per-plugin SSE registries (stt, mcp-endpoint, bridge-manager) are not individually gauged yet.
+> - `/auth/login` + `/auth/register` gained a failure-only rate limit (`LOGIN_RATE_LIMIT_MAX`, default 50 failures/15 min, 0 disables) — added by the initial Copilot pass, kept but made failure-only so normal traffic and the test suite are unaffected.
 
 ## 1. Context & goals
 

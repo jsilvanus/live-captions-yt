@@ -2,6 +2,7 @@ import path from 'node:path';
 import * as fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import logger from 'lcyt/logger';
+import { reportFfmpegRun } from 'lcyt-backend/ffmpeg';
 
 export class HlsManager {
   constructor({ hlsRoot = '/tmp/hls', localRtmp = null, rtmpApp = 'live', mediamtxClient = null } = {}) {
@@ -64,6 +65,20 @@ export class HlsManager {
 
       // Track process and lifecycle
       this._procs.set(hlsKey, proc);
+
+      // ffmpeg compute accounting (plan_metering_audit §4.1) — manual timing,
+      // same sink the runner factory feeds.
+      {
+        const ffmpegStartedAt = Date.now();
+        let accounted = false;
+        const account = () => {
+          if (accounted) return;
+          accounted = true;
+          reportFfmpegRun({ purpose: 'hls', apiKey: hlsKey, seconds: (Date.now() - ffmpegStartedAt) / 1000 });
+        };
+        proc.once('close', account);
+        proc.once('error', account);
+      }
 
       proc.once('error', (err) => {
         this._procs.delete(hlsKey);

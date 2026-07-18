@@ -275,6 +275,8 @@ export class CropManager {
       args,
       name: tag,
       stdin: 'ignore',
+      purpose: 'crop',
+      apiKey,
     });
     const handle = await runner.start();
 

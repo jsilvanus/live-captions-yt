@@ -45,19 +45,31 @@ function buildRequestHeaders(apiSettings, extraHeaders = {}) {
   };
 }
 
+// Optional accounting sink set by initAgent when the backend injects a
+// metrics handle (plan_metering_audit §3.2: ai.calls). No-op when unset —
+// tests and standalone use stay unaffected.
+let _aiCallSink = null;
+export function setAiCallSink(fn) {
+  _aiCallSink = typeof fn === 'function' ? fn : null;
+}
+export function reportAiCall(project = '') {
+  try { _aiCallSink?.(project); } catch { /* accounting must not break calls */ }
+}
+
 /**
  * Invoke a model request through either the direct HTTP transport or the
  * bridge-backed transport, returning the parsed response body.
  *
  * @param {{ apiUrl: string, apiKey: string, model: string, transport?: string, bridgeManager?: object, bridgeInstanceId?: string }} apiSettings
  * @param {object} payload
- * @param {{ endpointPath?: string, headers?: object }} [opts]
+ * @param {{ endpointPath?: string, headers?: object, project?: string }} [opts]
  * @returns {Promise<{ status: number, body: any }>}
  */
 export async function invokeModelCall(apiSettings, payload, opts = {}) {
   const endpointPath = opts.endpointPath || '/v1/chat/completions';
   const endpoint = `${apiSettings.apiUrl.replace(/\/$/, '')}${endpointPath}`;
   const headers = buildRequestHeaders(apiSettings, opts.headers || {});
+  reportAiCall(opts.project || apiSettings.project || '');
 
   if (apiSettings.transport === 'bridge') {
     if (!apiSettings.bridgeManager || !apiSettings.bridgeInstanceId) {

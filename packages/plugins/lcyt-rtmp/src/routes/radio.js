@@ -162,7 +162,7 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager, meta = {}) {
  * @param {import('express').RequestHandler} [auth]  Session JWT Bearer middleware — required for GET/PUT /config
  * @returns {Router}
  */
-export function createRadioRouter(db, radioManager, sttManager = null, auth = null) {
+export function createRadioRouter(db, radioManager, sttManager = null, auth = null, metrics = null) {
   const router = Router();
 
   // ── GET/PUT /radio/config — self-service Web Radio metadata (session Bearer) ──
@@ -380,7 +380,16 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
     res.setHeader('Content-Type', isPlaylist ? 'application/vnd.apple.mpegurl'
       : file.endsWith('.ts') ? 'video/mp2t' : 'video/mp4');
 
+    // egress.node_hls_bytes (plan_metering_audit §4.2): count proxied bytes
+    // per key; reported once when the response finishes. The nginx-fronted
+    // radio path (NGINX_RADIO_CONFIG_PATH) bypasses this proxy entirely and is
+    // measured at MediaMTX only.
+    let bytesSent = 0;
+    res.once('close', () => {
+      if (bytesSent > 0) metrics?.count('egress.node_hls_bytes', bytesSent, { project: key });
+    });
     Readable.fromWeb(upstream.body)
+      .on('data', (chunk) => { bytesSent += chunk.length; })
       .on('error', () => { if (!res.writableEnded) res.end(); })
       .pipe(res);
   });

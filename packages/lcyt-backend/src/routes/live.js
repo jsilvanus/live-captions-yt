@@ -10,6 +10,7 @@ import { isAllowedDomain } from '../lib/allowed-domains.js';
 import { startVideoRecording, finishVideoRecording, getVideoStorageDir } from '../db/videos.js';
 import { isS3Enabled } from '../storage/s3.js';
 import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
+import { getMetricsInstance } from '../metrics/index.js';
 
 /**
  * Relay-slot lookup used only for the `recordOnStart` check (plan/broadcasts).
@@ -386,6 +387,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     session.recordingVideoId = recordingVideo?.id ?? null;
 
     incrementDomainHourlySessionStart(db, domain, store.size());
+    // sessions.count / sessions.seconds are tallied by the bus tap on
+    // session.closed; only the concurrency peak needs a start-path hook.
+    getMetricsInstance()?.max('sessions.peak_concurrent', store.size(), { project: apiKey });
 
     res.setHeader('Access-Control-Allow-Origin', domain);
     return res.status(200).json({

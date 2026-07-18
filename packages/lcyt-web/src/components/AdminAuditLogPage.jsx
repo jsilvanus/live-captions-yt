@@ -50,6 +50,8 @@ function formatTimestamp(ts) {
   try { return new Date(ts.replace(' ', 'T') + 'Z').toLocaleString(); } catch { return ts; }
 }
 
+const ACTOR_KINDS = ['user', 'admin', 'device', 'session', 'external', 'system'];
+
 function AdminAuditLogContent({ backendUrl }) {
   const [entries, setEntries] = useState([]);
   const [total, setTotal] = useState(0);
@@ -58,6 +60,8 @@ function AdminAuditLogContent({ backendUrl }) {
   // Filters
   const [action, setAction] = useState('');
   const [actor, setActor] = useState('');
+  const [actorKind, setActorKind] = useState('');
+  const [project, setProject] = useState('');
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [expanded, setExpanded] = useState(null);
@@ -70,6 +74,8 @@ function AdminAuditLogContent({ backendUrl }) {
       const params = new URLSearchParams({ limit, offset });
       if (action) params.set('action', action);
       if (actor) params.set('actor', actor);
+      if (actorKind) params.set('actorKind', actorKind);
+      if (project) params.set('apiKey', project);
       if (fromDate) params.set('from', fromDate);
       if (toDate) params.set('to', toDate);
       const res = await adminFetch(backendUrl, `/admin/audit-log?${params}`);
@@ -81,19 +87,21 @@ function AdminAuditLogContent({ backendUrl }) {
     } finally {
       setLoading(false);
     }
-  }, [backendUrl, action, actor, fromDate, toDate, offset]);
+  }, [backendUrl, action, actor, actorKind, project, fromDate, toDate, offset]);
 
   useEffect(() => { load(); }, [load]);
 
   function clearFilters() {
     setAction('');
     setActor('');
+    setActorKind('');
+    setProject('');
     setFromDate('');
     setToDate('');
     setOffset(0);
   }
 
-  const hasFilters = action || actor || fromDate || toDate;
+  const hasFilters = action || actor || actorKind || project || fromDate || toDate;
   const pageCount = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
@@ -122,6 +130,20 @@ function AdminAuditLogContent({ backendUrl }) {
           Actor (email/label)
           <input type="text" value={actor} onChange={e => { setActor(e.target.value); setOffset(0); }}
             placeholder="e.g. alice@example.com"
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, minWidth: 110 }}>
+          Actor kind
+          <select value={actorKind} onChange={e => { setActorKind(e.target.value); setOffset(0); }}
+            style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }}>
+            <option value="">All</option>
+            {ACTOR_KINDS.map(k => <option key={k} value={k}>{k}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12, flex: 1, minWidth: 140 }}>
+          Project (API key)
+          <input type="text" value={project} onChange={e => { setProject(e.target.value); setOffset(0); }}
+            placeholder="exact key"
             style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid var(--color-border)', background: 'var(--color-surface)', color: 'var(--color-text)' }} />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
@@ -155,7 +177,9 @@ function AdminAuditLogContent({ backendUrl }) {
           <tr style={{ borderBottom: '2px solid var(--color-border)' }}>
             <th style={{ padding: '8px 4px', textAlign: 'left' }}>When</th>
             <th style={{ padding: '8px 4px', textAlign: 'left' }}>Actor</th>
+            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Kind</th>
             <th style={{ padding: '8px 4px', textAlign: 'left' }}>Action</th>
+            <th style={{ padding: '8px 4px', textAlign: 'left' }}>Project</th>
             <th style={{ padding: '8px 4px', textAlign: 'left' }}>Target</th>
             <th style={{ padding: '8px 4px', textAlign: 'left' }}>Details</th>
           </tr>
@@ -170,8 +194,14 @@ function AdminAuditLogContent({ backendUrl }) {
               <td style={{ padding: '6px 4px', fontFamily: 'monospace', fontSize: 12, maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {e.actor}
               </td>
+              <td style={{ padding: '6px 4px', fontSize: 11, color: 'var(--color-text-muted)' }}>
+                {e.actor_kind || '—'}
+              </td>
               <td style={{ padding: '6px 4px', fontWeight: 500 }}>
                 {ACTION_LABELS[e.action] || e.action}
+              </td>
+              <td style={{ padding: '6px 4px', fontFamily: 'monospace', fontSize: 11, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--color-text-muted)' }}>
+                {e.api_key || '—'}
               </td>
               <td style={{ padding: '6px 4px', fontSize: 12 }}>
                 <span style={{ color: 'var(--color-text-muted)' }}>{e.target_type}</span>
@@ -184,7 +214,7 @@ function AdminAuditLogContent({ backendUrl }) {
           ))}
           {entries.filter(e => expanded === e.id && e.details).map(e => (
             <tr key={`${e.id}-detail`} style={{ borderBottom: '1px solid var(--color-border)', background: 'var(--color-surface)' }}>
-              <td colSpan={5} style={{ padding: '6px 12px' }}>
+              <td colSpan={7} style={{ padding: '6px 12px' }}>
                 <pre style={{ margin: 0, fontSize: 11, whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--color-text-muted)' }}>
                   {JSON.stringify(e.details, null, 2)}
                 </pre>
@@ -192,7 +222,7 @@ function AdminAuditLogContent({ backendUrl }) {
             </tr>
           ))}
           {entries.length === 0 && !loading && (
-            <tr><td colSpan={5} style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-muted)' }}>No audit log entries</td></tr>
+            <tr><td colSpan={7} style={{ padding: 16, textAlign: 'center', color: 'var(--color-text-muted)' }}>No audit log entries</td></tr>
           )}
         </tbody>
       </table>

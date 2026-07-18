@@ -793,8 +793,8 @@ export function createAdminRouter(db, jwtSecret) {
   // -----------------------------------------------------------------------
 
   /**
-   * GET /admin/audit-log?q=&action=&targetType=&actor=&from=&to=&limit=&offset=
-   * Query the admin audit log.
+   * GET /admin/audit-log?q=&action=&targetType=&actor=&actorKind=&apiKey=&orgId=&from=&to=&limit=&offset=
+   * Query the unified audit log.
    */
   router.get('/audit-log', (req, res) => {
     const limit  = Math.min(Math.max(Number(req.query.limit)  || 50, 1), 200);
@@ -805,6 +805,9 @@ export function createAdminRouter(db, jwtSecret) {
       action:     (req.query.action     || '').trim(),
       targetType: (req.query.targetType || '').trim(),
       actor:      (req.query.actor      || '').trim(),
+      actorKind:  (req.query.actorKind  || '').trim(),
+      apiKey:     (req.query.apiKey     || '').trim(),
+      orgId:      (req.query.orgId      || '').trim(),
       from:       (req.query.from       || '').trim(),
       to:         (req.query.to         || '').trim(),
       limit,
