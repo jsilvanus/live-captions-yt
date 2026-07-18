@@ -249,7 +249,7 @@ Confirmed by reading `packages/plugins/lcyt-rtmp/src/radio-manager.js` and `pack
 
 - `radio_enabled` (boolean column on `api_keys`) is the only piece of radio config that exists, and it's admin-only (`PATCH /keys/:key`).
 - `RadioManager` itself is stateless metadata-wise — it tracks only `{ radioKey → { slug } }` for currently-live streams, nothing persistent.
-- Public routes already exist and are entirely read-only/generated: `GET /radio/:key/info` (`{ live, hlsUrl, slug? }`), `GET /radio/:key/player.js` (a self-contained `<audio controls>` player snippet — no title, no cover art, no autoplay support), and the HLS proxy itself. Note in passing: `GET /radio/:key/info` does not currently check `radio_enabled` at all — it reports live/hlsUrl regardless of whether the feature flag is on. Out of scope to fix here, but worth knowing before assuming the flag fully gates public visibility.
+- Public routes already exist and are entirely read-only/generated: `GET /radio/:key/info` (`{ live, hlsUrl, slug? }`), `GET /radio/:key/player.js` (a self-contained `<audio controls>` player snippet — no title, no cover art, no autoplay support), and the HLS proxy itself. **Fixed:** `GET /radio/:key/info` now checks `radio_enabled` and degrades gracefully when disabled (`live: false`, `hlsUrl`/`slug` omitted, metadata still returned) — see `packages/plugins/lcyt-rtmp/src/routes/radio.js`.
 - Nothing anywhere stores a title, description, cover image, or autoplay preference for a radio stream.
 
 ### Proposed schema

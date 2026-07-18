@@ -981,7 +981,7 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 - [x] `packages/plugins/lcyt-music/src/routes/music-config.js` — GET/PUT /music/config
 - [x] `packages/plugins/lcyt-music/src/api.js` — initMusicControl() + createMusicRouters()
 - [x] `packages/lcyt-backend/src/server.js` — mount /music routes when MUSIC_DETECTION_ACTIVE=1
-- [ ] `packages/plugins/lcyt-rtmp` — on_publish auto-start hook (deferred; `music_config.autoStart` field exists in the DB schema but is not yet consulted anywhere — `POST /music/start` must be called explicitly for now, same as `MusicManager.start()` being a manual-only entry point today)
+- [x] `packages/plugins/lcyt-rtmp` — on_publish auto-start hook: `routes/rtmp.js`'s `on_publish`/`on_publish_done` handlers now start/stop `MusicManager` per-key when `music_config.enabled` and `.autoStart` are both set, gated on `MUSIC_DETECTION_ACTIVE=1` and an ffmpeg-availability check; `lcyt-backend/src/server.js` wires the live `musicManager` instance onto the `rtmp` object passed to `createRtmpRouters()`.
 
 **Backend tests**
 - [x] `packages/plugins/lcyt-music/test/fft.test.js`

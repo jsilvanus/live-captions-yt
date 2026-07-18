@@ -211,7 +211,7 @@ listObjects(apiKey, prefix?)   → AsyncIterable<{ objectKey, storedKey, size, l
 | Wire `putObject`/`publicUrl` into HLS manager | Medium | New `lcyt-rtmp` component; uses `resolveStorage` the same way captions do. |
 | CDN URL config field | Low | Add optional `cdn_url` to `key_storage_config` so `publicUrl()` can return the CDN URL directly. |
 | S3 adapter tests | Low | Requires mock S3 (e.g. localstack or custom HTTP mock). |
-| Local FS → S3 migration script | Low | `scripts/migrate-files-to-s3.mjs` — walk `FILES_DIR`, upload each file, update DB `filename` column. |
+| ~~Local FS → S3 migration script~~ | ~~Low~~ | **Done** — `scripts/migrate-files-to-s3.mjs`: copy-only, verifies each upload, `--dry-run`, idempotent re-runs. |
 
 ---
 
@@ -224,4 +224,4 @@ Switching an existing deployment from local to S3 mid-operation:
 3. Bulk-update `filename` column: strip base dir prefix, leaving only the object key.
 4. Set `FILE_STORAGE=s3` and restart.
 
-A migration script (`scripts/migrate-files-to-s3.mjs`) is listed as low-priority future work above.
+A migration script now exists at `scripts/migrate-files-to-s3.mjs` and automates steps 2–3 above: it uploads each `caption_files` row's local file to S3, verifies the upload, and updates that row's `filename` column to the new S3 object key — copy-only (local files are never deleted), supports `--dry-run`, and skips rows already migrated on re-run.
