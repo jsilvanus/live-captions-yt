@@ -16,11 +16,12 @@ import { createVideoRouter } from '../src/routes/video.js';
 // Mock HlsManager
 // ---------------------------------------------------------------------------
 
-function makeMockHlsManager({ running = [] } = {}) {
+function makeMockHlsManager({ running = [], streamInfo = {} } = {}) {
   const runningSet = new Set(running);
   return {
     isRunning: (key) => runningSet.has(key),
     _runningSet: runningSet,
+    probeStreamInfo: async (key) => streamInfo[key] || { bandwidth: 2800000, codecs: '"avc1.4d401f,mp4a.40.2"' },
   };
 }
 
@@ -42,7 +43,12 @@ function makeMockSubsManager({ languages = {}, playlists = {}, subsRoot = '/tmp/
 
 let server, baseUrl;
 
-const mockHls  = makeMockHlsManager({ running: ['live-key'] });
+const mockHls  = makeMockHlsManager({
+  running: ['live-key'],
+  streamInfo: {
+    'live-key': { bandwidth: 5000000, codecs: '"hev1.1.6.L93.B0,mp4a.40.2"' },
+  },
+});
 const mockSubs = makeMockSubsManager({
   languages : { 'live-key': ['en-US', 'fi-FI'] },
   playlists : { 'live-key:en-US': '#EXTM3U\n#EXT-X-VERSION:3\n' },
@@ -143,6 +149,14 @@ describe('GET /video/:key/master.m3u8 — HLS master manifest', () => {
     const body = await res.text();
     // Subtitle groups are present since getLanguages returns ['en-US', 'fi-FI']
     assert.ok(body.includes('en-US') || body.includes('subs'), 'should include subtitle tracks');
+  });
+
+  it('uses probed bandwidth and codecs from hlsManager', async () => {
+    const res = await fetch(`${baseUrl}/video/live-key/master.m3u8`);
+    const body = await res.text();
+    // mockHls streamInfo for 'live-key' is { bandwidth: 5000000, codecs: '"hev1.1.6.L93.B0,mp4a.40.2"' }
+    assert.ok(body.includes('BANDWIDTH=5000000'), 'should include probed bandwidth');
+    assert.ok(body.includes('hev1.1.6.L93.B0'), 'should include probed H.265 codec');
   });
 });
 
