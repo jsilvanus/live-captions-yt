@@ -332,9 +332,22 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
    (re-applies the same-named preset from the new set), `/crop/status`.
    Remaining from this phase: the `overridePublisher` pre-config on the
    `{key}-crop` path for a cleaner splice in restart mode.
-3. **Web UI** — settings card, draggable preset editor, preset switcher, the
-   preset-set UI (set selector, duplicate-set, sources×sets overview grid,
-   operate-surface "Activate set" control), vertical monitor tile.
+3. **Web UI** ✅ (implemented 2026-07-18) — `/production/crop`
+   (`packages/lcyt-web/src/components/production/ProductionCropPage.jsx` +
+   `production/crop/{useCropEditor,CropPresetPanel,CropCanvas,CropSourcePanel}.jsx`,
+   linked from the main `/production` console header). Three-column operator
+   layout (left: preset-set tabs + preset library; center: draggable WYSIWYG
+   crop editor over the incoming preview + a live `{key}-crop` HLS vertical
+   monitor tile; right: camera/PTZ-preset source picker with bind/unbind) —
+   chosen over the plan's original sources×sets matrix-grid sketch per
+   explicit operator UI direction, since the same source→preset binding is
+   reachable per-set through the set tabs without a dedicated grid view.
+   Config (aspect/output/bitrate/transition/follow-program) lives in a
+   settings dialog on the same page rather than a separate Settings→CC/Egress
+   card, keeping the whole crop workflow on one operate surface. Enable
+   toggle, set create/rename/duplicate/delete/activate, preset CRUD +
+   activate, drag-to-reposition (throttled `POST /crop/position`), and
+   source bind/unbind are all wired to the real `/crop/*` API.
 4. **Production follow** — `crop_source_map` + registry callbacks + server wiring +
    `crop_preset` named-action/cue/tool registration.
 5. **Ops & polish** — ffmpeg image libzmq, docs (CLAUDE.md files, PORTS.md,

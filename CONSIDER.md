@@ -298,39 +298,44 @@ Decision taken: in-process in `lcyt-backend`, not a separate process.
 
 ---
 
-## Bridge-relayed and `deer`-kind AI providers aren't supported by the `agentic_chat` turn loop or vision adapters
+## ~~Bridge-relayed and `deer`-kind AI providers aren't supported by the `agentic_chat` turn loop or vision adapters~~ (RESOLVED)
 
-**Where:** `packages/plugins/lcyt-agent/src/agentic-turn.js`'s `resolveRoleProviderSettings()`,
-consumed by `routes/roles-chat.js`, `routes/production-assistant.js`, `routes/planner.js`,
-and `routes/vision-roles.js`.
+**Where:** `packages/plugins/lcyt-agent/src/agentic-turn.js`'s `resolveRoleProviderSettings()`
+and `invokeModelCall()`, consumed by `routes/roles-chat.js`, `routes/production-assistant.js`,
+`routes/planner.js`, `routes/vision-roles.js`, `agent-engine.js`, and
+`vision-adapters/{openai,google,anthropic}-vision.js`.
 
-**Finding:** `plan_ai_model_registry.md` designs `ai_providers.bridge_instance_id` so a
-project's Ollama can be reachable only through a specific `lcyt-bridge` instance's LAN, and
-Phase 2 of that plan (implemented) added a `model_call` bridge command specifically so
-inference could be relayed that way. But `resolveRoleProviderSettings()` — the one function
-every `agentic_chat` role (Setup/Asset Control/Graphics Editor Assistant, Production
-Assistant, Planner) and both vision roles (Tracker/Describer) use to turn a
-`project_ai_role_configs.provider_id` into usable settings — returns `null` for any provider
-with `bridge_instance_id` set or `kind: 'deer'`, which every one of those routes then turns
-into a `503 AI provider not configured or unsupported`. So the `model_call` bridge command
-built in Phase 2 has no real caller yet: discovery (`GET /api/tags`) works over a bridge,
-inference does not.
+**Original finding:** `resolveRoleProviderSettings()` returned `null` for any provider with
+`bridge_instance_id` set, which every route turned into a `503 AI provider not configured or
+unsupported` — so the `model_call` bridge command built in Phase 2 of
+`plan_ai_model_registry.md` had no real caller: discovery (`GET /api/tags`) worked over a
+bridge, inference did not.
 
-**Why skipped:** Wiring bridge-relayed inference through the turn loop means dispatching a
-full multi-turn, tool-calling chat-completions exchange through `bridgeManager.sendCommand()`
-instead of a direct `fetch()` — `model_call`'s current shape (`{ sourceUrl?, endpoint, model,
-prompt, outputMode }`) was built for vision's single-prompt-plus-image inference, not for an
-iterative conversation with a `tools` array and `tool_calls` responses. Extending it to carry
-a full OpenAI-style `messages`/`tools` payload and get a structured `tool_calls` response back
-over the bridge's request/response round-trip is a real design question (does the bridge parse
-tool-call JSON itself, or just relay bytes both ways?) that plan_ai_model_registry.md doesn't
-answer — building it now would be guessing at an unspecified wire contract rather than
-executing something already designed. `deer` is unimplemented everywhere in this codebase
-(Phase 4, unscoped, pending inspection of the actual `jsilvanus/deer` package APIs), so its
-`null` here is expected, not a gap.
+**Resolved (2026-07-13, `fafb55c` "Add bridge-aware model invocation for backend roles"):**
+`invokeModelCall(apiSettings, payload, opts)` now branches on `apiSettings.transport ===
+'bridge'`, dispatching `bridgeManager.sendCommand(instanceId, { type: 'model_call', endpoint,
+headers, payload })` instead of a direct `fetch()`. `resolveRoleProviderSettings()` returns
+`{ transport: 'bridge', bridgeManager, bridgeInstanceId }` settings for a bridge-relayed
+provider (still `null` only when no `bridgeManager` was injected, or for `kind: 'deer'`, which
+remains genuinely unscoped — Phase 4). `agent-engine.js`'s `_callChatCompletion` and every
+`agentic_chat` route now call through `invokeModelCall`, and `server.js` constructs every one
+of those routers with the composition root's `productionBridgeManager`, so bridge relay works
+end-to-end for the turn loop.
+
+**Update (2026-07-18):** the OpenAI-compatible vision adapter (used for `vendor: 'ollama'`,
+the only vendor a bridge-relayed provider actually uses in practice) already routed through
+`invokeModelCall` and thus already supported bridge transport, but `google-vision.js` and
+`anthropic-vision.js` still did a raw `fetch()` unconditionally — a bridge-relayed provider
+assigned to Tracker/Describer with a `google`/`anthropic` vendor would have silently ignored
+`transport: 'bridge'` and either failed (backend can't reach a LAN-only endpoint) or, worse,
+hit a same-named endpoint the backend *can* reach that wasn't the intended target. Closed by
+routing both adapters through `invokeModelCall` too, same as OpenAI's adapter — Google keeps
+its `?key=` query-param auth via `invokeModelCall`'s `endpointPath` option (not a bearer
+header), Anthropic keeps its `x-api-key`/`anthropic-version` headers via the `headers` option.
+Test coverage added in `test/vision-adapters.test.js` for all three vendors' bridge path.
 
 (Found during: implementing plan_ai_roles_framework.md's `agentic_chat` turn loop and vision
-roles, 2026-07-07.)
+roles, 2026-07-07. Resolved 2026-07-13/2026-07-18.)
 
 ---
 

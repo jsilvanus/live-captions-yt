@@ -1,3 +1,4 @@
+import { Link } from 'wouter';
 import { C } from './theme.js';
 
 // Top header (title + status chips) and the view-pill bar.
@@ -63,6 +64,9 @@ export function ProductionHeader({ D }) {
       )}
       <BroadcastStatusControl broadcast={D.broadcast} onSetStatus={D.actions.setBroadcastStatus} />
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <Link href="/production/crop" style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.04em', padding: '4px 9px', borderRadius: 5, background: C.chipBg, color: '#8fbef0', textDecoration: 'none' }}>
+          Vertical Crop
+        </Link>
         <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '.64rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '4px 9px', borderRadius: 5, background: cc.bg, color: cc.color }}>
           <span style={{ width: 6, height: 6, borderRadius: '50%', background: cc.dot }} />{cc.label}
         </span>

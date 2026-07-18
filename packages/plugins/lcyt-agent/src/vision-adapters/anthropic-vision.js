@@ -3,6 +3,8 @@
  * blocks.
  */
 
+import { invokeModelCall } from '../agentic-turn.js';
+
 const ANTHROPIC_VERSION = '2023-06-01';
 
 function parseOutput(text, outputMode) {
@@ -17,12 +19,22 @@ function parseOutput(text, outputMode) {
 
 export class AnthropicVisionAdapter {
   /**
-   * @param {{ model: string, apiKey: string, apiUrl: string }} opts
+   * @param {{
+   *   model: string,
+   *   apiKey: string,
+   *   apiUrl: string,
+   *   transport?: string,
+   *   bridgeManager?: object,
+   *   bridgeInstanceId?: string,
+   * }} opts
    */
-  constructor({ model, apiKey, apiUrl }) {
+  constructor({ model, apiKey, apiUrl, transport, bridgeManager, bridgeInstanceId }) {
     this.model = model;
     this.apiKey = apiKey;
     this.apiUrl = (apiUrl || 'https://api.anthropic.com').replace(/\/$/, '');
+    this.transport = transport;
+    this.bridgeManager = bridgeManager;
+    this.bridgeInstanceId = bridgeInstanceId;
   }
 
   /**
@@ -40,24 +52,22 @@ export class AnthropicVisionAdapter {
       })),
     ];
 
-    const res = await fetch(`${this.apiUrl}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': this.apiKey,
-        'anthropic-version': ANTHROPIC_VERSION,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: 500,
-        messages: [{ role: 'user', content }],
-      }),
+    const result = await invokeModelCall({
+      apiUrl: this.apiUrl,
+      apiKey: '', // Anthropic auth is the x-api-key header below, not a bearer token
+      model: this.model,
+      transport: this.transport,
+      bridgeManager: this.bridgeManager,
+      bridgeInstanceId: this.bridgeInstanceId,
+    }, {
+      model: this.model,
+      max_tokens: 500,
+      messages: [{ role: 'user', content }],
+    }, {
+      endpointPath: '/v1/messages',
+      headers: { 'x-api-key': this.apiKey, 'anthropic-version': ANTHROPIC_VERSION },
     });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Anthropic vision API error ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const data = await res.json();
+    const data = result.body;
     const text = data?.content?.[0]?.text;
     if (typeof text !== 'string') throw new Error('Unexpected Anthropic vision response format');
     return parseOutput(text, opts.outputMode);

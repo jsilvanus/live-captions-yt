@@ -77,9 +77,9 @@ Where an implemented plan has known unbuilt parts (deferred phases, optional add
 
 | File | Title | Summary |
 |---|---|---|
-| [plan_ai_roles_framework.md](plans/plan_ai_roles_framework.md) | AI Roles Framework — Model + Harness Selection | Extensible `ai_roles` registry + `project_ai_role_configs` for Tracker/Describer/Setup/Asset/Planner roles. `AgentChatPanel` frontend shipped; bridge-relayed provider support for agentic_chat/vision and Translation role remain. |
-| [plan_ai_model_registry.md](plans/plan_ai_model_registry.md) | AI Model Registry — Site & Project Provider Catalog, Ollama Auto-Discovery | `ai_providers`/`ai_provider_models`/`ai_provider_grants`; bridge-relayed inference; Docker deployment. Phase 3 (bridge-relayed inference for agentic_chat/vision) partial; Phase 4 ("deer" runtimes) unscoped. |
-| [plan_vertical_crop.md](plans/plan_vertical_crop.md) | Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop | Phases 1–2 implemented (schema, CropManager + {key}-crop path, /crop routes, relay sourceView, zmq live reposition with restart fallback); UI + production-follow phases remain. |
+| [plan_ai_roles_framework.md](plans/plan_ai_roles_framework.md) | AI Roles Framework — Model + Harness Selection | Extensible `ai_roles` registry + `project_ai_role_configs` for Tracker/Describer/Setup/Asset/Planner roles. `AgentChatPanel` frontend shipped; bridge-relayed provider support for agentic_chat/vision is done (turn loop + all three vision adapters). Translation role remains (still just a flagged future gap, not spec'd). |
+| [plan_ai_model_registry.md](plans/plan_ai_model_registry.md) | AI Model Registry — Site & Project Provider Catalog, Ollama Auto-Discovery | `ai_providers`/`ai_provider_models`/`ai_provider_grants`; bridge-relayed inference; Docker deployment. Phase 3 backend (bridge-relayed inference for agentic_chat/vision) done; its role-config model-picker UI (`lcyt-web`) still isn't wired up. Phase 4 ("deer" runtimes) unscoped. |
+| [plan_vertical_crop.md](plans/plan_vertical_crop.md) | Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop | Phases 1–3 implemented (schema, CropManager + {key}-crop path, /crop routes, relay sourceView, zmq live reposition with restart fallback, `/production/crop` operator UI — draggable WYSIWYG preset editor, preset-set tabs, camera/PTZ-preset source binding, vertical monitor tile); production-follow (Phase 4) and ops/polish (Phase 5) remain. |
 
 ### Pending
 

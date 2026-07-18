@@ -45,6 +45,27 @@ describe('OpenAiVisionAdapter', () => {
     const adapter = new OpenAiVisionAdapter({ model: 'm', apiKey: 'k', apiUrl: 'https://api.openai.com' });
     await assert.rejects(() => adapter.analyse([IMG], 'x'), /429/);
   });
+
+  test('routes through the bridge manager when transport is bridge, never touching fetch', async () => {
+    global.fetch = async () => { throw new Error('should not call fetch directly when bridge-relayed'); };
+    let sentCommand = null;
+    const bridgeManager = {
+      sendCommand: async (instanceId, command) => {
+        sentCommand = { instanceId, command };
+        return { ok: true, status: 200, body: { choices: [{ message: { content: 'A dog on a couch' } }] } };
+      },
+    };
+    const adapter = new OpenAiVisionAdapter({
+      model: 'llava', apiKey: '', apiUrl: 'http://ollama:11434',
+      transport: 'bridge', bridgeManager, bridgeInstanceId: 'bridge-1',
+    });
+    const result = await adapter.analyse([IMG], 'Describe');
+    assert.equal(sentCommand.instanceId, 'bridge-1');
+    assert.equal(sentCommand.command.type, 'model_call');
+    assert.equal(sentCommand.command.endpoint, 'http://ollama:11434/v1/chat/completions');
+    assert.equal(sentCommand.command.payload.model, 'llava');
+    assert.equal(result.text, 'A dog on a couch');
+  });
 });
 
 describe('GoogleVisionAdapter', () => {
@@ -81,6 +102,25 @@ describe('GoogleVisionAdapter', () => {
     const adapter = new GoogleVisionAdapter({ model: 'm', apiKey: 'k', apiUrl: 'https://x' });
     await assert.rejects(() => adapter.analyse([IMG], 'x'), /403/);
   });
+
+  test('routes through the bridge manager when transport is bridge, keeping the ?key= query intact', async () => {
+    global.fetch = async () => { throw new Error('should not call fetch directly when bridge-relayed'); };
+    let sentCommand = null;
+    const bridgeManager = {
+      sendCommand: async (instanceId, command) => {
+        sentCommand = { instanceId, command };
+        return { ok: true, status: 200, body: { candidates: [{ content: { parts: [{ text: 'Relayed scene' }] } }] } };
+      },
+    };
+    const adapter = new GoogleVisionAdapter({
+      model: 'gemini-1.5-flash', apiKey: 'g-key', apiUrl: 'https://generativelanguage.googleapis.com',
+      transport: 'bridge', bridgeManager, bridgeInstanceId: 'bridge-1',
+    });
+    const result = await adapter.analyse([IMG], 'Describe');
+    assert.equal(sentCommand.instanceId, 'bridge-1');
+    assert.match(sentCommand.command.endpoint, /models\/gemini-1\.5-flash:generateContent\?key=g-key$/);
+    assert.equal(result.text, 'Relayed scene');
+  });
 });
 
 describe('AnthropicVisionAdapter', () => {
@@ -116,6 +156,27 @@ describe('AnthropicVisionAdapter', () => {
     global.fetch = async () => ({ ok: false, status: 500, text: async () => 'server error' });
     const adapter = new AnthropicVisionAdapter({ model: 'm', apiKey: 'k', apiUrl: 'https://x' });
     await assert.rejects(() => adapter.analyse([IMG], 'x'), /500/);
+  });
+
+  test('routes through the bridge manager when transport is bridge, still carrying the anthropic headers', async () => {
+    global.fetch = async () => { throw new Error('should not call fetch directly when bridge-relayed'); };
+    let sentCommand = null;
+    const bridgeManager = {
+      sendCommand: async (instanceId, command) => {
+        sentCommand = { instanceId, command };
+        return { ok: true, status: 200, body: { content: [{ text: 'Relayed cameras' }] } };
+      },
+    };
+    const adapter = new AnthropicVisionAdapter({
+      model: 'claude-opus-4-8', apiKey: 'ak-x', apiUrl: 'https://api.anthropic.com',
+      transport: 'bridge', bridgeManager, bridgeInstanceId: 'bridge-1',
+    });
+    const result = await adapter.analyse([IMG], 'Describe');
+    assert.equal(sentCommand.instanceId, 'bridge-1');
+    assert.equal(sentCommand.command.endpoint, 'https://api.anthropic.com/v1/messages');
+    assert.equal(sentCommand.command.headers['x-api-key'], 'ak-x');
+    assert.equal(sentCommand.command.headers['anthropic-version'], '2023-06-01');
+    assert.equal(result.text, 'Relayed cameras');
   });
 });
 
