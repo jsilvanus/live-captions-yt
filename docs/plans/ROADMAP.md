@@ -231,8 +231,8 @@ with no existing consumers to break:
 | Plan | Package | Status |
 |---|---|---|
 | `plan_translate.md` — server-side translation plugin | new `lcyt-translate` plugin | Exploratory/not scheduled; zero collision risk with anything else since the package doesn't exist yet |
-| `plan_monitors.md` — confidence-only monitoring feeds | likely new plugin | Draft; needs a data-model decision before engineering starts |
-| `plan_mixer_feed_sources.md` — encoder/file sources, low-latency preview tiles | `lcyt-production` / mixer code | Draft; generalizes the existing mixer program bus |
+| `plan_ingest_feeds.md` — arbitrary named ingestion/egress, supersedes `plan_monitors.md` | `lcyt-production` + `lcyt-rtmp` | Draft; data-model decision made (reuses `prod_cameras`), ready for phased implementation |
+| `plan_mixer_feed_sources.md` — looping file sources, low-latency preview tiles | `lcyt-production` / mixer code | Draft; generalizes the existing mixer program bus; former 'encoder' source type now covered by `plan_ingest_feeds.md` |
 | `plan_live_variables.md` — live refresh, operator display, text-block expansion | `lcyt-connectors` + `lcyt-web` | Draft; ideas 2–3 are explicitly "design-pending" — needs a product decision before it's a Tier 3-style task |
 
 These can all run **simultaneously** with each other and with every lane above — none

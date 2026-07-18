@@ -21,7 +21,7 @@ Three hard requirements shape the design:
 
 1. **Crop at incoming quality.** The crop window must be cut from the decoded frames
    of the raw ingest at its native resolution (e.g. a 608×1080 window out of
-   1920×1080), *not* from an already-downscaled rendition such as `plan_monitors.md`'s
+   1920×1080), *not* from an already-downscaled rendition such as `plan_mixer_feed_sources.md`'s
    low-res `{key}-preview`.
 2. **Preset crop positions, switchable live.** The interesting subject moves when the
    mixer cuts: camera 1 on preset 1 needs the crop over the lectern, camera 2 needs it
