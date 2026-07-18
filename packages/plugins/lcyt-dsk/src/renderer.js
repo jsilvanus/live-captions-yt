@@ -136,6 +136,7 @@ export function renderTemplateToHtml(templateJson, opts = {}) {
       layer.width  != null ? `width:${Number(layer.width)}px`  : '',
       layer.height != null ? `height:${Number(layer.height)}px` : '',
       layer.animation ? `animation:${escHtml(layer.animation)}` : '',
+      layer.rotation != null ? `transform:rotate(${Number(layer.rotation)}deg);transform-origin:center center` : '',
     ].filter(Boolean).join(';');
 
     const extraStyle = layer.style ? Object.entries(layer.style).map(([k, v]) => {

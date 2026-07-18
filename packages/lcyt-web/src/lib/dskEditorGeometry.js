@@ -89,3 +89,16 @@ export function getLayerViewportPos(layer, selectedViewport) {
     height: vp.height != null ? Number(vp.height) : (layer.height != null ? Number(layer.height) : undefined),
   };
 }
+
+export function rotationFromPointerAngle(centerX, centerY, pointerX, pointerY) {
+  const dx = pointerX - centerX;
+  const dy = pointerY - centerY;
+  const radians = Math.atan2(dy, dx);
+  const degrees = (radians * 180 / Math.PI) + 90;
+  return degrees;
+}
+
+export function snapRotation(deg, snapEnabled) {
+  if (!snapEnabled) return deg;
+  return Math.round(deg / 15) * 15;
+}
