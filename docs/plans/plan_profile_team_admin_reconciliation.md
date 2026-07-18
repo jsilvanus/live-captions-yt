@@ -203,10 +203,12 @@ per-member subquery).
   substantial new concept (per-category default-item tables mirroring every
   device/config table) with no existing design anywhere in `docs/plans/`.
   Worth its own dedicated plan when prioritized.
-- **Doc staleness this plan does *not* fix**: `packages/lcyt-backend/CLAUDE.md`'s
-  route reference table is still missing the full `/orgs/*` CRUD surface and
+- **Doc staleness this plan flagged (now fixed)**: `packages/lcyt-backend/CLAUDE.md`'s
+  route reference table was initially missing the full `/orgs/*` CRUD surface and
   the `/admin/export|import/*`/`/admin/audit-log` routes (pre-existing gap,
-  unrelated to this plan's scope — flagged for whoever next edits that file).
+  unrelated to this plan's scope at the time). This documentation gap has since been
+  closed by adding: `/orgs/:id/audit`, `/orgs/:id/usage`, `/auth/me` PATCH/GET/DELETE
+  variants, and all `/admin/audit-log`, `/admin/export/*`, `/admin/import/*` routes.
 
 ## Implementation status
 
