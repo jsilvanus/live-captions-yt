@@ -348,7 +348,7 @@ export function useProductionData() {
   useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   return {
-    creds, connected,
+    creds, connected, jfetch,
     loaded, error,
     cameras, mixers, primaryMixer, templates, cueRules, relay, broadcast, thumbTick,
     sentEntries: sentLog?.entries || [],

@@ -58,6 +58,7 @@ const ProductionMixersPage   = lazyImport(() => import('./components/ProductionM
 const ProductionBridgesPage  = lazyImport(() => import('./components/ProductionBridgesPage').then(m => ({ default: m.ProductionBridgesPage })));
 const ProductionDevicesPage  = lazyImport(() => import('./components/ProductionDevicesPage').then(m => ({ default: m.ProductionDevicesPage })));
 const ProductionVisualPage   = lazyImport(() => import('./components/ProductionVisualPage').then(m => ({ default: m.ProductionVisualPage })));
+const ProductionCropPage     = lazyImport(() => import('./components/production/ProductionCropPage.jsx').then(m => ({ default: m.ProductionCropPage })));
 const PlannerPage            = lazyImport(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
 const TranslationsPage       = lazyImport(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
 const AiSettingsPage         = lazyImport(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
@@ -202,6 +203,7 @@ function SidebarApp() {
             <Route path="/production/bridges" component={ProductionBridgesPage} />
             <Route path="/production/devices" component={ProductionDevicesPage} />
             <Route path="/production/visual" component={ProductionVisualPage} />
+            <Route path="/production/crop" component={ProductionCropPage} />
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/planner" component={PlannerPage} />
             <Route path="/translations" component={TranslationsPage} />

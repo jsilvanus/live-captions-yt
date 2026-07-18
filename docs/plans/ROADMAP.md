@@ -52,7 +52,7 @@ lean on.
 |---|---|---|
 | `plan_ai_roles_framework.md` | Translation role — still just a flagged future gap, not spec'd | Needs a short design pass before it's implementable; not urgent, blocks nothing else. |
 | `plan_ai_model_registry.md` | Role-config model-picker UI (`GET /ai/providers/:id/models` wired into the Setup Hub) | Backend (registry, discovery, bridge-relayed inference for both the `agentic_chat` turn loop and all three vision adapters) is done and tested; today a role's `provider_id`/`model_name` can only be set by a direct API call, not through the UI. Pure `lcyt-web` frontend work. |
-| `plan_vertical_crop.md` | Operator UI for crop positioning/presets, production-follow phases, `overridePublisher` pre-config | Backend (schema, `CropManager`, `/crop` routes, live zmq repositioning) is done; this is pure frontend + one config knob. |
+| `plan_vertical_crop.md` | Production-follow phase (`crop_source_map` → mixer-switch/PTZ-preset registry callbacks, `crop_preset` named-action/cue/tool), `overridePublisher` pre-config | Backend (schema, `CropManager`, `/crop` routes, live zmq repositioning) and the operator UI (Phase 3) are done; this is the remaining auto-follow wiring + one config knob. |
 
 **Lane A — AI bridge-relay wiring** (`packages/plugins/lcyt-agent` only) is **done** —
 verified 2026-07-18: `resolveRoleProviderSettings()`/`invokeModelCall()` already dispatched
@@ -66,11 +66,18 @@ the 2026-07-13 commit. No lane is needed here anymore — the only remaining pie
 (`plan_ai_model_registry.md`'s role-config model-picker UI, above) is a `lcyt-web` frontend
 task, not a `lcyt-agent` backend one.
 
-**Lane B — Vertical crop operator UI** (`packages/lcyt-web` production workspace
-components + `useProductionData`). Touches frontend files
-`plan_broadcasts_next.md`'s work already touched (`Chrome.jsx`,
-`useProductionData.js`) — check for merge drift against that work before starting,
-but no other lane overlaps it.
+**Lane B — Vertical crop operator UI** is **done** — implemented 2026-07-18:
+`packages/lcyt-web/src/components/production/ProductionCropPage.jsx` (route
+`/production/crop`, linked from the main `/production` console header) plus
+`production/crop/{useCropEditor,CropPresetPanel,CropCanvas,CropSourcePanel}.jsx`.
+`useProductionData.js` gained one additive export (`jfetch`) so the new page
+can reuse its credentials/cameras/mixers plumbing instead of duplicating it;
+`Chrome.jsx` gained the "Vertical Crop" header link. See
+`plan_vertical_crop.md` Phase 3 for the UI shape (a three-column operator
+layout, not the plan's original sources×sets matrix-grid sketch — see that
+phase note for why). Remaining work on this plan (production-follow, Phase 4)
+is listed in Tier 1 above and is a `lcyt-rtmp`/`lcyt-production` backend lane,
+not a frontend one — no conflict with any other lane below.
 
 ---
 
@@ -159,7 +166,7 @@ expect merge pain.
 If launching several agents today, this set has no file/package overlap:
 
 - **Lane A** — done, see Tier 1 above; nothing left to dispatch here
-- **Lane B** — Vertical crop operator UI (`lcyt-web` production workspace)
+- **Lane B** — done, see Tier 1 above; the remaining vertical-crop work (production-follow) is a backend lane, not this frontend one
 - **Lane C** — Cue rules editor, current rule types (`lcyt-web` Assets page)
 - **Lane D** — Cue engine Phase 8.5 + Phase 9 (`lcyt-cues`)
 - One or two Tier 3 items from packages not already claimed above (e.g. HLS
