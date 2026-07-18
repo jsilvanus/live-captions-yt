@@ -311,6 +311,7 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
   // GET /radio/:key/info — JSON stream info (public)
   // Returns the public HLS URL and live status without exposing the API key in the URL.
   // When NginxManager is active, hlsUrl uses the slug-based nginx proxy URL.
+  // Respects radio_enabled flag: when disabled, live is always false and hlsUrl is omitted.
   router.get('/:key/info', hlsRateLimit, (req, res) => {
     const { key } = req.params;
     if (!RADIO_KEY_RE.test(key)) {
@@ -320,18 +321,30 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
     const backendOrigin = process.env.BACKEND_URL
       || `${req.protocol}://${req.get('host')}`;
 
-    const live    = radioManager.isRunning(key);
-    const hlsUrl  = radioManager.getPublicHlsUrl(key, backendOrigin);
-    // Only expose the slug when nginx is actually proxying it; otherwise the slug
-    // would be meaningless (no nginx location exists for it).
-    const slug    = radioManager.isNginxEnabled ? radioManager.getSlug(key) : null;
+    // Check if radio is enabled for this key. If not, report as not live and omit hlsUrl.
+    const enabled = isRadioEnabled(db, key);
+    const live    = enabled && radioManager.isRunning(key);
+
     // Metadata has no secrets in it (title/description/cover/autoplay), so it's
     // safe to expose alongside the stream info for embeddable "Now Playing" UIs.
     const { title, description, coverImageUrl, autoplay } = getRadioConfig(db, key);
 
     setCorsHeaders(res, getEmbedCors(db, key));
     res.setHeader('Cache-Control', 'no-cache, no-store');
-    res.json({ live, hlsUrl, title, description, coverImageUrl, autoplay, ...(slug ? { slug } : {}) });
+
+    const response = { live, title, description, coverImageUrl, autoplay };
+
+    // Only include hlsUrl if the feature is enabled
+    if (enabled) {
+      response.hlsUrl = radioManager.getPublicHlsUrl(key, backendOrigin);
+      // Only expose the slug when nginx is actually proxying it; otherwise the slug
+      // would be meaningless (no nginx location exists for it).
+      if (radioManager.isNginxEnabled) {
+        response.slug = radioManager.getSlug(key);
+      }
+    }
+
+    res.json(response);
   });
 
   // GET /radio/:key/:file — proxy HLS playlist and segments to MediaMTX.

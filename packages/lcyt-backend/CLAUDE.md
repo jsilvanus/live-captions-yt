@@ -121,6 +121,10 @@ GET  /contact             — server contact info (public)
 POST /auth/register       — create user account (email + password)
 POST /auth/login          — authenticate user → returns user JWT
 GET  /auth/me             — current user info (user Bearer token)
+PATCH /auth/me            — update own profile (name) (user Bearer token)
+GET  /auth/me/export      — export user's own account data (user Bearer token)
+DELETE /auth/me/data      — delete user's owned projects, keep account (user Bearer token)
+DELETE /auth/me           — full account deletion (user Bearer token)
 POST /auth/change-password — change password (user Bearer token)
 
 POST /live                — register session → returns session JWT
@@ -315,6 +319,8 @@ POST   /orgs                — create org; creator becomes owner (user Bearer t
 GET    /orgs/:id            — org detail (any member)
 PATCH  /orgs/:id            — update name/slug/projectSlugPolicy ('none'|'prefix': require "<orgslug>-" prefix on project public slugs) (owner only)
 DELETE /orgs/:id            — delete org (owner only); member projects are detached (api_keys.org_id → NULL), never deleted
+GET    /orgs/:id/audit      — org audit trail: queryable action log scoped to the org (owner/admin only; plan_metering_audit §5.5)
+GET    /orgs/:id/usage      — org usage rollups: per-project breakdown for owner/admin, aggregated totals for other members (any member; plan_metering_audit §6.1)
 GET    /orgs/:id/members    — list members (any member)
 POST   /orgs/:id/members    — invite member by email (owner/admin)
 PATCH  /orgs/:id/members/:userId — change member role; roles: owner/admin/editor/operator/viewer (owner/admin; owner changes owner-only)
@@ -345,6 +351,11 @@ PATCH  /admin/projects/:key          — update project (X-Admin-Key)
 PUT    /admin/projects/:key/features — batch update features (X-Admin-Key)
 POST   /admin/batch/users            — batch user operations (X-Admin-Key)
 POST   /admin/batch/projects         — batch project operations (X-Admin-Key)
+GET    /admin/audit-log              — query unified audit log with filters (X-Admin-Key or is_admin user)
+GET    /admin/export/users           — export all users + feature entitlements as JSON (X-Admin-Key or is_admin user)
+GET    /admin/export/projects        — export all projects + features as JSON (X-Admin-Key or is_admin user)
+POST   /admin/import/users           — import users from JSON export { users, options? } (X-Admin-Key or is_admin user)
+POST   /admin/import/projects        — import projects from JSON export { projects, options? } (X-Admin-Key or is_admin user)
 GET    /admin/orgs                       — list all orgs with search/pagination (X-Admin-Key)
 GET    /admin/feature-policies                    — list tri-state site feature policies (available/self_service/denied) (X-Admin-Key)
 PUT    /admin/feature-policies/:code              — set a site-wide feature policy mode (X-Admin-Key)
@@ -359,7 +370,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/routes/stt.js` — `createSttRouter(auth, sttManager, db, jwtSecret)`: server-side STT routes (`/stt/*`). Delegates to `SttManager` from `lcyt-rtmp`. Supports `google`, `whisper_http`, `openai` providers and `hls`, `rtmp`, `whep` audio sources. **SSE events** on `GET /stt/events`: `connected`, `transcript`, `stt_started`, `stt_stopped`, `stt_error`. The `?token=`/Bearer SSE auth verifies with `jwt.verify(token, jwtSecret)` (previously an unverified base64 decode of the payload — same class of bug fixed in `lcyt-connectors`' `/variables/events`, see that plugin's `CLAUDE.md`).
 - `src/middleware/auth.js` — JWT Bearer verification (session tokens: `{ sessionId, apiKey }`).
 - `src/middleware/feature-gate.js` — `createRequireFeature(db, code)` + `createRequireKeyFeature(db, code)`: opt-in feature gate middleware, no-op unless `FEATURE_GATE_ENFORCE=1`.
-- `src/routes/admin.js` — `createAdminRouter(db)`: admin panel routes (`/admin/*`). User CRUD with search/pagination, project management with cross-entity `user:email` search, batch operations (activate/deactivate/delete users; revoke/activate/delete projects), feature flag management, user feature entitlement management (`GET/PATCH /admin/users/:id/features`). All routes require `X-Admin-Key` header.
+- `src/routes/admin.js` — `createAdminRouter(db)`: admin panel routes (`/admin/*`). User CRUD with search/pagination, project management with cross-entity `user:email` search, batch operations (activate/deactivate/delete users; revoke/activate/delete projects), feature flag management, user feature entitlement management (`GET/PATCH /admin/users/:id/features`), data export/import (`GET /admin/export/{users,projects}`, `POST /admin/import/{users,projects}`), and unified audit log queries (`GET /admin/audit-log`). All routes require `X-Admin-Key` header or `is_admin` user JWT.
 - The RTMP/HLS/radio/preview/STT managers previously lived in `lcyt-backend`; they were extracted to `packages/plugins/lcyt-rtmp`. The backend imports them via `import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp'`.
 - The Cue Engine (`lcyt-cues`) provides inline cue metacode processing, phrase/fuzzy/semantic/event matching, sound-cue listeners, and CRUD routes. Imported via `import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues'`.
 - The AI Agent (`lcyt-agent`) owns AI configuration, embedding computation, context window management, LLM-based event cue evaluation, the AI model provider registry (`ai_providers`/`ai_provider_models`/`ai_provider_grants`), and the AI Roles Framework (role catalog, the shared `agentic_chat` turn loop, Production Assistant's suggestion queue, Tracker/Describer vision roles). Imported via `import { initAgent, createAgentRouter, createAiRouter, computeEmbeddings, createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter, createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter, createPlannerRouter } from 'lcyt-agent'` — see that plugin's `CLAUDE.md` for the full composition-root wiring example (it's the only file that holds `lcyt-backend`'s caption-target helpers, `lcyt-production`'s device registry, `lcyt-dsk`'s image helpers, and the running `AgentEngine` all together, needed to build the shared tool registry from `lcyt-tools`).
