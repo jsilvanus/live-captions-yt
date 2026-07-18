@@ -229,10 +229,16 @@ const {
   mediamtxClient: productionMediamtxClient,
 } = await initProductionControl(db);
 
+// Files plugin — storage adapter for caption file I/O (local FS or S3).
+// Always initialised so FILE_STORAGE configuration is logged at startup.
+// Wire into RTMP plugin so HLS segments can be published to storage.
+const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+
 // RTMP plugin — run DB migrations, create all manager instances.
 // Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
-const rtmp = await initRtmpControl(db, store, { metrics });
+// Pass resolveStorage so HLS manager can publish segments/playlists to storage.
+const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
@@ -247,10 +253,6 @@ let stopDsk = async () => {};
 if (process.env.GRAPHICS_ENABLED === '1') {
   ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics }));
 }
-
-// Files plugin — storage adapter for caption file I/O (local FS or S3).
-// Always initialised so FILE_STORAGE configuration is logged at startup.
-const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
 
 // Background metric pollers: storage gauges, MediaMTX egress deltas, and
 // orchestrator burst-VM accounting (plan_metering_audit §4.2–4.3).

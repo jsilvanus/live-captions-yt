@@ -71,9 +71,10 @@ export { getRadioConfig, setRadioConfig } from './db.js';
  * @param {import('../../lcyt-backend/src/store.js').SessionStore} [store]
  *   Optional session store — injected into SttManager for transcript delivery.
  *   Pass after the store is created in server.js.
- * @param {{ metrics?: { count: Function, gauge: Function, max: Function } }} [opts]
+ * @param {{ metrics?: { count: Function, gauge: Function, max: Function }, resolveStorage?: Function }} [opts]
  *   Optional backend metrics handle (plan_metering_audit §4.1) — bumps
  *   rtmp.streams / rtmp.stream_seconds usage counters on stream end.
+ *   Optional resolveStorage function (from lcyt-files) for HLS segment/playlist publishing.
  * @returns {Promise<{
  *   relayManager: RtmpRelayManager,
  *   hlsManager: HlsManager,
@@ -84,7 +85,7 @@ export { getRadioConfig, setRadioConfig } from './db.js';
  *   stop: () => Promise<void>
  * }>}
  */
-export async function initRtmpControl(db, store = null, { metrics = null } = {}) {
+export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null } = {}) {
   runMigrations(db);
 
   const ffmpegCaps = process.env.RTMP_RELAY_ACTIVE === '1'
@@ -146,7 +147,7 @@ export async function initRtmpControl(db, store = null, { metrics = null } = {})
   const nginxManager = new NginxManager();
 
   const radioManager   = new RadioManager({ mediamtxClient, nginxManager });
-  const hlsManager     = new HlsManager({ mediamtxClient });
+  const hlsManager     = new HlsManager({ mediamtxClient, resolveStorage });
   const hlsSubsManager = new HlsSubsManager();
   const previewManager = new PreviewManager({ mediamtxClient });
   const sttManager     = new SttManager(store, db);
