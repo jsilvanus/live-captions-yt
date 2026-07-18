@@ -5,6 +5,8 @@
  * account — simplest path for a per-provider apiKey stored in ai_providers.
  */
 
+import { invokeModelCall } from '../agentic-turn.js';
+
 function parseOutput(text, outputMode) {
   if (outputMode !== 'json') return { text, json: null, raw: text };
   const stripped = text.replace(/```json?\s*/gi, '').replace(/```/g, '').trim();
@@ -17,12 +19,22 @@ function parseOutput(text, outputMode) {
 
 export class GoogleVisionAdapter {
   /**
-   * @param {{ model: string, apiKey: string, apiUrl: string }} opts
+   * @param {{
+   *   model: string,
+   *   apiKey: string,
+   *   apiUrl: string,
+   *   transport?: string,
+   *   bridgeManager?: object,
+   *   bridgeInstanceId?: string,
+   * }} opts
    */
-  constructor({ model, apiKey, apiUrl }) {
+  constructor({ model, apiKey, apiUrl, transport, bridgeManager, bridgeInstanceId }) {
     this.model = model;
     this.apiKey = apiKey;
     this.apiUrl = (apiUrl || 'https://generativelanguage.googleapis.com').replace(/\/$/, '');
+    this.transport = transport;
+    this.bridgeManager = bridgeManager;
+    this.bridgeInstanceId = bridgeInstanceId;
   }
 
   /**
@@ -42,17 +54,16 @@ export class GoogleVisionAdapter {
       ...(opts.outputMode === 'json' ? { generationConfig: { responseMimeType: 'application/json' } } : {}),
     };
 
-    const url = `${this.apiUrl}/v1beta/models/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Google vision API error ${res.status}: ${text.slice(0, 200)}`);
-    }
-    const data = await res.json();
+    const endpointPath = `/v1beta/models/${encodeURIComponent(this.model)}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
+    const result = await invokeModelCall({
+      apiUrl: this.apiUrl,
+      apiKey: '', // auth is the ?key= query param above, not a bearer header
+      model: this.model,
+      transport: this.transport,
+      bridgeManager: this.bridgeManager,
+      bridgeInstanceId: this.bridgeInstanceId,
+    }, body, { endpointPath });
+    const data = result.body;
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (typeof text !== 'string') throw new Error('Unexpected Google vision response format');
     return parseOutput(text, opts.outputMode);

@@ -50,15 +50,24 @@ lean on.
 
 | Plan | What's left | Why it matters |
 |---|---|---|
-| `plan_ai_model_registry.md` + `plan_ai_roles_framework.md` | Bridge-relayed inference for the `agentic_chat` turn loop and vision adapters (both currently only resolve direct, non-bridge providers) | The **same gap blocks both plans at once** — fix it once in `lcyt-agent`, unblocks Setup/Asset/Graphics Assistants and Tracker/Describer running against a private/bridge-relayed Ollama instance. Single lane, see below. |
-| `plan_ai_roles_framework.md` | Translation role — still just a flagged future gap, not spec'd | Needs a short design pass before it's implementable; not urgent, but blocks nothing else so it's fine to defer to whoever picks up the bridge-relay work next. |
+| `plan_ai_roles_framework.md` | Translation role — still just a flagged future gap, not spec'd | Needs a short design pass before it's implementable; not urgent, blocks nothing else. |
+| `plan_ai_model_registry.md` | Role-config model-picker UI (`GET /ai/providers/:id/models` wired into the Setup Hub) | Backend (registry, discovery, bridge-relayed inference for both the `agentic_chat` turn loop and all three vision adapters) is done and tested; today a role's `provider_id`/`model_name` can only be set by a direct API call, not through the UI. Pure `lcyt-web` frontend work. |
 | `plan_vertical_crop.md` | Operator UI for crop positioning/presets, production-follow phases, `overridePublisher` pre-config | Backend (schema, `CropManager`, `/crop` routes, live zmq repositioning) is done; this is pure frontend + one config knob. |
 
-**Lane A — AI bridge-relay wiring** (`packages/plugins/lcyt-agent` only). Independent
-of every other lane; touches no shared composition-root file outside that plugin.
+**Lane A — AI bridge-relay wiring** (`packages/plugins/lcyt-agent` only) is **done** —
+verified 2026-07-18: `resolveRoleProviderSettings()`/`invokeModelCall()` already dispatched
+bridge-relayed inference for the `agentic_chat` turn loop (landed 2026-07-13, `fafb55c`); this
+pass additionally routed the Google and Anthropic vision adapters through the same
+`invokeModelCall()` bridge path (previously only the OpenAI-compatible/Ollama-vendor adapter
+supported it), added bridge-relay test coverage for all three vendors in
+`test/vision-adapters.test.js`, and updated `packages/plugins/lcyt-agent/CLAUDE.md`,
+`CONSIDER.md`, `docs/PLANS.md`, and the two plan files, all of which had gone stale relative to
+the 2026-07-13 commit. No lane is needed here anymore — the only remaining piece
+(`plan_ai_model_registry.md`'s role-config model-picker UI, above) is a `lcyt-web` frontend
+task, not a `lcyt-agent` backend one.
 
 **Lane B — Vertical crop operator UI** (`packages/lcyt-web` production workspace
-components + `useProductionData`). Independent of Lane A. Touches frontend files
+components + `useProductionData`). Touches frontend files
 `plan_broadcasts_next.md`'s work already touched (`Chrome.jsx`,
 `useProductionData.js`) — check for merge drift against that work before starting,
 but no other lane overlaps it.
@@ -149,7 +158,7 @@ expect merge pain.
 
 If launching several agents today, this set has no file/package overlap:
 
-- **Lane A** — AI bridge-relay wiring (`lcyt-agent`)
+- **Lane A** — done, see Tier 1 above; nothing left to dispatch here
 - **Lane B** — Vertical crop operator UI (`lcyt-web` production workspace)
 - **Lane C** — Cue rules editor, current rule types (`lcyt-web` Assets page)
 - **Lane D** — Cue engine Phase 8.5 + Phase 9 (`lcyt-cues`)

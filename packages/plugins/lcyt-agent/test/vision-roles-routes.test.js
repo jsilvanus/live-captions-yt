@@ -97,7 +97,7 @@ describe('POST /roles/:roleCode/start', () => {
     assert.equal(res.status, 503);
   });
 
-  it('503s when the provider is bridge-relayed (not yet supported)', async () => {
+  it('503s for a bridge-relayed provider when no bridge manager is injected', async () => {
     const bridgeProviderId = createProvider(db, {
       scope: 'site', kind: 'ollama', vendor: 'ollama', name: 'Bridge Ollama', baseUrl: 'http://ollama:11434', bridgeInstanceId: 'bridge-1',
     }).id;
