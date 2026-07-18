@@ -55,14 +55,14 @@ export function getKeyByDeviceCode(db, deviceCode) {
  * Returns the plain-text PIN (must be shown to the user exactly once) and the created row.
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
- * @param {{ roleType: string, name: string, pinHash: string, permissions?: string[], config?: object }} opts
- * @returns {{ id: number, api_key: string, role_type: string, name: string, permissions: string[], config: object|null, created_at: string }}
+ * @param {{ roleType: string, name: string, pinHash: string, permissions?: string[], config?: object, expiresAt?: string }} opts
+ * @returns {{ id: number, api_key: string, role_type: string, name: string, permissions: string[], config: object|null, created_at: string, expires_at?: string }}
  */
-export function createDeviceRole(db, apiKey, { roleType, name, pinHash, permissions = [], config = null }) {
+export function createDeviceRole(db, apiKey, { roleType, name, pinHash, permissions = [], config = null, expiresAt = null }) {
   const result = db.prepare(`
-    INSERT INTO project_device_roles (api_key, role_type, name, pin_hash, permissions, config)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(apiKey, roleType, name, pinHash, JSON.stringify(permissions), config ? JSON.stringify(config) : null);
+    INSERT INTO project_device_roles (api_key, role_type, name, pin_hash, permissions, config, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(apiKey, roleType, name, pinHash, JSON.stringify(permissions), config ? JSON.stringify(config) : null, expiresAt);
   return getDeviceRole(db, result.lastInsertRowid);
 }
 
@@ -75,6 +75,20 @@ export function createDeviceRole(db, apiKey, { roleType, name, pinHash, permissi
 export function getDeviceRole(db, id) {
   const row = db.prepare('SELECT * FROM project_device_roles WHERE id = ?').get(id);
   return row ? _formatRole(row) : null;
+}
+
+/**
+ * Check if a device role is currently active (not deactivated and not expired).
+ * Used by middleware to validate device JWTs on every request (Item 4 — Phase 4).
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} id
+ * @returns {boolean}
+ */
+export function isDeviceRoleActive(db, id) {
+  const row = db.prepare('SELECT active, expires_at FROM project_device_roles WHERE id = ?').get(id);
+  if (!row || row.active === 0) return false;
+  if (row.expires_at && new Date(row.expires_at) <= new Date()) return false;
+  return true;
 }
 
 /**

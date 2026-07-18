@@ -164,6 +164,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           email: payload.email || null,
           siteRole: payload.siteRole || null,
           scopes: payload.scopes || null,
+          roleId: payload.roleId || null,
         });
       }
 

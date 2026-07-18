@@ -10,6 +10,7 @@ import {
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
+import { createDeviceAuthMiddleware } from './middleware/device-auth.js';
 import { createSessionRouters } from './routes/session.js';
 import { createAccountRouters } from './routes/account.js';
 import { createOrganizationsRouter } from './routes/orgs.js';
@@ -457,6 +458,15 @@ app.use('/icons', createIconRouter(db, auth, store));
 app.use(express.json({ limit: '64kb' }));
 
 app.use(createWriteAuditMiddleware(db));
+
+// Device role JWT verification middleware (Item 4 — Phase 4).
+// Checks that device roles are still active on every request, not just at login.
+const deviceAuth = createDeviceAuthMiddleware(db, jwtSecret);
+app.use((req, res, next) => {
+  // Apply device auth check after project-access middleware sets req.auth.
+  // This middleware is safe to apply globally since it only acts for device auth.
+  deviceAuth(req, res, next);
+});
 
 // Request logging middleware
 app.use((req, res, next) => {
