@@ -382,7 +382,7 @@ export function createAdminRouter(db, jwtSecret) {
    * Body: { features: { 'radio': true, 'stt-server': false } }
    * Phase 3 of plan_userprojects.
    */
-  router.patch('/users/:id/features', (req, res) => {
+  router.patch('/users/:id/features', requireFullAdmin(), (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
 
@@ -914,7 +914,7 @@ export function createAdminRouter(db, jwtSecret) {
    * Import users from a JSON export. Body: { users: [...], options?: { skipExisting?: bool } }
    * Skips records that would conflict (email already taken) unless options.skipExisting = false.
    */
-  router.post('/import/users', async (req, res) => {
+  router.post('/import/users', requireFullAdmin(), async (req, res) => {
     const { users: importUsers, options = {} } = req.body || {};
     if (!Array.isArray(importUsers) || importUsers.length === 0) {
       return res.status(400).json({ error: 'users array is required' });
@@ -972,7 +972,7 @@ export function createAdminRouter(db, jwtSecret) {
    * POST /admin/import/projects
    * Import projects from a JSON export. Body: { projects: [...], options?: { skipExisting?: bool } }
    */
-  router.post('/import/projects', (req, res) => {
+  router.post('/import/projects', requireFullAdmin(), (req, res) => {
     const { projects: importProjects, options = {} } = req.body || {};
     if (!Array.isArray(importProjects) || importProjects.length === 0) {
       return res.status(400).json({ error: 'projects array is required' });
