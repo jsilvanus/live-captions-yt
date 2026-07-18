@@ -70,7 +70,7 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 |---|---|---|---|---|---|
 | **Graphics** | Reusable | `dsk_templates` | `GET /dsk/:key/templates` | `/graphics/editor` | ✅ |
 | **Global cues** | Reusable | `cue_rules` | `GET /cues/rules` | `/cues` page (`CuesPage.jsx`, `plan_cues.md` Phase 10) | ✅ |
-| **Global actions** | Reusable | `action_defs` | actions route | Named-actions dialog (already on page) | ✅ |
+| **Global actions** | Reusable | `action_defs` | actions route | `/actions` page (`NamedActionsPage.jsx`, `plan_named_actions.md`) | ✅ |
 | **Icons** | Reusable | `icons` | icons route | `/setup/icons` | ✅ |
 | **Caption / rundown files** | Produced | `caption_files` | `GET /file` | `/captions` | ✅ (a translation is a file with a `lang` badge — decision 2) |
 | **Broadcasts** | Produced | `broadcasts` | `GET /broadcasts` | read-only + Watch-on-YouTube link | ✅ |
@@ -91,7 +91,14 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 > link-out to `/graphics/editor`: a rule editor with per-match-type fields
 > (and, once Phase 9 ships, a composite condition tree) doesn't fit a small
 > `SetupItemRow` dialog. The card's row/header links now point at `/cues`
-> instead of `/planner`.
+> instead of `/planner`. The Global actions card got the same treatment the
+> same day: `NamedActionsManager` (previously written but never mounted
+> anywhere) now links to a new `/actions` page instead of being read-only.
+> Both editors also gained a second, embedded home: the Planner's
+> right-column `PlannerAssistPanel` (Cues/Actions tabs above the AI
+> assistant), since cues and named actions are properties of a rundown file
+> more than they're a standalone content library — see `plan_cues.md` and
+> `plan_named_actions.md` for the full reasoning.
 
 Notes from tracing the code:
 

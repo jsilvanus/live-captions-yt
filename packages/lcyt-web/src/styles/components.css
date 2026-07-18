@@ -3940,6 +3940,52 @@
   border-left-color: var(--color-accent);
 }
 
+/* ─── Planner right column: Cues/Actions tabs + AI assist ─────────────────
+   Same footprint `.agent-chat` used to have on its own (fixed width, left
+   border) — PlannerAssistPanel is now that column, with AgentChatPanel
+   embedded inside it (showHeader stays true, so it keeps its own collapse
+   toggle) rather than being the column itself. */
+.planner-assist-panel {
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.planner-assist-panel__tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.planner-assist-panel__tab {
+  flex: 1;
+  padding: 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.planner-assist-panel__tab--active {
+  color: var(--color-text);
+  border-bottom-color: var(--color-accent);
+}
+
+.planner-assist-panel__content {
+  flex: 0 1 auto;
+  max-height: 40%;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--color-border);
+}
+
 .agent-chat {
   display: flex;
   flex-direction: column;
@@ -3957,6 +4003,12 @@
   height: 100%;
   border-left: none;
   background: none;
+  /* Only takes effect when the parent is itself a flex container (e.g.
+     PlannerAssistPanel's column) — fills remaining space below sibling
+     content there. No-op otherwise, so this doesn't affect non-flex
+     parents like the Graphics Editor's Properties panel (comment below). */
+  flex: 1;
+  min-height: 0;
 }
 
 .agent-chat__header {
@@ -4113,5 +4165,13 @@
     border-left: none;
     border-top: 1px solid var(--color-border);
     max-height: 50vh;
+  }
+  /* PlannerPage.jsx switches to SwipeablePages below this breakpoint, where
+     PlannerAssistPanel already fills its page slot — this is only a fallback
+     in case the panel ever renders outside that JS branch. */
+  .planner-assist-panel {
+    width: 100%;
+    height: 100%;
+    border-left: none;
   }
 }

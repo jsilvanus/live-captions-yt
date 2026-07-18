@@ -31,13 +31,17 @@ function ruleMeta(rule) {
 }
 
 /**
- * CuesPage — `/cues`. Assets-card editor for `cue_rules`
- * (plan_cues.md Phase 10, scoped to phrase/regex/section/fuzzy per the
- * roadmap — composite trees + named conditions land once Phase 9 ships).
- * Reads/writes the existing `GET/POST/PUT/DELETE /cues/rules` API, unchanged.
+ * CuesManager — editor for `cue_rules` (plan_cues.md Phase 10, scoped to
+ * phrase/regex/section/fuzzy per the roadmap — composite trees + named
+ * conditions land once Phase 9 ships). Reads/writes the existing
+ * `GET/POST/PUT/DELETE /cues/rules` API, unchanged.
+ *
+ * Two homes: the standalone `/cues` page (`CuesPage`, below — reached from
+ * the Assets page's "Global cues" card) and, embedded (`embedded` prop, same
+ * convention as `LanguagesManager`), the Planner's right-column
+ * `PlannerAssistPanel` Cues tab.
  */
-export function CuesPage() {
-  useProjectRequired();
+export function CuesManager({ embedded = false }) {
   const session = useContext(SessionContext);
   const backendUrl = session?.backendUrl || '';
 
@@ -167,17 +171,27 @@ export function CuesPage() {
   const selectedType = draft ? EDITABLE_MATCH_TYPES.find(t => t.value === draft.match_type) : null;
 
   return (
-    <div style={{ padding: 20, maxWidth: 720, margin: '0 auto' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4, gap: 12 }}>
-        <h1 style={{ margin: 0, fontSize: 20 }}>Cue Rules</h1>
-        <button className="btn btn--primary btn--sm" onClick={openNew} disabled={!!editing}>
-          + Add rule
-        </button>
-      </div>
-      <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-text-muted)' }}>
-        Persistent cue rules that trigger on spoken phrases, sections, or fuzzy matches — independent of any
-        rundown file. See <Link href="/assets">Assets</Link> for the full cue count.
-      </p>
+    <div style={embedded ? { padding: 12, display: 'flex', flexDirection: 'column', gap: 8 } : { padding: 20, maxWidth: 720, margin: '0 auto' }}>
+      {embedded ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button className="btn btn--primary btn--sm" onClick={openNew} disabled={!!editing}>
+            + Add rule
+          </button>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4, gap: 12 }}>
+            <h1 style={{ margin: 0, fontSize: 20 }}>Cue Rules</h1>
+            <button className="btn btn--primary btn--sm" onClick={openNew} disabled={!!editing}>
+              + Add rule
+            </button>
+          </div>
+          <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--color-text-muted)' }}>
+            Persistent cue rules that trigger on spoken phrases, sections, or fuzzy matches — independent of any
+            rundown file. See <Link href="/assets">Assets</Link> for the full cue count.
+          </p>
+        </>
+      )}
 
       {error && <div style={{ color: 'var(--color-error)', margin: '0 0 12px', fontSize: 13 }}>{error}</div>}
 
@@ -333,4 +347,10 @@ export function CuesPage() {
       )}
     </div>
   );
+}
+
+/** CuesPage — `/cues`, the standalone-page wrapper around `CuesManager`. */
+export function CuesPage() {
+  useProjectRequired();
+  return <CuesManager />;
 }

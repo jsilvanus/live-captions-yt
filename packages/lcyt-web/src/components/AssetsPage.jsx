@@ -326,6 +326,7 @@ export function AssetsPage() {
       color: 'accent',
       status: connected ? (loading.actions ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.actions ? 'Loading…' : `${actions.length} action${actions.length === 1 ? '' : 's'}`) : 'Connect',
+      headerAction: { label: 'Open', href: '/actions' },
       body: !connected ? (
         <p className="setup-card__empty">Connect to a project to manage named actions.</p>
       ) : loading.actions ? (
@@ -338,6 +339,7 @@ export function AssetsPage() {
           name={action.name}
           meta={`@${action.slug}`}
           badge={action.definition ? 'macro' : 'empty'}
+          href="/actions"
         />
       )),
     },

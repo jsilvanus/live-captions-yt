@@ -116,6 +116,27 @@ instead of `/planner`. `plan_cues.md`, `plan_assets_page.md`, and
 (9 tests, Vitest) added. The composite-tree `ConditionTreeEditor` and Named
 Conditions section remain deferred to Phase 9 (Lane D), as scoped.
 
+**Same-day follow-up (also 2026-07-18):** on user feedback that cues (and
+named actions) are properties of a rundown file rather than a standalone
+library, the editor's logic was extracted into `CuesManager({ embedded })`
+(`CuesPage.jsx` is now a thin wrapper, mirroring `LanguagesManager`/
+`LanguagesPage.jsx`) and given a second home: an embedded "📋 Cues" tab in
+a new `packages/lcyt-web/src/components/planner/PlannerAssistPanel.jsx`,
+the Planner's right column, alongside an "⚡ Actions" tab and the AI
+assistant chat below both. The Actions tab reuses `NamedActionsManager.jsx`
+(`plan_named_actions.md`) — rebuilt on the same Dialog/SetupItemRow pattern
+and given its own standalone `/actions` page (linked from the Assets
+"Global actions" card, which was read-only until now) since it turned out
+to have been built earlier but never actually mounted anywhere. This
+replaced a non-functional "Cues and Actions panels coming soon" tab stub
+that was already sitting in `PlannerPage.jsx`'s narrow/mobile layout, and
+gave the desktop 3-column layout the same tabs for the first time.
+`plan_cues.md`, `plan_named_actions.md`, `plan_assets_page.md`, `docs/PLANS.md`,
+and `packages/lcyt-web/CLAUDE.md` updated; `test/components/NamedActionsManager.test.jsx`
+(7 tests) and `test/components/PlannerAssistPanel.test.jsx` (4 tests) added,
+`CuesPage.test.jsx`'s original 9 tests kept passing unmodified (pure
+extraction, no behavior change to the non-embedded default).
+
 **Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees**
 (`packages/plugins/lcyt-cues` only). Independent of Lane C in terms of files, but
 sequence Lane C's *extension* for composite-condition editing after Lane D lands.
