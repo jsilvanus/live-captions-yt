@@ -186,9 +186,9 @@ export async function initRtmpControl(db, store = null) {
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager }, { allowedRtmpDomains } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains } = {}) {
   return {
-    rtmpRouter:      createRtmpRouter(db, relayManager, cropManager),
+    rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager),
     ingestionRouter: createIngestionRouter(db, auth, relayManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager),
