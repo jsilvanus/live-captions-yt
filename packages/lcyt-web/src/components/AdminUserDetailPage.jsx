@@ -3,6 +3,7 @@ import { useRoute, useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth.js';
 import { adminFetch } from '../lib/admin.js';
+import { ConfirmDialog } from './ConfirmDialog.jsx';
 
 const FEATURE_LABELS = {
   captions:              'Captions',
@@ -50,6 +51,9 @@ export function AdminUserDetailPage() {
   const [entitlements, setEntitlements] = useState({});
   const [savingEntitlements, setSavingEntitlements] = useState(false);
   const [entitlementMsg, setEntitlementMsg] = useState('');
+  // Confirmation dialog
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!userId) return;
@@ -111,13 +115,22 @@ export function AdminUserDetailPage() {
     }
   }
 
-  async function handleDelete() {
-    if (!confirm(`Delete user ${user?.email}? This will unlink their projects.`)) return;
-    const res = await adminFetch(backendUrl, `/admin/users/${userId}?force=true`, {
-      method: 'DELETE',
-    });
-    if (res.ok) {
-      navigate('/admin/users');
+  function openDeleteConfirm() {
+    setConfirmOpen(true);
+  }
+
+  async function executeDelete() {
+    setDeleteLoading(true);
+    try {
+      const res = await adminFetch(backendUrl, `/admin/users/${userId}?force=true`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        navigate('/admin/users');
+      }
+    } finally {
+      setDeleteLoading(false);
+      setConfirmOpen(false);
     }
   }
 
@@ -183,7 +196,7 @@ export function AdminUserDetailPage() {
         <button className="btn btn--ghost btn--sm" onClick={handleToggleActive}>
           {user.active ? '🚫 Deactivate' : '✅ Activate'}
         </button>
-        <button className="btn btn--ghost btn--sm" onClick={handleDelete} style={{ color: 'var(--color-error, #e55)' }}>
+        <button className="btn btn--ghost btn--sm" onClick={openDeleteConfirm} style={{ color: 'var(--color-error, #e55)' }}>
           🗑️ Delete User
         </button>
       </div>
@@ -270,6 +283,17 @@ export function AdminUserDetailPage() {
           </tbody>
         </table>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Delete User"
+        message={`Delete user ${user?.email}? This will unlink their projects.`}
+        confirmLabel="Delete"
+        danger={true}
+        loading={deleteLoading}
+        onConfirm={executeDelete}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

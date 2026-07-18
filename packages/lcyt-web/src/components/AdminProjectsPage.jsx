@@ -5,6 +5,7 @@ import { adminFetch } from '../lib/admin.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
 import { AdminTabShell } from './AdminTabShell.jsx';
 import { ProjectThumbnail } from './ProjectsPage.jsx';
+import { ConfirmDialog } from './ConfirmDialog.jsx';
 
 // ── Admin Projects Page ─────────────────────────────────────────────────────
 
@@ -35,6 +36,9 @@ function AdminProjectsContent({ backendUrl, navigate }) {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  // Confirmation dialog
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmPending, setConfirmPending] = useState(false);
 
   const limit = 50;
 
@@ -80,17 +84,27 @@ function AdminProjectsContent({ backendUrl, navigate }) {
     }
   }
 
-  async function handleBatch() {
+  function openBatchConfirm() {
     if (!batchAction || selected.size === 0) return;
-    if (!confirm(`${batchAction} ${selected.size} project(s)?`)) return;
-    const res = await adminFetch(backendUrl, '/admin/batch/projects', {
-      method: 'POST',
-      body: JSON.stringify({ keys: [...selected], action: batchAction }),
-    });
-    if (res.ok) {
-      setSelected(new Set());
-      setBatchAction('');
-      load();
+    setConfirmOpen(true);
+  }
+
+  async function executeBatch() {
+    if (!batchAction || selected.size === 0) return;
+    setConfirmPending(true);
+    try {
+      const res = await adminFetch(backendUrl, '/admin/batch/projects', {
+        method: 'POST',
+        body: JSON.stringify({ keys: [...selected], action: batchAction }),
+      });
+      if (res.ok) {
+        setSelected(new Set());
+        setBatchAction('');
+        await load();
+      }
+    } finally {
+      setConfirmPending(false);
+      setConfirmOpen(false);
     }
   }
 
@@ -198,7 +212,7 @@ function AdminProjectsContent({ backendUrl, navigate }) {
               <option value="revoke">Revoke</option>
               <option value="delete">Delete</option>
             </select>
-            <button className="btn btn--ghost btn--sm" onClick={handleBatch} disabled={!batchAction}>Apply</button>
+            <button className="btn btn--ghost btn--sm" onClick={openBatchConfirm} disabled={!batchAction}>Apply</button>
           </div>
         )}
       </div>
@@ -243,6 +257,17 @@ function AdminProjectsContent({ backendUrl, navigate }) {
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Confirm Batch Action"
+        message={`${batchAction} ${selected.size} project(s)?`}
+        confirmLabel={batchAction.charAt(0).toUpperCase() + batchAction.slice(1)}
+        danger={batchAction === 'delete'}
+        loading={confirmPending}
+        onConfirm={executeBatch}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }
