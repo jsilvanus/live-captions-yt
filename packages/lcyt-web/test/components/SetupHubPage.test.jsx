@@ -27,7 +27,7 @@ import { SetupHubPage } from '../../src/components/setup-hub/SetupHubPage.jsx';
 // (for the Workflow filter's feature lookup), which throws without a
 // SessionContext.Provider — a disconnected mock is enough since
 // useProjectFeatures() no-ops without a real apiKey/token/backendUrl.
-const mockSession = { connected: false, apiKey: '', backendUrl: '', getSessionToken: () => null };
+const mockSession = { connected: false, apiKey: '', backendUrl: '', getSessionToken: () => null, getPersistedConfig: () => ({}) };
 
 function renderAt(path = '/setup') {
   const { hook } = memoryLocation({ path });

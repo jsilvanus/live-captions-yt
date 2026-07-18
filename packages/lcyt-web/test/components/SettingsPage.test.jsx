@@ -24,7 +24,7 @@ vi.mock('../../src/components/CCModal.jsx', () => ({
 // ---------------------------------------------------------------------------
 
 function mockSession(overrides = {}) {
-  return { connected: false, ...overrides };
+  return { connected: false, getPersistedConfig: vi.fn(() => ({})), ...overrides };
 }
 
 function renderPage(session = mockSession()) {

@@ -66,9 +66,9 @@ describe('CommandPalette', () => {
 
   it('displays navigation items', () => {
     renderPalette(true);
-    // Setup and Broadcast are always visible (no feature gate)
+    // Setup and Production are always visible (no feature gate)
     expect(screen.getByText(/Setup/)).toBeInTheDocument();
-    expect(screen.getByText(/Broadcast/)).toBeInTheDocument();
+    expect(screen.getByText(/Production/)).toBeInTheDocument();
   });
 
   it('filters items by query', () => {
