@@ -280,6 +280,7 @@ sttManager?.setDeliveryHelpers({
 // The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
 const { musicManager } = await initMusicControl(db, store, { metrics });
+rtmp.musicManager = musicManager;
 const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 
 // Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.

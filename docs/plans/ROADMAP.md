@@ -1,0 +1,159 @@
+---
+status: reference
+summary: "Prioritised way-forward across every plan in docs/PLANS.md as of 2026-07-18: what to work next, and — the point of this doc — which pieces of work can run in parallel across multiple simultaneous agents without touching the same files. Organised into tiers (finish what's in-progress, close high-value gaps in 'done' plans, small independent gap-closers, new/draft features, and one cross-cutting item that must run alone) plus a set of concrete, non-overlapping lanes for parallel dispatch. Also records two operational lessons learned from this session's subagent batch (isolation-worktree reliability, package.json `exports` fragility) that any future parallel dispatch should account for."
+---
+
+# Roadmap — Way Forward
+
+This is not a new plan. It reads `docs/PLANS.md` (the audited index — see there for
+per-plan detail and status) and turns it into an ordering: what to do next, and what
+can be done *at the same time* by independent agents without merge conflicts.
+
+Re-check `docs/PLANS.md` before acting on this document — it decays as work lands.
+
+---
+
+## 0. Operational notes before dispatching parallel agents
+
+Two things surfaced while closing out the last batch of small fixes, worth carrying
+forward into any future multi-agent dispatch:
+
+1. **`isolation: "worktree"` can silently fail.** Two of five agents in the last batch
+   ended up committing directly into the primary repo checkout instead of an isolated
+   worktree, with no error surfaced — the only tell was the worktree directory being
+   untouched at its base commit while the *primary* repo's `main` branch gained a stray
+   commit. **Always verify** a background agent actually produced its own worktree
+   (`git worktree list`, check the reported path is non-empty and matches) before
+   trusting isolation held. If it didn't, the commit is still recoverable (branch it
+   off before resetting `main`) but do this check *before* running anything destructive
+   in the primary checkout.
+2. **Never let an agent replace entries in a package's `"exports"` map — only add.**
+   One agent's edit to `lcyt-files/package.json` swapped an existing `exports` entry
+   for new ones its own code didn't even need (it imported via relative paths), which
+   silently broke every deep import of the old entry elsewhere in the repo
+   (`ERR_PACKAGE_PATH_NOT_EXPORTED`, three failing test files, only caught by running
+   the full `lcyt-backend` suite — package-scoped tests didn't touch the broken path).
+   This repo's convention is a small, curated, explicit `exports` map per package (no
+   wildcards) — before touching one, `grep -rn "from '<pkg>/` across the whole repo to
+   find every existing consumer, and only add.
+
+Both are why the parallel lanes below are grouped by **package/directory ownership** —
+two agents editing the same package's shared files (a `package.json`, a composition
+root like `server.js`) at the same time is the actual collision risk, not file count.
+
+---
+
+## Tier 1 — Finish what's in-progress (unblocks other work)
+
+These are partially built; finishing them removes a dependency several other items
+lean on.
+
+| Plan | What's left | Why it matters |
+|---|---|---|
+| `plan_ai_model_registry.md` + `plan_ai_roles_framework.md` | Bridge-relayed inference for the `agentic_chat` turn loop and vision adapters (both currently only resolve direct, non-bridge providers) | The **same gap blocks both plans at once** — fix it once in `lcyt-agent`, unblocks Setup/Asset/Graphics Assistants and Tracker/Describer running against a private/bridge-relayed Ollama instance. Single lane, see below. |
+| `plan_ai_roles_framework.md` | Translation role — still just a flagged future gap, not spec'd | Needs a short design pass before it's implementable; not urgent, but blocks nothing else so it's fine to defer to whoever picks up the bridge-relay work next. |
+| `plan_vertical_crop.md` | Operator UI for crop positioning/presets, production-follow phases, `overridePublisher` pre-config | Backend (schema, `CropManager`, `/crop` routes, live zmq repositioning) is done; this is pure frontend + one config knob. |
+
+**Lane A — AI bridge-relay wiring** (`packages/plugins/lcyt-agent` only). Independent
+of every other lane; touches no shared composition-root file outside that plugin.
+
+**Lane B — Vertical crop operator UI** (`packages/lcyt-web` production workspace
+components + `useProductionData`). Independent of Lane A. Touches frontend files
+`plan_broadcasts_next.md`'s work already touched (`Chrome.jsx`,
+`useProductionData.js`) — check for merge drift against that work before starting,
+but no other lane overlaps it.
+
+---
+
+## Tier 2 — Highest-value gap in an otherwise-"done" plan: the cue rules editor
+
+`plan_cues.md` is the single biggest concentration of remaining, user-visible work.
+Phases 1–8 are fully implemented, but:
+
+- **Phase 10 (Assets-card cue rules editor)** — `packages/plugins/lcyt-cues/src/routes/cues.js`
+  has had a full `/cues/rules` CRUD API since Phase 1, and **nothing in `lcyt-web` calls
+  it**. Today the only way to create a persistent cue rule is a raw HTTP request. This
+  is a shipped backend feature with zero UI — the highest-leverage single fix in the
+  whole backlog.
+- **Phase 9 (composite trees + named conditions, `/cues/defs`)** — a backend extension
+  motivated by exactly this editor gap (hand-authoring composite JSON trees is what
+  makes the missing editor actually painful).
+- **Phase 8.5 (inline ↔ backend cue sync gap)** — a correctness fix, independent of
+  9/10.
+
+**Recommended order:** ship the editor (Phase 10) *first*, scoped to today's simpler
+rule types (phrase/regex/section/fuzzy) — don't wait on Phase 9. That alone closes the
+"shipped API, no UI" gap for the common case. Extend the editor once Phase 9's
+composite trees exist.
+
+**Lane C — Cue rules editor (Phase 10, current rule types only)**
+(`packages/lcyt-web/src/components/AssetsPage.jsx` + a new editor component; reads
+the existing `/cues/rules` API). Independent of every other lane.
+
+**Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees**
+(`packages/plugins/lcyt-cues` only). Independent of Lane C in terms of files, but
+sequence Lane C's *extension* for composite-condition editing after Lane D lands.
+
+---
+
+## Tier 3 — Small, independent gap-closers (good for a parallel batch, like the last one)
+
+Each of these touches one package (plus at most one composition-root line), has no
+product-design ambiguity, and doesn't overlap any other row here or in Tiers 1–2:
+
+| Item | Package(s) | Note |
+|---|---|---|
+| Wire `putObject`/`publicUrl` into the HLS manager | `lcyt-rtmp` (`hls-manager.js`) + `lcyt-files` | `plan_files3.md`; medium priority, uses `resolveStorage` the same way captions already do |
+| DSK editor: rotation handle + snap-grid visual ruler | `lcyt-web` (`DskEditorPage.jsx`) | `plan_dsk.md`; two small, unrelated UI additions — could even be two separate agents |
+| Admin Phase 3: role-tiered admin access + live-stats dashboard | `lcyt-backend` (`routes/admin.js`) + `lcyt-web` admin page | `plan_admin.md` |
+| Device role Phase 4 enhancements | `lcyt-backend` (`db/device-roles.js`) + `lcyt-web` | `plan_userprojects.md` — check with the user first; the plan doesn't specify *what* the enhancements are, only that Phase 4 is future work |
+| YouTube stream-status polling in the web client | `lcyt-web` | `plan_client.md`; small, self-contained, no backend change needed if using YouTube's public API directly — confirm auth approach first |
+| HLS ffprobe `BANDWIDTH`/`CODECS` detection | `lcyt-rtmp` (`hls-sidecar` / manifest generation) | `plan_hls_sidecar.md`; replaces the hard-coded H.264/AAC default |
+| S3 adapter tests against a mock S3 | `lcyt-files` | `plan_files3.md`; needs localstack or a custom HTTP mock — infra decision first |
+
+These are exactly the shape of task that worked well as Haiku subagents this session —
+one package, one clear spec, tests included. **Caveat from §0**: if any of these touch
+a `package.json`, diff-review it before merging.
+
+---
+
+## Tier 4 — New/draft features (each isolated to a new or rarely-touched package)
+
+Not urgent, but genuinely good parallel candidates *because* they're new surface area
+with no existing consumers to break:
+
+| Plan | Package | Status |
+|---|---|---|
+| `plan_translate.md` — server-side translation plugin | new `lcyt-translate` plugin | Exploratory/not scheduled; zero collision risk with anything else since the package doesn't exist yet |
+| `plan_monitors.md` — confidence-only monitoring feeds | likely new plugin | Draft; needs a data-model decision before engineering starts |
+| `plan_mixer_feed_sources.md` — encoder/file sources, low-latency preview tiles | `lcyt-production` / mixer code | Draft; generalizes the existing mixer program bus |
+| `plan_live_variables.md` — live refresh, operator display, text-block expansion | `lcyt-connectors` + `lcyt-web` | Draft; ideas 2–3 are explicitly "design-pending" — needs a product decision before it's a Tier 3-style task |
+
+These can all run **simultaneously** with each other and with every lane above — none
+share a package with anything else in this document.
+
+---
+
+## Tier 5 — Do last, alone: PostgreSQL option
+
+`plan_postgres_option.md` touches the `db/*.js` layer of **every** package
+(`lcyt-backend` and every plugin that owns its own tables). It is the one item in this
+backlog that cannot be parallelized against anything else, including itself — every
+other lane above will be editing schema/migration files in the same packages this
+touches. Schedule it only when nothing else in Tiers 1–3 is actively in flight, or
+expect merge pain.
+
+---
+
+## Suggested parallel dispatch (right now)
+
+If launching several agents today, this set has no file/package overlap:
+
+- **Lane A** — AI bridge-relay wiring (`lcyt-agent`)
+- **Lane B** — Vertical crop operator UI (`lcyt-web` production workspace)
+- **Lane C** — Cue rules editor, current rule types (`lcyt-web` Assets page)
+- **Lane D** — Cue engine Phase 8.5 + Phase 9 (`lcyt-cues`)
+- One or two Tier 3 items from packages not already claimed above (e.g. HLS
+  `putObject`/`publicUrl` wiring, or the DSK editor's rotation handle)
+
+Do **not** add a Tier 5 (Postgres) lane to any batch that includes the above.

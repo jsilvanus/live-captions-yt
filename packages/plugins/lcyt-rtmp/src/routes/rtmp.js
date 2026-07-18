@@ -29,9 +29,10 @@ import logger from 'lcyt/logger';
  * @param {import('better-sqlite3').Database} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @param {import('../crop-manager.js').CropManager} [cropManager]  Vertical-crop renderer lifecycle
+ * @param {import('lcyt-music/src/music-manager.js').MusicManager} [musicManager]  Music detection manager
  * @returns {Router}
  */
-export function createRtmpRouter(db, relayManager, cropManager = null) {
+export function createRtmpRouter(db, relayManager, cropManager = null, musicManager = null) {
   const router = Router();
 
   // Parse application/x-www-form-urlencoded bodies (nginx-rtmp format)
@@ -101,6 +102,28 @@ export function createRtmpRouter(db, relayManager, cropManager = null) {
         }
       }
 
+      // Music detection: auto-start if enabled (best-effort, parallel to others).
+      if (musicManager && process.env.MUSIC_DETECTION_ACTIVE === '1') {
+        try {
+          // Defer getMusicConfig import to avoid hard dependency on lcyt-music
+          // (the music plugin may not be installed in minimal deployments)
+          const { getMusicConfig } = await import('lcyt-music');
+          const musicConfig = getMusicConfig(db, apiKey);
+          if (musicConfig.enabled && musicConfig.autoStart && !musicManager.isRunning(apiKey)) {
+            // Check ffmpeg availability before attempting to start
+            if (!musicManager.ffmpegVersion) {
+              logger.error(`[rtmp] Music detection auto-start skipped for ${apiKey.slice(0, 8)}…: ffmpeg not available`);
+            } else {
+              musicManager.start(apiKey, { streamKey: apiKey }).catch(err => {
+                logger.error(`[rtmp] Music detection start failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
+              });
+            }
+          }
+        } catch (err) {
+          logger.error(`[rtmp] Music config lookup or start failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        }
+      }
+
       // Always 200 to allow the publish (relay fan-out is best-effort)
       return res.status(200).send('ok');
     }
@@ -116,6 +139,12 @@ export function createRtmpRouter(db, relayManager, cropManager = null) {
       if (cropManager?.isRunning(apiKey)) {
         cropManager.stop(apiKey).catch(err => {
           logger.error(`[rtmp] Crop renderer stop failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
+        });
+      }
+      // Music detection: stop when stream ends (best-effort).
+      if (musicManager?.isRunning(apiKey)) {
+        musicManager.stop(apiKey).catch(err => {
+          logger.error(`[rtmp] Music detection stop failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
         });
       }
       return res.status(200).send('ok');

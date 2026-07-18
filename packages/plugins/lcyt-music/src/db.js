@@ -30,6 +30,7 @@ export function runMigrations(db) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS music_config (
       api_key             TEXT PRIMARY KEY,
+      enabled             INTEGER NOT NULL DEFAULT 0,
       silence_threshold   REAL NOT NULL DEFAULT 0.01,
       flatness_threshold  REAL NOT NULL DEFAULT 0.4,
       zcr_threshold       REAL NOT NULL DEFAULT 0.15,
@@ -42,15 +43,23 @@ export function runMigrations(db) {
     )
   `);
 
+  // Additive column migrations for music_config
+  const musicConfigCols = new Set(db.prepare("PRAGMA table_info(music_config)").all().map((c) => c.name));
+
+  // Phase 2: enabled field for per-key server-side detector toggle.
+  if (!musicConfigCols.has('enabled')) {
+    db.exec('ALTER TABLE music_config ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0');
+  }
+
   // Phase 4: auto-calibration opt-in. Additive column migration — default 0
   // (off) so existing configs/sessions keep today's fixed-threshold behaviour.
-  const musicConfigCols = new Set(db.prepare("PRAGMA table_info(music_config)").all().map((c) => c.name));
   if (!musicConfigCols.has('auto_calibrate')) {
     db.exec('ALTER TABLE music_config ADD COLUMN auto_calibrate INTEGER NOT NULL DEFAULT 0');
   }
 }
 
 const DEFAULT_MUSIC_CONFIG = {
+  enabled: false,
   silenceThreshold: 0.01,
   flatnessThreshold: 0.4,
   zcrThreshold: 0.15,
@@ -74,6 +83,7 @@ export function getMusicConfig(db, apiKey) {
   const row = db.prepare(`SELECT * FROM music_config WHERE api_key = ?`).get(apiKey);
   if (!row) return { ...DEFAULT_MUSIC_CONFIG };
   return {
+    enabled: !!row.enabled,
     silenceThreshold: row.silence_threshold,
     flatnessThreshold: row.flatness_threshold,
     zcrThreshold: row.zcr_threshold,
@@ -100,10 +110,11 @@ export function setMusicConfig(db, apiKey, patch = {}) {
   const merged = { ...current, ...patch };
   db.prepare(`
     INSERT INTO music_config (
-      api_key, silence_threshold, flatness_threshold, zcr_threshold,
+      api_key, enabled, silence_threshold, flatness_threshold, zcr_threshold,
       confirm_segments, bpm_enabled, bpm_min, bpm_max, auto_start, auto_calibrate, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'))
     ON CONFLICT(api_key) DO UPDATE SET
+      enabled = excluded.enabled,
       silence_threshold = excluded.silence_threshold,
       flatness_threshold = excluded.flatness_threshold,
       zcr_threshold = excluded.zcr_threshold,
@@ -116,6 +127,7 @@ export function setMusicConfig(db, apiKey, patch = {}) {
       updated_at = strftime('%s','now')
   `).run(
     apiKey,
+    merged.enabled ? 1 : 0,
     merged.silenceThreshold,
     merged.flatnessThreshold,
     merged.zcrThreshold,

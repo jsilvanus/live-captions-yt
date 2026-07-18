@@ -1,7 +1,7 @@
 ---
 id: plan/metacode_variable_unification
 title: "Metacode ↔ Variable Unification — One Namespace, a Reserved-Name Registry, Event-Bus-Coherent Names"
-status: draft
+status: implemented
 summary: "Reframes every metacode `<!-- name: value -->` as a write into a single per-project variable namespace, governed by one explicit reserved-name registry: plain names are variable assignments (readable via `{{name}}`, watched by downstream consumers, emitted as `variable.updated`), reserved names are actionable (fire a side effect via a handler, may also carry state). Replaces the current scattered `if (key === 'audio')` / dedicated-regex handling in `metacode-parser.js` with a registry-driven dispatch, and makes *metacode name ≈ variable name ≈ event-bus domain* one coherent vocabulary. Reconciles the three existing plans: extends `plan_api_connectors_variables.md`'s partial (snapshot-merge) unification into a true single namespace, gives `plan_pubsub_event_bus.md`'s topic taxonomy an explicit source (the registry's `emitsTopic`), and folds `plan_metacode_refactor.md`'s mechanical file moves into building the registry rather than relocating the scattered handling as-is. Namespace depth is decided: full DB namespace (every writer — file/manual/connector — targets the durable `variables` table), made safe for positional/temporary values by a per-assignment TTL/expiry (`<!-- section: Prayer => 20s:Hymn -->` — a `=>` sigil after the value, `<count><unit>(:<revert>)?`, spaces optional, units s/m/ms/c, revert to baseline / literal / previous-value via `~`)."
 related: plan/api_connectors_variables, plan/pubsub_event_bus, plan/metacode_refactor, plan/cues, plan/dsk, plan/authentication_refactor
 ---

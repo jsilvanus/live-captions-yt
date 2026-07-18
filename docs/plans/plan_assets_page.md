@@ -1,7 +1,7 @@
 ---
 id: plan/assets_page
 title: "Assets Page — Content Library of Project Assets"
-status: draft
+status: implemented
 summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit affordance opening the relevant editor/dialog, and clickable rows. v1 ships six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. Broadcasts are now a first-class /broadcasts system, VODs are a future dedicated system that stays placeholder-only, and thumbnail generation is part of the graphics pipeline rather than a separate tracked asset."
 related: plan/dashboard_console_redesign, plan/ai_roles_framework, plan/cues, plan/selfservice_config_backend
 ---

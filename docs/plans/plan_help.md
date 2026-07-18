@@ -1,7 +1,7 @@
 ---
 id: plan/help
 title: "Help Page Screenshot Capture"
-status: pending
+status: implemented
 summary: "Programmatic Playwright screenshot capture of all significant lcyt-web UI views for the user-facing help page."
 ---
 

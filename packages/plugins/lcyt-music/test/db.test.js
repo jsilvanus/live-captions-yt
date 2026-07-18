@@ -77,6 +77,48 @@ describe('lcyt-music db', () => {
     });
   });
 
+  describe('enabled config field', () => {
+    test('defaults to false when no config row exists', () => {
+      const config = getMusicConfig(db, 'key1');
+      assert.equal(config.enabled, false);
+    });
+
+    test('round-trips true through setMusicConfig/getMusicConfig', () => {
+      setMusicConfig(db, 'key1', { enabled: true });
+      const config = getMusicConfig(db, 'key1');
+      assert.equal(config.enabled, true);
+    });
+
+    test('omitted enabled keeps existing value on patch', () => {
+      setMusicConfig(db, 'key1', { enabled: true });
+      setMusicConfig(db, 'key1', { bpmEnabled: false });
+      const config = getMusicConfig(db, 'key1');
+      assert.equal(config.enabled, true);
+      assert.equal(config.bpmEnabled, false);
+    });
+  });
+
+  describe('autoStart config field', () => {
+    test('defaults to false when no config row exists', () => {
+      const config = getMusicConfig(db, 'key1');
+      assert.equal(config.autoStart, false);
+    });
+
+    test('round-trips true through setMusicConfig/getMusicConfig', () => {
+      setMusicConfig(db, 'key1', { autoStart: true });
+      const config = getMusicConfig(db, 'key1');
+      assert.equal(config.autoStart, true);
+    });
+
+    test('requires enabled=true to be effective (checked on publish)', () => {
+      setMusicConfig(db, 'key1', { autoStart: true, enabled: false });
+      const config = getMusicConfig(db, 'key1');
+      assert.equal(config.autoStart, true);
+      assert.equal(config.enabled, false);
+      // The RTMP on_publish hook should check: if (config.enabled && config.autoStart)
+    });
+  });
+
   describe('autoCalibrate config field', () => {
     test('defaults to false when no config row exists', () => {
       const config = getMusicConfig(db, 'key1');
