@@ -367,12 +367,15 @@ export class HlsManager {
 
     // Video codec
     if (videoStream?.codec_name === 'h264') {
-      // H.264: avc1.<profile+level as hex>
+      // H.264 per RFC 6381: avc1.PPCCLL — profile_idc, constraint-flags, level_idc
+      // as three separate hex bytes (constraint-flags unknown from ffprobe, use 00).
       // profile: baseline=66, main=77, high=100
       // level: e.g. 30 = 3.0, 40 = 4.0, 51 = 5.1 (multiply by 10)
       const profile = videoStream.profile === 'Main' ? 77 : videoStream.profile === 'High' ? 100 : 66;
       const level = videoStream.level || 40; // default to level 4.0
-      const hex = ((profile << 8) | level).toString(16).padStart(6, '0');
+      const hex = profile.toString(16).padStart(2, '0')
+        + '00'
+        + level.toString(16).padStart(2, '0');
       codecs.push(`avc1.${hex}`);
     } else if (videoStream?.codec_name === 'hevc' || videoStream?.codec_name === 'h265') {
       // H.265/HEVC: hev1.<profile+level as hex> or hvc1.<profile+level as hex>
