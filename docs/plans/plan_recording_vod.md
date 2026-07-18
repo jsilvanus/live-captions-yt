@@ -1,7 +1,7 @@
 ---
 id: plan/recording_vod
 title: "Recording & VOD Pipeline — Stored Videos from Broadcasts"
-status: draft
+status: implemented (phase 1; worker-daemon recorder = optional phase 2)
 summary: "Backs the Assets page's 'Stored videos' card with a real recording pipeline. A broadcast can opt in to recording; when it goes live, its MediaMTX stream path is patched to record (MediaMtxClient.patchPath) to HLS VOD (fMP4), whose segments land on S3 when configured or on local disk as a fallback (same local-default behaviour as lcyt-files, so recording works with no S3), and a videos table indexes the result keyed to the broadcast. Playback is HLS in-browser. MediaMTX native recording is the phase-1 recorder (chosen as the first step); the worker-daemon ffmpeg recorder (which already does ffmpeg + S3 upload) is a phase-2 alternative behind a swappable recorder interface. Opt-in per broadcast via a record_enabled flag on the broadcasts table (additive to plan_broadcasts.md)."
 related: plan/assets_page, plan/broadcasts, plan/asset_backends, plan/mediamtx, plan/hls_sidecar, plan/cloudfleet
 ---

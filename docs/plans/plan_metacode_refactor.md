@@ -1,5 +1,7 @@
 # Metacode Refactor Plan
 
+**Status:** implemented — metacode handling now lives in dedicated `packages/lcyt-web/src/lib/metacode-*.js` modules (parser, registry, runtime, planner, active-codes, actions, variables, ttl).
+
 > **See also `plan_metacode_variable_unification.md`.** This plan is a mechanical relocation of
 > the *existing* scattered metacode handling into dedicated `*metacode*` files, preserving the
 > current `if (key === …)` / per-family-regex dispatch as-is. The unification plan reframes that

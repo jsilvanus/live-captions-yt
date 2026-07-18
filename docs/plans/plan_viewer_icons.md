@@ -1,6 +1,6 @@
 # Plan — Viewer Icon Toggle + Icons Setup-Hub Card
 
-**Status:** pending
+**Status:** implemented
 **Scope:** `lcyt-backend` (caption_targets schema/db/routes), `lcyt-web` (TargetRow, Setup Hub, i18n)
 
 ## Motivation

@@ -1,7 +1,7 @@
 ---
 id: plan/named_actions
 title: "Named Actions — @name Composite Action Macros (backend registry + Assets UI)"
-status: draft
+status: implemented
 summary: "Named, composite action macros — the imperative sibling of the cue system's declarative named/composite matchers. A named action is a reusable bundle of metacode 'atoms' (audio/timer/goto/file/api/graphics/variable assignments) run together as a one-shot at send. Syntax mirrors cues: invoke `<!-- action: @intro -->`, inline composite `<!-- action: audio:start | graphics:+banner | section:Intro -->` (| = ordered 'then', NOT boolean), inline definition `<!-- action-def: intro: … -->`. Atoms dispatch through the Phase-3 reserved-name registry. Decisions: fire on SEND; nesting allowed with a cycle guard; NO conditionals in v1 (future `when:` guards noted); backend `action_defs` table + `/actions` CRUD + an Assets-page editor from the start; the registry's action taxonomy is refined so timer/audio/goto/file are tagged pointer-fired vs. named actions send-fired."
 related: plan/metacode_variable_unification, plan/cues, plan/api_connectors_variables, plan/dsk, plan/dashboard_console_redesign
 ---

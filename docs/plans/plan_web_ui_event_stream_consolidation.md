@@ -1,6 +1,6 @@
 # Plan: Consolidate the Operator Web UI onto a Single `/events/stream` Connection
 
-**Status:** Draft — not yet scheduled (self-contained follow-up; not in the event-bus PR)
+**Status:** Implemented — Phase A (core consolidation) shipped; Phase B (folding the caption session `/events` stream) remains optional
 **Date:** 2026-07-12
 **Context:** The authenticated operator web UI currently opens **several** SSE
 connections — one per domain (`useVariables` → `/variables/events`, roles panels →
