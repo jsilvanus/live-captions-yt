@@ -10,13 +10,14 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
-import { createAdminMiddleware } from '../middleware/admin.js';
+import { createAdminMiddleware, requireFullAdmin } from '../middleware/admin.js';
 import {
   getUserById,
   getKeysByUserId,
   updateUserPassword,
   createUser,
   clearUserReferences,
+  setUserAdminRole,
 } from '../db/users.js';
 import { reassignOrDeleteOwnedOrgs } from '../db/orgs.js';
 import {
@@ -161,7 +162,7 @@ export function createAdminRouter(db, jwtSecret) {
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const rows = db.prepare(
-      `SELECT u.id, u.email, u.name, u.created_at, u.active,
+      `SELECT u.id, u.email, u.name, u.created_at, u.active, u.is_admin, u.admin_role,
               (SELECT o.name FROM org_members om JOIN organizations o ON o.id = om.org_id WHERE om.user_id = u.id ORDER BY om.joined_at ASC LIMIT 1) AS org_name,
               (SELECT om.role FROM org_members om WHERE om.user_id = u.id ORDER BY om.joined_at ASC LIMIT 1) AS org_role
        FROM users u ${where} ORDER BY u.id LIMIT ? OFFSET ?`
@@ -177,6 +178,8 @@ export function createAdminRouter(db, jwtSecret) {
         name: r.name,
         createdAt: r.created_at,
         active: r.active === 1,
+        isAdmin: r.is_admin === 1,
+        adminRole: r.admin_role,
         orgName: r.org_name || null,
         role: r.org_role || null,
       })),
@@ -209,7 +212,7 @@ export function createAdminRouter(db, jwtSecret) {
    * POST /admin/users
    * Create a new user. Body: { email, password, name? }
    */
-  router.post('/users', async (req, res) => {
+  router.post('/users', requireFullAdmin(), async (req, res) => {
     const { email, password, name } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'email and password are required' });
@@ -233,16 +236,16 @@ export function createAdminRouter(db, jwtSecret) {
 
   /**
    * PATCH /admin/users/:id
-   * Update user fields: name, active.
+   * Update user fields: name, active, adminRole.
    */
-  router.patch('/users/:id', (req, res) => {
+  router.patch('/users/:id', requireFullAdmin(), (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
 
     const user = getUserById(db, id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const { name, active } = req.body || {};
+    const { name, active, adminRole } = req.body || {};
     const parts = [];
     const params = [];
 
@@ -253,6 +256,14 @@ export function createAdminRouter(db, jwtSecret) {
     if (active !== undefined) {
       parts.push('active = ?');
       params.push(active ? 1 : 0);
+    }
+    if (adminRole !== undefined) {
+      const validRoles = ['full', 'readonly'];
+      if (!validRoles.includes(adminRole)) {
+        return res.status(400).json({ error: `Invalid adminRole: ${adminRole}. Must be one of: ${validRoles.join(', ')}` });
+      }
+      parts.push('admin_role = ?');
+      params.push(adminRole);
     }
 
     if (parts.length === 0) return res.status(400).json({ error: 'No fields to update' });
@@ -267,7 +278,7 @@ export function createAdminRouter(db, jwtSecret) {
    * POST /admin/users/:id/set-password
    * Admin password reset. Body: { password }
    */
-  router.post('/users/:id/set-password', async (req, res) => {
+  router.post('/users/:id/set-password', requireFullAdmin(), async (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
 
@@ -302,7 +313,7 @@ export function createAdminRouter(db, jwtSecret) {
    * user row can be deleted under live FK enforcement), and any dangling
    * invited_by/granted_by/etc. attributions are cleared (clearUserReferences).
    */
-  router.delete('/users/:id', (req, res) => {
+  router.delete('/users/:id', requireFullAdmin(), (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
 
@@ -371,7 +382,7 @@ export function createAdminRouter(db, jwtSecret) {
    * Body: { features: { 'radio': true, 'stt-server': false } }
    * Phase 3 of plan_userprojects.
    */
-  router.patch('/users/:id/features', (req, res) => {
+  router.patch('/users/:id/features', requireFullAdmin(), (req, res) => {
     const id = Number(req.params.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'Invalid user ID' });
 
@@ -421,7 +432,7 @@ export function createAdminRouter(db, jwtSecret) {
     return res.json({ policies });
   });
 
-  router.put('/feature-policies/:code', featurePolicyRateLimit, (req, res) => {
+  router.put('/feature-policies/:code', featurePolicyRateLimit, requireFullAdmin(), (req, res) => {
     const code = req.params.code;
     if (!KNOWN_FEATURE_CODES.has(code)) {
       return res.status(404).json({ error: 'Feature policy not found' });
@@ -447,7 +458,7 @@ export function createAdminRouter(db, jwtSecret) {
     return res.json({ overrides: overrides.map(r => ({ code: r.feature_code, mode: r.mode, binaryOnly: BINARY_ONLY_FEATURES.has(r.feature_code), setBy: r.set_by, setAt: r.set_at })) });
   });
 
-  router.put('/orgs/:id/feature-overrides/:code', featurePolicyRateLimit, (req, res) => {
+  router.put('/orgs/:id/feature-overrides/:code', featurePolicyRateLimit, requireFullAdmin(), (req, res) => {
     const orgId = Number(req.params.id);
     const code = req.params.code;
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org ID' });
@@ -624,7 +635,7 @@ export function createAdminRouter(db, jwtSecret) {
    * PATCH /admin/projects/:key
    * Update project fields (delegates to updateKey).
    */
-  router.patch('/projects/:key', (req, res) => {
+  router.patch('/projects/:key', requireFullAdmin(), (req, res) => {
     const row = getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
 
@@ -659,7 +670,7 @@ export function createAdminRouter(db, jwtSecret) {
    * PUT /admin/projects/:key/features
    * Batch update project features. Body: { features: { code: bool|{enabled,config} } }
    */
-  router.put('/projects/:key/features', (req, res) => {
+  router.put('/projects/:key/features', requireFullAdmin(), (req, res) => {
     const row = getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
 
@@ -683,7 +694,7 @@ export function createAdminRouter(db, jwtSecret) {
    * POST /admin/batch/users
    * Body: { ids: number[], action: 'activate'|'deactivate'|'delete' }
    */
-  router.post('/batch/users', (req, res) => {
+  router.post('/batch/users', requireFullAdmin(), (req, res) => {
     const { ids, action } = req.body || {};
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array is required' });
@@ -737,7 +748,7 @@ export function createAdminRouter(db, jwtSecret) {
    * POST /admin/batch/projects
    * Body: { keys: string[], action?: 'revoke'|'activate'|'delete', features?: { code: bool } }
    */
-  router.post('/batch/projects', (req, res) => {
+  router.post('/batch/projects', requireFullAdmin(), (req, res) => {
     const { keys, action, features } = req.body || {};
     if (!Array.isArray(keys) || keys.length === 0) {
       return res.status(400).json({ error: 'keys array is required' });
@@ -903,7 +914,7 @@ export function createAdminRouter(db, jwtSecret) {
    * Import users from a JSON export. Body: { users: [...], options?: { skipExisting?: bool } }
    * Skips records that would conflict (email already taken) unless options.skipExisting = false.
    */
-  router.post('/import/users', async (req, res) => {
+  router.post('/import/users', requireFullAdmin(), async (req, res) => {
     const { users: importUsers, options = {} } = req.body || {};
     if (!Array.isArray(importUsers) || importUsers.length === 0) {
       return res.status(400).json({ error: 'users array is required' });
@@ -961,7 +972,7 @@ export function createAdminRouter(db, jwtSecret) {
    * POST /admin/import/projects
    * Import projects from a JSON export. Body: { projects: [...], options?: { skipExisting?: bool } }
    */
-  router.post('/import/projects', (req, res) => {
+  router.post('/import/projects', requireFullAdmin(), (req, res) => {
     const { projects: importProjects, options = {} } = req.body || {};
     if (!Array.isArray(importProjects) || importProjects.length === 0) {
       return res.status(400).json({ error: 'projects array is required' });

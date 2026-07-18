@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { getMemberAccessLevel } from '../db/project-members.js';
 import { verifyMcpToken, tokenHasScope } from '../db/mcp-tokens.js';
+import { isDeviceRoleActive } from '../db/device-roles.js';
 
 const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 import { extractAuthToken, normalizeUserPayload } from './auth.js';
@@ -116,7 +117,14 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
 
     try {
       const payload = jwt.verify(token, jwtSecret);
-      if (payload && (payload.sessionId || payload.apiKey)) {
+      // Legacy session tokens are plain { sessionId, apiKey } with no type/kind field.
+      // Device tokens also carry apiKey (for projectId resolution) but declare an
+      // explicit type/kind — they must fall through to the device branch below,
+      // not be swallowed here (this previously made every device token resolve
+      // as kind:'session', so deviceRole/roleId/permissions were never attached
+      // and the Item 4 active-role check below never ran).
+      const isDeviceToken = payload?.type === 'device' || payload?.kind === 'device';
+      if (payload && !isDeviceToken && (payload.sessionId || payload.apiKey)) {
         return handleTokenAuth(req, res, next, {
           kind: 'session',
           projectId: projectId || payload.projectId || payload.apiKey,
@@ -155,6 +163,14 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
       }
 
       if (payload.type === 'device' || payload.kind === 'device') {
+        // Device JWTs carry a 1h TTL, but a deactivated/expired role must revoke
+        // access immediately rather than waiting for the token to expire
+        // (Item 4 — Phase 4, plan_userprojects.md). roleId is only present on
+        // tokens issued after this check was added; older tokens without it
+        // fall through unchecked until they naturally expire.
+        if (payload.roleId != null && !isDeviceRoleActive(db, payload.roleId)) {
+          return res.status(401).json({ error: 'Device role is inactive or expired' });
+        }
         return handleTokenAuth(req, res, next, {
           kind: 'device',
           projectId: projectId || payload.projectId || payload.apiKey,
@@ -164,6 +180,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           email: payload.email || null,
           siteRole: payload.siteRole || null,
           scopes: payload.scopes || null,
+          roleId: payload.roleId || null,
         });
       }
 

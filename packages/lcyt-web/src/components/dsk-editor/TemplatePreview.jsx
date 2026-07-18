@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { handleAnchor, applyResize, gridSnap, snapToLayerEdges, getLayerViewportPos } from '../../lib/dskEditorGeometry.js';
+import { handleAnchor, applyResize, gridSnap, snapToLayerEdges, getLayerViewportPos, rotationFromPointerAngle, snapRotation, GRID_SIZE } from '../../lib/dskEditorGeometry.js';
 
 const HANDLE_LIST = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const HANDLE_CURSORS = {
@@ -25,6 +25,7 @@ function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
     ...(layer.width  != null ? { width:  Number(layer.width)  } : {}),
     ...(layer.height != null ? { height: Number(layer.height) } : {}),
     ...(layer.animation ? { animation: layer.animation } : {}),
+    ...(layer.rotation != null ? { transform: `rotate(${Number(layer.rotation)}deg)`, transformOrigin: 'center center' } : {}),
     outline: isSelected   ? '3px solid #4af'
            : isInSelection ? '2px dashed #48c'
            : undefined,
@@ -67,7 +68,7 @@ function renderLayerElement(layer, isSelected, isInSelection, onPointerDown) {
 
 export default function TemplatePreview({
   template, selectedIds, primaryId, selectedViewport,
-  onSelect, onDragStart, onMoveSelected, onResizeLayer, snapGrid, showSafeArea,
+  onSelect, onDragStart, onMoveSelected, onResizeLayer, onRotateLayer, snapGrid, showSafeArea, showGrid,
   vpWidth, vpHeight, previewTargetWidth = 960,
 }) {
   const t = template || EMPTY_TEMPLATE;
@@ -120,6 +121,22 @@ export default function TemplatePreview({
         x: Number(layer.x) || 0, y: Number(layer.y) || 0,
         width: Number(layer.width) || 0, height: Number(layer.height) || 0,
       },
+      hasMoved: false, historyPushed: false,
+    };
+    containerRef.current?.setPointerCapture(e.pointerId);
+  }
+
+  function startRotateDrag(e, layerId) {
+    e.stopPropagation();
+    const layer = effectiveLayers.find(l => l.id === layerId);
+    if (!layer) return;
+    const centerX = (Number(layer.x) || 0) + (Number(layer.width) || 0) / 2;
+    const centerY = (Number(layer.y) || 0) + (Number(layer.height) || 0) / 2;
+    dragRef.current = {
+      type: 'rotate', layerId,
+      startPointer: { x: e.clientX, y: e.clientY },
+      startRotation: Number(layer.rotation) || 0,
+      centerX, centerY,
       hasMoved: false, historyPushed: false,
     };
     containerRef.current?.setPointerCapture(e.pointerId);
@@ -181,6 +198,13 @@ export default function TemplatePreview({
 
     } else if (drag.type === 'resize') {
       onResizeLayer(drag.layerId, applyResize(drag.handle, drag.startRect, rawDx, rawDy));
+
+    } else if (drag.type === 'rotate') {
+      const currentPointerX = e.clientX / scale;
+      const currentPointerY = e.clientY / scale;
+      let rotation = rotationFromPointerAngle(drag.centerX, drag.centerY, currentPointerX, currentPointerY);
+      rotation = snapRotation(rotation, snapGrid);
+      onRotateLayer(drag.layerId, rotation);
     }
   }
 
@@ -230,6 +254,26 @@ export default function TemplatePreview({
           ? 'repeating-conic-gradient(#2a2a2a 0% 25%, #1a1a1a 0% 50%) 0 0 / 40px 40px'
           : undefined,
       }}>
+        {showGrid && (
+          <>
+            {Array.from({ length: Math.ceil((vpWidth || (t.width || 1920)) / GRID_SIZE) }).map((_, i) => (
+              <div key={`grid-v-${i}`} style={{
+                position: 'absolute',
+                left: i * GRID_SIZE, top: 0,
+                width: 1, height: vpHeight || (t.height || 1080),
+                background: 'rgba(100, 200, 255, 0.15)', pointerEvents: 'none', zIndex: 1,
+              }} />
+            ))}
+            {Array.from({ length: Math.ceil((vpHeight || (t.height || 1080)) / GRID_SIZE) }).map((_, i) => (
+              <div key={`grid-h-${i}`} style={{
+                position: 'absolute',
+                left: 0, top: i * GRID_SIZE,
+                width: vpWidth || (t.width || 1920), height: 1,
+                background: 'rgba(100, 200, 255, 0.15)', pointerEvents: 'none', zIndex: 1,
+              }} />
+            ))}
+          </>
+        )}
         {effectiveLayers.flatMap((layer) => {
           const isSelected    = layer.id === primaryId && selectedIds.size === 1;
           const isInSelection = selectedIds.has(layer.id);
@@ -257,7 +301,23 @@ export default function TemplatePreview({
               />
             );
           });
-          return [el, ...handles];
+
+          const nAnchor = handleAnchor('n', layer);
+          const rotateHandle = (
+            <div key={`${layer.id}-rotate`} style={{
+              position: 'absolute',
+              left: nAnchor.left, top: nAnchor.top - 30,
+              width: 14, height: 14,
+              background: '#f9a', border: '2px solid #fff', borderRadius: '50%',
+              cursor: 'grab', zIndex: 9999,
+              transform: 'translate(-50%, -50%)', boxSizing: 'border-box',
+              touchAction: 'none',
+            }}
+            onPointerDown={e => startRotateDrag(e, layer.id)}
+            />
+          );
+
+          return [el, ...handles, rotateHandle];
         })}
       </div>
       {showSafeArea && (<>

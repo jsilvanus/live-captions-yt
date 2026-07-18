@@ -11,7 +11,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
 import { createAdminRouter } from '../src/routes/admin.js';
-import { createUser, getUserById, setUserAdmin } from '../src/db/users.js';
+import { createUser, getUserById, setUserAdmin, setUserAdminRole } from '../src/db/users.js';
 import { createKey, getKey, formatKey } from '../src/db/keys.js';
 import bcrypt from 'bcryptjs';
 
@@ -139,6 +139,132 @@ describe('/admin — authentication', () => {
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body.users), 'should return users array');
     db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Role-tiered admin access (admin_role: 'full' | 'readonly')
+// ---------------------------------------------------------------------------
+
+describe('/admin — role-tiered access (readonly admin)', () => {
+  beforeEach(() => {
+    db.exec('PRAGMA foreign_keys = OFF');
+    try { db.prepare('DELETE FROM users').run(); } catch { /* */ }
+    db.exec('PRAGMA foreign_keys = ON');
+  });
+
+  function readonlyAdminToken() {
+    const hash = bcrypt.hashSync('pass1234', 1);
+    const user = createUser(db, { email: 'readonly-admin@test.com', passwordHash: hash });
+    setUserAdmin(db, user.id, true);
+    setUserAdminRole(db, user.id, 'readonly');
+    return jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
+  }
+
+  function fullAdminToken() {
+    const hash = bcrypt.hashSync('pass1234', 1);
+    const user = createUser(db, { email: 'full-admin@test.com', passwordHash: hash });
+    setUserAdmin(db, user.id, true);
+    setUserAdminRole(db, user.id, 'full');
+    return jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
+  }
+
+  it('readonly admin gets 200 on GET /admin/users', async () => {
+    const token = readonlyAdminToken();
+    const res = await fetch(`${baseUrl}/admin/users`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 200);
+  });
+
+  it('readonly admin gets 403 creating a user (POST /admin/users)', async () => {
+    const token = readonlyAdminToken();
+    const res = await fetch(`${baseUrl}/admin/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ email: 'new@test.com', password: 'password123' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('readonly admin gets 403 on PATCH /admin/users/:id', async () => {
+    const token = readonlyAdminToken();
+    const target = seedUser('target@test.com');
+    const res = await fetch(`${baseUrl}/admin/users/${target.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: 'Renamed' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('readonly admin gets 403 on DELETE /admin/users/:id', async () => {
+    const token = readonlyAdminToken();
+    const target = seedUser('target2@test.com');
+    const res = await fetch(`${baseUrl}/admin/users/${target.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('readonly admin gets 403 on PATCH /admin/users/:id/features', async () => {
+    const token = readonlyAdminToken();
+    const target = seedUser('target3@test.com');
+    const res = await fetch(`${baseUrl}/admin/users/${target.id}/features`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ features: { radio: true } }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('readonly admin gets 403 on POST /admin/import/users', async () => {
+    const token = readonlyAdminToken();
+    const res = await fetch(`${baseUrl}/admin/import/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ users: [{ email: 'imported@test.com' }] }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('readonly admin gets 403 on POST /admin/import/projects', async () => {
+    const token = readonlyAdminToken();
+    const res = await fetch(`${baseUrl}/admin/import/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ projects: [{ key: 'imported-key', owner: 'Imported' }] }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('readonly admin gets 403 on POST /admin/batch/users', async () => {
+    const token = readonlyAdminToken();
+    const target = seedUser('target4@test.com');
+    const res = await fetch(`${baseUrl}/admin/batch/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ action: 'deactivate', ids: [target.id] }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('full admin (default role) is unaffected by requireFullAdmin', async () => {
+    const token = fullAdminToken();
+    const target = seedUser('target5@test.com');
+    const res = await fetch(`${baseUrl}/admin/users/${target.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: 'Renamed' }),
+    });
+    assert.equal(res.status, 200);
+  });
+
+  it('X-Admin-Key bypasses role restriction on mutating routes', async () => {
+    const target = seedUser('target6@test.com');
+    const { status } = await adminPatch(`/admin/users/${target.id}`, { name: 'Renamed via key' });
+    assert.equal(status, 200);
   });
 });
 

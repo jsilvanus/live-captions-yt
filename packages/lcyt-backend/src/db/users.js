@@ -36,11 +36,11 @@ export function getUserByEmail(db, email) {
  * Fetch a user by ID (excludes password_hash).
  * @param {import('better-sqlite3').Database} db
  * @param {number} id
- * @returns {{ id: number, email: string, name: string|null, created_at: string, active: number, is_admin: number }|undefined}
+ * @returns {{ id: number, email: string, name: string|null, created_at: string, active: number, is_admin: number, admin_role: string }|undefined}
  */
 export function getUserById(db, id) {
   return db.prepare(
-    'SELECT id, email, name, created_at, active, is_admin FROM users WHERE id = ?'
+    'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users WHERE id = ?'
   ).get(id);
 }
 
@@ -77,13 +77,27 @@ export function setUserAdmin(db, userId, isAdmin) {
 }
 
 /**
+ * Set the admin role for a user (when is_admin = 1).
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ * @param {string} role - 'full' or 'readonly'
+ */
+export function setUserAdminRole(db, userId, role) {
+  const validRoles = ['full', 'readonly'];
+  if (!validRoles.includes(role)) {
+    throw new Error(`Invalid admin_role: ${role}. Must be one of: ${validRoles.join(', ')}`);
+  }
+  db.prepare('UPDATE users SET admin_role = ? WHERE id = ?').run(role, userId);
+}
+
+/**
  * List all users (excludes password_hash).
  * @param {import('better-sqlite3').Database} db
  * @returns {object[]}
  */
 export function getAllUsers(db) {
   return db.prepare(
-    'SELECT id, email, name, created_at, active, is_admin FROM users ORDER BY id'
+    'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users ORDER BY id'
   ).all();
 }
 

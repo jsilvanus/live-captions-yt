@@ -185,6 +185,7 @@ export function DskEditorPage() {
   const [primaryId, setPrimaryId]     = useState(null);    // property-panel target
   const [snapGrid, setSnapGrid]       = useState(false);
   const [showSafeArea, setShowSafeArea] = useState(false);
+  const [showGrid, setShowGrid]       = useState(false);
   const [aspectLock, setAspectLock]   = useState(true);
   const [status, setStatus]           = useState('');
   const [loading, setLoading]         = useState(false);
@@ -918,6 +919,17 @@ export function DskEditorPage() {
     isDirty.current = true;
   }
 
+  function handleRotateLayer(id, rotation) {
+    setTemplate(t => ({
+      ...t,
+      layers: t.layers.map(l => {
+        if (l.id !== id) return l;
+        return { ...l, rotation: Math.round(rotation) };
+      }),
+    }));
+    isDirty.current = true;
+  }
+
   // ── Phase 3 group management ─────────────────────────────────────────────
 
   /** Group all currently selected layers into a new named group. */
@@ -1191,6 +1203,12 @@ export function DskEditorPage() {
             ⊞ {snapGrid ? 'Grid on' : 'Grid'}
           </button>
 
+          {/* Show grid ruler */}
+          <button onClick={() => setShowGrid(v => !v)} title="Show grid ruler"
+                  style={showGrid ? btnActiveStyle : btnStyle}>
+            ⊟ {showGrid ? 'Ruler on' : 'Ruler'}
+          </button>
+
           {/* Safe area guides */}
           <button onClick={() => setShowSafeArea(v => !v)} title="Safe area guides"
                   style={showSafeArea ? btnActiveStyle : btnStyle}>
@@ -1250,8 +1268,10 @@ export function DskEditorPage() {
               onDragStart={handleDragStart}
               onMoveSelected={handleMoveSelected}
               onResizeLayer={handleResizeLayer}
+              onRotateLayer={handleRotateLayer}
               snapGrid={snapGrid}
               showSafeArea={showSafeArea}
+              showGrid={showGrid}
               vpWidth={(selectedViewport === 'landscape' ? 1920 : (viewportsList.find(v => v.name === selectedViewport)?.width)) || 1920}
               vpHeight={(selectedViewport === 'landscape' ? 1080 : (viewportsList.find(v => v.name === selectedViewport)?.height)) || 1080}
             />

@@ -59,7 +59,7 @@ export function createAdminMiddleware(db, jwtSecret) {
         if (payload.type === 'user') {
           const user = getUserById(db, payload.userId);
           if (user?.is_admin) {
-            req.adminUser = { userId: user.id, email: user.email };
+            req.adminUser = { userId: user.id, email: user.email, adminRole: user.admin_role };
             return next();
           }
         }
@@ -87,5 +87,26 @@ export function createAdminMiddleware(db, jwtSecret) {
 
     // --- No valid admin auth ---
     return res.status(401).json({ error: 'Admin authentication required' });
+  };
+}
+
+/**
+ * Middleware to require full admin privileges. Must be applied after createAdminMiddleware.
+ * Allows full admins and legacy X-Admin-Key (no role restriction). Rejects readonly admins.
+ *
+ * @returns {import('express').RequestHandler}
+ */
+export function requireFullAdmin() {
+  return (req, res, next) => {
+    // X-Admin-Key is considered full admin (legacy)
+    if (req.headers['x-admin-key']) {
+      return next();
+    }
+    // User-based admin: check role
+    if (req.adminUser?.adminRole === 'full') {
+      return next();
+    }
+    // Readonly admin or no admin token
+    return res.status(403).json({ error: 'Full admin privileges required' });
   };
 }
