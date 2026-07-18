@@ -196,7 +196,11 @@ describe('POST /live', () => {
         const startBody = await startRes.json();
         const startPatch = calls.filter(([op, , config]) => op === 'patch' && config?.record === 'yes');
         assert.strictEqual(startPatch.length, 1);
-        assert.strictEqual(startPatch[0][1], 'recording-key');
+        // MediaMTX recording is keyed by the project's RTMP ingest identity
+        // (api_keys.ingest_stream_key, falling back to the bare apiKey), never
+        // by the legacy caption-relay `streamKey` from the POST body — those
+        // are deliberately decoupled (plan_selfservice_config_backend.md §2).
+        assert.strictEqual(startPatch[0][1], key);
         assert.strictEqual(startPatch[0][2].record, 'yes');
         assert.strictEqual(startPatch[0][2].recordFormat, 'fmp4');
         assert.ok(startPatch[0][2].recordPath);
