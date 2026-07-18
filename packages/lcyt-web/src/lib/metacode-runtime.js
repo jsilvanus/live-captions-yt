@@ -209,7 +209,17 @@ export function buildCueMap(file) {
   for (let i = 0; i < file.lineCodes.length; i++) {
     const lc = file.lineCodes[i];
     if (lc.cue) {
-      map.set(lc.cue.toLowerCase(), { index: i, mode: lc.cueMode || 'next', fuzzy: !!lc.cueFuzzy, semantic: !!lc.cueSemantic, events: !!lc.cueEvents });
+      map.set(lc.cue.toLowerCase(), {
+        index: i,
+        mode: lc.cueMode || 'next',
+        fuzzy: !!lc.cueFuzzy,
+        semantic: !!lc.cueSemantic,
+        events: !!lc.cueEvents,
+        // Composite/tree cues (Phase 9 — compact `|`-expressions and the
+        // multi-line `cue:` block grammar) fire server-side only, same
+        // reasoning as semantic/events — see checkCueMatch() below.
+        composite: !!lc.cueTree,
+      });
     }
   }
   return map;
@@ -284,6 +294,10 @@ export function checkCueMatch(cueMap, text, pointer, opts) {
       continue;
     } else if (entry.events) {
       // Event cues are matched server-side by the AI agent — skip in frontend
+      continue;
+    } else if (entry.composite) {
+      // Composite/tree cues are evaluated server-side (CueEngine.evaluateComposite) —
+      // skip in frontend; they fire only via backend cue_fired SSE events.
       continue;
     } else if (phrase.includes('*')) {
       // Glob pattern: escape regex chars, convert * to .*

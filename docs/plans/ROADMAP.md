@@ -165,6 +165,41 @@ scope for this plugin). 24 new tests (`cue-engine.test.js`, new
 note for the API surface to build against; not dispatched as part of this lane
 since it's frontend work.
 
+**Lane C's deferred pieces — done (2026-07-18, same day as Lane D):** the
+`ConditionTreeEditor`/Named Conditions extension Lane D's note above unblocked
+was picked up immediately rather than staying a separate dispatch. New
+`packages/lcyt-web/src/components/ConditionTreeEditor.jsx` — recursive
+leaf/group/ref editor (add-leaf buttons for exact/fuzzy/semantic/section/
+track/event, collapsible and/or/not group containers with `not` truncated to
+one child, a `ref` leaf as a validated `<select>` sourced from the named-
+conditions list, an inline warning when `not` wraps a semantic/event/ref
+child, and an exported `summarizeConditionTree()` for compact one-line
+rendering). `CuesManager` (`CuesPage.jsx`) gained: `composite` and `track`
+in its editable match-type list (composite swaps the pattern field for
+`ConditionTreeEditor`; track auto-suggests a 1000ms cooldown), and a full
+Named Conditions CRUD section wired to `/cues/defs`, including the locked
+name-after-creation field, the inline-sourced "Defined by a rundown file's
+`cue-def:` block…" notice, and its Detach button (`PUT /cues/defs/:id`
+`{ source: 'api' }`). On the parser side, `metacode-parser.js` gained the
+multi-line indented composite-block grammar itself — `CUE_BLOCK_OPEN_RE`/
+`CUE_DEF_BLOCK_OPEN_RE` detect a bare `<!-- cue(*{0,2}):` or
+`<!-- cue-def:name:` open line and collect an indented body until a closing
+`-->` (a composite `cue:` block's close may carry trailing caption text on
+the same line; a `cue-def:` block's must be bare), parsed by
+`parseIndentedConditionBlock()`/`parseBlockLeafLine()` into the same tree
+shape the pre-existing compact `|`-pipe syntax already produced — plus two
+small pre-existing bugs fixed along the way (`parseCueLeaf()` had no
+`track`/`regex` keyword cases; `~~:value`/`~:value` left a stray leading
+colon). `metacode-runtime.js`'s `buildCueMap()`/`checkCueMatch()` now
+correctly mark and skip composite cue entries — previously a composite
+cue's raw expression text was silently (and incorrectly, if harmlessly)
+substring-matched as a literal phrase. 45 new tests across
+`ConditionTreeEditor.test.jsx` (16), `fileUtils.test.js` (15), `CuesPage.test.jsx`
+(11), `metacode-runtime.test.js` (4, plus 2 existing assertions updated for
+the new `composite` field). `plan_cues.md`, `docs/PLANS.md`, and this file
+updated. Phase 9 and Phase 10 are both now fully implemented, frontend and
+backend — nothing from either phase remains dispatchable.
+
 ---
 
 ## Tier 3 — Small, independent gap-closers (good for a parallel batch, like the last one)
@@ -222,9 +257,9 @@ If launching several agents today, this set has no file/package overlap:
 
 - **Lane A** — done, see Tier 1 above; nothing left to dispatch here
 - **Lane B** — done, see Tier 1 above; the remaining vertical-crop work (production-follow) is a backend lane, not this frontend one
-- **Lane C** — done, see Tier 2 above; the deferred `ConditionTreeEditor`/Named
-  Conditions extension is now unblocked by Lane D's backend API but not yet
-  dispatched (frontend work — see Lane D's note above for what to build against)
+- **Lane C** — done, see Tier 2 above; its deferred `ConditionTreeEditor`/Named
+  Conditions extension is also done (same-day follow-up after Lane D) — nothing
+  left to dispatch here
 - **Lane D** — done, see Tier 2 above; nothing left to dispatch here
 - One or two Tier 3 items from packages not already claimed above (e.g. HLS
   `putObject`/`publicUrl` wiring, or the DSK editor's rotation handle)

@@ -4175,3 +4175,129 @@
     border-left: none;
   }
 }
+
+/* ─── ConditionTreeEditor (Phase 9 composite trees / named conditions) ───── */
+
+.condition-tree-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.condition-tree-editor--empty {
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.condition-tree-editor__empty-hint {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.condition-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.condition-add-row__sep {
+  width: 1px;
+  align-self: stretch;
+  background: var(--color-border);
+  margin: 0 2px;
+}
+
+.condition-group {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.condition-group--and { border-left: 3px solid var(--color-accent); }
+.condition-group--or { border-left: 3px solid #6ea8e8; }
+.condition-group--not { border-left: 3px solid #e07a5f; }
+
+.condition-group__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+}
+
+.condition-group__collapse {
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+.condition-group__op {
+  width: auto;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 6px;
+}
+
+.condition-group__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 8px 24px;
+}
+
+.condition-group__warning {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  background: var(--color-surface-elevated);
+  border-radius: 6px;
+}
+
+.condition-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.condition-node--leaf {
+  flex-wrap: nowrap;
+}
+
+.condition-node--leaf .settings-field__input {
+  flex: 1;
+  min-width: 0;
+}
+
+.condition-node__badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+.condition-node__badge--ref {
+  color: var(--color-accent);
+}
+
+.condition-node__remove {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.condition-node__remove:hover { color: var(--color-error); }

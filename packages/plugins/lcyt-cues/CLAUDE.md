@@ -35,7 +35,7 @@ app.use('/cues', createCueRouter(db, auth, engine));
 | `<!-- cue[semantic]:phrase -->` | next + semantic | Embedding similarity (backend only) |
 | `<!-- cue[events]:description -->` | next + AI event | LLM evaluation (backend only) |
 
-Composite condition-tree cues (`<!-- cue:\nor:\n  exact: ...\n-->`) and `<!-- cue-def:name: ... -->` named-condition blocks are specced in `docs/plans/plan_cues.md` Phase 9 but **not yet parsed by the frontend** — the backend condition-tree evaluator, `/cues/rules` `match_type: 'composite'`, and `/cues/defs` CRUD are all ready for it (this is the Lane C follow-up: `metacode-parser.js`, `metacode-runtime.js`, and a `ConditionTreeEditor` component in `CuesPage.jsx`/`CuesManager`).
+Composite condition-tree cues (`<!-- cue:\nor:\n  exact: ...\n-->`) and `<!-- cue-def:name: ... -->` named-condition blocks — specced in `docs/plans/plan_cues.md` Phase 9 — are now parsed by the frontend too (`packages/lcyt-web/src/lib/metacode-parser.js`'s `parseIndentedConditionBlock()`), alongside the pre-existing compact `|`-pipe syntax that produces the same tree shape. `lcyt-web`'s `ConditionTreeEditor` component (`CuesPage.jsx`/`CuesManager`) is the visual builder for both `/cues/rules` composite rules and `/cues/defs` named conditions — see `packages/lcyt-web/CLAUDE.md`.
 
 **Sound cue match types:** `music_start`, `music_stop`, `silence` (with minimum duration timer).
 **Tracker cue match type:** `track` (label + confidence threshold, checked against the latest cached `track_state` — no timer, unlike `silence`).

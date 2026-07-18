@@ -202,10 +202,13 @@ function parseCueLeaf(value) {
 
   if (normalized.startsWith('~~')) {
     semantic = true;
-    normalized = normalized.slice(2).trim();
+    // Tolerate both `~~word` and `~~:word` (the multi-line block grammar's
+    // "~~: value" leaf marker, which also reaches here via the cue-def:
+    // single-line fallback to this same expression parser).
+    normalized = normalized.slice(2).replace(/^:/, '').trim();
   } else if (normalized.startsWith('~')) {
     fuzzy = true;
-    normalized = normalized.slice(1).trim();
+    normalized = normalized.slice(1).replace(/^:/, '').trim();
   }
 
   const keywordMatch = normalized.match(/^([a-z]+)(?::|\s+)(.*)$/i);
@@ -235,6 +238,10 @@ function parseCueLeaf(value) {
         return { type: 'ref', name: payload };
       case 'section':
         return { type: 'match', matchType: 'section', pattern: payload };
+      case 'track':
+        return { type: 'match', matchType: 'track', pattern: payload };
+      case 'regex':
+        return { type: 'match', matchType: 'regex', pattern: payload };
       case 'context': {
         const [pathPart, ...patternParts] = payload.split('=');
         const path = pathPart?.trim() || '';
@@ -258,6 +265,126 @@ function parseCueLeaf(value) {
     matchType: semantic ? 'semantic' : events ? 'event_cue' : fuzzy ? 'fuzzy' : 'phrase',
     pattern: normalized,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Multi-line composite block grammar (Phase 9, docs/plans/plan_cues.md
+// "Composite block grammar") — an alternative, indentation-based authoring
+// syntax for the same condition-tree shape parseCueExpression() already
+// builds from the compact `|`-pipe syntax. A bare "<!-- cue(*{0,2}):" or
+// "<!-- cue-def:name:" open line (nothing else on the line) starts a block;
+// body lines are collected stanza-style until a closing "-->" — see
+// CUE_BLOCK_OPEN_RE/CUE_DEF_BLOCK_OPEN_RE usage in parseFileContent() below.
+// ---------------------------------------------------------------------------
+
+const CUE_BLOCK_OPEN_RE = /^<!--\s*cue(\*{0,2})\s*:\s*$/i;
+const CUE_DEF_BLOCK_OPEN_RE = /^<!--\s*cue-def\s*:\s*([a-z0-9_-]+)\s*:\s*$/i;
+
+/** Parse one body line of an indented condition block into a leaf node. */
+function parseBlockLeafLine(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+
+  if (trimmed.startsWith('@')) {
+    const name = trimmed.slice(1).trim();
+    return name ? { type: 'ref', name } : null;
+  }
+
+  let m = trimmed.match(/^~~\s*:\s*(.+)$/);
+  if (m) return { type: 'match', matchType: 'semantic', pattern: m[1].trim() };
+  m = trimmed.match(/^~\s*:\s*(.+)$/);
+  if (m) return { type: 'match', matchType: 'fuzzy', pattern: m[1].trim() };
+
+  m = trimmed.match(/^([a-z_]+)\s*:\s*(.+)$/i);
+  if (m) {
+    const keyword = m[1].toLowerCase();
+    const payload = m[2].trim();
+    if (!payload) return null;
+    switch (keyword) {
+      case 'exact':
+      case 'phrase':
+        return { type: 'match', matchType: 'phrase', pattern: payload };
+      case 'fuzzy':
+        return { type: 'match', matchType: 'fuzzy', pattern: payload };
+      case 'semantic':
+        return { type: 'match', matchType: 'semantic', pattern: payload };
+      case 'section':
+        return { type: 'match', matchType: 'section', pattern: payload };
+      case 'track':
+        return { type: 'match', matchType: 'track', pattern: payload };
+      case 'regex':
+        return { type: 'match', matchType: 'regex', pattern: payload };
+      case 'event':
+      case 'events':
+      case 'event_cue':
+        return { type: 'match', matchType: 'event_cue', pattern: payload };
+      case 'ref':
+        return { type: 'ref', name: payload.replace(/^@/, '') };
+      case 'context': {
+        const [pathPart, ...patternParts] = payload.split('=');
+        const path = pathPart?.trim() || '';
+        let pattern = patternParts.join('=').trim();
+        let fuzzy = false;
+        if (pattern.startsWith('~')) { fuzzy = true; pattern = pattern.slice(1).trim(); }
+        return { type: 'match', matchType: 'context', path, operator: 'equals', pattern, fuzzy };
+      }
+      default:
+        // Unknown keyword — treat the whole line as a literal phrase leaf
+        // rather than silently dropping the author's condition.
+        return { type: 'match', matchType: 'phrase', pattern: trimmed };
+    }
+  }
+
+  // Bare word/phrase, no keyword prefix at all → implicit exact/phrase leaf
+  // (mirrors the compact syntax's "word (bare, no prefix) → exact" rule).
+  return { type: 'match', matchType: 'phrase', pattern: trimmed };
+}
+
+/**
+ * Parse the body of a multi-line composite `cue:`/`cue-def:` block into a
+ * condition-tree node, using 2-space indentation for and/or/not nesting.
+ * A depth-0 sequence of bare leaf lines (no explicit and:/or:/not: header)
+ * is treated as an implicit top-level `or:` — see plan_cues.md's "Composite
+ * block grammar" section for the full grammar and examples.
+ *
+ * @param {string[]} bodyLines — raw (unstripped) lines between the open and
+ *   close markers, indentation intact.
+ * @returns {object|null} a condition-tree node, or null if the block was empty.
+ */
+function parseIndentedConditionBlock(bodyLines) {
+  const entries = [];
+  for (const raw of bodyLines) {
+    const text = raw ?? '';
+    if (!text.trim()) continue;
+    const leading = text.match(/^( *)/)?.[1]?.length ?? 0;
+    entries.push({ depth: Math.floor(leading / 2), text: text.trim() });
+  }
+  if (entries.length === 0) return null;
+
+  const cursor = { i: 0 };
+  function parseSiblings(depth) {
+    const nodes = [];
+    while (cursor.i < entries.length && entries[cursor.i].depth >= depth) {
+      const entry = entries[cursor.i];
+      if (entry.depth > depth) { cursor.i++; continue; } // orphaned deeper indent — skip defensively
+      const groupMatch = entry.text.match(/^(and|or|not)\s*:?\s*$/i);
+      if (groupMatch) {
+        const op = groupMatch[1].toLowerCase();
+        cursor.i++;
+        const children = parseSiblings(depth + 1);
+        if (children.length > 0) nodes.push({ op, children: op === 'not' ? children.slice(0, 1) : children });
+      } else {
+        const leaf = parseBlockLeafLine(entry.text);
+        cursor.i++;
+        if (leaf) nodes.push(leaf);
+      }
+    }
+    return nodes;
+  }
+
+  const topNodes = parseSiblings(entries[0].depth);
+  if (topNodes.length === 0) return null;
+  return topNodes.length === 1 ? topNodes[0] : { op: 'or', children: topNodes };
 }
 
 function parseCueValue(rawValue, opts = {}) {
@@ -285,8 +412,64 @@ export function parseFileContent(rawText) {
   const currentCodes = {};
 
   for (let i = 0; i < rawLines.length; i++) {
-    const raw = rawLines[i].trim();
+    let raw = rawLines[i].trim();
     if (!raw) continue;
+
+    // --- Multi-line composite blocks (Phase 9) — a bare open line with
+    // nothing after the final colon starts an indented condition-tree block,
+    // collected until a closing "-->" (cue-def: requires a bare "-->" line,
+    // since a definition isn't attached to any caption line; a composite
+    // cue: block's "-->" may carry trailing caption text on the same line,
+    // same as the single-line form). Checked first since neither
+    // CUE_DEF_RE nor CUE_META_RE below can match an unterminated line.
+    const cueDefBlockOpen = raw.match(CUE_DEF_BLOCK_OPEN_RE);
+    if (cueDefBlockOpen) {
+      const [, defName] = cueDefBlockOpen;
+      const bodyLines = [];
+      i++;
+      while (i < rawLines.length) {
+        if (rawLines[i].trim() === '-->') break;
+        bodyLines.push(rawLines[i]);
+        i++;
+      }
+      const tree = parseIndentedConditionBlock(bodyLines);
+      if (defName && tree) cueDefs.push({ name: defName, tree });
+      continue;
+    }
+
+    let blockCuePhrase = null;
+    let blockCueMode = null;
+    let blockCueTree = null;
+    const cueBlockOpen = raw.match(CUE_BLOCK_OPEN_RE);
+    if (cueBlockOpen) {
+      const [, stars] = cueBlockOpen;
+      const bodyLines = [];
+      let trailer = '';
+      i++;
+      while (i < rawLines.length) {
+        const startTrimmed = rawLines[i].trimStart();
+        if (startTrimmed.startsWith('-->')) { trailer = startTrimmed.slice(3); break; }
+        bodyLines.push(rawLines[i]);
+        i++;
+      }
+      const tree = parseIndentedConditionBlock(bodyLines);
+      if (tree) {
+        blockCueTree = tree;
+        blockCueMode = stars === '**' ? 'any' : stars === '*' ? 'skip' : 'next';
+        blockCuePhrase = bodyLines.map(l => l.trim()).filter(Boolean).join(' ') || '(composite)';
+      }
+      raw = trailer.trim();
+      if (!raw) {
+        // No trailing caption content after "-->" — still emit an entry for
+        // this composite cue, same as a bare single-line `<!-- cue:phrase -->`.
+        if (blockCueTree) {
+          lines.push('');
+          lineCodes.push({ ...currentCodes, cue: blockCuePhrase, cueMode: blockCueMode, cueFuzzy: false, cueSemantic: false, cueEvents: false, cueTree: blockCueTree });
+          lineNumbers.push(i + 1);
+        }
+        continue;
+      }
+    }
 
     // --- Extract cue-def metacodes first (dedicated regex) ---
     CUE_DEF_RE.lastIndex = 0;
@@ -295,7 +478,7 @@ export function parseFileContent(rawText) {
       if (!name) return '';
       try {
         let parsed = val.trim();
-        try { parsed = JSON.parse(parsed); } catch {}
+        try { parsed = JSON.parse(parsed); } catch { parsed = parseCueExpression(parsed) ?? parsed; }
         lineCueDefs.push({ name, tree: parsed });
       } catch {}
       return '';
@@ -303,12 +486,12 @@ export function parseFileContent(rawText) {
 
     // --- Extract cue metacodes first (dedicated regex) ---
     CUE_META_RE.lastIndex = 0;
-    let cuePhrase = null;
-    let cueMode = null;
+    let cuePhrase = blockCuePhrase;
+    let cueMode = blockCueMode;
     let cueFuzzy = false;
     let cueSemantic = false;
     let cueEvents = false;
-    let cueTree = null;
+    let cueTree = blockCueTree;
     const afterCueStrip = afterCueDefStrip.replace(CUE_META_RE, (_, stars, tilde, bracket, val) => {
       const parsed = parseCueValue(val, { stars, tilde, bracket });
       const trimmed = parsed.cuePhrase?.trim();

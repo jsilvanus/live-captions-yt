@@ -160,8 +160,8 @@ describe('buildCueMap()', () => {
     );
     const map = buildCueMap(file);
     assert.equal(map.size, 2);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false, semantic: false, events: false });
-    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false, semantic: false, events: false });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: false, semantic: false, events: false, composite: false });
+    assert.deepEqual(map.get('hallelujah'), { index: 2, mode: 'skip', fuzzy: false, semantic: false, events: false, composite: false });
   });
 
   it('stores phrases in lowercase', () => {
@@ -459,7 +459,7 @@ describe('checkCueMatch() — fuzzy cues', () => {
       [1, 2]
     );
     const map = buildCueMap(file);
-    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true, semantic: false, events: false });
+    assert.deepEqual(map.get('amen'), { index: 0, mode: 'next', fuzzy: true, semantic: false, events: false, composite: false });
   });
 });
 
@@ -507,6 +507,51 @@ describe('checkCueMatch() — semantic cues', () => {
     );
     const map = buildCueMap(file);
     assert.equal(map.get('amen').semantic, false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// checkCueMatch — composite cues (Phase 9)
+// ---------------------------------------------------------------------------
+
+describe('checkCueMatch() — composite cues', () => {
+  it('composite cues are skipped by frontend checkCueMatch', () => {
+    const map = new Map([
+      ['exact: amen or: end of prayer', { index: 3, mode: 'any', fuzzy: false, semantic: false, events: false, composite: true }],
+    ]);
+    // Composite cues fire only via backend SSE (CueEngine.evaluateComposite) — frontend skips them
+    const r = checkCueMatch(map, 'amen', -1);
+    assert.equal(r, null);
+  });
+
+  it('non-composite cues still match normally alongside composite ones', () => {
+    const map = new Map([
+      ['exact: amen or: end of prayer', { index: 3, mode: 'any', fuzzy: false, semantic: false, events: false, composite: true }],
+      ['hallelujah', { index: 5, mode: 'any', fuzzy: false, semantic: false, events: false, composite: false }],
+    ]);
+    const r = checkCueMatch(map, 'hallelujah', -1);
+    assert.ok(r);
+    assert.equal(r.index, 5);
+  });
+
+  it('buildCueMap marks composite when the line carries a cueTree', () => {
+    const file = makeFile(
+      ['Line 1'],
+      [{ cue: 'exact: amen', cueMode: 'next', cueTree: { op: 'or', children: [{ type: 'match', matchType: 'phrase', pattern: 'amen' }] } }],
+      [1]
+    );
+    const map = buildCueMap(file);
+    assert.equal(map.get('exact: amen').composite, true);
+  });
+
+  it('buildCueMap defaults composite to false when there is no cueTree', () => {
+    const file = makeFile(
+      ['Line 1'],
+      [{ cue: 'amen', cueMode: 'next' }],
+      [1]
+    );
+    const map = buildCueMap(file);
+    assert.equal(map.get('amen').composite, false);
   });
 });
 
