@@ -53,6 +53,44 @@ export function YouTubeTab() {
     }
   }, [showToast]);
 
+  // Poll broadcast status every 20 seconds while signed in and tab is visible
+  useEffect(() => {
+    if (!token) return;
+
+    const pollInterval = 20000; // 20 seconds
+    let timeoutId;
+
+    const poll = async () => {
+      // Skip polling if document is hidden
+      if (document.visibilityState === 'hidden') {
+        // Schedule the next poll even though we skipped this one
+        timeoutId = setTimeout(poll, pollInterval);
+        return;
+      }
+      await fetchBroadcasts(token);
+      timeoutId = setTimeout(poll, pollInterval);
+    };
+
+    // Start polling immediately
+    poll();
+
+    // Listen for visibility changes to optimize API quota usage
+    const handleVisibilityChange = () => {
+      // If visibility changes back to visible, poll immediately
+      if (document.visibilityState === 'visible') {
+        clearTimeout(timeoutId);
+        poll();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [token, fetchBroadcasts]);
+
   async function handleSignIn() {
     setLoggingIn(true);
     try {

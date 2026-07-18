@@ -556,6 +556,7 @@ function renderTemplateLayer(layer, zIndex, serverUrl, layerOverrides, bindings)
     zIndex,
     pointerEvents: 'none',
     ...(layer.animation ? { animation: layer.animation } : {}),
+    ...(layer.rotation != null ? { transform: `rotate(${Number(layer.rotation)}deg)`, transformOrigin: 'center center' } : {}),
     ...(layer.style ? kebabToCamel(layer.style) : {}),
   };
 

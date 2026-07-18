@@ -201,6 +201,7 @@ export function initDb(dbPath) {
     db.prepare('PRAGMA table_info(users)').all().map(c => c.name)
   );
   if (!existingUserCols.has('is_admin')) db.exec('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0');
+  if (!existingUserCols.has('admin_role')) db.exec("ALTER TABLE users ADD COLUMN admin_role TEXT NOT NULL DEFAULT 'full'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS caption_usage (
@@ -619,6 +620,14 @@ export function initDb(dbPath) {
     )
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_device_roles_key ON project_device_roles(api_key)');
+
+  // Additive migration for device role expiry (Item 4 — Phase 4 time-limited sessions)
+  const existingDeviceRoleCols = new Set(
+    db.prepare('PRAGMA table_info(project_device_roles)').all().map(c => c.name)
+  );
+  if (!existingDeviceRoleCols.has('expires_at')) {
+    db.exec('ALTER TABLE project_device_roles ADD COLUMN expires_at TEXT');
+  }
 
   // ── Personal MCP access tokens (plan/mcp) ─────────────────────────────────
   // Named, individually-revocable bearer tokens for external MCP clients

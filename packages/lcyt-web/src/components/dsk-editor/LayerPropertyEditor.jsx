@@ -40,7 +40,7 @@ export default function LayerPropertyEditor({ layer, selectionCount, aspectLock,
   }
 
   function setField(key, value) {
-    const numericKeys = ['x', 'y', 'width', 'height'];
+    const numericKeys = ['x', 'y', 'width', 'height', 'rotation'];
     const val = value === '' ? undefined : (numericKeys.includes(key) ? Number(value) : value);
     onChange({ ...layer, [key]: val }, key === 'id' ? layer.id : undefined);
   }
@@ -134,6 +134,11 @@ export default function LayerPropertyEditor({ layer, selectionCount, aspectLock,
                  style={{ ...inputStyle, width: 100 }} />
         </div>
       ))}
+      <div style={fieldRowStyle}>
+        <span style={labelStyle}>Rotation (°)</span>
+        <input type="number" value={layer.rotation ?? ''} onChange={e => setField('rotation', e.target.value)}
+               style={{ ...inputStyle, width: 100 }} min="0" max="360" step="1" />
+      </div>
       {layer.type === 'image' && (
         <div style={fieldRowStyle}>
           <span style={labelStyle}>Aspect lock</span>

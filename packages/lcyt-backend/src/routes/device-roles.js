@@ -99,7 +99,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
     return res.json({ deviceRoles: roles });
   });
 
-  // POST /keys/:key/device-roles — create
+  // POST /keys/:key/device-roles — create (with optional expiresAt for time-limited sessions)
   router.post('/device-roles', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
@@ -110,7 +110,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
         return res.status(403).json({ error: 'owner or admin required' });
       }
     }
-    const { roleType, name, permissions = [], config } = req.body || {};
+    const { roleType, name, permissions = [], config, expiresAt } = req.body || {};
     if (!roleType) return res.status(400).json({ error: 'roleType is required' });
     if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
     if (!['camera', 'mic', 'mixer', 'custom'].includes(roleType)) {
@@ -125,6 +125,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
       pinHash,
       permissions,
       config: config || null,
+      expiresAt: expiresAt || null,
     });
 
     // Return plain PIN exactly once

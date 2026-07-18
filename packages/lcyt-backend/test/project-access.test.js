@@ -8,6 +8,7 @@ import { createKey } from '../src/db/keys.js';
 import { addMember } from '../src/db/project-members.js';
 import { createUser } from '../src/db/users.js';
 import { createMcpToken } from '../src/db/mcp-tokens.js';
+import { createDeviceRole, deactivateDeviceRole } from '../src/db/device-roles.js';
 import { createProjectAccessMiddleware } from '../src/middleware/project-access.js';
 
 const JWT_SECRET = 'test-project-access-secret';
@@ -87,6 +88,51 @@ describe('project access middleware', () => {
       headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey },
     });
     assert.equal(res.status, 403);
+  });
+});
+
+describe('device JWT active-role check (Item 4 — Phase 4)', () => {
+  const deviceToken = (roleId) => jwt.sign(
+    { kind: 'device', type: 'device', apiKey: projectKey, projectId: projectKey, projectRole: 'member', deviceRole: 'camera', roleId },
+    JWT_SECRET,
+    { expiresIn: '1h' },
+  );
+
+  it('accepts a device JWT whose role is active', async () => {
+    const role = createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 1', pinHash: 'hash' });
+    const res = await fetch(`${baseUrl}/check`, {
+      headers: { Authorization: `Bearer ${deviceToken(role.id)}`, 'X-Project-Id': projectKey },
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.auth.kind, 'device');
+  });
+
+  it('rejects a device JWT once its role is deactivated, before the 1h TTL expires', async () => {
+    const role = createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 2', pinHash: 'hash' });
+    const token = deviceToken(role.id);
+    // Token still has 1h left on its TTL, but the role is deactivated server-side.
+    deactivateDeviceRole(db, role.id);
+    const res = await fetch(`${baseUrl}/check`, {
+      headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey },
+    });
+    assert.equal(res.status, 401);
+  });
+
+  it('rejects a device JWT once its role has time-expired', async () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    const role = createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 3', pinHash: 'hash', expiresAt: past });
+    const res = await fetch(`${baseUrl}/check`, {
+      headers: { Authorization: `Bearer ${deviceToken(role.id)}`, 'X-Project-Id': projectKey },
+    });
+    assert.equal(res.status, 401);
+  });
+
+  it('does not reject a device JWT with no roleId (pre-Item-4 tokens degrade to unchecked, not broken)', async () => {
+    const res = await fetch(`${baseUrl}/check`, {
+      headers: { Authorization: `Bearer ${deviceToken(undefined)}`, 'X-Project-Id': projectKey },
+    });
+    assert.equal(res.status, 200);
   });
 });
 

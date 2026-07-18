@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/api.js",
   "scripts": {
-    "test": "node --experimental-test-module-mocks --test test/rtmp-manager.test.js test/dsk-composite-filter.test.js test/nginx-manager.test.js test/hls-segment-fetcher.test.js test/google-stt.test.js test/stt-manager.test.js test/whisper-http.test.js test/openai-stt.test.js test/pcm-buffer.test.js test/stt-manager-rtmp.test.js test/rtmp-manager-restart.test.js test/rtmp-manager.unit.test.js test/preview-route.test.js test/crop-geometry.test.js test/crop-db.test.js test/crop-manager.test.js test/crop-routes.test.js test/radio-routes.test.js"
+    "test": "node --experimental-test-module-mocks --test test/rtmp-manager.test.js test/dsk-composite-filter.test.js test/nginx-manager.test.js test/hls-segment-fetcher.test.js test/google-stt.test.js test/stt-manager.test.js test/whisper-http.test.js test/openai-stt.test.js test/pcm-buffer.test.js test/stt-manager-rtmp.test.js test/rtmp-manager-restart.test.js test/rtmp-manager.unit.test.js test/preview-route.test.js test/crop-geometry.test.js test/crop-db.test.js test/crop-manager.test.js test/crop-routes.test.js test/radio-routes.test.js test/hls-manager-storage.test.js test/hls-manager-probe.test.js"
   },
   "dependencies": {
     "express": "^4.21",

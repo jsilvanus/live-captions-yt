@@ -58,3 +58,4 @@ describe()                                      → string (startup log message)
 - `packages/plugins/lcyt-files/test/local-adapter.test.js` — adapter methods, `writeToBackendFile`, and `closeFileHandles`.
 - `packages/plugins/lcyt-files/test/key-segment.test.js` — 9 tests: UUID/backward-compat pass-through, sanitization, and collision-resistance for keys that sanitize identically or share a 40-char prefix.
 - `packages/plugins/lcyt-files/test/vtt.test.js` — `shiftVttContent` cue shifting.
+- `packages/plugins/lcyt-files/test/s3-adapter.test.js` (`tmp_plan_tier3.md` Item 7) — full S3 adapter coverage (`openAppend`/`openRead`/`deleteFile`/`putObject`/`publicUrl`/`listObjects` pagination) against `test/helpers/mock-s3-server.js`, a lightweight `node:http` mock implementing the path-style S3 REST subset the adapter uses — chosen over localstack to keep the suite dependency-free, matching this repo's test conventions.

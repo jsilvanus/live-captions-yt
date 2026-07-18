@@ -153,10 +153,15 @@ function buildPlayerHtml(key, backendOrigin, theme) {
  * @param {string} key               Viewer / HLS key
  * @param {string} backendOrigin     Absolute origin for the video stream URL
  * @param {string[]} langs           Active subtitle language tags
+ * @param {object} [streamInfo]      Optional stream info { bandwidth, codecs }; uses defaults if omitted
  * @returns {string}
  */
-function buildMasterManifest(key, backendOrigin, langs) {
+function buildMasterManifest(key, backendOrigin, langs, streamInfo) {
   const videoUrl = `${backendOrigin}/stream-hls/${encodeURIComponent(key)}/index.m3u8`;
+
+  // Use probed stream info if available, else use hard-coded defaults
+  const bandwidth = streamInfo?.bandwidth ?? 2800000;
+  const codecs = streamInfo?.codecs ?? '"avc1.4d401f,mp4a.40.2"';
 
   let out = '#EXTM3U\n#EXT-X-VERSION:3\n\n';
 
@@ -167,9 +172,9 @@ function buildMasterManifest(key, backendOrigin, langs) {
       out += `#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="subs",LANGUAGE="${lang}",NAME="${name}",DEFAULT=${isDefault},AUTOSELECT=YES,FORCED=NO,URI="subs/${encodeURIComponent(lang)}/playlist.m3u8"\n`;
     });
     out += '\n';
-    out += `#EXT-X-STREAM-INF:BANDWIDTH=2800000,CODECS="avc1.4d401f,mp4a.40.2",SUBTITLES="subs"\n`;
+    out += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},CODECS=${codecs},SUBTITLES="subs"\n`;
   } else {
-    out += `#EXT-X-STREAM-INF:BANDWIDTH=2800000,CODECS="avc1.4d401f,mp4a.40.2"\n`;
+    out += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},CODECS=${codecs}\n`;
   }
   out += `${videoUrl}\n`;
 
@@ -223,7 +228,7 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
 
   // ── GET /video/:key/master.m3u8 — master HLS manifest ────────────────────
 
-  router.get('/:key/master.m3u8', videoRateLimit, (req, res) => {
+  router.get('/:key/master.m3u8', videoRateLimit, async (req, res) => {
     const { key } = req.params;
     if (!VIDEO_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid key format' });
@@ -235,7 +240,8 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
 
     const backendOrigin = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
     const langs = hlsSubsManager.getLanguages(key);
-    const manifest = buildMasterManifest(key, backendOrigin, langs);
+    const streamInfo = await hlsManager.probeStreamInfo(key);
+    const manifest = buildMasterManifest(key, backendOrigin, langs, streamInfo);
 
     setCors(res);
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');

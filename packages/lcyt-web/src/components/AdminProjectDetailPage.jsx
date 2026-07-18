@@ -3,6 +3,7 @@ import { useRoute, useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth.js';
 import { adminFetch } from '../lib/admin.js';
+import { ConfirmDialog } from './ConfirmDialog.jsx';
 
 const FEATURE_LABELS = {
   captions:              'Captions',
@@ -47,6 +48,9 @@ export function AdminProjectDetailPage() {
   const [featureEdits, setFeatureEdits] = useState({});
   const [savingFeatures, setSavingFeatures] = useState(false);
   const [featureMsg, setFeatureMsg] = useState('');
+  // Confirmation dialog
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [revokeLoading, setRevokeLoading] = useState(false);
 
   const load = useCallback(async () => {
     if (!projectKey) return;
@@ -104,13 +108,22 @@ export function AdminProjectDetailPage() {
     }
   }
 
-  async function handleRevoke() {
-    if (!confirm('Revoke this project?')) return;
-    const revokeRes = await adminFetch(backendUrl, '/admin/batch/projects', {
-      method: 'POST',
-      body: JSON.stringify({ keys: [projectKey], action: 'revoke' }),
-    });
-    if (revokeRes.ok) load();
+  function openRevokeConfirm() {
+    setConfirmOpen(true);
+  }
+
+  async function executeRevoke() {
+    setRevokeLoading(true);
+    try {
+      const revokeRes = await adminFetch(backendUrl, '/admin/batch/projects', {
+        method: 'POST',
+        body: JSON.stringify({ keys: [projectKey], action: 'revoke' }),
+      });
+      if (revokeRes.ok) await load();
+    } finally {
+      setRevokeLoading(false);
+      setConfirmOpen(false);
+    }
   }
 
   if (loading) return <div style={{ padding: 24 }}>Loading…</div>;
@@ -161,7 +174,7 @@ export function AdminProjectDetailPage() {
       {/* Actions */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         {project.active ? (
-          <button className="btn btn--ghost btn--sm" onClick={handleRevoke} style={{ color: 'var(--color-error, #e55)' }}>
+          <button className="btn btn--ghost btn--sm" onClick={openRevokeConfirm} style={{ color: 'var(--color-error, #e55)' }}>
             🚫 Revoke
           </button>
         ) : (
@@ -231,6 +244,17 @@ export function AdminProjectDetailPage() {
           </tbody>
         </table>
       )}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Revoke Project"
+        message="Revoke this project?"
+        confirmLabel="Revoke"
+        danger={true}
+        loading={revokeLoading}
+        onConfirm={executeRevoke}
+        onCancel={() => setConfirmOpen(false)}
+      />
     </div>
   );
 }

@@ -373,7 +373,7 @@ POST /keys (user Bearer)
 
 ## Current Status
 
-All three core phases (data model, enforcement middleware, and admin user feature management) are implemented. Phase 4 (future device role enhancements) remains pending.
+All three core phases (data model, enforcement middleware, and admin user feature management) are implemented. Phase 4 (future device role enhancements) is partially implemented — see below.
 
 ### Implemented checklist
 
@@ -396,11 +396,11 @@ All three core phases (data model, enforcement middleware, and admin user featur
 
 ### Remaining (Phase 4 — future enhancements)
 
-- [ ] QR code generation for device PINs (scannable from web UI)
-- [ ] Tally light display on the camera device role view
-- [ ] Device role JWT verification middleware (check `active=1` on each request that uses a device token)
-- [ ] Time-limited device role sessions (optional expiry field)
-- [ ] Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands
+- [ ] QR code generation for device PINs (scannable from web UI) — needs a UX decision, deliberately left out of `tmp_plan_tier3.md` Item 4
+- [ ] Tally light display on the camera device role view — needs a hardware/UX spec, deliberately left out of `tmp_plan_tier3.md` Item 4
+- [x] Device role JWT verification middleware (`tmp_plan_tier3.md` Item 4) — the active/expiry check lives inside `createProjectAccessMiddleware`'s device branch (`middleware/project-access.js`), not a separate globally-mounted middleware; see that plan's "Implementation notes" for why the first attempt at this was a no-op
+- [x] Time-limited device role sessions (`tmp_plan_tier3.md` Item 4) — optional `expires_at` column, `isDeviceRoleActive()` checks it; omitted = indefinite (unchanged default)
+- [x] Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands (`tmp_plan_tier3.md` Item 4)
 - [ ] Web UI for admin user feature management in admin panel
 
 ---
@@ -450,14 +450,14 @@ PATCH /admin/users/:id/features   — grant/revoke user entitlements
   Body: { features: { 'stt-server': true, 'radio': false } }
 ```
 
-### Phase 4 — Future device role enhancements (pending)
+### Phase 4 — Future device role enhancements (partially implemented, see below)
 
-- QR code generation for device PINs (scannable from web UI)
-- Tally light display on the camera device role view
-- Device role JWT verification middleware (check `active=1` on each request that uses a device token)
-- Time-limited device role sessions (optional expiry field)
-- Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands
-- Web UI for admin user feature management in admin panel
+- QR code generation for device PINs (scannable from web UI) — pending, needs a UX decision
+- Tally light display on the camera device role view — pending, needs a hardware/UX spec
+- ~~Device role JWT verification middleware (check `active=1` on each request that uses a device token)~~ — **Done**
+- ~~Time-limited device role sessions (optional expiry field)~~ — **Done**
+- ~~Admin CLI `lcyt-backend-admin users features [list|grant|revoke]` commands~~ — **Done**
+- Web UI for admin user feature management in admin panel — pending
 
 ---
 
