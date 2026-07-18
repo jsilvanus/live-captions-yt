@@ -19,11 +19,11 @@ try {
 // ---------------------------------------------------------------------------
 
 describe('CueEngine', () => {
-  let CueEngine, runMigrations, insertCueRule, listCueRules, getRecentCueEvents;
+  let CueEngine, runMigrations, insertCueRule, listCueRules, getRecentCueEvents, insertNamedCondition;
 
   before(async () => {
     ({ CueEngine } = await import('../src/cue-engine.js'));
-    ({ runMigrations, insertCueRule, listCueRules, getRecentCueEvents } = await import('../src/db.js'));
+    ({ runMigrations, insertCueRule, listCueRules, getRecentCueEvents, insertNamedCondition } = await import('../src/db.js'));
   });
 
   function createDb() {
@@ -110,6 +110,133 @@ describe('CueEngine', () => {
     assert.equal(fired.length, 1);
     assert.equal(fired[0].rule.match_type, 'composite');
     assert.equal(fired[0].rule.source, 'inline');
+  });
+
+  // -------------------------------------------------------------------------
+  // Phase 9 — composite & named conditions
+  // -------------------------------------------------------------------------
+
+  test('evaluateComposite resolves and/or/not trees synchronously for cheap leaves', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+
+    const orResult = await engine.evaluateComposite('key1', {
+      op: 'or',
+      children: [
+        { type: 'match', matchType: 'phrase', pattern: 'amen' },
+        { type: 'match', matchType: 'phrase', pattern: 'hallelujah' },
+      ],
+    }, { text: 'we said hallelujah' });
+    assert.equal(orResult.matched, true);
+    assert.equal(orResult.leaf.pattern, 'hallelujah');
+
+    const andResult = await engine.evaluateComposite('key1', {
+      op: 'and',
+      children: [
+        { type: 'match', matchType: 'phrase', pattern: 'prayer' },
+        { type: 'match', matchType: 'phrase', pattern: 'healing' },
+      ],
+    }, { text: 'a prayer for healing' });
+    assert.equal(andResult.matched, true);
+
+    const notResult = await engine.evaluateComposite('key1', {
+      op: 'not',
+      children: [{ type: 'match', matchType: 'phrase', pattern: 'amen' }],
+    }, { text: 'no match here' });
+    assert.equal(notResult.matched, true);
+  });
+
+  test('evaluateComposite named ref resolves against the DB-backed cue_named_conditions table', async () => {
+    const db = createDb();
+    insertNamedCondition(db, {
+      id: 'def1', api_key: 'key1', name: 'prayer-ending',
+      condition_tree: {
+        op: 'or',
+        children: [
+          { type: 'match', matchType: 'phrase', pattern: 'amen' },
+          { type: 'match', matchType: 'phrase', pattern: 'end of the prayer' },
+        ],
+      },
+    });
+    const engine = new CueEngine(db);
+
+    const result = await engine.evaluateComposite('key1', { type: 'ref', name: 'prayer-ending' }, { text: 'and so we said amen' });
+    assert.equal(result.matched, true);
+    assert.equal(result.leaf.pattern, 'amen');
+
+    const miss = await engine.evaluateComposite('key1', { type: 'ref', name: 'prayer-ending' }, { text: 'welcome everyone' });
+    assert.equal(miss.matched, false);
+  });
+
+  test('evaluateComposite treats a self-referencing named condition as a no-match, not an infinite loop', async () => {
+    const db = createDb();
+    insertNamedCondition(db, {
+      id: 'def1', api_key: 'key1', name: 'cyclic',
+      condition_tree: { type: 'ref', name: 'cyclic' },
+    });
+    const engine = new CueEngine(db);
+
+    const result = await engine.evaluateComposite('key1', { type: 'ref', name: 'cyclic' }, { text: 'anything' });
+    assert.equal(result.matched, false);
+  });
+
+  test('evaluateComposite evaluates cheap sync leaves before async (semantic) leaves regardless of source order', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    let embedCalled = false;
+    engine.setEmbeddingFn(async () => {
+      embedCalled = true;
+      throw new Error('embedding fn should not have been called');
+    });
+
+    const result = await engine.evaluateComposite('key1', {
+      op: 'or',
+      children: [
+        { type: 'match', matchType: 'semantic', pattern: 'end of the prayer' },
+        { type: 'match', matchType: 'phrase', pattern: 'amen' },
+      ],
+    }, { text: 'and all the people said amen', apiKey: 'key1' });
+
+    assert.equal(result.matched, true);
+    assert.equal(result.leaf.type, 'phrase');
+    assert.equal(embedCalled, false, 'the async semantic leaf should not run once the cheap sync leaf already matched');
+  });
+
+  test('evaluateComposite track leaf reads cached tracker state', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    engine.evaluateTrackerEvent('key1', { labels: [{ label: 'presenter-standing', confidence: 0.9 }] });
+
+    const hit = await engine.evaluateComposite('key1', { type: 'match', matchType: 'track', pattern: 'presenter-standing' }, { apiKey: 'key1' });
+    assert.equal(hit.matched, true);
+
+    const miss = await engine.evaluateComposite('key1', { type: 'match', matchType: 'track', pattern: 'presenter-seated' }, { apiKey: 'key1' });
+    assert.equal(miss.matched, false);
+  });
+
+  test('evaluateCompositeRules fires DB-backed composite rules and respects cooldown', async () => {
+    const db = createDb();
+    insertCueRule(db, {
+      id: 'comp1', api_key: 'key1', name: 'prayer-ending-rule',
+      match_type: 'composite', pattern: '',
+      condition_tree: {
+        op: 'or',
+        children: [
+          { type: 'match', matchType: 'phrase', pattern: 'amen' },
+          { type: 'match', matchType: 'section', pattern: 'prayer' },
+        ],
+      },
+      action: { type: 'event', label: 'prayer-ending' },
+      cooldown_ms: 60000,
+    });
+    const engine = new CueEngine(db);
+
+    const fired1 = await engine.evaluateCompositeRules('key1', 'and all the people said amen', {});
+    assert.equal(fired1.length, 1);
+    assert.equal(fired1[0].rule.match_type, 'composite');
+
+    const fired2 = await engine.evaluateCompositeRules('key1', 'and all the people said amen', {});
+    assert.equal(fired2.length, 0, 'cooldown should block an immediate repeat');
   });
 
   test('phrase match fires when text contains the phrase', () => {

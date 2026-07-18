@@ -16,7 +16,7 @@
  *   // fired = [{ rule, matched }]
  */
 
-import { listCueRules, insertCueEvent } from './db.js';
+import { listCueRules, insertCueEvent, listNamedConditions } from './db.js';
 import logger from 'lcyt/logger';
 
 // ---------------------------------------------------------------------------
@@ -201,12 +201,26 @@ export class CueEngine {
      * Map<apiKey, { cues: Array<object>, cueDefs: object, fileName: string|null, fileId: string|null }>
      */
     this._inlineState = new Map();
+
+    /**
+     * Per-API-key cached named condition trees (Phase 9), keyed by name.
+     * Map<apiKey, Map<name, tree>>. Invalidated on /cues/defs CRUD via invalidate().
+     */
+    this._namedConditionCache = new Map();
+
+    /**
+     * Latest tracker state per API key (Phase 9 `track:` leaves), structurally
+     * identical to _silenceState — a plain cached-read, not a subscription.
+     * Map<apiKey, { labels: Array<{ label, confidence, region? }>, ts: number }>
+     */
+    this._trackerState = new Map();
   }
 
   /** Invalidate the rule cache for a given API key (call after CRUD). */
   invalidate(apiKey) {
     this._ruleCache.delete(apiKey);
     this._embeddingCache.delete(apiKey);
+    this._namedConditionCache.delete(apiKey);
   }
 
   /** Replace the inline cue snapshot for an API key. */
@@ -269,7 +283,7 @@ export class CueEngine {
   _loadRules(apiKey) {
     if (this._ruleCache.has(apiKey)) return this._ruleCache.get(apiKey);
     const rules = listCueRules(this._db, apiKey).filter(r => r.enabled);
-    // Pre-compile regex patterns once
+    // Pre-compile regex patterns and composite condition trees once
     for (const rule of rules) {
       if (rule.match_type === 'regex') {
         try {
@@ -277,20 +291,72 @@ export class CueEngine {
         } catch {
           rule._compiledRe = null;
         }
+      } else if (rule.match_type === 'composite') {
+        try {
+          rule._parsedTree = rule.condition_tree ? JSON.parse(rule.condition_tree) : null;
+        } catch {
+          rule._parsedTree = null;
+        }
       }
     }
     this._ruleCache.set(apiKey, rules);
     return rules;
   }
 
-  _evaluateLeafCondition(node, ctx = {}) {
+  /**
+   * Load (and cache) named condition trees for an API key.
+   * @param {string} apiKey
+   * @returns {Map<string, object>} name → condition tree
+   */
+  _loadNamedConditions(apiKey) {
+    if (this._namedConditionCache.has(apiKey)) return this._namedConditionCache.get(apiKey);
+    const map = new Map();
+    for (const row of listNamedConditions(this._db, apiKey)) {
+      try {
+        map.set(row.name, JSON.parse(row.condition_tree));
+      } catch {
+        logger.warn(`[cues] Malformed condition_tree JSON for named condition ${row.id}`);
+      }
+    }
+    this._namedConditionCache.set(apiKey, map);
+    return map;
+  }
+
+  /** True if `node` is a leaf condition (as opposed to a ref or and/or/not group). */
+  _isLeafNode(node) {
     if (!node || typeof node !== 'object') return false;
-    const matchType = node.matchType || node.match_type || node.type || 'phrase';
+    if (node.type === 'ref' || node.ref) return false;
+    if (node.type === 'match') return true;
+    return Boolean(node.matchType || node.match_type || node.pattern !== undefined || node.value !== undefined || node.text !== undefined || node.path || node.key);
+  }
+
+  /** Describe a leaf node for `cue_fired` debugging payloads (which leaf matched). */
+  _describeLeaf(node) {
+    return {
+      type: node.matchType || node.match_type || node.type || 'phrase',
+      pattern: node.pattern ?? node.value ?? node.text ?? '',
+    };
+  }
+
+  /**
+   * Evaluate a single leaf condition. `semantic` and `event`/`event_cue` leaves
+   * are async (embedding/LLM API calls); every other leaf type is synchronous
+   * under the hood but the method is uniformly async so callers don't need to
+   * special-case leaf types.
+   *
+   * @param {object} node
+   * @param {{ text?: string, codes?: object, apiKey?: string }} [ctx]
+   * @returns {Promise<boolean>}
+   */
+  async _evaluateLeaf(node, ctx = {}) {
+    const matchType = node.matchType || node.match_type || (node.type === 'match' ? 'phrase' : node.type) || 'phrase';
     const pattern = node.pattern ?? node.value ?? node.text ?? '';
     const text = String(ctx.text || '');
     const codes = ctx.codes || {};
+    const apiKey = ctx.apiKey;
     switch (matchType) {
       case 'phrase':
+      case 'exact':
         return text.toLowerCase().includes(String(pattern).toLowerCase());
       case 'regex': {
         try { return new RegExp(String(pattern), 'i').test(text); } catch { return false; }
@@ -313,37 +379,162 @@ export class CueEngine {
         if (node.operator === 'contains') return actualText.toLowerCase().includes(patternText.toLowerCase());
         return actualText.toLowerCase() === patternText.toLowerCase();
       }
+      case 'track': {
+        const state = this._trackerState.get(apiKey);
+        const labels = Array.isArray(state?.labels) ? state.labels : [];
+        const threshold = node.confidence_threshold ?? node.threshold ?? 0;
+        const target = String(pattern).toLowerCase();
+        return labels.some(entry => String(entry?.label || '').toLowerCase() === target && (entry?.confidence ?? 1) >= threshold);
+      }
+      case 'semantic': {
+        if (!pattern || !text || !this._embedFn) return false;
+        const threshold = node.fuzzy_threshold ?? node.threshold ?? 0.75;
+        try {
+          const vectors = await Promise.resolve(this._embedFn([String(pattern), text], { apiKey }));
+          const [a, b] = Array.isArray(vectors) ? vectors : [];
+          if (!a || !b) return false;
+          return cosineSimilarity(a, b) >= threshold;
+        } catch (err) {
+          logger.warn('[cues] Composite semantic leaf evaluation failed:', err?.message);
+          return false;
+        }
+      }
+      case 'event':
+      case 'event_cue': {
+        if (!pattern || !this._agentEvaluateFn) return false;
+        try {
+          const TIMEOUT_MS = parseInt(process.env.CUE_EVENT_TIMEOUT_MS || '5000', 10);
+          const result = await Promise.race([
+            Promise.resolve(this._agentEvaluateFn(apiKey, String(pattern), { confidenceThreshold: node.fuzzy_threshold ?? node.threshold ?? 0.7 })),
+            new Promise((_, rej) => setTimeout(() => rej(new Error('event-eval-timeout')), TIMEOUT_MS)),
+          ]);
+          return Boolean(result?.matched);
+        } catch (err) {
+          logger.warn('[cues] Composite event leaf evaluation failed:', err?.message);
+          return false;
+        }
+      }
       default:
         return false;
     }
   }
 
-  _evaluateCompositeCondition(node, ctx = {}, defs = {}) {
+  /** True if evaluating `node` might require an async (embedding/LLM) call. */
+  _nodeIsAsync(node, apiKey, localDefs, seen) {
     if (!node) return false;
     if (typeof node === 'string') {
-      return this._evaluateCompositeCondition(defs[node], ctx, defs);
+      if (seen.has(node)) return false;
+      seen.add(node);
+      return this._nodeIsAsync(this._resolveRefTarget(apiKey, node, localDefs), apiKey, localDefs, seen);
     }
     if (node.type === 'ref' || node.ref) {
       const name = node.name || node.ref;
-      return this._evaluateCompositeCondition(name ? defs[name] : null, ctx, defs);
+      if (!name || seen.has(name)) return false;
+      seen.add(name);
+      return this._nodeIsAsync(this._resolveRefTarget(apiKey, name, localDefs), apiKey, localDefs, seen);
     }
-    if (node.type === 'match' || node.matchType || node.match_type || node.pattern || node.value || node.text || node.path || node.key) {
-      return this._evaluateLeafCondition(node, ctx);
+    if (this._isLeafNode(node)) {
+      const matchType = node.matchType || node.match_type || (node.type === 'match' ? 'phrase' : node.type) || 'phrase';
+      return matchType === 'semantic' || matchType === 'event' || matchType === 'event_cue';
     }
+    const items = Array.isArray(node.children) ? node.children : Array.isArray(node.conditions) ? node.conditions : [];
+    return items.some(child => this._nodeIsAsync(child, apiKey, localDefs, seen));
+  }
+
+  /** Resolve a `@name`/ref target against the file-local defs first, then the DB-backed named-condition cache. */
+  _resolveRefTarget(apiKey, name, localDefs) {
+    if (localDefs && Object.prototype.hasOwnProperty.call(localDefs, name)) return localDefs[name];
+    return this._loadNamedConditions(apiKey).get(name);
+  }
+
+  /**
+   * Order a group's children so cheap, synchronous leaves (phrase/fuzzy/section/
+   * context/track) are evaluated before costly async ones (semantic/event),
+   * regardless of source order — an `or` of exact + semantic should never pay
+   * for an embedding call once the exact match already hit. Stable within each
+   * cost tier.
+   */
+  _orderByCost(items, apiKey, localDefs) {
+    return items
+      .map((item, idx) => ({ item, idx, async: this._nodeIsAsync(item, apiKey, localDefs, new Set()) }))
+      .sort((a, b) => (a.async === b.async ? a.idx - b.idx : (a.async ? 1 : -1)))
+      .map(entry => entry.item);
+  }
+
+  /**
+   * Resolve and evaluate a named-condition reference, guarding against cycles
+   * within the current resolution chain (`visited`). A repeat reference is
+   * treated as a no-match with a warning, not a throw, so one bad definition
+   * doesn't take down evaluation of everything else.
+   */
+  async _resolveAndEvaluateRef(apiKey, name, ctx, localDefs, visited) {
+    if (!name) return { matched: false, leaf: null };
+    if (visited.has(name)) {
+      logger.warn(`[cues] Cycle detected resolving named condition "${name}" — treating as no-match`);
+      return { matched: false, leaf: null };
+    }
+    const resolved = this._resolveRefTarget(apiKey, name, localDefs);
+    if (!resolved) return { matched: false, leaf: null };
+    const nextVisited = new Set(visited);
+    nextVisited.add(name);
+    return this.evaluateComposite(apiKey, resolved, ctx, localDefs, nextVisited);
+  }
+
+  /**
+   * Async recursive composite condition-tree evaluator (Phase 9).
+   *
+   * Group nodes (`and`/`or`/`not`) short-circuit; within a group, cheap sync
+   * leaves are evaluated before async ones (see _orderByCost). `track` leaves
+   * read cached tracker state synchronously. `ref` leaves resolve against
+   * `localDefs` (the inline snapshot's cueDefs, if any) and otherwise the
+   * DB-backed `cue_named_conditions` cache, recursing with a cycle guard.
+   *
+   * @param {string} apiKey
+   * @param {object|string} node — a leaf, group, or ref node (or a bare ref name string)
+   * @param {{ text?: string, codes?: object, apiKey?: string }} [ctx]
+   * @param {object} [localDefs] — file-local named conditions (inline `cue-def:` blocks)
+   * @param {Set<string>} [visited] — named conditions already in the current resolution chain
+   * @returns {Promise<{ matched: boolean, leaf: { type: string, pattern: string }|null }>}
+   */
+  async evaluateComposite(apiKey, node, ctx = {}, localDefs = {}, visited = new Set()) {
+    if (!node) return { matched: false, leaf: null };
+    if (typeof node === 'string') {
+      return this._resolveAndEvaluateRef(apiKey, node, ctx, localDefs, visited);
+    }
+    if (node.type === 'ref' || node.ref) {
+      const name = node.name || node.ref;
+      return this._resolveAndEvaluateRef(apiKey, name, ctx, localDefs, visited);
+    }
+    if (this._isLeafNode(node)) {
+      const matched = await this._evaluateLeaf(node, ctx);
+      return { matched, leaf: matched ? this._describeLeaf(node) : null };
+    }
+
     const op = node.op || node.type || 'and';
     const items = Array.isArray(node.children) ? node.children : Array.isArray(node.conditions) ? node.conditions : [];
-    switch (op) {
-      case 'and':
-        return items.every(child => this._evaluateCompositeCondition(child, ctx, defs));
-      case 'or':
-        return items.some(child => this._evaluateCompositeCondition(child, ctx, defs));
-      case 'not': {
-        const child = items[0];
-        return !this._evaluateCompositeCondition(child, ctx, defs);
+    const ordered = this._orderByCost(items, apiKey, localDefs);
+
+    if (op === 'and') {
+      let lastLeaf = null;
+      for (const child of ordered) {
+        const result = await this.evaluateComposite(apiKey, child, ctx, localDefs, visited);
+        if (!result.matched) return { matched: false, leaf: null };
+        lastLeaf = result.leaf || lastLeaf;
       }
-      default:
-        return false;
+      return { matched: true, leaf: lastLeaf };
     }
+    if (op === 'or') {
+      for (const child of ordered) {
+        const result = await this.evaluateComposite(apiKey, child, ctx, localDefs, visited);
+        if (result.matched) return result;
+      }
+      return { matched: false, leaf: null };
+    }
+    if (op === 'not') {
+      const result = await this.evaluateComposite(apiKey, items[0], ctx, localDefs, visited);
+      return { matched: !result.matched, leaf: null };
+    }
+    return { matched: false, leaf: null };
   }
 
   /**
@@ -491,8 +682,10 @@ export class CueEngine {
             const snapshot = this._inlineState.get(apiKey) || { cueDefs: {} };
             const defs = snapshot.cueDefs || {};
             const tree = rule.tree || rule.condition || rule.definition || (rule.cueDef ? { type: 'ref', name: rule.cueDef } : null);
-            const resolved = this._evaluateCompositeCondition(tree, { text, codes, apiKey, rule }, defs);
-            if (resolved) matched = rule.pattern || rule.name || 'composite';
+            const result = await this.evaluateComposite(apiKey, tree, { text, codes, apiKey, rule }, defs);
+            if (result.matched) {
+              matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
+            }
             break;
           }
           default:
@@ -591,6 +784,117 @@ export class CueEngine {
       }
     } catch (e) { throw e; }
     }
+  }
+
+  /**
+   * Evaluate DB-backed composite rules (`match_type: 'composite'`) against a
+   * caption. Additive alongside `evaluate()` (sync phrase/regex/section/fuzzy)
+   * and `evaluateEventCues()` — composite rules are skipped by both of those.
+   *
+   * @param {string} apiKey
+   * @param {string} text — the caption text that triggered evaluation
+   * @param {object} [codes] — current persistent codes (section, speaker, etc.)
+   * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for matches
+   * @returns {Promise<Array<{ rule: object, matched: string }>>}
+   */
+  async evaluateCompositeRules(apiKey, text, codes = {}, onFired) {
+    const rules = this._loadRules(apiKey);
+    const now = Date.now();
+    const fired = [];
+
+    for (const rule of rules) {
+      if (rule.match_type !== 'composite' || !rule._parsedTree) continue;
+
+      if (rule.cooldown_ms > 0) {
+        const last = this._lastFired.get(rule.id);
+        if (last && (now - last) < rule.cooldown_ms) continue;
+      }
+
+      try {
+        const result = await this.evaluateComposite(apiKey, rule._parsedTree, { text, codes, apiKey, rule }, {});
+        if (result.matched) {
+          this._lastFired.set(rule.id, Date.now());
+          const matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
+          fired.push({ rule, matched });
+
+          try {
+            let action = {};
+            try { action = JSON.parse(rule.action); } catch {
+              logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+            }
+            insertCueEvent(this._db, apiKey, {
+              rule_id: rule.id,
+              rule_name: rule.name,
+              matched,
+              action,
+            });
+          } catch (err) {
+            logger.warn('[cues] Failed to insert cue_event:', err?.message);
+          }
+        }
+      } catch (err) {
+        logger.warn(`[cues] Composite rule evaluation error for rule ${rule.id}:`, err?.message);
+      }
+    }
+
+    if (fired.length > 0) onFired?.(fired);
+    return fired;
+  }
+
+  /**
+   * Evaluate `track:` cue rules (`match_type: 'track'`) against the latest
+   * tracker state. Mirrors `evaluateSoundEvent()`'s shape but has no timer
+   * logic — a tracker state update is a plain cached-read check, not a
+   * duration-gated transition. Also updates the cached `_trackerState` that
+   * `track` leaves inside composite trees read synchronously.
+   *
+   * @param {string} apiKey
+   * @param {{ labels: Array<{ label: string, confidence?: number, region?: object }>, ts?: number }} state
+   * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for matches
+   * @returns {Array<{ rule: object, matched: string }>} — fired rules
+   */
+  evaluateTrackerEvent(apiKey, state, onFired) {
+    this._trackerState.set(apiKey, state && typeof state === 'object' ? state : { labels: [] });
+    const rules = this._loadRules(apiKey);
+    const now = Date.now();
+    const fired = [];
+    const labels = Array.isArray(state?.labels) ? state.labels : [];
+
+    for (const rule of rules) {
+      if (rule.match_type !== 'track') continue;
+
+      if (rule.cooldown_ms > 0) {
+        const last = this._lastFired.get(rule.id);
+        if (last && (now - last) < rule.cooldown_ms) continue;
+      }
+
+      const target = String(rule.pattern || '').toLowerCase();
+      const threshold = rule.fuzzy_threshold ?? 0;
+      const hit = labels.find(entry => String(entry?.label || '').toLowerCase() === target && (entry?.confidence ?? 1) >= threshold);
+      if (!hit) continue;
+
+      this._lastFired.set(rule.id, now);
+      const matched = `track:${rule.pattern}`;
+      fired.push({ rule, matched });
+
+      try {
+        let action = {};
+        try { action = JSON.parse(rule.action); } catch {
+          logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+        }
+        insertCueEvent(this._db, apiKey, {
+          rule_id: rule.id,
+          rule_name: rule.name,
+          matched,
+          action,
+        });
+      } catch (err) {
+        logger.warn('[cues] Failed to insert cue_event:', err?.message);
+      }
+    }
+
+    if (fired.length > 0) onFired?.(fired);
+    return fired;
   }
 
   /**

@@ -26,6 +26,10 @@
  *   createSoundCueListener() subscribes to sound_label events on each
  *   session emitter and evaluates music_start/music_stop/silence rules.
  *
+ * Tracker-state cue listening (Phase 9):
+ *   createTrackerCueListener() mirrors createSoundCueListener() for
+ *   track_state events and evaluates match_type: 'track' rules.
+ *
  * Usage:
  *   const cueProcessor = createCueProcessor({ store, db, engine });
  *   // In captions route:
@@ -55,7 +59,7 @@ function _emitCueResults(store, apiKey, fired) {
       type: 'cue_fired',
       data: {
         label: rule.name,
-        source: rule.source === 'inline' ? 'inline' : 'event_cue',
+        source: rule.source === 'inline' ? 'inline' : (rule.match_type === 'composite' ? 'composite' : 'event_cue'),
         ruleId: rule.id,
         matchType: rule.match_type,
         matched,
@@ -160,6 +164,15 @@ export function createCueProcessor({ store, db, engine }) {
           console.warn('[cues] Event cue evaluation error:', err?.message);
         });
       }
+
+      // Evaluate DB-backed composite rules (Phase 9). Async — results arrive via SSE callback.
+      if (typeof engine.evaluateCompositeRules === 'function') {
+        engine.evaluateCompositeRules(apiKey, cleanText, codes, (eventFired) => {
+          _emitCueResults(store, apiKey, eventFired);
+        }).catch(err => {
+          console.warn('[cues] Composite rule evaluation error:', err?.message);
+        });
+      }
     }
 
     return cleanText;
@@ -208,15 +221,58 @@ function _attachSoundListener(session, engine, store) {
     // Evaluate music_start, music_stop, and silence rules
     const fired = engine.evaluateSoundEvent(session.apiKey, label, (delayedResults) => {
       // Silence timer callback — fire cue_fired events for the delayed results
-      _emitCueFired(session, delayedResults);
+      _emitCueFired(session, delayedResults, 'sound');
     });
 
     // Emit immediately fired rules (music_start, music_stop)
-    _emitCueFired(session, fired);
+    _emitCueFired(session, fired, 'sound');
   });
 }
 
-function _emitCueFired(session, fired) {
+/**
+ * Wire `track_state` events from session emitters to the CueEngine (Phase 9).
+ *
+ * Mirrors createSoundCueListener() exactly, but for `track:` cue rules: a fast
+ * local tracker subsystem (out of scope for this plugin — see plan_cues.md
+ * Phase 9 "Tracker-state leaves") is expected to emit `track_state` events
+ * shaped like `{ labels: [{ label, confidence, region? }], ts }` on the
+ * session emitter, the same way lcyt-music emits `sound_label`. Nothing in
+ * this repo emits `track_state` yet; this listener is inert (attaches, never
+ * fires) until such a producer exists.
+ *
+ * Call once after the session store is available.
+ *
+ * @param {{ store: object, engine: import('./cue-engine.js').CueEngine }} opts
+ */
+export function createTrackerCueListener({ store, engine }) {
+  if (!store || !engine) return;
+
+  const origOnSession = store.onNewSession;
+  store.onNewSession = (session) => {
+    origOnSession?.(session);
+    _attachTrackerListener(session, engine, store);
+  };
+
+  for (const session of store.all?.() ?? []) {
+    _attachTrackerListener(session, engine, store);
+  }
+}
+
+function _attachTrackerListener(session, engine, store) {
+  if (!session?.emitter || session._cueTrackerListenerAttached) return;
+  session._cueTrackerListenerAttached = true;
+
+  session.emitter.on('event', (evt) => {
+    if (evt.type !== 'track_state') return;
+    const state = evt.data;
+    if (!state) return;
+
+    const fired = engine.evaluateTrackerEvent(session.apiKey, state);
+    _emitCueFired(session, fired, 'track');
+  });
+}
+
+function _emitCueFired(session, fired, source = 'sound') {
   if (!fired || fired.length === 0 || !session?.emitter) return;
   const ts = Date.now();
   for (const { rule, matched } of fired) {
@@ -227,7 +283,7 @@ function _emitCueFired(session, fired) {
       type: 'cue_fired',
       data: {
         label: rule.name,
-        source: 'sound',
+        source,
         ruleId: rule.id,
         matchType: rule.match_type,
         matched,

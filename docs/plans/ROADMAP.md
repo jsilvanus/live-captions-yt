@@ -137,9 +137,33 @@ and `packages/lcyt-web/CLAUDE.md` updated; `test/components/NamedActionsManager.
 `CuesPage.test.jsx`'s original 9 tests kept passing unmodified (pure
 extraction, no behavior change to the non-embedded default).
 
-**Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees**
-(`packages/plugins/lcyt-cues` only). Independent of Lane C in terms of files, but
-sequence Lane C's *extension* for composite-condition editing after Lane D lands.
+**Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees** is
+**done** — implemented 2026-07-18, continuing PR #282, `packages/plugins/lcyt-cues`
+only (no frontend changes). Phase 8.5 turned out to already be shipped by the time
+this lane started: `POST /cues/inline`, `CueEngine.setInlineSnapshot()`/
+`evaluateInlineCues()`, and the frontend caller in `InputBar.jsx` all already
+existed with test coverage — this doc and `plan_cues.md` had simply gone stale
+(the "operational lesson" §0 warns about exactly this: re-check before acting).
+Phase 9 backend landed fresh in this pass: `cue_named_conditions` table +
+`GET/POST/PUT/DELETE /cues/defs` (write-time cycle rejection for both
+self-reference and multi-hop cycles), `cue_rules.condition_tree` +
+`match_type: 'composite'`/`'track'` support in `/cues/rules` (non-zero default
+`cooldown_ms` for `track`/composite-with-`track`-leaf rules), and a rewritten
+async `CueEngine.evaluateComposite()` (leaf types `phrase`/`exact`/`regex`/
+`fuzzy`/`section`/`context`/`track`/`semantic`/`event`, cheap-sync-before-async
+ordering within a group, cycle-guarded `ref` resolution against the DB-backed
+named-condition cache) replacing the old inline-only, sync, `cueDefs`-only
+evaluator. New `evaluateCompositeRules()` (DB-backed composite rules — inline
+composite already worked) and `evaluateTrackerEvent()`/`createTrackerCueListener()`
+(`track:` leaves and standalone `track` rules — mirrors the sound-cue listener;
+inert until some future tracker subsystem emits `track_state`, which is out of
+scope for this plugin). 24 new tests (`cue-engine.test.js`, new
+`tracker-cues.test.js`, `routes.test.js`). `plan_cues.md`, `docs/PLANS.md`, and
+`packages/plugins/lcyt-cues/CLAUDE.md` updated. **Now unblocked:** Lane C's
+`ConditionTreeEditor`/Named Conditions extension and the frontend composite-cue/
+`cue-def:` parser work — see `plan_cues.md` Phase 9's "Frontend (not built)"
+note for the API surface to build against; not dispatched as part of this lane
+since it's frontend work.
 
 ---
 
@@ -198,8 +222,10 @@ If launching several agents today, this set has no file/package overlap:
 
 - **Lane A** — done, see Tier 1 above; nothing left to dispatch here
 - **Lane B** — done, see Tier 1 above; the remaining vertical-crop work (production-follow) is a backend lane, not this frontend one
-- **Lane C** — done, see Tier 2 above; nothing left to dispatch here (the `ConditionTreeEditor`/Named Conditions extension is Phase-9-gated, not a standalone dispatch)
-- **Lane D** — Cue engine Phase 8.5 + Phase 9 (`lcyt-cues`)
+- **Lane C** — done, see Tier 2 above; the deferred `ConditionTreeEditor`/Named
+  Conditions extension is now unblocked by Lane D's backend API but not yet
+  dispatched (frontend work — see Lane D's note above for what to build against)
+- **Lane D** — done, see Tier 2 above; nothing left to dispatch here
 - One or two Tier 3 items from packages not already claimed above (e.g. HLS
   `putObject`/`publicUrl` wiring, or the DSK editor's rotation handle)
 

@@ -2,7 +2,7 @@
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
 status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Implemented work includes compact inline cue syntax, backend composite/context evaluation, inline cue snapshot sync, and a Cue Rules editor UI (`/cues`, scoped to phrase/regex/section/fuzzy rules); remaining work focuses on multi-modal cues, the inline↔backend sync gap, and composite/named-condition rules (plus their editor extension)."
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Implemented work includes compact inline cue syntax, backend composite/context evaluation, inline cue snapshot sync (Phase 8.5), backend composite trees + reusable named conditions + tracker-state leaves (Phase 9), and a Cue Rules editor UI (`/cues`, scoped to phrase/regex/section/fuzzy rules); remaining work is multi-modal cues and the editor's `ConditionTreeEditor`/Named Conditions extension (frontend, Lane C follow-up) now that its backend API exists."
 related: plan/agent, plan/ai_roles_framework
 ---
 
@@ -18,15 +18,16 @@ related: plan/agent, plan/ai_roles_framework
 
 - Compact inline cue syntax and modifier support (`cue:`, `cue*:`, `cue**:`, plus fuzzy/semantic/context-style forms).
 - Backend evaluation for composite/context cues, including named condition definitions and backend-side evaluation paths.
-- Inline cue snapshot sync from parsed rundown files into the backend so backend-evaluated cues participate in the live runtime path.
+- Inline cue snapshot sync from parsed rundown files into the backend (`POST /cues/inline`) so backend-evaluated cues participate in the live runtime path — Phase 8.5, implemented (found already shipped, previously mis-tracked as planned — see Phase 8.5 note below).
+- Composite condition trees (`and`/`or`/`not`), reusable named conditions (`cue_named_conditions` table + `/cues/defs` CRUD with write-time cycle rejection), and tracker-state (`track:`) leaves, all backend — Phase 9 backend, implemented 2026-07-18 (Lane D, continuing PR #282).
 - Parser/runtime/regression coverage for the compact syntax and backend cue-evaluation paths.
 - A Cue Rules editor UI (`/cues`, `CuesPage.jsx`) for today's simple rule types (phrase/regex/section/fuzzy) — Phase 10, implemented 2026-07-18.
 
 ## Remaining roadmap
 
 - Multi-modal scene understanding and vision-backed event cues.
-- Closing the inline↔backend cue sync gap for `semantic`/`event` inline cues (Phase 8.5).
-- Composite rules and reusable named conditions (Phase 9), and the Cue Rules editor's `ConditionTreeEditor`/Named Conditions extension that depends on it (remainder of Phase 10).
+- The Cue Rules editor's `ConditionTreeEditor` and Named Conditions section (remainder of Phase 10) — frontend work, now unblocked since Phase 9's `/cues/defs` API and `condition_tree` support exist. See the Lane C follow-up prompt in Phase 9's "Frontend (not built)" note below.
+- The fps30 tracker subsystem itself (whatever emits `track_state` events) — out of scope for `lcyt-cues`, which only implements the cue-engine-facing consumer side (`track:` leaves, `match_type: 'track'` rules, `createTrackerCueListener()`). Nothing in this repo produces `track_state` yet.
 
 ---
 
@@ -464,7 +465,11 @@ Combine all available signals for comprehensive scene understanding:
 
 ---
 
-## Phase 8.5 — Close the Inline ↔ Backend Cue Sync Gap (Prerequisite, Planned)
+## Phase 8.5 — Close the Inline ↔ Backend Cue Sync Gap (Prerequisite, Implemented)
+
+### Status (2026-07-18)
+
+Already shipped — confirmed by direct code inspection while scoping Lane D's remaining Phase 9 work. `POST /cues/inline` (`packages/plugins/lcyt-cues/src/routes/cues.js`), `CueEngine.setInlineSnapshot()`/`evaluateInlineCues()` (`cue-engine.js`), the `source: 'inline'` `cue_fired` SSE value, and the frontend caller (`packages/lcyt-web/src/components/InputBar.jsx`, `POST ${backendUrl}/cues/inline` on file load) all exist with test coverage (`test/routes.test.js`'s `/cues/inline` suite, `test/cue-engine.test.js`'s inline semantic/composite tests). This section had drifted out of date relative to the code — the "Problem"/"Design" text below is kept as the accurate design rationale, but the checklist has been corrected to reflect what's actually landed.
 
 ### Problem
 
@@ -484,15 +489,32 @@ Inline cues are per-file, change on every edit, and are cheap to resend — they
 
 ### Implementation
 
-- [ ] `CueEngine`: `registerInlineCues(apiKey, cues)` / merge logic in `_loadRules()`
-- [ ] `lcyt-cues` routes: `POST /cues/inline`
-- [ ] Frontend: call `POST /cues/inline` on file load and on cue-metacode-affecting edits (debounced)
-- [ ] `cue_fired` SSE `source: 'inline'`
-- [ ] Tests: engine merge behavior, replace-not-append semantics, route auth/validation
+- [x] `CueEngine`: inline cue registration (`setInlineSnapshot()`) and a dedicated evaluation path (`evaluateInlineCues()`) — implemented as a separate ephemeral snapshot rather than merged into `_loadRules()`'s DB-rule cache, which is an equivalent design (inline entries never need regex precompilation or cooldown-cache sharing with DB rules) and is what the shipped code does
+- [x] `lcyt-cues` routes: `POST /cues/inline`
+- [x] Frontend: call `POST /cues/inline` on file load (`InputBar.jsx`)
+- [x] `cue_fired` SSE `source: 'inline'`
+- [x] Tests: engine inline-evaluation behavior, replace-not-append semantics (`setInlineSnapshot` always replaces), route auth/validation
 
 ---
 
-## Phase 9 — Composite & Named Conditions (Planned)
+## Phase 9 — Composite & Named Conditions (Backend implemented; frontend editor pending)
+
+### Status (2026-07-18)
+
+Backend implemented in this pass (Lane D, continuing PR #282, `packages/plugins/lcyt-cues` only — no frontend changes). All of the below is landed and tested:
+
+- `cue_named_conditions` table (`db.js`) + full CRUD (`listNamedConditions`/`getNamedCondition`/`getNamedConditionByName`/`insertNamedCondition`/`updateNamedCondition`/`deleteNamedCondition`) and `cue_rules.condition_tree` column.
+- `GET/POST/PUT/DELETE /cues/defs` (`routes/cues.js`) — tree validation (known leaf types, `not:` exactly one child) and write-time cycle rejection (`detectCycle()`) for both self-reference and multi-hop reference cycles.
+- `POST/PUT /cues/rules` accept `match_type: 'composite'` (with `condition_tree`, pattern optional) and `match_type: 'track'` (pattern required, cooldown defaults to 1000ms unless set explicitly — same default applied when a composite rule's tree contains a `track:` leaf).
+- `CueEngine.evaluateComposite(apiKey, node, ctx, localDefs, visited)` — async recursive tree evaluator. Leaf types: `phrase`/`exact`, `regex`, `fuzzy`, `section`, `context`, `track` (sync, reads cached tracker state), `semantic`, `event`/`event_cue` (async, embedding/LLM calls). Groups (`and`/`or`/`not`) short-circuit and evaluate cheap sync leaves before async ones within a group regardless of source order (`_orderByCost()`/`_nodeIsAsync()`). `ref` leaves resolve against a caller-supplied `localDefs` map first, then the DB-backed named-condition cache (`_loadNamedConditions()`, invalidated via the existing `invalidate(apiKey)`), with a `visited`-set cycle guard so a bad definition degrades to a no-match instead of an infinite loop. Returns `{ matched, leaf }` so callers can report which leaf actually fired (for `cue_fired` debugging payloads) — this replaced the old inline-only, sync, `defs`-only `_evaluateCompositeCondition()`/`_evaluateLeafCondition()` pair, which `evaluateInlineCues()`'s `composite` case now calls through the new async path instead.
+- `CueEngine.evaluateCompositeRules(apiKey, text, codes, onFired)` — new async evaluation path for DB-backed `match_type: 'composite'` rules (inline composite cues were already covered by `evaluateInlineCues()`; DB-backed ones had no evaluation path at all before this). Wired into `cue-processor.js` alongside `evaluate()`/`evaluateInlineCues()`/`evaluateEventCues()`.
+- `CueEngine._trackerState` cache + `evaluateTrackerEvent(apiKey, state, onFired)` (mirrors `_silenceState`/`evaluateSoundEvent()`, but is a plain cached-state check with no timer logic) for standalone `match_type: 'track'` rules, and `createTrackerCueListener()` (`cue-processor.js`, mirrors `createSoundCueListener()`) wired to a `track_state` session-emitter event, exported from `api.js`. **Nothing in this repo emits `track_state` yet** — the fps30 tracker subsystem itself is out of scope here (see plan text below); the listener is inert until such a producer exists, same relationship `createSoundCueListener()` has always had with `lcyt-music`.
+- `_emitCueResults()`/`_emitCueFired()` (`cue-processor.js`) source labeling fixed: DB-backed composite matches now report `source: 'composite'` (previously would have fallen through to the generic `event_cue` label; inline composite matches still correctly report `source: 'inline'`), and the sound-cue emitter's hardcoded `'sound'` source is now a parameter so the same helper serves the new tracker listener with `source: 'track'`.
+- Tests: `test/cue-engine.test.js` (composite tree evaluation, DB-backed named-condition ref resolution, self-reference and cheap-leaf-first-ordering regression tests, `evaluateCompositeRules` + cooldown), `test/tracker-cues.test.js` (new — mirrors `sound-cues.test.js` for `match_type: 'track'`), `test/routes.test.js` (`/cues/rules` composite/track validation, `/cues/defs` CRUD + duplicate-name + cycle rejection).
+
+**Not built (frontend, Lane C follow-up — see the end-of-turn prompt for the Lane C agent):** the `ConditionTreeEditor` component, the Cue Rules editor's Named Conditions section, and the `ref`-leaf dropdown in `CuesPage.jsx`/`CuesManager` — all still blocked on nothing now except being built; the `/cues/defs` API and `condition_tree` support they need now exist. Also not built: inline `<!-- cue-def:name: ... -->` block parsing/collection in the frontend parser (`metacode-parser.js`) and its `cueDefs` upsert into `/cues/defs` — the backend `POST /cues/inline`'s `cueDefs` payload field already existed pre-Phase-9 and continues to populate the engine's file-local `localDefs` snapshot (used first, before the DB-backed cache, in `evaluateComposite`'s ref resolution) but nothing yet parses a `cue-def:` block out of a rundown file or upserts it into the durable `cue_named_conditions` table with `source: 'inline'`.
+
+The rest of this section is kept as-written below (it's still the accurate target design) with the checklist corrected to reflect what shipped in this pass vs. what's still frontend/parser work.
 
 ### Motivation
 
@@ -664,20 +686,20 @@ or:
 
 ### Implementation checklist
 
-- [ ] `CUE_META_RE` / parser: recognize multi-line composite block (stanza-style collection) and `cue-def:` blocks
-- [ ] Parser: `lineCodes[i].cueTree`, parse-result `cueDefs` map
-- [ ] `db.js`: `cue_named_conditions` table, `cue_rules.condition_tree` column
-- [ ] Named-condition CRUD routes (`/cues/defs`)
-- [ ] `/cues/rules` accepts `match_type: 'composite'` + `condition_tree`
-- [ ] `CueEngine.evaluateComposite()` — async tree evaluator, cheap-leaf-first ordering, cycle-guarded `ref` resolution
-- [ ] `CueEngine`/`db.js`: named-condition cache + invalidation
-- [ ] `CueEngine._trackerState` cache + `evaluateTrackerEvent()` (mirrors `_silenceState`/`evaluateSoundEvent()`), `track` leaf support in `evaluateComposite()`
-- [ ] `createTrackerCueListener()` (mirrors `createSoundCueListener()`), wired to whatever emits `track_state` on the session emitter
-- [ ] `match_type: 'track'` added to the standalone CRUD rule validation list (alongside `music_start`/`music_stop`/`silence`), with a non-zero default `cooldown_ms`
-- [ ] Frontend `buildCueMap()`/`checkCueMatch()`: skip composite entries (backend-SSE-only)
-- [ ] Phase 8.5 sync path extended to carry composite trees + `cue-def:` blocks
-- [ ] `cue_fired` SSE payload: composite rule matches identify which leaf(es) matched (for the rundown log / debugging)
-- [ ] Tests: tree evaluator (and/or/not, short-circuit ordering, cycle detection), parser (composite block, cue-def block), routes (validation, cycle rejection), tracker listener/cache (mirroring existing sound-cue tests)
+- [ ] `CUE_META_RE` / parser: recognize multi-line composite block (stanza-style collection) and `cue-def:` blocks — **frontend, not built** (Lane C follow-up)
+- [ ] Parser: `lineCodes[i].cueTree`, parse-result `cueDefs` map — **frontend, not built** (Lane C follow-up)
+- [x] `db.js`: `cue_named_conditions` table, `cue_rules.condition_tree` column
+- [x] Named-condition CRUD routes (`/cues/defs`)
+- [x] `/cues/rules` accepts `match_type: 'composite'` + `condition_tree`
+- [x] `CueEngine.evaluateComposite()` — async tree evaluator, cheap-leaf-first ordering, cycle-guarded `ref` resolution
+- [x] `CueEngine`/`db.js`: named-condition cache + invalidation
+- [x] `CueEngine._trackerState` cache + `evaluateTrackerEvent()` (mirrors `_silenceState`/`evaluateSoundEvent()`), `track` leaf support in `evaluateComposite()`
+- [x] `createTrackerCueListener()` (mirrors `createSoundCueListener()`) — wired to a `track_state` session-emitter event; nothing in this repo emits that event yet, so the listener is exported and ready but inert until a tracker producer exists (out of scope here, see plan text above)
+- [x] `match_type: 'track'` added to the standalone CRUD rule validation list (alongside `music_start`/`music_stop`/`silence`), with a non-zero default `cooldown_ms`
+- [ ] Frontend `buildCueMap()`/`checkCueMatch()`: skip composite entries (backend-SSE-only) — **frontend, not built** (Lane C follow-up); `buildInlineCuePayload()` in `metacode-runtime.js` already has a `'composite'` fallback matchType for the `needsBackend` case, but nothing populates `lc.cueTree`/`lc.cueDef` from an actual parsed composite block yet since the parser side doesn't exist
+- [x] Phase 8.5 sync path extended to carry composite trees + `cue-def:` blocks — `POST /cues/inline`'s payload shape (`cues[].tree`/`cues[].cueDef`, top-level `cueDefs`) already supported this pre-Phase-9 (see `normalizeInlineCue()` in `routes/cues.js`); this pass is what makes composite trees sent through it actually evaluate against a real async tree evaluator with DB-backed named-condition support, instead of the old sync-only, inline-`cueDefs`-only evaluator
+- [x] `cue_fired` SSE payload: composite rule matches identify which leaf(es) matched (for the rundown log / debugging) — `evaluateComposite()` returns `{ matched, leaf }`; both `evaluateInlineCues()` and `evaluateCompositeRules()` turn a matched `leaf` into a `composite:<type>:<pattern>` matched-string
+- [x] Tests: tree evaluator (and/or/not, cheap-leaf-first ordering, cycle detection), routes (`/cues/defs` validation + cycle rejection, `/cues/rules` composite/track validation), tracker listener/cache (mirroring existing sound-cue tests) — parser/`cue-def:`-block tests remain frontend, not built
 
 ---
 
@@ -747,8 +769,8 @@ Phase 9 lets a `cue-def:` block in a rundown file upsert into the same `cue_name
 | 6 | AI Agent: AI config + embeddings + video/image inference (`lcyt-agent`) | 🔧 In Progress | AI config |
 | 7 | AI Event cues (`cue[events]:description`) | ✅ Implemented | Phase 6, `lcyt-agent` |
 | 8 | Multi-modal scene understanding | 📋 Planned | Phase 6, Phase 7 |
-| 8.5 | Close inline↔backend cue sync gap (semantic/event inline cues are currently inert) | 📋 Planned | Phase 5, Phase 7 |
-| 9 | Composite & named conditions (`and`/`or`/`not` trees, `@name` reuse) | 📋 Planned | Phase 8.5 |
-| 10 | Assets card: Cue Rules editor UI (`/cues` page) | 🔧 Implemented (phrase/regex/section/fuzzy only) | Phase 9 for the `ConditionTreeEditor`/Named Conditions extension |
+| 8.5 | Close inline↔backend cue sync gap (semantic/event inline cues) | ✅ Implemented | Phase 5, Phase 7 |
+| 9 | Composite & named conditions (`and`/`or`/`not` trees, `@name` reuse, `track:` leaves) | 🔧 Backend implemented 2026-07-18; frontend (`ConditionTreeEditor`, parser `cue-def:` blocks) pending | Phase 8.5 |
+| 10 | Assets card: Cue Rules editor UI (`/cues` page) | 🔧 Implemented (phrase/regex/section/fuzzy only) | Phase 9 frontend for the `ConditionTreeEditor`/Named Conditions extension |
 
 > **See also:** [AI Agent Plan](plan_agent.md) for additional agent phases including SVG graphics AI (Phase 5) and AI-assisted rundown creation (Phase 6).
