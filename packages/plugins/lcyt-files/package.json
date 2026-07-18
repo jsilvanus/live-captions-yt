@@ -6,9 +6,7 @@
   "main": "src/api.js",
   "exports": {
     ".": "./src/api.js",
-    "./adapters/local": "./src/adapters/local.js",
-    "./adapters/s3": "./src/adapters/s3.js",
-    "./adapters/key-segment": "./src/adapters/key-segment.js"
+    "./src/adapters/local.js": "./src/adapters/local.js"
   },
   "scripts": {
     "test": "node --experimental-test-module-mocks --test test/*.test.js"
