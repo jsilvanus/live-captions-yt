@@ -100,6 +100,7 @@ Where an implemented plan has known unbuilt parts (deferred phases, optional add
 
 | File | Title | Summary |
 |---|---|---|
+| [ROADMAP.md](plans/ROADMAP.md) | Roadmap — Way Forward | Prioritised ordering across every plan above: what to work next, and which pieces can run in parallel across simultaneous agents without file/package collisions. Re-derive from this index rather than trusting it blindly — it decays as work lands. |
 | [plan_mcp_oauth.md](plans/plan_mcp_oauth.md) | OAuth Authorization Server for MCP (Deferred) | Deferred-by-design reference design: LCYT as OAuth 2.1 authorization server for hosted MCP clients. **Nothing built** — `mcp_tokens` covers the near-term audience; do not build until a hosted-client integration is actually requested. |
 | [PR_phase6-7_hetzner.md](plans/PR_phase6-7_hetzner.md) | PR: Phase 6–7 Hetzner provisioning and autoscaling scaffolding | PR artifact for `plan/dock-ffmpeg`: Hetzner provisioning + autoscaling. |
 | [plan_backend_split.md](plans/plan_backend_split.md) | lcyt-backend Modularization & Plugin Extraction Assessment | Structural analysis: plugin extraction complete (lcyt-rtmp, lcyt-dsk, lcyt-agent, lcyt-music, lcyt-cues). |
