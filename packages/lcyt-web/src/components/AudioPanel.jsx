@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
-import { getSttEngine, getSttLang, getSttCloudConfig } from '../lib/sttConfig';
+import { getSttEngine, getSttLang, setSttLang, getSttCloudConfig, COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
 import { KEYS } from '../lib/storageKeys.js';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
@@ -12,6 +12,7 @@ import { isMobileDevice } from '../lib/device';
 // Extracted components/hooks
 import AudioLevelMeter from './audio/AudioLevelMeter';
 import { useWebSpeech } from '../hooks/useWebSpeech';
+import { useSourceLanguages } from '../hooks/useSourceLanguages';
 
 // Duration of the utterance-end button click flash animation (ms) — must match CSS @keyframes
 const UTTERANCE_CLICK_FLASH_MS = 400;
@@ -190,6 +191,9 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const { micHolder, clientId, claimMic, releaseMic, connected } = session;
   const iHaveMic    = micHolder === clientId;
   const otherHasMic = micHolder !== null && !iHaveMic;
+
+  // Fetch shared STT source languages (Phase 5)
+  const { sourceLanguages, loading: sourceLanguagesLoading } = useSourceLanguages();
 
   // ── Poll server STT status when engine=server and connected ──────────────
   useEffect(() => {
@@ -984,6 +988,35 @@ export const AudioPanel = forwardRef(function AudioPanel(
           )}
         </div>
       </div>
+
+      {/* Browser-STT language picker (Phase 5: reads shared source-language list) */}
+      {!isServerMode && (
+        <div className="audio-panel__language-row">
+          <label className="audio-panel__language-label">Language:</label>
+          <select
+            className="audio-panel__language-select"
+            value={getSttLang()}
+            onChange={(e) => {
+              setSttLang(e.target.value);
+              webkitSpeech.setLanguage?.(e.target.value);
+            }}
+          >
+            {sourceLanguages.length > 0 ? (
+              sourceLanguages.map((lang) => (
+                <option key={lang.lang} value={lang.lang}>
+                  {lang.label || lang.lang}
+                </option>
+              ))
+            ) : (
+              COMMON_LANGUAGES.map((lang) => (
+                <option key={lang.code} value={lang.code}>
+                  {lang.label}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+      )}
 
       {/* Hint / error line */}
       {(hint || cloudError) && (
