@@ -41,6 +41,7 @@ function mockSession(overrides = {}) {
     syncOffset: 0,
     send: vi.fn().mockResolvedValue({ ok: true }),
     sendBatch: vi.fn().mockResolvedValue({ ok: true }),
+    getPersistedConfig: vi.fn(() => ({})),
     ...overrides,
   };
 }

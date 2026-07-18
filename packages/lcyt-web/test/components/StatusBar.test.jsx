@@ -6,7 +6,7 @@ import { ToastContext } from '../../src/contexts/ToastContext.jsx';
 import { LangProvider } from '../../src/contexts/LangContext.jsx';
 
 // ---------------------------------------------------------------------------
-// Mock wouter — StatusBar now uses useLocation() to navigate to /settings etc.
+// Mock wouter — StatusBar uses useLocation() to navigate to / and /settings.
 // ---------------------------------------------------------------------------
 
 const mockNavigate = vi.fn();
@@ -22,11 +22,10 @@ vi.mock('wouter', () => ({
 function mockSession(overrides = {}) {
   return {
     connected: false,
-    sequence: 0,
-    syncOffset: 0,
-    connect: vi.fn().mockResolvedValue(undefined),
     disconnect: vi.fn().mockResolvedValue(undefined),
+    clearPersistedConfig: vi.fn(),
     getPersistedConfig: vi.fn(() => ({ backendUrl: 'https://api.test', apiKey: 'key123' })),
+    getSttStatus: vi.fn().mockResolvedValue({ running: false }),
     ...overrides,
   };
 }
@@ -42,11 +41,7 @@ function mockToast() {
 function renderStatusBar({ session, toast, ...props } = {}) {
   const s = session || mockSession();
   const t = toast || mockToast();
-  const callbacks = {
-    onControlsOpen: vi.fn(),
-    onPrivacyOpen: vi.fn(),
-    ...props,
-  };
+  const callbacks = { ...props };
 
   const result = render(
     <SessionContext.Provider value={s}>
@@ -69,6 +64,12 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+//
+// StatusBar was redesigned (project-routing work, plan/broadcasts era) into
+// a project-scoped header: it no longer owns connect/disconnect or the
+// Settings/CC/Broadcast/Controls/Privacy buttons (those moved elsewhere).
+// It now just shows the brand, an optional STT status chip, MusicChip, and
+// "Leave project" / "Log out" actions.
 
 describe('StatusBar', () => {
   it('renders brand name', () => {
@@ -76,112 +77,92 @@ describe('StatusBar', () => {
     expect(screen.getByText('lcyt-web')).toBeInTheDocument();
   });
 
-  it('shows connect button when disconnected', () => {
+  it('renders Leave project and Log out buttons', () => {
     renderStatusBar();
-    const btn = screen.getByTitle(/connect/i);
-    expect(btn).toBeInTheDocument();
-    expect(btn).not.toBeDisabled();
+    expect(screen.getByTitle('Leave project')).toBeInTheDocument();
+    expect(screen.getByTitle('Log out')).toBeInTheDocument();
   });
 
-  it('shows disconnect button when connected', () => {
+  it('does not show an STT chip when STT is not running', async () => {
     renderStatusBar({ session: mockSession({ connected: true }) });
-    expect(screen.getByTitle(/disconnect/i)).toBeInTheDocument();
-  });
-
-  it('calls session.connect when connect button is clicked', async () => {
-    const session = mockSession();
-    renderStatusBar({ session });
-
-    fireEvent.click(screen.getByTitle(/connect/i));
-
     await waitFor(() => {
-      expect(session.connect).toHaveBeenCalledWith({ backendUrl: 'https://api.test', apiKey: 'key123' });
+      expect(document.querySelector('.status-bar__stt-chip--active')).toBeNull();
     });
   });
 
-  it('calls session.disconnect when already connected', async () => {
-    const session = mockSession({ connected: true });
-    renderStatusBar({ session });
-
-    fireEvent.click(screen.getByTitle(/disconnect/i));
-
-    await waitFor(() => {
-      expect(session.disconnect).toHaveBeenCalled();
-    });
-  });
-
-  it('navigates to /settings when connecting with no config', async () => {
+  it('shows an STT chip while connected and STT is running', async () => {
     const session = mockSession({
-      getPersistedConfig: vi.fn(() => ({ backendUrl: '', apiKey: '' })),
+      connected: true,
+      getSttStatus: vi.fn().mockResolvedValue({ running: true, provider: 'google', mode: 'rest', language: 'en-US' }),
     });
     renderStatusBar({ session });
 
-    fireEvent.click(screen.getByTitle(/connect/i));
-
-    expect(mockNavigate).toHaveBeenCalledWith('/settings');
-    expect(session.connect).not.toHaveBeenCalled();
-  });
-
-  it('shows toast on connection error', async () => {
-    const session = mockSession();
-    session.connect.mockRejectedValue(new Error('Connection refused'));
-    const toast = mockToast();
-    renderStatusBar({ session, toast });
-
-    fireEvent.click(screen.getByTitle(/connect/i));
-
     await waitFor(() => {
-      expect(toast.showToast).toHaveBeenCalledWith('Connection refused', 'error');
+      expect(screen.getByText('STT: google/rest / en-US')).toBeInTheDocument();
     });
   });
 
-  it('navigates to /settings on Settings button click', () => {
-    renderStatusBar();
-    fireEvent.click(screen.getByTitle('Settings'));
-    expect(mockNavigate).toHaveBeenCalledWith('/settings');
-  });
+  it('navigates to /settings?tab=cc when the STT chip is clicked (no onCCOpen)', async () => {
+    const session = mockSession({
+      connected: true,
+      getSttStatus: vi.fn().mockResolvedValue({ running: true, provider: 'google', mode: null, language: 'en-US' }),
+    });
+    renderStatusBar({ session });
 
-  it('navigates to /settings?tab=cc on CC button click', () => {
-    renderStatusBar();
-    fireEvent.click(screen.getByTitle('CC'));
+    await waitFor(() => screen.getByText('STT: google / en-US'));
+    fireEvent.click(screen.getByText('STT: google / en-US'));
     expect(mockNavigate).toHaveBeenCalledWith('/settings?tab=cc');
   });
 
-  it('navigates to /broadcast on Broadcast button click', () => {
-    renderStatusBar();
-    fireEvent.click(screen.getByTitle('Broadcast'));
-    expect(mockNavigate).toHaveBeenCalledWith('/broadcast');
+  it('calls onCCOpen instead of navigating when the STT chip is clicked and onCCOpen is provided', async () => {
+    const session = mockSession({
+      connected: true,
+      getSttStatus: vi.fn().mockResolvedValue({ running: true, provider: 'google', mode: null, language: 'en-US' }),
+    });
+    const onCCOpen = vi.fn();
+    renderStatusBar({ session, onCCOpen });
+
+    await waitFor(() => screen.getByText('STT: google / en-US'));
+    fireEvent.click(screen.getByText('STT: google / en-US'));
+    expect(onCCOpen).toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('fires onControlsOpen callback', () => {
-    const callbacks = { onControlsOpen: vi.fn() };
-    renderStatusBar(callbacks);
-    fireEvent.click(screen.getByTitle('Controls'));
-    expect(callbacks.onControlsOpen).toHaveBeenCalled();
-  });
-
-  it('fires onPrivacyOpen callback', () => {
-    const callbacks = { onPrivacyOpen: vi.fn() };
-    renderStatusBar(callbacks);
-    fireEvent.click(screen.getByTitle('Privacy'));
-    expect(callbacks.onPrivacyOpen).toHaveBeenCalled();
-  });
-
-  it('disables connect button while connecting', async () => {
-    let resolveConnect;
+  it('clicking Leave project disconnects, strips project credentials, toasts, and navigates home', async () => {
+    localStorage.setItem('lcyt.session.config', JSON.stringify({
+      backendUrl: 'https://api.test', apiKey: 'key123', projectId: 'p1', projectAccessToken: 'tok',
+    }));
     const session = mockSession();
-    session.connect.mockReturnValue(new Promise(r => { resolveConnect = r; }));
-    renderStatusBar({ session });
+    const toast = mockToast();
+    renderStatusBar({ session, toast });
 
-    fireEvent.click(screen.getByTitle(/connect/i));
+    fireEvent.click(screen.getByTitle('Leave project'));
 
     await waitFor(() => {
-      const btn = document.querySelector('.status-bar__btn--connecting');
-      expect(btn).not.toBeNull();
-      expect(btn).toBeDisabled();
+      expect(session.disconnect).toHaveBeenCalled();
+      expect(toast.showToast).toHaveBeenCalledWith('Left project', 'info');
+      expect(mockNavigate).toHaveBeenCalledWith('/');
     });
 
-    resolveConnect();
+    const persisted = JSON.parse(localStorage.getItem('lcyt.session.config'));
+    expect(persisted.apiKey).toBeUndefined();
+    expect(persisted.projectId).toBeUndefined();
+    expect(persisted.projectAccessToken).toBeUndefined();
+    expect(persisted.backendUrl).toBe('https://api.test');
+  });
+
+  it('clicking Log out disconnects, clears the persisted config, toasts, and navigates home', async () => {
+    const session = mockSession();
+    const toast = mockToast();
+    renderStatusBar({ session, toast });
+
+    fireEvent.click(screen.getByTitle('Log out'));
+
+    await waitFor(() => {
+      expect(session.disconnect).toHaveBeenCalled();
+      expect(session.clearPersistedConfig).toHaveBeenCalled();
+      expect(toast.showToast).toHaveBeenCalledWith('Logged out', 'info');
+      expect(mockNavigate).toHaveBeenCalledWith('/');
+    });
   });
 });
-

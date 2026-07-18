@@ -92,6 +92,7 @@ function mockSession(overrides = {}) {
     updateRelay: vi.fn().mockResolvedValue(undefined),
     configureRelay: vi.fn().mockResolvedValue(undefined),
     stopRelay: vi.fn().mockResolvedValue(undefined),
+    getPersistedConfig: vi.fn(() => ({})),
     ...overrides,
   };
 }

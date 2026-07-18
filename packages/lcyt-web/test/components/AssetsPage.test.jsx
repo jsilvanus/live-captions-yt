@@ -6,7 +6,7 @@ import { AssetsPage } from '../../src/components/AssetsPage.jsx';
 
 function renderWith(session) {
   return render(
-    <SessionContext.Provider value={session}>
+    <SessionContext.Provider value={{ getPersistedConfig: () => ({}), ...session }}>
       <AssetsPage />
     </SessionContext.Provider>
   );

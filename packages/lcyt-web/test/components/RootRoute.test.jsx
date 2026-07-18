@@ -18,7 +18,7 @@ import { RootRoute } from '../../src/components/RootRoute.jsx';
 
 function renderWith(session) {
   return render(
-    <SessionContext.Provider value={session}>
+    <SessionContext.Provider value={{ getPersistedConfig: () => ({}), ...session }}>
       <RootRoute />
     </SessionContext.Provider>
   );
