@@ -24,6 +24,19 @@ function makeRow(frac, panels, split) {
   return { frac, panels, split: split || panels.map(() => 1) };
 }
 
+// A pane entry is either a bare type string (the original, still-valid shape)
+// or { type, settings } for pane types that need per-instance config (e.g.
+// which variable names a "variables" widget watches). Normalizers below let
+// every consumer treat both shapes uniformly without a storage-version bump —
+// old saved layouts (bare strings) keep working unchanged.
+export function paneType(pane) {
+  return typeof pane === 'string' ? pane : pane?.type;
+}
+
+export function paneSettings(pane) {
+  return typeof pane === 'string' ? undefined : pane?.settings;
+}
+
 /** The four built-in views and their default order. */
 export function defaultViews() {
   const views = {
@@ -164,6 +177,14 @@ export function addPane(state, ci, ri) {
 export function changePaneType(state, ci, ri, pi, type) {
   return updateActiveView(state, (v) => {
     v.cols[ci].rows[ri].panels[pi] = type;
+  });
+}
+
+/** Update a pane's per-instance settings, preserving its current type. */
+export function changePaneSettings(state, ci, ri, pi, settings) {
+  return updateActiveView(state, (v) => {
+    const r = v.cols[ci].rows[ri];
+    r.panels[pi] = { type: paneType(r.panels[pi]), settings };
   });
 }
 

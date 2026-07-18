@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useId } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
 
@@ -487,10 +487,63 @@ function LowerThirdsPane({ D }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// VARIABLES — live {{ }} watchlist widget
+// ═══════════════════════════════════════════════════════════════════════════
+
+function VariablesPane({ D, settings, onSettingsChange }) {
+  const [draft, setDraft] = useState('');
+  const datalistId = useId();
+  const watched = settings?.keys || [];
+  const known = Object.keys(D.variables || {}).filter((n) => !watched.includes(n));
+
+  function addKey(name) {
+    const key = (name || '').trim();
+    if (!key || watched.includes(key)) return;
+    onSettingsChange?.({ ...settings, keys: [...watched, key] });
+    setDraft('');
+  }
+  function removeKey(name) {
+    onSettingsChange?.({ ...settings, keys: watched.filter((k) => k !== name) });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 6, padding: '7px 9px', borderBottom: `1px solid #232323`, flexShrink: 0 }}>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addKey(draft); }}
+          list={datalistId} placeholder="variable name…"
+          style={{ flex: 1, background: C.inputBg, border: `1px solid ${C.inputBorder}`, borderRadius: 6, padding: '5px 9px', fontSize: '.7rem', color: '#ddd' }} />
+        <datalist id={datalistId}>
+          {known.map((n) => <option key={n} value={n} />)}
+        </datalist>
+        <button onClick={() => addKey(draft)} style={{ fontSize: '.66rem', fontWeight: 600, color: '#bbb', background: C.btnBg, border: `1px solid ${C.panelBorder}`, borderRadius: 6, padding: '5px 10px' }}>+ Watch</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {watched.length === 0 && <Empty>No variables watched yet. Add a name above (e.g. viewers, now_playing).</Empty>}
+        {watched.map((name) => {
+          const entry = D.variables?.[name];
+          const value = entry?.value ?? entry?.defaultValue ?? '';
+          const resolved = entry != null;
+          return (
+            <div key={name} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center', padding: '7px 9px', borderRadius: 6, background: C.tileBg, border: `1px solid ${C.tileBorder}` }}>
+              <span style={{ fontFamily: C.mono, fontSize: '.7rem', color: '#a8c6f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={name}>{name}</span>
+              <span style={{ fontSize: '.76rem', color: resolved ? '#eef2f8' : C.textMuted, fontStyle: resolved ? 'normal' : 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(value)}>
+                {resolved ? String(value) : 'unresolved'}
+              </span>
+              <button onClick={() => removeKey(name)} title="Stop watching" style={{ width: 20, height: 20, borderRadius: 5, background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.8rem', lineHeight: 1 }}>×</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function PaneBody({ type, D }) {
+export function PaneBody({ type, D, settings, onSettingsChange }) {
   switch (type) {
     case 'cameras':     return <CamerasPane D={D} />;
     case 'thumbnails':  return <ThumbnailsPane D={D} />;
@@ -506,6 +559,7 @@ export function PaneBody({ type, D }) {
     case 'chat':        return <ChatPane D={D} />;
     case 'general':     return <ControlsPane D={D} />;
     case 'lowerthirds': return <LowerThirdsPane D={D} />;
+    case 'variables':   return <VariablesPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }

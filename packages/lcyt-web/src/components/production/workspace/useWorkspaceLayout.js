@@ -92,6 +92,7 @@ export function useWorkspaceLayout(scope) {
     addRow:        (ci) => apply((s) => L.addRow(s, ci)),
     addPane:       (ci, ri) => apply((s) => L.addPane(s, ci, ri)),
     changePaneType:(ci, ri, pi, t) => apply((s) => L.changePaneType(s, ci, ri, pi, t)),
+    changePaneSettings: (ci, ri, pi, settings) => apply((s) => L.changePaneSettings(s, ci, ri, pi, settings)),
     removePane:    (ci, ri, pi) => apply((s) => L.removePane(s, ci, ri, pi)),
     resizeCols, resizeRows, resizePanes,
   };

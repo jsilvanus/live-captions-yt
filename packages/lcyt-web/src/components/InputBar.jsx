@@ -14,7 +14,7 @@ import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap
 import { interpolateVariables } from '../lib/metacode-variables.js';
 import { extractPersistentCodes, NON_PERSISTENT_CODE_KEYS } from '../lib/metacode-registry.js';
 import { expandActionItems, applyAtoms } from '../lib/metacode-actions.js';
-import { useVariables } from '../hooks/useVariables.js';
+import { useVariablesContext } from '../contexts/VariablesContext.jsx';
 import { useActions } from '../hooks/useActions.js';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
@@ -35,11 +35,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const fileStore = useFileContext();
   const sentLog = useSentLogContext();
   const { showToast } = useToastContext();
-  const variables = useVariables({
-    backendUrl: session.backendUrl,
-    connected: session.connected,
-    getToken: session.getSessionToken,
-  });
+  const variables = useVariablesContext();
   const namedActions = useActions({
     backendUrl: session.backendUrl,
     connected: session.connected,

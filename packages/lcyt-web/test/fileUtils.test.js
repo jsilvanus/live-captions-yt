@@ -1194,3 +1194,37 @@ describe('parseFileContent() — API connector triggers', () => {
     assert.equal(lineCodes[1].apiTriggers, undefined);
   });
 });
+
+// ---------------------------------------------------------------------------
+// {{name[N]}} / {{name[N*]}} variable-backed text blocks (plan_live_variables.md §3)
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — {{name[N]}} variable block markers', () => {
+  it('tags a sole {{name[N]}} line with codes.varBlock (soft wrap)', () => {
+    const { lines, lineCodes } = parseFileContent('{{quote[40]}}');
+    assert.equal(lines[0], '{{quote[40]}}');
+    assert.deepEqual(lineCodes[0].varBlock, { name: 'quote', maxLen: 40, hard: false });
+  });
+
+  it('tags a sole {{name[N*]}} line with codes.varBlock (hard wrap)', () => {
+    const { lineCodes } = parseFileContent('{{quote[40*]}}');
+    assert.deepEqual(lineCodes[0].varBlock, { name: 'quote', maxLen: 40, hard: true });
+  });
+
+  it('block-only: mixed with other text it is NOT treated as a block marker', () => {
+    const { lines, lineCodes } = parseFileContent('Quote: {{quote[40]}}');
+    assert.equal(lines[0], 'Quote: {{quote[40]}}');
+    assert.equal(lineCodes[0].varBlock, undefined);
+  });
+
+  it('plain {{name}} (no bracket) is never a block marker', () => {
+    const { lineCodes } = parseFileContent('{{quote}}');
+    assert.equal(lineCodes[0].varBlock, undefined);
+  });
+
+  it('coexists with a persistent code on the same line', () => {
+    const { lineCodes } = parseFileContent('<!-- section: Sermon -->{{quote[40]}}');
+    assert.equal(lineCodes[0].section, 'Sermon');
+    assert.deepEqual(lineCodes[0].varBlock, { name: 'quote', maxLen: 40, hard: false });
+  });
+});

@@ -482,6 +482,32 @@
   100% { background: transparent; }
 }
 
+/* Live {{name}} insertion — bus-pushed value, styled so it reads as "this bit
+   is a variable" rather than plain caption text (plan_live_variables.md §2). */
+.caption-line__var {
+  background: var(--color-active-line, rgba(90, 150, 220, 0.15));
+  border-bottom: 1px dotted var(--color-accent);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.caption-line__var--unresolved {
+  opacity: 0.6;
+  font-style: italic;
+}
+
+/* {{name[N]}} block — a virtual line materialized from a variable's value,
+   not present in the raw file (plan_live_variables.md §3). */
+.caption-line--virtual {
+  border-left-color: var(--color-accent);
+  opacity: 0.92;
+}
+
+.caption-line--var-pending {
+  opacity: 0.55;
+  font-style: italic;
+}
+
 .caption-view__empty {
   padding: 32px;
   color: var(--color-text-dim);

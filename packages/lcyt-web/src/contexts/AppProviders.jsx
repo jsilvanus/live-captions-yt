@@ -6,10 +6,12 @@ import { ConnectionContext } from './ConnectionContext';
 import { CaptionContext } from './CaptionContext';
 import { SessionApiContext } from './SessionApiContext';
 import { useSession } from '../hooks/useSession';
+import { useVariables } from '../hooks/useVariables.js';
 import { FileProvider } from './FileContext';
 import { SentLogContext } from './SentLogContext';
 import { ToastProvider } from './ToastContext';
 import { LangProvider } from './LangContext';
+import { VariablesContext } from './VariablesContext.jsx';
 
 const EMBED_CHANNEL = 'lcyt-embed';
 
@@ -116,6 +118,15 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
           sessionUrlRef.current   = null;
         }
       : undefined,
+  });
+
+  // Single shared {{ }} variable snapshot — one GET /variables + one
+  // /events/stream subscription for the whole app (InputBar, CaptionView,
+  // Production workspace all read this instead of instantiating their own).
+  const variables = useVariables({
+    backendUrl: session.backendUrl,
+    connected:  session.connected,
+    getToken:   session.getSessionToken,
   });
 
   // Auto-connect on mount:
@@ -248,11 +259,13 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
           <ConnectionContext.Provider value={connectionValue}>
             <CaptionContext.Provider value={captionValue}>
               <SessionApiContext.Provider value={sessionApiValue}>
-                <FileProvider>
-                  <ToastProvider>
-                    {children}
-                  </ToastProvider>
-                </FileProvider>
+                <VariablesContext.Provider value={variables}>
+                  <FileProvider>
+                    <ToastProvider>
+                      {children}
+                    </ToastProvider>
+                  </FileProvider>
+                </VariablesContext.Provider>
               </SessionApiContext.Provider>
             </CaptionContext.Provider>
           </ConnectionContext.Provider>

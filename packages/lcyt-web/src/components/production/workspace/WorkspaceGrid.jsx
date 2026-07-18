@@ -1,5 +1,6 @@
 import { C } from './theme.js';
 import { paneMeta, TYPE_OPTIONS } from './paneTypes.js';
+import { paneType, paneSettings } from './layout.js';
 import { PaneBody, PaneHeaderActions } from './panes/index.jsx';
 
 // Renders the column → row → pane tiling for the active view, plus resize
@@ -13,10 +14,11 @@ function ResizeHandle({ onPointerDown, orientation }) {
   return <div onPointerDown={onPointerDown} style={style} />;
 }
 
-function Pane({ D, wl, type, ci, ri, pi, panelsLen, splitArr }) {
+function Pane({ D, wl, type, settings, ci, ri, pi, panelsLen, splitArr }) {
   const meta = paneMeta(type);
   const frac = splitArr && splitArr[pi] != null ? splitArr[pi] : 1;
   const hasSplitAfter = pi < panelsLen - 1;
+  const onSettingsChange = (s) => wl.changePaneSettings(ci, ri, pi, s);
 
   return (
     <div style={{ position: 'relative', flexGrow: frac, flexBasis: 0, minWidth: 0, display: 'flex' }}>
@@ -41,7 +43,7 @@ function Pane({ D, wl, type, ci, ri, pi, panelsLen, splitArr }) {
         </div>
         {/* Panel body */}
         <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-          <PaneBody type={type} D={D} />
+          <PaneBody type={type} D={D} settings={settings} onSettingsChange={onSettingsChange} />
         </div>
       </div>
       {hasSplitAfter && <ResizeHandle orientation="col" onPointerDown={(e) => wl.resizePanes(e, ci, ri, pi)} />}
@@ -59,8 +61,8 @@ export function WorkspaceGrid({ D, wl }) {
         <div key={ci} data-cc="rows" style={{ position: 'relative', flexGrow: col.frac, flexBasis: 0, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 6 }}>
           {col.rows.map((row, ri) => (
             <div key={ri} data-cc="panes" style={{ position: 'relative', flexGrow: row.frac, flexBasis: 0, minHeight: 0, minWidth: 0, display: 'flex', gap: 6 }}>
-              {row.panels.map((type, pi) => (
-                <Pane key={pi} D={D} wl={wl} type={type} ci={ci} ri={ri} pi={pi} panelsLen={row.panels.length} splitArr={row.split} />
+              {row.panels.map((pane, pi) => (
+                <Pane key={pi} D={D} wl={wl} type={paneType(pane)} settings={paneSettings(pane)} ci={ci} ri={ri} pi={pi} panelsLen={row.panels.length} splitArr={row.split} />
               ))}
               {ri < col.rows.length - 1 && <ResizeHandle orientation="row" onPointerDown={(e) => wl.resizeRows(e, ci, ri)} />}
             </div>

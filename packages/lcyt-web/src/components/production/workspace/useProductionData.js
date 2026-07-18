@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { SessionContext } from '../../../contexts/SessionContext';
 import { SentLogContext } from '../../../contexts/SentLogContext';
+import { VariablesContext } from '../../../contexts/VariablesContext.jsx';
 import { KEYS } from '../../../lib/storageKeys.js';
 import { ACTIVE_BROADCAST_EVENT, notifyActiveBroadcastChanged } from '../../../hooks/useActiveBroadcast.js';
 
@@ -33,6 +34,7 @@ function readCreds(session) {
 export function useProductionData() {
   const session = useContext(SessionContext);
   const sentLog = useContext(SentLogContext);
+  const variablesCtx = useContext(VariablesContext);
   const creds = readCreds(session);
   const { backendUrl, apiKey, token } = creds;
 
@@ -352,6 +354,7 @@ export function useProductionData() {
     loaded, error,
     cameras, mixers, primaryMixer, templates, cueRules, relay, broadcast, thumbTick,
     sentEntries: sentLog?.entries || [],
+    variables: variablesCtx?.variables || {},
     activeInput, previewCam, programCam, camById,
     ui, patch,
     refresh: loadCore,

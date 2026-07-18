@@ -18,6 +18,7 @@
 import { RESERVED_METACODES, BOOLEAN_CODES } from './metacode-registry.js';
 import { parseValueTtl } from './metacode-ttl.js';
 import { parseActionItems } from './metacode-actions.js';
+import { parseVarBlockMarker } from './metacode-varblocks.js';
 const MULTI_META_RE = /<!--\s*([a-z][a-z0-9-]*(?:\[[^\]]*\])?)\s*:\s*([\s\S]*?)\s*-->/gi;
 const CUE_DEF_RE = /<!--\s*cue-def\s*:\s*([a-z0-9_-]+)\s*:\s*([\s\S]*?)\s*-->/gi;
 const STANZA_OPEN_RE = /^<!--\s*stanza\s*$/i;
@@ -615,8 +616,15 @@ export function parseFileContent(rawText) {
     // Strip all comment metacodes to get the remaining content text
     const contentText = stripAllComments(lineRaw);
 
+    // {{name[N]}} / {{name[N*]}} variable-backed text block — block-only: the
+    // marker must be this line's *entire* content. Expansion into virtual
+    // lines happens later (useFileStore), once a live variable snapshot is
+    // available; the parser just tags the marker (docs/plans/plan_live_variables.md §3).
+    const varBlock = parseVarBlockMarker(contentText);
+
     // Build the codes object for this line
     const codes = { ...currentCodes };
+    if (varBlock) codes.varBlock = varBlock;
     if (lineActions.audioCapture) codes.audioCapture = lineActions.audioCapture;
     if (lineActions.timer != null) codes.timer = lineActions.timer;
     if (lineActions.goto != null) codes.goto = lineActions.goto;

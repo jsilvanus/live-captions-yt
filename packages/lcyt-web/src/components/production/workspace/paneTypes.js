@@ -16,6 +16,7 @@ export const TYPE_OPTIONS = [
   ['chat',        'AI Assistant'],
   ['general',     'Controls'],
   ['lowerthirds', 'Lower Thirds / Graphics'],
+  ['variables',   'Variables'],
 ];
 
 export const PANE_META = {
@@ -33,6 +34,7 @@ export const PANE_META = {
   chat:        { title: 'AI Production Assistant', dot: '#a06fd0' },
   general:     { title: 'Controls',                dot: '#8a8a8a' },
   lowerthirds: { title: 'Lower Thirds / Graphics', dot: '#d08a4a' },
+  variables:   { title: 'Variables',               dot: '#4ab0a0' },
 };
 
 export function paneMeta(type) {
