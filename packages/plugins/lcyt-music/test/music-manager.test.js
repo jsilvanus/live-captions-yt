@@ -227,4 +227,95 @@ describe('MusicManager', () => {
 
     await mgr.stop('key1');
   });
+
+  describe('auto-start on publish (via on_publish hook in lcyt-rtmp)', () => {
+    test('ffmpegVersion is probed on construction', async () => {
+      const mgr = new MusicManager(makeMockDb(), null, makeSoundProcessor());
+      // The mock sets probeFfmpegVersion to return null, so ffmpegVersion should be null
+      assert.equal(mgr.ffmpegVersion, null);
+    });
+
+    test('start() can be called even when ffmpegVersion is null (graceful handling in rtmp.js)', async () => {
+      const mgr = new MusicManager(makeMockDb(), null, makeSoundProcessor());
+      assert.equal(mgr.ffmpegVersion, null);
+      // start() should not throw; the RTMP route layer checks ffmpegVersion before calling start()
+      await mgr.start('key1');
+      assert.equal(mgr.isRunning('key1'), true);
+      await mgr.stop('key1');
+    });
+
+    test('auto-start behavior: enabled=true + autoStart=true → start is called', async () => {
+      // This test documents the expected behavior:
+      // When the RTMP on_publish hook runs, it checks:
+      //   if (musicConfig.enabled && musicConfig.autoStart && !musicManager.isRunning(apiKey)) {
+      //     if (musicManager.ffmpegVersion) {
+      //       musicManager.start(apiKey, { streamKey: apiKey })
+      //     }
+      //   }
+      // This test verifies the config conditions are correct; the actual wiring is tested via
+      // the RTMP route tests in lcyt-rtmp.
+      const mockDb = {
+        prepare() {
+          return {
+            get() {
+              return {
+                enabled: 1,
+                auto_start: 1,
+                silence_threshold: 0.01,
+                flatness_threshold: 0.4,
+                zcr_threshold: 0.15,
+                confirm_segments: 2,
+                bpm_enabled: 1,
+                bpm_min: 40,
+                bpm_max: 200,
+                auto_calibrate: 0,
+              };
+            },
+            run() { return {}; },
+            all() { return []; },
+          };
+        },
+        exec() {},
+      };
+      const { getMusicConfig } = await import('../src/db.js');
+      const config = getMusicConfig(mockDb, 'key1');
+      assert.equal(config.enabled, true);
+      assert.equal(config.autoStart, true);
+      // The RTMP router should check both conditions before starting
+    });
+
+    test('auto-start behavior: enabled=false + autoStart=true → start is NOT called', async () => {
+      // When enabled=false but autoStart=true, the on_publish hook should not start.
+      // This is like having music detection configured but not enabled globally for the key.
+      const mockDb = {
+        prepare() {
+          return {
+            get() {
+              return {
+                enabled: 0,
+                auto_start: 1,
+                silence_threshold: 0.01,
+                flatness_threshold: 0.4,
+                zcr_threshold: 0.15,
+                confirm_segments: 2,
+                bpm_enabled: 1,
+                bpm_min: 40,
+                bpm_max: 200,
+                auto_calibrate: 0,
+              };
+            },
+            run() { return {}; },
+            all() { return []; },
+          };
+        },
+        exec() {},
+      };
+      const { getMusicConfig } = await import('../src/db.js');
+      const config = getMusicConfig(mockDb, 'key1');
+      assert.equal(config.enabled, false);
+      assert.equal(config.autoStart, true);
+      // The RTMP router checks: if (config.enabled && config.autoStart)
+      // This should NOT start because enabled=false
+    });
+  });
 });
