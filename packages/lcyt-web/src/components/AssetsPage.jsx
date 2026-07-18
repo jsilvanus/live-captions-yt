@@ -300,7 +300,7 @@ export function AssetsPage() {
       color: 'cyan',
       status: connected ? (loading.cues ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.cues ? 'Loading…' : `${cueRules.length} rule${cueRules.length === 1 ? '' : 's'}`) : 'Connect',
-      headerAction: { label: 'Open', href: '/planner' },
+      headerAction: { label: 'Open', href: '/cues' },
       body: !connected ? (
         <p className="setup-card__empty">Connect to a project to view cue rules.</p>
       ) : loading.cues ? (
@@ -313,7 +313,7 @@ export function AssetsPage() {
           name={rule.name || 'Cue rule'}
           meta={rule.match_type || 'phrase'}
           badge={rule.enabled === false ? 'disabled' : 'active'}
-          href="/planner"
+          href="/cues"
         />
       )),
     },

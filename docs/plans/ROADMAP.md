@@ -102,9 +102,19 @@ rule types (phrase/regex/section/fuzzy) — don't wait on Phase 9. That alone cl
 "shipped API, no UI" gap for the common case. Extend the editor once Phase 9's
 composite trees exist.
 
-**Lane C — Cue rules editor (Phase 10, current rule types only)**
-(`packages/lcyt-web/src/components/AssetsPage.jsx` + a new editor component; reads
-the existing `/cues/rules` API). Independent of every other lane.
+**Lane C — Cue rules editor (Phase 10, current rule types only)** is **done** —
+implemented 2026-07-18: `packages/lcyt-web/src/components/CuesPage.jsx` (new,
+route `/cues`) is a CRUD editor over the existing `/cues/rules` API, scoped to
+`phrase`/`regex`/`section`/`fuzzy` as planned — no backend changes. Rules of
+other match types (`semantic`, `event_cue`, sound-cue types, future
+`composite`) still list/toggle/delete but lock their edit form with a notice
+rather than expose fields the editor doesn't support yet. `AssetsPage.jsx`'s
+existing "Global cues" card (it already had one, unlike the plan's original
+`TILES`-array sketch — see `plan_cues.md` Phase 10) now links to `/cues`
+instead of `/planner`. `plan_cues.md`, `plan_assets_page.md`, and
+`packages/lcyt-web/CLAUDE.md` updated; `test/components/CuesPage.test.jsx`
+(9 tests, Vitest) added. The composite-tree `ConditionTreeEditor` and Named
+Conditions section remain deferred to Phase 9 (Lane D), as scoped.
 
 **Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees**
 (`packages/plugins/lcyt-cues` only). Independent of Lane C in terms of files, but
@@ -167,7 +177,7 @@ If launching several agents today, this set has no file/package overlap:
 
 - **Lane A** — done, see Tier 1 above; nothing left to dispatch here
 - **Lane B** — done, see Tier 1 above; the remaining vertical-crop work (production-follow) is a backend lane, not this frontend one
-- **Lane C** — Cue rules editor, current rule types (`lcyt-web` Assets page)
+- **Lane C** — done, see Tier 2 above; nothing left to dispatch here (the `ConditionTreeEditor`/Named Conditions extension is Phase-9-gated, not a standalone dispatch)
 - **Lane D** — Cue engine Phase 8.5 + Phase 9 (`lcyt-cues`)
 - One or two Tier 3 items from packages not already claimed above (e.g. HLS
   `putObject`/`publicUrl` wiring, or the DSK editor's rotation handle)

@@ -37,6 +37,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/production/visual` | `ProductionVisualPage` | Video/audio signal-flow diagram of the production setup (Mermaid) |
 | `/production/crop` | `ProductionCropPage` | Vertical Crop operator page — draggable preset editor, preset-set tabs, camera/PTZ-preset source binding, live `{key}-crop` vertical monitor (linked from the `/production` console header) |
 | `/planner` | `PlannerPage` | Event/service planner |
+| `/cues` | `CuesPage` | Cue rules CRUD editor (`GET/POST/PUT/DELETE /cues/rules`), scoped to `phrase`/`regex`/`section`/`fuzzy` rule types — linked from the Assets page's "Global cues" card (plan_cues.md Phase 10). Rules with other match types (`semantic`, `event_cue`, sound-cue types, future `composite`) list/toggle/delete but lock their edit form. |
 | `/translations` | `TranslationsPage` | Translation management |
 | `/projects` | `ProjectsPage` | User project (API key) management |
 | `/projects/:key` | `ProjectSettingsPage` | Per-project settings page (Summary, Features, Team, Device roles, Danger zone tabs — `ProjectDetailModal` un-nested) |
@@ -156,6 +157,9 @@ Embed pages that own a session (`/embed/audio`, `/embed/input`, `/embed/file-dro
 **Added 2026-03-17 (Vitest):**
 - `test/components/useSentLog.test.jsx` (30 tests) — initial state, localStorage restore on mount (invalid JSON, non-array), `add()` (prepend order, pending flag, timestamp, localStorage persistence), `confirm()` (string + object arg, sequence update, no-op for unknown), `markError()` (error flag, clears pending, no-op for unknown, not persisted), `updateRequestId()`, `clear()` (empties entries + storage).
 - `test/components/useToast.test.jsx` (18 tests) — `useToast`: initial state, `showToast()` (type default, custom type, unique IDs, auto-dismiss timer, no-dismiss when duration=0), `dismissToast()` (removes matching, partial, no-op for unknown); `ToastContainer`: no-crash empty, renders messages, CSS class, multiple toasts, click-to-dismiss with 200ms fade.
+
+**Added 2026-07-18 (Vitest):**
+- `test/components/CuesPage.test.jsx` (9 tests) — `CuesPage` (`/cues`, plan_cues.md Phase 10): connect prompt when disconnected, list/empty states from `GET /cues/rules`, create via dialog (`POST /cues/rules` body shape), client-side invalid-regex rejection before submit, edit-dialog prefill + save (`PUT /cues/rules/:id`), delete with confirmation dialog (`DELETE /cues/rules/:id`), optimistic enable/disable toggle, and the locked-edit-form notice for non-editable match types (e.g. `music_start`).
 
 **Gaps (Low):**
 - **React components** — 30+ leaf components (App, panels, modals, all pages) have no tests.

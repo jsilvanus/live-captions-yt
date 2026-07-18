@@ -69,7 +69,7 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 | Card | Group | Backing store | List endpoint | Editor / target | Real data v1? |
 |---|---|---|---|---|---|
 | **Graphics** | Reusable | `dsk_templates` | `GET /dsk/:key/templates` | `/graphics/editor` | ✅ |
-| **Global cues** | Reusable | `cue_rules` | `GET /cues/rules` | cue rule dialog | ✅ |
+| **Global cues** | Reusable | `cue_rules` | `GET /cues/rules` | `/cues` page (`CuesPage.jsx`, `plan_cues.md` Phase 10) | ✅ |
 | **Global actions** | Reusable | `action_defs` | actions route | Named-actions dialog (already on page) | ✅ |
 | **Icons** | Reusable | `icons` | icons route | `/setup/icons` | ✅ |
 | **Caption / rundown files** | Produced | `caption_files` | `GET /file` | `/captions` | ✅ (a translation is a file with a `lang` badge — decision 2) |
@@ -84,6 +84,14 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 > the Assets page v1 per decision 1a, and light up as those plans land. Rundowns
 > fold into the existing "Caption / rundown files" card rather than being their
 > own card.
+
+> **Update (2026-07-18):** the Global cues card's editor target changed from
+> the originally-sketched inline dialog to a dedicated `/cues` page
+> (`CuesPage.jsx`) — see `plan_cues.md` Phase 10. Same reasoning as Graphics'
+> link-out to `/graphics/editor`: a rule editor with per-match-type fields
+> (and, once Phase 9 ships, a composite condition tree) doesn't fit a small
+> `SetupItemRow` dialog. The card's row/header links now point at `/cues`
+> instead of `/planner`.
 
 Notes from tracing the code:
 
