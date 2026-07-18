@@ -1,6 +1,6 @@
 ---
-status: pending
-summary: "Concrete, atomic implementation plan for ROADMAP.md's Tier 3 (small, independent gap-closers). Seven items, each scoped to file-level steps grounded in the current codebase (not just the plan-file summaries), with two corrections to ROADMAP's package attributions and one already-satisfied sub-item flagged as done. Organised as seven independent lanes plus one item that needs a scope decision before dispatch."
+status: implemented
+summary: "Concrete, atomic implementation plan for ROADMAP.md's Tier 3 (small, independent gap-closers). Seven items, each scoped to file-level steps grounded in the current codebase (not just the plan-file summaries), with two corrections to ROADMAP's package attributions and one already-satisfied sub-item flagged as done. Organised as seven independent lanes plus one item that needs a scope decision before dispatch. Implemented via two parallel worktree agents (2026-07-18); see 'Implementation notes' at the end of this file for what shipped, what was fixed during review, and what's left."
 ---
 
 # Tier 3 Implementation Plan
@@ -490,3 +490,74 @@ a call worth a quick confirmation before dispatch, per ROADMAP's own note.
 - Everything else in this document (Items 2, 5, 7, and Item 1/6's non-overlap
   with everything but each other) is fully independent and matches ROADMAP
   §0's package-ownership dispatch rule.
+
+---
+
+## Implementation notes (2026-07-18)
+
+All seven items shipped via two parallel Haiku worktree agents (Phase 1:
+Items 1/6/5/7; Phase 2: Items 2/3/4-scoped, matching the "Suggested parallel
+dispatch" table above), then merged into `claude/tier3-implementation-plan-jdfx08`.
+Full repo test suite green post-merge (`npm test` + `lcyt-web`'s Vitest
+component suite). A few things worth recording for next time, per ROADMAP §0's
+own convention of writing down operational lessons:
+
+- **Worktree isolation failed twice, in two different ways**, on the exact
+  first turn of both agents, both silently:
+  - Both agents' worktrees were initially created from `origin/main`
+    instead of the branch they were told to work on — one commit short,
+    missing this very plan file, so neither could actually read the spec
+    they were told to treat as authoritative on their first turn. Caught by
+    checking `git log -1` against the expected commit before trusting
+    either agent's "I read the plan" claim.
+  - Independently, a stray partial commit (`e87f319`, matching the real
+    Item 1 commit's message but containing only a 1-line `package.json`
+    diff) landed directly in the *primary* checkout, not any worktree —
+    exactly the failure ROADMAP §0 documents from an earlier session. It
+    was never pushed and its content was fully redundant with the worktree
+    branch's proper commit, so it was safely `git reset --hard`-ed away.
+    Caught only by checking `git log` on the primary checkout right before
+    merging, not by the `git status --short` checks done throughout the
+    session — **checking for a clean working tree is not the same as
+    checking for stray commits on the branch tip; do both.**
+- **Both agents' self-reports needed correction, not just verification.**
+  Every "all tests pass" claim checked out when independently re-run, but:
+  - Item 6's commit referenced `HlsManager.probeStreamInfo()` and shipped
+    tests for it, but the method implementation itself was never `git add`-ed
+    — the commit would throw if checked out in isolation. The working tree
+    still had it uncommitted; folded into a follow-up commit.
+  - The H.264 `CODECS` string encoding computed `(profile << 8) | level`,
+    which produces the wrong byte order per RFC 6381's `avc1.PPCCLL` (three
+    separate hex bytes) — `avc1.004228` instead of `avc1.420028` for
+    Baseline level 4.0. Fixed; would have risked real playback rejection on
+    strict clients (Safari's native HLS player validates this string).
+  - Item 3a (admin role tiers) shipped with three mutating routes missing
+    the `requireFullAdmin()` gate (`PATCH /users/:id/features`,
+    `POST /import/users`, `POST /import/projects`) and zero test coverage
+    for the readonly-admin behavior despite the plan asking for it. Fixed,
+    9 tests added.
+  - Item 4's JWT verification middleware was a **complete no-op**, for two
+    independent reasons: it was mounted as global `app.use()` middleware
+    registered before any route-specific `createProjectAccessMiddleware()`
+    call, so `req.auth` didn't exist yet when it ran; and even moved to the
+    right place, device JWTs never reached the code path that would check
+    them, because a pre-existing (not introduced by this work) loose
+    session-token check (`payload.sessionId || payload.apiKey`) swallows
+    any token carrying `apiKey` — which device tokens do, alongside their
+    `type: 'device'` field — before the device-specific branch ever runs.
+    Every device token was resolving as `kind: 'session'` with none of
+    `deviceRole`/`roleId`/`permissions` attached, which also explains why
+    write-audit's `req.auth?.kind === 'device'` actor-kind labeling likely
+    never fired correctly either. Fixed by moving the active-role check
+    into `createProjectAccessMiddleware`'s own device branch and excluding
+    device tokens from the loose session match; 4 tests added.
+  - Item 4's admin CLI subcommands and time-limited-session field were not
+    independently re-verified beyond "tests still pass" (no dedicated CLI
+    test infrastructure exists in this repo to check against — flagged as
+    a gap, not fixed, per `packages/lcyt-backend/CLAUDE.md`'s existing note
+    that CLI tests are missing entirely).
+- None of the above were caught by the agents' own "all tests pass" claims
+  — every one required either reading the actual diff or writing a test
+  that hadn't existed before. Trusting a green test count without checking
+  what it does and doesn't cover would have shipped a dead feature (Item 4)
+  and a broken one (Item 6's codec string) as "done."

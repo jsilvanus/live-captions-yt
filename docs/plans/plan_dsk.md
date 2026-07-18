@@ -91,8 +91,11 @@ All Phase 3 features (previously listed as "excluded from Phase 2") are implemen
 
 ### Not yet implemented (deferred to Phase 4 or later)
 
-- Rotation handle (future)
-- Snap to grid *visual* ruler overlay (future)
+- ~~Rotation handle~~ — **Done** (`tmp_plan_tier3.md` Item 2a): drag handle in `TemplatePreview.jsx`
+  + numeric input in `LayerPropertyEditor.jsx`, 15° snap increments, applied consistently in the
+  editor canvas, `lcyt-dsk`'s `renderer.js` (Playwright RTMP output), and `DskPage.jsx` (live overlay).
+- ~~Snap to grid *visual* ruler overlay~~ — **Done** (`tmp_plan_tier3.md` Item 2b): toggleable
+  gridline overlay in `TemplatePreview.jsx`, editor-canvas-only.
 
 ---
 

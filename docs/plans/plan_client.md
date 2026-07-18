@@ -578,7 +578,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 - Multi-user collaboration (one client per session)
 - Caption editing/deletion after send
-- YouTube API integration (stream status polling) — out of scope for web client MVP; may add in a patch
+- ~~YouTube API integration (stream status polling) — out of scope for web client MVP; may add in a patch~~ — **Done** (`tmp_plan_tier3.md` Item 5): `YouTubeTab.jsx` polls `listScheduledBroadcasts()` every 20s while signed in, paused via `visibilitychange` when the tab is backgrounded.
 - Mobile app (PWA is fine as a side effect, not a primary target)
 - Offline mode
 

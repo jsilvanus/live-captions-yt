@@ -173,7 +173,9 @@ Cleanup: `stopSubs(viewerKey)` removes the key's directory. Called automatically
 
 - If the video stream is not running (`hlsManager.isRunning(key) === false`), return 404.
 - If no subtitle languages are active yet, emit the manifest without `EXT-X-MEDIA` lines and without `SUBTITLES=` on the stream-inf.
-- `BANDWIDTH` is hard-coded to a typical value; adding ffprobe inspection is noted as future work.
+- `BANDWIDTH`/`CODECS` are now probed live via ffprobe (`HlsManager.probeStreamInfo()`,
+  60s cache, `tmp_plan_tier3.md` Item 6) and fall back to the hard-coded typical value
+  above only when probing fails or ffprobe isn't installed.
 
 ### 7. Player Page
 
@@ -388,7 +390,7 @@ Inline in `video.js` (template literal):
 | Item | Notes |
 |---|---|
 | **Source language tag** | The viewer payload has no explicit `sourceLang` field. Using `'original'` as the key is safe and unambiguous. Passing the actual BCP-47 source tag (e.g. `'en'`) requires either a session config lookup or an extra field on the broadcast payload — defer to a follow-up PR. |
-| **Video CODECS string** | The master manifest hard-codes `avc1.4d401f,mp4a.40.2` (H.264 Baseline + AAC). This covers all OBS/hardware encoder defaults. Add ffprobe detection as an optional enhancement later. |
+| **Video CODECS string** | ~~The master manifest hard-codes `avc1.4d401f,mp4a.40.2`~~ — **Done**: `HlsManager.probeStreamInfo()` (`tmp_plan_tier3.md` Item 6) now probes the real stream via ffprobe and builds an RFC-6381-correct `avc1.PPCCLL` string; the hard-coded value remains only as the fallback when probing fails. |
 | **Subtitle-only mode** | If no video stream is running, still serve subtitle playlists (useful for testing captioning without video). The master manifest can reference a dummy stream-inf pointing at a non-live video URL — the player will show an error for video but subtitles remain accessible. |
 | **CEA-708 embedding** | Future: embed captions directly into `.ts` segments via ffmpeg `mov_text`/`cea608` — enables closed-caption rendering on devices that don't support WebVTT sidecar (e.g. Smart TVs). Out of scope here. |
 | **Rate limit tuning** | 120 req/min/IP was designed for video segments. Subtitle playlists are polled at the same frequency; the limit covers both. Monitor in production and tune if needed. |

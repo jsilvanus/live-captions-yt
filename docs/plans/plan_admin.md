@@ -1,6 +1,6 @@
 # Admin Panel — Web-based User & Project Management
 
-**Status:** implemented (Phase 1 + Phase 2)
+**Status:** implemented (Phase 1 + Phase 2 + Phase 3)
 
 > Conflates and extends the user/projects system from `plan_userprojects.md`.
 > This plan covers the **admin dashboard** for managing users, projects (API keys),
@@ -192,8 +192,14 @@ When `features` is included alongside `action`, features are updated for all mat
 - [x] Frontend: `navConfig.js` — Audit Log nav item
 - [x] Frontend: Build verified
 
-## Phase 3 (planned)
+## Phase 3
 
-- [ ] Role-based admin access (super-admin vs. read-only admin)
-- [ ] Admin action confirmation dialogs
+- [x] Role-based admin access (`full`/`readonly` — `tmp_plan_tier3.md` Item 3a): additive
+      `users.admin_role` column, `requireFullAdmin()` middleware gates every mutating
+      `/admin/*` route (`X-Admin-Key` always resolves to full access).
+- [x] Admin action confirmation dialogs (`tmp_plan_tier3.md` Item 3b): shared
+      `ConfirmDialog.jsx` component replaces the native `confirm()` popups in
+      `AdminUsersPage.jsx`/`AdminProjectsPage.jsx`/`AdminUserDetailPage.jsx`/`AdminProjectDetailPage.jsx`.
+- [x] Real-time live-stats dashboard — delivered separately by `plan_metering_audit.md`
+      (`AdminMetricsPage.jsx`, `GET /admin/metrics/live`), not this plan.
 - [ ] Real-time admin dashboard with live stats

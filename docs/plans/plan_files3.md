@@ -208,9 +208,9 @@ listObjects(apiKey, prefix?)   → AsyncIterable<{ objectKey, storedKey, size, l
 
 | Item | Priority | Notes |
 |---|---|---|
-| Wire `putObject`/`publicUrl` into HLS manager | Medium | New `lcyt-rtmp` component; uses `resolveStorage` the same way captions do. |
+| ~~Wire `putObject`/`publicUrl` into HLS manager~~ | ~~Medium~~ | **Done** (`tmp_plan_tier3.md` Item 1) — `HlsManager` (`lcyt-rtmp`) polls its output directory and pushes new/changed HLS files via `resolveStorage`, injected from `lcyt-backend/src/server.js`'s `initFilesControl()`. |
 | CDN URL config field | Low | Add optional `cdn_url` to `key_storage_config` so `publicUrl()` can return the CDN URL directly. |
-| S3 adapter tests | Low | Requires mock S3 (e.g. localstack or custom HTTP mock). |
+| ~~S3 adapter tests~~ | ~~Low~~ | **Done** (`tmp_plan_tier3.md` Item 7) — `test/s3-adapter.test.js` against a lightweight custom `node:http` mock (`test/helpers/mock-s3-server.js`), not localstack, matching the repo's no-external-service test convention. |
 | ~~Local FS → S3 migration script~~ | ~~Low~~ | **Done** — `scripts/migrate-files-to-s3.mjs`: copy-only, verifies each upload, `--dry-run`, idempotent re-runs. |
 
 ---
