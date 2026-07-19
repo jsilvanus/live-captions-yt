@@ -30,7 +30,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/graphics/control` | `DskControlPage` | DSK broadcast control panel |
 | `/graphics/viewports` | `DskViewportsPage` | DSK viewport management |
 | `/production` | `ProductionOperatorPage` | Tileable operator console (`components/production/workspace/`) — Pre-flight/Live Relay/Live Mixer/Captions + custom views |
-| `/production/cameras` | `ProductionCamerasPage` | Camera management |
+| `/production/cameras` | `ProductionCamerasPage` | Camera management. Control types: `none`/`amx`/`visca-ip`/`webcam`/`mobile`/`rtmp` — the last three (`HAS_CAMERA_KEY_TYPES`) get a `camera_key` field; `rtmp` (plan_ingest_feeds.md §1a/§3) is a named feed pushed in externally, no browser "Open camera" WHIP link like `webcam`/`mobile` get |
 | `/production/mixers` | `ProductionMixersPage` | Mixer management |
 | `/production/bridges` | `ProductionBridgesPage` | Bridge instance management |
 | `/production/devices` | `ProductionDevicesPage` | Device role management |
@@ -46,7 +46,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/broadcasts` | `BroadcastsManager` | Broadcast scheduler & manager — plan/schedule broadcasts, set metadata (title, description, thumbnail URL), link YouTube, enable recording |
 | `/videos` | `StoredVideosManager` | Recorded broadcast playback (HLS) & management — produced by the recording pipeline, not authored here |
 | `/team` | `TeamPage` | Organization/team management (backed by the `/orgs` backend routes: members, roles, org projects) |
-| `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable |
+| `/setup` | `SetupHubPage` | Persistent device/service catalog — every card has an `id` and is deep-linkable. Notably: `IngestionSection.jsx` (`id="ingestion"`) lists every `camera_key`-bearing camera alongside the Video/DSK slots — one referenced by a `GET /stream` relay's `sourceCameraId` renders active, one referenced by none renders greyed out as "Monitor" (computed client-side, not a stored flag — plan_ingest_feeds.md §3); `EgressSection.jsx` (`id="egress"`) lets each relay slot pick a source (Program / Vertical Crop / any named feed camera) via `RelaySlotRow`'s `feedCameras` prop |
 | `/setup/wizard` | `SetupWizardPage` | Guided one-time setup wizard (superseded by the hub as the default `/setup` destination, still reachable) |
 | `/setup/:card` | `SetupHubPage` | Deep link — same page as `/setup`, with the card whose `id` matches `:card` (e.g. `connectors`, `cameras`, `stt`, `storage`, `icons`) scrolled into view and highlighted for 10s |
 | `/setup/:card/page` | `SetupStandalonePage` | Full-page equivalent of a card (`cameras`\|`mixers`\|`encoders`\|`bridges`\|`viewports`\|`caption-targets` only) with a banner linking back to the hub card — device/config-manager cards render the same manager component non-embedded; `viewports` renders the full `DskViewportsPage` editor (text layers, present-to-screen) since those don't fit the card's item-row model. Cards without a real standalone-page duplicate (Egress — `/broadcast` covers more than just relay targets — Storage, STT, etc.) don't route here. |

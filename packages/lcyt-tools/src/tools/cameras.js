@@ -26,13 +26,13 @@ export function createCameraTools(deps) {
     },
     {
       name: 'camera.create',
-      description: 'Create a camera. controlType is one of none, amx, visca-ip, webcam, mobile.',
+      description: 'Create a camera. controlType is one of none, amx, visca-ip, webcam, mobile, rtmp.',
       inputSchema: {
         type: 'object',
         properties: {
           name: { type: 'string' },
           mixerInput: { type: 'number' },
-          controlType: { type: 'string', enum: ['none', 'amx', 'visca-ip', 'webcam', 'mobile'] },
+          controlType: { type: 'string', enum: ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'] },
           controlConfig: { type: 'object' },
           bridgeInstanceId: { type: 'string' },
         },
@@ -50,7 +50,7 @@ export function createCameraTools(deps) {
           id: { type: 'string' },
           name: { type: 'string' },
           mixerInput: { type: 'number' },
-          controlType: { type: 'string', enum: ['none', 'amx', 'visca-ip', 'webcam', 'mobile'] },
+          controlType: { type: 'string', enum: ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'] },
           controlConfig: { type: 'object' },
           bridgeInstanceId: { type: 'string' },
         },

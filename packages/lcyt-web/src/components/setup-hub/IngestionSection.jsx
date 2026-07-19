@@ -14,6 +14,10 @@ function statusDotFor(live) {
   return UNKNOWN_DOT; // null/undefined — unknown, e.g. DSK slot before its status is wired server-side
 }
 
+// Camera control types that carry a camera_key (a real MediaMTX ingest path) —
+// webcam/mobile (WHIP) and 'rtmp' (pushed — plan_ingest_feeds.md §1a).
+const FEED_CAMERA_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
+
 /**
  * IngestionSection — "one Video, one DSK" RTMP ingest, per the mockup's
  * `IngestionCard.dc.html`. Wired against `GET/PATCH /ingestion/config`
@@ -21,16 +25,21 @@ function statusDotFor(live) {
  * that contract isn't implemented server-side yet, so this fails soft
  * (shows the empty state) against a real backend until it is.
  *
- * Also shows any browser-type camera (`controlType` webcam/mobile — real
- * data via the existing `GET /production/cameras`) as a faded "camera"
- * badge row, matching the mockup's `ingestionCamPhantoms` cross-reference —
- * those cameras stream in over RTMP too, just on their own per-camera path.
+ * Also lists every camera_key-bearing camera (`controlType` webcam/mobile/
+ * rtmp — real data via `GET /production/cameras`, plan_ingest_feeds.md §2b's
+ * `live` field) alongside the Video/DSK slots. A camera referenced by at
+ * least one `GET /stream` relay's `sourceCameraId` renders as an active row
+ * with its live dot and current egress target(s); one referenced by none is
+ * a "Monitor" — greyed out, computed purely client-side from the camera +
+ * relay lists, not a separate flag anywhere in the data model
+ * (plan_ingest_feeds.md §3).
  */
 export function IngestionSection() {
   const session = useSessionContext();
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [camPhantoms, setCamPhantoms] = useState([]);
+  const [feedCameras, setFeedCameras] = useState([]);
+  const [relays, setRelays] = useState([]);
   const [editingSlot, setEditingSlot] = useState(null); // 'video' | 'dsk' | null
 
   const authedFetch = useCallback((path, opts = {}) => {
@@ -51,17 +60,34 @@ export function IngestionSection() {
     finally { setLoading(false); }
   }, [session?.connected, authedFetch]);
 
-  const loadCameraPhantoms = useCallback(async () => {
+  const loadFeedCameras = useCallback(async () => {
     if (!session?.connected) return;
     try {
       const r = await authedFetch('/production/cameras');
       if (!r.ok) return;
       const cams = await r.json();
-      setCamPhantoms((cams || []).filter(c => c.controlType === 'webcam' || c.controlType === 'mobile'));
+      setFeedCameras((cams || []).filter(c => FEED_CAMERA_TYPES.has(c.controlType) && c.cameraKey));
     } catch { /* ignore */ }
   }, [session?.connected, authedFetch]);
 
-  useEffect(() => { load(); loadCameraPhantoms(); }, [load, loadCameraPhantoms]);
+  const loadRelays = useCallback(async () => {
+    if (!session?.connected) return;
+    try {
+      const r = await authedFetch('/stream');
+      if (!r.ok) return;
+      const body = await r.json();
+      setRelays(body?.relays || []);
+    } catch { /* RTMP relay not active on this backend — leave relays empty */ }
+  }, [session?.connected, authedFetch]);
+
+  useEffect(() => { load(); loadFeedCameras(); loadRelays(); }, [load, loadFeedCameras, loadRelays]);
+
+  const relaysByCameraId = new Map();
+  for (const relay of relays) {
+    if (!relay.sourceCameraId) continue;
+    if (!relaysByCameraId.has(relay.sourceCameraId)) relaysByCameraId.set(relay.sourceCameraId, []);
+    relaysByCameraId.get(relay.sourceCameraId).push(relay);
+  }
 
   async function toggleSlot(slot, enabled) {
     setConfig(c => c ? { ...c, [slot]: { ...c[slot], enabled } } : c);
@@ -110,15 +136,24 @@ export function IngestionSection() {
         </>
       )}
 
-      {camPhantoms.map(cam => (
-        <SetupItemRow
-          key={cam.id}
-          name={cam.name}
-          meta="Browser camera — streams in via its own RTMP path"
-          badge="camera"
-          faded
-        />
-      ))}
+      {feedCameras.map(cam => {
+        const targets = relaysByCameraId.get(cam.id) || [];
+        const isMonitor = targets.length === 0;
+        const meta = isMonitor
+          ? `${cam.cameraKey} — no egress target`
+          : `${cam.cameraKey} → ${targets.map(t => t.targetName || t.targetUrl).join(', ')}`;
+        return (
+          <SetupItemRow
+            key={cam.id}
+            name={cam.name}
+            meta={meta}
+            badge={isMonitor ? 'Monitor' : 'camera'}
+            faded={isMonitor}
+            statusDot={statusDotFor(cam.live)}
+            href="/production/cameras"
+          />
+        );
+      })}
 
       {editingSlot && (
         <Dialog title={`${editingSlot === 'video' ? 'Video' : 'DSK'} ingest`} onClose={() => setEditingSlot(null)}>

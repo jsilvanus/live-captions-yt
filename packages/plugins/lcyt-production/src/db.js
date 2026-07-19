@@ -84,6 +84,20 @@ export function runMigrations(db) {
   if (!cameraCols3.includes('thumbnail_captured_at')) {
     db.exec('ALTER TABLE prod_cameras ADD COLUMN thumbnail_captured_at TEXT');
   }
+
+  // owner_api_key: the project (api_keys.key) that created this camera, set
+  // automatically from the now-real session/device auth on the CRUD routes
+  // (plan_ingest_feeds.md's cross-tenant sourceCameraId review finding).
+  // NULL for any camera created before this column existed, or via the
+  // in-process crud.js path with no ownerApiKey supplied — those stay in the
+  // pre-existing open/legacy bucket rather than becoming inaccessible.
+  // No FK to api_keys (cross-plugin, mirrors the rest of this file's
+  // no-hard-dependency convention) and no project scoping on prod_mixers/
+  // prod_encoders yet — out of scope here, see CONSIDER.md.
+  const cameraCols4 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols4.includes('owner_api_key')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN owner_api_key TEXT');
+  }
 }
 
 /**

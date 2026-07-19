@@ -8,7 +8,7 @@ import {
   MAX_RELAY_SLOTS,
   setSlotTargetType, setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
-  setSlotRecordOnStart, setSlotRecordOnButton,
+  setSlotRecordOnStart, setSlotRecordOnButton, setSlotSourceView, setSlotSourceCameraId,
   clearSlot, buildInitialRelayList,
 } from '../../lib/relayConfig.js';
 
@@ -25,23 +25,34 @@ function slotMeta(entry) {
 }
 
 /**
- * EgressSection — YouTube/generic RTMP relay targets (4 slots), wired to the
+ * EgressSection — YouTube/generic RTMP relay targets, wired to the
  * same client-side `relayConfig.js` localStorage data the Broadcast →
  * Settings → Stream tab uses (see `StreamTab.jsx`/`RelayPanel.jsx`). Reuses
  * `RelaySlotRow` (the same per-slot editor) as Dialog content instead of
- * RelayPanel's own always-inline expanding rows.
+ * RelayPanel's own always-inline expanding rows. `MAX_RELAY_SLOTS` is a UI
+ * convenience cap only — the backend itself has none (plan_ingest_feeds.md
+ * §1b). Each slot can pick a source (Program / Vertical Crop / any named
+ * feed camera) via the `feedCameras` list this component fetches and passes
+ * to `RelaySlotRow` — `RelayPanel.jsx`/`StreamTab.jsx` don't fetch or pass
+ * that list yet, so the source picker only appears here for now.
  *
  * No `/setup/egress/page` parity route: unlike the device managers, there's
  * no standalone page that's *just* this — `/broadcast` also covers Encoder
  * and YouTube auth config, so the footer link goes there directly instead of
  * through a parity banner.
  */
+// Camera control types that carry a camera_key (a real MediaMTX ingest path) —
+// webcam/mobile (WHIP) and 'rtmp' (pushed — plan_ingest_feeds.md §1a). Same
+// filter IngestionSection.jsx uses.
+const FEED_CAMERA_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
+
 export function EgressSection() {
   const session = useSessionContext();
   const [relayList, setRelayList] = useState(buildInitialRelayList);
   const [editingSlot, setEditingSlot] = useState(null);
   const [relayStatus, setRelayStatus] = useState(null);
   const [relayActive, setRelayActiveState] = useState(false);
+  const [feedCameras, setFeedCameras] = useState([]);
 
   const refreshStatus = useCallback(() => {
     if (!session?.connected) { setRelayStatus(null); return; }
@@ -50,7 +61,20 @@ export function EgressSection() {
       .catch(() => setRelayStatus(null));
   }, [session]);
 
-  useEffect(() => { refreshStatus(); }, [refreshStatus]);
+  const refreshFeedCameras = useCallback(async () => {
+    if (!session?.connected) { setFeedCameras([]); return; }
+    try {
+      const token = session.getSessionToken?.();
+      const r = await fetch(`${session.backendUrl}/production/cameras`, {
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      if (!r.ok) return;
+      const cams = await r.json();
+      setFeedCameras((cams || []).filter(c => FEED_CAMERA_TYPES.has(c.controlType) && c.cameraKey));
+    } catch { /* ignore — source picker just stays hidden */ }
+  }, [session]);
+
+  useEffect(() => { refreshStatus(); refreshFeedCameras(); }, [refreshStatus, refreshFeedCameras]);
 
   function persistSlot(slot, updated) {
     if (updated.targetType   !== undefined) setSlotTargetType(slot, updated.targetType);
@@ -64,6 +88,8 @@ export function EgressSection() {
     if (updated.audioBitrate !== undefined) setSlotAudioBitrate(slot, updated.audioBitrate ?? '');
     if (updated.recordOnStart !== undefined) setSlotRecordOnStart(slot, !!updated.recordOnStart);
     if (updated.recordOnButton !== undefined) setSlotRecordOnButton(slot, !!updated.recordOnButton);
+    if (updated.sourceView     !== undefined) setSlotSourceView(slot, updated.sourceView);
+    if (updated.sourceCameraId !== undefined) setSlotSourceCameraId(slot, updated.sourceCameraId);
   }
 
   async function persistRelayToBackend(entry) {
@@ -91,6 +117,8 @@ export function EgressSection() {
         fps: entry.fps ?? undefined,
         videoBitrate: entry.videoBitrate || undefined,
         audioBitrate: entry.audioBitrate || undefined,
+        sourceView: entry.sourceView || undefined,
+        sourceCameraId: entry.sourceCameraId || undefined,
       });
     } catch { /* ignore */ }
   }
@@ -111,7 +139,7 @@ export function EgressSection() {
     const used = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!used.includes(s)) {
-        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false };
+        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false, sourceView: 'program', sourceCameraId: '' };
         setRelayList(list => [...list, entry]);
         setEditingSlot(s);
         return;
@@ -142,7 +170,7 @@ export function EgressSection() {
       icon={EgressIcon}
       color="cyan"
       title="Egress"
-      description="YouTube / generic RTMP relay targets — 4-slot configuration."
+      description="YouTube / generic RTMP relay targets — sourced from Program, Vertical Crop, or any named feed."
       status="ready"
       headerAction={relayList.length < MAX_RELAY_SLOTS ? { label: 'Add', onClick: addSlot } : undefined}
       footerLink={{ label: 'Manage in Broadcast → Settings', href: '/broadcast' }}
@@ -177,6 +205,7 @@ export function EgressSection() {
             onChange={updated => updateSlot(editingEntry.slot, updated)}
             onRemove={() => removeSlot(editingEntry.slot)}
             runningSlots={runningSlots}
+            feedCameras={feedCameras}
           />
         </Dialog>
       )}

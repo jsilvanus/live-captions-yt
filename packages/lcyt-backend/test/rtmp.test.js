@@ -181,9 +181,11 @@ describe('rtmp_relays DB helpers (fan-out)', () => {
     assert.strictEqual(deleteRelay(db, 'ghost'), false);
   });
 
-  it('upsertRelay rejects slot out of range', () => {
-    assert.throws(() => upsertRelay(db, 'key-6', 5, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+  it('upsertRelay rejects non-positive slots but allows slot 5+ (plan_ingest_feeds.md §1b removed the 4-slot cap)', () => {
     assert.throws(() => upsertRelay(db, 'key-6', 0, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+    assert.throws(() => upsertRelay(db, 'key-6', -1, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+    const relay = upsertRelay(db, 'key-6', 5, 'rtmp://z.example.com/live/1');
+    assert.strictEqual(relay.slot, 5);
   });
 
   it('upsertRelay stores targetName and captionMode', () => {
@@ -684,11 +686,11 @@ describe('/stream CRUD (fan-out)', () => {
     assert.strictEqual(res.status, 400);
   });
 
-  it('POST /stream returns 400 for slot out of range', async () => {
+  it('POST /stream returns 400 for slot 0 (still invalid — must be a positive integer)', async () => {
     const res = await fetch(`${baseUrl}/stream`, {
       method: 'POST',
       headers: bearerHeaders(token),
-      body: JSON.stringify({ slot: 5, targetUrl: 'rtmp://x.example.com/live/y' }),
+      body: JSON.stringify({ slot: 0, targetUrl: 'rtmp://x.example.com/live/y' }),
     });
     assert.strictEqual(res.status, 400);
   });
@@ -728,6 +730,21 @@ describe('/stream CRUD (fan-out)', () => {
     const t2 = jwt.sign({ sessionId: 'fake2', apiKey: k2.key }, JWT_SECRET, { expiresIn: '1h' });
     const res = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(t2) });
     assert.strictEqual(res.status, 403);
+  });
+
+  it('allows more than 4 relay targets (plan_ingest_feeds.md §1b removed the cap)', async () => {
+    // All relays were cleared by the 'DELETE /stream removes all relay configs' test above.
+    for (let slot = 1; slot <= 5; slot++) {
+      const res = await fetch(`${baseUrl}/stream`, {
+        method: 'POST',
+        headers: bearerHeaders(token),
+        body: JSON.stringify({ slot, targetUrl: `rtmp://target${slot}.example.com/live` }),
+      });
+      assert.strictEqual(res.status, 201, `slot ${slot} should be accepted`);
+    }
+    const res = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(token) });
+    const body = await res.json();
+    assert.strictEqual(body.relays.length, 5);
   });
 });
 

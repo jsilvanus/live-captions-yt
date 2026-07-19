@@ -184,7 +184,9 @@ POST /dsk-rtmp/on_publish_done     — nginx-rtmp on_publish_done callback for D
 GET/POST/PUT/DELETE /images/:id — image upload/management for DSK overlays (JWT Bearer or X-API-Key)
 GET  /youtube/config      — return YOUTUBE_CLIENT_ID for client-side OAuth (Bearer token)
 GET/POST/PUT/DELETE /rtmp — RTMP relay slot management (Bearer token)
-GET/POST /stream          — RTMP relay stream control (Bearer token + domain allowlist)
+POST /feed-rtmp/on_publish        — nginx-rtmp on_publish callback for named-feed RTMP ingest (plan_ingest_feeds.md §2a)
+POST /feed-rtmp/on_publish_done   — nginx-rtmp on_publish_done callback for named-feed RTMP ingest
+GET/POST /stream          — RTMP relay stream control (Bearer token + domain allowlist); slots may set sourceCameraId to relay from a named feed instead of the raw ingest, no cap on target count
 GET  /ingestion/config    — RTMP ingest status: { video: {enabled,active,streamKey,ingestUrl,rotatable,live}, dsk: {enabled,ingestUrl,live} } (Bearer token; mounted only when RTMP_RELAY_ACTIVE=1)
 PATCH /ingestion/config   — { video?: {enabled?}, dsk?: {enabled?} } — video flips relay_allowed (self-service, feature-gated on `ingest`); dsk is 501 (no real gate exists yet)
 POST /ingestion/config/rotate — rotate the video ingest stream key, decoupling it from the api_key (Bearer token)

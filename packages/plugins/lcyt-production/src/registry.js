@@ -258,8 +258,14 @@ export class DeviceRegistry {
 // ---------------------------------------------------------------------------
 
 export function parseCamera(row) {
+  // owner_api_key is a real api_keys.key value (itself a bearer-like
+  // credential elsewhere in this system, e.g. the legacy RTMP stream key —
+  // plan_selfservice_config_backend.md) — never spread it into the response;
+  // callers that need it for an ownership check read row.owner_api_key
+  // directly before calling parseCamera().
+  const { owner_api_key, ...rest } = row;
   return {
-    ...row,
+    ...rest,
     mixerInput:       row.mixer_input,
     controlType:      row.control_type,
     controlConfig:    JSON.parse(row.control_config || '{}'),
@@ -269,6 +275,7 @@ export function parseCamera(row) {
     cameraKey:        row.camera_key ?? null,
     thumbnailCapturedAt: row.thumbnail_captured_at ?? null,
     createdAt:        row.created_at,
+    isOwned:          owner_api_key != null,
   };
 }
 

@@ -95,6 +95,10 @@ export function runMigrations(db) {
       if (!latestCols.has('source_view'))   db.exec("ALTER TABLE rtmp_relays ADD COLUMN source_view TEXT NOT NULL DEFAULT 'program'");
       if (!latestCols.has('record_on_start')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN record_on_start INTEGER NOT NULL DEFAULT 0');
       if (!latestCols.has('record_on_button')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN record_on_button INTEGER NOT NULL DEFAULT 0');
+      // Optional named-feed source (plan_ingest_feeds.md §1b): a prod_cameras.id.
+      // When set, takes priority over source_view — the slot relays from that
+      // camera's camera_key MediaMTX path instead of the raw per-key ingest.
+      if (!latestCols.has('source_camera_id')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN source_camera_id TEXT');
     }
   }
 

@@ -545,3 +545,119 @@ Three were evaluated and intentionally left as-is:
 
 All fixes verified: 110 backend tests (9 new), 428 + 430 frontend tests, all
 passing.
+
+## `CAMERA_CONTROL_TYPES` duplicated between `routes/cameras.js` and `crud.js`
+
+**Where:** `packages/plugins/lcyt-production/src/routes/cameras.js`,
+`packages/plugins/lcyt-production/src/crud.js`
+
+**Finding:** Both files independently declare the same
+`CAMERA_CONTROL_TYPES` array (camera `control_type` validation) — a
+pre-existing duplication (the file header comment on `crud.js` already flags
+it: "kept deliberately separate from the route files ... see CONSIDER.md for
+the follow-up to de-duplicate") that `plan_ingest_feeds.md`'s new `'rtmp'`
+control type had to be added to in both places to keep the HTTP route and
+the in-process `lcyt-tools`/MCP path consistent. Still not de-duplicated —
+doing so would mean routing `crud.js`'s callers through the same validation
+helper as the Express routes, a small refactor but touching both files'
+public shape.
+
+**Why skipped:** out of scope for `plan_ingest_feeds.md`'s ingestion work;
+noted so the next control-type addition doesn't silently miss one copy again.
+
+## Egress relay-slot UI: localStorage list doesn't sync from `GET /stream`, and only one of three consumers got the new source picker
+
+**Where:** `packages/lcyt-web/src/lib/relayConfig.js`,
+`packages/lcyt-web/src/components/setup-hub/EgressSection.jsx`,
+`packages/lcyt-web/src/components/panels/RelayPanel.jsx` /
+`broadcast/StreamTab.jsx`, `components/panels/RelaySlotRow.jsx`
+
+**Finding:** `plan_ingest_feeds.md` needed a per-slot "source" picker
+(Program / Vertical Crop / named feed camera) so an operator can route
+different incoming feeds to different egress targets. Two pre-existing
+architectural facts made this bigger than it looked while implementing it:
+
+1. The relay-slot list the UI edits (`relayConfig.js`, `buildInitialRelayList`)
+   is **entirely localStorage-backed** and never fetched from `GET /stream` —
+   it independently POSTs to the backend on every change but never reads the
+   backend's actual configured slots back. This predates this plan; not
+   touched here.
+2. `RelaySlotRow` (the shared per-slot editor) is used by **three** call
+   sites — `EgressSection.jsx` (Setup Hub), and `RelayPanel.jsx` (used by
+   `StreamTab.jsx`, the `/broadcast` page). The new `feedCameras` prop (the
+   camera list that drives the source picker) was only wired into
+   `EgressSection.jsx`. `RelayPanel.jsx`/`StreamTab.jsx` don't fetch or pass
+   it, so the picker simply doesn't render there (the prop defaults to `[]`,
+   backward compatible) — those two surfaces are still Program-only.
+
+**Why skipped:** fixing #1 is a real backend-sync rewrite of the relay-slot
+data model, unrelated in size to "add a dropdown," and risked destabilizing
+the existing (untested) Egress UI without being able to visually verify the
+result in this pass. Fixing #2 is smaller — wire the same `feedCameras` fetch
+into `RelayPanel.jsx`/`StreamTab.jsx` and pass it through — and is the more
+likely next step; noted here so it isn't lost.
+
+## `/production/cameras` WHIP + kiosk pages remain unauthenticated even after the cross-tenant `sourceCameraId` auth fix
+
+**Where:** `packages/plugins/lcyt-production/src/routes/cameras.js`
+(`isUnauthenticatedCameraRoute()`), `packages/lcyt-web/src/components/CameraStreamPage.jsx`,
+`packages/lcyt-web/src/components/LcytMixerPage.jsx`, `packages/lcyt-web/src/components/DeviceLoginPage.jsx`
+
+**Finding:** Fixing the cross-tenant `sourceCameraId` finding (a project
+could reference any other project's camera via a relay slot) required real
+auth on the camera CRUD routes — `owner_api_key` + `canAccessCamera()` +
+`opts.auth` wired to `scopedAuth('production')` in `server.js`. But
+`CameraStreamPage.jsx` and `LcytMixerPage.jsx` are capability-URL kiosk pages
+(a dedicated device opens a bare URL and pushes its webcam / drives the
+mixer — no login flow at all) that send no Authorization header of any kind.
+Blanket-applying auth would break them, so `isUnauthenticatedCameraRoute()`
+carves out `/whip`, `/whip-url`, and the thumbnail-serving routes explicitly,
+leaving them exactly as open as before this pass. A real device-role JWT
+mechanism already exists (`DeviceLoginPage.jsx` → `POST
+/auth/device-login` → `routes/device-roles.js`'s `deviceLoginHandler`,
+issuing a `{kind:'device', type:'device', apiKey, projectId, deviceRole,
+roleId, permissions}` token fully compatible with
+`createProjectAccessMiddleware`) but neither kiosk page reads or sends it —
+it's stored in `sessionStorage['lcyt-device']` and never used again.
+
+**Also found in the same area (separate bug, not fixed):**
+`DeviceLoginPage.jsx` redirects to `/production/camera/${apiKey}` (passing
+the *project's apiKey* as the `:key` route param) while `CameraStreamPage.jsx`
+treats `:key` as a raw `cameraId`. These are different values — the redirect
+target looks like it would 404 or resolve the wrong camera today, independent
+of the auth question.
+
+**Why skipped:** wiring the device-role JWT into two kiosk pages that
+currently have zero auth UI is a real feature addition (reading the token
+from `sessionStorage`, sending it as `Authorization: Bearer`, handling
+expiry/re-login), not a natural extension of the CRUD-route auth fix — and
+fixing the `DeviceLoginPage.jsx` route-param mismatch first would be a
+prerequisite so the redirect even lands on the right camera. Scoped the
+cross-tenant fix to CRUD routes only (list/get/create/update/delete/preset/
+thumbnail-capture) and left WHIP/kiosk auth as this follow-up.
+
+(Found during: `/code-review` cross-tenant `sourceCameraId` fix,
+plan_ingest_feeds.md, 2026-07-19.)
+
+## `prod_mixers` has no `owner_api_key`/ownership scoping, unlike `prod_cameras`
+
+**Where:** `packages/plugins/lcyt-production/src/db.js`,
+`packages/plugins/lcyt-production/src/routes/mixers.js`
+
+**Finding:** The cross-tenant `sourceCameraId` fix added `owner_api_key` to
+`prod_cameras` and real auth + `canAccessCamera()` gating to
+`routes/cameras.js`. `prod_mixers` has the identical shape problem in
+principle (no project/tenant column at all, `routes/mixers.js` has no
+`opts.auth`), but nothing in `plan_ingest_feeds.md`'s named-feed/egress work
+ever references a mixer by cross-project ID the way relay slots reference
+cameras via `sourceCameraId` — there's no equivalent attack surface exercised
+by this plan, so it wasn't in scope for this pass.
+
+**Why skipped:** doing mixers the same way is a same-shaped, mechanical
+follow-up (additive `owner_api_key` column, `canAccessCamera`-equivalent
+gate, `opts.auth` wiring, ownership-filtering tests) but is a separate
+change with its own review, not a hidden dependency of the sourceCameraId
+fix.
+
+(Found during: `/code-review` cross-tenant `sourceCameraId` fix,
+plan_ingest_feeds.md, 2026-07-19.)
