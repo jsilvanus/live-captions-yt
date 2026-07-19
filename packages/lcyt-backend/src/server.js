@@ -635,9 +635,10 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
 
 // RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1
 if (process.env.RTMP_RELAY_ACTIVE === '1') {
-  const { rtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
+  const { rtmpRouter, feedRtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
     createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains, metrics });
   app.use('/rtmp',       rtmpRouter);
+  app.use('/feed-rtmp',  feedRtmpRouter);
   app.use('/ingestion',  ingestionRouter);
   app.use('/stream',     streamRouter);
   app.use('/stream-hls', streamHlsRouter);

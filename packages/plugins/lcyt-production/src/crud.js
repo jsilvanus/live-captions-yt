@@ -21,7 +21,9 @@ import { getSwitchCommand as atemGetSwitchCommand } from './adapters/mixer/atem.
 import { getSwitchCommand as monarchHdxGetSwitchCommand } from './adapters/mixer/monarch_hdx.js';
 import { getSwitchCommand as obsGetSwitchCommand } from './adapters/mixer/obs.js';
 
-const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile'];
+// 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
+// than WHIP — kept in sync with routes/cameras.js's own copy of this list.
+const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'];
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
 // ---------------------------------------------------------------------------

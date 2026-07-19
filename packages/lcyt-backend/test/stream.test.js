@@ -60,6 +60,13 @@ before(() => new Promise((resolve) => {
      VALUES (?, 'Test Owner', 1, 1, 0)`
   ).run(TEST_API_KEY);
 
+  // Minimal prod_cameras table (plan_ingest_feeds.md §1b/§2c) — lcyt-rtmp has
+  // no dependency on lcyt-production, so db/relay.js's resolveRelaySourceCameraKey()
+  // queries it directly; this test exercises that cross-plugin path with its
+  // own inline schema, same convention as feed-rtmp.test.js.
+  db.exec(`CREATE TABLE prod_cameras (id TEXT PRIMARY KEY, camera_key TEXT UNIQUE, control_type TEXT NOT NULL DEFAULT 'none')`);
+  db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type) VALUES ('cam-altar', 'altar-cam', 'rtmp')").run();
+
   mockRelay = makeMockRelayManager();
 
   const auth = createAuthMiddleware(JWT_SECRET);
@@ -171,12 +178,36 @@ describe('POST /stream — create relay slot', () => {
     assert.equal(res.status, 400);
   });
 
-  it('returns 400 for invalid slot (> 4)', async () => {
+  it('returns 400 for slot 0 (still invalid — must be a positive integer)', async () => {
+    const res = await streamFetch('/', {
+      method: 'POST',
+      body: JSON.stringify({ slot: 0, targetUrl: 'rtmp://example.com/live/key' }),
+    });
+    assert.equal(res.status, 400);
+  });
+
+  it('allows more than 4 relay targets (plan_ingest_feeds.md §1b removed the cap)', async () => {
     const res = await streamFetch('/', {
       method: 'POST',
       body: JSON.stringify({ slot: 5, targetUrl: 'rtmp://example.com/live/key' }),
     });
-    assert.equal(res.status, 400);
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.relay.slot, 5);
+  });
+
+  it('defaults slot to max(existing)+1 when slot is omitted', async () => {
+    await streamFetch('/', {
+      method: 'POST',
+      body: JSON.stringify({ slot: 7, targetUrl: 'rtmp://example.com/live/a' }),
+    });
+    const res = await streamFetch('/', {
+      method: 'POST',
+      body: JSON.stringify({ targetUrl: 'rtmp://example.com/live/b' }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.relay.slot, 8);
   });
 
   it('returns 400 for invalid scale format', async () => {
@@ -201,21 +232,49 @@ describe('POST /stream — create relay slot', () => {
     assert.equal(body.relay.targetName, 'mystream');
   });
 
-  it('returns 400 when all 4 slots are used', async () => {
-    // Fill all 4 slots
+  it('upserting an existing slot number replaces it in place', async () => {
     for (let s = 1; s <= 4; s++) {
       await streamFetch('/', {
         method: 'POST',
         body: JSON.stringify({ slot: s, targetUrl: `rtmp://example.com/live/slot${s}` }),
       });
     }
-    // Attempt to add a new slot 5 — already blocked, try to add beyond 4
     const res = await streamFetch('/', {
       method: 'POST',
       body: JSON.stringify({ slot: 4, targetUrl: 'rtmp://example.com/live/new' }),
     });
-    // Slot 4 already exists → upsert is OK (not a new slot)
     assert.equal(res.status, 201);
+  });
+
+  it('creates a 5th, 6th, ... slot with no cap (plan_ingest_feeds.md §1b)', async () => {
+    for (let s = 1; s <= 6; s++) {
+      const res = await streamFetch('/', {
+        method: 'POST',
+        body: JSON.stringify({ slot: s, targetUrl: `rtmp://example.com/live/slot${s}` }),
+      });
+      assert.equal(res.status, 201, `slot ${s} should be accepted`);
+    }
+    const listRes = await streamFetch('/');
+    const listBody = await listRes.json();
+    assert.equal(listBody.relays.length, 6);
+  });
+
+  it('accepts sourceCameraId for a known camera with a camera_key', async () => {
+    const res = await streamFetch('/', {
+      method: 'POST',
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'cam-altar' }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.relay.sourceCameraId, 'cam-altar');
+  });
+
+  it('returns 400 for an unknown sourceCameraId', async () => {
+    const res = await streamFetch('/', {
+      method: 'POST',
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'no-such-camera' }),
+    });
+    assert.equal(res.status, 400);
   });
 });
 
@@ -344,9 +403,17 @@ describe('PUT /stream/:slot — update slot', () => {
 // ---------------------------------------------------------------------------
 
 describe('DELETE /stream/:slot', () => {
-  it('returns 400 for invalid slot', async () => {
-    const res = await streamFetch('/99', { method: 'DELETE' });
+  it('returns 400 for a malformed slot (not a positive integer)', async () => {
+    const res = await streamFetch('/0', { method: 'DELETE' });
     assert.equal(res.status, 400);
+  });
+
+  it('returns 200 with deleted:false for a well-formed but unconfigured slot (no cap to violate)', async () => {
+    const res = await streamFetch('/99', { method: 'DELETE' });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.ok, true);
+    assert.equal(body.deleted, false);
   });
 
   it('deletes a slot and returns 200', async () => {

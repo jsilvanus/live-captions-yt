@@ -34,7 +34,7 @@ app.use('/production', createProductionRouter(db, registry, bridgeManager, { pub
 - `adapters/mixer/lcyt.js` — LCYT software mixer adapter.
 - `adapters/mixer/monarch_hdx.js` — Matrox Monarch HDX encoder/mixer adapter.
 
-**Camera control types:** `none`, `amx`, `visca-ip`, `webcam`, `mobile` (`webcam`/`mobile` route through the browser/WebRTC adapter — only these two ever get a `camera_key`)
+**Camera control types:** `none`, `amx`, `visca-ip`, `webcam`, `mobile`, `rtmp` (`webcam`/`mobile` route through the browser/WebRTC adapter; `rtmp` — plan_ingest_feeds.md §1a — is a named feed pushed via RTMP instead, no PTZ, no browser adapter. `webcam`/`mobile`/`rtmp` are the three types that ever get a `camera_key`: the resolvable MediaMTX path identity, populated via WHIP for the first two and via `lcyt-rtmp`'s `feed-rtmp` on_publish resolver for the third — see that plugin's CLAUDE.md. `CAMERA_CONTROL_TYPES` is duplicated between `routes/cameras.js` and `crud.js`; keep both in sync, see CONSIDER.md)
 **Mixer types:** `roland`, `amx`, `atem`, `obs`, `lcyt`, `monarch_hdx`
 **Encoder types:** `monarch_hd`, `monarch_hdx` (connection sources: `backend`, `frontend`, `bridge`)
 

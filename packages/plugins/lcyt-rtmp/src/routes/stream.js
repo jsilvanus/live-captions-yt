@@ -1,17 +1,17 @@
 import { Router } from 'express';
-import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey } from '../db.js';
+import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceCameraKey } from '../db.js';
 import logger from 'lcyt/logger';
-
-const MAX_RELAY_SLOTS = 4;
 
 /**
  * Factory for the /stream router.
  *
  * Authenticated (JWT Bearer) CRUD for per-key RTMP relay configuration.
- * One incoming stream fans out to up to 4 target slots.
+ * One incoming stream fans out to an arbitrary number of target slots — no
+ * cap is enforced (plan_ingest_feeds.md §1b; a future per-team quota is an
+ * explicit non-goal of that plan, not built here).
  * The API key must have relay_allowed = true.
  *
- * POST   /stream              — create/replace a relay slot (body: { slot?, targetUrl, targetName?, captionMode? })
+ * POST   /stream              — create/replace a relay slot (body: { slot?, targetUrl, targetName?, captionMode?, sourceCameraId? })
  * GET    /stream              — get all configured slots + running status per slot
  * GET    /stream/history      — per-stream RTMP usage history for this key
  * PUT    /stream/:slot        — update a specific slot
@@ -52,7 +52,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
   }
 
   function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView } = req.body || {};
+    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
@@ -61,7 +61,8 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
     const resolvedMode = validModes.includes(captionMode) ? captionMode : 'http';
 
     // Which rendition this slot forwards (plan_vertical_crop.md): the raw
-    // program feed (default) or the {key}-crop vertical rendition.
+    // program feed (default) or the {key}-crop vertical rendition. Ignored
+    // when sourceCameraId is set (plan_ingest_feeds.md §1b/§2c).
     let resolvedSourceView = 'program';
     if (sourceView !== undefined && sourceView !== null && sourceView !== '') {
       if (sourceView !== 'program' && sourceView !== 'crop') {
@@ -69,6 +70,21 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         return null;
       }
       resolvedSourceView = sourceView;
+    }
+
+    // Optional named-feed source: a prod_cameras.id with a real camera_key
+    // (plan_ingest_feeds.md §1b). Takes priority over sourceView when set.
+    let resolvedSourceCameraId = null;
+    if (sourceCameraId !== undefined && sourceCameraId !== null && sourceCameraId !== '') {
+      if (typeof sourceCameraId !== 'string') {
+        res.status(400).json({ error: 'sourceCameraId must be a string camera id' });
+        return null;
+      }
+      if (!resolveRelaySourceCameraKey(db, sourceCameraId)) {
+        res.status(400).json({ error: `Unknown or feed-less camera '${sourceCameraId}'` });
+        return null;
+      }
+      resolvedSourceCameraId = sourceCameraId;
     }
 
     // Validate optional per-slot transcode options
@@ -105,13 +121,15 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
       videoBitrate: resolvedVideoBitrate,
       audioBitrate: resolvedAudioBitrate,
       sourceView:   resolvedSourceView,
+      sourceCameraId: resolvedSourceCameraId,
     };
   }
 
+  // No upper bound — plan_ingest_feeds.md §1b removes the earlier 4-slot cap.
   function parseSlot(raw, res) {
     const slot = Number(raw);
-    if (!Number.isInteger(slot) || slot < 1 || slot > MAX_RELAY_SLOTS) {
-      res.status(400).json({ error: `slot must be an integer between 1 and ${MAX_RELAY_SLOTS}` });
+    if (!Number.isInteger(slot) || slot < 1) {
+      res.status(400).json({ error: 'slot must be a positive integer' });
       return null;
     }
     return slot;
@@ -121,15 +139,16 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
   router.post('/', requireRelayAllowed, (req, res) => {
     const fields = validateBody(req, res);
     if (!fields) return;
-    const slotRaw = req.body?.slot ?? 1;
-    const slot = parseSlot(String(slotRaw), res);
-    if (slot === null) return;
-
-    // Check max slots: don't allow more than MAX_RELAY_SLOTS distinct slots
     const existing = getRelays(db, req.session.apiKey);
-    const isNewSlot = !existing.find(r => r.slot === slot);
-    if (isNewSlot && existing.length >= MAX_RELAY_SLOTS) {
-      return res.status(400).json({ error: `Maximum of ${MAX_RELAY_SLOTS} relay targets per key` });
+
+    let slot;
+    if (req.body?.slot === undefined || req.body?.slot === null || req.body?.slot === '') {
+      // No slot given: append as a new target (max existing slot + 1), so
+      // clients don't need to track slot numbers by hand.
+      slot = existing.reduce((max, r) => Math.max(max, r.slot), 0) + 1;
+    } else {
+      slot = parseSlot(String(req.body.slot), res);
+      if (slot === null) return;
     }
 
     try {
@@ -143,6 +162,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         videoBitrate:  fields.videoBitrate,
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
+        sourceCameraId: fields.sourceCameraId,
       });
       return res.status(201).json({ ok: true, relay });
     } catch (err) {
@@ -229,6 +249,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         videoBitrate:  fields.videoBitrate,
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
+        sourceCameraId: fields.sourceCameraId,
       });
       return res.status(200).json({ ok: true, relay });
     } catch (err) {

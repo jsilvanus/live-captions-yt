@@ -22,6 +22,7 @@
  *   if (process.env.RTMP_RELAY_ACTIVE === '1') {
  *     const routers = createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains });
  *     app.use('/rtmp',       routers.rtmpRouter);
+ *     app.use('/feed-rtmp',  routers.feedRtmpRouter);
  *     app.use('/ingestion',  routers.ingestionRouter);
  *     app.use('/stream',     routers.streamRouter);
  *     app.use('/stream-hls', routers.streamHlsRouter);
@@ -47,6 +48,7 @@ import { HlsSubsManager } from './hls-subs-manager.js';
 import { SttManager } from './stt-manager.js';
 import { CropManager } from './crop-manager.js';
 import { createRtmpRouter } from './routes/rtmp.js';
+import { createFeedRtmpRouter } from './routes/feed-rtmp.js';
 import { createCropRouter } from './routes/crop.js';
 import { createIngestionRouter } from './routes/ingestion.js';
 import { createStreamRouter } from './routes/stream.js';
@@ -185,6 +187,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  * @param {{ allowedRtmpDomains?: string, metrics?: object }} [opts]
  * @returns {{
  *   rtmpRouter: import('express').Router,
+ *   feedRtmpRouter: import('express').Router,
  *   ingestionRouter: import('express').Router,
  *   streamRouter: import('express').Router,
  *   streamHlsRouter: import('express').Router,
@@ -195,6 +198,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
 export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager),
+    feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
     ingestionRouter: createIngestionRouter(db, auth, relayManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),

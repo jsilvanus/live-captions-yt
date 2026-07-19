@@ -76,6 +76,15 @@ describe('camera CRUD', () => {
     const res = updateCamera(db, registry, created.camera.id, { controlType: 'bogus' });
     assert.equal(res.ok, false);
   });
+
+  it("accepts controlType 'rtmp' with a camera_key (plan_ingest_feeds.md §1a)", () => {
+    const db = makeDb();
+    const registry = makeRegistryStub();
+    const created = createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
+    assert.equal(created.ok, true);
+    assert.equal(created.camera.controlType, 'rtmp');
+    assert.equal(created.camera.cameraKey, 'altar-cam');
+  });
 });
 
 describe('mixer CRUD', () => {

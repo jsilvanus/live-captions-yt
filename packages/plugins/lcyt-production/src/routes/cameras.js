@@ -4,7 +4,9 @@ import * as fs from 'node:fs';
 import { parseCamera } from '../registry.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
 
-const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile'];
+// 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
+// than WHIP — no PTZ, uses camera_key/mixer_input exactly like webcam/mobile.
+const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'];
 const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
 
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {

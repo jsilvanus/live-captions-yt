@@ -545,3 +545,22 @@ Three were evaluated and intentionally left as-is:
 
 All fixes verified: 110 backend tests (9 new), 428 + 430 frontend tests, all
 passing.
+
+## `CAMERA_CONTROL_TYPES` duplicated between `routes/cameras.js` and `crud.js`
+
+**Where:** `packages/plugins/lcyt-production/src/routes/cameras.js`,
+`packages/plugins/lcyt-production/src/crud.js`
+
+**Finding:** Both files independently declare the same
+`CAMERA_CONTROL_TYPES` array (camera `control_type` validation) — a
+pre-existing duplication (the file header comment on `crud.js` already flags
+it: "kept deliberately separate from the route files ... see CONSIDER.md for
+the follow-up to de-duplicate") that `plan_ingest_feeds.md`'s new `'rtmp'`
+control type had to be added to in both places to keep the HTTP route and
+the in-process `lcyt-tools`/MCP path consistent. Still not de-duplicated —
+doing so would mean routing `crud.js`'s callers through the same validation
+helper as the Express routes, a small refactor but touching both files'
+public shape.
+
+**Why skipped:** out of scope for `plan_ingest_feeds.md`'s ingestion work;
+noted so the next control-type addition doesn't silently miss one copy again.
