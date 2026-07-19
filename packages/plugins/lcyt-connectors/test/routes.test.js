@@ -267,6 +267,27 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
     assert.equal(scheduler.isPolling('key1', 'weather', 'current'), false);
   });
 
+  test('editing an unrelated field does not restart an already-active poll', async () => {
+    await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'News', slug: 'news', baseUrl: 'https://example.com' }) });
+    await json('/connectors/news/requests', { method: 'POST', body: JSON.stringify({ name: 'Headlines', slug: 'headlines', method: 'GET', path: '/headlines' }) });
+    await json('/connectors/news/requests/headlines/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    await new Promise((r) => setImmediate(r));
+    const callsBefore = fireCalls.length;
+
+    const res = await json('/connectors/news/requests/headlines', { method: 'PUT', body: JSON.stringify({ name: 'Top Headlines' }) });
+    assert.equal(res.status, 200);
+    await new Promise((r) => setImmediate(r));
+
+    assert.equal(fireCalls.length, callsBefore); // no extra immediate fire from a needless restart
+    assert.equal(scheduler.isPolling('key1', 'news', 'headlines'), true); // still polling under the same key
+  });
+
+  test('renaming the request slug DOES re-key the active poll', async () => {
+    await json('/connectors/news/requests/headlines', { method: 'PUT', body: JSON.stringify({ slug: 'headlines-renamed' }) });
+    assert.equal(scheduler.isPolling('key1', 'news', 'headlines'), false);
+    assert.equal(scheduler.isPolling('key1', 'news', 'headlines-renamed'), true);
+  });
+
   test('deleting the request stops its poll', async () => {
     await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
     assert.equal(scheduler.isPolling('key1', 'weather', 'current'), true);

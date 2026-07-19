@@ -379,17 +379,30 @@ export function useProductionData() {
   // ─── Constant poll toggle (ConnectorPollsPane — plan_live_variables.md §2) ─
   // A live/operational decision, kept out of Setup Hub on purpose: flipping
   // this is "start/stop watching this value right now", not connector config.
-  const togglePoll = useCallback(async (connectorSlug, requestSlug, enabled) => {
+  const patchConnectorRequest = useCallback((connectorSlug, requestSlug, patch) => {
     setConnectorRequests((prev) => prev.map((r) =>
-      r.connectorSlug === connectorSlug && r.requestSlug === requestSlug ? { ...r, constantPollEnabled: enabled } : r
-    )); // optimistic
+      r.connectorSlug === connectorSlug && r.requestSlug === requestSlug ? { ...r, ...patch } : r
+    ));
+  }, []);
+
+  const togglePoll = useCallback(async (connectorSlug, requestSlug, enabled) => {
+    patchConnectorRequest(connectorSlug, requestSlug, { constantPollEnabled: enabled }); // optimistic
     try {
       const r = await jfetch(`/connectors/${connectorSlug}/requests/${requestSlug}/poll`, {
         method: 'PUT', body: JSON.stringify({ enabled }),
       });
-      if (r.ok) loadConnectorRequests(); // reconcile with the real DB state
-    } catch { /* optimistic value stands; next loadConnectorRequests() will correct it */ }
-  }, [jfetch, loadConnectorRequests]);
+      if (!r.ok) { patchConnectorRequest(connectorSlug, requestSlug, { constantPollEnabled: !enabled }); return; } // revert
+      const { request } = await r.json().catch(() => ({}));
+      if (request) {
+        patchConnectorRequest(connectorSlug, requestSlug, {
+          constantPollEnabled: !!request.constantPollEnabled,
+          prefetchIntervalMs: request.prefetchIntervalMs,
+        }); // patch from the PUT's own authoritative row — no full re-fetch needed
+      }
+    } catch {
+      patchConnectorRequest(connectorSlug, requestSlug, { constantPollEnabled: !enabled }); // revert
+    }
+  }, [jfetch, patchConnectorRequest]);
 
   useEffect(() => () => clearTimeout(flashTimer.current), []);
 

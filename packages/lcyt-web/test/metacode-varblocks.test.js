@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseVarBlockMarker, wrapValue, expandVarBlocks, hasVarBlocks } from '../src/lib/metacode-varblocks.js';
+import { parseVarBlockMarker, wrapValue, expandVarBlocks, hasVarBlocks, pendingVarBlockNames } from '../src/lib/metacode-varblocks.js';
 
 describe('parseVarBlockMarker()', () => {
   it('parses a soft-wrap block marker', () => {
@@ -101,6 +101,35 @@ describe('expandVarBlocks()', () => {
     const out = expandVarBlocks(lines, lineCodes, [1]);
     assert.equal(out.lineCodes[0].varBlockPending, true);
   });
+
+  it('one-shot codes (timer, apiTriggers, goto, cue, actions) stay only on the first virtual segment', () => {
+    const lines = ['{{quote[10]}}'];
+    const lineCodes = [{
+      section: 'Sermon', timer: 5, goto: 42,
+      apiTriggers: [{ connectorSlug: 'weather', requestSlug: 'current', tier: 'prefetch' }],
+      cue: 'Amen', cueMode: 'next',
+      actions: [{ key: 'audio', value: 'start' }],
+      varBlock: { name: 'quote', maxLen: 10, hard: false },
+    }];
+    const out = expandVarBlocks(lines, lineCodes, [7], { quote: 'the quick brown fox' });
+    assert.equal(out.lines.length, 2); // two wrapped segments
+    // First segment: keeps everything (persistent + one-shot).
+    assert.equal(out.lineCodes[0].section, 'Sermon');
+    assert.equal(out.lineCodes[0].timer, 5);
+    assert.equal(out.lineCodes[0].goto, 42);
+    assert.ok(out.lineCodes[0].apiTriggers);
+    assert.equal(out.lineCodes[0].cue, 'Amen');
+    assert.ok(out.lineCodes[0].actions);
+    // Second segment: persistent code stays, one-shot/trigger codes are stripped
+    // so they don't re-fire as the operator advances through the block.
+    assert.equal(out.lineCodes[1].section, 'Sermon');
+    assert.equal(out.lineCodes[1].timer, undefined);
+    assert.equal(out.lineCodes[1].goto, undefined);
+    assert.equal(out.lineCodes[1].apiTriggers, undefined);
+    assert.equal(out.lineCodes[1].cue, undefined);
+    assert.equal(out.lineCodes[1].cueMode, undefined);
+    assert.equal(out.lineCodes[1].actions, undefined);
+  });
 });
 
 describe('hasVarBlocks()', () => {
@@ -116,5 +145,32 @@ describe('hasVarBlocks()', () => {
 
   it('returns false for plain lines', () => {
     assert.equal(hasVarBlocks([{}, { section: 'x' }]), false);
+  });
+});
+
+describe('pendingVarBlockNames()', () => {
+  it('collects the variable names of still-pending blocks', () => {
+    const lineCodes = [
+      { varBlock: { name: 'weather', maxLen: 10, hard: false } },
+      { section: 'x' },
+      { varBlock: { name: 'quote', maxLen: 20, hard: false } },
+    ];
+    assert.deepEqual(pendingVarBlockNames(lineCodes).sort(), ['quote', 'weather']);
+  });
+
+  it('dedupes repeated names', () => {
+    const lineCodes = [
+      { varBlock: { name: 'weather', maxLen: 10, hard: false } },
+      { varBlock: { name: 'weather', maxLen: 20, hard: false } },
+    ];
+    assert.deepEqual(pendingVarBlockNames(lineCodes), ['weather']);
+  });
+
+  it('ignores already-resolved (virtual) lines — no varBlock key survives expansion', () => {
+    assert.deepEqual(pendingVarBlockNames([{ virtual: true, virtualBlock: 'weather' }]), []);
+  });
+
+  it('returns [] for no pending blocks', () => {
+    assert.deepEqual(pendingVarBlockNames([{}, { section: 'x' }]), []);
   });
 });

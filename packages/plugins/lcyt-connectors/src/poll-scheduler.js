@@ -14,6 +14,7 @@
  *
  * See docs/plans/plan_live_variables.md §2.
  */
+import logger from 'lcyt/logger';
 import { listConstantPollRequests } from './db.js';
 
 const SEP = ' ';
@@ -39,16 +40,30 @@ export function createPollScheduler({ db, engine }) {
     if (t) { clearInterval(t); timers.delete(k); }
   }
 
+  // Failures here would otherwise vanish silently for the rest of the server
+  // session — the poll keeps ticking but the watched variable just stops
+  // updating, with no signal to the operator (the UI's "polling" badge only
+  // reflects the DB flag, not fetch success).
+  function fireAndLog(apiKey, connectorSlug, requestSlug) {
+    engine.fireRequest(apiKey, connectorSlug, requestSlug)
+      .then((result) => {
+        if (!result?.ok) {
+          logger.warn(`[poll-scheduler] ${apiKey} ${connectorSlug}.${requestSlug} failed: ${result?.error || 'unknown error'}`);
+        }
+      })
+      .catch((err) => {
+        logger.warn(`[poll-scheduler] ${apiKey} ${connectorSlug}.${requestSlug} threw: ${err?.message ?? err}`);
+      });
+  }
+
   /** (Re)start polling a request. Last-write-wins — clears any existing interval first. */
   function start(apiKey, connectorSlug, requestSlug, intervalMs) {
     stop(apiKey, connectorSlug, requestSlug);
     const delay = Math.max(MIN_INTERVAL_MS, Number(intervalMs) || 3000);
     // Fire once immediately (mirrors the frontend prefetch tier's "refresh on
     // arrival" behavior) rather than waiting a full interval for the first value.
-    engine.fireRequest(apiKey, connectorSlug, requestSlug).catch(() => {});
-    const t = setInterval(() => {
-      engine.fireRequest(apiKey, connectorSlug, requestSlug).catch(() => {});
-    }, delay);
+    fireAndLog(apiKey, connectorSlug, requestSlug);
+    const t = setInterval(() => fireAndLog(apiKey, connectorSlug, requestSlug), delay);
     if (typeof t.unref === 'function') t.unref();
     timers.set(keyOf(apiKey, connectorSlug, requestSlug), t);
   }

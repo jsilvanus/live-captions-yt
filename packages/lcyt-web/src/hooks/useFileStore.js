@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseFileContent } from '../lib/metacode-parser.js';
 import { expandVarBlocks } from '../lib/metacode-varblocks.js';
+import { findLineIndexForRaw } from '../lib/metacode-runtime.js';
 
 const POINTERS_KEY = 'lcyt-pointers';
 const FILES_STORAGE_KEY = 'lcyt:files';
@@ -271,6 +272,33 @@ export function useFileStore({
   }
 
   /**
+   * Re-run {{name[N]}} block expansion for a file whose raw text has NOT
+   * changed (only a variable resolved) — used by FileContext's reactive
+   * re-expand-pending effect. Unlike updateFileFromRawText's raw index
+   * clamp (correct for user edits, where the array naturally grows/shrinks
+   * under the pointer), this remaps the pointer by raw source line number
+   * so a block materializing into a different number of virtual lines can
+   * never silently move the pointer onto unrelated content — see
+   * docs/plans/plan_live_variables.md §3.
+   */
+  function refreshVarBlocks(id) {
+    const fileIdx = filesRef.current.findIndex(f => f.id === id);
+    if (fileIdx === -1) return;
+
+    const file = filesRef.current[fileIdx];
+    const targetRaw = file.lineNumbers?.[file.pointer];
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(file.rawText);
+    const pointer = targetRaw != null
+      ? Math.min(findLineIndexForRaw(lineNumbers, targetRaw), Math.max(0, lines.length - 1))
+      : Math.min(file.pointer, Math.max(0, lines.length - 1));
+
+    const newFiles = [...filesRef.current];
+    newFiles[fileIdx] = { ...file, lines, lineCodes, lineNumbers, cueDefs, actionDefs, pointer };
+    setFiles(newFiles);
+    saveFilesToStorage(newFiles);
+  }
+
+  /**
    * Create a new empty file with the given name, make it active, and enter raw edit mode.
    * @param {string} name
    */
@@ -326,6 +354,7 @@ export function useFileStore({
     advancePointer,
     clearPointers,
     updateFileFromRawText,
+    refreshVarBlocks,
     createEmptyFile,
   };
 }

@@ -224,6 +224,18 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     // Functions omitted — stable via useCallback
   ]);
 
+  // VariablesContext: only changes identity when the variable snapshot itself
+  // changes, not on every unrelated AppProviders re-render (e.g. a caption
+  // send bumping session.sequence) — same reasoning as connectionValue/
+  // captionValue above. snapshot/refresh/writeFileCode are stable via
+  // useCallback in useVariables().
+  const variablesValue = useMemo(() => ({
+    variables:     variables.variables,
+    snapshot:      variables.snapshot,
+    refresh:       variables.refresh,
+    writeFileCode: variables.writeFileCode,
+  }), [variables.variables]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // SessionApiContext: all methods are stable, so this object never changes.
   const sessionApiValue = useMemo(() => ({
     getStats:         session.getStats,
@@ -259,7 +271,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
           <ConnectionContext.Provider value={connectionValue}>
             <CaptionContext.Provider value={captionValue}>
               <SessionApiContext.Provider value={sessionApiValue}>
-                <VariablesContext.Provider value={variables}>
+                <VariablesContext.Provider value={variablesValue}>
                   <FileProvider>
                     <ToastProvider>
                       {children}

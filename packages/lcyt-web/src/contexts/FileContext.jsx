@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef } from 'react';
 import { useFileStore } from '../hooks/useFileStore';
 import { VariablesContext } from './VariablesContext.jsx';
-import { hasVarBlocks } from '../lib/metacode-varblocks.js';
+import { pendingVarBlockNames } from '../lib/metacode-varblocks.js';
 
 export const FileContext = createContext(null);
 
@@ -23,15 +23,24 @@ export function FileProvider({ children, ...opts }) {
   // a "loading…" placeholder (varBlockPending). Once the bus delivers that
   // variable's value, re-parse+expand just that file so the block
   // materializes — an already-materialized block is never reflowed here
-  // (see metacode-varblocks.js).
+  // (see metacode-varblocks.js). `variables.variables` gets a new identity on
+  // EVERY variable.* SSE event project-wide (e.g. an unrelated constant-poll
+  // ticking every second), so this only actually reparses a file when one of
+  // its OWN pending variable names is now present in the snapshot — not on
+  // every unrelated tick. refreshVarBlocks (not updateFileFromRawText) remaps
+  // the pointer by raw source line number, so a block materializing into a
+  // different number of virtual lines can't silently move the pointer onto
+  // unrelated content underneath the operator.
   const filesRef = useRef(fileStore.files);
   filesRef.current = fileStore.files;
   useEffect(() => {
     if (!variables) return;
     for (const file of filesRef.current) {
-      if (file.rawText != null && hasVarBlocks(file.lineCodes || [])) {
-        fileStore.updateFileFromRawText(file.id, file.rawText);
-      }
+      if (file.rawText == null) continue;
+      const pending = pendingVarBlockNames(file.lineCodes || []);
+      if (pending.length === 0) continue;
+      const anyResolved = pending.some((name) => Object.prototype.hasOwnProperty.call(variables.variables, name));
+      if (anyResolved) fileStore.refreshVarBlocks(file.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variables?.variables]);

@@ -185,11 +185,14 @@ export function createConnectorsRouter(db, auth, pollScheduler = null) {
     }
     if (slug !== undefined && !SLUG_RE.test(slug)) return res.status(400).json({ error: 'slug must be lowercase, hyphen-separated' });
     const priorSlug = req.request.slug;
+    const priorIntervalMs = req.request.prefetch_interval_ms;
     const row = updateRequest(db, req.request.id, req.body || {});
-    // Slug or prefetch_interval_ms may have just changed under a still-active
-    // constant poll — re-key/re-time it rather than leaving a stale interval
-    // running against the old slug or timing.
-    if (pollScheduler && row.constant_poll_enabled) {
+    // Only re-key/re-time an active constant poll when the slug or interval
+    // actually changed — otherwise an unrelated field edit (name, body,
+    // timeout) would stop+restart the poll and fire one unplanned extra
+    // live request via pollScheduler.start()'s immediate fire.
+    const addressingChanged = row.slug !== priorSlug || row.prefetch_interval_ms !== priorIntervalMs;
+    if (pollScheduler && row.constant_poll_enabled && addressingChanged) {
       pollScheduler.stop(req.apiKey, req.connector.slug, priorSlug);
       pollScheduler.start(req.apiKey, req.connector.slug, row.slug, row.prefetch_interval_ms);
     }

@@ -290,9 +290,12 @@ export function CaptionView({ onLineSend }) {
     const isHeading = lines[i].startsWith('#');
     const codes = lineCodes?.[i];
     const isEmptySend = !!codes?.emptySend;
-    const isMetaOnly = !isEmptySend && !lines[i]?.trim() && codes && Object.keys(codes).length > 0;
     const isVarPending = !!codes?.varBlockPending;
     const isVirtual = !!codes?.virtual;
+    // A virtual line is always real (if possibly blank) caption content from
+    // a {{name[N]}} block — never treat it as a metadata-only line, or an
+    // empty-valued segment would lose its double-click-to-send gesture.
+    const isMetaOnly = !isEmptySend && !isVirtual && !lines[i]?.trim() && codes && Object.keys(codes).length > 0;
 
     let cls = 'caption-line';
     if (isActive) cls += ' caption-line--active';

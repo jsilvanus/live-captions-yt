@@ -376,6 +376,41 @@ describe('useFileStore — updateFileFromRawText()', () => {
 });
 
 // ---------------------------------------------------------------------------
+// refreshVarBlocks() — {{name[N]}} background re-expansion (plan_live_variables.md §3)
+// ---------------------------------------------------------------------------
+
+describe('useFileStore — refreshVarBlocks()', () => {
+  it('remaps the pointer by raw source line number instead of clamping the same array index', async () => {
+    // Starts unresolved — the block renders as a single "loading…" placeholder line.
+    let snapshot = {};
+    const { result } = renderHook(() => useFileStore({ getVariablesSnapshot: () => snapshot }));
+    const content = 'Welcome\n{{weather[6]}}\nThank you for joining';
+    await act(() => result.current.loadFile(makeFile('test.txt', content)));
+    const id = result.current.files[0].id;
+
+    // 3 lines while pending: "Welcome" / placeholder / "Thank you for joining".
+    expect(result.current.files[0].lines.length).toBe(3);
+    act(() => result.current.setPointer(id, 2));
+    expect(result.current.files[0].lines[result.current.files[0].pointer]).toBe('Thank you for joining');
+
+    // Variable resolves in the background (no user action) into 3 wrapped segments,
+    // growing the array — a naive same-index clamp would now land mid-block.
+    snapshot = { weather: 'windy today mostly cloudy' };
+    act(() => result.current.refreshVarBlocks(id));
+
+    const file = result.current.files[0];
+    expect(file.lines.length).toBeGreaterThan(3);
+    expect(file.lines[file.pointer]).toBe('Thank you for joining');
+  });
+
+  it('is a no-op for an unknown file id', async () => {
+    const { result } = renderHook(() => useFileStore());
+    await act(() => result.current.loadFile(makeFile('test.txt', 'Hello')));
+    expect(() => act(() => result.current.refreshVarBlocks('nonexistent'))).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // localStorage persistence across remount
 // ---------------------------------------------------------------------------
 

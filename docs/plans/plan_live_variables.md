@@ -142,6 +142,26 @@ no real network I/O) and its `GET /connectors` embedding test.
 floor, not an aggregate-load guard (flagged in
 `packages/plugins/lcyt-connectors/CLAUDE.md`).
 
+### Post-review fixes (2026-07-19)
+
+A `/code-review` pass on this feature surfaced and fixed several real bugs:
+- `poll-scheduler.js`'s constant-poll failures were silently swallowed
+  (`.catch(() => {})`, no log) — now logged via `lcyt/logger` (`ok:false`
+  results are inspected too, not just thrown rejections).
+- The request-update route (`PUT /connectors/:connectorSlug/requests/:requestSlug`)
+  unconditionally stopped+restarted an active poll on *any* field edit,
+  firing one unplanned extra live request each time — now only re-keys when
+  the slug or `prefetch_interval_ms` actually changed.
+- `useProductionData.js`'s `togglePoll` never reverted its optimistic UI
+  update on a failed `PUT .../poll`, and reloaded the entire connector list
+  on success instead of using the PUT's own returned row — both fixed.
+- `VariablesContext.Provider`'s value wasn't memoized (unlike its sibling
+  context values in `AppProviders.jsx`), so every direct consumer re-rendered
+  on any unrelated `AppProviders` re-render — now wrapped in `useMemo`.
+- `packages/plugins/lcyt-connectors/README.md`'s quick-start example was
+  stale (pre-`pollScheduler` 2-arg `createConnectorsRouter` call) — fixed to
+  match the current signature.
+
 ## 3. Variable-backed text blocks — implemented (scoped)
 
 Distinct from inline `{{name}}` (single value, one line, resolved at send): a
@@ -203,20 +223,47 @@ saved/persisted) is never touched by expansion, so save/serialize skipping
 virtual lines is true by construction rather than requiring an explicit
 filter.
 
+**Correction (2026-07-19 code review):** "unmodified" above was true for the
+initial parse, but not for the *reactive* re-expand path — a background
+variable resolution (`FileContext.jsx`'s effect) could change a file's line
+count while the operator's pointer was sitting on a later, unrelated line,
+and the original `updateFileFromRawText()` pointer clamp
+(`Math.min(file.pointer, lines.length-1)`) kept the same *array index*, not
+the same *logical line* — silently moving the active/highlighted caption to
+different content mid-broadcast. Fixed with a dedicated
+`useFileStore.refreshVarBlocks(id)` that remaps the pointer by raw source
+line number (via `metacode-runtime.js`'s existing `findLineIndexForRaw`,
+the same helper `goto:` uses) instead of clamping the raw index — manual
+raw-text edits still use `updateFileFromRawText`'s original index-clamp
+behavior, which is correct there since the raw text itself changed. Also
+fixed: one-shot codes on a block's marker line (`timer`, `goto`, `apiTriggers`,
+`cue`, `actions`) were being copied onto *every* wrapped virtual segment,
+so they re-fired once per segment instead of once for the block — now only
+the first segment carries them (`metacode-varblocks.js`'s
+`stripOneShotCodes`). And an empty-valued block (`{{name[N]}}` resolving to
+`''`) was classified as a metadata-only line, losing its double-click-to-send
+gesture — `CaptionView.jsx`'s `isMetaOnly` now excludes virtual lines.
+
 ### Implementation status (2026-07-19)
 
 **Done:** `lib/metacode-varblocks.js` (`parseVarBlockMarker`, `wrapValue`,
-`expandVarBlocks`, `hasVarBlocks`); `metacode-parser.js` detects the block-only
+`expandVarBlocks`, `hasVarBlocks`, `pendingVarBlockNames`, one-shot-code
+stripping on non-first segments); `metacode-parser.js` detects the block-only
 marker and attaches `codes.varBlock` (pure, no variable access);
 `hooks/useFileStore.js` applies `expandVarBlocks()` after every parse
 (`loadFile`, `updateFileFromRawText`, `loadFileFromText`, initial-mount
-restore) via an optional `getVariablesSnapshot` option;
-`contexts/FileContext.jsx` supplies the shared snapshot and re-parses files
-with pending blocks reactively; `CaptionView.jsx` styles pending/virtual lines
-distinctly (`caption-line--var-pending` / `caption-line--virtual`) and shows
+restore) via an optional `getVariablesSnapshot` option, plus a dedicated
+`refreshVarBlocks()` for the reactive background path (pointer-safe, see
+correction above); `contexts/FileContext.jsx` supplies the shared snapshot
+and reactively re-expands only files whose *specific* pending variable name
+has resolved (not on every unrelated `variable.*` tick — a real waste under
+constant-poll); `CaptionView.jsx` styles pending/virtual lines distinctly
+(`caption-line--var-pending` / `caption-line--virtual`) and shows
 the `20:1`-style compound gutter number for virtual lines instead of the raw
-integer. Tests: `test/metacode-varblocks.test.js`, `fileUtils.test.js`'s
-block-marker describe block.
+integer. Tests: `test/metacode-varblocks.test.js` (incl. one-shot-code
+stripping and `pendingVarBlockNames`), `fileUtils.test.js`'s block-marker
+describe block, `test/components/useFileStore.test.jsx`'s `refreshVarBlocks()`
+pointer-remap test.
 
 **Not done:** live re-expand-on-arrival (re-materializing a block fresh each
 time the pointer re-enters it, per the originally-recommended semantics) —

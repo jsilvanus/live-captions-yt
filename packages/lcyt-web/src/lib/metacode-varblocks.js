@@ -17,6 +17,25 @@
 
 const VAR_BLOCK_RE = /^\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\[(\d+)(\*)?\]\s*\}\}$/;
 
+// One-shot codes carried by the block-marker line (timer/goto/api triggers/cue/
+// named actions/…) belong to the block as a whole, not to every wrapped
+// segment — otherwise each virtual line re-fires them independently as the
+// operator advances through. Only the first segment keeps them; persistent
+// codes (section, speaker, custom keys, …) are NOT in this list and stay on
+// every segment, since they describe ongoing state rather than a one-shot
+// trigger.
+const ONE_SHOT_CODE_KEYS = [
+  'audioCapture', 'timer', 'goto', 'fileSwitch', 'fileSwitchServer',
+  'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'cueTree',
+  'apiTriggers', 'actions', 'codeTtls',
+];
+
+function stripOneShotCodes(codes) {
+  const out = { ...codes };
+  for (const key of ONE_SHOT_CODE_KEYS) delete out[key];
+  return out;
+}
+
 /**
  * Does `text` (already trimmed of other metacodes) consist of *only* a
  * {{name[N]}} / {{name[N*]}} marker? Returns the parsed marker or null.
@@ -117,8 +136,9 @@ export function expandVarBlocks(lines, lineCodes, lineNumbers, variablesSnapshot
 
     const segments = wrapValue(variablesSnapshot[marker.name], marker.maxLen, marker.hard);
     segments.forEach((seg, k) => {
+      const segCodes = k === 0 ? restCodes : stripOneShotCodes(restCodes);
       outLines.push(seg);
-      outCodes.push({ ...restCodes, virtual: true, virtualBlock: marker.name, virtualIndex: k, virtualCount: segments.length });
+      outCodes.push({ ...segCodes, virtual: true, virtualBlock: marker.name, virtualIndex: k, virtualCount: segments.length });
       outNumbers.push(lineNumbers[i]);
     });
   }
@@ -126,7 +146,20 @@ export function expandVarBlocks(lines, lineCodes, lineNumbers, variablesSnapshot
   return { lines: outLines, lineCodes: outCodes, lineNumbers: outNumbers };
 }
 
-/** Does this parsed file (pre-expansion) contain at least one varBlock marker? */
+/** Does this file's (already-expanded) lineCodes contain at least one still-pending block? */
 export function hasVarBlocks(lineCodes) {
   return lineCodes.some((c) => c?.varBlock);
+}
+
+/**
+ * Variable names referenced by this file's still-pending blocks (deduped).
+ * Used to decide whether a reactive re-expand is actually worth doing —
+ * a file should only be reparsed when one of the SPECIFIC variables its
+ * pending blocks are waiting on has resolved, not on every unrelated
+ * variable change (see contexts/FileContext.jsx).
+ */
+export function pendingVarBlockNames(lineCodes) {
+  const names = new Set();
+  for (const c of lineCodes) if (c?.varBlock) names.add(c.varBlock.name);
+  return [...names];
 }
