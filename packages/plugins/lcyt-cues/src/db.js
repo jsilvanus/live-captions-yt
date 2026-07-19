@@ -2,8 +2,9 @@
  * Cue Engine plugin — DB migrations and helpers.
  *
  * Tables:
- *   cue_rules   — persistent trigger rules (phrase match, regex, section match)
- *   cue_events  — log of fired cue events
+ *   cue_rules              — persistent trigger rules (phrase match, regex, section match, composite, track)
+ *   cue_events             — log of fired cue events
+ *   cue_named_conditions   — reusable named condition trees (Phase 9, referenced via `@name`/`ref` leaves)
  *
  * @param {import('better-sqlite3').Database} db
  */
@@ -37,6 +38,32 @@ export function runMigrations(db) {
   if (!cols.has('fuzzy_threshold')) {
     db.exec('ALTER TABLE cue_rules ADD COLUMN fuzzy_threshold REAL NOT NULL DEFAULT 0.75');
   }
+
+  // Additive migration: condition_tree column (Phase 9) — JSON tree, used when match_type = 'composite'
+  if (!cols.has('condition_tree')) {
+    db.exec('ALTER TABLE cue_rules ADD COLUMN condition_tree TEXT');
+  }
+
+  // cue_named_conditions — reusable named condition trees (Phase 9).
+  // A tree can be referenced from any cue_rules.condition_tree (or another named
+  // condition's tree) via a `{ type: 'ref', name }` leaf. `source` distinguishes
+  // conditions authored via CRUD ('api') from ones upserted by an inline
+  // `<!-- cue-def:name: ... -->` block in a rundown file ('inline').
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cue_named_conditions (
+      id             TEXT PRIMARY KEY,
+      api_key        TEXT NOT NULL,
+      name           TEXT NOT NULL,
+      condition_tree TEXT NOT NULL,
+      source         TEXT NOT NULL DEFAULT 'api',
+      created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS cue_named_conditions_key_name
+      ON cue_named_conditions(api_key, name)
+  `);
 
   // cue_events — log of fired cue events for audit/rundown export.
   // Note: ts is stored as seconds-since-epoch (SQLite strftime('%s','now'));
@@ -90,18 +117,19 @@ export function getCueRule(db, id) {
  */
 export function insertCueRule(db, rule) {
   db.prepare(`
-    INSERT INTO cue_rules (id, api_key, name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO cue_rules (id, api_key, name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold, condition_tree)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(rule.id, rule.api_key, rule.name, rule.match_type, rule.pattern,
          JSON.stringify(rule.action ?? {}), rule.enabled ?? 1, rule.cooldown_ms ?? 0,
-         rule.fuzzy_threshold ?? 0.75);
+         rule.fuzzy_threshold ?? 0.75,
+         rule.condition_tree !== undefined ? JSON.stringify(rule.condition_tree) : null);
 }
 
 /**
  * Update a cue rule.
  * @param {import('better-sqlite3').Database} db
  * @param {string} id
- * @param {object} fields — any subset of { name, match_type, pattern, action, enabled, cooldown_ms }
+ * @param {object} fields — any subset of { name, match_type, pattern, action, enabled, cooldown_ms, condition_tree }
  */
 export function updateCueRule(db, id, fields) {
   const sets = [];
@@ -116,6 +144,10 @@ export function updateCueRule(db, id, fields) {
     sets.push('action = ?');
     vals.push(JSON.stringify(fields.action));
   }
+  if (fields.condition_tree !== undefined) {
+    sets.push('condition_tree = ?');
+    vals.push(fields.condition_tree === null ? null : JSON.stringify(fields.condition_tree));
+  }
   if (sets.length === 0) return;
   vals.push(id);
   db.prepare(`UPDATE cue_rules SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
@@ -128,6 +160,88 @@ export function updateCueRule(db, id, fields) {
  */
 export function deleteCueRule(db, id) {
   db.prepare('DELETE FROM cue_rules WHERE id = ?').run(id);
+}
+
+// ---------------------------------------------------------------------------
+// Named condition CRUD (Phase 9)
+// ---------------------------------------------------------------------------
+
+/**
+ * List all named conditions for an API key.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @returns {Array<object>}
+ */
+export function listNamedConditions(db, apiKey) {
+  return db.prepare('SELECT * FROM cue_named_conditions WHERE api_key = ? ORDER BY created_at').all(apiKey);
+}
+
+/**
+ * Get a single named condition by ID.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} id
+ * @returns {object|undefined}
+ */
+export function getNamedCondition(db, id) {
+  return db.prepare('SELECT * FROM cue_named_conditions WHERE id = ?').get(id);
+}
+
+/**
+ * Get a single named condition by (api_key, name).
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} name
+ * @returns {object|undefined}
+ */
+export function getNamedConditionByName(db, apiKey, name) {
+  return db.prepare('SELECT * FROM cue_named_conditions WHERE api_key = ? AND name = ?').get(apiKey, name);
+}
+
+/**
+ * Insert a new named condition.
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ id: string, api_key: string, name: string, condition_tree: object, source?: string }} cond
+ */
+export function insertNamedCondition(db, cond) {
+  db.prepare(`
+    INSERT INTO cue_named_conditions (id, api_key, name, condition_tree, source)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(cond.id, cond.api_key, cond.name, JSON.stringify(cond.condition_tree), cond.source || 'api');
+}
+
+/**
+ * Update a named condition.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} id
+ * @param {object} fields — any subset of { name, condition_tree, source }
+ */
+export function updateNamedCondition(db, id, fields) {
+  const sets = [];
+  const vals = [];
+  if (fields.name !== undefined) {
+    sets.push('name = ?');
+    vals.push(fields.name);
+  }
+  if (fields.condition_tree !== undefined) {
+    sets.push('condition_tree = ?');
+    vals.push(JSON.stringify(fields.condition_tree));
+  }
+  if (fields.source !== undefined) {
+    sets.push('source = ?');
+    vals.push(fields.source);
+  }
+  if (sets.length === 0) return;
+  vals.push(id);
+  db.prepare(`UPDATE cue_named_conditions SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+}
+
+/**
+ * Delete a named condition.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} id
+ */
+export function deleteNamedCondition(db, id) {
+  db.prepare('DELETE FROM cue_named_conditions WHERE id = ?').run(id);
 }
 
 // ---------------------------------------------------------------------------

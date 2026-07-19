@@ -696,6 +696,16 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lineCodes[0].cueTree.children[1].pattern, 'music');
   });
 
+  it('parses track and regex keyword terms', () => {
+    const raw = '<!-- cue: track:presenter-standing|+regex:\\bAmen\\b -->Let us pray';
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.op, 'and');
+    assert.equal(lineCodes[0].cueTree.children[0].matchType, 'track');
+    assert.equal(lineCodes[0].cueTree.children[0].pattern, 'presenter-standing');
+    assert.equal(lineCodes[0].cueTree.children[1].matchType, 'regex');
+    assert.equal(lineCodes[0].cueTree.children[1].pattern, '\\bAmen\\b');
+  });
+
   it('parses grouped cue expressions with parenthesis precedence', () => {
     const raw = '<!-- cue: exact:Amen|+(exact:Peace|exact:Grace) -->Let us pray';
     const { lineCodes } = parseFileContent(raw);
@@ -714,6 +724,167 @@ describe('parseFileContent() — cue metacodes', () => {
     assert.equal(lineCodes[0].cueTree.children[0].pattern, 'Amen');
     assert.equal(lineCodes[0].cueTree.children[1].type, 'ref');
     assert.equal(lineCodes[0].cueTree.children[1].name, 'closing');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-line composite block grammar (Phase 9, plan_cues.md "Composite block
+// grammar") — the indented cue:/cue-def: block form, an alternative authoring
+// syntax to the compact `|`-expression tests above, producing the same
+// cueTree/cueDefs shape.
+// ---------------------------------------------------------------------------
+
+describe('parseFileContent() — multi-line composite cue: block', () => {
+  it('parses an explicit top-level or: with sync and async leaves, keeping trailing caption text', () => {
+    const raw = [
+      '<!-- cue:',
+      'or:',
+      '  exact: Amen',
+      '  ~~: end of the prayer',
+      '  section: prayer',
+      '-->We beseech thee, O Lord',
+    ].join('\n');
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], 'We beseech thee, O Lord');
+    assert.equal(lineCodes[0].cueMode, 'next');
+    assert.equal(lineCodes[0].cueTree.op, 'or');
+    assert.deepEqual(lineCodes[0].cueTree.children.map(c => [c.matchType, c.pattern]), [
+      ['phrase', 'Amen'],
+      ['semantic', 'end of the prayer'],
+      ['section', 'prayer'],
+    ]);
+  });
+
+  it('treats a flat list of leaf lines (no and:/or:/not: header) as an implicit top-level or:', () => {
+    const raw = ['<!-- cue:', '  exact: Amen', '  ~~: end of the prayer', '-->'].join('\n');
+    const { lines, lineCodes } = parseFileContent(raw);
+    assert.equal(lines[0], '');
+    assert.equal(lineCodes[0].cueTree.op, 'or');
+    assert.equal(lineCodes[0].cueTree.children.length, 2);
+  });
+
+  it('supports nested and: inside or: via 2-space indentation', () => {
+    const raw = [
+      '<!-- cue:',
+      'or:',
+      '  exact: Amen',
+      '  and:',
+      '    section: prayer',
+      '    ~~: leader concludes',
+      '-->',
+    ].join('\n');
+    const { lineCodes } = parseFileContent(raw);
+    const tree = lineCodes[0].cueTree;
+    assert.equal(tree.op, 'or');
+    assert.equal(tree.children[0].pattern, 'Amen');
+    assert.equal(tree.children[1].op, 'and');
+    assert.equal(tree.children[1].children[0].matchType, 'section');
+    assert.equal(tree.children[1].children[1].matchType, 'semantic');
+  });
+
+  it('supports not: (single child) and a bare @ref leaf', () => {
+    const raw = [
+      '<!-- cue:',
+      'or:',
+      '  exact: Amen',
+      '  not:',
+      '    section: intro',
+      '  @closing',
+      '-->',
+    ].join('\n');
+    const { lineCodes } = parseFileContent(raw);
+    const tree = lineCodes[0].cueTree;
+    assert.equal(tree.children[1].op, 'not');
+    assert.equal(tree.children[1].children.length, 1);
+    assert.equal(tree.children[1].children[0].matchType, 'section');
+    assert.equal(tree.children[2].type, 'ref');
+    assert.equal(tree.children[2].name, 'closing');
+  });
+
+  it('supports track: and event: leaves', () => {
+    const raw = ['<!-- cue:', '  track: presenter-standing', '  event: the speaker sits down', '-->'].join('\n');
+    const { lineCodes } = parseFileContent(raw);
+    const tree = lineCodes[0].cueTree;
+    assert.equal(tree.children[0].matchType, 'track');
+    assert.equal(tree.children[0].pattern, 'presenter-standing');
+    assert.equal(tree.children[1].matchType, 'event_cue');
+    assert.equal(tree.children[1].pattern, 'the speaker sits down');
+  });
+
+  it('a bare word line with no keyword prefix is an implicit exact/phrase leaf', () => {
+    const raw = ['<!-- cue:', '  Amen', '  ~~: end of the prayer', '-->'].join('\n');
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.children[0].matchType, 'phrase');
+    assert.equal(lineCodes[0].cueTree.children[0].pattern, 'Amen');
+  });
+
+  it('cue*: and cue**: block modifiers set cueMode the same as the single-line form', () => {
+    const skipRaw = ['<!-- cue*:', '  exact: Amen', '-->'].join('\n');
+    const anyRaw = ['<!-- cue**:', '  exact: Amen', '-->'].join('\n');
+    assert.equal(parseFileContent(skipRaw).lineCodes[0].cueMode, 'skip');
+    assert.equal(parseFileContent(anyRaw).lineCodes[0].cueMode, 'any');
+  });
+
+  it('a single-leaf block returns the leaf directly, not wrapped in a group', () => {
+    const raw = ['<!-- cue:', '  section: prayer', '-->'].join('\n');
+    const { lineCodes } = parseFileContent(raw);
+    assert.equal(lineCodes[0].cueTree.type, 'match');
+    assert.equal(lineCodes[0].cueTree.matchType, 'section');
+  });
+});
+
+describe('parseFileContent() — multi-line cue-def: block', () => {
+  it('parses a named condition block into cueDefs without emitting a caption line', () => {
+    const raw = [
+      '<!-- cue-def:prayer-ending:',
+      'or:',
+      '  exact: amen',
+      '  ~~: end of the prayer',
+      '-->',
+      'Let us continue',
+    ].join('\n');
+    const { lines, cueDefs } = parseFileContent(raw);
+    assert.deepEqual(lines, ['Let us continue']);
+    assert.equal(cueDefs.length, 1);
+    assert.equal(cueDefs[0].name, 'prayer-ending');
+    assert.equal(cueDefs[0].tree.op, 'or');
+    assert.equal(cueDefs[0].tree.children[0].pattern, 'amen');
+  });
+
+  it('a cue-def: block followed by @ref cues resolves the same way the compact single-line form does', () => {
+    const raw = [
+      '<!-- cue-def:prayer-ending:',
+      'or:',
+      '  exact: amen',
+      '  ~~: end of the prayer',
+      '-->',
+      '<!-- cue:@prayer-ending -->Let us stand',
+      '<!-- cue*:@prayer-ending -->Closing hymn',
+    ].join('\n');
+    const { lines, lineCodes, cueDefs } = parseFileContent(raw);
+    assert.deepEqual(lines, ['Let us stand', 'Closing hymn']);
+    assert.equal(lineCodes[0].cueTree.type, 'ref');
+    assert.equal(lineCodes[0].cueTree.name, 'prayer-ending');
+    assert.equal(lineCodes[1].cueMode, 'skip');
+    assert.equal(cueDefs[0].name, 'prayer-ending');
+  });
+
+  it('single-line cue-def: falls back to the compact expression parser when the value is not raw JSON', () => {
+    const raw = '<!-- cue-def:short: exact:Amen|+~~:closing -->';
+    const { cueDefs } = parseFileContent(raw);
+    assert.equal(cueDefs[0].name, 'short');
+    assert.equal(cueDefs[0].tree.op, 'and');
+    assert.equal(cueDefs[0].tree.children[0].pattern, 'Amen');
+    assert.equal(cueDefs[0].tree.children[1].matchType, 'semantic');
+    assert.equal(cueDefs[0].tree.children[1].pattern, 'closing');
+  });
+
+  it('single-line cue-def: still accepts a raw JSON tree', () => {
+    const raw = '<!-- cue-def:literal: {"op":"or","children":[{"type":"match","matchType":"phrase","pattern":"Amen"}]} -->';
+    const { cueDefs } = parseFileContent(raw);
+    assert.equal(cueDefs[0].name, 'literal');
+    assert.equal(cueDefs[0].tree.op, 'or');
+    assert.equal(cueDefs[0].tree.children[0].pattern, 'Amen');
   });
 });
 

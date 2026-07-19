@@ -300,7 +300,7 @@ export function AssetsPage() {
       color: 'cyan',
       status: connected ? (loading.cues ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.cues ? 'Loading…' : `${cueRules.length} rule${cueRules.length === 1 ? '' : 's'}`) : 'Connect',
-      headerAction: { label: 'Open', href: '/planner' },
+      headerAction: { label: 'Open', href: '/cues' },
       body: !connected ? (
         <p className="setup-card__empty">Connect to a project to view cue rules.</p>
       ) : loading.cues ? (
@@ -313,7 +313,7 @@ export function AssetsPage() {
           name={rule.name || 'Cue rule'}
           meta={rule.match_type || 'phrase'}
           badge={rule.enabled === false ? 'disabled' : 'active'}
-          href="/planner"
+          href="/cues"
         />
       )),
     },
@@ -326,6 +326,7 @@ export function AssetsPage() {
       color: 'accent',
       status: connected ? (loading.actions ? 'partial' : 'ready') : 'partial',
       statusLabel: connected ? (loading.actions ? 'Loading…' : `${actions.length} action${actions.length === 1 ? '' : 's'}`) : 'Connect',
+      headerAction: { label: 'Open', href: '/actions' },
       body: !connected ? (
         <p className="setup-card__empty">Connect to a project to manage named actions.</p>
       ) : loading.actions ? (
@@ -338,6 +339,7 @@ export function AssetsPage() {
           name={action.name}
           meta={`@${action.slug}`}
           badge={action.definition ? 'macro' : 'empty'}
+          href="/actions"
         />
       )),
     },

@@ -60,6 +60,8 @@ const ProductionDevicesPage  = lazyImport(() => import('./components/ProductionD
 const ProductionVisualPage   = lazyImport(() => import('./components/ProductionVisualPage').then(m => ({ default: m.ProductionVisualPage })));
 const ProductionCropPage     = lazyImport(() => import('./components/production/ProductionCropPage.jsx').then(m => ({ default: m.ProductionCropPage })));
 const PlannerPage            = lazyImport(() => import('./components/PlannerPage').then(m => ({ default: m.PlannerPage })));
+const CuesPage                = lazyImport(() => import('./components/CuesPage.jsx').then(m => ({ default: m.CuesPage })));
+const NamedActionsPage        = lazyImport(() => import('./components/NamedActionsPage.jsx').then(m => ({ default: m.NamedActionsPage })));
 const TranslationsPage       = lazyImport(() => import('./components/TranslationsPage').then(m => ({ default: m.TranslationsPage })));
 const AiSettingsPage         = lazyImport(() => import('./components/AiSettingsPage').then(m => ({ default: m.AiSettingsPage })));
 const AdminUsersPage         = lazyImport(() => import('./components/AdminUsersPage').then(m => ({ default: m.AdminUsersPage })));
@@ -206,6 +208,8 @@ function SidebarApp() {
             <Route path="/production/crop" component={ProductionCropPage} />
             <Route path="/production" component={ProductionOperatorPage} />
             <Route path="/planner" component={PlannerPage} />
+            <Route path="/cues" component={CuesPage} />
+            <Route path="/actions" component={NamedActionsPage} />
             <Route path="/translations" component={TranslationsPage} />
             <Route path="/ai" component={AiSettingsPage} />
             <Route path="/admin/users/:id" component={AdminUserDetailPage} />

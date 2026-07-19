@@ -102,13 +102,103 @@ rule types (phrase/regex/section/fuzzy) — don't wait on Phase 9. That alone cl
 "shipped API, no UI" gap for the common case. Extend the editor once Phase 9's
 composite trees exist.
 
-**Lane C — Cue rules editor (Phase 10, current rule types only)**
-(`packages/lcyt-web/src/components/AssetsPage.jsx` + a new editor component; reads
-the existing `/cues/rules` API). Independent of every other lane.
+**Lane C — Cue rules editor (Phase 10, current rule types only)** is **done** —
+implemented 2026-07-18: `packages/lcyt-web/src/components/CuesPage.jsx` (new,
+route `/cues`) is a CRUD editor over the existing `/cues/rules` API, scoped to
+`phrase`/`regex`/`section`/`fuzzy` as planned — no backend changes. Rules of
+other match types (`semantic`, `event_cue`, sound-cue types, future
+`composite`) still list/toggle/delete but lock their edit form with a notice
+rather than expose fields the editor doesn't support yet. `AssetsPage.jsx`'s
+existing "Global cues" card (it already had one, unlike the plan's original
+`TILES`-array sketch — see `plan_cues.md` Phase 10) now links to `/cues`
+instead of `/planner`. `plan_cues.md`, `plan_assets_page.md`, and
+`packages/lcyt-web/CLAUDE.md` updated; `test/components/CuesPage.test.jsx`
+(9 tests, Vitest) added. The composite-tree `ConditionTreeEditor` and Named
+Conditions section remain deferred to Phase 9 (Lane D), as scoped.
 
-**Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees**
-(`packages/plugins/lcyt-cues` only). Independent of Lane C in terms of files, but
-sequence Lane C's *extension* for composite-condition editing after Lane D lands.
+**Same-day follow-up (also 2026-07-18):** on user feedback that cues (and
+named actions) are properties of a rundown file rather than a standalone
+library, the editor's logic was extracted into `CuesManager({ embedded })`
+(`CuesPage.jsx` is now a thin wrapper, mirroring `LanguagesManager`/
+`LanguagesPage.jsx`) and given a second home: an embedded "📋 Cues" tab in
+a new `packages/lcyt-web/src/components/planner/PlannerAssistPanel.jsx`,
+the Planner's right column, alongside an "⚡ Actions" tab and the AI
+assistant chat below both. The Actions tab reuses `NamedActionsManager.jsx`
+(`plan_named_actions.md`) — rebuilt on the same Dialog/SetupItemRow pattern
+and given its own standalone `/actions` page (linked from the Assets
+"Global actions" card, which was read-only until now) since it turned out
+to have been built earlier but never actually mounted anywhere. This
+replaced a non-functional "Cues and Actions panels coming soon" tab stub
+that was already sitting in `PlannerPage.jsx`'s narrow/mobile layout, and
+gave the desktop 3-column layout the same tabs for the first time.
+`plan_cues.md`, `plan_named_actions.md`, `plan_assets_page.md`, `docs/PLANS.md`,
+and `packages/lcyt-web/CLAUDE.md` updated; `test/components/NamedActionsManager.test.jsx`
+(7 tests) and `test/components/PlannerAssistPanel.test.jsx` (4 tests) added,
+`CuesPage.test.jsx`'s original 9 tests kept passing unmodified (pure
+extraction, no behavior change to the non-embedded default).
+
+**Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees** is
+**done** — implemented 2026-07-18, continuing PR #282, `packages/plugins/lcyt-cues`
+only (no frontend changes). Phase 8.5 turned out to already be shipped by the time
+this lane started: `POST /cues/inline`, `CueEngine.setInlineSnapshot()`/
+`evaluateInlineCues()`, and the frontend caller in `InputBar.jsx` all already
+existed with test coverage — this doc and `plan_cues.md` had simply gone stale
+(the "operational lesson" §0 warns about exactly this: re-check before acting).
+Phase 9 backend landed fresh in this pass: `cue_named_conditions` table +
+`GET/POST/PUT/DELETE /cues/defs` (write-time cycle rejection for both
+self-reference and multi-hop cycles), `cue_rules.condition_tree` +
+`match_type: 'composite'`/`'track'` support in `/cues/rules` (non-zero default
+`cooldown_ms` for `track`/composite-with-`track`-leaf rules), and a rewritten
+async `CueEngine.evaluateComposite()` (leaf types `phrase`/`exact`/`regex`/
+`fuzzy`/`section`/`context`/`track`/`semantic`/`event`, cheap-sync-before-async
+ordering within a group, cycle-guarded `ref` resolution against the DB-backed
+named-condition cache) replacing the old inline-only, sync, `cueDefs`-only
+evaluator. New `evaluateCompositeRules()` (DB-backed composite rules — inline
+composite already worked) and `evaluateTrackerEvent()`/`createTrackerCueListener()`
+(`track:` leaves and standalone `track` rules — mirrors the sound-cue listener;
+inert until some future tracker subsystem emits `track_state`, which is out of
+scope for this plugin). 24 new tests (`cue-engine.test.js`, new
+`tracker-cues.test.js`, `routes.test.js`). `plan_cues.md`, `docs/PLANS.md`, and
+`packages/plugins/lcyt-cues/CLAUDE.md` updated. **Now unblocked:** Lane C's
+`ConditionTreeEditor`/Named Conditions extension and the frontend composite-cue/
+`cue-def:` parser work — see `plan_cues.md` Phase 9's "Frontend (not built)"
+note for the API surface to build against; not dispatched as part of this lane
+since it's frontend work.
+
+**Lane C's deferred pieces — done (2026-07-18, same day as Lane D):** the
+`ConditionTreeEditor`/Named Conditions extension Lane D's note above unblocked
+was picked up immediately rather than staying a separate dispatch. New
+`packages/lcyt-web/src/components/ConditionTreeEditor.jsx` — recursive
+leaf/group/ref editor (add-leaf buttons for exact/fuzzy/semantic/section/
+track/event, collapsible and/or/not group containers with `not` truncated to
+one child, a `ref` leaf as a validated `<select>` sourced from the named-
+conditions list, an inline warning when `not` wraps a semantic/event/ref
+child, and an exported `summarizeConditionTree()` for compact one-line
+rendering). `CuesManager` (`CuesPage.jsx`) gained: `composite` and `track`
+in its editable match-type list (composite swaps the pattern field for
+`ConditionTreeEditor`; track auto-suggests a 1000ms cooldown), and a full
+Named Conditions CRUD section wired to `/cues/defs`, including the locked
+name-after-creation field, the inline-sourced "Defined by a rundown file's
+`cue-def:` block…" notice, and its Detach button (`PUT /cues/defs/:id`
+`{ source: 'api' }`). On the parser side, `metacode-parser.js` gained the
+multi-line indented composite-block grammar itself — `CUE_BLOCK_OPEN_RE`/
+`CUE_DEF_BLOCK_OPEN_RE` detect a bare `<!-- cue(*{0,2}):` or
+`<!-- cue-def:name:` open line and collect an indented body until a closing
+`-->` (a composite `cue:` block's close may carry trailing caption text on
+the same line; a `cue-def:` block's must be bare), parsed by
+`parseIndentedConditionBlock()`/`parseBlockLeafLine()` into the same tree
+shape the pre-existing compact `|`-pipe syntax already produced — plus two
+small pre-existing bugs fixed along the way (`parseCueLeaf()` had no
+`track`/`regex` keyword cases; `~~:value`/`~:value` left a stray leading
+colon). `metacode-runtime.js`'s `buildCueMap()`/`checkCueMatch()` now
+correctly mark and skip composite cue entries — previously a composite
+cue's raw expression text was silently (and incorrectly, if harmlessly)
+substring-matched as a literal phrase. 45 new tests across
+`ConditionTreeEditor.test.jsx` (16), `fileUtils.test.js` (15), `CuesPage.test.jsx`
+(11), `metacode-runtime.test.js` (4, plus 2 existing assertions updated for
+the new `composite` field). `plan_cues.md`, `docs/PLANS.md`, and this file
+updated. Phase 9 and Phase 10 are both now fully implemented, frontend and
+backend — nothing from either phase remains dispatchable.
 
 ---
 
@@ -167,8 +257,10 @@ If launching several agents today, this set has no file/package overlap:
 
 - **Lane A** — done, see Tier 1 above; nothing left to dispatch here
 - **Lane B** — done, see Tier 1 above; the remaining vertical-crop work (production-follow) is a backend lane, not this frontend one
-- **Lane C** — Cue rules editor, current rule types (`lcyt-web` Assets page)
-- **Lane D** — Cue engine Phase 8.5 + Phase 9 (`lcyt-cues`)
+- **Lane C** — done, see Tier 2 above; its deferred `ConditionTreeEditor`/Named
+  Conditions extension is also done (same-day follow-up after Lane D) — nothing
+  left to dispatch here
+- **Lane D** — done, see Tier 2 above; nothing left to dispatch here
 - One or two Tier 3 items from packages not already claimed above (e.g. HLS
   `putObject`/`publicUrl` wiring, or the DSK editor's rotation handle)
 

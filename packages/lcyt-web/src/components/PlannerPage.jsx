@@ -8,7 +8,8 @@ import { KEYS } from '../lib/storageKeys.js';
 import { uid, serializePlan, deserializePlan } from '../lib/plannerUtils.js';
 import { NormalizeLinesModal, normalizeLines } from './NormalizeLinesModal';
 import { SessionContext } from '../contexts/SessionContext';
-import { AgentChatPanel, useAgentChat } from './agent/AgentChatPanel.jsx';
+import { useAgentChat } from './agent/AgentChatPanel.jsx';
+import { PlannerAssistPanel } from './planner/PlannerAssistPanel.jsx';
 import { SwipeablePages } from './SwipeablePages.jsx';
 import { PlannerBroadcastFilePanel } from './PlannerBroadcastFilePanel.jsx';
 export { serializePlan, deserializePlan } from '../lib/plannerUtils.js';
@@ -1055,6 +1056,23 @@ export function PlannerPage() {
     </div>
   );
 
+  // Shared with both the desktop and narrow (SwipeablePages) layouts below —
+  // PlannerAssistPanel forwards this straight to AgentChatPanel.
+  const chatProps = {
+    title: 'Planner Assistant',
+    subtitle: 'Describe the event to draft a rundown, or describe a change to make to the one you have.',
+    messages: chatMessages,
+    onSend: handleChatSend,
+    loading: aiLoading,
+    error: aiError,
+    disabled: !sessionToken,
+    quickActions: blocks.length === 0 ? RUNDOWN_STARTERS.map(t => ({
+      label: t.label,
+      onClick: () => handleChatSend(t.prompt),
+    })) : undefined,
+    isNarrow,
+  };
+
   // On mobile, use swipeable pages for the three main sections
   if (isNarrow) {
     const pages = [
@@ -1156,43 +1174,7 @@ export function PlannerPage() {
         label: 'Cues & AI',
         content: (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-            {/* Cues and Actions tabs stub */}
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--color-border)', flexShrink: 0 }}>
-              <button
-                style={{
-                  flex: 1, padding: '12px', borderRadius: 0, border: 'none', background: 'transparent', color: 'var(--color-text-muted)',
-                  fontSize: 12, fontWeight: '500', cursor: 'pointer', borderBottom: '2px solid var(--color-border)',
-                }}
-              >
-                📋 Cues
-              </button>
-              <button
-                style={{
-                  flex: 1, padding: '12px', borderRadius: 0, border: 'none', background: 'transparent', color: 'var(--color-text-muted)',
-                  fontSize: 12, fontWeight: '500', cursor: 'pointer', borderBottom: '2px solid var(--color-border)',
-                }}
-              >
-                ⚡ Actions
-              </button>
-            </div>
-            <div style={{ padding: 12, fontSize: 12, color: 'var(--color-text-muted)' }}>
-              Cues and Actions panels coming soon
-            </div>
-            {/* AI Chat */}
-            <AgentChatPanel
-              title="Planner Assistant"
-              subtitle="Describe the event to draft a rundown, or describe a change to make to the one you have."
-              messages={chatMessages}
-              onSend={handleChatSend}
-              loading={aiLoading}
-              error={aiError}
-              disabled={!sessionToken}
-              quickActions={blocks.length === 0 ? RUNDOWN_STARTERS.map(t => ({
-                label: t.label,
-                onClick: () => handleChatSend(t.prompt),
-              })) : undefined}
-              isNarrow={isNarrow}
-            />
+            <PlannerAssistPanel chatProps={chatProps} />
           </div>
         ),
       },
@@ -1290,20 +1272,7 @@ export function PlannerPage() {
         )}
       </div>
       </div>
-      <AgentChatPanel
-        title="Planner Assistant"
-        subtitle="Describe the event to draft a rundown, or describe a change to make to the one you have."
-        messages={chatMessages}
-        onSend={handleChatSend}
-        loading={aiLoading}
-        error={aiError}
-        disabled={!sessionToken}
-        quickActions={blocks.length === 0 ? RUNDOWN_STARTERS.map(t => ({
-          label: t.label,
-          onClick: () => handleChatSend(t.prompt),
-        })) : undefined}
-        isNarrow={isNarrow}
-      />
+      <PlannerAssistPanel chatProps={chatProps} />
     </div>
   );
 }
