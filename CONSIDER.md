@@ -479,3 +479,55 @@ via `EventBus.sseSubscriberCount()`. The remaining bespoke registries (STT
 per-connection listeners, MCP endpoint sessions, bridge-manager SSE channels)
 would each need their own size accessor threaded through; skipped as low-value
 for the live panel v1.
+
+## PR #282 (Cue Rules editor + composite condition trees) — cleanup findings not posted inline
+
+**Where:** `packages/plugins/lcyt-cues/src/routes/cues.js`,
+`packages/plugins/lcyt-cues/src/cue-engine.js`,
+`packages/lcyt-web/src/components/{CuesPage,NamedActionsManager}.jsx`,
+`packages/lcyt-web/src/styles/components.css`,
+`packages/plugins/lcyt-cues/src/cue-processor.js`
+
+**Finding:** a scheduled `/code-review --comment` pass on PR #282 posted 10
+correctness/efficiency findings as inline PR comments (the diff-comment
+budget). These reuse/simplification/convention findings, all independently
+confirmed by finder + verifier agent passes, were left out of the inline
+batch rather than dropped:
+
+- `isLeafNode()` (`routes/cues.js`) and `CueEngine._isLeafNode()`
+  (`cue-engine.js`) are byte-for-byte duplicate logic, both new in this PR,
+  with no shared source of truth — risk of silent drift on the next leaf
+  type added.
+- The `req.session?.apiKey` / 401 check is inlined ~10 times across
+  `routes/cues.js` instead of a local `requireApiKey(req, res)` helper (the
+  convention already established by `packages/plugins/lcyt-actions/src/routes/helpers.js`).
+- `CuesPage.jsx` hand-rolls its own authed-fetch wrapper duplicating the
+  sibling `NamedActionsManager.jsx`'s `authHeaders()` pattern.
+- `PlannerAssistPanel.jsx`'s new `.planner-assist-panel__tab` CSS duplicates
+  the existing app-wide `.settings-tab`/`.settings-tab--active` styling
+  instead of reusing it.
+- The "parse action JSON + `insertCueEvent`" block is copy-pasted 7 times in
+  `cue-engine.js`, including 2 new copies added by this PR — should be a
+  single `_recordFired(apiKey, rule, matched)` helper.
+- `NamedActionsManager.jsx`'s rewrite duplicates ~150 lines of the
+  CRUD-dialog state machine as a third copy of the same pattern already used
+  by `CuesManager`/`LanguagesManager` (per the code's own comment) — a shared
+  `useCrudDialog` hook would collapse all three.
+- `treeContainsTrackLeaf()` is knowingly re-implemented on both frontend
+  (`CuesPage.jsx`) and backend (`routes/cues.js`) with only a comment tying
+  them together (and both copies share the same ref-resolution bug, fixed
+  separately as a correctness finding).
+- `cue-engine.js`'s `_nodeIsAsync()`/`_orderByCost()` re-walk the entire
+  composite condition tree on every `evaluateComposite()` call instead of
+  caching the ordering once at rule-load time, unlike the sibling
+  `_parsedTree`/regex pre-compile step that already caches in `_loadRules()`.
+- `cue-processor.js:173`'s `console.warn('[cues] Composite rule evaluation
+  error:', ...)` (new in this PR) should be `logger.warn(...)` per this
+  repo's CLAUDE.md ("Use the `lcyt/logger` module rather than `console.*`
+  directly") — the sibling `logger.warn` call added in `cue-engine.js` in
+  the same PR follows the convention correctly.
+
+**Why skipped:** correctness bugs (data corruption, silently-dead rules,
+ReDoS, wrong threshold field, cue-spam cooldown gap) outrank cleanup findings
+under the review's output cap; these are real but lower-severity and fit a
+routine follow-up pass rather than blocking this PR.
