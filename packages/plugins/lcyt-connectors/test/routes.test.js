@@ -249,27 +249,31 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
 
   test('PUT .../poll {enabled:true} starts the scheduler and reports constantPollEnabled', async () => {
     await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' }) });
-    await json('/connectors/weather/requests', { method: 'POST', body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }) });
+    const created = await json('/connectors/weather/requests', { method: 'POST', body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }) });
+    const requestId = created.body.request.id;
 
     const res = await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
     assert.equal(res.status, 200);
     assert.equal(res.body.request.constantPollEnabled, true);
-    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), true);
+    assert.equal(scheduler.isPolling(requestId), true);
     await new Promise((r) => setImmediate(r));
     assert.deepEqual(fireCalls, [['key1', 'weather', 'current']]);
   });
 
   test('PUT .../poll {enabled:false} stops the scheduler', async () => {
+    const req = await json('/connectors/weather/requests/current');
+    const requestId = req.body.request.id;
     await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
     const res = await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: false }) });
     assert.equal(res.status, 200);
     assert.equal(res.body.request.constantPollEnabled, false);
-    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), false);
+    assert.equal(scheduler.isPolling(requestId), false);
   });
 
   test('editing an unrelated field does not restart an already-active poll', async () => {
     await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'News', slug: 'news', baseUrl: 'https://example.com' }) });
-    await json('/connectors/news/requests', { method: 'POST', body: JSON.stringify({ name: 'Headlines', slug: 'headlines', method: 'GET', path: '/headlines' }) });
+    const created = await json('/connectors/news/requests', { method: 'POST', body: JSON.stringify({ name: 'Headlines', slug: 'headlines', method: 'GET', path: '/headlines' }) });
+    const requestId = created.body.request.id;
     await json('/connectors/news/requests/headlines/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
     await new Promise((r) => setImmediate(r));
     const callsBefore = fireCalls.length;
@@ -279,21 +283,35 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
     await new Promise((r) => setImmediate(r));
 
     assert.equal(fireCalls.length, callsBefore); // no extra immediate fire from a needless restart
-    assert.equal(scheduler.isPolling('key1', 'news', 'headlines'), true); // still polling under the same key
+    assert.equal(scheduler.isPolling(requestId), true); // still polling under the same (stable) id
   });
 
-  test('renaming the request slug DOES re-key the active poll', async () => {
-    await json('/connectors/news/requests/headlines', { method: 'PUT', body: JSON.stringify({ slug: 'headlines-renamed' }) });
-    assert.equal(scheduler.isPolling('key1', 'news', 'headlines'), false);
-    assert.equal(scheduler.isPolling('key1', 'news', 'headlines-renamed'), true);
+  test('renaming the request slug needs no scheduler action — the next fire resolves the new slug from the DB', async () => {
+    const req = await json('/connectors/news/requests/headlines');
+    const requestId = req.body.request.id;
+    assert.equal(scheduler.isPolling(requestId), true); // still polling from the previous test, same id throughout
+
+    const res = await json('/connectors/news/requests/headlines', { method: 'PUT', body: JSON.stringify({ slug: 'headlines-renamed' }) });
+    assert.equal(res.status, 200);
+    assert.equal(scheduler.isPolling(requestId), true); // no re-key needed — same id, nothing stopped/restarted
+
+    fireCalls.length = 0;
+    // Force an immediate fire to observe which slug the scheduler resolves —
+    // in production this just happens on the next natural interval tick.
+    scheduler.stop(requestId);
+    scheduler.start(requestId, 5000);
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(fireCalls, [['key1', 'news', 'headlines-renamed']]);
   });
 
   test('deleting the request stops its poll', async () => {
+    const req = await json('/connectors/weather/requests/current');
+    const requestId = req.body.request.id;
     await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
-    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), true);
+    assert.equal(scheduler.isPolling(requestId), true);
     const res = await json('/connectors/weather/requests/current', { method: 'DELETE' });
     assert.equal(res.status, 200);
-    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), false);
+    assert.equal(scheduler.isPolling(requestId), false);
   });
 
   test('PUT .../poll 501s without a pollScheduler wired', async () => {

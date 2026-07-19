@@ -162,6 +162,51 @@ A `/code-review` pass on this feature surfaced and fixed several real bugs:
   stale (pre-`pollScheduler` 2-arg `createConnectorsRouter` call) — fixed to
   match the current signature.
 
+### Post-review fixes, round 2 (2026-07-19)
+
+A second `/code-review` pass on the same feature surfaced and fixed five more:
+- **Freeze violation across sibling blocks:** `expandVarBlocks()` recomputed
+  *every* pending or resolved block on each reparse, so resolving one
+  `{{name[N]}}` block could silently reflow or refreeze a different,
+  already-resolved sibling block elsewhere in the same file — violating the
+  "materialize-once-then-freeze" semantics from §3 for anything but the block
+  that actually changed. Fixed by threading the file's own already-expanded
+  arrays in as `opts.previous = { lines, lineCodes, lineNumbers }`; a new
+  `buildFrozenMap(previous)` lets the main loop reuse an already-materialized
+  run verbatim (matched by raw source line number) instead of recomputing it,
+  so only a block whose backing variable actually changed re-expands.
+  `useFileStore.refreshVarBlocks()` now passes the file's current arrays as
+  `previous`; the raw-text-edit path (`updateFileFromRawText`) still does a
+  fully fresh expansion with no `previous`, correct there since the source
+  text itself changed.
+- **Missing chip rendering in two `CaptionView.jsx` branches:** the
+  empty-send label and the meta/action-label spans rendered `{{name}}` as
+  raw JSX text instead of resolving it live like the rest of the line —
+  fixed by routing both through `renderTextWithVariables()` /
+  `dangerouslySetInnerHTML`, same as the normal-text render path.
+- **Stale watchlist keys on rename:** the Production `connectorPolls` pane's
+  watchlist stored `connectorSlug.requestSlug` composite strings, which broke
+  silently on a connector or request rename (same class of bug as the
+  `poll-scheduler.js` rekeying problem below). Fixed by keying watched
+  entries by the request's stable `requestId` instead, with
+  `resolveWatchedEntry(known, key)` falling back to the legacy composite-string
+  match so layouts saved before this change keep resolving.
+- **Duplicated watchlist add/remove logic:** `VariablesPane` and
+  `ConnectorPollsPane` each hand-rolled their own add/remove-from-a-settings-array
+  code. Extracted into a shared `useWatchlist(settings, onSettingsChange, field)`
+  hook in `panes/index.jsx`.
+- **`PollScheduler` keyed by mutable slug strings:** `start()`/`stop()` were
+  keyed by `(apiKey, connectorSlug, requestSlug)`, so every rename path in
+  `routes/connectors.js` had to explicitly re-key or stop the affected poll
+  timer(s) — an easy spot to miss on a future route change. Rewritten to key
+  by the request's stable database `id`: every fire resolves the current
+  `api_key`/`connectorSlug`/`requestSlug` fresh from the DB
+  (`getConstantPollTarget`), so a rename now needs **zero** scheduler
+  interaction anywhere, and a deleted request or an out-of-band
+  `constant_poll_enabled=0` self-heals on its next fire instead of depending
+  on every mutation path remembering to call `stop()`. See
+  `packages/plugins/lcyt-connectors/CLAUDE.md`.
+
 ## 3. Variable-backed text blocks — implemented (scoped)
 
 Distinct from inline `{{name}}` (single value, one line, resolved at send): a
@@ -260,10 +305,14 @@ has resolved (not on every unrelated `variable.*` tick — a real waste under
 constant-poll); `CaptionView.jsx` styles pending/virtual lines distinctly
 (`caption-line--var-pending` / `caption-line--virtual`) and shows
 the `20:1`-style compound gutter number for virtual lines instead of the raw
-integer. Tests: `test/metacode-varblocks.test.js` (incl. one-shot-code
-stripping and `pendingVarBlockNames`), `fileUtils.test.js`'s block-marker
-describe block, `test/components/useFileStore.test.jsx`'s `refreshVarBlocks()`
-pointer-remap test.
+integer, and (round 2) resolves `{{name}}` in its empty-send/meta-label
+branches too. Tests: `test/metacode-varblocks.test.js` (incl. one-shot-code
+stripping, `pendingVarBlockNames`, and the round-2 `opts.previous`
+frozen-reuse cases — sibling-block isolation, no accidental freeze without
+`previous`, a still-pending block gets a fresh resolve attempt),
+`fileUtils.test.js`'s block-marker describe block, and
+`test/components/useFileStore.test.jsx`'s `refreshVarBlocks()` pointer-remap
+test.
 
 **Not done:** live re-expand-on-arrival (re-materializing a block fresh each
 time the pointer re-enters it, per the originally-recommended semantics) —

@@ -102,6 +102,52 @@ describe('expandVarBlocks()', () => {
     assert.equal(out.lineCodes[0].varBlockPending, true);
   });
 
+  it('freeze: an already-materialized block is reused verbatim when a sibling pending block resolves, even if its own variable value has since drifted', () => {
+    const lines = ['{{a[20]}}', '{{b[20]}}'];
+    const lineCodes = [
+      { varBlock: { name: 'a', maxLen: 20, hard: false } },
+      { varBlock: { name: 'b', maxLen: 20, hard: false } },
+    ];
+    const lineNumbers = [1, 2];
+
+    // First pass: `a` resolves, `b` is still pending.
+    const first = expandVarBlocks(lines, lineCodes, lineNumbers, { a: 'original value' });
+    assert.equal(first.lines[0], 'original value');
+    assert.equal(first.lineCodes[1].varBlockPending, true);
+
+    // Second pass (simulating a reparse triggered by `b` resolving): `a`'s
+    // *live* value has since changed, but `a`'s block was already frozen —
+    // it must come back unchanged, not reflowed with the new value.
+    const second = expandVarBlocks(lines, lineCodes, lineNumbers, { a: 'CHANGED value', b: 'now resolved' }, {
+      previous: { lines: first.lines, lineCodes: first.lineCodes, lineNumbers: first.lineNumbers },
+    });
+    assert.equal(second.lines[0], 'original value'); // frozen — not "CHANGED value"
+    assert.equal(second.lineCodes[0].virtual, true);
+    assert.ok(second.lines.includes('now resolved')); // b materialized fresh
+  });
+
+  it('without `previous`, a reparse recomputes every block from the live snapshot (no accidental freeze)', () => {
+    const lines = ['{{a[20]}}'];
+    const lineCodes = [{ varBlock: { name: 'a', maxLen: 20, hard: false } }];
+    const lineNumbers = [1];
+    const first = expandVarBlocks(lines, lineCodes, lineNumbers, { a: 'original' });
+    const second = expandVarBlocks(lines, lineCodes, lineNumbers, { a: 'changed' }); // no opts.previous
+    assert.equal(first.lines[0], 'original');
+    assert.equal(second.lines[0], 'changed');
+  });
+
+  it('a still-pending block in `previous` is not treated as frozen — it gets a fresh shot at resolving', () => {
+    const lines = ['{{a[20]}}'];
+    const lineCodes = [{ varBlock: { name: 'a', maxLen: 20, hard: false } }];
+    const lineNumbers = [1];
+    const pending = expandVarBlocks(lines, lineCodes, lineNumbers, {}); // still unresolved
+    const resolved = expandVarBlocks(lines, lineCodes, lineNumbers, { a: 'now resolved' }, {
+      previous: { lines: pending.lines, lineCodes: pending.lineCodes, lineNumbers: pending.lineNumbers },
+    });
+    assert.equal(resolved.lines[0], 'now resolved');
+    assert.equal(resolved.lineCodes[0].virtual, true);
+  });
+
   it('one-shot codes (timer, apiTriggers, goto, cue, actions) stay only on the first virtual segment', () => {
     const lines = ['{{quote[10]}}'];
     const lineCodes = [{

@@ -52,11 +52,18 @@ export function useFileStore({
   const getVariablesSnapshotRef = useRef(getVariablesSnapshot);
   getVariablesSnapshotRef.current = getVariablesSnapshot;
 
-  /** parseFileContent() + {{name[N]}} block expansion using the current variable snapshot. */
-  function parseAndExpand(rawText) {
+  /**
+   * parseFileContent() + {{name[N]}} block expansion using the current
+   * variable snapshot. `previous` (a file's currently-displayed
+   * lines/lineCodes/lineNumbers) makes already-materialized blocks reused
+   * verbatim rather than recomputed — pass it only from the reactive
+   * background path (refreshVarBlocks), never from a user-initiated raw-text
+   * save, which should always do a fully fresh expansion.
+   */
+  function parseAndExpand(rawText, previous) {
     const parsed = parseFileContent(rawText);
     const snapshot = getVariablesSnapshotRef.current?.() || {};
-    const expanded = expandVarBlocks(parsed.lines, parsed.lineCodes, parsed.lineNumbers, snapshot);
+    const expanded = expandVarBlocks(parsed.lines, parsed.lineCodes, parsed.lineNumbers, snapshot, previous ? { previous } : undefined);
     return { ...parsed, ...expanded };
   }
 
@@ -279,7 +286,9 @@ export function useFileStore({
    * under the pointer), this remaps the pointer by raw source line number
    * so a block materializing into a different number of virtual lines can
    * never silently move the pointer onto unrelated content — see
-   * docs/plans/plan_live_variables.md §3.
+   * docs/plans/plan_live_variables.md §3. Also passes the file's current
+   * state as `previous` so any already-materialized sibling block is reused
+   * verbatim instead of being silently reflowed by this reparse.
    */
   function refreshVarBlocks(id) {
     const fileIdx = filesRef.current.findIndex(f => f.id === id);
@@ -287,7 +296,9 @@ export function useFileStore({
 
     const file = filesRef.current[fileIdx];
     const targetRaw = file.lineNumbers?.[file.pointer];
-    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(file.rawText);
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(file.rawText, {
+      lines: file.lines, lineCodes: file.lineCodes, lineNumbers: file.lineNumbers,
+    });
     const pointer = targetRaw != null
       ? Math.min(findLineIndexForRaw(lineNumbers, targetRaw), Math.max(0, lines.length - 1))
       : Math.min(file.pointer, Math.max(0, lines.length - 1));

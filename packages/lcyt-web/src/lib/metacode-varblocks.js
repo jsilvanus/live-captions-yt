@@ -37,6 +37,34 @@ function stripOneShotCodes(codes) {
 }
 
 /**
+ * Group `previous`'s already-materialized virtual runs by source raw line
+ * number, so a reparse can reuse a block verbatim instead of recomputing it.
+ * @returns {Map<number, { lines: string[], codes: object[] }>}
+ */
+function buildFrozenMap(previous) {
+  const map = new Map();
+  if (!previous) return map;
+  const { lines, lineCodes, lineNumbers } = previous;
+  let i = 0;
+  while (i < lineCodes.length) {
+    const raw = lineNumbers[i];
+    const name = lineCodes[i]?.virtualBlock;
+    if (!lineCodes[i]?.virtual || !name) { i++; continue; }
+    const runLines = [];
+    const runCodes = [];
+    let j = i;
+    while (j < lineCodes.length && lineCodes[j]?.virtual && lineCodes[j].virtualBlock === name && lineNumbers[j] === raw) {
+      runLines.push(lines[j]);
+      runCodes.push(lineCodes[j]);
+      j++;
+    }
+    map.set(raw, { lines: runLines, codes: runCodes });
+    i = j;
+  }
+  return map;
+}
+
+/**
  * Does `text` (already trimmed of other metacodes) consist of *only* a
  * {{name[N]}} / {{name[N*]}} marker? Returns the parsed marker or null.
  * @param {string} text
@@ -106,15 +134,28 @@ export function wrapValue(value, maxLen, hard) {
  * not reflowed by later variable changes — a fresh expansion only happens on
  * an explicit reparse (raw edit save, file reload).
  *
+ * `opts.previous` (the file's currently-displayed { lines, lineCodes,
+ * lineNumbers }, same raw text) makes that freeze real rather than
+ * incidental: without it, a reparse triggered by a *different*, still-pending
+ * block resolving would recompute EVERY block from the live snapshot,
+ * silently reflowing an already-materialized sibling block if its own
+ * variable had also drifted since it first resolved. With `previous`, any
+ * block already materialized at the same source line is reused verbatim —
+ * only newly-pending→resolved blocks are (re)computed. Pass `previous` only
+ * from the reactive background path (useFileStore's refreshVarBlocks); a
+ * user-initiated raw-text save intentionally does a fully fresh expansion.
+ *
  * @param {string[]} lines
  * @param {object[]} lineCodes
  * @param {number[]} lineNumbers
  * @param {Record<string,string>} [variablesSnapshot]
+ * @param {{ previous?: { lines: string[], lineCodes: object[], lineNumbers: number[] } }} [opts]
  */
-export function expandVarBlocks(lines, lineCodes, lineNumbers, variablesSnapshot = {}) {
+export function expandVarBlocks(lines, lineCodes, lineNumbers, variablesSnapshot = {}, opts = {}) {
   const outLines = [];
   const outCodes = [];
   const outNumbers = [];
+  const frozen = buildFrozenMap(opts.previous);
 
   for (let i = 0; i < lines.length; i++) {
     const marker = lineCodes[i]?.varBlock;
@@ -122,6 +163,14 @@ export function expandVarBlocks(lines, lineCodes, lineNumbers, variablesSnapshot
       outLines.push(lines[i]);
       outCodes.push(lineCodes[i]);
       outNumbers.push(lineNumbers[i]);
+      continue;
+    }
+
+    const frozenRun = frozen.get(lineNumbers[i]);
+    if (frozenRun && frozenRun.codes[0]?.virtualBlock === marker.name) {
+      outLines.push(...frozenRun.lines);
+      outCodes.push(...frozenRun.codes);
+      for (let k = 0; k < frozenRun.lines.length; k++) outNumbers.push(lineNumbers[i]);
       continue;
     }
 

@@ -145,6 +145,7 @@ export function useProductionData() {
       for (const c of conns || []) {
         for (const r of c.requests || []) {
           flattened.push({
+            requestId: r.id, // stable across connector/request slug renames — prefer this for watchlist keys
             connectorSlug: c.slug, connectorName: c.name,
             requestSlug: r.slug, requestName: r.name,
             constantPollEnabled: !!r.constantPollEnabled,

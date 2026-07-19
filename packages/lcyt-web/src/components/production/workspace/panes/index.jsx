@@ -487,6 +487,27 @@ function LowerThirdsPane({ D }) {
   );
 }
 
+/**
+ * Shared per-instance watchlist state: an array of string keys stored under
+ * one field of a pane's settings, with add/remove that preserve the rest of
+ * settings and dedupe on add. Used by VariablesPane (watched variable names)
+ * and ConnectorPollsPane (watched connector-request ids) — same add/remove/
+ * dedupe shape; each pane still owns its own "pick what to add" UI and list
+ * rendering, which differ enough (inline datalist vs. dialog+select) not to
+ * share a single component.
+ */
+function useWatchlist(settings, onSettingsChange, field) {
+  const watched = settings?.[field] || [];
+  function add(item) {
+    if (!item || watched.includes(item)) return;
+    onSettingsChange?.({ ...settings, [field]: [...watched, item] });
+  }
+  function remove(item) {
+    onSettingsChange?.({ ...settings, [field]: watched.filter((k) => k !== item) });
+  }
+  return { watched, add, remove };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // VARIABLES — live {{ }} watchlist widget
 // ═══════════════════════════════════════════════════════════════════════════
@@ -494,17 +515,14 @@ function LowerThirdsPane({ D }) {
 function VariablesPane({ D, settings, onSettingsChange }) {
   const [draft, setDraft] = useState('');
   const datalistId = useId();
-  const watched = settings?.keys || [];
+  const { watched, add, remove } = useWatchlist(settings, onSettingsChange, 'keys');
   const known = Object.keys(D.variables || {}).filter((n) => !watched.includes(n));
 
   function addKey(name) {
     const key = (name || '').trim();
     if (!key || watched.includes(key)) return;
-    onSettingsChange?.({ ...settings, keys: [...watched, key] });
+    add(key);
     setDraft('');
-  }
-  function removeKey(name) {
-    onSettingsChange?.({ ...settings, keys: watched.filter((k) => k !== name) });
   }
 
   return (
@@ -531,7 +549,7 @@ function VariablesPane({ D, settings, onSettingsChange }) {
               <span style={{ fontSize: '.76rem', color: resolved ? '#eef2f8' : C.textMuted, fontStyle: resolved ? 'normal' : 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(value)}>
                 {resolved ? String(value) : 'unresolved'}
               </span>
-              <button onClick={() => removeKey(name)} title="Stop watching" style={{ width: 20, height: 20, borderRadius: 5, background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.8rem', lineHeight: 1 }}>×</button>
+              <button onClick={() => remove(name)} title="Stop watching" style={{ width: 20, height: 20, borderRadius: 5, background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.8rem', lineHeight: 1 }}>×</button>
             </div>
           );
         })}
@@ -547,21 +565,31 @@ function VariablesPane({ D, settings, onSettingsChange }) {
 
 function connectorRequestKey(r) { return `${r.connectorSlug}.${r.requestSlug}`; }
 
+/**
+ * Resolve a watched entry against the live connector-request list. New
+ * entries are keyed by the request's stable `requestId`, so a connector or
+ * request slug rename never orphans them. Older entries persisted before
+ * this fix used the "connectorSlug.requestSlug" composite string, which
+ * DOES break on rename — still resolved here for backward compat with
+ * already-saved workspace layouts, but never written by addCall() below.
+ */
+function resolveWatchedEntry(known, key) {
+  return known.find((r) => r.requestId === key) || known.find((r) => connectorRequestKey(r) === key);
+}
+
 function ConnectorPollsPane({ D, settings, onSettingsChange }) {
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [pickedKey, setPickedKey] = useState('');
-  const watched = settings?.calls || [];
+  const [pickedId, setPickedId] = useState('');
+  const { watched, add, remove } = useWatchlist(settings, onSettingsChange, 'calls');
   const known = D.connectorRequests || [];
-  const available = known.filter((r) => !watched.includes(connectorRequestKey(r)));
+  const watchedIds = new Set(watched.map((key) => resolveWatchedEntry(known, key)?.requestId).filter(Boolean));
+  const available = known.filter((r) => !watchedIds.has(r.requestId));
 
   function addCall() {
-    if (!pickedKey) return;
-    onSettingsChange?.({ ...settings, calls: [...watched, pickedKey] });
-    setPickedKey('');
+    if (!pickedId) return;
+    add(pickedId);
+    setPickedId('');
     setDialogOpen(false);
-  }
-  function removeCall(key) {
-    onSettingsChange?.({ ...settings, calls: watched.filter((k) => k !== key) });
   }
 
   return (
@@ -569,7 +597,7 @@ function ConnectorPollsPane({ D, settings, onSettingsChange }) {
       <div style={{ padding: 9, display: 'flex', flexWrap: 'wrap', gap: 10, alignContent: 'start', flex: 1, overflow: 'auto' }}>
         {watched.length === 0 && <Empty>No API calls watched yet. "+ Add API call" to start toggling constant poll.</Empty>}
         {watched.map((key) => {
-          const req = known.find((r) => connectorRequestKey(r) === key);
+          const req = resolveWatchedEntry(known, key);
           const on = !!req?.constantPollEnabled;
           const label = req ? (req.requestName || req.requestSlug) : key;
           return (
@@ -577,7 +605,7 @@ function ConnectorPollsPane({ D, settings, onSettingsChange }) {
               <button
                 onClick={() => req && D.actions.togglePoll(req.connectorSlug, req.requestSlug, !on)}
                 disabled={!req}
-                title={req ? `${key} — every ${req.prefetchIntervalMs}ms, independent of the caption pointer` : `${key} — request no longer exists`}
+                title={req ? `${connectorRequestKey(req)} — every ${req.prefetchIntervalMs}ms, independent of the caption pointer` : `${key} — request no longer exists`}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 7,
                   padding: '9px 16px', borderRadius: 8, fontSize: '.74rem', fontWeight: 600,
@@ -587,7 +615,7 @@ function ConnectorPollsPane({ D, settings, onSettingsChange }) {
                 <span style={{ width: 7, height: 7, borderRadius: '50%', background: on ? '#fff' : '#5a5a5a', flexShrink: 0 }} />
                 {label}
               </button>
-              <button onClick={() => removeCall(key)} title="Stop watching here (does not stop the poll)"
+              <button onClick={() => remove(key)} title="Stop watching here (does not stop the poll)"
                 style={{ position: 'absolute', top: -6, right: -6, width: 17, height: 17, borderRadius: '50%', background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.6rem', lineHeight: 1 }}>×</button>
             </div>
           );
@@ -601,7 +629,7 @@ function ConnectorPollsPane({ D, settings, onSettingsChange }) {
           footer={
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button className="btn btn--secondary btn--sm" onClick={() => setDialogOpen(false)}>Cancel</button>
-              <button className="btn btn--primary btn--sm" onClick={addCall} disabled={!pickedKey}>Add</button>
+              <button className="btn btn--primary btn--sm" onClick={addCall} disabled={!pickedId}>Add</button>
             </div>
           }>
           {available.length === 0 ? (
@@ -609,11 +637,11 @@ function ConnectorPollsPane({ D, settings, onSettingsChange }) {
               No requests to add — configure connectors and requests in Setup → Connectors first, or every request is already watched here.
             </p>
           ) : (
-            <select value={pickedKey} onChange={(e) => setPickedKey(e.target.value)}
+            <select value={pickedId} onChange={(e) => setPickedId(e.target.value)}
               style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--border, #ccc)' }}>
               <option value="">Select a connector request…</option>
               {available.map((r) => (
-                <option key={connectorRequestKey(r)} value={connectorRequestKey(r)}>
+                <option key={r.requestId} value={r.requestId}>
                   {r.connectorName} → {r.requestName} ({connectorRequestKey(r)})
                 </option>
               ))}

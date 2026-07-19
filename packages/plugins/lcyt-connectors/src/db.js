@@ -266,6 +266,25 @@ export function listConstantPollRequests(db) {
   `).all();
 }
 
+/**
+ * Resolve one request's current constant-poll target by its stable id —
+ * PollScheduler calls this fresh on every fire (see poll-scheduler.js) so a
+ * connector/request slug rename takes effect on the next tick automatically,
+ * with no explicit re-keying needed anywhere. Returns undefined if the
+ * request (or its connector) no longer exists — the scheduler treats that
+ * as "stop polling, nothing left to fire".
+ */
+export function getConstantPollTarget(db, requestId) {
+  return db.prepare(`
+    SELECT r.id AS request_id, r.slug AS request_slug, r.prefetch_interval_ms AS interval_ms,
+           r.constant_poll_enabled AS constant_poll_enabled,
+           c.api_key AS api_key, c.slug AS connector_slug
+    FROM api_requests r
+    JOIN api_connectors c ON c.id = r.connector_id
+    WHERE r.id = ?
+  `).get(requestId);
+}
+
 function clampInterval(value, fallback) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return fallback;

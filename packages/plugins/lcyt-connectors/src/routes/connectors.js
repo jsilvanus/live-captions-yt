@@ -127,22 +127,16 @@ export function createConnectorsRouter(db, auth, pollScheduler = null) {
     if (authType !== undefined && !VALID_AUTH_TYPES.includes(authType)) {
       return res.status(400).json({ error: `authType must be one of: ${VALID_AUTH_TYPES.join(', ')}` });
     }
-    const priorSlug = req.connector.slug;
     const row = updateConnector(db, req.connector.id, { name, slug, baseUrl, authType, authConfig, headers });
-    // A connector-slug rename re-keys every constant-poll timer under it.
-    if (pollScheduler && row.slug !== priorSlug) {
-      for (const r of listRequests(db, req.connector.id)) {
-        if (!r.constant_poll_enabled) continue;
-        pollScheduler.stop(req.apiKey, priorSlug, r.slug);
-        pollScheduler.start(req.apiKey, row.slug, r.slug, r.prefetch_interval_ms);
-      }
-    }
+    // No re-keying needed on a connector-slug rename: PollScheduler resolves
+    // the current connector/request slugs from the DB by request id on every
+    // fire, so a rename just takes effect on the next tick.
     res.json({ connector: maskConnector(row) });
   });
 
   router.delete('/:connectorSlug', (req, res) => {
     if (pollScheduler) {
-      for (const r of listRequests(db, req.connector.id)) pollScheduler.stop(req.apiKey, req.connector.slug, r.slug);
+      for (const r of listRequests(db, req.connector.id)) pollScheduler.stop(r.id);
     }
     deleteConnector(db, req.connector.id);
     res.json({ ok: true });
@@ -184,24 +178,22 @@ export function createConnectorsRouter(db, auth, pollScheduler = null) {
       return res.status(400).json({ error: `responseType must be one of: ${VALID_RESPONSE_TYPES.join(', ')}` });
     }
     if (slug !== undefined && !SLUG_RE.test(slug)) return res.status(400).json({ error: 'slug must be lowercase, hyphen-separated' });
-    const priorSlug = req.request.slug;
     const priorIntervalMs = req.request.prefetch_interval_ms;
     const row = updateRequest(db, req.request.id, req.body || {});
-    // Only re-key/re-time an active constant poll when the slug or interval
-    // actually changed — otherwise an unrelated field edit (name, body,
-    // timeout) would stop+restart the poll and fire one unplanned extra
-    // live request via pollScheduler.start()'s immediate fire.
-    const addressingChanged = row.slug !== priorSlug || row.prefetch_interval_ms !== priorIntervalMs;
-    if (pollScheduler && row.constant_poll_enabled && addressingChanged) {
-      pollScheduler.stop(req.apiKey, req.connector.slug, priorSlug);
-      pollScheduler.start(req.apiKey, req.connector.slug, row.slug, row.prefetch_interval_ms);
+    // A slug rename needs no action — PollScheduler resolves the current
+    // slug from the DB by request id on every fire. Only the interval needs
+    // an explicit restart: a live setInterval's delay can't be changed in
+    // place, and restarting unconditionally would fire one unplanned extra
+    // live request on every unrelated field edit (name, body, timeout).
+    if (pollScheduler && row.constant_poll_enabled && row.prefetch_interval_ms !== priorIntervalMs) {
+      pollScheduler.start(row.id, row.prefetch_interval_ms);
     }
     res.json({ request: maskRequest(row) });
   });
 
   router.delete('/:connectorSlug/requests/:requestSlug', (req, res) => {
     deleteRequest(db, req.request.id);
-    if (pollScheduler) pollScheduler.stop(req.apiKey, req.connector.slug, req.request.slug);
+    if (pollScheduler) pollScheduler.stop(req.request.id);
     res.json({ ok: true });
   });
 
@@ -212,8 +204,8 @@ export function createConnectorsRouter(db, auth, pollScheduler = null) {
     if (!pollScheduler) return res.status(501).json({ error: 'Constant poll is not enabled on this server' });
     const enabled = !!req.body?.enabled;
     const row = setConstantPoll(db, req.request.id, enabled);
-    if (enabled) pollScheduler.start(req.apiKey, req.connector.slug, req.request.slug, row.prefetch_interval_ms);
-    else pollScheduler.stop(req.apiKey, req.connector.slug, req.request.slug);
+    if (enabled) pollScheduler.start(row.id, row.prefetch_interval_ms);
+    else pollScheduler.stop(row.id);
     res.json({ request: maskRequest(row) });
   });
 

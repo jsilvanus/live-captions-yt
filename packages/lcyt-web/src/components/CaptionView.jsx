@@ -338,9 +338,10 @@ export function CaptionView({ onLineSend }) {
         </span>
         <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
         {isEmptySend
-          ? <span className={`caption-line__empty-send-label${codes.emptySendLabel ? ' caption-line__empty-send-label--named' : ''}`}>{codes.emptySendLabel ?? '⊘ send codes'}</span>
+          ? <span className={`caption-line__empty-send-label${codes.emptySendLabel ? ' caption-line__empty-send-label--named' : ''}`}
+              dangerouslySetInnerHTML={{ __html: renderTextWithVariables(codes.emptySendLabel ?? '⊘ send codes', varsSnapshot) }} />
           : isMetaOnly
-            ? <span className="caption-line__meta-label">{actionLabel}</span>
+            ? <span className="caption-line__meta-label" dangerouslySetInnerHTML={{ __html: renderTextWithVariables(actionLabel ?? '', varsSnapshot) }} />
             : <span className="caption-line__text" dangerouslySetInnerHTML={{ __html: displayText }} />
         }
       </li>
