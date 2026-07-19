@@ -631,6 +631,11 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   publicUrl: process.env.PUBLIC_URL,
   mediamtxClient: productionMediamtxClient,
   metrics,
+  // Real session/user/device auth on the camera CRUD routes only — WHIP and
+  // thumbnail-image routes stay unauthenticated kiosk/img-tag endpoints, see
+  // routes/cameras.js's isUnauthenticatedCameraRoute() (plan_ingest_feeds.md
+  // cross-tenant review finding).
+  auth: scopedAuth('production'),
 }));
 
 // RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1

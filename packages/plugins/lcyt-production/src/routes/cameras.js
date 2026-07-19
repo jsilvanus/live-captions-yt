@@ -8,11 +8,44 @@ import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from
 // than WHIP — no PTZ, uses camera_key/mixer_input exactly like webcam/mobile.
 const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'];
 const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
+// Mirrors lcyt-rtmp's rtmp-manager.js SAFE_NAME_RE — camera_key becomes a raw
+// MediaMTX path/shell-command fragment in that plugin's runOnPublish
+// registration (code-review follow-up: an unsafe camera_key previously
+// wasn't rejected until relay start time, where it could abort unrelated
+// relay slots — see rtmp-manager.js's per-group try/catch).
+const CAMERA_KEY_RE = /^[A-Za-z0-9_-]+$/;
+
+// Routes that must stay unauthenticated even after opts.auth is supplied:
+// - /whip, /whip-url: CameraStreamPage.jsx is a capability-URL kiosk page
+//   with no login flow (a dedicated device opens a bare URL and pushes its
+//   webcam) — see plan_ingest_feeds.md's code-review follow-up in
+//   CONSIDER.md for wiring these into the existing (currently-unused)
+//   device-role JWT mechanism instead, out of scope here.
+// - /thumbnail, /thumbnail.jpg: served as plain <img src> tags in the
+//   production console (panes/index.jsx) — browsers don't attach
+//   Authorization headers to image requests, so gating these would just
+//   break every camera thumbnail tile.
+function isUnauthenticatedCameraRoute(path) {
+  return /\/whip(-url)?(\/|$)/.test(path) || /\/thumbnail(\.jpg)?$/.test(path);
+}
 
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {
   const mediamtxClient = opts.mediamtxClient ?? null;
   const cameraThumbnailOpts = opts.cameraThumbnail ?? {};
+  // Real session/user/device auth (createProjectAccessMiddleware, same as
+  // every other project-scoped router) — optional so existing route-level
+  // tests that construct this router directly keep working unauthenticated
+  // (matching today's behavior) unless they explicitly opt in. server.js
+  // always supplies it in production.
+  const auth = opts.auth ?? null;
   const router = Router();
+
+  if (auth) {
+    router.use((req, res, next) => {
+      if (isUnauthenticatedCameraRoute(req.path)) return next();
+      return auth(req, res, next);
+    });
+  }
 
   /**
    * Build the computed thumbnailUrl field for a parsed camera row.
@@ -25,6 +58,22 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       ...camera,
       thumbnailUrl: camera.thumbnailCapturedAt ? `${origin}/production/cameras/${camera.id}/thumbnail` : null,
     };
+  }
+
+  /**
+   * Ownership check: a camera with an owner_api_key set is only visible/
+   * writable to the session that owns it; a camera with no owner (created
+   * before this column existed, or via crud.js with no ownerApiKey) stays in
+   * the pre-existing open/legacy bucket. When no auth middleware is wired in
+   * at all (req.session is undefined), every camera is treated as accessible
+   * — matches this router's previous fully-open behavior in that config.
+   * @param {{owner_api_key: string|null}} row  raw DB row (pre-parseCamera)
+   * @param {import('express').Request} req
+   * @returns {boolean}
+   */
+  function canAccessCamera(row, req) {
+    if (!req.session?.apiKey) return true;
+    return row.owner_api_key == null || row.owner_api_key === req.session.apiKey;
   }
 
   /**
@@ -63,11 +112,14 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     },
   );
 
-  // GET /production/cameras — list all cameras
+  // GET /production/cameras — list all cameras. Filtered to the caller's own
+  // + legacy/unowned cameras (plan_ingest_feeds.md's cross-tenant review
+  // finding) — only takes effect once auth is wired in (req.session.apiKey set).
   router.get('/', async (req, res) => {
     const rows = db
       .prepare('SELECT * FROM prod_cameras ORDER BY sort_order, created_at')
       .all()
+      .filter(row => canAccessCamera(row, req))
       .map(row => withThumbnailUrl(parseCamera(row), req));
     res.json(await Promise.all(rows.map(withLive)));
   });
@@ -75,7 +127,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // GET /production/cameras/:id — single camera
   router.get('/:id', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Camera not found' });
+    // 404 (not 403) for a foreign camera — don't confirm its existence to a
+    // caller who doesn't own it.
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     res.json(await withLive(withThumbnailUrl(parseCamera(row), req)));
   });
 
@@ -92,11 +146,18 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!CAMERA_CONTROL_TYPES.includes(controlType)) {
       return res.status(400).json({ error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` });
     }
+    if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
+      return res.status(400).json({ error: 'cameraKey may only contain letters, digits, underscore, and hyphen' });
+    }
     const id = randomUUID();
+    // Stamped from the now-real auth context when available; null (the
+    // pre-existing open/legacy behavior) when this router is used without
+    // auth wired in (e.g. existing route-level tests).
+    const ownerApiKey = req.session?.apiKey ?? null;
     db.prepare(`
-      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null);
+      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
@@ -109,7 +170,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.put('/:id', (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ error: 'Camera not found' });
+    if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const {
       name             = existing.name,
@@ -124,6 +185,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
     if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
       return res.status(400).json({ error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` });
+    }
+    if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
+      return res.status(400).json({ error: 'cameraKey may only contain letters, digits, underscore, and hyphen' });
     }
 
     db.prepare(`
@@ -145,7 +209,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.delete('/:id', (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ error: 'Camera not found' });
+    if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
 
     db.prepare('DELETE FROM prod_cameras WHERE id = ?').run(id);
     registry.removeCamera(id).catch(() => {});
@@ -156,7 +220,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // POST /production/cameras/:id/thumbnail/capture — capture a still frame as this camera's thumbnail
   router.post('/:id/thumbnail/capture', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Camera not found' });
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const camera = parseCamera(row);
     const { apiKey, mixerId } = req.body ?? {};
@@ -189,7 +253,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.post('/:id/preset/:presetId', async (req, res) => {
     const { id, presetId } = req.params;
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
-    if (!row) return res.status(404).json({ error: 'Camera not found' });
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     try {
       const camera = parseCamera(row);

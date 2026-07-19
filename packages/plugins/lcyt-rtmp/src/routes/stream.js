@@ -80,7 +80,10 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
         res.status(400).json({ error: 'sourceCameraId must be a string camera id' });
         return null;
       }
-      if (!resolveRelaySourceCameraKey(db, sourceCameraId)) {
+      if (!resolveRelaySourceCameraKey(db, sourceCameraId, req.session.apiKey)) {
+        // Same 400 whether the camera doesn't exist, has no camera_key, or
+        // is owned by a different project — doesn't confirm a foreign
+        // camera's existence to a caller who doesn't own it.
         res.status(400).json({ error: `Unknown or feed-less camera '${sourceCameraId}'` });
         return null;
       }

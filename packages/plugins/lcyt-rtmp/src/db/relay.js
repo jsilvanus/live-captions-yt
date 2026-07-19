@@ -158,7 +158,7 @@ function formatRelayRow(row) {
 // Keyed by db instance (not a single module-level flag) — a test process can
 // legitimately hold multiple db instances with different schemas at once.
 const _hasProdCamerasCache = new WeakMap();
-function hasProdCamerasTable(db) {
+export function hasProdCamerasTable(db) {
   if (!_hasProdCamerasCache.has(db)) {
     _hasProdCamerasCache.set(db, !!db.prepare(
       "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prod_cameras'"
@@ -257,19 +257,51 @@ export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, ca
 }
 
 /**
- * Resolve a relay's source camera to its MediaMTX path (camera_key).
- * Cross-plugin: prod_cameras is owned by lcyt-production, but the two share
- * one SQLite db instance repo-wide, so this queries it directly rather than
- * taking a hard dependency — the same pattern lcyt-dsk's dsk-rtmp.js already
- * uses for api_keys (plan_ingest_feeds.md §2c).
+ * Resolve a relay's source camera to its MediaMTX path (camera_key), scoped
+ * to the requesting project. Cross-plugin: prod_cameras is owned by
+ * lcyt-production, but the two share one SQLite db instance repo-wide, so
+ * this queries it directly rather than taking a hard dependency — the same
+ * pattern lcyt-dsk's dsk-rtmp.js already uses for api_keys
+ * (plan_ingest_feeds.md §2c).
+ *
+ * requestingApiKey is required and enforced: a camera with an owner_api_key
+ * set is only resolvable by the project that owns it (code-review follow-up
+ * — the original §2c implementation had no such check at all, letting any
+ * project's relay egress-route any other project's live camera feed). A
+ * camera with no owner (created before ownership existed, or via crud.js's
+ * MCP path which deliberately stays unscoped — see lcyt-tools/CLAUDE.md)
+ * remains resolvable by any project, matching the pre-existing open/legacy
+ * behavior for those rows.
  * @param {import('better-sqlite3').Database} db
  * @param {string} cameraId
- * @returns {string|null} camera_key, or null if not found / has no camera_key
+ * @param {string} requestingApiKey
+ * @returns {string|null} camera_key, or null if not found / has no camera_key / owned by a different project
  */
-export function resolveRelaySourceCameraKey(db, cameraId) {
+export function resolveRelaySourceCameraKey(db, cameraId, requestingApiKey) {
   if (!hasProdCamerasTable(db)) return null;
-  const row = db.prepare('SELECT camera_key FROM prod_cameras WHERE id = ?').get(cameraId);
-  return row?.camera_key || null;
+  const row = db.prepare('SELECT camera_key, owner_api_key FROM prod_cameras WHERE id = ?').get(cameraId);
+  if (!row?.camera_key) return null;
+  if (row.owner_api_key != null && row.owner_api_key !== requestingApiKey) return null;
+  return row.camera_key;
+}
+
+/**
+ * Find every distinct apiKey with at least one rtmp_relays slot sourced from
+ * this camera (source_camera_id). Used by feed-rtmp.js's on_publish so a
+ * camera-only relay configuration (no program-sourced slot at all) actually
+ * gets its MediaMTX fan-out registered when the *camera* starts publishing —
+ * code-review follow-up: previously nothing ever called start()/startAll()
+ * in that scenario, since every existing trigger (routes/rtmp.js's on_publish,
+ * PUT /stream/active) keys off the PRIMARY apiKey's own publish state, never
+ * a referenced camera's.
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} cameraId
+ * @returns {string[]}
+ */
+export function getApiKeysReferencingCamera(db, cameraId) {
+  return db.prepare('SELECT DISTINCT api_key FROM rtmp_relays WHERE source_camera_id = ?')
+    .all(cameraId)
+    .map(r => r.api_key);
 }
 
 /**

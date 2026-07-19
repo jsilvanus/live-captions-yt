@@ -25,6 +25,10 @@ import { getSwitchCommand as obsGetSwitchCommand } from './adapters/mixer/obs.js
 // than WHIP — kept in sync with routes/cameras.js's own copy of this list.
 const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'];
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
+// Mirrors routes/cameras.js's own copy (and lcyt-rtmp's rtmp-manager.js
+// SAFE_NAME_RE) — camera_key becomes a raw MediaMTX path/shell-command
+// fragment in that plugin's runOnPublish registration.
+const CAMERA_KEY_RE = /^[A-Za-z0-9_-]+$/;
 
 // ---------------------------------------------------------------------------
 // Cameras
@@ -43,16 +47,26 @@ export function createCamera(db, registry, fields = {}) {
   const {
     name, mixerInput = null, controlType = 'none', controlConfig = {},
     sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend', cameraKey = null,
+    // Optional (plan_ingest_feeds.md's cross-tenant review finding). Not set
+    // by packages/lcyt-tools' camera.create handler today — that tool group
+    // deliberately treats cameras as a shared, project-wide pool (see
+    // lcyt-tools/CLAUDE.md), so MCP-created cameras stay unowned/legacy on
+    // purpose. Available here for any future in-process caller that does
+    // have real project context to pass along.
+    ownerApiKey = null,
   } = fields;
   if (!name || typeof name !== 'string') return { ok: false, error: 'name is required' };
   if (!CAMERA_CONTROL_TYPES.includes(controlType)) {
     return { ok: false, error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` };
   }
+  if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
+    return { ok: false, error: 'cameraKey may only contain letters, digits, underscore, and hyphen' };
+  }
   const id = randomUUID();
   db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey);
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, ownerApiKey);
   registry.reloadCamera(id).catch((err) => console.warn(`[production-control] reloadCamera after create: ${err.message}`));
   return { ok: true, camera: getCameraById(db, id) };
 }
@@ -72,6 +86,9 @@ export function updateCamera(db, registry, id, patch = {}) {
 
   if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
     return { ok: false, error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` };
+  }
+  if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
+    return { ok: false, error: 'cameraKey may only contain letters, digits, underscore, and hyphen' };
   }
 
   db.prepare(`

@@ -38,3 +38,20 @@ test('writeCaption drops when FIFO writer.write times out', async () => {
     console.warn = origWarn;
   }
 });
+
+test('start() refuses per-slot transcoding beyond the technical slot ceiling (code-review follow-up)', async () => {
+  const manager = new RtmpRelayManager();
+  const relays = [];
+  for (let i = 1; i <= 9; i++) {
+    relays.push({ slot: i, targetUrl: `rtmp://target${i}.example/live`, targetName: `slot${i}` });
+  }
+  // Only one slot needs transcoding, but the filter_complex split re-encodes
+  // every program-sourced slot's video stream in one ffmpeg process — so the
+  // ceiling is on the total slot count, not how many actually set an option.
+  relays[0].scale = '1280x720';
+
+  await assert.rejects(
+    () => manager.start('deadbeef', relays),
+    /exceeds the 8-slot technical ceiling/,
+  );
+});

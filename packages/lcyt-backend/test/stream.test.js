@@ -64,8 +64,8 @@ before(() => new Promise((resolve) => {
   // no dependency on lcyt-production, so db/relay.js's resolveRelaySourceCameraKey()
   // queries it directly; this test exercises that cross-plugin path with its
   // own inline schema, same convention as feed-rtmp.test.js.
-  db.exec(`CREATE TABLE prod_cameras (id TEXT PRIMARY KEY, camera_key TEXT UNIQUE, control_type TEXT NOT NULL DEFAULT 'none')`);
-  db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type) VALUES ('cam-altar', 'altar-cam', 'rtmp')").run();
+  db.exec(`CREATE TABLE prod_cameras (id TEXT PRIMARY KEY, camera_key TEXT UNIQUE, control_type TEXT NOT NULL DEFAULT 'none', owner_api_key TEXT)`);
+  db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type, owner_api_key) VALUES ('cam-altar', 'altar-cam', 'rtmp', NULL)").run();
 
   mockRelay = makeMockRelayManager();
 
@@ -275,6 +275,19 @@ describe('POST /stream — create relay slot', () => {
       body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'no-such-camera' }),
     });
     assert.equal(res.status, 400);
+  });
+
+  it("returns 400 for a sourceCameraId owned by a different project (code-review follow-up: cross-tenant sourceCameraId)", async () => {
+    db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type, owner_api_key) VALUES ('cam-other', 'other-cam', 'rtmp', 'some-other-project-key')").run();
+    try {
+      const res = await streamFetch('/', {
+        method: 'POST',
+        body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'cam-other' }),
+      });
+      assert.equal(res.status, 400);
+    } finally {
+      db.prepare("DELETE FROM prod_cameras WHERE id = 'cam-other'").run();
+    }
   });
 });
 

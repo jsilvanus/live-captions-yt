@@ -33,8 +33,8 @@ function makeRegistryStub(activeSourceByMixer = {}) {
 function insertCamera(overrides = {}) {
   const id = overrides.id ?? randomUUID();
   db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key, owner_api_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     overrides.name ?? 'Cam 1',
@@ -43,6 +43,7 @@ function insertCamera(overrides = {}) {
     JSON.stringify(overrides.control_config ?? {}),
     overrides.sort_order ?? 0,
     overrides.camera_key ?? null,
+    overrides.owner_api_key ?? null,
   );
   return id;
 }
@@ -65,14 +66,25 @@ function mockPreview(jpegBytes = 'jpeg-bytes') {
   };
 }
 
-function startApp(registry, mediamtxClient = null) {
+function startApp(registry, mediamtxClient = null, opts = {}) {
   const app = express();
   app.use(express.json());
-  app.use('/production/cameras', createCamerasRouter(db, registry, null, { cameraThumbnail: { thumbnailsDir }, mediamtxClient }));
+  app.use('/production/cameras', createCamerasRouter(db, registry, null, { cameraThumbnail: { thumbnailsDir }, mediamtxClient, ...opts }));
   return new Promise((resolve) => {
     server = createServer(app);
     server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
   });
+}
+
+// Stand-in for scopedAuth('production') — real auth middleware resolves a
+// session/user-project/device JWT or lcytmcp_ token down to req.session.apiKey
+// (see project-access.js); tests only need that end result, keyed off a
+// plain header so each test can act as a different project.
+function fakeAuth(req, res, next) {
+  const apiKey = req.headers['x-api-key'];
+  if (!apiKey) return res.status(401).json({ error: 'missing api key' });
+  req.session = { apiKey };
+  next();
 }
 
 before(() => {
@@ -209,5 +221,102 @@ describe('camera thumbnail routes', () => {
 
     const one = await (await fetch(`${baseUrl}/production/cameras/${liveId}`)).json();
     assert.equal(one.live, true);
+  });
+});
+
+describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sourceCameraId)', () => {
+  it('with no auth configured, an unowned camera is fully visible/editable (legacy behavior preserved)', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = insertCamera();
+    const res = await fetch(`${baseUrl}/production/cameras/${id}`);
+    assert.equal(res.status, 200);
+  });
+
+  it('with auth configured, CRUD routes require it (401 without credentials)', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const res = await fetch(`${baseUrl}/production/cameras`);
+    assert.equal(res.status, 401);
+  });
+
+  it('owner can read/update/delete their own camera', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const id = insertCamera({ owner_api_key: 'proj-a' });
+
+    const getRes = await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(getRes.status, 200);
+
+    const putRes = await fetch(`${baseUrl}/production/cameras/${id}`, {
+      method: 'PUT', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed' }),
+    });
+    assert.equal(putRes.status, 200);
+  });
+
+  it("a different project cannot read, update, or delete another project's owned camera (404, not leaked)", async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const id = insertCamera({ owner_api_key: 'proj-a' });
+
+    const getRes = await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(getRes.status, 404);
+
+    const putRes = await fetch(`${baseUrl}/production/cameras/${id}`, {
+      method: 'PUT', headers: { 'x-api-key': 'proj-b', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Hijacked' }),
+    });
+    assert.equal(putRes.status, 404);
+
+    const delRes = await fetch(`${baseUrl}/production/cameras/${id}`, { method: 'DELETE', headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(delRes.status, 404);
+  });
+
+  it("GET / filters out other projects' owned cameras but keeps unowned (legacy) ones visible", async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const ownedId = insertCamera({ owner_api_key: 'proj-a', name: 'Owned by A' });
+    const otherOwnedId = insertCamera({ owner_api_key: 'proj-b', name: 'Owned by B' });
+    const legacyId = insertCamera({ owner_api_key: null, name: 'Legacy unowned' });
+
+    const list = await (await fetch(`${baseUrl}/production/cameras`, { headers: { 'x-api-key': 'proj-a' } })).json();
+    const ids = list.map((c) => c.id);
+    assert.ok(ids.includes(ownedId));
+    assert.ok(ids.includes(legacyId));
+    assert.ok(!ids.includes(otherOwnedId));
+  });
+
+  it('POST / stamps the creating project as owner_api_key', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const res = await fetch(`${baseUrl}/production/cameras`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Cam' }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.isOwned, true);
+    assert.equal(body.owner_api_key, undefined, 'owner_api_key must never be serialized back to the client');
+
+    const row = db.prepare('SELECT owner_api_key FROM prod_cameras WHERE id = ?').get(body.id);
+    assert.equal(row.owner_api_key, 'proj-a');
+  });
+
+  it('WHIP routes remain unauthenticated even when auth is configured', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const id = insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
+    // No x-api-key header at all — a real kiosk page sends none of these routes any auth.
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/whip-url`);
+    assert.notEqual(res.status, 401);
+  });
+
+  it('thumbnail-serving routes remain unauthenticated even when auth is configured', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const id = insertCamera({ owner_api_key: 'proj-a', camera_key: 'cam-key-thumb' });
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail`);
+    assert.notEqual(res.status, 401);
   });
 });

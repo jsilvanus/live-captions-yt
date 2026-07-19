@@ -85,6 +85,35 @@ describe('camera CRUD', () => {
     assert.equal(created.camera.controlType, 'rtmp');
     assert.equal(created.camera.cameraKey, 'altar-cam');
   });
+
+  it('createCamera rejects a camera_key with unsafe characters (code-review follow-up)', () => {
+    const db = makeDb();
+    const registry = makeRegistryStub();
+    const res = createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar cam; rm -rf' });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /letters, digits, underscore, and hyphen/);
+  });
+
+  it('updateCamera rejects a camera_key with unsafe characters (code-review follow-up)', () => {
+    const db = makeDb();
+    const registry = makeRegistryStub();
+    const created = createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
+    const res = updateCamera(db, registry, created.camera.id, { cameraKey: '$(evil)' });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /letters, digits, underscore, and hyphen/);
+    // Unchanged in the DB — the malformed value must not have been persisted.
+    assert.equal(getCameraById(db, created.camera.id).cameraKey, 'altar-cam');
+  });
+
+  it('createCamera stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', () => {
+    const db = makeDb();
+    const registry = makeRegistryStub();
+    const owned = createCamera(db, registry, { name: 'Owned', controlType: 'none', ownerApiKey: 'proj-a' });
+    assert.equal(owned.camera.isOwned, true);
+
+    const legacy = createCamera(db, registry, { name: 'Legacy', controlType: 'none' });
+    assert.equal(legacy.camera.isOwned, false);
+  });
 });
 
 describe('mixer CRUD', () => {
