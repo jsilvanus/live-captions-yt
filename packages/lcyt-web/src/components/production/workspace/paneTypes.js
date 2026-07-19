@@ -17,6 +17,7 @@ export const TYPE_OPTIONS = [
   ['general',     'Controls'],
   ['lowerthirds', 'Lower Thirds / Graphics'],
   ['variables',   'Variables'],
+  ['connectorPolls', 'Connector Polls'],
 ];
 
 export const PANE_META = {
@@ -35,6 +36,7 @@ export const PANE_META = {
   general:     { title: 'Controls',                dot: '#8a8a8a' },
   lowerthirds: { title: 'Lower Thirds / Graphics', dot: '#d08a4a' },
   variables:   { title: 'Variables',               dot: '#4ab0a0' },
+  connectorPolls: { title: 'Connector Polls',      dot: '#1a7f4b' },
 };
 
 export function paneMeta(type) {

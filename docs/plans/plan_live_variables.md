@@ -2,7 +2,7 @@
 id: plan/live_variables
 title: "Live Variables — Continuous Refresh, Live Operator Display, and Text-Block Expansion"
 status: in-progress
-summary: "Forward-looking variable behaviours split out of plan_metacode_variable_unification so that plan can finish on its implemented core (registry/namespace/TTL). Three ideas: (1) the settled connector-fetch-timing decision (no load tier — a pointer-tier trigger on the first line covers 'on load'); (2) an always-updated variable that the operator sees live and normalized — implemented: bus-pushed {{name}} chip rendering in CaptionView (no polling, shared VariablesContext) plus a Production-page watchlist widget, AND a session-long, pointer-independent background refresh ('constant poll') as a deliberately separate opt-in UI toggle per connector request (server-side PollScheduler) rather than any change to the !api:/api:/api!: metacode tiers, which stay pointer-scoped exactly as before; (3) variable-backed text blocks — implemented in a scoped form: {{name[N]}}/{{name[N*]}} (reusing the {{ }} sigil with a bracket length modifier, decided over the earlier <!-- lines: name --> marker sketch), block-only, materialize-once-then-freeze (a stronger, simpler freeze than 'freeze only while inside, re-expand on next arrival' — deferred as a follow-on), virtual lines displayed with a 20:1-style compound gutter number rather than borrowing new raw integers."
+summary: "Forward-looking variable behaviours split out of plan_metacode_variable_unification so that plan can finish on its implemented core (registry/namespace/TTL). Three ideas: (1) the settled connector-fetch-timing decision (no load tier — a pointer-tier trigger on the first line covers 'on load'); (2) an always-updated variable that the operator sees live and normalized — implemented: bus-pushed {{name}} chip rendering in CaptionView (no polling, shared VariablesContext) plus a Production-page watchlist widget, AND a session-long, pointer-independent background refresh ('constant poll') as a deliberately separate opt-in mechanism (server-side PollScheduler) rather than any change to the !api:/api:/api!: metacode tiers, which stay pointer-scoped exactly as before — the interactive toggle lives in a Production workspace widget (ConnectorPollsPane, dialog-driven 'add an API call' + highlight-on-poll buttons), not the Setup Hub, since starting/stopping a poll is a live operational decision, not connector configuration; (3) variable-backed text blocks — implemented in a scoped form: {{name[N]}}/{{name[N*]}} (reusing the {{ }} sigil with a bracket length modifier, decided over the earlier <!-- lines: name --> marker sketch), block-only, materialize-once-then-freeze (a stronger, simpler freeze than 'freeze only while inside, re-expand on next arrival' — deferred as a follow-on), virtual lines displayed with a 20:1-style compound gutter number rather than borrowing new raw integers."
 related: plan/api_connectors_variables, plan/metacode_variable_unification, plan/pubsub_event_bus, plan/cues, plan/dsk
 ---
 
@@ -95,10 +95,8 @@ operator isn't currently pointed at sees a value that stopped updating.
 **Decided:** constant poll is a **separate, explicit, opt-in** mechanism —
 never an implicit change to what writing `!api:`/`api:`/`api!:` inline does.
 The metacode tiers stay exactly pointer-scoped and frontend-owned, as
-originally designed. Instead: a server-side `PollScheduler`
-(`packages/plugins/lcyt-connectors/src/poll-scheduler.js`), toggled per
-connector request via a UI button ("Poll continuously" / "Stop polling",
-`ConnectorsSection.jsx`'s `RequestRow`) hitting
+originally designed. Backend: a server-side `PollScheduler`
+(`packages/plugins/lcyt-connectors/src/poll-scheduler.js`) toggled via
 `PUT /connectors/:connectorSlug/requests/:requestSlug/poll`. Once enabled, a
 `setInterval` (reusing the request's `prefetch_interval_ms`, floored at
 1000ms) keeps calling the resolution engine's `fireRequest()` for the whole
@@ -107,13 +105,32 @@ operator session — until explicitly disabled. Persisted
 (`api_requests.constant_poll_enabled`) and restored on server restart
 (`PollScheduler.restore()`), mirroring `ttl-scheduler.js`'s shape.
 
+**Decided (UI placement) — Production, not Setup Hub.** Starting/stopping a
+continuous poll is a live, in-the-moment operational call ("watch this value
+closely for the rest of the service"), not connector configuration — so the
+interactive control lives in the Production workspace, not the Setup Hub
+Connectors card. `ConnectorsSection.jsx`'s `RequestRow` keeps only a
+**read-only** "● polling" status badge (config surface still shows the
+current state; it just can't change it). The actual toggle is a new
+`connectorPolls` production pane (`ConnectorPollsPane`,
+`components/production/workspace/panes/index.jsx`) — a widget matching the
+`variables` pane's per-instance-configurable shape: "+ Add API call" opens a
+`Dialog` with a `<select>` of known connector.request pairs
+(`useProductionData.js`'s `connectorRequests`, loaded from `GET /connectors`
++ per-connector `GET /connectors/:slug/requests`); each added call renders as
+a button that **highlights (solid green, live-dot) when polling is on** and
+toggles on click (`D.actions.togglePoll`, optimistic update reconciled
+against the real DB state). Removing a call from the widget only stops
+*watching* it here — it does not stop the poll itself (mirrors the
+`variables` pane's same watch/unwatch-vs-delete distinction).
+
 **Done:** `db.js` (`constant_poll_enabled` column, `setConstantPoll()`,
 `listConstantPollRequests()`), `poll-scheduler.js`, the `PUT .../poll` route
 (re-keys/stops cleanly on request delete, connector delete, or either's slug
 rename — no timer left running under a stale key), `initConnectors()` wiring,
-the Setup Hub toggle button. Tests: `test/poll-scheduler.test.js`,
-`test/routes.test.js`'s constant-poll describe block (fake in-process engine,
-no real network I/O).
+the `connectorPolls` Production widget, the read-only Setup Hub status badge.
+Tests: `test/poll-scheduler.test.js`, `test/routes.test.js`'s constant-poll
+describe block (fake in-process engine, no real network I/O).
 
 **Not done:** no per-project/admin-wide cap on concurrently-polling requests
 — each toggle is an independent server interval with only a per-request rate
@@ -227,5 +244,5 @@ with other text is left unexpanded by design (#1), not a bug.
 ## Index Entry
 
 ```
-| [plan_live_variables.md](plans/plan_live_variables.md) | Live Variables — Continuous Refresh, Live Operator Display, Text-Block Expansion | (1) DECIDED fetch-timing (no load tier — a first-line pointer trigger covers "on load"). (2) Live display implemented: bus-pushed `{{name}}` chip rendering in CaptionView (shared `VariablesContext`, no polling) + a Production-page `variables` watchlist widget (pane model extended to per-instance settings); session-long background refresh implemented as "constant poll" — a deliberately separate per-request opt-in toggle (server-side `PollScheduler`), not any change to the `!api:`/`api:`/`api!:` metacode tiers, which remain pointer-scoped. (3) `{{name[N]}}`/`{{name[N*]}}` variable-backed text blocks implemented (block-only, soft/hard wrap, virtual lines via a pure post-parse expansion pass — no `useFileStore` pointer-model changes needed, `20:1`-style gutter display); materializes once then freezes rather than live re-expand-on-arrival (deferred follow-on). | |
+| [plan_live_variables.md](plans/plan_live_variables.md) | Live Variables — Continuous Refresh, Live Operator Display, Text-Block Expansion | (1) DECIDED fetch-timing (no load tier — a first-line pointer trigger covers "on load"). (2) Live display implemented: bus-pushed `{{name}}` chip rendering in CaptionView (shared `VariablesContext`, no polling) + a Production-page `variables` watchlist widget (pane model extended to per-instance settings); session-long background refresh implemented as "constant poll" — a deliberately separate opt-in mechanism (server-side `PollScheduler`), not any change to the `!api:`/`api:`/`api!:` metacode tiers, with its interactive toggle placed in a Production workspace widget (`connectorPolls` pane — dialog-driven "add an API call", highlight-on-poll buttons) rather than Setup Hub, since starting/stopping a poll is a live decision, not connector config. (3) `{{name[N]}}`/`{{name[N*]}}` variable-backed text blocks implemented (block-only, soft/hard wrap, virtual lines via a pure post-parse expansion pass — no `useFileStore` pointer-model changes needed, `20:1`-style gutter display); materializes once then freezes rather than live re-expand-on-arrival (deferred follow-on). | |
 ```

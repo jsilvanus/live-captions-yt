@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useId } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
+import { Dialog } from '../../../Dialog.jsx';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -540,6 +541,91 @@ function VariablesPane({ D, settings, onSettingsChange }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CONNECTOR POLLS — live start/stop of constant poll (production decision,
+// deliberately kept out of Setup Hub — see plan_live_variables.md §2)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function connectorRequestKey(r) { return `${r.connectorSlug}.${r.requestSlug}`; }
+
+function ConnectorPollsPane({ D, settings, onSettingsChange }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pickedKey, setPickedKey] = useState('');
+  const watched = settings?.calls || [];
+  const known = D.connectorRequests || [];
+  const available = known.filter((r) => !watched.includes(connectorRequestKey(r)));
+
+  function addCall() {
+    if (!pickedKey) return;
+    onSettingsChange?.({ ...settings, calls: [...watched, pickedKey] });
+    setPickedKey('');
+    setDialogOpen(false);
+  }
+  function removeCall(key) {
+    onSettingsChange?.({ ...settings, calls: watched.filter((k) => k !== key) });
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: 9, display: 'flex', flexWrap: 'wrap', gap: 10, alignContent: 'start', flex: 1, overflow: 'auto' }}>
+        {watched.length === 0 && <Empty>No API calls watched yet. "+ Add API call" to start toggling constant poll.</Empty>}
+        {watched.map((key) => {
+          const req = known.find((r) => connectorRequestKey(r) === key);
+          const on = !!req?.constantPollEnabled;
+          const label = req ? (req.requestName || req.requestSlug) : key;
+          return (
+            <div key={key} style={{ position: 'relative' }}>
+              <button
+                onClick={() => req && D.actions.togglePoll(req.connectorSlug, req.requestSlug, !on)}
+                disabled={!req}
+                title={req ? `${key} — every ${req.prefetchIntervalMs}ms, independent of the caption pointer` : `${key} — request no longer exists`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '9px 16px', borderRadius: 8, fontSize: '.74rem', fontWeight: 600,
+                  background: on ? '#1a7f4b' : C.btnBg, border: `1px solid ${on ? '#25995c' : C.panelBorder}`,
+                  color: on ? '#fff' : req ? '#dcdcdc' : C.textFaint,
+                }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: on ? '#fff' : '#5a5a5a', flexShrink: 0 }} />
+                {label}
+              </button>
+              <button onClick={() => removeCall(key)} title="Stop watching here (does not stop the poll)"
+                style={{ position: 'absolute', top: -6, right: -6, width: 17, height: 17, borderRadius: '50%', background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.6rem', lineHeight: 1 }}>×</button>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ padding: '7px 9px', borderTop: `1px solid #232323`, flexShrink: 0 }}>
+        <button onClick={() => setDialogOpen(true)} style={{ width: '100%', fontSize: '.68rem', fontWeight: 600, color: '#bbb', background: C.btnBg, border: `1px solid ${C.panelBorder}`, borderRadius: 6, padding: '7px 10px' }}>+ Add API call</button>
+      </div>
+      {dialogOpen && (
+        <Dialog title="Add an API call to watch" onClose={() => setDialogOpen(false)}
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn--secondary btn--sm" onClick={() => setDialogOpen(false)}>Cancel</button>
+              <button className="btn btn--primary btn--sm" onClick={addCall} disabled={!pickedKey}>Add</button>
+            </div>
+          }>
+          {available.length === 0 ? (
+            <p style={{ fontSize: '.85em', opacity: 0.7 }}>
+              No requests to add — configure connectors and requests in Setup → Connectors first, or every request is already watched here.
+            </p>
+          ) : (
+            <select value={pickedKey} onChange={(e) => setPickedKey(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--border, #ccc)' }}>
+              <option value="">Select a connector request…</option>
+              {available.map((r) => (
+                <option key={connectorRequestKey(r)} value={connectorRequestKey(r)}>
+                  {r.connectorName} → {r.requestName} ({connectorRequestKey(r)})
+                </option>
+              ))}
+            </select>
+          )}
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -560,6 +646,7 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
     case 'general':     return <ControlsPane D={D} />;
     case 'lowerthirds': return <LowerThirdsPane D={D} />;
     case 'variables':   return <VariablesPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
+    case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }
