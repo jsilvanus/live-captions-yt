@@ -44,12 +44,24 @@ function ruleMeta(rule) {
 /** True if any leaf in the tree is a `track` leaf — mirrors the backend's
  * treeContainsTrackLeaf() in routes/cues.js, used only to decide whether to
  * suggest a non-zero cooldown default in the form (the backend applies its
- * own default independently either way). */
-function treeContainsTrackLeaf(node) {
+ * own default independently either way). `resolveRef(name)` looks up a named
+ * condition's tree so a `track:` leaf hidden behind a `ref` node is still
+ * found; `seen` guards against reference cycles. */
+function treeContainsTrackLeaf(node, resolveRef = null, seen = new Set()) {
+  if (typeof node === 'string') {
+    if (!resolveRef || seen.has(node)) return false;
+    seen.add(node);
+    return treeContainsTrackLeaf(resolveRef(node), resolveRef, seen);
+  }
   if (!node || typeof node !== 'object') return false;
-  if (node.type === 'ref') return false;
+  if (node.type === 'ref') {
+    const name = node.name || node.ref;
+    if (!name || !resolveRef || seen.has(name)) return false;
+    seen.add(name);
+    return treeContainsTrackLeaf(resolveRef(name), resolveRef, seen);
+  }
   if (node.matchType === 'track') return true;
-  return (node.children || []).some(treeContainsTrackLeaf);
+  return (node.children || []).some(child => treeContainsTrackLeaf(child, resolveRef, seen));
 }
 
 function SectionHeader({ title, buttonLabel, onAdd, disabled }) {
@@ -170,10 +182,11 @@ export function CuesManager({ embedded = false }) {
   }
 
   function setConditionTree(nextTree) {
+    const resolveRef = name => namedConditions.find(nc => nc.name === name)?.condition_tree || null;
     setDraft(d => ({
       ...d,
       condition_tree: nextTree,
-      cooldown_ms: treeContainsTrackLeaf(nextTree) && Number(d.cooldown_ms) === 0 ? 1000 : d.cooldown_ms,
+      cooldown_ms: treeContainsTrackLeaf(nextTree, resolveRef) && Number(d.cooldown_ms) === 0 ? 1000 : d.cooldown_ms,
     }));
   }
 

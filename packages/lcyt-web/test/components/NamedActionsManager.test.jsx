@@ -132,6 +132,35 @@ describe('NamedActionsManager', () => {
     });
   });
 
+  it('closes the edit dialog if the action being edited is deleted', async () => {
+    const user = userEvent.setup();
+    global.fetch.mockImplementation((url, opts) => {
+      if (opts?.method === 'DELETE') {
+        return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ actions: [{ slug: 'lower-thirds', name: 'Lower thirds', definition: 'audio:start' }] }),
+      });
+    });
+
+    renderWith(baseSession);
+    await waitFor(() => expect(screen.getByText('Lower thirds')).toBeInTheDocument());
+
+    await user.click(screen.getByTitle('Settings'));
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+
+    await user.click(screen.getByTitle('Delete'));
+    const confirmDialog = screen.getAllByRole('dialog').find(d => d.textContent.includes('Delete named action?'));
+    await user.click(within(confirmDialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => {
+      const deleteCall = global.fetch.mock.calls.find(([, opts]) => opts?.method === 'DELETE');
+      expect(deleteCall).toBeTruthy();
+    });
+    expect(screen.queryByRole('button', { name: 'Save' })).not.toBeInTheDocument();
+  });
+
   it('renders compact chrome in embedded mode (no page title)', async () => {
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ actions: [] }) });
     render(

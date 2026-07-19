@@ -55,10 +55,20 @@ function isLeafNode(node) {
   return Boolean(node.matchType || node.match_type || node.pattern !== undefined || node.value !== undefined || node.text !== undefined || node.path || node.key);
 }
 
-/** Validate a condition-tree node. Returns an error string, or null if valid. */
-function validateConditionNode(node) {
+/**
+ * Validate a condition-tree node. Returns an error string, or null if valid.
+ * `isRoot` is true only for the outermost call (a rule/named-condition's
+ * top-level `condition_tree`) — a bare ref-name string is a valid shorthand
+ * for a *child* node, but a rule's own tree must always be a real object,
+ * never a plain string (accepting one there is how a JSON-string leaked back
+ * from a stale read gets silently treated as "valid").
+ */
+function validateConditionNode(node, isRoot = false) {
   if (node === undefined || node === null) return 'condition node is required';
-  if (typeof node === 'string') return node.length ? null : 'ref name must not be empty';
+  if (typeof node === 'string') {
+    if (isRoot) return 'condition_tree must be an object, not a plain ref name';
+    return node.length ? null : 'ref name must not be empty';
+  }
   if (typeof node !== 'object' || Array.isArray(node)) return 'condition node must be an object or a ref name string';
 
   if (node.type === 'ref' || node.ref) {
@@ -70,6 +80,7 @@ function validateConditionNode(node) {
   if (isLeafNode(node)) {
     const matchType = node.matchType || node.match_type || (node.type !== 'match' ? node.type : undefined) || 'phrase';
     if (!LEAF_MATCH_TYPES.has(matchType)) return `unknown leaf match type "${matchType}"`;
+    if (matchType === 'regex' && !isSafeRegex(node.pattern)) return 'invalid or unsafe regex pattern';
     return null;
   }
 
@@ -124,14 +135,30 @@ function detectCycle(startName, allDefs) {
   return visit(startName);
 }
 
-/** True if any leaf in the tree is a `track:` leaf (used to pick a sane cooldown default). */
-function treeContainsTrackLeaf(node) {
+/**
+ * True if any leaf in the tree is a `track:` leaf (used to pick a sane
+ * cooldown default). `resolveRef(name)` — if given — looks up a named
+ * condition's tree so a `track:` leaf hidden behind a `ref` node is still
+ * found; without it, ref nodes are treated as leaf-free (pre-existing
+ * behaviour). `seen` guards against reference cycles.
+ */
+function treeContainsTrackLeaf(node, resolveRef = null, seen = new Set()) {
+  if (typeof node === 'string') {
+    if (!resolveRef || seen.has(node)) return false;
+    seen.add(node);
+    return treeContainsTrackLeaf(resolveRef(node), resolveRef, seen);
+  }
   if (!node || typeof node !== 'object') return false;
-  if (node.type === 'ref' || node.ref) return false;
+  if (node.type === 'ref' || node.ref) {
+    const name = node.name || node.ref;
+    if (!name || !resolveRef || seen.has(name)) return false;
+    seen.add(name);
+    return treeContainsTrackLeaf(resolveRef(name), resolveRef, seen);
+  }
   const matchType = node.matchType || node.match_type || (node.type !== 'match' ? node.type : undefined);
   if (matchType === 'track') return true;
   const items = Array.isArray(node.children) ? node.children : Array.isArray(node.conditions) ? node.conditions : [];
-  return items.some(treeContainsTrackLeaf);
+  return items.some(child => treeContainsTrackLeaf(child, resolveRef, seen));
 }
 
 /**
@@ -140,9 +167,9 @@ function treeContainsTrackLeaf(node) {
  * arrival, so unlike every other match type (default 0), these default to a
  * non-zero cooldown unless the caller explicitly set one.
  */
-function defaultCooldownFor(matchType, conditionTree) {
+function defaultCooldownFor(matchType, conditionTree, resolveRef = null) {
   if (matchType === 'track') return 1000;
-  if (matchType === 'composite' && treeContainsTrackLeaf(conditionTree)) return 1000;
+  if (matchType === 'composite' && treeContainsTrackLeaf(conditionTree, resolveRef)) return 1000;
   return 0;
 }
 
@@ -185,6 +212,11 @@ function normalizeInlineCue(rawCue, index, apiKey) {
 export function createCueRouter(db, auth, engine) {
   const router = Router();
 
+  /** Look up a named condition's tree by name, for `treeContainsTrackLeaf` ref resolution. */
+  function resolveNamedConditionTree(apiKey, name) {
+    return safeParseJSON(getNamedConditionByName(db, apiKey, name)?.condition_tree, null);
+  }
+
   // ── Inline sync ────────────────────────────────────────────────────────
 
   /** POST /cues/inline — replace the active inline cue snapshot for the session */
@@ -216,10 +248,11 @@ export function createCueRouter(db, auth, engine) {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
     const rules = listCueRules(db, apiKey);
-    // Parse action JSON for the response
+    // Parse action/condition_tree JSON for the response
     const parsed = rules.map(r => ({
       ...r,
       action: (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(),
+      condition_tree: safeParseJSON(r.condition_tree, null),
     }));
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ rules: parsed });
@@ -242,7 +275,7 @@ export function createCueRouter(db, auth, engine) {
       return res.status(400).json({ error: 'pattern is required' });
     }
     if (resolvedMatchType === 'composite') {
-      const treeError = validateConditionNode(condition_tree);
+      const treeError = validateConditionNode(condition_tree, true);
       if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
     }
 
@@ -271,7 +304,7 @@ export function createCueRouter(db, auth, engine) {
       pattern: pattern ?? '',
       action: action || {},
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
-      cooldown_ms: cooldown_ms !== undefined && cooldown_ms !== null ? cooldown_ms : defaultCooldownFor(resolvedMatchType, condition_tree),
+      cooldown_ms: cooldown_ms !== undefined && cooldown_ms !== null ? cooldown_ms : defaultCooldownFor(resolvedMatchType, condition_tree, name => resolveNamedConditionTree(apiKey, name)),
       fuzzy_threshold: fuzzy_threshold ?? 0.75,
       condition_tree: resolvedMatchType === 'composite' ? condition_tree : undefined,
     });
@@ -299,9 +332,13 @@ export function createCueRouter(db, auth, engine) {
     if (PATTERN_REQUIRED_MATCH_TYPES.includes(resolvedMatchType) && (pattern === undefined || pattern === null || pattern === '')) {
       return res.status(400).json({ error: 'pattern is required' });
     }
-    if (resolvedMatchType === 'composite' && condition_tree !== undefined) {
-      const treeError = validateConditionNode(condition_tree);
-      if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
+    if (resolvedMatchType === 'composite') {
+      const effectiveTree = condition_tree !== undefined ? condition_tree : safeParseJSON(rule.condition_tree, null);
+      if (!effectiveTree) return res.status(400).json({ error: 'condition_tree is required for composite rules' });
+      if (condition_tree !== undefined) {
+        const treeError = validateConditionNode(condition_tree, true);
+        if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
+      }
     }
 
     // Validate regex pattern if the rule is (or will remain) a regex rule
@@ -326,7 +363,7 @@ export function createCueRouter(db, auth, engine) {
     // clobber an existing custom cooldown on an unrelated field update.
     let resolvedCooldown = cooldown_ms;
     if (resolvedCooldown === undefined && match_type && match_type !== rule.match_type) {
-      const defaultCooldown = defaultCooldownFor(resolvedMatchType, condition_tree ?? safeParseJSON(rule.condition_tree, null));
+      const defaultCooldown = defaultCooldownFor(resolvedMatchType, condition_tree ?? safeParseJSON(rule.condition_tree, null), name => resolveNamedConditionTree(apiKey, name));
       if (defaultCooldown > 0) resolvedCooldown = defaultCooldown;
     }
 
@@ -382,7 +419,7 @@ export function createCueRouter(db, auth, engine) {
     if (getNamedConditionByName(db, apiKey, name)) {
       return res.status(409).json({ error: `A named condition "${name}" already exists` });
     }
-    const treeError = validateConditionNode(condition_tree);
+    const treeError = validateConditionNode(condition_tree, true);
     if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
 
     const allDefs = new Map(listNamedConditions(db, apiKey).map(d => [d.name, safeParseJSON(d.condition_tree, null)]));
@@ -417,7 +454,7 @@ export function createCueRouter(db, auth, engine) {
     const resolvedName = name || existing.name;
 
     if (condition_tree !== undefined) {
-      const treeError = validateConditionNode(condition_tree);
+      const treeError = validateConditionNode(condition_tree, true);
       if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
     }
     if (name && name !== existing.name) {

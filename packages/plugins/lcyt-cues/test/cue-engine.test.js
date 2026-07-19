@@ -146,6 +146,35 @@ describe('CueEngine', () => {
     assert.equal(notResult.matched, true);
   });
 
+  test('evaluateComposite treats a "not" group with zero children as a no-match, not always-true', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+
+    // A malformed tree (e.g. from an unvalidated inline-sync payload) with an
+    // empty "not" group must never resolve `matched: true` no matter the text.
+    const result = await engine.evaluateComposite('key1', {
+      op: 'not',
+      children: [],
+    }, { text: 'anything at all' });
+    assert.equal(result.matched, false);
+  });
+
+  test('evaluateComposite track leaf respects a fuzzy_threshold confidence cutoff (not confidence_threshold)', async () => {
+    const db = createDb();
+    const engine = new CueEngine(db);
+    engine.evaluateTrackerEvent('key1', { labels: [{ label: 'presenter-standing', confidence: 0.4 }] });
+
+    const belowThreshold = await engine.evaluateComposite('key1', {
+      type: 'match', matchType: 'track', pattern: 'presenter-standing', fuzzy_threshold: 0.8,
+    }, { apiKey: 'key1' });
+    assert.equal(belowThreshold.matched, false, 'a fuzzy_threshold above the cached confidence should reject the match');
+
+    const aboveThreshold = await engine.evaluateComposite('key1', {
+      type: 'match', matchType: 'track', pattern: 'presenter-standing', fuzzy_threshold: 0.3,
+    }, { apiKey: 'key1' });
+    assert.equal(aboveThreshold.matched, true);
+  });
+
   test('evaluateComposite named ref resolves against the DB-backed cue_named_conditions table', async () => {
     const db = createDb();
     insertNamedCondition(db, {

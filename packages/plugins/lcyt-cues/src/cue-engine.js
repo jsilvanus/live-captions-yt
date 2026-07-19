@@ -296,6 +296,7 @@ export class CueEngine {
           rule._parsedTree = rule.condition_tree ? JSON.parse(rule.condition_tree) : null;
         } catch {
           rule._parsedTree = null;
+          logger.warn(`[cues] Malformed condition_tree JSON for rule ${rule.id}`);
         }
       }
     }
@@ -382,7 +383,7 @@ export class CueEngine {
       case 'track': {
         const state = this._trackerState.get(apiKey);
         const labels = Array.isArray(state?.labels) ? state.labels : [];
-        const threshold = node.confidence_threshold ?? node.threshold ?? 0;
+        const threshold = node.fuzzy_threshold ?? node.threshold ?? 0;
         const target = String(pattern).toLowerCase();
         return labels.some(entry => String(entry?.label || '').toLowerCase() === target && (entry?.confidence ?? 1) >= threshold);
       }
@@ -531,6 +532,10 @@ export class CueEngine {
       return { matched: false, leaf: null };
     }
     if (op === 'not') {
+      // A malformed/unvalidated tree (e.g. from the unguarded /cues/inline
+      // sync path) could carry a childless "not" group; `!{matched:false}`
+      // would otherwise evaluate that as an always-true match.
+      if (items.length !== 1) return { matched: false, leaf: null };
       const result = await this.evaluateComposite(apiKey, items[0], ctx, localDefs, visited);
       return { matched: !result.matched, leaf: null };
     }
@@ -800,43 +805,50 @@ export class CueEngine {
   async evaluateCompositeRules(apiKey, text, codes = {}, onFired) {
     const rules = this._loadRules(apiKey);
     const now = Date.now();
-    const fired = [];
 
-    for (const rule of rules) {
-      if (rule.match_type !== 'composite' || !rule._parsedTree) continue;
+    // Rules are independent (each keyed separately in `_lastFired`, each a
+    // separate `insertCueEvent` row), so evaluate them concurrently rather
+    // than serially — composite/semantic/event leaves can each take up to
+    // `CUE_EVENT_TIMEOUT_MS`, and per-caption latency shouldn't scale with
+    // rule count.
+    const results = await Promise.all(rules.map(async rule => {
+      if (rule.match_type !== 'composite' || !rule._parsedTree) return null;
 
       if (rule.cooldown_ms > 0) {
         const last = this._lastFired.get(rule.id);
-        if (last && (now - last) < rule.cooldown_ms) continue;
+        if (last && (now - last) < rule.cooldown_ms) return null;
       }
 
       try {
         const result = await this.evaluateComposite(apiKey, rule._parsedTree, { text, codes, apiKey, rule }, {});
-        if (result.matched) {
-          this._lastFired.set(rule.id, Date.now());
-          const matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
-          fired.push({ rule, matched });
+        if (!result.matched) return null;
 
-          try {
-            let action = {};
-            try { action = JSON.parse(rule.action); } catch {
-              logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
-            }
-            insertCueEvent(this._db, apiKey, {
-              rule_id: rule.id,
-              rule_name: rule.name,
-              matched,
-              action,
-            });
-          } catch (err) {
-            logger.warn('[cues] Failed to insert cue_event:', err?.message);
+        this._lastFired.set(rule.id, Date.now());
+        const matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
+
+        try {
+          let action = {};
+          try { action = JSON.parse(rule.action); } catch {
+            logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
           }
+          insertCueEvent(this._db, apiKey, {
+            rule_id: rule.id,
+            rule_name: rule.name,
+            matched,
+            action,
+          });
+        } catch (err) {
+          logger.warn('[cues] Failed to insert cue_event:', err?.message);
         }
+
+        return { rule, matched };
       } catch (err) {
         logger.warn(`[cues] Composite rule evaluation error for rule ${rule.id}:`, err?.message);
+        return null;
       }
-    }
+    }));
 
+    const fired = results.filter(Boolean);
     if (fired.length > 0) onFired?.(fired);
     return fired;
   }

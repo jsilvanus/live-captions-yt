@@ -171,6 +171,112 @@ describe('/cues/rules — composite and track match types (Phase 9)', () => {
   });
 });
 
+describe('/cues/rules — composite condition_tree fixes', () => {
+  test('GET /cues/rules returns condition_tree as a parsed object, not a JSON string', async () => {
+    const createRes = await post('/cues/rules', {
+      name: 'parsed-tree-check',
+      match_type: 'composite',
+      condition_tree: { type: 'match', matchType: 'phrase', pattern: 'hallelujah' },
+    });
+    assert.equal(createRes.status, 201);
+    const created = await createRes.json();
+
+    const listRes = await get('/cues/rules');
+    const { rules } = await listRes.json();
+    const row = rules.find(r => r.id === created.id);
+    assert.equal(typeof row.condition_tree, 'object');
+    assert.equal(row.condition_tree.pattern, 'hallelujah');
+  });
+
+  test('a save round trip on the parsed condition_tree does not corrupt it', async () => {
+    const createRes = await post('/cues/rules', {
+      name: 'roundtrip-check',
+      match_type: 'composite',
+      condition_tree: { type: 'match', matchType: 'phrase', pattern: 'grace' },
+    });
+    const created = await createRes.json();
+
+    const listRes = await get('/cues/rules');
+    const { rules } = await listRes.json();
+    const loaded = rules.find(r => r.id === created.id).condition_tree;
+
+    // Simulate the UI's "open edit dialog, save without changes" round trip.
+    const updateRes = await put(`/cues/rules/${created.id}`, { condition_tree: loaded });
+    assert.equal(updateRes.status, 200);
+
+    const listAfter = await get('/cues/rules');
+    const { rules: rulesAfter } = await listAfter.json();
+    const reloaded = rulesAfter.find(r => r.id === created.id).condition_tree;
+    assert.equal(typeof reloaded, 'object');
+    assert.equal(reloaded.pattern, 'grace');
+  });
+
+  test('PUT rejects switching match_type to composite with no existing or provided condition_tree', async () => {
+    const createRes = await post('/cues/rules', {
+      name: 'switch-to-composite',
+      match_type: 'phrase',
+      pattern: 'x',
+    });
+    const created = await createRes.json();
+
+    const updateRes = await put(`/cues/rules/${created.id}`, { match_type: 'composite' });
+    assert.equal(updateRes.status, 400);
+  });
+
+  test('PUT allows switching match_type to composite when a condition_tree is provided', async () => {
+    const createRes = await post('/cues/rules', {
+      name: 'switch-to-composite-with-tree',
+      match_type: 'phrase',
+      pattern: 'x',
+    });
+    const created = await createRes.json();
+
+    const updateRes = await put(`/cues/rules/${created.id}`, {
+      match_type: 'composite',
+      condition_tree: { type: 'match', matchType: 'phrase', pattern: 'y' },
+    });
+    assert.equal(updateRes.status, 200);
+  });
+
+  test('rejects an unsafe regex pattern inside a composite leaf', async () => {
+    const res = await post('/cues/rules', {
+      name: 'redos-composite',
+      match_type: 'composite',
+      condition_tree: { type: 'match', matchType: 'regex', pattern: '(a+)+$' },
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test('rejects a bare ref-name string as the top-level condition_tree', async () => {
+    const res = await post('/cues/rules', {
+      name: 'bare-string-root',
+      match_type: 'composite',
+      condition_tree: 'some-named-condition',
+    });
+    assert.equal(res.status, 400);
+  });
+
+  test('a composite rule whose only track leaf is behind a ref still gets the non-zero cooldown default', async () => {
+    await post('/cues/defs', {
+      name: 'track-behind-ref',
+      condition_tree: { type: 'match', matchType: 'track', pattern: 'presenter-standing' },
+    });
+
+    const res = await post('/cues/rules', {
+      name: 'composite-with-ref-track',
+      match_type: 'composite',
+      condition_tree: { type: 'ref', name: 'track-behind-ref' },
+    });
+    assert.equal(res.status, 201);
+    const created = await res.json();
+
+    const listRes = await get('/cues/rules');
+    const { rules } = await listRes.json();
+    const row = rules.find(r => r.id === created.id);
+    assert.ok(row.cooldown_ms > 0, 'composite rules referencing a track leaf via ref should default to a non-zero cooldown');
+  });
+});
+
 describe('/cues/defs — named conditions (Phase 9)', () => {
   test('creates a named condition', async () => {
     const res = await post('/cues/defs', {

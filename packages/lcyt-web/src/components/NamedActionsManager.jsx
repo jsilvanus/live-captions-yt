@@ -121,6 +121,7 @@ export function NamedActionsManager({ embedded = false }) {
       const r = await fetch(`${backendUrl}/actions/${encodeURIComponent(action.slug)}`, { method: 'DELETE', headers });
       if (!r.ok) { const data = await r.json().catch(() => ({})); throw new Error(data.error || `HTTP ${r.status}`); }
       setConfirmDelete(null);
+      if (editing && editing !== 'new' && editing.slug === action.slug) closeDialog();
       load();
     } catch (e) {
       setError(e.message);
