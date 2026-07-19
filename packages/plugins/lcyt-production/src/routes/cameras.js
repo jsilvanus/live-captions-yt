@@ -27,6 +27,23 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     };
   }
 
+  /**
+   * Attach a computed `live` field for any camera with a camera_key —
+   * webcam/mobile (WHIP) and 'rtmp' (plan_ingest_feeds.md §2b) all publish
+   * to a MediaMTX path under that name, so the same liveness check already
+   * used by GET /:id/whip-url works uniformly for all three. `null` means
+   * "unknown" (no camera_key, or no MediaMTX client configured) — same
+   * dim/neutral-dot convention the Ingestion card's video/dsk slots use.
+   * @param {object} camera  parseCamera() output (already has thumbnailUrl attached)
+   * @returns {Promise<object>}
+   */
+  async function withLive(camera) {
+    if (!camera.cameraKey || !mediamtxClient) return { ...camera, live: null };
+    let live = null;
+    try { live = await mediamtxClient.isPathPublishing(camera.cameraKey); } catch { /* ignore */ }
+    return { ...camera, live };
+  }
+
   // -------------------------------------------------------------------------
   // Text body parser for WHIP SDP routes (must come before route definitions)
   // -------------------------------------------------------------------------
@@ -47,19 +64,19 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   );
 
   // GET /production/cameras — list all cameras
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const rows = db
       .prepare('SELECT * FROM prod_cameras ORDER BY sort_order, created_at')
       .all()
       .map(row => withThumbnailUrl(parseCamera(row), req));
-    res.json(rows);
+    res.json(await Promise.all(rows.map(withLive)));
   });
 
   // GET /production/cameras/:id — single camera
-  router.get('/:id', (req, res) => {
+  router.get('/:id', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Camera not found' });
-    res.json(withThumbnailUrl(parseCamera(row), req));
+    res.json(await withLive(withThumbnailUrl(parseCamera(row), req)));
   });
 
   // POST /production/cameras — create camera

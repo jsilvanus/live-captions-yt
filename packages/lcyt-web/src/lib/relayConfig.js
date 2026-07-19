@@ -151,12 +151,44 @@ export function setSlotRecordOnButton(slot, enabled) {
   } catch {}
 }
 
+/**
+ * Which feed this slot relays from (plan_ingest_feeds.md §1b/§3): the raw
+ * program ingest (default), the {key}-crop vertical rendition, or a named
+ * feed camera. sourceCameraId (a prod_cameras id) takes priority over
+ * sourceView when set — see db/relay.js's resolveRelaySourceCameraKey().
+ * @param {number} slot
+ * @returns {'program'|'crop'}
+ */
+export function getSlotSourceView(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'sourceView')) || 'program'; } catch { return 'program'; }
+}
+
+/** @param {number} slot @param {'program'|'crop'} sourceView */
+export function setSlotSourceView(slot, sourceView) {
+  try { localStorage.setItem(slotKey(slot, 'sourceView'), sourceView); } catch {}
+}
+
+/** @param {number} slot @returns {string} a prod_cameras id, or '' for none */
+export function getSlotSourceCameraId(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'sourceCameraId')) || ''; } catch { return ''; }
+}
+
+/** @param {number} slot @param {string} cameraId */
+export function setSlotSourceCameraId(slot, cameraId) {
+  try {
+    if (cameraId) localStorage.setItem(slotKey(slot, 'sourceCameraId'), cameraId);
+    else localStorage.removeItem(slotKey(slot, 'sourceCameraId'));
+  } catch {}
+}
+
 /** Remove all localStorage keys for a slot. */
 export function clearSlot(slot) {
   try {
     ['type', 'ytKey', 'genericUrl', 'genericName', 'captionMode']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
     ['scale', 'fps', 'videoBitrate', 'audioBitrate', 'recordOnStart', 'recordOnButton']
+      .forEach(f => localStorage.removeItem(slotKey(slot, f)));
+    ['sourceView', 'sourceCameraId']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
   } catch {}
 }
@@ -186,12 +218,19 @@ export function setRelayCaptionMode(mode) { setSlotCaptionMode(1, mode); }
 
 // ─── Multi-slot helpers ────────────────────────────────────────────────────────
 
-export const MAX_RELAY_SLOTS = 4;
+// UI convenience cap on how many slots the "Add" button will offer — the
+// backend itself has no cap (plan_ingest_feeds.md §1b removed the earlier
+// 4-slot ceiling entirely; a future per-team quota is a deliberate non-goal).
+// Raised from 4 so the UI doesn't artificially re-impose a limit the backend
+// no longer has. Not further generalized in this pass — see CONSIDER.md for
+// the pre-existing gap where this whole slot list lives in localStorage
+// rather than syncing from GET /stream.
+export const MAX_RELAY_SLOTS = 16;
 
 /**
  * Get config for a specific slot.
- * @param {number} slot 1-4
- * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate }}
+ * @param {number} slot 1-16
+ * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId }}
  */
 export function getSlotConfig(slot) {
   return {
@@ -207,6 +246,8 @@ export function getSlotConfig(slot) {
     audioBitrate:    getSlotAudioBitrate(slot),
     recordOnStart:   getSlotRecordOnStart(slot),
     recordOnButton:  getSlotRecordOnButton(slot),
+    sourceView:      getSlotSourceView(slot),
+    sourceCameraId:  getSlotSourceCameraId(slot),
   };
 }
 

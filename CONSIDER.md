@@ -564,3 +564,35 @@ public shape.
 
 **Why skipped:** out of scope for `plan_ingest_feeds.md`'s ingestion work;
 noted so the next control-type addition doesn't silently miss one copy again.
+
+## Egress relay-slot UI: localStorage list doesn't sync from `GET /stream`, and only one of three consumers got the new source picker
+
+**Where:** `packages/lcyt-web/src/lib/relayConfig.js`,
+`packages/lcyt-web/src/components/setup-hub/EgressSection.jsx`,
+`packages/lcyt-web/src/components/panels/RelayPanel.jsx` /
+`broadcast/StreamTab.jsx`, `components/panels/RelaySlotRow.jsx`
+
+**Finding:** `plan_ingest_feeds.md` needed a per-slot "source" picker
+(Program / Vertical Crop / named feed camera) so an operator can route
+different incoming feeds to different egress targets. Two pre-existing
+architectural facts made this bigger than it looked while implementing it:
+
+1. The relay-slot list the UI edits (`relayConfig.js`, `buildInitialRelayList`)
+   is **entirely localStorage-backed** and never fetched from `GET /stream` —
+   it independently POSTs to the backend on every change but never reads the
+   backend's actual configured slots back. This predates this plan; not
+   touched here.
+2. `RelaySlotRow` (the shared per-slot editor) is used by **three** call
+   sites — `EgressSection.jsx` (Setup Hub), and `RelayPanel.jsx` (used by
+   `StreamTab.jsx`, the `/broadcast` page). The new `feedCameras` prop (the
+   camera list that drives the source picker) was only wired into
+   `EgressSection.jsx`. `RelayPanel.jsx`/`StreamTab.jsx` don't fetch or pass
+   it, so the picker simply doesn't render there (the prop defaults to `[]`,
+   backward compatible) — those two surfaces are still Program-only.
+
+**Why skipped:** fixing #1 is a real backend-sync rewrite of the relay-slot
+data model, unrelated in size to "add a dropdown," and risked destabilizing
+the existing (untested) Egress UI without being able to visually verify the
+result in this pass. Fixing #2 is smaller — wire the same `feedCameras` fetch
+into `RelayPanel.jsx`/`StreamTab.jsx` and pass it through — and is the more
+likely next step; noted here so it isn't lost.

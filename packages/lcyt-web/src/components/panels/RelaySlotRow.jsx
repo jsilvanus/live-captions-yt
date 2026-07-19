@@ -3,15 +3,20 @@ import { useLang } from '../../contexts/LangContext.jsx';
 
 /**
  * RelaySlotRow — single RTMP relay slot editor.
- * Data shape: { slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate }
+ * Data shape: { slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId }
  *
  * Props:
  *   entry: object
  *   onChange: (updated) => void
  *   onRemove: () => void
  *   runningSlots?: number[]
+ *   feedCameras?: Array<{ id, name, cameraKey }>  camera_key-bearing cameras
+ *     (webcam/mobile/rtmp) this slot can source from instead of the raw
+ *     program ingest — plan_ingest_feeds.md §3. Omit/empty to hide the
+ *     source picker entirely (backward compatible for callers that don't
+ *     fetch the camera list, e.g. embed widgets).
  */
-export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
+export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], feedCameras = [] }) {
   const { t } = useLang();
   const [showAdvanced, setShowAdvanced] = useState(
     Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708' || entry.recordOnStart || entry.recordOnButton)
@@ -122,6 +127,29 @@ export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [] }) {
               <option value="cea708">{t('settings.relay.slotCaptionModeCea708')}</option>
             </select>
           </div>
+          {/* Source (plan_ingest_feeds.md §3) — which incoming feed this slot relays from */}
+          {feedCameras.length > 0 && (
+            <div style={{ gridColumn: '1 / -1' }}>
+              <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>Source</label>
+              <select
+                className="settings-field__input"
+                value={entry.sourceCameraId ? `camera:${entry.sourceCameraId}` : (entry.sourceView === 'crop' ? 'crop' : 'program')}
+                onChange={e => {
+                  const v = e.target.value;
+                  if (v === 'program') onChange({ ...entry, sourceView: 'program', sourceCameraId: '' });
+                  else if (v === 'crop') onChange({ ...entry, sourceView: 'crop', sourceCameraId: '' });
+                  else onChange({ ...entry, sourceView: 'program', sourceCameraId: v.slice('camera:'.length) });
+                }}
+                style={{ width: '100%' }}
+              >
+                <option value="program">Program (main feed)</option>
+                <option value="crop">Vertical Crop</option>
+                {feedCameras.map(cam => (
+                  <option key={cam.id} value={`camera:${cam.id}`}>{cam.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {/* Scale */}
           <div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8em', marginBottom: 2 }}>

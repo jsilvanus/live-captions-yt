@@ -65,10 +65,10 @@ function mockPreview(jpegBytes = 'jpeg-bytes') {
   };
 }
 
-function startApp(registry) {
+function startApp(registry, mediamtxClient = null) {
   const app = express();
   app.use(express.json());
-  app.use('/production/cameras', createCamerasRouter(db, registry, null, { cameraThumbnail: { thumbnailsDir } }));
+  app.use('/production/cameras', createCamerasRouter(db, registry, null, { cameraThumbnail: { thumbnailsDir }, mediamtxClient }));
   return new Promise((resolve) => {
     server = createServer(app);
     server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
@@ -179,5 +179,35 @@ describe('camera thumbnail routes', () => {
     const afterList = await afterRes.json();
     const afterCam = afterList.find(c => c.id === id);
     assert.equal(afterCam.thumbnailUrl, `${baseUrl}/production/cameras/${id}/thumbnail`);
+  });
+
+  it('GET / and GET /:id show live: null with no mediamtxClient configured', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = insertCamera({ camera_key: 'cam-key-2' });
+
+    const listRes = await fetch(`${baseUrl}/production/cameras`);
+    const list = await listRes.json();
+    assert.equal(list.find(c => c.id === id).live, null);
+
+    const oneRes = await fetch(`${baseUrl}/production/cameras/${id}`);
+    assert.equal((await oneRes.json()).live, null);
+  });
+
+  it("GET / and GET /:id reflect live status for camera_key-bearing cameras (plan_ingest_feeds.md §2b)", async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const mtx = { isPathPublishing: async (key) => key === 'live-cam' };
+    await startApp(makeRegistryStub(), mtx);
+    const liveId = insertCamera({ camera_key: 'live-cam', control_type: 'rtmp' });
+    const offlineId = insertCamera({ camera_key: 'offline-cam', control_type: 'rtmp' });
+    const noKeyId = insertCamera({ camera_key: null, control_type: 'none' });
+
+    const list = await (await fetch(`${baseUrl}/production/cameras`)).json();
+    assert.equal(list.find(c => c.id === liveId).live, true);
+    assert.equal(list.find(c => c.id === offlineId).live, false);
+    assert.equal(list.find(c => c.id === noKeyId).live, null);
+
+    const one = await (await fetch(`${baseUrl}/production/cameras/${liveId}`)).json();
+    assert.equal(one.live, true);
   });
 });

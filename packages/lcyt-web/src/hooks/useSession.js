@@ -674,23 +674,28 @@ export function useSession({
 
   // ─── RTMP relay ─────────────────────────────────────────
 
-  const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate } = {}) {
+  const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
     const body = { slot, targetUrl, targetName, captionMode, recordOnStart, recordOnButton };
     if (scale) body.scale = scale;
     if (fps != null) body.fps = fps;
     if (videoBitrate) body.videoBitrate = videoBitrate;
     if (audioBitrate) body.audioBitrate = audioBitrate;
+    // sourceCameraId (plan_ingest_feeds.md §1b/§3) takes priority over sourceView server-side.
+    if (sourceCameraId) body.sourceCameraId = sourceCameraId;
+    else if (sourceView) body.sourceView = sourceView;
     return api.post('/stream', body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate } = {}) {
+  const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
     const body = { targetUrl, targetName, captionMode, recordOnStart, recordOnButton };
     if (scale) body.scale = scale;
     if (fps != null) body.fps = fps;
     if (videoBitrate) body.videoBitrate = videoBitrate;
     if (audioBitrate) body.audioBitrate = audioBitrate;
+    if (sourceCameraId) body.sourceCameraId = sourceCameraId;
+    else if (sourceView) body.sourceView = sourceView;
     return api.put(`/stream/${slot}`, body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
