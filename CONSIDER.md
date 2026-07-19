@@ -480,54 +480,68 @@ per-connection listeners, MCP endpoint sessions, bridge-manager SSE channels)
 would each need their own size accessor threaded through; skipped as low-value
 for the live panel v1.
 
-## PR #282 (Cue Rules editor + composite condition trees) — cleanup findings not posted inline
+## PR #282 (Cue Rules editor + composite condition trees) — remaining cleanup findings
 
-**Where:** `packages/plugins/lcyt-cues/src/routes/cues.js`,
-`packages/plugins/lcyt-cues/src/cue-engine.js`,
-`packages/lcyt-web/src/components/{CuesPage,NamedActionsManager}.jsx`,
-`packages/lcyt-web/src/styles/components.css`,
-`packages/plugins/lcyt-cues/src/cue-processor.js`
+**Where:** `packages/lcyt-web/src/components/{planner/PlannerAssistPanel,NamedActionsManager,CuesPage}.jsx`,
+`packages/plugins/lcyt-cues/src/routes/cues.js`
 
 **Finding:** a scheduled `/code-review --comment` pass on PR #282 posted 10
 correctness/efficiency findings as inline PR comments (the diff-comment
-budget). These reuse/simplification/convention findings, all independently
-confirmed by finder + verifier agent passes, were left out of the inline
-batch rather than dropped:
+budget) and logged 9 reuse/simplification/convention findings here for a
+follow-up pass. That follow-up fixed 6 of them:
 
-- `isLeafNode()` (`routes/cues.js`) and `CueEngine._isLeafNode()`
-  (`cue-engine.js`) are byte-for-byte duplicate logic, both new in this PR,
-  with no shared source of truth — risk of silent drift on the next leaf
-  type added.
-- The `req.session?.apiKey` / 401 check is inlined ~10 times across
-  `routes/cues.js` instead of a local `requireApiKey(req, res)` helper (the
-  convention already established by `packages/plugins/lcyt-actions/src/routes/helpers.js`).
-- `CuesPage.jsx` hand-rolls its own authed-fetch wrapper duplicating the
-  sibling `NamedActionsManager.jsx`'s `authHeaders()` pattern.
-- `PlannerAssistPanel.jsx`'s new `.planner-assist-panel__tab` CSS duplicates
-  the existing app-wide `.settings-tab`/`.settings-tab--active` styling
-  instead of reusing it.
-- The "parse action JSON + `insertCueEvent`" block is copy-pasted 7 times in
-  `cue-engine.js`, including 2 new copies added by this PR — should be a
-  single `_recordFired(apiKey, rule, matched)` helper.
-- `NamedActionsManager.jsx`'s rewrite duplicates ~150 lines of the
-  CRUD-dialog state machine as a third copy of the same pattern already used
-  by `CuesManager`/`LanguagesManager` (per the code's own comment) — a shared
-  `useCrudDialog` hook would collapse all three.
-- `treeContainsTrackLeaf()` is knowingly re-implemented on both frontend
-  (`CuesPage.jsx`) and backend (`routes/cues.js`) with only a comment tying
-  them together (and both copies share the same ref-resolution bug, fixed
-  separately as a correctness finding).
-- `cue-engine.js`'s `_nodeIsAsync()`/`_orderByCost()` re-walk the entire
-  composite condition tree on every `evaluateComposite()` call instead of
-  caching the ordering once at rule-load time, unlike the sibling
-  `_parsedTree`/regex pre-compile step that already caches in `_loadRules()`.
-- `cue-processor.js:173`'s `console.warn('[cues] Composite rule evaluation
-  error:', ...)` (new in this PR) should be `logger.warn(...)` per this
-  repo's CLAUDE.md ("Use the `lcyt/logger` module rather than `console.*`
-  directly") — the sibling `logger.warn` call added in `cue-engine.js` in
-  the same PR follows the convention correctly.
+- ✅ `isLeafNode()`/`CueEngine._isLeafNode()` duplication — extracted to
+  `packages/plugins/lcyt-cues/src/condition-tree.js`, imported by both.
+- ✅ The inlined `req.session?.apiKey`/401 check (~10 call sites in
+  `routes/cues.js`) — extracted to `requireApiKey()` in the new
+  `packages/plugins/lcyt-cues/src/routes/helpers.js`, mirroring the
+  `lcyt-actions` convention.
+- ✅ `CuesPage.jsx`'s hand-rolled authed-fetch wrapper — extracted to the new
+  `packages/lcyt-web/src/hooks/useAuthedFetch.js` and adopted by
+  `NamedActionsManager.jsx` too (replacing its narrower `authHeaders()`
+  pattern), rather than the other way around, since `CuesPage`'s version was
+  the more complete abstraction (a full fetch wrapper vs. a bare
+  headers-getter).
+- ✅ The copy-pasted "parse action JSON + `insertCueEvent`" block (7 sites in
+  `cue-engine.js`) — collapsed into a single `_recordFired(apiKey, rule,
+  matched)` helper.
+- ✅ `_nodeIsAsync()`/`_orderByCost()` re-walking the whole composite tree on
+  every `evaluateComposite()` call — added `_precomputeOrder()`, run once in
+  `_loadRules()`/`_loadNamedConditions()` right after parsing, which mutates
+  each tree's group nodes' children into pre-sorted order and marks them
+  `__ordered`; `evaluateComposite()` skips re-sorting when that flag is set.
+  Ad hoc trees (inline cues, whose `localDefs` vary call to call) still sort
+  per-call as before. Regression test added confirming the cheap-before-async
+  ordering still holds through the DB-rule load path.
+- ✅ `cue-processor.js:173`'s `console.warn(...)` (new in this PR) — now
+  `logger.warn(...)`.
 
-**Why skipped:** correctness bugs (data corruption, silently-dead rules,
-ReDoS, wrong threshold field, cue-spam cooldown gap) outrank cleanup findings
-under the review's output cap; these are real but lower-severity and fit a
-routine follow-up pass rather than blocking this PR.
+Three were evaluated and intentionally left as-is:
+
+- `PlannerAssistPanel.jsx`'s `.planner-assist-panel__tab` CSS, on closer look,
+  isn't actually a blind duplicate of `.settings-tab`/`.settings-tab--active`:
+  it uses `flex: 1` (two tabs split the 280px sidebar's width evenly, a
+  segmented-control look) versus `.settings-tab`'s `flex: 0 0 auto` (sized to
+  content, meant for a horizontally-scrollable multi-tab bar), plus a
+  different color token and font-size. Forcing reuse would visually regress
+  the Planner's tab bar from an even split to left-aligned, content-sized
+  tabs. Left alone; revisit only if the two are deliberately unified as a
+  design decision, not as a code-reuse pass.
+- `NamedActionsManager.jsx`'s ~150-line CRUD-dialog state machine (a third
+  copy of the pattern `CuesManager`/`LanguagesManager` also use) — a shared
+  `useCrudDialog` hook is the right shape long-term, but the three managers'
+  field sets, validation, and slug-locking rules differ enough that extracting
+  one safely is a real design task, not a mechanical dedup; deferred rather
+  than risking a rushed abstraction across three already-shipped, tested
+  components.
+- `treeContainsTrackLeaf()` staying duplicated between `CuesPage.jsx`
+  (browser) and `routes/cues.js` (Node backend plugin) — the frontend can't
+  depend on a backend plugin's internals without breaking the
+  frontend/backend architecture boundary, so genuine code sharing would need
+  a new isomorphic shared package just for this one ~15-line predicate. Both
+  copies were already fixed to correctly resolve `ref` nodes (the actual bug);
+  the duplication itself is an accepted cross-runtime tradeoff, not something
+  left broken.
+
+All fixes verified: 110 backend tests (9 new), 428 + 430 frontend tests, all
+passing.
