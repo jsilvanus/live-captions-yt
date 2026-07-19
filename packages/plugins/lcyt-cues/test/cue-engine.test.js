@@ -268,6 +268,35 @@ describe('CueEngine', () => {
     assert.equal(fired2.length, 0, 'cooldown should block an immediate repeat');
   });
 
+  test('evaluateCompositeRules still evaluates cheap leaves before async ones once the ordering is precomputed at rule load', async () => {
+    const db = createDb();
+    insertCueRule(db, {
+      id: 'comp-precompute', api_key: 'key1', name: 'cheap-before-async',
+      match_type: 'composite', pattern: '',
+      condition_tree: {
+        op: 'or',
+        children: [
+          { type: 'match', matchType: 'semantic', pattern: 'end of the prayer' },
+          { type: 'match', matchType: 'phrase', pattern: 'amen' },
+        ],
+      },
+      action: {},
+    });
+    const engine = new CueEngine(db);
+    let embedCalled = false;
+    engine.setEmbeddingFn(async () => {
+      embedCalled = true;
+      throw new Error('embedding fn should not have been called');
+    });
+
+    // Triggers `_loadRules()` → `_precomputeOrder()`, which pre-sorts this
+    // rule's tree so the cheap phrase leaf is tried before the async
+    // semantic leaf despite the source order above.
+    const fired = await engine.evaluateCompositeRules('key1', 'and all the people said amen', {});
+    assert.equal(fired.length, 1);
+    assert.equal(embedCalled, false, 'the async semantic leaf should not run once the precomputed-cheap-first phrase leaf already matched');
+  });
+
   test('phrase match fires when text contains the phrase', () => {
     const db = createDb();
     insertCueRule(db, {

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useContext } from 'react';
 import { Link } from 'wouter';
 import { SessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
+import { useAuthedFetch } from '../hooks/useAuthedFetch';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { ConditionTreeEditor, summarizeConditionTree } from './ConditionTreeEditor.jsx';
@@ -103,13 +104,7 @@ export function CuesManager({ embedded = false }) {
   const [defFormError, setDefFormError] = useState(null);
   const [confirmDeleteDef, setConfirmDeleteDef] = useState(null);
 
-  const authedFetch = useCallback((path, opts = {}) => {
-    const token = session?.getSessionToken?.();
-    return fetch(`${backendUrl}${path}`, {
-      ...opts,
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
-    });
-  }, [session, backendUrl]);
+  const authedFetch = useAuthedFetch(session, backendUrl);
 
   const load = useCallback(async () => {
     if (!session?.connected) { setLoading(false); return; }

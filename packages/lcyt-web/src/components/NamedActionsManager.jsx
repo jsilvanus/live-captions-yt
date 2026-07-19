@@ -13,6 +13,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
+import { useAuthedFetch } from '../hooks/useAuthedFetch';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 
@@ -42,18 +43,14 @@ export function NamedActionsManager({ embedded = false }) {
   const [slugTouched, setSlugTouched] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
 
-  const authHeaders = useCallback(() => {
-    const token = session?.getSessionToken?.();
-    return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : null;
-  }, [session]);
+  const authedFetch = useAuthedFetch(session, backendUrl);
 
   const load = useCallback(async () => {
-    const headers = authHeaders();
-    if (!connected || !backendUrl || !headers) { setActions([]); setLoading(false); return; }
+    if (!connected || !backendUrl) { setActions([]); setLoading(false); return; }
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/actions`, { headers });
+      const r = await authedFetch('/actions');
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       setActions(Array.isArray(data.actions) ? data.actions : []);
@@ -62,7 +59,7 @@ export function NamedActionsManager({ embedded = false }) {
     } finally {
       setLoading(false);
     }
-  }, [connected, backendUrl, authHeaders]);
+  }, [connected, backendUrl, authedFetch]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -97,14 +94,12 @@ export function NamedActionsManager({ embedded = false }) {
     if (!slug) { setFormError('A valid slug (lowercase, hyphens) is required.'); return; }
     setFormError(null);
 
-    const headers = authHeaders();
-    if (!headers) return;
     const isNew = editing === 'new';
     const body = JSON.stringify({ name: draft.name.trim(), slug, definition: draft.definition, description: draft.description || null });
-    const url = isNew ? `${backendUrl}/actions` : `${backendUrl}/actions/${encodeURIComponent(editing.slug)}`;
+    const path = isNew ? '/actions' : `/actions/${encodeURIComponent(editing.slug)}`;
 
     try {
-      const r = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers, body });
+      const r = await authedFetch(path, { method: isNew ? 'POST' : 'PUT', body });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       closeDialog();
@@ -115,10 +110,8 @@ export function NamedActionsManager({ embedded = false }) {
   }
 
   async function handleDelete(action) {
-    const headers = authHeaders();
-    if (!headers) return;
     try {
-      const r = await fetch(`${backendUrl}/actions/${encodeURIComponent(action.slug)}`, { method: 'DELETE', headers });
+      const r = await authedFetch(`/actions/${encodeURIComponent(action.slug)}`, { method: 'DELETE' });
       if (!r.ok) { const data = await r.json().catch(() => ({})); throw new Error(data.error || `HTTP ${r.status}`); }
       setConfirmDelete(null);
       if (editing && editing !== 'new' && editing.slug === action.slug) closeDialog();

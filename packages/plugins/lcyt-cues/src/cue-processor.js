@@ -40,6 +40,7 @@
  */
 
 import { insertCueEvent } from './db.js';
+import logger from 'lcyt/logger';
 
 const CUE_RE = /<!--\s*cue\s*:\s*([^>]+?)\s*-->/gi;
 
@@ -170,7 +171,7 @@ export function createCueProcessor({ store, db, engine }) {
         engine.evaluateCompositeRules(apiKey, cleanText, codes, (eventFired) => {
           _emitCueResults(store, apiKey, eventFired);
         }).catch(err => {
-          console.warn('[cues] Composite rule evaluation error:', err?.message);
+          logger.warn('[cues] Composite rule evaluation error:', err?.message);
         });
       }
     }

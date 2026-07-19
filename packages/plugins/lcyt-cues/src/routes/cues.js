@@ -24,6 +24,8 @@ import {
   listNamedConditions, getNamedCondition, getNamedConditionByName,
   insertNamedCondition, updateNamedCondition, deleteNamedCondition,
 } from '../db.js';
+import { isLeafNode } from '../condition-tree.js';
+import { requireApiKey } from './helpers.js';
 
 function isSafeRegex(pattern) {
   if (!pattern) return false;
@@ -47,13 +49,6 @@ const PATTERN_REQUIRED_MATCH_TYPES = ['regex', 'phrase', 'section', 'fuzzy', 'se
 
 const LEAF_MATCH_TYPES = new Set(['phrase', 'exact', 'regex', 'fuzzy', 'semantic', 'section', 'context', 'track', 'event', 'event_cue']);
 const GROUP_OPS = new Set(['and', 'or', 'not']);
-
-function isLeafNode(node) {
-  if (!node || typeof node !== 'object') return false;
-  if (node.type === 'ref' || node.ref) return false;
-  if (node.type === 'match') return true;
-  return Boolean(node.matchType || node.match_type || node.pattern !== undefined || node.value !== undefined || node.text !== undefined || node.path || node.key);
-}
 
 /**
  * Validate a condition-tree node. Returns an error string, or null if valid.
@@ -221,8 +216,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** POST /cues/inline — replace the active inline cue snapshot for the session */
   router.post('/inline', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const body = req.body || {};
     const cues = Array.isArray(body.cues) ? body.cues : [];
@@ -245,8 +240,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** GET /cues/rules — list all rules for the authenticated session's API key */
   router.get('/rules', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
     const rules = listCueRules(db, apiKey);
     // Parse action/condition_tree JSON for the response
     const parsed = rules.map(r => ({
@@ -260,8 +255,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** POST /cues/rules — create a new cue rule */
   router.post('/rules', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold, condition_tree } = req.body || {};
     const resolvedMatchType = match_type || 'phrase';
@@ -315,8 +310,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** PUT /cues/rules/:id — update a cue rule */
   router.put('/rules/:id', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const rule = getCueRule(db, req.params.id);
     if (!rule) return res.status(404).json({ error: 'Rule not found' });
@@ -381,8 +376,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** DELETE /cues/rules/:id — delete a cue rule */
   router.delete('/rules/:id', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const rule = getCueRule(db, req.params.id);
     if (!rule) return res.status(404).json({ error: 'Rule not found' });
@@ -397,8 +392,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** GET /cues/defs — list named conditions for the authenticated session's API key */
   router.get('/defs', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
     const defs = listNamedConditions(db, apiKey).map(d => ({
       ...d,
       condition_tree: safeParseJSON(d.condition_tree, null),
@@ -409,8 +404,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** POST /cues/defs — create a new named condition */
   router.post('/defs', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const { name, condition_tree, source } = req.body || {};
     if (!name || typeof name !== 'string') {
@@ -443,8 +438,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** PUT /cues/defs/:id — update a named condition */
   router.put('/defs/:id', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const existing = getNamedCondition(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'Named condition not found' });
@@ -482,8 +477,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** DELETE /cues/defs/:id — delete a named condition */
   router.delete('/defs/:id', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
 
     const existing = getNamedCondition(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'Named condition not found' });
@@ -498,8 +493,8 @@ export function createCueRouter(db, auth, engine) {
 
   /** GET /cues/events — list recent cue events (rundown) */
   router.get('/events', auth, (req, res) => {
-    const apiKey = req.session?.apiKey;
-    if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
     const events = getRecentCueEvents(db, apiKey, limit);
     // Parse action JSON for the response

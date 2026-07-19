@@ -17,6 +17,7 @@
  */
 
 import { listCueRules, insertCueEvent, listNamedConditions } from './db.js';
+import { isLeafNode } from './condition-tree.js';
 import logger from 'lcyt/logger';
 
 // ---------------------------------------------------------------------------
@@ -298,6 +299,11 @@ export class CueEngine {
           rule._parsedTree = null;
           logger.warn(`[cues] Malformed condition_tree JSON for rule ${rule.id}`);
         }
+        // Composite DB rules always evaluate with empty `localDefs` (see
+        // evaluateCompositeRules), so the cost ordering below is stable for
+        // this tree's lifetime — pre-sort it once here instead of re-walking
+        // and reclassifying every leaf's async-ness on every evaluation.
+        if (rule._parsedTree) this._precomputeOrder(rule._parsedTree, apiKey, {});
       }
     }
     this._ruleCache.set(apiKey, rules);
@@ -319,16 +325,13 @@ export class CueEngine {
         logger.warn(`[cues] Malformed condition_tree JSON for named condition ${row.id}`);
       }
     }
+    // Set the cache before pre-sorting: a named condition's tree can itself
+    // ref another named condition, and precomputing cost order resolves refs
+    // to classify them — without the cache set first, that resolution would
+    // recursively rebuild `map` from scratch for every cross-reference.
     this._namedConditionCache.set(apiKey, map);
+    for (const tree of map.values()) this._precomputeOrder(tree, apiKey, {});
     return map;
-  }
-
-  /** True if `node` is a leaf condition (as opposed to a ref or and/or/not group). */
-  _isLeafNode(node) {
-    if (!node || typeof node !== 'object') return false;
-    if (node.type === 'ref' || node.ref) return false;
-    if (node.type === 'match') return true;
-    return Boolean(node.matchType || node.match_type || node.pattern !== undefined || node.value !== undefined || node.text !== undefined || node.path || node.key);
   }
 
   /** Describe a leaf node for `cue_fired` debugging payloads (which leaf matched). */
@@ -337,6 +340,32 @@ export class CueEngine {
       type: node.matchType || node.match_type || node.type || 'phrase',
       pattern: node.pattern ?? node.value ?? node.text ?? '',
     };
+  }
+
+  /**
+   * Persist a `cue_events` row for a rule that just matched. Every
+   * `evaluate*()` method calls this immediately after a match — centralizes
+   * the repeated "parse `rule.action` JSON, insert, log-and-swallow on
+   * failure" sequence.
+   * @param {string} apiKey
+   * @param {object} rule
+   * @param {string} matched
+   */
+  _recordFired(apiKey, rule, matched) {
+    try {
+      let action = {};
+      try { action = JSON.parse(rule.action); } catch {
+        logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
+      }
+      insertCueEvent(this._db, apiKey, {
+        rule_id: rule.id,
+        rule_name: rule.name,
+        matched,
+        action,
+      });
+    } catch (err) {
+      logger.warn('[cues] Failed to insert cue_event:', err?.message);
+    }
   }
 
   /**
@@ -434,7 +463,7 @@ export class CueEngine {
       seen.add(name);
       return this._nodeIsAsync(this._resolveRefTarget(apiKey, name, localDefs), apiKey, localDefs, seen);
     }
-    if (this._isLeafNode(node)) {
+    if (isLeafNode(node)) {
       const matchType = node.matchType || node.match_type || (node.type === 'match' ? 'phrase' : node.type) || 'phrase';
       return matchType === 'semantic' || matchType === 'event' || matchType === 'event_cue';
     }
@@ -460,6 +489,27 @@ export class CueEngine {
       .map((item, idx) => ({ item, idx, async: this._nodeIsAsync(item, apiKey, localDefs, new Set()) }))
       .sort((a, b) => (a.async === b.async ? a.idx - b.idx : (a.async ? 1 : -1)))
       .map(entry => entry.item);
+  }
+
+  /**
+   * Recursively pre-sort every group node's children by cost (see
+   * `_orderByCost`) and mark the node as already-ordered, mutating `node` in
+   * place. Only safe to call once, with a stable `localDefs`, on a tree that
+   * won't be evaluated with a *different* `localDefs` later — which holds for
+   * both DB-backed composite rules (`_loadRules`) and named conditions
+   * (`_loadNamedConditions`), which always evaluate with `localDefs: {}`.
+   * Stops at `ref` boundaries — whatever a ref resolves to gets its own
+   * precompute pass when *that* tree is loaded.
+   */
+  _precomputeOrder(node, apiKey, localDefs) {
+    if (!node || typeof node !== 'object') return;
+    if (node.type === 'ref' || node.ref) return;
+    if (isLeafNode(node)) return;
+    const key = Array.isArray(node.children) ? 'children' : Array.isArray(node.conditions) ? 'conditions' : null;
+    if (!key) return;
+    node[key] = this._orderByCost(node[key], apiKey, localDefs);
+    node.__ordered = true;
+    for (const child of node[key]) this._precomputeOrder(child, apiKey, localDefs);
   }
 
   /**
@@ -506,14 +556,18 @@ export class CueEngine {
       const name = node.name || node.ref;
       return this._resolveAndEvaluateRef(apiKey, name, ctx, localDefs, visited);
     }
-    if (this._isLeafNode(node)) {
+    if (isLeafNode(node)) {
       const matched = await this._evaluateLeaf(node, ctx);
       return { matched, leaf: matched ? this._describeLeaf(node) : null };
     }
 
     const op = node.op || node.type || 'and';
     const items = Array.isArray(node.children) ? node.children : Array.isArray(node.conditions) ? node.conditions : [];
-    const ordered = this._orderByCost(items, apiKey, localDefs);
+    // `_precomputeOrder` (run once at rule/named-condition load time) already
+    // sorted `items` in place for DB-backed trees — only pay for a fresh sort
+    // here for ad hoc trees (inline cues, whose `localDefs` vary call to call
+    // and so can't be safely precomputed).
+    const ordered = node.__ordered ? items : this._orderByCost(items, apiKey, localDefs);
 
     if (op === 'and') {
       let lastLeaf = null;
@@ -597,22 +651,7 @@ export class CueEngine {
       if (matched !== null) {
         this._lastFired.set(rule.id, now);
         fired.push({ rule, matched });
-
-        // Persist the cue event
-        try {
-          let action = {};
-          try { action = JSON.parse(rule.action); } catch {
-            logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
-          }
-          insertCueEvent(this._db, apiKey, {
-            rule_id: rule.id,
-            rule_name: rule.name,
-            matched,
-            action,
-          });
-        } catch (err) {
-          logger.warn('[cues] Failed to insert cue_event:', err?.message);
-        }
+        this._recordFired(apiKey, rule, matched);
       }
     }
 
@@ -703,20 +742,7 @@ export class CueEngine {
       if (matched !== null) {
         this._lastFired.set(rule.id, now);
         fired.push({ rule, matched });
-        try {
-          let action = {};
-          try { action = JSON.parse(rule.action); } catch {
-            logger.warn(`[cues] Malformed action JSON for inline rule ${rule.id}`);
-          }
-          insertCueEvent(this._db, apiKey, {
-            rule_id: rule.id,
-            rule_name: rule.name,
-            matched,
-            action,
-          });
-        } catch (err) {
-          logger.warn('[cues] Failed to insert inline cue_event:', err?.message);
-        }
+        this._recordFired(apiKey, rule, matched);
       }
     }
 
@@ -765,23 +791,7 @@ export class CueEngine {
         if (result.matched) {
           this._lastFired.set(rule.id, Date.now());
           const matched = `event_cue:${rule.pattern} (${result.confidence.toFixed(2)})`;
-
-          // Persist the cue event
-          try {
-            let action = {};
-            try { action = JSON.parse(rule.action); } catch {
-              logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
-            }
-            insertCueEvent(this._db, apiKey, {
-              rule_id: rule.id,
-              rule_name: rule.name,
-              matched,
-              action,
-            });
-          } catch (err) {
-            logger.warn('[cues] Failed to insert cue_event:', err?.message);
-          }
-
+          this._recordFired(apiKey, rule, matched);
           onFired?.([{ rule, matched }]);
         }
       } catch (err) {
@@ -825,21 +835,7 @@ export class CueEngine {
 
         this._lastFired.set(rule.id, Date.now());
         const matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
-
-        try {
-          let action = {};
-          try { action = JSON.parse(rule.action); } catch {
-            logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
-          }
-          insertCueEvent(this._db, apiKey, {
-            rule_id: rule.id,
-            rule_name: rule.name,
-            matched,
-            action,
-          });
-        } catch (err) {
-          logger.warn('[cues] Failed to insert cue_event:', err?.message);
-        }
+        this._recordFired(apiKey, rule, matched);
 
         return { rule, matched };
       } catch (err) {
@@ -888,21 +884,7 @@ export class CueEngine {
       this._lastFired.set(rule.id, now);
       const matched = `track:${rule.pattern}`;
       fired.push({ rule, matched });
-
-      try {
-        let action = {};
-        try { action = JSON.parse(rule.action); } catch {
-          logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
-        }
-        insertCueEvent(this._db, apiKey, {
-          rule_id: rule.id,
-          rule_name: rule.name,
-          matched,
-          action,
-        });
-      } catch (err) {
-        logger.warn('[cues] Failed to insert cue_event:', err?.message);
-      }
+      this._recordFired(apiKey, rule, matched);
     }
 
     if (fired.length > 0) onFired?.(fired);
@@ -986,23 +968,7 @@ export class CueEngine {
                 if (state.currentLabel === 'silence') {
                   this._lastFired.set(ruleRef.id, Date.now());
                   const result = { rule: ruleRef, matched: `silence:${minSeconds}s` };
-
-                  // Persist the cue event
-                  try {
-                    let action = {};
-                    try { action = JSON.parse(ruleRef.action); } catch {
-                      logger.warn(`[cues] Malformed action JSON for rule ${ruleRef.id}`);
-                    }
-                    insertCueEvent(this._db, apiKey, {
-                      rule_id: ruleRef.id,
-                      rule_name: ruleRef.name,
-                      matched: result.matched,
-                      action,
-                    });
-                  } catch (err) {
-                    logger.warn('[cues] Failed to insert cue_event:', err?.message);
-                  }
-
+                  this._recordFired(apiKey, ruleRef, result.matched);
                   onFired?.([result]);
                 }
               }, remainingMs);
@@ -1017,22 +983,7 @@ export class CueEngine {
       if (matched !== null) {
         this._lastFired.set(rule.id, now);
         fired.push({ rule, matched });
-
-        // Persist the cue event
-        try {
-          let action = {};
-          try { action = JSON.parse(rule.action); } catch {
-            logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
-          }
-          insertCueEvent(this._db, apiKey, {
-            rule_id: rule.id,
-            rule_name: rule.name,
-            matched,
-            action,
-          });
-        } catch (err) {
-          logger.warn('[cues] Failed to insert cue_event:', err?.message);
-        }
+        this._recordFired(apiKey, rule, matched);
       }
     }
 
