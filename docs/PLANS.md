@@ -92,7 +92,7 @@ Where an implemented plan has known unbuilt parts (deferred phases, optional add
 | File | Title | Summary |
 |---|---|---|
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Exploratory, not yet scheduled: server-side translation to close STT and CLI translation gap. |
-| [plan_ingest_feeds.md](plans/plan_ingest_feeds.md) | Ingest Feeds — Arbitrary Named Ingestion, Egress, and Mixing | Generalizes RTMP ingestion from the fixed 'one Video, one DSK' model to arbitrary named, independently-relayable feeds (a new prod_cameras control_type), with egress able to select any of them and no cap on target count. Supersedes the earlier, narrower plan_monitors.md. |
+| [plan_ingest_feeds.md](plans/plan_ingest_feeds.md) | Ingest Feeds — Arbitrary Named Ingestion, Egress, and Mixing | **Implemented.** Generalizes RTMP ingestion from the fixed 'one Video, one DSK' model to arbitrary named, independently-relayable feeds (a new prod_cameras control_type: 'rtmp'), with egress able to select any of them (source_camera_id) and no cap on target count. Supersedes the earlier, narrower plan_monitors.md. Admin-configurable relay quota and a real lcyt-mixer live Preview bus are explicit non-goals/future work. |
 | [plan_mixer_feed_sources.md](plans/plan_mixer_feed_sources.md) | Mixer Feed Sources — Looping File Sources & Low-Latency Preview Tiles | Adds a looping-video-file source type to the software mixer's program bus plus WHEP live preview tiles; its former 'encoder' source type is now covered by plan_ingest_feeds.md. |
 | [plan_postgres_option.md](plans/plan_postgres_option.md) | PostgreSQL as an Optional Backend | Adds PostgreSQL as optional backend for Node.js backend and plugin-owned DB layers. |
 

@@ -1,9 +1,11 @@
 ---
 id: plan/ingest_feeds
 title: "Ingest Feeds — Arbitrary Named Ingestion, Egress, and Mixing"
-status: draft
+status: implemented
 summary: "Generalizes RTMP ingestion from the current fixed 'one Video, one DSK' model to an arbitrary number of named, independently-relayable feeds, modeled as a new prod_cameras control_type rather than a separate table. Egress (rtmp_relays) is generalized to select any named feed as its source, and its 4-slot cap is removed (per-team quota is a deliberate non-goal for now). A 'Monitor' is no longer a distinct entity — it's simply a feed nobody has pointed an egress target at. Supersedes the earlier, narrower plan_monitors.md draft."
 ---
+
+**Implementation status (2026-07-19):** Phases 1-3 implemented and merged — `prod_cameras.control_type: 'rtmp'`, the `feed-rtmp` on_publish router, `rtmp_relays.source_camera_id` + uncapped slots, `rtmp-manager.js`'s per-feed fan-out, `GET /production/cameras`'s `live` field, and the frontend wiring (camera form's `'RTMP Feed'` type, `IngestionSection.jsx`'s active/Monitor rows, `EgressSection.jsx`'s per-slot source picker). Full monorepo test suite green; production build verified. Two frontend gaps deliberately left for a follow-up rather than blind-fixed, logged in `CONSIDER.md`: the Egress relay-slot list is localStorage-only and never syncs from `GET /stream` (pre-existing, unrelated to this plan's scope), and the new source picker only reached `EgressSection.jsx` — `RelayPanel.jsx`/`StreamTab.jsx` (the `/broadcast` page) don't fetch/pass the camera list yet, so they stay Program-only for now. Phases 4 (admin-configurable relay quota) and 5 (a real live Preview/PVW bus for the `lcyt` software mixer) remain explicit non-goals/future work, not attempted here.
 
 # Ingest Feeds — Arbitrary Named Ingestion, Egress, and Mixing
 
