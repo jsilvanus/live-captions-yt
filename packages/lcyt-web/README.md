@@ -322,7 +322,7 @@ ref.current.triggerSend()                            // send from active pointer
 ref.current.sendText(text, fileId, lineIndex)        // send specific text + flash
 ref.current.focus()
 ```
-Reads from `SessionContext`, `FileContext`, `SentLogContext`, `ToastContext`.
+Reads from `SessionContext`, `FileContext`, `SentLogContext`, `ToastContext`, `VariablesContext` (optional — degrades to a no-op {{ }} snapshot when no `VariablesContext.Provider` is present, e.g. in the manual provider wiring below).
 
 **Language selector:** A small language picker button to the left of the send button shows the current input bar language (persisted in `lcyt:input-bar-lang`).
 

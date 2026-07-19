@@ -26,18 +26,21 @@ In `lcyt-backend`:
 ```javascript
 import { initConnectors, createConnectorsRouter, createVariablesRouter } from 'lcyt-connectors';
 
-const { bus, engine } = initConnectors(db, { filesControl: { resolveStorage } });
+const { bus, engine, scheduler, pollScheduler } = initConnectors(db, { filesControl: { resolveStorage } });
 
-app.use('/connectors', createConnectorsRouter(db, auth));
-app.use('/variables', createVariablesRouter(db, auth, bus, engine));
+app.use('/connectors', createConnectorsRouter(db, auth, pollScheduler));
+app.use('/variables', createVariablesRouter(db, auth, bus, engine, scheduler, jwtSecret));
 ```
+
+`pollScheduler` is optional — omit the third argument to `createConnectorsRouter` to disable the constant-poll toggle route (`PUT .../poll` then 501s instead).
 
 ## API Routes
 
 ```
-GET/POST/PUT/DELETE /connectors                              — API Connector CRUD (auth_config masked on read)
+GET/POST/PUT/DELETE /connectors                              — API Connector CRUD (auth_config masked on read); GET embeds each connector's requests
 GET/POST/PUT/DELETE /connectors/:connectorSlug/requests       — nested Request CRUD
 GET/POST/PUT/DELETE /connectors/:connectorSlug/requests/:requestSlug/mappings — response mapping CRUD
+PUT    /connectors/:connectorSlug/requests/:requestSlug/poll  — { enabled } toggle constant poll (session-long, pointer-independent background refresh; separate from !api:/api:/api!:)
 
 GET    /variables                — snapshot: { [name]: { value, source, defaultValue, resolvedAt } }
 POST   /variables                — create a manual variable { name, value?, defaultValue? } (400 if name starts with '_')

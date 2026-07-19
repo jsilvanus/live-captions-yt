@@ -8,6 +8,7 @@
  *   GET/PUT/DELETE       /connectors/:connectorSlug/requests/:requestSlug
  *   GET/POST             /connectors/:connectorSlug/requests/:requestSlug/mappings
  *   PUT/DELETE           /connectors/:connectorSlug/requests/:requestSlug/mappings/:mappingId
+ *   PUT                  /connectors/:connectorSlug/requests/:requestSlug/poll
  *
  * auth_config is never returned to the client — see maskConnector() in db.js.
  */
@@ -15,7 +16,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   listConnectors, getConnectorBySlug, createConnector, updateConnector, deleteConnector, maskConnector,
-  listRequests, getRequestBySlug, createRequest, updateRequest, deleteRequest,
+  listRequests, getRequestBySlug, createRequest, updateRequest, deleteRequest, setConstantPoll,
   listMappings, getMappingById, createMapping, updateMapping, deleteMapping,
 } from '../db.js';
 import { requireApiKey } from './helpers.js';
@@ -39,6 +40,7 @@ function maskRequest(row) {
     responseType: row.response_type,
     prefetchIntervalMs: row.prefetch_interval_ms,
     timeoutMs: row.timeout_ms,
+    constantPollEnabled: !!row.constant_poll_enabled,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -58,8 +60,10 @@ function maskMapping(row) {
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
+ * @param {ReturnType<import('../poll-scheduler.js').createPollScheduler>} [pollScheduler] —
+ *   omit to disable the constant-poll toggle route (PUT .../poll 501s without it)
  */
-export function createConnectorsRouter(db, auth) {
+export function createConnectorsRouter(db, auth, pollScheduler = null) {
   const router = Router();
   router.use(auth);
 
@@ -88,8 +92,16 @@ export function createConnectorsRouter(db, auth) {
 
   // ── Connectors ────────────────────────────────────────────────────────────
 
+  // Requests are joined in here (not a separate per-connector round trip) so
+  // callers that need every request across every connector — e.g. the
+  // Production workspace's connectorPolls widget — get it in one call instead
+  // of GET /connectors followed by N GET /connectors/:slug/requests.
   router.get('/', (req, res) => {
-    res.json({ connectors: listConnectors(db, req.apiKey).map(maskConnector) });
+    const connectors = listConnectors(db, req.apiKey).map((c) => ({
+      ...maskConnector(c),
+      requests: listRequests(db, c.id).map(maskRequest),
+    }));
+    res.json({ connectors });
   });
 
   router.post('/', (req, res) => {
@@ -116,10 +128,16 @@ export function createConnectorsRouter(db, auth) {
       return res.status(400).json({ error: `authType must be one of: ${VALID_AUTH_TYPES.join(', ')}` });
     }
     const row = updateConnector(db, req.connector.id, { name, slug, baseUrl, authType, authConfig, headers });
+    // No re-keying needed on a connector-slug rename: PollScheduler resolves
+    // the current connector/request slugs from the DB by request id on every
+    // fire, so a rename just takes effect on the next tick.
     res.json({ connector: maskConnector(row) });
   });
 
   router.delete('/:connectorSlug', (req, res) => {
+    if (pollScheduler) {
+      for (const r of listRequests(db, req.connector.id)) pollScheduler.stop(r.id);
+    }
     deleteConnector(db, req.connector.id);
     res.json({ ok: true });
   });
@@ -160,13 +178,35 @@ export function createConnectorsRouter(db, auth) {
       return res.status(400).json({ error: `responseType must be one of: ${VALID_RESPONSE_TYPES.join(', ')}` });
     }
     if (slug !== undefined && !SLUG_RE.test(slug)) return res.status(400).json({ error: 'slug must be lowercase, hyphen-separated' });
+    const priorIntervalMs = req.request.prefetch_interval_ms;
     const row = updateRequest(db, req.request.id, req.body || {});
+    // A slug rename needs no action — PollScheduler resolves the current
+    // slug from the DB by request id on every fire. Only the interval needs
+    // an explicit restart: a live setInterval's delay can't be changed in
+    // place, and restarting unconditionally would fire one unplanned extra
+    // live request on every unrelated field edit (name, body, timeout).
+    if (pollScheduler && row.constant_poll_enabled && row.prefetch_interval_ms !== priorIntervalMs) {
+      pollScheduler.start(row.id, row.prefetch_interval_ms);
+    }
     res.json({ request: maskRequest(row) });
   });
 
   router.delete('/:connectorSlug/requests/:requestSlug', (req, res) => {
     deleteRequest(db, req.request.id);
+    if (pollScheduler) pollScheduler.stop(req.request.id);
     res.json({ ok: true });
+  });
+
+  // ── Constant poll — session-long, pointer-independent background refresh ──
+  // Deliberately separate from !api:/api:/api!: (plan_live_variables.md §2):
+  // an explicit per-request opt-in toggle, never implied by inline metacode.
+  router.put('/:connectorSlug/requests/:requestSlug/poll', (req, res) => {
+    if (!pollScheduler) return res.status(501).json({ error: 'Constant poll is not enabled on this server' });
+    const enabled = !!req.body?.enabled;
+    const row = setConstantPoll(db, req.request.id, enabled);
+    if (enabled) pollScheduler.start(row.id, row.prefetch_interval_ms);
+    else pollScheduler.stop(row.id);
+    res.json({ request: maskRequest(row) });
   });
 
   // ── Response mappings ────────────────────────────────────────────────────

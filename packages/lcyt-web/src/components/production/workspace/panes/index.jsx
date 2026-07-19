@@ -1,6 +1,7 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useId } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
+import { Dialog } from '../../../Dialog.jsx';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -486,11 +487,177 @@ function LowerThirdsPane({ D }) {
   );
 }
 
+/**
+ * Shared per-instance watchlist state: an array of string keys stored under
+ * one field of a pane's settings, with add/remove that preserve the rest of
+ * settings and dedupe on add. Used by VariablesPane (watched variable names)
+ * and ConnectorPollsPane (watched connector-request ids) — same add/remove/
+ * dedupe shape; each pane still owns its own "pick what to add" UI and list
+ * rendering, which differ enough (inline datalist vs. dialog+select) not to
+ * share a single component.
+ */
+function useWatchlist(settings, onSettingsChange, field) {
+  const watched = settings?.[field] || [];
+  function add(item) {
+    if (!item || watched.includes(item)) return;
+    onSettingsChange?.({ ...settings, [field]: [...watched, item] });
+  }
+  function remove(item) {
+    onSettingsChange?.({ ...settings, [field]: watched.filter((k) => k !== item) });
+  }
+  return { watched, add, remove };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VARIABLES — live {{ }} watchlist widget
+// ═══════════════════════════════════════════════════════════════════════════
+
+function VariablesPane({ D, settings, onSettingsChange }) {
+  const [draft, setDraft] = useState('');
+  const datalistId = useId();
+  const { watched, add, remove } = useWatchlist(settings, onSettingsChange, 'keys');
+  const known = Object.keys(D.variables || {}).filter((n) => !watched.includes(n));
+
+  function addKey(name) {
+    const key = (name || '').trim();
+    if (!key || watched.includes(key)) return;
+    add(key);
+    setDraft('');
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ display: 'flex', gap: 6, padding: '7px 9px', borderBottom: `1px solid #232323`, flexShrink: 0 }}>
+        <input value={draft} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') addKey(draft); }}
+          list={datalistId} placeholder="variable name…"
+          style={{ flex: 1, background: C.inputBg, border: `1px solid ${C.inputBorder}`, borderRadius: 6, padding: '5px 9px', fontSize: '.7rem', color: '#ddd' }} />
+        <datalist id={datalistId}>
+          {known.map((n) => <option key={n} value={n} />)}
+        </datalist>
+        <button onClick={() => addKey(draft)} style={{ fontSize: '.66rem', fontWeight: 600, color: '#bbb', background: C.btnBg, border: `1px solid ${C.panelBorder}`, borderRadius: 6, padding: '5px 10px' }}>+ Watch</button>
+      </div>
+      <div style={{ flex: 1, overflow: 'auto', padding: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {watched.length === 0 && <Empty>No variables watched yet. Add a name above (e.g. viewers, now_playing).</Empty>}
+        {watched.map((name) => {
+          const entry = D.variables?.[name];
+          const value = entry?.value ?? entry?.defaultValue ?? '';
+          const resolved = entry != null;
+          return (
+            <div key={name} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'center', padding: '7px 9px', borderRadius: 6, background: C.tileBg, border: `1px solid ${C.tileBorder}` }}>
+              <span style={{ fontFamily: C.mono, fontSize: '.7rem', color: '#a8c6f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={name}>{name}</span>
+              <span style={{ fontSize: '.76rem', color: resolved ? '#eef2f8' : C.textMuted, fontStyle: resolved ? 'normal' : 'italic', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={String(value)}>
+                {resolved ? String(value) : 'unresolved'}
+              </span>
+              <button onClick={() => remove(name)} title="Stop watching" style={{ width: 20, height: 20, borderRadius: 5, background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.8rem', lineHeight: 1 }}>×</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CONNECTOR POLLS — live start/stop of constant poll (production decision,
+// deliberately kept out of Setup Hub — see plan_live_variables.md §2)
+// ═══════════════════════════════════════════════════════════════════════════
+
+function connectorRequestKey(r) { return `${r.connectorSlug}.${r.requestSlug}`; }
+
+/**
+ * Resolve a watched entry against the live connector-request list. New
+ * entries are keyed by the request's stable `requestId`, so a connector or
+ * request slug rename never orphans them. Older entries persisted before
+ * this fix used the "connectorSlug.requestSlug" composite string, which
+ * DOES break on rename — still resolved here for backward compat with
+ * already-saved workspace layouts, but never written by addCall() below.
+ */
+function resolveWatchedEntry(known, key) {
+  return known.find((r) => r.requestId === key) || known.find((r) => connectorRequestKey(r) === key);
+}
+
+function ConnectorPollsPane({ D, settings, onSettingsChange }) {
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [pickedId, setPickedId] = useState('');
+  const { watched, add, remove } = useWatchlist(settings, onSettingsChange, 'calls');
+  const known = D.connectorRequests || [];
+  const watchedIds = new Set(watched.map((key) => resolveWatchedEntry(known, key)?.requestId).filter(Boolean));
+  const available = known.filter((r) => !watchedIds.has(r.requestId));
+
+  function addCall() {
+    if (!pickedId) return;
+    add(pickedId);
+    setPickedId('');
+    setDialogOpen(false);
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <div style={{ padding: 9, display: 'flex', flexWrap: 'wrap', gap: 10, alignContent: 'start', flex: 1, overflow: 'auto' }}>
+        {watched.length === 0 && <Empty>No API calls watched yet. "+ Add API call" to start toggling constant poll.</Empty>}
+        {watched.map((key) => {
+          const req = resolveWatchedEntry(known, key);
+          const on = !!req?.constantPollEnabled;
+          const label = req ? (req.requestName || req.requestSlug) : key;
+          return (
+            <div key={key} style={{ position: 'relative' }}>
+              <button
+                onClick={() => req && D.actions.togglePoll(req.connectorSlug, req.requestSlug, !on)}
+                disabled={!req}
+                title={req ? `${connectorRequestKey(req)} — every ${req.prefetchIntervalMs}ms, independent of the caption pointer` : `${key} — request no longer exists`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '9px 16px', borderRadius: 8, fontSize: '.74rem', fontWeight: 600,
+                  background: on ? '#1a7f4b' : C.btnBg, border: `1px solid ${on ? '#25995c' : C.panelBorder}`,
+                  color: on ? '#fff' : req ? '#dcdcdc' : C.textFaint,
+                }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: on ? '#fff' : '#5a5a5a', flexShrink: 0 }} />
+                {label}
+              </button>
+              <button onClick={() => remove(key)} title="Stop watching here (does not stop the poll)"
+                style={{ position: 'absolute', top: -6, right: -6, width: 17, height: 17, borderRadius: '50%', background: '#222', border: `1px solid ${C.panelBorder}`, color: '#aaa', fontSize: '.6rem', lineHeight: 1 }}>×</button>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ padding: '7px 9px', borderTop: `1px solid #232323`, flexShrink: 0 }}>
+        <button onClick={() => setDialogOpen(true)} style={{ width: '100%', fontSize: '.68rem', fontWeight: 600, color: '#bbb', background: C.btnBg, border: `1px solid ${C.panelBorder}`, borderRadius: 6, padding: '7px 10px' }}>+ Add API call</button>
+      </div>
+      {dialogOpen && (
+        <Dialog title="Add an API call to watch" onClose={() => setDialogOpen(false)}
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button className="btn btn--secondary btn--sm" onClick={() => setDialogOpen(false)}>Cancel</button>
+              <button className="btn btn--primary btn--sm" onClick={addCall} disabled={!pickedId}>Add</button>
+            </div>
+          }>
+          {available.length === 0 ? (
+            <p style={{ fontSize: '.85em', opacity: 0.7 }}>
+              No requests to add — configure connectors and requests in Setup → Connectors first, or every request is already watched here.
+            </p>
+          ) : (
+            <select value={pickedId} onChange={(e) => setPickedId(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', borderRadius: 6, border: '1px solid var(--border, #ccc)' }}>
+              <option value="">Select a connector request…</option>
+              {available.map((r) => (
+                <option key={r.requestId} value={r.requestId}>
+                  {r.connectorName} → {r.requestName} ({connectorRequestKey(r)})
+                </option>
+              ))}
+            </select>
+          )}
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═══════════════════════════════════════════════════════════════════════════
 
-export function PaneBody({ type, D }) {
+export function PaneBody({ type, D, settings, onSettingsChange }) {
   switch (type) {
     case 'cameras':     return <CamerasPane D={D} />;
     case 'thumbnails':  return <ThumbnailsPane D={D} />;
@@ -506,6 +673,8 @@ export function PaneBody({ type, D }) {
     case 'chat':        return <ChatPane D={D} />;
     case 'general':     return <ControlsPane D={D} />;
     case 'lowerthirds': return <LowerThirdsPane D={D} />;
+    case 'variables':   return <VariablesPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
+    case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }

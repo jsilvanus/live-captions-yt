@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { parseFileContent } from '../lib/metacode-parser.js';
+import { expandVarBlocks } from '../lib/metacode-varblocks.js';
+import { findLineIndexForRaw } from '../lib/metacode-runtime.js';
 
 const POINTERS_KEY = 'lcyt-pointers';
 const FILES_STORAGE_KEY = 'lcyt:files';
@@ -20,12 +22,16 @@ function newId() {
  * @param {function} [opts.onFileRemoved]    - (fileId: string) => void
  * @param {function} [opts.onActiveChanged]  - ({fileId, file}) => void
  * @param {function} [opts.onPointerChanged] - ({fileId, fromIndex, toIndex, line}) => void
+ * @param {function} [opts.getVariablesSnapshot] - () => ({ [name]: value }); used to expand
+ *   {{name[N]}}/{{name[N*]}} variable-backed text blocks into virtual lines at parse time
+ *   (see lib/metacode-varblocks.js). Omit to leave such markers unexpanded.
  */
 export function useFileStore({
   onFileLoaded,
   onFileRemoved,
   onActiveChanged,
   onPointerChanged,
+  getVariablesSnapshot,
 } = {}) {
   const [files, setFilesState] = useState([]);
   const [activeId, setActiveIdState] = useState(null);
@@ -43,6 +49,23 @@ export function useFileStore({
   // Keep callbacks always fresh — updated on every render before any code runs
   const cbs = useRef({});
   cbs.current = { onFileLoaded, onFileRemoved, onActiveChanged, onPointerChanged };
+  const getVariablesSnapshotRef = useRef(getVariablesSnapshot);
+  getVariablesSnapshotRef.current = getVariablesSnapshot;
+
+  /**
+   * parseFileContent() + {{name[N]}} block expansion using the current
+   * variable snapshot. `previous` (a file's currently-displayed
+   * lines/lineCodes/lineNumbers) makes already-materialized blocks reused
+   * verbatim rather than recomputed — pass it only from the reactive
+   * background path (refreshVarBlocks), never from a user-initiated raw-text
+   * save, which should always do a fully fresh expansion.
+   */
+  function parseAndExpand(rawText, previous) {
+    const parsed = parseFileContent(rawText);
+    const snapshot = getVariablesSnapshotRef.current?.() || {};
+    const expanded = expandVarBlocks(parsed.lines, parsed.lineCodes, parsed.lineNumbers, snapshot, previous ? { previous } : undefined);
+    return { ...parsed, ...expanded };
+  }
 
   function setFiles(newFiles) {
     filesRef.current = newFiles;
@@ -104,7 +127,7 @@ export function useFileStore({
       const entries = [];
       for (const item of saved) {
         if (!item.name || typeof item.rawText !== 'string') continue;
-        const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(item.rawText);
+        const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(item.rawText);
         const id = newId();
         const savedPointer = pointers[item.name] ?? 0;
         const pointer = Math.min(savedPointer, Math.max(0, lines.length - 1));
@@ -129,7 +152,7 @@ export function useFileStore({
 
       reader.onload = (e) => {
         const rawText = e.target.result;
-        const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(rawText);
+        const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(rawText);
 
         const id = newId();
         const pointers = loadPointers();
@@ -246,11 +269,42 @@ export function useFileStore({
     if (fileIdx === -1) return;
 
     const file = filesRef.current[fileIdx];
-    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(rawText);
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(rawText);
     const pointer = Math.min(file.pointer, Math.max(0, lines.length - 1));
 
     const newFiles = [...filesRef.current];
     newFiles[fileIdx] = { ...file, lines, lineCodes, lineNumbers, cueDefs, actionDefs, rawText, pointer };
+    setFiles(newFiles);
+    saveFilesToStorage(newFiles);
+  }
+
+  /**
+   * Re-run {{name[N]}} block expansion for a file whose raw text has NOT
+   * changed (only a variable resolved) — used by FileContext's reactive
+   * re-expand-pending effect. Unlike updateFileFromRawText's raw index
+   * clamp (correct for user edits, where the array naturally grows/shrinks
+   * under the pointer), this remaps the pointer by raw source line number
+   * so a block materializing into a different number of virtual lines can
+   * never silently move the pointer onto unrelated content — see
+   * docs/plans/plan_live_variables.md §3. Also passes the file's current
+   * state as `previous` so any already-materialized sibling block is reused
+   * verbatim instead of being silently reflowed by this reparse.
+   */
+  function refreshVarBlocks(id) {
+    const fileIdx = filesRef.current.findIndex(f => f.id === id);
+    if (fileIdx === -1) return;
+
+    const file = filesRef.current[fileIdx];
+    const targetRaw = file.lineNumbers?.[file.pointer];
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(file.rawText, {
+      lines: file.lines, lineCodes: file.lineCodes, lineNumbers: file.lineNumbers,
+    });
+    const pointer = targetRaw != null
+      ? Math.min(findLineIndexForRaw(lineNumbers, targetRaw), Math.max(0, lines.length - 1))
+      : Math.min(file.pointer, Math.max(0, lines.length - 1));
+
+    const newFiles = [...filesRef.current];
+    newFiles[fileIdx] = { ...file, lines, lineCodes, lineNumbers, cueDefs, actionDefs, pointer };
     setFiles(newFiles);
     saveFilesToStorage(newFiles);
   }
@@ -280,7 +334,7 @@ export function useFileStore({
    * @returns {{ id, name, lines, lineCodes, lineNumbers, pointer, rawText }}
    */
   function loadFileFromText(name, rawText) {
-    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseFileContent(rawText);
+    const { lines, lineCodes, lineNumbers, cueDefs, actionDefs } = parseAndExpand(rawText);
     const id = newId();
     const entry = { id, name, lines, lineCodes, lineNumbers, cueDefs, actionDefs, pointer: 0, rawText };
     const newFiles = [...filesRef.current, entry];
@@ -311,6 +365,7 @@ export function useFileStore({
     advancePointer,
     clearPointers,
     updateFileFromRawText,
+    refreshVarBlocks,
     createEmptyFile,
   };
 }

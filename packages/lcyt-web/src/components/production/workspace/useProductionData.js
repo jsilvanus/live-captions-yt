@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useContext } from 'react';
 import { SessionContext } from '../../../contexts/SessionContext';
 import { SentLogContext } from '../../../contexts/SentLogContext';
+import { VariablesContext } from '../../../contexts/VariablesContext.jsx';
 import { KEYS } from '../../../lib/storageKeys.js';
 import { ACTIVE_BROADCAST_EVENT, notifyActiveBroadcastChanged } from '../../../hooks/useActiveBroadcast.js';
 
@@ -33,6 +34,7 @@ function readCreds(session) {
 export function useProductionData() {
   const session = useContext(SessionContext);
   const sentLog = useContext(SentLogContext);
+  const variablesCtx = useContext(VariablesContext);
   const creds = readCreds(session);
   const { backendUrl, apiKey, token } = creds;
 
@@ -125,8 +127,38 @@ export function useProductionData() {
     } catch { /* ignore */ }
   }, [backendUrl, token, jfetch]);
 
+  // Flattened connector.request list — the addressable "API calls" a
+  // ConnectorPollsPane widget can watch and toggle constant poll on
+  // (plan_live_variables.md §2). Requests are configured in Setup Hub's
+  // Connectors card; this just reads them for the Production-side toggle.
+  // One round trip: GET /connectors embeds each connector's requests
+  // (routes/connectors.js), so there's no N+1 of a follow-up
+  // GET /connectors/:slug/requests per connector.
+  const [connectorRequests, setConnectorRequests] = useState([]);
+  const loadConnectorRequests = useCallback(async () => {
+    if (!backendUrl || !token) return;
+    try {
+      const cr = await jfetch('/connectors');
+      if (!cr.ok) return;
+      const { connectors: conns } = await cr.json();
+      const flattened = [];
+      for (const c of conns || []) {
+        for (const r of c.requests || []) {
+          flattened.push({
+            requestId: r.id, // stable across connector/request slug renames — prefer this for watchlist keys
+            connectorSlug: c.slug, connectorName: c.name,
+            requestSlug: r.slug, requestName: r.name,
+            constantPollEnabled: !!r.constantPollEnabled,
+            prefetchIntervalMs: r.prefetchIntervalMs,
+          });
+        }
+      }
+      setConnectorRequests(flattened);
+    } catch { /* ignore */ }
+  }, [backendUrl, token, jfetch]);
+
   useEffect(() => { loadCore(); }, [loadCore]);
-  useEffect(() => { loadTemplates(); loadCues(); loadRelay(); loadBroadcast(); }, [loadTemplates, loadCues, loadRelay, loadBroadcast]);
+  useEffect(() => { loadTemplates(); loadCues(); loadRelay(); loadBroadcast(); loadConnectorRequests(); }, [loadTemplates, loadCues, loadRelay, loadBroadcast, loadConnectorRequests]);
   useEffect(() => {
     window.addEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
     return () => window.removeEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
@@ -345,6 +377,34 @@ export function useProductionData() {
     } catch { /* ignore */ }
   }, [token, jfetch, loadCues]);
 
+  // ─── Constant poll toggle (ConnectorPollsPane — plan_live_variables.md §2) ─
+  // A live/operational decision, kept out of Setup Hub on purpose: flipping
+  // this is "start/stop watching this value right now", not connector config.
+  const patchConnectorRequest = useCallback((connectorSlug, requestSlug, patch) => {
+    setConnectorRequests((prev) => prev.map((r) =>
+      r.connectorSlug === connectorSlug && r.requestSlug === requestSlug ? { ...r, ...patch } : r
+    ));
+  }, []);
+
+  const togglePoll = useCallback(async (connectorSlug, requestSlug, enabled) => {
+    patchConnectorRequest(connectorSlug, requestSlug, { constantPollEnabled: enabled }); // optimistic
+    try {
+      const r = await jfetch(`/connectors/${connectorSlug}/requests/${requestSlug}/poll`, {
+        method: 'PUT', body: JSON.stringify({ enabled }),
+      });
+      if (!r.ok) { patchConnectorRequest(connectorSlug, requestSlug, { constantPollEnabled: !enabled }); return; } // revert
+      const { request } = await r.json().catch(() => ({}));
+      if (request) {
+        patchConnectorRequest(connectorSlug, requestSlug, {
+          constantPollEnabled: !!request.constantPollEnabled,
+          prefetchIntervalMs: request.prefetchIntervalMs,
+        }); // patch from the PUT's own authoritative row — no full re-fetch needed
+      }
+    } catch {
+      patchConnectorRequest(connectorSlug, requestSlug, { constantPollEnabled: !enabled }); // revert
+    }
+  }, [jfetch, patchConnectorRequest]);
+
   useEffect(() => () => clearTimeout(flashTimer.current), []);
 
   return {
@@ -352,13 +412,15 @@ export function useProductionData() {
     loaded, error,
     cameras, mixers, primaryMixer, templates, cueRules, relay, broadcast, thumbTick,
     sentEntries: sentLog?.entries || [],
+    variables: variablesCtx?.variables || {},
+    connectorRequests,
     activeInput, previewCam, programCam, camById,
     ui, patch,
     refresh: loadCore,
     actions: {
       setPreview, recallPreset, captureThumbnail, switchTo, cut,
       toggleCaptioning, stageGraphic, setGraphicField, cutGraphicLive, clearGraphicLive,
-      sendChat, addCueRule, setBroadcastStatus,
+      sendChat, addCueRule, setBroadcastStatus, togglePoll,
     },
     youtube: {
       getConfig: getYouTubeConfig,

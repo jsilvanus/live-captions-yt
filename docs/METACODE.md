@@ -160,6 +160,58 @@ names are reserved/actionable vs. plain variables is declared in
 
 ---
 
+## Variable Insertion & Text Blocks (`{{ }}`)
+
+Unlike the metacodes above, `{{ }}` is not stripped — it is *replaced* with content that is
+delivered. See `docs/plans/plan_api_connectors_variables.md` and
+`docs/plans/plan_live_variables.md` for the full model.
+
+### `{{name}}` — plain insertion
+
+A pure, timing-agnostic read of variable `name`'s current value. Never triggers a fetch —
+resolution happens at send (`InputBar.jsx`'s `doSend()`) via
+`packages/lcyt-web/src/lib/metacode-variables.js`'s `interpolateVariables()`.
+
+```
+Now playing: {{now_playing}}
+```
+
+**Live display:** while the operator has the line open (not yet sent), the caption view shows
+the variable's *current, live* value in place, in a distinct style, rather than the raw
+`{{name}}` token — bus-pushed via the shared `variable.*` SSE topic (`useVariables()`,
+`VariablesContext`), no polling. Handled in `packages/lcyt-web/src/components/CaptionView.jsx`.
+
+### `{{name[N]}}` / `{{name[N*]}}` — variable-backed text blocks
+
+Expands a variable's (possibly long) value into multiple **visible, navigable, sendable**
+virtual lines, wrapped to at most `N` characters — distinct from plain `{{name}}` (single
+value, one line). Use case: an `api:` call fetches a long text into a variable; the operator
+steps through it a line at a time.
+
+```
+{{scripture[40]}}    soft wrap — break at the closest whitespace before 40 chars
+{{quote[40*]}}        hard wrap — slice at exactly 40 characters, ignoring words
+```
+
+- **Block-only**: the marker must be the line's *entire* content (after other metacodes are
+  stripped). Used inline mixed with other text (`Quote: {{q[40]}}`) it is left as literal,
+  unresolved text — not expanded.
+- **Virtual lines**: the wrapped segments are not written back into the raw `.txt` file. They
+  exist only in the in-memory parsed line arrays, tagged `virtual: true` / `virtualBlock: name`,
+  and share the source line's gutter number.
+- **Not-yet-resolved fallback**: if the variable has never resolved when the file is parsed, the
+  marker line shows a `⏳ … loading…` placeholder (tagged `varBlockPending: true`) instead of
+  expanding; it materializes automatically once the value arrives (reactive re-parse, see
+  `contexts/FileContext.jsx`).
+- **Freeze**: once a block has materialized, later changes to the variable do **not** reflow it
+  — a fresh expansion only happens on an explicit reparse (raw-edit save, file reload/re-open).
+  This avoids the wrapped line count shifting under the operator mid-navigation.
+- Where handled: marker detection in `packages/lcyt-web/src/lib/metacode-parser.js` (pure, no
+  variable access); wrap + expansion logic in `packages/lcyt-web/src/lib/metacode-varblocks.js`;
+  applied to the parsed line arrays in `packages/lcyt-web/src/hooks/useFileStore.js`.
+
+---
+
 ## Stanza Blocks
 
 Multi-line stanza text that is shown to the viewer *before* the singer begins. The stanza is
@@ -423,6 +475,8 @@ metacode uses these raw line numbers.
 | `cue[semantic]: <phrase>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` (embedding similarity) |
 | `cue[events]: <desc>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` → `packages/plugins/lcyt-agent` (LLM evaluation) |
 | `stanza` block | Block | `packages/lcyt-web/src/lib/metacode-parser.js` (compatibility re-exports in `fileUtils.js`) |
+| `{{name}}` | Insertion | `packages/lcyt-web/src/lib/metacode-variables.js` (send) → live display in `CaptionView.jsx` |
+| `{{name[N]}}` / `{{name[N*]}}` | Text block | `metacode-parser.js` (marker) → `metacode-varblocks.js` (wrap) → `hooks/useFileStore.js` (virtual lines) |
 | `graphics: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
 | `graphics[vp]: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
 

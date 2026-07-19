@@ -344,7 +344,7 @@ const _operatorManager = new OperatorManager({
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
 // user-defined outbound API connectors. Runs its own DB migrations
 // (api_connectors, api_requests, api_response_mappings, variables tables).
-const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler } = initConnectors(db, {
+const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler, pollScheduler: _connectorsPollScheduler } = initConnectors(db, {
   filesControl: { resolveStorage },
   eventBus,
 });
@@ -622,7 +622,7 @@ app.use('/roles/assistant', createProductionAssistantRouter(
   productionBridgeManager,
 ));
 app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
-app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector')));
+app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
 app.use('/actions', createActionsRouter(db, scopedAuth('action')));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));

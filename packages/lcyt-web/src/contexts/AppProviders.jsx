@@ -6,10 +6,12 @@ import { ConnectionContext } from './ConnectionContext';
 import { CaptionContext } from './CaptionContext';
 import { SessionApiContext } from './SessionApiContext';
 import { useSession } from '../hooks/useSession';
+import { useVariables } from '../hooks/useVariables.js';
 import { FileProvider } from './FileContext';
 import { SentLogContext } from './SentLogContext';
 import { ToastProvider } from './ToastContext';
 import { LangProvider } from './LangContext';
+import { VariablesContext } from './VariablesContext.jsx';
 
 const EMBED_CHANNEL = 'lcyt-embed';
 
@@ -118,6 +120,15 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
       : undefined,
   });
 
+  // Single shared {{ }} variable snapshot — one GET /variables + one
+  // /events/stream subscription for the whole app (InputBar, CaptionView,
+  // Production workspace all read this instead of instantiating their own).
+  const variables = useVariables({
+    backendUrl: session.backendUrl,
+    connected:  session.connected,
+    getToken:   session.getSessionToken,
+  });
+
   // Auto-connect on mount:
   //   1. If initConfig + autoConnect prop are provided (embed / URL-param mode), use those.
   //   2. Otherwise, if the user is authenticated (user auth or minimal-mode config) or the
@@ -213,6 +224,18 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     // Functions omitted — stable via useCallback
   ]);
 
+  // VariablesContext: only changes identity when the variable snapshot itself
+  // changes, not on every unrelated AppProviders re-render (e.g. a caption
+  // send bumping session.sequence) — same reasoning as connectionValue/
+  // captionValue above. snapshot/refresh/writeFileCode are stable via
+  // useCallback in useVariables().
+  const variablesValue = useMemo(() => ({
+    variables:     variables.variables,
+    snapshot:      variables.snapshot,
+    refresh:       variables.refresh,
+    writeFileCode: variables.writeFileCode,
+  }), [variables.variables]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // SessionApiContext: all methods are stable, so this object never changes.
   const sessionApiValue = useMemo(() => ({
     getStats:         session.getStats,
@@ -248,11 +271,13 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
           <ConnectionContext.Provider value={connectionValue}>
             <CaptionContext.Provider value={captionValue}>
               <SessionApiContext.Provider value={sessionApiValue}>
-                <FileProvider>
-                  <ToastProvider>
-                    {children}
-                  </ToastProvider>
-                </FileProvider>
+                <VariablesContext.Provider value={variablesValue}>
+                  <FileProvider>
+                    <ToastProvider>
+                      {children}
+                    </ToastProvider>
+                  </FileProvider>
+                </VariablesContext.Provider>
               </SessionApiContext.Provider>
             </CaptionContext.Provider>
           </ConnectionContext.Provider>

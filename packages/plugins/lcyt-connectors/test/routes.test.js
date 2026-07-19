@@ -86,6 +86,22 @@ describe('lcyt-connectors routes', () => {
     assert.equal(res.status, 404);
   });
 
+  test('GET /connectors embeds each connector\'s requests — no follow-up GET /connectors/:slug/requests needed', async () => {
+    await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'Joined', slug: 'joined-test', baseUrl: 'https://example.com' }) });
+    await json('/connectors/joined-test/requests', { method: 'POST', body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }) });
+    await json('/connectors/joined-test/requests', { method: 'POST', body: JSON.stringify({ name: 'Forecast', slug: 'forecast', method: 'GET', path: '/forecast' }) });
+
+    const { status, body } = await json('/connectors');
+    assert.equal(status, 200);
+    const connector = body.connectors.find((c) => c.slug === 'joined-test');
+    assert.ok(connector);
+    assert.equal(connector.requests.length, 2);
+    assert.deepEqual(connector.requests.map((r) => r.slug).sort(), ['current', 'forecast'].sort());
+    assert.equal(connector.requests[0].constantPollEnabled, false);
+    // auth_config masking still holds for the connector itself
+    assert.equal('authConfig' in connector, false);
+  });
+
   test('rejects a duplicate connector slug', async () => {
     await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'A', slug: 'dup', baseUrl: 'https://a.example' }) });
     const { status, body } = await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'B', slug: 'dup', baseUrl: 'https://b.example' }) });
@@ -181,5 +197,147 @@ describe('lcyt-connectors routes', () => {
   test('GET /variables/events is retired', async () => {
     const res = await fetch(`${baseUrl}/variables/events`);
     assert.equal(res.status, 404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Constant poll — session-long, pointer-independent background refresh
+// (plan_live_variables.md §2). Deliberately separate from !api:/api:/api!:,
+// which stay pointer-scoped and frontend-owned — this only covers the new
+// opt-in toggle route. Uses a fake engine (no real fetch) wired directly
+// through createPollScheduler, independent of initConnectors' real engine.
+// ---------------------------------------------------------------------------
+
+const { createPollScheduler } = await import('../src/poll-scheduler.js');
+
+describe('lcyt-connectors routes — constant poll toggle', () => {
+  let server, baseUrl, fireCalls, scheduler;
+
+  before(async () => {
+    const db = new Database(':memory:');
+    const { runMigrations } = await import('../src/db.js');
+    runMigrations(db);
+    fireCalls = [];
+    const fakeEngine = {
+      fireRequest: async (apiKey, connectorSlug, requestSlug) => {
+        fireCalls.push([apiKey, connectorSlug, requestSlug]);
+        return { ok: true, variables: [] };
+      },
+    };
+    scheduler = createPollScheduler({ db, engine: fakeEngine });
+    const app = express();
+    app.use(express.json());
+    app.use('/connectors', createConnectorsRouter(db, fakeAuth, scheduler));
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(() => {
+    scheduler.stopAll();
+    return new Promise((resolve) => server.close(resolve));
+  });
+
+  async function json(path, opts) {
+    const res = await fetch(`${baseUrl}${path}`, {
+      headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      ...opts,
+    });
+    return { status: res.status, body: await res.json() };
+  }
+
+  test('PUT .../poll {enabled:true} starts the scheduler and reports constantPollEnabled', async () => {
+    await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' }) });
+    const created = await json('/connectors/weather/requests', { method: 'POST', body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }) });
+    const requestId = created.body.request.id;
+
+    const res = await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.request.constantPollEnabled, true);
+    assert.equal(scheduler.isPolling(requestId), true);
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(fireCalls, [['key1', 'weather', 'current']]);
+  });
+
+  test('PUT .../poll {enabled:false} stops the scheduler', async () => {
+    const req = await json('/connectors/weather/requests/current');
+    const requestId = req.body.request.id;
+    await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    const res = await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: false }) });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.request.constantPollEnabled, false);
+    assert.equal(scheduler.isPolling(requestId), false);
+  });
+
+  test('editing an unrelated field does not restart an already-active poll', async () => {
+    await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'News', slug: 'news', baseUrl: 'https://example.com' }) });
+    const created = await json('/connectors/news/requests', { method: 'POST', body: JSON.stringify({ name: 'Headlines', slug: 'headlines', method: 'GET', path: '/headlines' }) });
+    const requestId = created.body.request.id;
+    await json('/connectors/news/requests/headlines/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    await new Promise((r) => setImmediate(r));
+    const callsBefore = fireCalls.length;
+
+    const res = await json('/connectors/news/requests/headlines', { method: 'PUT', body: JSON.stringify({ name: 'Top Headlines' }) });
+    assert.equal(res.status, 200);
+    await new Promise((r) => setImmediate(r));
+
+    assert.equal(fireCalls.length, callsBefore); // no extra immediate fire from a needless restart
+    assert.equal(scheduler.isPolling(requestId), true); // still polling under the same (stable) id
+  });
+
+  test('renaming the request slug needs no scheduler action — the next fire resolves the new slug from the DB', async () => {
+    const req = await json('/connectors/news/requests/headlines');
+    const requestId = req.body.request.id;
+    assert.equal(scheduler.isPolling(requestId), true); // still polling from the previous test, same id throughout
+
+    const res = await json('/connectors/news/requests/headlines', { method: 'PUT', body: JSON.stringify({ slug: 'headlines-renamed' }) });
+    assert.equal(res.status, 200);
+    assert.equal(scheduler.isPolling(requestId), true); // no re-key needed — same id, nothing stopped/restarted
+
+    fireCalls.length = 0;
+    // Force an immediate fire to observe which slug the scheduler resolves —
+    // in production this just happens on the next natural interval tick.
+    scheduler.stop(requestId);
+    scheduler.start(requestId, 5000);
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(fireCalls, [['key1', 'news', 'headlines-renamed']]);
+  });
+
+  test('deleting the request stops its poll', async () => {
+    const req = await json('/connectors/weather/requests/current');
+    const requestId = req.body.request.id;
+    await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    assert.equal(scheduler.isPolling(requestId), true);
+    const res = await json('/connectors/weather/requests/current', { method: 'DELETE' });
+    assert.equal(res.status, 200);
+    assert.equal(scheduler.isPolling(requestId), false);
+  });
+
+  test('PUT .../poll 501s without a pollScheduler wired', async () => {
+    const db = new Database(':memory:');
+    const { runMigrations } = await import('../src/db.js');
+    runMigrations(db);
+    const app = express();
+    app.use(express.json());
+    app.use('/connectors', createConnectorsRouter(db, fakeAuth)); // no scheduler passed
+    const s = await new Promise((resolve) => {
+      const srv = app.listen(0, () => resolve(srv));
+    });
+    const url = `http://127.0.0.1:${s.address().port}`;
+    await fetch(`${url}/connectors`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      body: JSON.stringify({ name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' }),
+    });
+    await fetch(`${url}/connectors/weather/requests`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }),
+    });
+    const res = await fetch(`${url}/connectors/weather/requests/current/poll`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(res.status, 501);
+    await new Promise((resolve) => s.close(resolve));
   });
 });

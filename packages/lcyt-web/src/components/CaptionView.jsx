@@ -1,5 +1,6 @@
-import { useRef, useEffect, useState } from 'react';
+import { useRef, useEffect, useState, useContext } from 'react';
 import { useFileContext } from '../contexts/FileContext';
+import { VariablesContext } from '../contexts/VariablesContext.jsx';
 
 const VIRTUAL_THRESHOLD = 500;
 const VIRTUAL_BUFFER = 50;
@@ -31,8 +32,38 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;');
 }
 
+// Plain {{name}} insertion only — {{name[N]}} block markers never reach here,
+// they're already fully expanded into literal virtual-line text by
+// useFileStore before CaptionView ever sees them (metacode-varblocks.js).
+const VAR_RE = /\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}/g;
+
+/**
+ * Render caption text with {{name}} tokens replaced by their *live* resolved
+ * value, wrapped in a styled span so the operator can see at a glance which
+ * part of the line is a variable (plan_live_variables.md §2). Falls back to
+ * plain escaped text when no variables snapshot is available (e.g. FileProvider
+ * used standalone without VariablesContext).
+ */
+function renderTextWithVariables(text, variablesSnapshot) {
+  if (!variablesSnapshot || !text.includes('{{')) return escapeHtml(text);
+  let out = '';
+  let last = 0;
+  VAR_RE.lastIndex = 0;
+  let m;
+  while ((m = VAR_RE.exec(text))) {
+    out += escapeHtml(text.slice(last, m.index));
+    const name = m[1];
+    const resolved = Object.prototype.hasOwnProperty.call(variablesSnapshot, name);
+    const value = resolved ? String(variablesSnapshot[name] ?? '') : '';
+    out += `<span class="caption-line__var${resolved ? '' : ' caption-line__var--unresolved'}" title="{{${escapeHtml(name)}}}">${escapeHtml(value)}</span>`;
+    last = m.index + m[0].length;
+  }
+  out += escapeHtml(text.slice(last));
+  return out;
+}
+
 // Keys that have dedicated display in buildActionLabel — exclude from generic label
-const ACTION_DISPLAY_KEYS = ['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'emptySend', 'emptySendLabel'];
+const ACTION_DISPLAY_KEYS = ['timer', 'goto', 'audioCapture', 'fileSwitch', 'fileSwitchServer', 'cue', 'cueMode', 'cueFuzzy', 'cueSemantic', 'cueEvents', 'emptySend', 'emptySendLabel', 'varBlock', 'varBlockPending', 'virtual', 'virtualBlock', 'virtualIndex', 'virtualCount'];
 
 /** Build a short indicator label for a metadata-only line. */
 function buildActionLabel(codes) {
@@ -58,11 +89,14 @@ function buildActionLabel(codes) {
   }
   return parts.length > 0 ? parts.join(' │ ') : null;
 }
+// Internal bookkeeping codes — never meaningful to show an operator directly.
+const HIDDEN_CODE_KEYS = ['varBlock', 'varBlockPending', 'virtual', 'virtualBlock', 'virtualIndex', 'virtualCount'];
+
 function buildCodesTitle(codes) {
-  if (!codes || Object.keys(codes).length === 0) return null;
-  return Object.entries(codes)
-    .map(([k, v]) => `${k}: ${v}`)
-    .join(' | ');
+  if (!codes) return null;
+  const entries = Object.entries(codes).filter(([k]) => !HIDDEN_CODE_KEYS.includes(k));
+  if (entries.length === 0) return null;
+  return entries.map(([k, v]) => `${k}: ${v}`).join(' | ');
 }
 
 /** Insert `<!-- key: value -->\n` before the line at cursor position. */
@@ -83,6 +117,7 @@ function insertCodeAtCursor(textareaEl, rawValue, setRawValue, key, value) {
 
 export function CaptionView({ onLineSend }) {
   const { activeFile, setPointer, lastSentLine, setLastSentLine, rawEditMode, setRawEditMode, updateFileFromRawText, rawEditValue, setRawEditValue } = useFileContext();
+  const variables = useContext(VariablesContext);
   const containerRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -246,6 +281,8 @@ export function CaptionView({ onLineSend }) {
   const start = useVirtual ? Math.max(0, pointer - VIRTUAL_BUFFER) : 0;
   const end = useVirtual ? Math.min(lines.length, pointer + VIRTUAL_BUFFER + 1) : lines.length;
 
+  const varsSnapshot = variables?.snapshot();
+
   const visibleLines = [];
   for (let i = start; i < end; i++) {
     const isActive = i === pointer;
@@ -253,7 +290,12 @@ export function CaptionView({ onLineSend }) {
     const isHeading = lines[i].startsWith('#');
     const codes = lineCodes?.[i];
     const isEmptySend = !!codes?.emptySend;
-    const isMetaOnly = !isEmptySend && !lines[i]?.trim() && codes && Object.keys(codes).length > 0;
+    const isVarPending = !!codes?.varBlockPending;
+    const isVirtual = !!codes?.virtual;
+    // A virtual line is always real (if possibly blank) caption content from
+    // a {{name[N]}} block — never treat it as a metadata-only line, or an
+    // empty-valued segment would lose its double-click-to-send gesture.
+    const isMetaOnly = !isEmptySend && !isVirtual && !lines[i]?.trim() && codes && Object.keys(codes).length > 0;
 
     let cls = 'caption-line';
     if (isActive) cls += ' caption-line--active';
@@ -261,14 +303,20 @@ export function CaptionView({ onLineSend }) {
     if (isHeading) cls += ' caption-line--heading';
     if (isEmptySend) cls += ' caption-line--empty-send';
     if (isMetaOnly) cls += ' caption-line--meta-only';
+    if (isVarPending) cls += ' caption-line--var-pending';
+    if (isVirtual) cls += ' caption-line--virtual';
 
     const displayText = isHeading
       ? escapeHtml(lines[i].replace(/^#+\s*/, ''))
       : isEmptySend
         ? ''
-        : escapeHtml(lines[i]);
+        : renderTextWithVariables(lines[i], varsSnapshot);
 
     const lineNum = lineNumbers?.[i] ?? (i + 1);
+    // Virtual lines (from a {{name[N]}} block) share their source line's raw
+    // number — display them as "20:1", "20:2", … so they read as generated,
+    // not as if the file actually grew new numbered lines (plan_live_variables.md §3).
+    const lineNumDisplay = isVirtual ? `${lineNum}:${(codes.virtualIndex ?? 0) + 1}` : String(lineNum);
     const codesTitle = buildCodesTitle(codes);
     const hasCodes = !!codesTitle;
     const actionLabel = isMetaOnly ? buildActionLabel(codes) : null;
@@ -284,15 +332,16 @@ export function CaptionView({ onLineSend }) {
         <span
           className={`caption-line__linenum${hasCodes ? ' caption-line__linenum--coded' : ''}`}
           title={codesTitle ?? undefined}
-          aria-label={codesTitle ? `Line ${lineNum}, codes: ${codesTitle}` : `Line ${lineNum}`}
+          aria-label={codesTitle ? `Line ${lineNumDisplay}, codes: ${codesTitle}` : `Line ${lineNumDisplay}`}
         >
-          {lineNum}
+          {lineNumDisplay}
         </span>
         <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
         {isEmptySend
-          ? <span className={`caption-line__empty-send-label${codes.emptySendLabel ? ' caption-line__empty-send-label--named' : ''}`}>{codes.emptySendLabel ?? '⊘ send codes'}</span>
+          ? <span className={`caption-line__empty-send-label${codes.emptySendLabel ? ' caption-line__empty-send-label--named' : ''}`}
+              dangerouslySetInnerHTML={{ __html: renderTextWithVariables(codes.emptySendLabel ?? '⊘ send codes', varsSnapshot) }} />
           : isMetaOnly
-            ? <span className="caption-line__meta-label">{actionLabel}</span>
+            ? <span className="caption-line__meta-label" dangerouslySetInnerHTML={{ __html: renderTextWithVariables(actionLabel ?? '', varsSnapshot) }} />
             : <span className="caption-line__text" dangerouslySetInnerHTML={{ __html: displayText }} />
         }
       </li>
