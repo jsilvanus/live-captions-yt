@@ -2,7 +2,7 @@
 id: plan/live_variables
 title: "Live Variables — Continuous Refresh, Live Operator Display, and Text-Block Expansion"
 status: in-progress
-summary: "Forward-looking variable behaviours split out of plan_metacode_variable_unification so that plan can finish on its implemented core (registry/namespace/TTL). Three ideas: (1) the settled connector-fetch-timing decision (no load tier — a pointer-tier trigger on the first line covers 'on load'); (2) an always-updated variable that the operator sees live and normalized — the live-display half is implemented (bus-pushed {{name}} chip rendering in CaptionView, no polling, shared VariablesContext, plus a Production-page watchlist widget); the session-long pointer-independent background refresh half (extending api!: beyond 'while pointer is on the line') is not yet built; (3) variable-backed text blocks — implemented in a scoped form: {{name[N]}}/{{name[N*]}} (reusing the {{ }} sigil with a bracket length modifier, decided over the earlier <!-- lines: name --> marker sketch), block-only, materialize-once-then-freeze (a stronger, simpler freeze than 'freeze only while inside, re-expand on next arrival' — deferred as a follow-on)."
+summary: "Forward-looking variable behaviours split out of plan_metacode_variable_unification so that plan can finish on its implemented core (registry/namespace/TTL). Three ideas: (1) the settled connector-fetch-timing decision (no load tier — a pointer-tier trigger on the first line covers 'on load'); (2) an always-updated variable that the operator sees live and normalized — implemented: bus-pushed {{name}} chip rendering in CaptionView (no polling, shared VariablesContext) plus a Production-page watchlist widget, AND a session-long, pointer-independent background refresh ('constant poll') as a deliberately separate opt-in UI toggle per connector request (server-side PollScheduler) rather than any change to the !api:/api:/api!: metacode tiers, which stay pointer-scoped exactly as before; (3) variable-backed text blocks — implemented in a scoped form: {{name[N]}}/{{name[N*]}} (reusing the {{ }} sigil with a bracket length modifier, decided over the earlier <!-- lines: name --> marker sketch), block-only, materialize-once-then-freeze (a stronger, simpler freeze than 'freeze only while inside, re-expand on next arrival' — deferred as a follow-on), virtual lines displayed with a 20:1-style compound gutter number rather than borrowing new raw integers."
 related: plan/api_connectors_variables, plan/metacode_variable_unification, plan/pubsub_event_bus, plan/cues, plan/dsk
 ---
 
@@ -37,7 +37,7 @@ Settled — do not revisit "on load".
 > This is about *refreshing* a variable from a connector. `{{name}}` itself is a
 > pure read, resolved at send; it never fetches.
 
-## 2. Always-updated, always-seen (live) variable — design pending
+## 2. Always-updated, always-seen (live) variable — implemented
 
 A variable that stays continuously current and that the operator **sees live and
 normalized** — e.g. a viewer count, "now playing", a countdown, the current
@@ -82,11 +82,43 @@ view vs. a dedicated live panel/dashboard widget); refresh cadence.
   `changePaneSettings`) — additive, no storage-version bump, old saved layouts
   keep working unchanged.
 
-**Not done:** the session-long, pointer-independent background refresh (`api!:`
-polling beyond "while the pointer sits on its line") — cadence/streaming-source
-question is unaddressed; today's implementation only makes *already-known*
-variable state live-visible, it doesn't change when/how often connectors are
-polled.
+### Constant poll — decided & implemented (2026-07-19)
+
+The bus only distributes a *change* to subscribers instantly (no polling to
+*see* an update) — it does not itself keep a connector-backed variable's
+*source* fresh. Something still has to actually call the connector on an
+interval, and that's what was missing: `api!:`'s prefetch loop is
+pointer-scoped (`InputBar.jsx` clears its `setInterval` the instant the
+pointer leaves the line), so a live-display consumer watching a variable the
+operator isn't currently pointed at sees a value that stopped updating.
+
+**Decided:** constant poll is a **separate, explicit, opt-in** mechanism —
+never an implicit change to what writing `!api:`/`api:`/`api!:` inline does.
+The metacode tiers stay exactly pointer-scoped and frontend-owned, as
+originally designed. Instead: a server-side `PollScheduler`
+(`packages/plugins/lcyt-connectors/src/poll-scheduler.js`), toggled per
+connector request via a UI button ("Poll continuously" / "Stop polling",
+`ConnectorsSection.jsx`'s `RequestRow`) hitting
+`PUT /connectors/:connectorSlug/requests/:requestSlug/poll`. Once enabled, a
+`setInterval` (reusing the request's `prefetch_interval_ms`, floored at
+1000ms) keeps calling the resolution engine's `fireRequest()` for the whole
+server session — independent of any browser tab, caption pointer, or
+operator session — until explicitly disabled. Persisted
+(`api_requests.constant_poll_enabled`) and restored on server restart
+(`PollScheduler.restore()`), mirroring `ttl-scheduler.js`'s shape.
+
+**Done:** `db.js` (`constant_poll_enabled` column, `setConstantPoll()`,
+`listConstantPollRequests()`), `poll-scheduler.js`, the `PUT .../poll` route
+(re-keys/stops cleanly on request delete, connector delete, or either's slug
+rename — no timer left running under a stale key), `initConnectors()` wiring,
+the Setup Hub toggle button. Tests: `test/poll-scheduler.test.js`,
+`test/routes.test.js`'s constant-poll describe block (fake in-process engine,
+no real network I/O).
+
+**Not done:** no per-project/admin-wide cap on concurrently-polling requests
+— each toggle is an independent server interval with only a per-request rate
+floor, not an aggregate-load guard (flagged in
+`packages/plugins/lcyt-connectors/CLAUDE.md`).
 
 ## 3. Variable-backed text blocks — implemented (scoped)
 
@@ -138,13 +170,18 @@ preserved *unmodified*: expansion (`lib/metacode-varblocks.js`'s
 `expandVarBlocks()`) runs as a pure post-processing pass immediately after
 `parseFileContent()`, producing real (not sparse/lazy) entries in those same
 parallel arrays — so every existing pointer/`goto`/gutter/advance code path
-works for free. Virtual segments share their source line's gutter number and
-are tagged `virtual: true` / `virtualBlock: name` / `virtualIndex`; `rawText`
-(what gets saved/persisted) is never touched by expansion, so save/serialize
-skipping virtual lines is true by construction rather than requiring an
-explicit filter.
+works for free. Virtual segments share their source line's *raw* line number
+(`lineNumbers[i]` stays a plain integer — `goto`/`findLineIndexForRaw` need
+that, so it is never restyled into a display string) but are tagged
+`virtual: true` / `virtualBlock: name` / `virtualIndex`, from which
+`CaptionView.jsx` derives the **gutter display** `20:1`, `20:2`, `20:3`
+(`${rawLineNumber}:${virtualIndex + 1}`) — a virtual line reads as generated,
+not as if the file actually grew new numbered lines. `rawText` (what gets
+saved/persisted) is never touched by expansion, so save/serialize skipping
+virtual lines is true by construction rather than requiring an explicit
+filter.
 
-### Implementation status (2026-07-18)
+### Implementation status (2026-07-19)
 
 **Done:** `lib/metacode-varblocks.js` (`parseVarBlockMarker`, `wrapValue`,
 `expandVarBlocks`, `hasVarBlocks`); `metacode-parser.js` detects the block-only
@@ -154,9 +191,10 @@ marker and attaches `codes.varBlock` (pure, no variable access);
 restore) via an optional `getVariablesSnapshot` option;
 `contexts/FileContext.jsx` supplies the shared snapshot and re-parses files
 with pending blocks reactively; `CaptionView.jsx` styles pending/virtual lines
-distinctly (`caption-line--var-pending` / `caption-line--virtual`). Tests:
-`test/metacode-varblocks.test.js`, `fileUtils.test.js`'s block-marker describe
-block.
+distinctly (`caption-line--var-pending` / `caption-line--virtual`) and shows
+the `20:1`-style compound gutter number for virtual lines instead of the raw
+integer. Tests: `test/metacode-varblocks.test.js`, `fileUtils.test.js`'s
+block-marker describe block.
 
 **Not done:** live re-expand-on-arrival (re-materializing a block fresh each
 time the pointer re-enters it, per the originally-recommended semantics) —
@@ -189,5 +227,5 @@ with other text is left unexpanded by design (#1), not a bug.
 ## Index Entry
 
 ```
-| [plan_live_variables.md](plans/plan_live_variables.md) | Live Variables — Continuous Refresh, Live Operator Display, Text-Block Expansion | (1) DECIDED fetch-timing (no load tier — a first-line pointer trigger covers "on load"). (2) Live display implemented: bus-pushed `{{name}}` chip rendering in CaptionView (shared `VariablesContext`, no polling) + a Production-page `variables` watchlist widget (pane model extended to per-instance settings). Session-long background refresh (beyond `api!:`'s pointer-scoped polling) **not done**. (3) `{{name[N]}}`/`{{name[N*]}}` variable-backed text blocks implemented (block-only, soft/hard wrap, virtual lines via a pure post-parse expansion pass — no `useFileStore` pointer-model changes needed); materializes once then freezes rather than live re-expand-on-arrival (deferred follow-on). | |
+| [plan_live_variables.md](plans/plan_live_variables.md) | Live Variables — Continuous Refresh, Live Operator Display, Text-Block Expansion | (1) DECIDED fetch-timing (no load tier — a first-line pointer trigger covers "on load"). (2) Live display implemented: bus-pushed `{{name}}` chip rendering in CaptionView (shared `VariablesContext`, no polling) + a Production-page `variables` watchlist widget (pane model extended to per-instance settings); session-long background refresh implemented as "constant poll" — a deliberately separate per-request opt-in toggle (server-side `PollScheduler`), not any change to the `!api:`/`api:`/`api!:` metacode tiers, which remain pointer-scoped. (3) `{{name[N]}}`/`{{name[N*]}}` variable-backed text blocks implemented (block-only, soft/hard wrap, virtual lines via a pure post-parse expansion pass — no `useFileStore` pointer-model changes needed, `20:1`-style gutter display); materializes once then freezes rather than live re-expand-on-arrival (deferred follow-on). | |
 ```

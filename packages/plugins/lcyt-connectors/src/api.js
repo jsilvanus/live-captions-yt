@@ -14,7 +14,10 @@
  *
  * The prefetch tier's repeating background loop (plan §1.2, §4) is owned by
  * the frontend (onPointerChanged sets/clears an interval calling
- * POST /variables/refresh) — there is no server-side loop to manage here.
+ * POST /variables/refresh) — there is no server-side loop for it, and the
+ * constant-poll feature below does not change that: !api:/api:/api!: stay
+ * pointer-scoped exactly as before. Constant poll is a separate, explicit
+ * opt-in per request (PUT .../poll), never implied by a metacode.
  *
  * Every outbound connector HTTP call passes through network-guard.js's SSRF
  * guard first (loopback/private/link-local/reserved addresses blocked by
@@ -25,6 +28,7 @@ import { runMigrations } from './db.js';
 import { VariablesBus } from './variables-bus.js';
 import { createResolutionEngine } from './resolution-engine.js';
 import { createTtlScheduler } from './ttl-scheduler.js';
+import { createPollScheduler } from './poll-scheduler.js';
 
 export { createConnectorsRouter } from './routes/connectors.js';
 export { createVariablesRouter } from './routes/variables.js';
@@ -32,6 +36,7 @@ export { createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter } from './r
 export { VariablesBus } from './variables-bus.js';
 export { createResolutionEngine } from './resolution-engine.js';
 export { createTtlScheduler } from './ttl-scheduler.js';
+export { createPollScheduler } from './poll-scheduler.js';
 export { checkUrlAllowed } from './network-guard.js';
 export * from './db.js';
 export { interpolate, interpolatePairs, extractVariableNames } from './interpolate.js';
@@ -48,5 +53,7 @@ export function initConnectors(db, opts = {}) {
   const engine = createResolutionEngine({ db, bus, filesControl: opts.filesControl || null });
   const scheduler = createTtlScheduler({ db, bus });
   scheduler.restore();
-  return { bus, engine, scheduler };
+  const pollScheduler = createPollScheduler({ db, engine });
+  pollScheduler.restore();
+  return { bus, engine, scheduler, pollScheduler };
 }

@@ -310,6 +310,10 @@ export function CaptionView({ onLineSend }) {
         : renderTextWithVariables(lines[i], varsSnapshot);
 
     const lineNum = lineNumbers?.[i] ?? (i + 1);
+    // Virtual lines (from a {{name[N]}} block) share their source line's raw
+    // number — display them as "20:1", "20:2", … so they read as generated,
+    // not as if the file actually grew new numbered lines (plan_live_variables.md §3).
+    const lineNumDisplay = isVirtual ? `${lineNum}:${(codes.virtualIndex ?? 0) + 1}` : String(lineNum);
     const codesTitle = buildCodesTitle(codes);
     const hasCodes = !!codesTitle;
     const actionLabel = isMetaOnly ? buildActionLabel(codes) : null;
@@ -325,9 +329,9 @@ export function CaptionView({ onLineSend }) {
         <span
           className={`caption-line__linenum${hasCodes ? ' caption-line__linenum--coded' : ''}`}
           title={codesTitle ?? undefined}
-          aria-label={codesTitle ? `Line ${lineNum}, codes: ${codesTitle}` : `Line ${lineNum}`}
+          aria-label={codesTitle ? `Line ${lineNumDisplay}, codes: ${codesTitle}` : `Line ${lineNumDisplay}`}
         >
-          {lineNum}
+          {lineNumDisplay}
         </span>
         <span className="caption-line__gutter">{isActive ? '►' : ''}</span>
         {isEmptySend

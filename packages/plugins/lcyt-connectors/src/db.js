@@ -41,12 +41,20 @@ export function runMigrations(db) {
       response_type        TEXT    NOT NULL DEFAULT 'auto',
       prefetch_interval_ms INTEGER NOT NULL DEFAULT 3000,
       timeout_ms           INTEGER NOT NULL DEFAULT 200,
+      -- Session-long, pointer-independent background refresh (plan_live_variables.md §2),
+      -- deliberately opt-in and separate from the !api:/api:/api!: metacode tiers, which
+      -- stay pointer-scoped and frontend-owned exactly as before. Toggled via
+      -- PUT /connectors/:connectorSlug/requests/:requestSlug/poll, run by PollScheduler.
+      constant_poll_enabled INTEGER NOT NULL DEFAULT 0,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE (connector_id, slug)
     )
   `);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_api_requests_connector ON api_requests(connector_id)`);
+  // Additive column migration for pre-existing installs (fresh DBs already get
+  // the column from the CREATE TABLE above).
+  try { db.exec(`ALTER TABLE api_requests ADD COLUMN constant_poll_enabled INTEGER NOT NULL DEFAULT 0`); } catch { /* column already exists */ }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS api_response_mappings (
@@ -234,6 +242,28 @@ export function updateRequest(db, id, fields) {
 
 export function deleteRequest(db, id) {
   return db.prepare('DELETE FROM api_requests WHERE id = ?').run(id).changes > 0;
+}
+
+/** Toggle a request's constant-poll flag (see PollScheduler). Returns the updated row. */
+export function setConstantPoll(db, id, enabled) {
+  db.prepare(`UPDATE api_requests SET constant_poll_enabled = ?, updated_at = datetime('now') WHERE id = ?`)
+    .run(enabled ? 1 : 0, id);
+  return getRequestById(db, id);
+}
+
+/**
+ * Every request currently opted into constant polling, across all projects —
+ * joined with its owning connector so PollScheduler.restore() has the
+ * (apiKey, connectorSlug, requestSlug) triple fireRequest() needs.
+ */
+export function listConstantPollRequests(db) {
+  return db.prepare(`
+    SELECT r.id AS request_id, r.slug AS request_slug, r.prefetch_interval_ms AS interval_ms,
+           c.api_key AS api_key, c.slug AS connector_slug
+    FROM api_requests r
+    JOIN api_connectors c ON c.id = r.connector_id
+    WHERE r.constant_poll_enabled = 1
+  `).all();
 }
 
 function clampInterval(value, fallback) {

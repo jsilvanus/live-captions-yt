@@ -183,3 +183,106 @@ describe('lcyt-connectors routes', () => {
     assert.equal(res.status, 404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Constant poll — session-long, pointer-independent background refresh
+// (plan_live_variables.md §2). Deliberately separate from !api:/api:/api!:,
+// which stay pointer-scoped and frontend-owned — this only covers the new
+// opt-in toggle route. Uses a fake engine (no real fetch) wired directly
+// through createPollScheduler, independent of initConnectors' real engine.
+// ---------------------------------------------------------------------------
+
+const { createPollScheduler } = await import('../src/poll-scheduler.js');
+
+describe('lcyt-connectors routes — constant poll toggle', () => {
+  let server, baseUrl, fireCalls, scheduler;
+
+  before(async () => {
+    const db = new Database(':memory:');
+    const { runMigrations } = await import('../src/db.js');
+    runMigrations(db);
+    fireCalls = [];
+    const fakeEngine = {
+      fireRequest: async (apiKey, connectorSlug, requestSlug) => {
+        fireCalls.push([apiKey, connectorSlug, requestSlug]);
+        return { ok: true, variables: [] };
+      },
+    };
+    scheduler = createPollScheduler({ db, engine: fakeEngine });
+    const app = express();
+    app.use(express.json());
+    app.use('/connectors', createConnectorsRouter(db, fakeAuth, scheduler));
+    await new Promise((resolve) => {
+      server = app.listen(0, () => resolve());
+    });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  after(() => {
+    scheduler.stopAll();
+    return new Promise((resolve) => server.close(resolve));
+  });
+
+  async function json(path, opts) {
+    const res = await fetch(`${baseUrl}${path}`, {
+      headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      ...opts,
+    });
+    return { status: res.status, body: await res.json() };
+  }
+
+  test('PUT .../poll {enabled:true} starts the scheduler and reports constantPollEnabled', async () => {
+    await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' }) });
+    await json('/connectors/weather/requests', { method: 'POST', body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }) });
+
+    const res = await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.request.constantPollEnabled, true);
+    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), true);
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(fireCalls, [['key1', 'weather', 'current']]);
+  });
+
+  test('PUT .../poll {enabled:false} stops the scheduler', async () => {
+    await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    const res = await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: false }) });
+    assert.equal(res.status, 200);
+    assert.equal(res.body.request.constantPollEnabled, false);
+    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), false);
+  });
+
+  test('deleting the request stops its poll', async () => {
+    await json('/connectors/weather/requests/current/poll', { method: 'PUT', body: JSON.stringify({ enabled: true }) });
+    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), true);
+    const res = await json('/connectors/weather/requests/current', { method: 'DELETE' });
+    assert.equal(res.status, 200);
+    assert.equal(scheduler.isPolling('key1', 'weather', 'current'), false);
+  });
+
+  test('PUT .../poll 501s without a pollScheduler wired', async () => {
+    const db = new Database(':memory:');
+    const { runMigrations } = await import('../src/db.js');
+    runMigrations(db);
+    const app = express();
+    app.use(express.json());
+    app.use('/connectors', createConnectorsRouter(db, fakeAuth)); // no scheduler passed
+    const s = await new Promise((resolve) => {
+      const srv = app.listen(0, () => resolve(srv));
+    });
+    const url = `http://127.0.0.1:${s.address().port}`;
+    await fetch(`${url}/connectors`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      body: JSON.stringify({ name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' }),
+    });
+    await fetch(`${url}/connectors/weather/requests`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }),
+    });
+    const res = await fetch(`${url}/connectors/weather/requests/current/poll`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json', 'x-test-api-key': 'key1' },
+      body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(res.status, 501);
+    await new Promise((resolve) => s.close(resolve));
+  });
+});

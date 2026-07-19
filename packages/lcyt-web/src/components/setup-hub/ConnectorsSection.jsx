@@ -126,8 +126,19 @@ function MappingsEditor({ api, connectorSlug, requestSlug }) {
   );
 }
 
-function RequestRow({ api, connectorSlug, request, onDeleted }) {
+function RequestRow({ api, connectorSlug, request, onDeleted, onPollToggled }) {
   const [expanded, setExpanded] = useState(false);
+  const [pollBusy, setPollBusy] = useState(false);
+
+  async function togglePoll(e) {
+    e.stopPropagation();
+    setPollBusy(true);
+    try {
+      await api(`/connectors/${connectorSlug}/requests/${request.slug}/poll`, { method: 'PUT', body: { enabled: !request.constantPollEnabled } });
+      onPollToggled();
+    } catch { /* ignore — row keeps its prior state */ } finally { setPollBusy(false); }
+  }
+
   return (
     <div style={{ border: '1px solid var(--border, #ddd)', borderRadius: 8, padding: '0.6rem 0.8rem', marginBottom: 6 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setExpanded(v => !v)}>
@@ -136,7 +147,18 @@ function RequestRow({ api, connectorSlug, request, onDeleted }) {
           <code style={{ fontSize: '0.85em' }}>{request.method} {request.path}</code>{' '}
           <span style={{ fontSize: '0.8em', opacity: 0.6 }}>{connectorSlug}.{request.slug}</span>
         </span>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          {request.constantPollEnabled && (
+            <span title={`Polling continuously every ${request.prefetchIntervalMs}ms, independent of the caption pointer`}
+              style={{ fontSize: '0.75em', padding: '1px 6px', borderRadius: 4, background: 'var(--success-bg, #1a7f4b)', color: '#fff' }}>
+              ● polling
+            </span>
+          )}
+          <button type="button" className="btn btn--secondary btn--sm"
+            disabled={pollBusy} onClick={togglePoll}
+            title="Keep this variable fresh continuously (session-long, independent of the caption pointer) — separate from the !api:/api:/api!: metacode tiers, which are unaffected by this toggle">
+            {request.constantPollEnabled ? 'Stop polling' : 'Poll continuously'}
+          </button>
           <button type="button" className="btn btn--danger btn--sm" onClick={(e) => { e.stopPropagation(); onDeleted(request.slug); }}>Delete</button>
           <span>{expanded ? '▾' : '▸'}</span>
         </div>
@@ -233,7 +255,7 @@ function ConnectorDialogBody({ api, connector, onDeleted }) {
         </div>
       </div>
       {requests.map(r => (
-        <RequestRow key={r.id} api={api} connectorSlug={connector.slug} request={r} onDeleted={deleteRequest} />
+        <RequestRow key={r.id} api={api} connectorSlug={connector.slug} request={r} onDeleted={deleteRequest} onPollToggled={loadRequests} />
       ))}
       <NewRequestForm api={api} connectorSlug={connector.slug} onCreated={loadRequests} />
     </div>
