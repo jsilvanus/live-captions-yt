@@ -116,9 +116,12 @@ current state; it just can't change it). The actual toggle is a new
 `components/production/workspace/panes/index.jsx`) — a widget matching the
 `variables` pane's per-instance-configurable shape: "+ Add API call" opens a
 `Dialog` with a `<select>` of known connector.request pairs
-(`useProductionData.js`'s `connectorRequests`, loaded from `GET /connectors`
-+ per-connector `GET /connectors/:slug/requests`); each added call renders as
-a button that **highlights (solid green, live-dot) when polling is on** and
+(`useProductionData.js`'s `connectorRequests`, loaded from a single
+`GET /connectors` call — the route joins each connector's `requests` in the
+same response so this is one HTTP round trip, not `GET /connectors` followed
+by an N-connector fan-out of `GET /connectors/:slug/requests`); each added
+call renders as a button that **highlights (solid green, live-dot) when
+polling is on** and
 toggles on click (`D.actions.togglePoll`, optimistic update reconciled
 against the real DB state). Removing a call from the widget only stops
 *watching* it here — it does not stop the poll itself (mirrors the
@@ -127,10 +130,12 @@ against the real DB state). Removing a call from the widget only stops
 **Done:** `db.js` (`constant_poll_enabled` column, `setConstantPoll()`,
 `listConstantPollRequests()`), `poll-scheduler.js`, the `PUT .../poll` route
 (re-keys/stops cleanly on request delete, connector delete, or either's slug
-rename — no timer left running under a stale key), `initConnectors()` wiring,
-the `connectorPolls` Production widget, the read-only Setup Hub status badge.
-Tests: `test/poll-scheduler.test.js`, `test/routes.test.js`'s constant-poll
-describe block (fake in-process engine, no real network I/O).
+rename — no timer left running under a stale key), `GET /connectors` embeds
+each connector's `requests` (avoids the N+1 the widget would otherwise need),
+`initConnectors()` wiring, the `connectorPolls` Production widget, the
+read-only Setup Hub status badge. Tests: `test/poll-scheduler.test.js`,
+`test/routes.test.js`'s constant-poll describe block (fake in-process engine,
+no real network I/O) and its `GET /connectors` embedding test.
 
 **Not done:** no per-project/admin-wide cap on concurrently-polling requests
 — each toggle is an independent server interval with only a per-request rate

@@ -304,7 +304,7 @@ GET  /roles/assistant/suggestions  — pending suggestions queue (confirm mode) 
 POST /roles/assistant/suggestions/:id/confirm | /reject — execute or discard a pending suggestion (Bearer token)
 POST /roles/planner/assist         — { currentPlan?, goal, templateId? } → { ok, content }; supersedes the removed /agent/generate-rundown|edit-rundown (Bearer token)
 
-GET/POST/PUT/DELETE /connectors                              — API Connector CRUD, auth_config masked (Bearer token)
+GET/POST/PUT/DELETE /connectors                              — API Connector CRUD, auth_config masked (Bearer token); GET embeds each connector's requests ({ ...connector, requests: [...] }) so a caller needing every request across every connector (e.g. the Production connectorPolls widget) gets it in one round trip instead of N follow-up GET /connectors/:slug/requests calls
 GET/POST/PUT/DELETE /connectors/:connectorSlug/requests       — nested Request CRUD (Bearer token)
 GET/POST/PUT/DELETE /connectors/:connectorSlug/requests/:requestSlug/mappings — response mapping CRUD (Bearer token)
 PUT    /connectors/:connectorSlug/requests/:requestSlug/poll — { enabled } toggle constant poll: a session-long, pointer-independent background refresh, explicitly separate from the !api:/api:/api!: metacode tiers (plan_live_variables.md §2) (Bearer token)

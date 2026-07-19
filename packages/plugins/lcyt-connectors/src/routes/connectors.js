@@ -92,8 +92,16 @@ export function createConnectorsRouter(db, auth, pollScheduler = null) {
 
   // ── Connectors ────────────────────────────────────────────────────────────
 
+  // Requests are joined in here (not a separate per-connector round trip) so
+  // callers that need every request across every connector — e.g. the
+  // Production workspace's connectorPolls widget — get it in one call instead
+  // of GET /connectors followed by N GET /connectors/:slug/requests.
   router.get('/', (req, res) => {
-    res.json({ connectors: listConnectors(db, req.apiKey).map(maskConnector) });
+    const connectors = listConnectors(db, req.apiKey).map((c) => ({
+      ...maskConnector(c),
+      requests: listRequests(db, c.id).map(maskRequest),
+    }));
+    res.json({ connectors });
   });
 
   router.post('/', (req, res) => {

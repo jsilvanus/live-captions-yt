@@ -131,6 +131,9 @@ export function useProductionData() {
   // ConnectorPollsPane widget can watch and toggle constant poll on
   // (plan_live_variables.md §2). Requests are configured in Setup Hub's
   // Connectors card; this just reads them for the Production-side toggle.
+  // One round trip: GET /connectors embeds each connector's requests
+  // (routes/connectors.js), so there's no N+1 of a follow-up
+  // GET /connectors/:slug/requests per connector.
   const [connectorRequests, setConnectorRequests] = useState([]);
   const loadConnectorRequests = useCallback(async () => {
     if (!backendUrl || !token) return;
@@ -140,19 +143,14 @@ export function useProductionData() {
       const { connectors: conns } = await cr.json();
       const flattened = [];
       for (const c of conns || []) {
-        try {
-          const rr = await jfetch(`/connectors/${c.slug}/requests`);
-          if (!rr.ok) continue;
-          const { requests } = await rr.json();
-          for (const r of requests || []) {
-            flattened.push({
-              connectorSlug: c.slug, connectorName: c.name,
-              requestSlug: r.slug, requestName: r.name,
-              constantPollEnabled: !!r.constantPollEnabled,
-              prefetchIntervalMs: r.prefetchIntervalMs,
-            });
-          }
-        } catch { /* skip this connector, keep the rest */ }
+        for (const r of c.requests || []) {
+          flattened.push({
+            connectorSlug: c.slug, connectorName: c.name,
+            requestSlug: r.slug, requestName: r.name,
+            constantPollEnabled: !!r.constantPollEnabled,
+            prefetchIntervalMs: r.prefetchIntervalMs,
+          });
+        }
       }
       setConnectorRequests(flattened);
     } catch { /* ignore */ }

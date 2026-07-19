@@ -86,6 +86,22 @@ describe('lcyt-connectors routes', () => {
     assert.equal(res.status, 404);
   });
 
+  test('GET /connectors embeds each connector\'s requests — no follow-up GET /connectors/:slug/requests needed', async () => {
+    await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'Joined', slug: 'joined-test', baseUrl: 'https://example.com' }) });
+    await json('/connectors/joined-test/requests', { method: 'POST', body: JSON.stringify({ name: 'Current', slug: 'current', method: 'GET', path: '/current' }) });
+    await json('/connectors/joined-test/requests', { method: 'POST', body: JSON.stringify({ name: 'Forecast', slug: 'forecast', method: 'GET', path: '/forecast' }) });
+
+    const { status, body } = await json('/connectors');
+    assert.equal(status, 200);
+    const connector = body.connectors.find((c) => c.slug === 'joined-test');
+    assert.ok(connector);
+    assert.equal(connector.requests.length, 2);
+    assert.deepEqual(connector.requests.map((r) => r.slug).sort(), ['current', 'forecast'].sort());
+    assert.equal(connector.requests[0].constantPollEnabled, false);
+    // auth_config masking still holds for the connector itself
+    assert.equal('authConfig' in connector, false);
+  });
+
   test('rejects a duplicate connector slug', async () => {
     await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'A', slug: 'dup', baseUrl: 'https://a.example' }) });
     const { status, body } = await json('/connectors', { method: 'POST', body: JSON.stringify({ name: 'B', slug: 'dup', baseUrl: 'https://b.example' }) });
