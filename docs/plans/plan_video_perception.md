@@ -2,8 +2,8 @@
 id: plan/video_perception
 title: "Video Perception — Per-Camera fps30 Tracker, World State, and AI Observability"
 status: draft
-summary: "Specs the two genuinely new AI layers a multi-camera (1-10) production system needs on top of LCYT's existing AI infrastructure: (1) the fps30 tracker subsystem — a local, GPU-light, per-camera CV pipeline (detection/tracking/pose/framing) that `plan_cues.md` already anticipated and left an inert consumer contract for (`track:` leaves, `track_state` event) — handling both dedicated-feed cameras and cameras only visible via a shared/mixer feed (visibility/staleness state, feed→active-camera resolver reusing `plan_vertical_crop.md` Phase 4's not-yet-built onProgramChanged/onCameraPresetRecalled callbacks); (2) a World State / Scene State service that fuses per-camera observations into queryable structured state, exposed as new EventBus topics rather than a knowledge graph. Also specs project-editable camera/preset metadata (label + overlaps_with/alternate_for, not a geometric floor-plan map) and a separate, gated AI observability / prompt-sculpting page (multi-camera WHEP grid + live detection overlay + captured-inference replay + prompt sandbox). Explicitly does NOT introduce a new 'Production Director' — richer input from this plan feeds the existing Production Assistant / Hosted Operator (`plan_ai_roles_framework.md`, `plan_unified_external_control.md`), which already receives structured (non-video) state and decides camera/mixer actions."
-related: plan/cues, plan/ai_roles_framework, plan/prod, plan/pubsub_event_bus, plan/dock_ffmpeg, plan/vertical_crop, plan/unified_external_control, plan/mixer_feed_sources, plan/agent
+summary: "Specs the two genuinely new AI layers a multi-camera (1-10) production system needs on top of LCYT's existing AI infrastructure: (1) the fps30 tracker subsystem — a local, GPU-light, per-camera CV pipeline (detection/tracking/pose/framing) that `plan_cues.md` already anticipated and left an inert consumer contract for (`track:` leaves, `track_state` event) — handling both dedicated-feed cameras and cameras only visible via a shared/mixer feed (visibility/staleness state, feed→active-camera resolver reusing `plan_vertical_crop.md` Phase 4's not-yet-built onProgramChanged/onCameraPresetRecalled callbacks); (2) a World State / Scene State service that fuses per-camera observations into queryable structured state, exposed as new EventBus topics rather than a knowledge graph. Also specs project-editable camera/preset metadata (label + overlaps_with/alternate_for, not a geometric floor-plan map). Explicitly does NOT introduce a new 'Production Director' — richer input from this plan feeds the existing Production Assistant / Hosted Operator (`plan_ai_roles_framework.md`, `plan_unified_external_control.md`), which already receives structured (non-video) state and decides camera/mixer actions. The AI observability/prompt-sculpting page originally specced as part of this plan was split out to `plan_ai_observability.md` (2026-07-20) since it doesn't need to wait for anything here — see that plan's Stage 3 for how it extends to this plan's `camera.track_state` once built."
+related: plan/cues, plan/ai_roles_framework, plan/prod, plan/pubsub_event_bus, plan/dock_ffmpeg, plan/vertical_crop, plan/unified_external_control, plan/mixer_feed_sources, plan/agent, plan/ai_observability
 ---
 
 # Video Perception — Per-Camera fps30 Tracker, World State, and AI Observability
@@ -44,7 +44,8 @@ What's actually missing is:
 4. **An AI observability / prompt-sculpting surface**, separate from the live operator
    console, to see what the perception/understanding layers actually produced and
    iterate on prompts against captured evidence instead of guessing why a decision was
-   made after the fact.
+   made after the fact. Specced in a sibling plan, `plan_ai_observability.md` — not
+   in this one, and not gated on it (see "Non-goals" below).
 
 Everything else in a from-scratch brief (communication protocol choice, specialist
 services, future multi-agent coordination) already has an LCYT-native answer or is
@@ -69,9 +70,11 @@ explicitly out of scope — see "Non-goals" below.
   starting point, not a decision to revisit later.
 - **No continuous per-frame LLM reasoning.** The whole point of splitting perception
   (this plan, local/cheap) from scene understanding (`ai_roles_framework`'s Describer,
-  sampled/event-driven, already implemented) stays intact. The observability page
-  (below) letting a human *watch* continuous video is a frontend decoding cost, not a
-  backend inference-cost regression — see its own non-goal note.
+  sampled/event-driven, already implemented) stays intact. `plan_ai_observability.md`'s
+  page letting a human *watch* continuous video is a frontend decoding cost, not a
+  backend inference-cost regression — see that plan's own non-goal note.
+- **No AI observability page in this plan.** Split out to `plan_ai_observability.md`
+  (2026-07-20) — see §4 below for why, and for the one point of coupling (its Stage 3).
 
 ---
 
@@ -258,48 +261,24 @@ tried against actual handoff decisions and found insufficient — not before.
 
 ---
 
-## 4. AI observability / "prompt sculpting" page
+## 4. AI observability / "prompt sculpting" page — see `plan_ai_observability.md`
 
-A separate, gated page — **not** part of the live operator console (`/production`).
-Wrong audience, wrong risk profile: raw model internals and editable prompts are a
-dev/admin surface, and cramming them into what a volunteer operates live during a
-service is pure noise and a support/security surface. Same pattern as
-`/production/crop` being its own route rather than folded into the main console.
-
-### Capabilities
-
-1. **Live multi-camera grid + detection overlay.** Sources video via the low-latency
-   WHEP preview tiles already specced (not yet implemented) in
-   `plan_mixer_feed_sources.md` — reuse that transport rather than inventing a
-   second one. Detection boxes/framing scores are `camera.track_state` events
-   rendered as a client-side canvas overlay on top of each tile. Cheap — no new
-   backend transport.
-2. **Capture + replay.** Scene Understanding (`ai_roles_framework`'s Describer, once
-   camera-scoped per the amendment below) retains its last-N request/response pairs
-   per camera in a small ring buffer / debug-log table — not just the final emitted
-   event. Without this, "why did it think X five minutes ago" is unanswerable; only
-   live debugging would ever be possible.
-3. **Prompt sandbox.** Take a captured frame + its context, edit the venue-context
-   prompt block (§3's consumer), re-run against that same frame, diff the output
-   against what was actually produced live. This is the one genuinely new
-   backend endpoint in this whole section — a "replay this input against a new
-   prompt" call — everything else in this list is composition of existing pieces.
-
-### Explicit non-goal
-
-Opening this page must **not** silently increase production inference sampling rate
-— the event-driven/sampled design this whole plan protects doesn't get to regress
-because a debug page happened to be open. If temporarily-faster sampling while
-actively debugging one camera turns out to be wanted, it must be an explicit, scoped,
-auto-reverting per-camera override — not a side effect of page visibility.
+Originally specced as part of this plan; split out (2026-07-20) because it doesn't
+need to wait for anything here — it's useful today against the already-implemented
+Tracker/Describer roles. That plan's Stage 3 extends its overlay to this plan's
+`camera.track_state` once built (§1 above) — the only coupling between the two, and
+it's additive, not blocking. See `plan_ai_observability.md` for the page's own scope,
+staging, and its explicit non-goal about not silently increasing production
+inference sampling rate.
 
 ---
 
 ## Amendments to other plans (tracked here, applied there)
 
-This plan's job is Layers 1 and 3 plus the two cross-cutting pieces (camera metadata,
-observability page). It deliberately does not re-spec Layers 2/4/5/9 — those get
-targeted amendments in their owning plans instead of a competing description here:
+This plan's job is Layers 1 and 3 plus the camera-metadata cross-cutting piece (the
+observability page is now `plan_ai_observability.md`'s job, not this plan's — see §4).
+It deliberately does not re-spec Layers 2/4/5/9 — those get targeted amendments in
+their owning plans instead of a competing description here:
 
 - **`plan_ai_roles_framework.md`** — camera-scope Tracker/Describer (today
   project-scoped, one preview-JPEG feed per project) so a project with N cameras gets
@@ -336,12 +315,11 @@ targeted amendments in their owning plans instead of a competing description her
 3. **Shared/single-feed resolver** — once `plan_vertical_crop.md` Phase 4's
    `onProgramChanged`/`onCameraPresetRecalled` ship (ideally as EventBus events per
    the promotion recommendation above), wire the feed→active-camera tagging.
-4. **Observability page — live overlay** — WHEP grid + detection overlay, read-only,
-   no new backend beyond what Phases 1–2 already emit.
-5. **Observability page — capture/replay + prompt sandbox** — the ring buffer/debug
-   log and the "replay against edited prompt" endpoint; genuinely new backend work,
-   sequenced last since it's the least urgent for the system to *function* and the
-   most useful once there's real perception output to look at.
+
+The AI observability page is no longer phased here — see `plan_ai_observability.md`'s
+own staging, which starts independently of this plan and only picks up a dependency
+on it (Stage 3, extending the overlay to `camera.track_state`) once Phase 2 above has
+shipped.
 
 ## Open questions
 
