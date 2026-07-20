@@ -1,3 +1,10 @@
+---
+id: plan/setup_wizard
+title: "Setup Wizard"
+status: implemented
+summary: "Adds a guided `/setup` wizard: feature selection, dependency auto-enable, shared config panels (targets/translation/relay/CEA/embed/STT) reused by the wizard and existing modals. All build items done, including the CCModal/SettingsModal panel migration originally tracked as a follow-on. Superseded in part by plan_dashboard_console_redesign.md, which repurposed the `/setup` route itself into the persistent SetupHubPage device/service catalog; the wizard now lives at `/setup/wizard`, reachable via the hub's 'Run setup wizard' link."
+---
+
 # Setup Wizard — Implementation Plan
 
 ## Context
@@ -554,6 +561,14 @@ Add route inside `<Switch>` in `SidebarApp`, after `/projects`:
 <Route path="/setup" component={SetupWizardPage} />
 ```
 
+**Superseded (2026-07-06 by `plan_dashboard_console_redesign.md`):** `/setup` was
+later repurposed from this one-time wizard into the persistent `SetupHubPage`
+device/service catalog. The wizard itself was not deleted — it now lives at
+`/setup/wizard` (`packages/lcyt-web/src/main.jsx`: `<Route path="/setup" component={SetupHubPage} />`,
+`<Route path="/setup/wizard" component={SetupWizardPage} />`), reachable from
+the hub via "Run setup wizard." Everything else in this plan (steps, panels,
+dependency logic, save flow) is unaffected by the route change.
+
 ---
 
 ## Verification
@@ -588,4 +603,4 @@ Add route inside `<Switch>` in `SidebarApp`, after `/projects`:
 | `setup-wizard/` — WizardShell, WizardProgress, DepNotice, StepFeatureSelection, StepReview, SetupWizardPage, index | ✅ done |
 | `main.jsx` — /setup route | ✅ done |
 | `navConfig.js` — Setup nav item in NAV_BOTTOM | ✅ done |
-| CCModal/SettingsModal migration to use panels | ⬜ follow-on |
+| CCModal/SettingsModal migration to use panels | ✅ done — `CCModal.jsx` imports `TargetsPanel`, `TranslationPanel`, `ServicePanel`, `DetailsPanel`; `SettingsModal.jsx` imports `RelayPanel` (confirmed by import grep, 2026-07-20) |

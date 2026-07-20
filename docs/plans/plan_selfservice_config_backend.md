@@ -26,11 +26,15 @@ shape incl. `live`/`501` DSK semantics, `GET/PUT /radio/config`'s
 `url`/`headers`/`viewerKey`/`noBatch`) all matched exactly with no changes
 needed on either side. §1's Translation half now has a real Setup Hub card
 (`LanguagesSection.jsx`/`LanguagesPage.jsx`, replacing the old plain link-out
-card) — but as built (2026-07-06) it's wired to the localStorage
+card); as first built (2026-07-06) it was wired to the localStorage
 `lib/translationConfig.js` instead of the already-implemented
-`GET/PUT /translation/config*` routes documented above, a bug to fix
-independently (tracked in `plan_server_stt.md`'s Phase 5 todo, since that
-phase's UI work depends on the fix either way). `scripts/dev/
+`GET/PUT /translation/config*` routes documented above — that bug has since
+been fixed (commit `6c005b3`; `plan_server_stt.md`'s Phase 5 todo item is now
+checked off): `LanguagesManager` (`packages/lcyt-web/src/components/
+LanguagesPage.jsx`) calls `GET/PUT /translation/config` directly, and
+`lib/translationConfig.js` is retained only for its static vendor/target
+constant lists and as a legacy localStorage shim used elsewhere (e.g.
+`AudioPanel`), not for Languages-page state. `scripts/dev/
 screenshot-mock-backend.mjs` keeps in-memory stubs for all three routes for
 local frontend dev without a full `lcyt-backend` instance running.
 
