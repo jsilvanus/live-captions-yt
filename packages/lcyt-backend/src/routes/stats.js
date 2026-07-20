@@ -20,12 +20,12 @@ import logger from 'lcyt/logger';
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
  * @param {import('../store.js').SessionStore} [store] - In-memory session store
- * @param {{ resolveStorage?: (apiKey: string) => Promise<object> }} [opts]
+ * @param {{ resolveStorage?: (apiKey: string) => Promise<object>, settings?: import('../settings/service.js').SettingsService }} [opts]
  * @returns {Router}
  */
-export function createStatsRouter(db, auth, store, { resolveStorage } = {}) {
+export function createStatsRouter(db, auth, store, { resolveStorage, settings = null } = {}) {
   const router = Router();
-  const requireStats = createRequireFeature(db, 'stats');
+  const requireStats = createRequireFeature(db, 'stats', settings);
 
   // GET /stats — Per-key usage stats (auth required)
   router.get('/', auth, requireStats, (req, res) => {

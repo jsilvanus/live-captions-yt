@@ -31,17 +31,18 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  *   POST   /keys?freetier — Self-service free-tier key sign-up (name + email required)
  *
  * @param {import('better-sqlite3').Database} db
- * @param {{ loginEnabled?: boolean, jwtSecret?: string }} [opts]
+ * @param {{ loginEnabled?: boolean, jwtSecret?: string, settings?: import('../settings/service.js').SettingsService }} [opts]
  * @returns {Router}
  */
-export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null } = {}) {
+export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, settings = null } = {}) {
   const router = Router();
 
   // POST /keys — Create API key (admin) OR user project OR free-tier sign-up (?freetier)
   router.post('/', (req, res) => {
     // ── free-tier path ────────────────────────────────────────────────────────
     if ('freetier' in req.query) {
-      if (process.env.FREE_APIKEY_ACTIVE !== '1') {
+      const freeApikeyActive = settings ? settings.get('app.free_apikey_active') : process.env.FREE_APIKEY_ACTIVE === '1';
+      if (!freeApikeyActive) {
         return res.status(404).json({ error: 'Not found' });
       }
 

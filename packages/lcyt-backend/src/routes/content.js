@@ -23,26 +23,26 @@ import { createFilesRouter } from 'lcyt-files';
  * @param {import('express').RequestHandler} auth
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
- * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function }} [managers]
+ * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function, settings?: import('../settings/service.js').SettingsService }} [managers]
  * @param {import('express').RequestHandler} [projectAuth]
  * @returns {Router}
  */
-export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null } = {}, makeScopedAuth = null) {
+export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, settings = null } = {}, makeScopedAuth = null) {
   const router = Router();
   // Per-resource project access for scoped external tokens; falls back to the
   // session-JWT `auth` when no factory is supplied (isolated tests).
   const scoped = (resource) => (makeScopedAuth ? makeScopedAuth(resource) : auth);
-  router.use('/stats',           createStatsRouter(db, auth, store, { resolveStorage }));
-  router.use('/usage',           createUsageRouter(db));
+  router.use('/stats',           createStatsRouter(db, auth, store, { resolveStorage, settings }));
+  router.use('/usage',           createUsageRouter(db, settings));
   router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache));
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
-  router.use('/youtube',         createYouTubeRouter(auth));
+  router.use('/youtube',         createYouTubeRouter(auth, settings));
   router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret));
   router.use('/targets',         createTargetsRouter(scoped('target'), db));
   router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
   router.use('/videos',          createVideosRouter(scoped('video'), db));
   router.use('/translation',     createTranslationRouter(scoped('translation'), db));
-  router.use('/bridge-download', createBridgeDownloadRouter());
+  router.use('/bridge-download', createBridgeDownloadRouter(settings));
   return router;
 }

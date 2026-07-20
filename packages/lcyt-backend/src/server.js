@@ -124,66 +124,78 @@ if (!process.env.ADMIN_KEY) {
   console.info('  Set ADMIN_KEY in your environment to enable API key management via HTTP.');
 }
 
-const DEFAULT_ALLOWED_DOMAINS = 'lcyt.fi,www.lcyt.fi,localhost';
-const _allowedDomains = process.env.ALLOWED_DOMAINS ?? DEFAULT_ALLOWED_DOMAINS;
-if (_allowedDomains === '*') {
+// ---------------------------------------------------------------------------
+// Database, session store, and settings service
+// ---------------------------------------------------------------------------
+// Moved ahead of the startup-log block below (it used to run before the DB
+// existed) so every one of those log lines reads through SettingsService —
+// env > DB (server_settings) > registry default precedence for the ~130 env
+// vars this backend and its plugins read (plan_env_to_ui_settings.md) —
+// instead of raw process.env, and DB-set values are reflected at the next
+// boot even though most of this block is startup logging, not enforcement.
+
+const db = initDb();
+const settings = new SettingsService(db);
+
+const _allowedDomains = settings.get('app.allowed_domains');
+if (_allowedDomains.length === 1 && _allowedDomains[0] === '*') {
   console.warn('⚠ ALLOWED_DOMAINS=* — sessions allowed from any domain.');
 } else {
-  if (!process.env.ALLOWED_DOMAINS) {
-    console.info(`ℹ ALLOWED_DOMAINS not set — using default domains: ${DEFAULT_ALLOWED_DOMAINS}`);
+  if (settings.source('app.allowed_domains') === 'default') {
+    console.info(`ℹ ALLOWED_DOMAINS not set — using default domains: ${_allowedDomains.join(',')}`);
   }
-  console.info(`✓ Allowed session domains: ${_allowedDomains}`);
+  console.info(`✓ Allowed session domains: ${_allowedDomains.join(',')}`);
 }
 
 // ALLOWED_RTMP_DOMAINS — restricts which domains may use the /stream relay endpoints.
 // If unset, falls back to ALLOWED_DOMAINS so operators only need to set one variable.
-const _allowedRtmpDomains = process.env.ALLOWED_RTMP_DOMAINS ?? _allowedDomains;
-if (process.env.ALLOWED_RTMP_DOMAINS) {
-  if (_allowedRtmpDomains === '*') {
+const _allowedRtmpDomains = settings.get('app.allowed_rtmp_domains') ?? _allowedDomains;
+if (settings.source('app.allowed_rtmp_domains') !== 'default') {
+  if (_allowedRtmpDomains.length === 1 && _allowedRtmpDomains[0] === '*') {
     console.warn('⚠ ALLOWED_RTMP_DOMAINS=* — RTMP relay accessible from any domain.');
   } else {
-    console.info(`✓ Allowed RTMP relay domains: ${_allowedRtmpDomains}`);
+    console.info(`✓ Allowed RTMP relay domains: ${_allowedRtmpDomains.join(',')}`);
   }
 } else {
   console.info('ℹ ALLOWED_RTMP_DOMAINS not set — falling back to ALLOWED_DOMAINS for RTMP relay access.');
 }
 
-if (process.env.USAGE_PUBLIC) {
+if (settings.get('app.usage_public')) {
   console.info('✓ GET /usage is public (USAGE_PUBLIC is set).');
 } else {
   console.info('ℹ GET /usage requires X-Admin-Key (set USAGE_PUBLIC to make it public).');
 }
 
-if (process.env.FREE_APIKEY_ACTIVE !== '1') {
+if (!settings.get('app.free_apikey_active')) {
   console.info('ℹ FREE_APIKEY_ACTIVE is not set — POST /keys?freetier is disabled.');
 } else {
   console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
 }
 
-const loginEnabled = process.env.USE_USER_LOGINS !== '0';
+const loginEnabled = settings.get('app.use_user_logins');
 if (loginEnabled) {
   console.info('✓ User logins enabled. Set USE_USER_LOGINS=0 to disable.');
 } else {
   console.info('ℹ User logins disabled (USE_USER_LOGINS=0).');
 }
 
-if (process.env.GRAPHICS_ENABLED === '1') {
-  const graphicsDir = process.env.GRAPHICS_DIR || '/data/images';
-  const maxFileMB   = ((Number(process.env.GRAPHICS_MAX_FILE_BYTES)    || 5  * 1024 * 1024) / 1024 / 1024).toFixed(0);
-  const maxStoreMB  = ((Number(process.env.GRAPHICS_MAX_STORAGE_BYTES) || 50 * 1024 * 1024) / 1024 / 1024).toFixed(0);
+if (settings.get('graphics.enabled')) {
+  const graphicsDir = process.env.GRAPHICS_DIR || '/data/images'; // Tier A path — env-only
+  const maxFileMB   = (settings.get('graphics.max_file_bytes') / 1024 / 1024).toFixed(0);
+  const maxStoreMB  = (settings.get('graphics.max_storage_bytes') / 1024 / 1024).toFixed(0);
   console.info(`✓ Graphics upload enabled — dir: ${graphicsDir}, max file: ${maxFileMB} MB, max per-key storage: ${maxStoreMB} MB`);
 } else {
   console.info('ℹ GRAPHICS_ENABLED is not set — POST /images (upload) is disabled. Set GRAPHICS_ENABLED=1 to enable.');
 }
 
-if (process.env.RTMP_APPLICATION) {
-  console.info(`✓ RTMP application name: ${process.env.RTMP_APPLICATION} — /rtmp will reject other app names.`);
+if (settings.get('media.rtmp_application')) {
+  console.info(`✓ RTMP application name: ${settings.get('media.rtmp_application')} — /rtmp will reject other app names.`);
 } else {
   console.info('ℹ RTMP_APPLICATION not set — /rtmp will accept any application name.');
 }
 
 // YouTube OAuth configuration check
-if (process.env.YOUTUBE_CLIENT_ID) {
+if (settings.get('app.youtube_client_id')) {
   console.info('✓ YouTube OAuth configured (YOUTUBE_CLIENT_ID is set).');
 } else {
   console.warn('⚠ YOUTUBE_CLIENT_ID is not set — YouTube OAuth (GET /youtube/config) will return 503.');
@@ -192,22 +204,12 @@ if (process.env.YOUTUBE_CLIENT_ID) {
 
 // Nginx configuration reminder
 console.info('ℹ nginx: see scripts/nginx-app.conf.sample for an example nginx vhost configuration.');
-if (process.env.RTMP_RELAY_ACTIVE === '1') {
+if (settings.get('media.rtmp_relay_active')) {
   console.info('  RTMP relay is active. Ensure nginx-rtmp is configured with on_publish/on_publish_done pointing to /rtmp.');
 } else {
   console.info('  RTMP relay is inactive. Set RTMP_RELAY_ACTIVE=1 and configure nginx-rtmp to enable it.');
 }
 
-// ---------------------------------------------------------------------------
-// Database and session store
-// ---------------------------------------------------------------------------
-
-const db = initDb();
-// Server settings — env > DB (server_settings) > registry default precedence
-// for the ~130 env vars this backend and its plugins read (plan_env_to_ui_settings.md).
-// Constructed right after the DB opens so every read site below and every
-// plugin init() can be handed the same instance.
-const settings = new SettingsService(db);
 const metrics = createMetrics(db);
 setMetricsInstance(metrics);
 // One shared pub/sub bus for the whole backend. Every per-project SSE registry
@@ -275,10 +277,15 @@ setHlsSubsManager(hlsSubsManager);
 hlsSubsManager.sweepStaleDir().catch(() => {});
 
 // DSK plugin: DB migrations, Playwright renderer, caption processor.
-// Only initialised when GRAPHICS_ENABLED=1 (same flag that gates image upload and Chromium install).
+// Only initialised when graphics.enabled=1 (same flag that gates image upload and
+// Chromium install). Starting/stopping the Playwright renderer live is a real
+// process lifecycle change, not a cheap reconfigure, so this stays restart-tier —
+// frozen here at boot and reused below (health's features list) rather than a
+// fresh settings.get() call, so both agree with what actually got initialised.
+const graphicsEnabled = settings.get('graphics.enabled');
 let _dskCaptionProcessor = null;
 let stopDsk = async () => {};
-if (process.env.GRAPHICS_ENABLED === '1') {
+if (graphicsEnabled) {
   ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics }));
 }
 
@@ -288,7 +295,7 @@ const metricsPollers = startMetricsPollers({
   db,
   metrics,
   mediamtxClient: productionMediamtxClient,
-  orchestratorUrl: process.env.ORCHESTRATOR_URL || '',
+  orchestratorUrl: settings.get('compute.orchestrator_url') || '',
 });
 
 // Inject translation-config + fan-out + caption-file helpers into SttManager
@@ -544,18 +551,22 @@ app.get('/metrics', async (req, res) => {
   res.send(await metrics.getMetricsText());
 });
 
-// Health check — no auth required
+// Health check — no auth required. RTMP relay and music are hot (settings.get()
+// read live, matching the request-time gate on their routers below); graphics
+// reuses the frozen boot-time `graphicsEnabled` since that capability is
+// restart-tier (see above).
 app.get('/health', (req, res) => {
+  const rtmpActive = settings.get('media.rtmp_relay_active');
   // Build feature list based on enabled capabilities
   const features = ['captions', 'sync'];
   if (loginEnabled) features.push('login');
   // Admin panel is available if: user-based logins are enabled (any admin user can use it)
   // or the legacy ADMIN_KEY env var is set.
   if (loginEnabled || process.env.ADMIN_KEY) features.push('admin');
-  if (process.env.RTMP_RELAY_ACTIVE === '1') features.push('rtmp');
-  if (process.env.GRAPHICS_ENABLED === '1') features.push('graphics');
+  if (rtmpActive) features.push('rtmp');
+  if (graphicsEnabled) features.push('graphics');
   if (sttManager) features.push('stt');
-  if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) features.push('music');
+  if (settings.get('music.detection_active') && musicManager) features.push('music');
   features.push('files', 'viewer', 'production', 'ai', 'cues', 'agent');
 
   res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
@@ -565,39 +576,36 @@ app.get('/health', (req, res) => {
     activeSessions: store.size(),
     loginEnabled,
     features,
-    ...(process.env.RTMP_RELAY_ACTIVE === '1' ? {
+    ...(rtmpActive ? {
       rtmpIngest: {
-        host: process.env.RTMP_HOST || 'rtmp.lcyt.fi',
-        app:  process.env.RTMP_APP  || 'stream',
+        host: settings.get('media.rtmp_host'),
+        app:  settings.get('media.rtmp_app'),
       },
     } : {}),
   });
 });
 
-// Contact info — no auth required
-const _contactInfo = (() => {
-  const name = process.env.CONTACT_NAME;
-  const email = process.env.CONTACT_EMAIL;
-  if (name && email) {
-    console.info(`✓ Contact info configured: ${name} <${email}>`);
-    return {
-      name, email,
-      ...(process.env.CONTACT_PHONE ? { phone: process.env.CONTACT_PHONE } : {}),
-      ...(process.env.CONTACT_WEBSITE ? { website: process.env.CONTACT_WEBSITE } : {}),
-    };
-  }
+// Contact info — no auth required. Read live per request (hot) instead of a
+// frozen startup snapshot, so a DB-saved contact.* value takes effect
+// immediately, matching the registry's apply: 'hot' for this category.
+if (settings.get('contact.name') && settings.get('contact.email')) {
+  console.info(`✓ Contact info configured: ${settings.get('contact.name')} <${settings.get('contact.email')}>`);
+} else {
   console.info('ℹ CONTACT_NAME/CONTACT_EMAIL not set — GET /contact will return 404.');
-  return null;
-})();
+}
 
 app.get('/contact', (req, res) => {
-  if (!_contactInfo) return res.status(404).json({ error: 'Contact information not configured' });
+  const name = settings.get('contact.name');
+  const email = settings.get('contact.email');
+  if (!name || !email) return res.status(404).json({ error: 'Contact information not configured' });
+  const phone = settings.get('contact.phone');
+  const website = settings.get('contact.website');
   res.set('Cache-Control', 'public, max-age=3600');
-  res.status(200).json(_contactInfo);
+  res.status(200).json({ name, email, ...(phone ? { phone } : {}), ...(website ? { website } : {}) });
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage, mediamtxClient: productionMediamtxClient }));
-app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage, mediamtxClient: productionMediamtxClient, settings }));
+app.use(createAccountRouters(db, jwtSecret, { loginEnabled, settings }));
 app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
 app.use('/admin', createAdminRouter(db, jwtSecret));
 // Admin metrics: rollup time series + "right now" live panel
@@ -610,7 +618,7 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache }, scopedAuth));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings }, scopedAuth));
 app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
@@ -664,7 +672,7 @@ app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connect
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
-  publicUrl: process.env.PUBLIC_URL,
+  publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
   metrics,
   // Real session/user/device auth on the camera CRUD routes only — WHIP and
@@ -674,28 +682,43 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   auth: scopedAuth('production'),
 }));
 
-// RTMP relay routes — only mounted when RTMP_RELAY_ACTIVE=1
-if (process.env.RTMP_RELAY_ACTIVE === '1') {
+// RTMP relay routes — media.rtmp_relay_active is hot: always mounted (the
+// managers themselves are already initialised unconditionally above,
+// regardless of this flag), gated by a request-time middleware instead of a
+// module-load-time `if`, so a DB write takes effect without a restart. When
+// disabled, the gate calls next() to fall through — behaviourally identical
+// to the previous `if`-gated code either way, since createOrgNetworkRulesRouter
+// above (mounted at `/`, unconditional internal auth) already intercepts any
+// unauthenticated request to a not-yet-matched path before it would reach a
+// bare Express 404 (see CONSIDER.md — pre-existing, not introduced here).
+function gatedRouter(getEnabled) {
+  return (router) => (req, res, next) => (getEnabled() ? router(req, res, next) : next());
+}
+{
+  const rtmpGate = gatedRouter(() => settings.get('media.rtmp_relay_active'));
   const { rtmpRouter, feedRtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
-    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains, metrics });
-  app.use('/rtmp',       rtmpRouter);
-  app.use('/feed-rtmp',  feedRtmpRouter);
-  app.use('/ingestion',  ingestionRouter);
-  app.use('/stream',     streamRouter);
-  app.use('/stream-hls', streamHlsRouter);
-  app.use('/radio',      radioRouter);
-  app.use('/preview',    previewRouter);
-  app.use('/crop',       cropRouter);
+    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics });
+  app.use('/rtmp',       rtmpGate(rtmpRouter));
+  app.use('/feed-rtmp',  rtmpGate(feedRtmpRouter));
+  app.use('/ingestion',  rtmpGate(ingestionRouter));
+  app.use('/stream',     rtmpGate(streamRouter));
+  app.use('/stream-hls', rtmpGate(streamHlsRouter));
+  app.use('/radio',      rtmpGate(radioRouter));
+  app.use('/preview',    rtmpGate(previewRouter));
+  app.use('/crop',       rtmpGate(cropRouter));
 }
 
-// Music detection (server-side HLS audio analysis) routes — only mounted when
-// MUSIC_DETECTION_ACTIVE=1 and the optional lcyt-music plugin provided a MusicManager.
-if (process.env.MUSIC_DETECTION_ACTIVE === '1' && musicManager) {
-  app.use('/music', ...createMusicRouters(db, auth, musicManager));
+// Music detection (server-side HLS audio analysis) routes — same hot-gate
+// pattern; musicManager's presence is still a boot-time concern (the optional
+// plugin either loaded or didn't), only the active/inactive flag is live.
+if (musicManager) {
+  const musicGate = gatedRouter(() => settings.get('music.detection_active'));
+  const [musicRouter, musicConfigRouter] = createMusicRouters(db, auth, musicManager);
+  app.use('/music', musicGate(musicRouter), musicGate(musicConfigRouter));
 }
 
 // ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics };
+export { app, db, store, settings, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics };

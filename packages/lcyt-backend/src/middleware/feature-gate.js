@@ -22,10 +22,15 @@ import { hasFeature } from '../db/project-features.js';
 
 /**
  * Returns true when feature-gate enforcement is active.
- * Reads the env var once per call so tests can override it.
+ * Reads the env var once per call so tests can override it. When a
+ * SettingsService is supplied, it takes precedence (env > DB > default is
+ * already SettingsService's own resolution order) so a DB-set
+ * app.feature_gate_enforce takes effect without a restart.
+ * @param {import('../settings/service.js').SettingsService} [settings]
  * @returns {boolean}
  */
-export function isEnforced() {
+export function isEnforced(settings = null) {
+  if (settings) return settings.get('app.feature_gate_enforce');
   const v = process.env.FEATURE_GATE_ENFORCE;
   return v === '1' || v === 'true';
 }
@@ -36,11 +41,12 @@ export function isEnforced() {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {string} featureCode
+ * @param {import('../settings/service.js').SettingsService} [settings]
  * @returns {import('express').RequestHandler}
  */
-export function createRequireFeature(db, featureCode) {
+export function createRequireFeature(db, featureCode, settings = null) {
   return function requireFeature(req, res, next) {
-    if (!isEnforced()) return next();
+    if (!isEnforced(settings)) return next();
 
     const apiKey = req.session?.apiKey;
     if (!apiKey) {
@@ -65,11 +71,12 @@ export function createRequireFeature(db, featureCode) {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {string} featureCode
+ * @param {import('../settings/service.js').SettingsService} [settings]
  * @returns {import('express').RequestHandler}
  */
-export function createRequireKeyFeature(db, featureCode) {
+export function createRequireKeyFeature(db, featureCode, settings = null) {
   return function requireKeyFeature(req, res, next) {
-    if (!isEnforced()) return next();
+    if (!isEnforced(settings)) return next();
 
     const apiKey = req.params.key;
     if (!apiKey) return next();
