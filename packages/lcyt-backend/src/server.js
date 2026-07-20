@@ -79,7 +79,7 @@ import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
-  createAiModelsRouter, createPlannerRouter,
+  createPlannerRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
@@ -570,7 +570,6 @@ app.get('/contact', (req, res) => {
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage, mediamtxClient: productionMediamtxClient }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
-app.use('/ai/models', createAiModelsRouter(db, userAuth));
 app.use('/admin', createAdminRouter(db, jwtSecret));
 // Admin metrics: rollup time series + "right now" live panel
 // (plan_metering_audit §6.1). Same admin auth as the /admin router.

@@ -58,7 +58,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |
 | `/admin/projects/:key` | `AdminProjectDetailPage` | Project detail, features, members (feature-gated: `admin`) |
 | `/admin/audit-log` | `AdminAuditLogPage` | Admin audit log (feature-gated: `admin`; removed from sidebar nav, route still live) |
-| `/admin/ai-models` | `AdminAiModelsPage` | Site-scope AI provider/model management (feature-gated: `admin`) |
+| `/admin/ai-models` | `AdminAiModelsPage` | MCP personal access token management (`McpAccessSection`, same card as `/setup`'s "MCP access"); route name is a holdover from a deleted AI-models card (feature-gated: `admin`) |
 | `/admin/site-features` | `AdminSiteFeaturesPage` | Tri-state site feature policies + per-org overrides (feature-gated: `admin`) |
 | `/admin/teams` | `AdminTeamsPage` | All orgs on the deployment (`GET /admin/orgs`), feature overrides (feature-gated: `admin`) |
 

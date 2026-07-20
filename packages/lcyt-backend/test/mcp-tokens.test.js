@@ -3,8 +3,8 @@
  * db helpers (create/list/update/revoke/verify) and the /mcp-tokens router.
  *
  * The router is project-settings style (user JWT Bearer + explicit
- * X-Api-Key header, same convention as /ai/models) — no live caption
- * session required, matching the Setup Hub "MCP access" card's usage.
+ * X-Api-Key header) — no live caption session required, matching the
+ * Setup Hub "MCP access" card's usage.
  */
 
 import { describe, it, before, after } from 'node:test';

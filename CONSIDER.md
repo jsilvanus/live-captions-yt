@@ -662,7 +662,7 @@ fix.
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
 plan_ingest_feeds.md, 2026-07-19.)
 
-## `AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry
+## ~~`AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry~~ (RESOLVED)
 
 **Where:** `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`,
 `routes/ai-models.js`, standalone `ai_model_configs` table (all in
@@ -677,14 +677,27 @@ nothing in the `agentic_chat` turn loop, vision adapters, or
 `ai_providers`/`ai_provider_models`/`provider_id` registry the plan actually
 built.
 
-**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
-code-cleanup or wire-up decision (either delete the dead plumbing, or use it
-as the starting point for the actual Phase 3 model-picker UI), not something
-to fix as a side effect of correcting plan status text.
+**Resolution (ROADMAP.md Tier 0, 2026-07-20):** Took the "delete it" branch
+of the finding's own decision (repurposing into the real Phase 3 UI is
+Tier 1 scope — `plan_ai_model_registry.md` — and building it now would have
+been throwaway effort against a card that didn't exist yet). Deleted
+`AiModelsSection.jsx`, `packages/plugins/lcyt-agent/src/ai-models.js`,
+`packages/plugins/lcyt-agent/src/routes/ai-models.js`, the `/ai/models`
+mount in `lcyt-backend/src/server.js`, and the `ai_model_configs` migration
+call — existing deployments keep any already-created (now-orphaned) table,
+harmless since nothing reads it. Removed its two mount points
+(`SetupHubPage.jsx`'s `ai-models` card, `AdminAiModelsPage.jsx`) and the
+now-dead `listAiModels`/`createAiModel`/`updateAiModel`/`deleteAiModel`
+helpers from `lib/aiAdminApi.js`. `AdminAiModelsPage.jsx` (`/admin/ai-models`
+— hidden from the Admin tab bar, still reachable by direct URL, see
+`HIDDEN.md`) keeps its route and now hosts only `McpAccessSection`, which
+was already independently mounted on the Setup Hub. Updated the stale
+"Phase 3 not done" callout in `plan_ai_model_registry.md` and the two other
+plan docs that referenced this card by name.
 
-(Found during: docs/plans frontmatter audit, 2026-07-20.)
+(Found during: docs/plans frontmatter audit, 2026-07-20. Resolved same day.)
 
-## Recording/VOD marks `storage_type='s3'` but nothing ever uploads the segments there
+## ~~Recording/VOD marks `storage_type='s3'` but nothing ever uploads the segments there~~ (RESOLVED)
 
 **Where:** `packages/lcyt-backend/src/db/videos.js` (`startVideoRecording`/
 `finishVideoRecording`), `packages/lcyt-backend/src/routes/live.js`
@@ -700,9 +713,27 @@ would 404 on VOD playback for any broadcast recorded this way, since
 `GET /videos/:id/playlist.m3u8` would look for segments at an S3 location
 nothing ever populated.
 
-**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
-functional bug requiring either wiring an uploader into the recording path
-or making `storage_type` correctly reflect "local, even though S3 is
-configured" until that's built.
+**Resolution (ROADMAP.md Tier 0, 2026-07-20):** Added `uploadDirectoryToS3()`
+to `packages/lcyt-backend/src/storage/s3.js` — a small authenticated
+PutObject-based uploader (`@aws-sdk/client-s3`, added as an optional
+dependency mirroring `lcyt-files`' pattern) that walks a local recording
+directory and uploads every file under the same `${storageKey}/<relative
+path>` layout the existing (unsigned-fetch) playback read path already
+expects, so no change was needed on the read side. `db/videos.js` gained
+`syncVideoRecordingToStorage(db, apiKey, videoId)`, which uploads and
+records the real `size_bytes`, or — on upload failure — downgrades the row
+to `storage_type='local'` so playback still works against the local files
+MediaMTX already wrote, instead of the previous silent 404. Wired into both
+recording-finish paths in `routes/live.js` (`stopSessionRecording()` and the
+`DELETE /live` teardown handler) via `scheduleRecordingStorageSync()`, which
+waits `RECORDING_UPLOAD_DELAY_MS` (default 3000ms) before reading the
+directory to give MediaMTX's `record:no` patch time to flush the final
+segment to disk. Deliberately kept the existing key/URL scheme (not
+`lcyt-files`' `S3_PREFIX`-based `keyDir()` layout) rather than reusing that
+adapter directly, since the two were never aligned to begin with and
+reusing it would have required also rewriting the already-working read
+path. Tests: `packages/lcyt-backend/test/videos.test.js` (upload success,
+upload-failure fallback, local-storage no-op) against a new lightweight
+mock S3 server (`test/helpers/mock-s3-server.js`, PUT-only).
 
-(Found during: docs/plans frontmatter audit, 2026-07-20.)
+(Found during: docs/plans frontmatter audit, 2026-07-20. Resolved same day.)

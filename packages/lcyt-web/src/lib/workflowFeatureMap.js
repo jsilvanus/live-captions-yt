@@ -8,8 +8,8 @@
  * Not every feature code has a Setup Hub card counterpart (e.g. `stats`,
  * `mic-lock`, `embed` are not represented as their own cards) — those are
  * simply omitted here and never contribute a card to the Workflow filter.
- * `ai-models`/`connectors` likewise have no wizard feature code at all, so
- * they never appear under the Workflow filter, only under "All".
+ * `connectors` likewise has no wizard feature code at all, so it never
+ * appears under the Workflow filter, only under "All".
  */
 export const FEATURE_TO_CARD_IDS = {
   captions:         ['caption-targets'],

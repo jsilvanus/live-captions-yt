@@ -1,12 +1,14 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import express from 'express';
 import { initDb } from '../src/db/schema.js';
 import { createVideosRouter, rewritePlaylistReferences } from '../src/routes/videos.js';
+import { startVideoRecording, getVideo, getVideoStorageDir, syncVideoRecordingToStorage } from '../src/db/videos.js';
+import { startMockS3Server } from './helpers/mock-s3-server.js';
 
 function auth(req, res, next) {
   req.session = { apiKey: 'demo-key' };
@@ -117,5 +119,68 @@ describe('videos router', () => {
       delete process.env.S3_ENDPOINT;
       delete process.env.S3_BUCKET;
     }
+  });
+
+  it('syncVideoRecordingToStorage uploads local recording artifacts to S3', async () => {
+    const mockS3 = await startMockS3Server();
+    process.env.S3_ENDPOINT = `http://127.0.0.1:${mockS3.port}`;
+    process.env.S3_BUCKET = 'demo-bucket';
+    process.env.S3_ACCESS_KEY_ID = 'test';
+    process.env.S3_SECRET_ACCESS_KEY = 'test';
+    try {
+      const result = startVideoRecording(db, 'demo-key', { title: 'S3 sync', storageType: 's3' });
+      assert.ok(result.ok);
+      const videoId = result.video.id;
+
+      // Simulate MediaMTX having written a real recorded segment alongside the placeholders.
+      writeFileSync(join(getVideoStorageDir('demo-key', videoId), 'segment1.ts'), 'segment-bytes');
+
+      await syncVideoRecordingToStorage(db, 'demo-key', videoId);
+
+      const storageKey = getVideo(db, 'demo-key', videoId).storageKey;
+      assert.ok(mockS3.objects.has(`demo-bucket/${storageKey}/playlist.m3u8`));
+      assert.ok(mockS3.objects.has(`demo-bucket/${storageKey}/segment0.ts`));
+      assert.equal(mockS3.objects.get(`demo-bucket/${storageKey}/segment1.ts`)?.toString(), 'segment-bytes');
+
+      const updated = getVideo(db, 'demo-key', videoId);
+      assert.equal(updated.storageType, 's3');
+      assert.ok(updated.sizeBytes > 0);
+    } finally {
+      await mockS3.stop();
+      delete process.env.S3_ENDPOINT;
+      delete process.env.S3_BUCKET;
+      delete process.env.S3_ACCESS_KEY_ID;
+      delete process.env.S3_SECRET_ACCESS_KEY;
+    }
+  });
+
+  it('syncVideoRecordingToStorage falls back to local storage when the upload fails', async () => {
+    process.env.S3_ENDPOINT = 'http://127.0.0.1:1'; // nothing listening — connection refused
+    process.env.S3_BUCKET = 'demo-bucket';
+    try {
+      const result = startVideoRecording(db, 'demo-key', { title: 'S3 sync failure', storageType: 's3' });
+      assert.ok(result.ok);
+      const videoId = result.video.id;
+
+      await syncVideoRecordingToStorage(db, 'demo-key', videoId);
+
+      const updated = getVideo(db, 'demo-key', videoId);
+      assert.equal(updated.storageType, 'local');
+    } finally {
+      delete process.env.S3_ENDPOINT;
+      delete process.env.S3_BUCKET;
+    }
+  });
+
+  it('syncVideoRecordingToStorage is a no-op for local-storage recordings', async () => {
+    const result = startVideoRecording(db, 'demo-key', { title: 'Local only', storageType: 'local' });
+    assert.ok(result.ok);
+    const videoId = result.video.id;
+
+    await syncVideoRecordingToStorage(db, 'demo-key', videoId);
+
+    const updated = getVideo(db, 'demo-key', videoId);
+    assert.equal(updated.storageType, 'local');
+    assert.equal(updated.sizeBytes, 0);
   });
 });

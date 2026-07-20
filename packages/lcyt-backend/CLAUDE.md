@@ -19,6 +19,8 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `BACKUP_DIR` | Directory for DB backup files | none |
 | `ICONS_DIR` | Directory for icon assets served at `/icons/*` | none |
 | `BACKEND_URL` | Server's own URL (used internally for DSK renderer etc.) | none |
+| `VIDEOS_STORAGE_DIR` | Local directory MediaMTX recordings + VOD playback artifacts are written to/served from | `./recordings` |
+| `RECORDING_UPLOAD_DELAY_MS` | Grace delay before an S3-backed recording's local files are read for upload, to let MediaMTX flush the final segment after `record:no` | `3000` |
 | `FFMPEG_WRAPPER` | Custom ffmpeg wrapper script path | none |
 | `JWT_SECRET` | HS256 signing key | auto-generated (warns) |
 | `ADMIN_KEY` | Admin endpoint auth | none (disables admin) |
@@ -332,8 +334,6 @@ GET    /orgs/:id/projects   — list projects attached to the org (any member)
 GET    /orgs/:id/features   — org feature codes (any member)
 PUT    /orgs/:id/features   — update org feature codes (owner/admin)
 
-GET/POST/PATCH/DELETE /ai/models[/:id] — per-key, per-role AI model config CRUD (lcyt-agent; user Bearer token + X-API-Key header or apiKey field)
-
 GET  /music/status          — server-side music analysis session state (Bearer token; mounted only when MUSIC_DETECTION_ACTIVE=1)
 POST /music/start | /music/stop — start/stop server-side HLS audio analysis (Bearer token)
 GET  /music/events/history  — paginated music/speech/silence event history (Bearer token)
@@ -397,7 +397,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/ffmpeg/docker-runner.js` — Runs ffmpeg inside a Docker container (`FFMPEG_IMAGE`).
 - `src/ffmpeg/worker-runner.js` — Delegates ffmpeg jobs to the worker daemon (`WORKER_DAEMON_URL`).
 - `src/ffmpeg/pipe-utils.js` — Shared pipe/stream utilities for ffmpeg runners.
-- `src/storage/s3.js` — S3 upload utilities (used by backend-level S3 operations).
+- `src/storage/s3.js` — S3 utilities for backend-owned (non-caption-file) objects: `isS3Enabled()`, `buildS3Url()` (unsigned path-style read URL, used by `routes/videos.js`'s VOD playback proxy), and `uploadDirectoryToS3(localDir, storageKeyPrefix)` (authenticated `@aws-sdk/client-s3` PutObject, optional dependency — recursively uploads a local recording directory under `${storageKeyPrefix}/<relative path>`, the same layout `buildS3Url` reads from). Deliberately a separate, simpler key scheme from `lcyt-files`' per-caption-file S3 adapter (no `S3_PREFIX`/`keyDir()` involved) — see `db/videos.js`'s `syncVideoRecordingToStorage()` for the only caller.
 - `src/routes/device-roles.js` — Device role CRUD + pin-code auth for production devices.
 - `src/routes/project-features.js` — Per-project feature flag CRUD.
 - `src/routes/project-members.js` — Project membership CRUD (invite, role update, remove).
