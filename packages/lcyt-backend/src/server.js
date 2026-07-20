@@ -18,6 +18,8 @@ import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createAdminMetricsRouter } from './routes/metrics.js';
+import { createAdminSettingsRouter } from './routes/admin-settings.js';
+import { SettingsService } from './settings/service.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
 import { createEventsStreamRouter } from './routes/events-stream.js';
 import { createEventsCatalogRouter } from './routes/events-catalog.js';
@@ -201,6 +203,11 @@ if (process.env.RTMP_RELAY_ACTIVE === '1') {
 // ---------------------------------------------------------------------------
 
 const db = initDb();
+// Server settings — env > DB (server_settings) > registry default precedence
+// for the ~130 env vars this backend and its plugins read (plan_env_to_ui_settings.md).
+// Constructed right after the DB opens so every read site below and every
+// plugin init() can be handed the same instance.
+const settings = new SettingsService(db);
 const metrics = createMetrics(db);
 setMetricsInstance(metrics);
 // One shared pub/sub bus for the whole backend. Every per-project SSE registry
@@ -596,6 +603,8 @@ app.use('/admin', createAdminRouter(db, jwtSecret));
 // Admin metrics: rollup time series + "right now" live panel
 // (plan_metering_audit §6.1). Same admin auth as the /admin router.
 app.use('/admin/metrics', createAdminMiddleware(db, jwtSecret), createAdminMetricsRouter(db, { store, metrics, metricsPollers }));
+// Server Settings admin surface (plan_env_to_ui_settings.md) — same admin auth as /admin/metrics.
+app.use('/admin/server-settings', createAdminMiddleware(db, jwtSecret), createAdminSettingsRouter(db, settings));
 app.use('/images',   imagesRouter);
 app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
