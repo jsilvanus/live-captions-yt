@@ -661,3 +661,25 @@ fix.
 
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
 plan_ingest_feeds.md, 2026-07-19.)
+
+## `AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry
+
+**Where:** `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`,
+`routes/ai-models.js`, standalone `ai_model_configs` table (all in
+`packages/plugins/lcyt-agent`).
+
+**Finding:** While auditing `plan_ai_model_registry.md`'s frontmatter, found
+that this component + route + table look like they could be Phase 3's
+still-missing role-config model-picker UI, but they're entirely separate
+plumbing: `getAiModelConfig()` has zero call sites outside its own module —
+nothing in the `agentic_chat` turn loop, vision adapters, or
+`project_ai_role_configs` reads from it. It never got wired to the
+`ai_providers`/`ai_provider_models`/`provider_id` registry the plan actually
+built.
+
+**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
+code-cleanup or wire-up decision (either delete the dead plumbing, or use it
+as the starting point for the actual Phase 3 model-picker UI), not something
+to fix as a side effect of correcting plan status text.
+
+(Found during: docs/plans frontmatter audit, 2026-07-20.)
