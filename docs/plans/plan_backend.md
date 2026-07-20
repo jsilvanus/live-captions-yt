@@ -2,10 +2,13 @@
 id: plan/backend
 title: "lcyt-backend Express Relay Backend"
 status: implemented
-summary: "CORS relay backend for YouTube Live caption ingestion: JWT auth, SQLite key management, multi-user sessions, admin CLI."
+summary: "Original v1 plan for lcyt-backend: CORS relay for YouTube caption ingestion, JWT auth, SQLite API-key management, admin CLI. All v1 features described here shipped as designed, but the backend has since grown far beyond this scope (user accounts/orgs, target-array fan-out, SSE events, broadcasts, translation, RTMP/DSK/STT, MCP, admin panel, AI roles) — see packages/lcyt-backend/CLAUDE.md for the current route list and plan_captions.md for the current caption-delivery pipeline."
+related: [plan_captions.md, plan_authentication_refactor.md, plan_team_org_backend.md, plan_selfservice_config_backend.md, plan_userprojects.md, plan_mcp.md, plan_admin.md]
 ---
 
 # lcyt-backend — Plan
+
+> **Historical note:** this is the original v1 design doc for `lcyt-backend`. It was implemented as written (single `streamKey` per session, SQLite-only API key registry, no user accounts). Since then the backend grew substantially: user accounts/login (`plan_authentication_refactor.md`), orgs/teams (`plan_team_org_backend.md`), server-persisted multi-target fan-out and SSE delivery results (`plan_captions.md`, superseding the synchronous single-`streamKey` `/captions` response shape described below), self-service target/translation config (`plan_selfservice_config_backend.md`), broadcasts, RTMP/DSK/STT plugins, an admin panel, and MCP integration. The endpoint list and session shape below reflect the v1 design only — see `packages/lcyt-backend/CLAUDE.md` for the current full route table.
 
 ## Purpose
 
@@ -1030,6 +1033,6 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 
 ## Open Questions / Future Enhancements
 
-1. **Rate limiting**: Not in v1. Recommended for production deployments via `express-rate-limit`. Should be documented in the README with a suggested configuration.
+1. **Rate limiting**: Not in v1 as originally planned; since added via `express-rate-limit` on several routes (`/auth/login`+`/auth/register` via `LOGIN_RATE_LIMIT_MAX`, `/live/recording`, `/video`, `/icons`, `/events/publish`, `/mcp`, admin feature-policy routes) — see `packages/lcyt-backend/CLAUDE.md`. `/captions` itself is not rate-limited by IP; sequencing is serialized per-session via `_sendQueue` instead.
 
-2. **WebSocket support**: HTTP POST per caption adds a round-trip per message. A WebSocket upgrade path could reduce latency for high-frequency captioning, but adds complexity. Evaluate after v1 based on real-world usage patterns.
+2. **WebSocket support**: HTTP POST per caption adds a round-trip per message. Not built — the shipped design instead made `/captions` asynchronous (202 + `requestId`, real result delivered over the `GET /events` SSE stream, see `plan_captions.md` §5/§7), which addresses the same latency concern without a WebSocket upgrade.
