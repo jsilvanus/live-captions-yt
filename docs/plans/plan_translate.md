@@ -1,10 +1,40 @@
 # Plan: Server-Side Translation Plugin (`lcyt-translate`)
 
-**Status:** Draft / Exploratory — not yet scheduled
+**Status:** Partially superseded (2026-07-20) — see note below. The specific architecture in this
+document (a standalone `lcyt-translate` plugin, a new `stt_translate_config` table, `GET/PUT
+/translate/config`, operator-level env-var vendor keys) was **not built**.
 **Date:** 2026-03-26
 **Context:** Extracted from `plan_backend_split.md` — plugin splitting section.
+**Related:** `plan/server-stt` (Phase 5), `plan/translations`
 
 ---
+
+## Status Note (2026-07-20)
+
+Gap #1 below (server-side STT bypassing translation) **has been closed**, but by a different,
+simpler mechanism than the one proposed in this document — see `plan_server_stt.md` Phase 5
+("Server-side translation for server-STT transcripts"), implemented and verified:
+
+- The translation call lives in `packages/plugins/lcyt-rtmp/src/translate-server.js`
+  (`translateText`/`isSameLanguage`) — colocated with `SttManager` in `lcyt-rtmp`, not a new
+  `lcyt-translate` plugin package.
+- It reuses the **already-existing** `translation_vendor_config`/`translation_targets` tables
+  (`packages/lcyt-backend/src/db/translation-config.js`, built for the self-service/client config
+  UI per `plan_selfservice_config_backend.md` §1) — no new `stt_translate_config` table, and
+  per-user vendor API keys are already stored there, not gated behind operator-level env vars as
+  this doc's Phase 1 recommended.
+- Wiring is `SttManager.setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets,
+  … })`, called once from `server.js`, not a `translateManager` constructor option.
+- There is no separate `/translate/config` HTTP API — config is read/written through the existing
+  `GET/PUT /translation/config*` routes (`packages/lcyt-backend/src/routes/translation.js`).
+
+Gap #2 below (API/generic/CLI clients that `POST /captions` directly with no `translations` map)
+is **still open** — `packages/lcyt-backend/src/routes/captions.js` has no server-side translation
+step; it only composes/fans-out whatever `translations` the client already supplied. If that gap is
+ever closed, the STT precedent above (reuse `translation_vendor_config`/`translation_targets` +
+`translate-server.js`-style module, not a new plugin) is the template to follow — this document's
+plugin-package/new-table/new-route design should be considered superseded rather than revived
+as-is.
 
 ## Background and Motivation
 
@@ -332,4 +362,10 @@ This is the correct behaviour: browser translation remains the primary path for 
 | DB schema | New `stt_translate_config` table |
 | Breaking changes | None |
 
-This plan is **exploratory** — the feature is fully designed here but not yet scheduled. The STT gap is real and worth closing; the question is whether server-side translation adds sufficient value over asking STT users to configure the browser translation pipeline when they replay through the web UI.
+This plan is **partially superseded** (see Status Note above, 2026-07-20) — the STT gap this
+document set out to close is real and has since been closed, but via `plan_server_stt.md` Phase 5's
+lighter-weight design (reusing existing tables, colocated in `lcyt-rtmp`), not the standalone
+`lcyt-translate` plugin proposed here. The remaining gap (API/generic/CLI clients bypassing
+translation on direct `POST /captions`) is unaddressed by any implemented mechanism; this document
+remains useful as a design reference for that gap, but should not be scheduled as originally
+written.
