@@ -97,6 +97,10 @@ webrtc: no
 #                  independently to its own relay target via runOnPublish
 # dsk/{key}      — DSK renderer output pushed by Playwright/ffmpeg (RTMP app "dsk",
 #                  DSK_RTMP_APP); rtmp-manager reads it via RTSP when compositing
+# {key}-crop     — vertical (9:16) crop rendition pushed by CropManager
+#                  (plan_vertical_crop.md); read back over RTSP by relay slots
+#                  with sourceView:'crop' and served to browsers via
+#                  /stream-hls/{key}-crop/index.m3u8, same as any other path
 # ─────────────────────────────────────────────────────────────────────────────
 
 paths:

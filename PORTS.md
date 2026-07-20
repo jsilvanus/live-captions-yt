@@ -12,6 +12,7 @@
 | **8889** | HTTP/WS | MediaMTX — WebRTC preview | inbound (browsers) | `MEDIAMTX_WEBRTC_BASE_URL` |
 | **9997** | HTTP | MediaMTX — REST API | internal | `MEDIAMTX_API_URL` |
 | **9998** | HTTP | MediaMTX — Prometheus metrics | internal | — (`docker/mediamtx.yml` `metricsAddress`) |
+| **5560+** | ZeroMQ | Vertical-crop live repositioning (`CropManager`, one port per running crop renderer) | internal (loopback only) | `CROP_ZMQ_PORT_BASE` |
 | **4000** | HTTP | lcyt-orchestrator | internal | `PORT` |
 | **5000** | HTTP | lcyt-worker-daemon | internal | `PORT` |
 | **9090** | HTTP | Prometheus (docker-compose.monitoring.yml) | internal | — |
@@ -82,6 +83,20 @@ Never exposed to the public.
 - **Inbound from internet:** no — internal only
 - Override: `MEDIAMTX_API_URL=http://127.0.0.1:9997`
 
+### Vertical-crop live repositioning — ports 5560+
+
+Each running crop renderer (`CropManager`, `packages/plugins/lcyt-rtmp/src/crop-manager.js`,
+`docs/plans/plan_vertical_crop.md`) that has zmq support in its ffmpeg build
+(`hasZmq`) opens one ZeroMQ REQ/REP socket, bound to `127.0.0.1` only, so
+crop position changes land on the running ffmpeg process without a restart.
+Ports are allocated per-process starting at `CROP_ZMQ_PORT_BASE` (default
+`5560`) and cycle through a 1000-port window — never a single fixed port,
+and never exposed outside the host.
+
+- **Inbound from internet:** no — loopback only, never bound to a public interface
+- **Firewall:** no rule needed (never listens outside 127.0.0.1)
+- Override: `CROP_ZMQ_PORT_BASE=5560`
+
 ### nginx — ports 80 / 443
 
 Reverse proxy in front of lcyt-backend and MediaMTX HLS.
@@ -125,3 +140,4 @@ TCP  9998  MediaMTX Prometheus metrics
 | `MEDIAMTX_RTSP_BASE_URL` | `rtsp://127.0.0.1:8554` | MediaMTX RTSP base — used by relay `runOnPublish` |
 | `MEDIAMTX_WEBRTC_BASE_URL` | `http://127.0.0.1:8889` | MediaMTX WebRTC base — returned by `/preview/:key/webrtc` |
 | `MEDIAMTX_API_URL` | `http://localhost:9997` | MediaMTX REST API — used by MediaMtxClient |
+| `CROP_ZMQ_PORT_BASE` | `5560` | First 127.0.0.1 port for per-process vertical-crop zmq binds |

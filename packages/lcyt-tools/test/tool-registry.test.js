@@ -50,6 +50,28 @@ function makeAgentFake() {
   };
 }
 
+function makeCropFake() {
+  const presets = {
+    key1: [{ id: 'p1', name: 'Wide', xNorm: 0.2, yNorm: 0 }],
+    key2: [{ id: 'p2', name: 'Tele', xNorm: 0.8, yNorm: 0 }],
+  };
+  const running = new Set(['key1']); // key2 has a preset but no running renderer
+  return {
+    cropManager: {
+      isRunning: (apiKey) => running.has(apiKey),
+      getStatus: (apiKey) => ({ running: running.has(apiKey), activePresetId: null, xNorm: 0.5, yNorm: 0 }),
+      applyPosition: async (apiKey, opts) => {
+        cropApplyCalls.push([apiKey, opts]);
+        return { ok: true, mode: 'live', xNorm: opts.xNorm, yNorm: opts.yNorm };
+      },
+    },
+    getCropConfig: () => ({ transitionMs: 250 }),
+    getCropPreset: (db, apiKey, id) => (presets[apiKey] || []).find((p) => p.id === id) ?? null,
+    listCropPresets: (db, apiKey) => presets[apiKey] || [],
+  };
+}
+let cropApplyCalls = [];
+
 function makeAssetsFake() {
   const images = new Map([[1, { id: 1, apiKey: 'key1', settings: {} }]]);
   return {
@@ -72,23 +94,26 @@ function makeAssetsFake() {
 
 function makeFullRegistry() {
   registryCalls = [];
+  cropApplyCalls = [];
   return createToolRegistry({
     db: {},
     captionTargets: makeCaptionTargetsFake(),
     production: makeProductionFake(),
     agent: makeAgentFake(),
     assets: makeAssetsFake(),
+    crop: makeCropFake(),
   });
 }
 
 describe('createToolRegistry', () => {
-  it('assembles all 18 tools across the five groups', () => {
+  it('assembles all 20 tools across the six groups', () => {
     const reg = makeFullRegistry();
     const names = reg.tools.map((t) => t.name).sort();
     assert.deepEqual(names, [
       'asset.delete', 'asset.list', 'asset.update',
       'camera.create', 'camera.delete', 'camera.list', 'camera.preset', 'camera.update',
       'caption_target.create', 'caption_target.delete', 'caption_target.list', 'caption_target.update',
+      'crop.activate_preset', 'crop.list_presets',
       'dsk_template.edit', 'dsk_template.generate', 'dsk_template.suggest_styles',
       'mixer.create', 'mixer.delete', 'mixer.list', 'mixer.switch', 'mixer.update',
     ].sort());
@@ -103,8 +128,8 @@ describe('createToolRegistry', () => {
 
   it('every destructive/state-changing tool has destructiveHint; list/get tools have readOnlyHint', () => {
     const reg = makeFullRegistry();
-    const destructive = ['caption_target.delete', 'camera.delete', 'camera.preset', 'mixer.delete', 'mixer.switch', 'asset.delete'];
-    const readOnly = ['caption_target.list', 'camera.list', 'mixer.list', 'asset.list', 'dsk_template.suggest_styles'];
+    const destructive = ['caption_target.delete', 'camera.delete', 'camera.preset', 'mixer.delete', 'mixer.switch', 'asset.delete', 'crop.activate_preset'];
+    const readOnly = ['caption_target.list', 'camera.list', 'mixer.list', 'asset.list', 'dsk_template.suggest_styles', 'crop.list_presets'];
     for (const name of destructive) {
       const tool = reg.tools.find((t) => t.name === name);
       assert.equal(tool.annotations?.destructiveHint, true, `${name} should have destructiveHint`);
@@ -163,6 +188,57 @@ describe('createToolRegistry', () => {
       const result = await reg.callTool('mixer.switch', { mixerId: 'mix1', inputNumber: 3 }, { apiKey: 'key1' });
       assert.equal(result.ok, true);
       assert.deepEqual(registryCalls, [['switchSource', 'mix1', 3]]);
+    });
+  });
+
+  describe('crop.* handlers', () => {
+    it('list_presets returns the project\'s presets plus renderer status', async () => {
+      const reg = makeFullRegistry();
+      const result = await reg.callTool('crop.list_presets', {}, { apiKey: 'key1' });
+      assert.equal(result.ok, true);
+      assert.equal(result.presets.length, 1);
+      assert.equal(result.presets[0].id, 'p1');
+      assert.equal(result.running, true);
+
+      const other = await reg.callTool('crop.list_presets', {}, { apiKey: 'key2' });
+      assert.equal(other.presets.length, 1);
+      assert.equal(other.presets[0].id, 'p2');
+      assert.equal(other.running, false);
+    });
+
+    it('activate_preset applies the preset live, defaulting transitionMs from crop_config', async () => {
+      const reg = makeFullRegistry();
+      const result = await reg.callTool('crop.activate_preset', { presetId: 'p1' }, { apiKey: 'key1' });
+      assert.equal(result.ok, true);
+      assert.equal(result.presetId, 'p1');
+      assert.equal(cropApplyCalls.length, 1);
+      const [apiKey, opts] = cropApplyCalls[0];
+      assert.equal(apiKey, 'key1');
+      assert.equal(opts.xNorm, 0.2);
+      assert.equal(opts.activePresetId, 'p1');
+      assert.equal(opts.transitionMs, 250, 'falls back to crop_config.transitionMs when not provided');
+    });
+
+    it('activate_preset honours an explicit transitionMs', async () => {
+      const reg = makeFullRegistry();
+      await reg.callTool('crop.activate_preset', { presetId: 'p1', transitionMs: 500 }, { apiKey: 'key1' });
+      assert.equal(cropApplyCalls[0][1].transitionMs, 500);
+    });
+
+    it('activate_preset returns ok:false for an unknown preset', async () => {
+      const reg = makeFullRegistry();
+      const result = await reg.callTool('crop.activate_preset', { presetId: 'nope' }, { apiKey: 'key1' });
+      assert.equal(result.ok, false);
+      assert.equal(cropApplyCalls.length, 0);
+    });
+
+    it('activate_preset returns ok:false when the renderer is not running', async () => {
+      const reg = makeFullRegistry();
+      // key2 has its own preset (p2) but no running renderer.
+      const result = await reg.callTool('crop.activate_preset', { presetId: 'p2' }, { apiKey: 'key2' });
+      assert.equal(result.ok, false);
+      assert.match(result.error, /not running/);
+      assert.equal(cropApplyCalls.length, 0);
     });
   });
 

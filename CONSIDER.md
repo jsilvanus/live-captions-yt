@@ -737,3 +737,86 @@ upload-failure fallback, local-storage no-op) against a new lightweight
 mock S3 server (`test/helpers/mock-s3-server.js`, PUT-only).
 
 (Found during: docs/plans frontmatter audit, 2026-07-20. Resolved same day.)
+
+---
+
+## `crop_preset` has no working named-action or cue-triggered path — premise mismatch, not built
+
+**Where:** `packages/plugins/lcyt-actions` (named actions), `packages/plugins/lcyt-cues`
+(cue engine), `packages/lcyt-web/src/lib/metacode-actions.js` (named-action execution)
+
+**Finding:** `docs/plans/plan_vertical_crop.md` Phase 4 asked for a `crop_preset`
+"named-action/cue/tool" — recall a crop preset "the same way other production
+actions are today," by analogy with `camera.preset`/`mixer.switch`. Investigating
+before implementing (per this session's instructions) found that analogy doesn't
+hold:
+
+- **Named actions execute entirely client-side.** `lcyt-actions`' own `CLAUDE.md`
+  states it plainly: "Parsing, `@`-ref expansion..., and send-time execution all
+  live in the web client." `lcyt-web/src/lib/metacode-actions.js`'s `applyAtoms()`
+  only knows `api:`/`!api:`/`api!:` (connector triggers), `audio:start`/`stop`, and
+  generic persistent variable/graphics/section assignment atoms — there is no
+  camera/mixer/production-control atom at all, for *any* device, today. Adding
+  `crop_preset:` as the first one would mean inventing that category, and doing it
+  requires an `lcyt-web` change — explicitly out of scope for the session that did
+  this work ("no `lcyt-web` conflict").
+- **Cue-fired actions are descriptive-only.** `cue_rules.action` (and
+  `cue_events.action`) is arbitrary JSON, but `cue-processor.js` only ever does one
+  thing with it: attach it to the `cue_fired` SSE event for the *frontend* to
+  interpret (today: jump the rundown pointer). No cue firing, for any action type,
+  executes a backend side effect. Making `crop_preset` the first one would mean
+  building a new backend cue-action-dispatcher — a bigger, more architecturally-loaded
+  change than "follow the existing pattern," since there is no existing pattern of
+  a cue driving hardware to follow.
+
+**What *was* built instead:** the one piece of "recall a crop preset the same way
+other production actions are today" that has a real, precedented, backend-only
+mechanism — a `crop.list_presets`/`crop.activate_preset` AI-tool pair
+(`packages/lcyt-tools/src/tools/crop.js`), registered exactly like
+`camera.preset`/`mixer.switch` and added to the Production Assistant role's
+`available_tools` (`packages/plugins/lcyt-agent/src/ai-roles.js`).
+
+**Why skipped:** forcing the named-action/cue halves would mean either violating
+this task's explicit `lcyt-web`-untouched constraint, or inventing new
+cue-execution architecture speculatively (against this repo's "no speculative
+abstractions beyond what's asked" convention) for a single action type with no
+sibling to generalize from yet. A future pass that actually wants
+cue/named-action-driven device control should design that capability for
+camera/mixer/crop together, not bolt one narrow case onto an architecture that
+doesn't support the concept at all.
+
+(Found during: `plan_vertical_crop.md` Phase 4/5 implementation, 2026-07-20.)
+
+---
+
+## AI-tool-driven mixer switches / camera preset recalls don't trigger vertical-crop follow
+
+**Where:** `packages/lcyt-tools/src/tools/mixers.js` (`mixer.switch`),
+`packages/lcyt-tools/src/tools/cameras.js` (`camera.preset`),
+`packages/plugins/lcyt-production/src/routes/mixers.js` and `routes/cameras.js`
+
+**Finding:** `plan_vertical_crop.md` Phase 4's production-follow notifications
+(`registry.notifyProgramChanged()`/`notifyCameraPresetRecalled()`) are fired from
+the **HTTP route handlers** in `lcyt-production`, not from
+`DeviceRegistry.switchSource()`/`callPreset()` themselves — this is deliberate:
+a bridge-relayed switch (the common case for real roland/amx/atem/monarch_hdx
+hardware) returns early from the route without ever calling `switchSource()`, so
+the route is the only place that sees both the direct and bridge-relayed
+transports succeed. But `lcyt-tools`' `mixer.switch`/`camera.preset` tool
+handlers (used by the Production Assistant AI role and any MCP client) call
+`registry.switchSource()`/`callPreset()` **directly**, bypassing the HTTP route
+entirely — so an AI-tool-driven or MCP-driven mixer switch or PTZ preset recall
+never fires the production-follow notification, and the vertical crop will not
+follow it, even though the operator-UI-driven equivalent does.
+
+**Why skipped:** out of scope for this task, which was scoped to
+`lcyt-production`/`lcyt-rtmp` and asked to hook into "wherever mixer-switch and
+PTZ-preset-recall events already fire in `lcyt-production`" — that's the routes,
+which is what got wired. Closing this gap would mean adding the same
+`registry.notifyProgramChanged()`/`notifyCameraPresetRecalled()` calls to
+`tools/mixers.js`'s `mixer.switch` and `tools/cameras.js`'s `camera.preset`
+handlers (both already receive `ctx.apiKey`, they just don't use it today since
+cameras/mixers are project-wide tables) — a small, mechanical follow-up, not a
+design question, whenever AI-tool-driven crop-follow parity is wanted.
+
+(Found during: `plan_vertical_crop.md` Phase 4 implementation, 2026-07-20.)

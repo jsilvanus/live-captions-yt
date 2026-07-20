@@ -28,6 +28,7 @@ import { createCameraTools } from './tools/cameras.js';
 import { createMixerTools } from './tools/mixers.js';
 import { createDskTemplateTools } from './tools/dsk-templates.js';
 import { createAssetTools } from './tools/assets.js';
+import { createCropTools } from './tools/crop.js';
 
 /**
  * Build the full tool registry.
@@ -38,10 +39,11 @@ import { createAssetTools } from './tools/assets.js';
  * @param {object} [deps.production] — { registry, bridgeManager, listCameras, getCameraById, createCamera, updateCamera, deleteCamera, listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand } from 'lcyt-production'
  * @param {import('lcyt-agent').AgentEngine} [deps.agent] — for dsk_template.* tools
  * @param {object} [deps.assets] — { listImages, getImageByKey, updateImageSettings, deleteImage } from 'lcyt-dsk'
+ * @param {object} [deps.crop] — { cropManager, getCropConfig, getCropPreset, listCropPresets } from 'lcyt-rtmp' (plan_vertical_crop.md §4)
  * @returns {{ tools: Array<{name, description, inputSchema, annotations}>, callTool: Function, byName: Map }}
  */
 export function createToolRegistry(deps = {}) {
-  const { db, captionTargets, production, agent, assets } = deps;
+  const { db, captionTargets, production, agent, assets, crop } = deps;
 
   const groups = [];
   if (captionTargets) groups.push(createCaptionTargetTools({ db, ...captionTargets }));
@@ -51,6 +53,7 @@ export function createToolRegistry(deps = {}) {
   }
   if (agent) groups.push(createDskTemplateTools({ agent }));
   if (assets) groups.push(createAssetTools({ db, ...assets }));
+  if (crop) groups.push(createCropTools({ db, ...crop }));
 
   const entries = groups.flat();
   const byName = new Map(entries.map((t) => [t.name, t]));

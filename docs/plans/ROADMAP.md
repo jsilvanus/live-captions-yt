@@ -53,6 +53,21 @@ Phase 3), and seven small Tier-3 gap-closers (`tmp_plan_tier3.md`). All of it sh
 and was verified still-accurate by the 2026-07-20 audit. See `CONSIDER.md` and
 `tmp_plan_tier3.md`'s "Implementation notes" for the detail; it's not repeated here.
 
+`plan_vertical_crop.md` Phase 4 (production-follow — `registry.onProgramChanged()`/
+`onCameraPresetRecalled()` in `lcyt-production`, `CropManager.applyForSource()` in
+`lcyt-rtmp`, a `crop.list_presets`/`crop.activate_preset` AI-tool pair in
+`lcyt-tools` wired into the Production Assistant role) and Phase 5 (ops —
+`docker/lcyt-ffmpeg/Dockerfile` now builds ffmpeg from source with
+`--enable-libzmq`, `PORTS.md`/`docker/mediamtx.yml` docs) landed since the
+2026-07-20 audit. **Not done, premise mismatch found:** the plan's `crop_preset`
+"named-action/cue" half — `lcyt-actions` is pure storage with all execution
+client-side (`packages/lcyt-web/src/lib/metacode-actions.js`), and cue rules'
+`action` JSON is descriptive-only, interpreted by the frontend, with no
+production-control atom (camera/mixer included) ever wired into either system
+today. Implementing it for real needs `lcyt-web` changes explicitly out of scope
+for that work session, or a new backend cue-action-dispatcher that doesn't
+exist for any action type yet. See `CONSIDER.md`.
+
 ---
 
 ## Tier 0 — Fix now: real bugs the audit surfaced
@@ -78,7 +93,6 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 | `plan_team_org_backend.md` | `getEffectiveProjectAccessLevel()` org-baseline-plus-project-override resolver, and the sweep of existing per-project auth checks (`project-features.js`, `keys.js`, `device-roles.js`, `middleware/project-access.js`) onto it | The `/team` org UI and CRUD are fully live, but org membership today grants **zero** baseline access to any individual project's resources (captions, DSK, cues, STT, etc.) — only to org-level surfaces. A user can be shown as a team member and still be locked out of every project the team owns. This is the single most consequential gap in the whole backlog because it's a half-shipped, user-facing feature, not a deferred nice-to-have. Auth-sensitive — scope carefully, needs its own full route-level test pass, probably shouldn't run in parallel with other `lcyt-backend` auth-adjacent work. |
 | `plan_ai_model_registry.md` | Phase 3 frontend: wire `provider_id`/`model_name` into the Setup Hub role-config UI (backend `resolveRoleProviderSettings()`/`invokeModelCall()` is done and tested) | Today a role's model can only be set by a direct API call. Fold in the Tier 0 decision about `AiModelsSection.jsx` — either delete-and-rebuild clean or repurpose its shell. Phase 4 ("deer" in-process runtimes) stays unscoped pending inspection of the actual `jsilvanus/deer` package APIs — don't start it speculatively. |
 | `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
-| `plan_vertical_crop.md` | Phase 4 (production-follow: `crop_source_map` → mixer-switch/PTZ-preset registry callbacks, `crop_preset` named-action/cue/tool), Phase 5 (ops/polish — `docker/lcyt-ffmpeg/Dockerfile` still has no `libzmq`, so live reposition falls back to restart-only in that image) | Schema, `CropManager`, `/crop` routes, live zmq repositioning, and the full operator UI (`/production/crop`) are done. This is backend-only (`lcyt-production`/`lcyt-rtmp`), no `lcyt-web` conflict with the AI-frontend lanes above. |
 | `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
 
 ---
@@ -97,7 +111,7 @@ one-shot lane.
 |---|---|---|
 | `plan_broadcast_platform_sync.md` | **High** — closes `plan_broadcasts.md`'s biggest explicitly-out-of-scope gap (YouTube two-way sync), which is the most-requested-shaped missing piece in the whole broadcasts feature | New `lcyt-platforms` plugin + server-side OAuth (replacing the current browser-only implicit-token flow in `youtubeAuth.js`/`youtubeApi.js`/`YouTubeTab.jsx`) + `lcyt-web` broadcast UI. Facebook Live is explicitly deferred within this same plan — don't scope it in. |
 | `plan_env_to_ui_settings.md` | **Medium-high** — ops/quality-of-life; makes ~130 env-var-only settings admin-editable without redeploying, closes a real operability gap for self-hosted deployments | New `server_settings` table + declarative registry/service + Admin UI tab, additive by design (env > DB > default precedence keeps 12-factor deployments untouched). Mostly isolated to `lcyt-backend` config plumbing + one new Admin page; low collision risk with Tier 1 work. |
-| `plan_video_perception.md` | **High but large** — the fps30 tracker subsystem `plan_cues.md` has anticipated (and left an inert consumer contract for) since before this doc existed, plus a World State fusion service; the biggest single scope item in this tier | New per-camera CV pipeline (deploys as a new job type on the existing `lcyt-orchestrator`/`lcyt-worker-daemon`, not a new ops story) + World State service + camera/preset metadata. **Real sequencing dependency, not just scope note:** its shared/single-feed camera handling needs `plan_vertical_crop.md` Phase 4's `onProgramChanged`/`onCameraPresetRecalled` callbacks (Tier 1, not yet built) — that plan's write-up now recommends promoting them to real EventBus events once this plan is a second consumer. Sequence Tier 1's vertical-crop Phase 4 before or alongside this plan's Phase 3 (shared-feed resolver), not after. Its Phase 1 (schema + camera metadata + World State skeleton, no perception producer) has no such dependency and can start immediately. |
+| `plan_video_perception.md` | **High but large** — the fps30 tracker subsystem `plan_cues.md` has anticipated (and left an inert consumer contract for) since before this doc existed, plus a World State fusion service; the biggest single scope item in this tier | New per-camera CV pipeline (deploys as a new job type on the existing `lcyt-orchestrator`/`lcyt-worker-daemon`, not a new ops story) + World State service + camera/preset metadata. Its shared/single-feed camera handling needs `plan_vertical_crop.md` Phase 4's `onProgramChanged`/`onCameraPresetRecalled` callbacks — **now implemented** (`lcyt-production`'s `DeviceRegistry`), so this plan's Phase 3 (shared-feed resolver) is unblocked; the callbacks are still plain setter-injected listeners, not real EventBus events, so a second consumer here should still weigh promoting them per that plan's §4 note. Its Phase 1 (schema + camera metadata + World State skeleton, no perception producer) has no dependency either way and can start immediately. |
 | `plan_ai_observability.md` | **Medium, high leverage-per-effort** — the prompt-sculpting/debug page, split out of `plan_video_perception.md` specifically so it isn't stuck behind that plan's dependency chain | Genuinely startable now: Stage 1 (live overlay + capture/replay + prompt sandbox) works against the already-implemented Tracker/Describer roles, no new dependency. Stage 2 (true multi-camera grid) needs `plan_ai_roles_framework.md`'s camera-scoping amendment (Tier 1). Stage 3 (extend to `camera.track_state`) needs `plan_video_perception.md` Phase 2. Small enough to skip the phase-planning-first recommendation given to the three larger Tier 2 items above. |
 | `plan_mixer_feed_sources.md` | Medium — niche production feature (looping-file mixer source + WHEP low-latency preview tiles) | `lcyt-production`/mixer code; its former 'encoder' source type is already covered by the implemented `plan_ingest_feeds.md`, so scope is smaller than the plan's original draft. May overlap `plan_vertical_crop.md` Phase 4's mixer-registry callbacks — check before running both at once. `plan_video_perception.md`'s observability page also wants this plan's WHEP preview-tile work as its video source — a second reason to land this one earlier rather than later in the tier. |
 | `plan_local_stt.md` | Depends on appetite — large, standalone infra investment (containerized faster-whisper server, Finnish fine-tuning pipeline, dependency on the separate `crowd-source-voice` platform for training data) | Self-contained new service (`lcyt-stt`), integrates via the *unchanged* `WhisperHttpAdapter`, so it's zero-risk to schedule alongside anything else — but confirm there's actually a Finnish-STT-quality driver before investing in the training pipeline half; the inference-server half alone may be worth doing independently of the training half. |
@@ -174,18 +188,16 @@ Non-overlapping lanes, grouped by package ownership per §0:
   `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. **Coordinate with
   Lane 3** if both touch `SetupHubPage.jsx`'s layout — confirm section ordering
   before either lands, or sequence them.
-- **Lane 5 (`lcyt-production`/`lcyt-rtmp`, backend-only):** Tier 1's
-  `plan_vertical_crop.md` Phase 4. No `lcyt-web` conflict with Lanes 3–4.
 - **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 (new package, isolated):** Begin `plan_env_to_ui_settings.md` similarly —
   phase-plan first, then dispatch.
 - **Lane 9 (`lcyt-agent` + new tables, isolated):** `plan_video_perception.md`
-  Phase 1 only (schema + camera metadata + World State skeleton, no perception
-  producer yet) — has no dependency on Lane 5 and can start now. Do **not** start
-  that plan's Phase 2/3 (the actual fps30 producer) until Lane 5
-  (`plan_vertical_crop.md` Phase 4) has landed or is running in the same batch — see
-  Tier 2's dependency note.
+  Phase 1 (schema + camera metadata + World State skeleton, no perception
+  producer yet), and now also Phase 2/3 (the fps30 producer + shared-feed
+  resolver) — their dependency on `plan_vertical_crop.md` Phase 4's
+  `onProgramChanged`/`onCameraPresetRecalled` callbacks is satisfied, that
+  phase has landed (see "Recently closed" above).
 - **Lane 10 (`lcyt-web` + `lcyt-agent`, isolated):** `plan_ai_observability.md`
   Stage 1 (live overlay + capture/replay + prompt sandbox against today's
   Tracker/Describer) — no dependency on any other lane here, can start immediately

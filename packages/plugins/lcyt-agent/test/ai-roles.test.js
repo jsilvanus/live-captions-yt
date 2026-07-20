@@ -52,7 +52,7 @@ describe('ai-roles', () => {
     assert.deepEqual(tracker.inputTypes, ['video_frames']);
     assert.deepEqual(tracker.availableTools, []);
     const assistant = roles.getRole(db, 'assistant');
-    assert.deepEqual(assistant.availableTools, ['camera.preset', 'mixer.switch']);
+    assert.deepEqual(assistant.availableTools, ['camera.preset', 'mixer.switch', 'crop.list_presets', 'crop.activate_preset']);
     assert.equal(roles.getRole(db, 'no-such-role'), null);
   });
 

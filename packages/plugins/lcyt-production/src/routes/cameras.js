@@ -257,6 +257,12 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
     try {
       const camera = parseCamera(row);
+      // Whichever project's session recalled this preset — production-follow
+      // (plan_vertical_crop.md §4) scopes the crop_source_map lookup to it,
+      // same reasoning as the mixer-switch route above; prod_cameras has an
+      // owner_api_key but it's optional/legacy, not what "which project is
+      // driving this camera right now" means for the crop follow.
+      const apiKey = req.session?.apiKey ?? null;
 
       // Bridge routing: if camera is assigned to a bridge, relay via SSE
       if (camera.bridgeInstanceId && bridgeManager) {
@@ -278,6 +284,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
         await registry.callPreset(id, presetId);
       }
 
+      registry.notifyCameraPresetRecalled({ apiKey, cameraId: id, preset: presetId });
       res.json({ ok: true, cameraId: id, presetId });
     } catch (err) {
       const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
