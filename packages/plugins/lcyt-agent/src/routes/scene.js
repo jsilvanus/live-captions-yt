@@ -5,17 +5,15 @@
  */
 
 import { Router } from 'express';
-import { getSceneState } from '../scene-state.js';
 
 /**
  * @param {import('express').RequestHandler} auth — project-scoped auth middleware
+ * @param {import('../scene-state.js').SceneState} sceneState — shared instance from initAgent()
  * @returns {import('express').Router}
  */
-export function createSceneRouter(auth) {
+export function createSceneRouter(auth, sceneState) {
   const router = Router();
   router.use(auth);
-
-  const sceneState = getSceneState();
 
   // GET /scene/state — return the current scene state snapshot
   router.get('/state', (req, res) => {

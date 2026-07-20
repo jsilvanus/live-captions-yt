@@ -337,6 +337,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
+  sceneState: _sceneState,
 } = await initAgent(db, { eventBus, metrics, settings });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
@@ -669,7 +670,7 @@ app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddl
 app.use('/roles', createRolesRouter(db, scopedAuth('role')));
 app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
 app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
-app.use('/scene', createSceneRouter(scopedAuth('role')));
+app.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },

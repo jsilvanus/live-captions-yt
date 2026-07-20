@@ -9,12 +9,12 @@ import {
   initAgent, createAgentRouter, createAiRouter, computeEmbeddings,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter,
   createRolesRouter, createRolesChatRouter, createProductionAssistantRouter,
-  createVisionRolesRouter, createPlannerRouter,
+  createVisionRolesRouter, createPlannerRouter, createSceneRouter,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
 
 const {
-  agent, providerRegistry, rolesBus, assistantManager, visionRoleManager,
+  agent, providerRegistry, rolesBus, assistantManager, visionRoleManager, sceneState,
 } = await initAgent(db);
 
 providerRegistry.setBridgeManager(productionBridgeManager); // setter injection, after both plugins init
@@ -38,6 +38,7 @@ app.use('/roles', createRolesChatRouter(db, auth, toolsContext, rolesBus));     
 app.use('/roles', createVisionRolesRouter(db, auth, visionRoleManager));           // tracker/describer start/stop/status
 app.use('/roles/assistant', createProductionAssistantRouter(db, auth, toolsContext, assistantManager, agent, { listCameras, listMixers, registry }));
 app.use('/roles/planner', createPlannerRouter(db, auth, agent));
+app.use('/scene', createSceneRouter(auth, sceneState));
 ```
 
 **Source files (`src/`):**
@@ -70,7 +71,7 @@ app.use('/roles/planner', createPlannerRouter(db, auth, agent));
 
 **World State / Scene State (plan_video_perception.md Phase 1 Stream B):**
 - `scene-state.js` — `SceneState` class: in-memory per-project snapshots of the current scene understanding. One snapshot per `apiKey`, created lazily on first access, never persisted. Snapshot shape per the plan's §2: `{ activeSpeaker: {personId, cameraId, confidence, since}|null, cameras: {[cameraId]: {visible, lastSeenAt, labels, framingScore}}, segmentGuess: {label, confidence, since}|null, updatedAt }`. Snapshot-only in Phase 1; history log deferred (plan's open question about retention sizing). Updated by handlers wired in Phase 2/3; currently just returns empty/idle state.
-- `routes/scene.js` — `createSceneRouter(auth)`: `GET /scene/state` (scoped-auth protected), returns the per-project snapshot. Mounted at `/scene` from the backend (so the path is `GET /scene/state`), same auth scope as the roles routes.
+- `routes/scene.js` — `createSceneRouter(auth, sceneState)`: `GET /scene/state` (scoped-auth protected), returns the per-project snapshot from the injected `sceneState` (the same instance `initAgent()` constructs and returns — not a module-level singleton, matching how `visionRoleManager` is threaded through). Mounted at `/scene` from the backend (so the path is `GET /scene/state`), same auth scope as the roles routes.
 
 **Backward compatibility:** `packages/lcyt-backend/src/ai/index.js` re-exports from `lcyt-agent`.
 

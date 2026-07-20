@@ -54,20 +54,3 @@ export class SceneState {
     return this.getState(apiKey);
   }
 }
-
-/**
- * Singleton instance.
- * @type {SceneState}
- */
-let _instance = null;
-
-/**
- * Get or create the singleton SceneState instance.
- * @returns {SceneState}
- */
-export function getSceneState() {
-  if (!_instance) {
-    _instance = new SceneState();
-  }
-  return _instance;
-}
