@@ -18,6 +18,7 @@ vi.mock('../../src/components/setup-hub/SttSection.jsx', () => ({ SttSection: ()
 vi.mock('../../src/components/setup-hub/StorageSection.jsx', () => ({ StorageSection: () => <div data-testid="storage-section" /> }));
 vi.mock('../../src/components/setup-hub/McpAccessSection.jsx', () => ({ McpAccessSection: () => <div data-testid="mcp-access-section" /> }));
 vi.mock('../../src/components/setup-hub/ConnectorsSection.jsx', () => ({ ConnectorsSection: () => <div data-testid="connectors-section" /> }));
+vi.mock('../../src/components/setup-hub/AiRoleModelsSection.jsx', () => ({ AiRoleModelsSection: () => <div data-testid="ai-role-models-section" /> }));
 
 import { SetupHubPage } from '../../src/components/setup-hub/SetupHubPage.jsx';
 
@@ -56,6 +57,7 @@ describe('SetupHubPage', () => {
     expect(screen.getByTestId('mcp-access-section')).toBeInTheDocument();
     expect(screen.getByTestId('connectors-section')).toBeInTheDocument();
     expect(screen.getByTestId('languages-section')).toBeInTheDocument();
+    expect(screen.getByTestId('ai-role-models-section')).toBeInTheDocument();
   });
 
   it('links to the setup wizard as a secondary entry point', () => {

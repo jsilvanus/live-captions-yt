@@ -68,6 +68,17 @@ today. Implementing it for real needs `lcyt-web` changes explicitly out of scope
 for that work session, or a new backend cue-action-dispatcher that doesn't
 exist for any action type yet. See `CONSIDER.md`.
 
+`plan_ai_model_registry.md` Phase 3's frontend half (Tier 1, Lane 3) also landed
+since the 2026-07-20 audit: `AiRoleModelsSection.jsx`, a new Setup Hub card
+(`id="ai-roles"`, mounted alongside `McpAccessSection`/`ConnectorsSection`) that
+lets a project pick a configured `ai_providers` row and a model per
+`agentic_chat` role, saved through the existing `PUT /roles/:roleCode/config`
+route — no backend changes were needed, `GET /ai/providers`/
+`GET /ai/providers/:id/models` already existed and worked. This is the real
+fold-in of Tier 0's `AiModelsSection.jsx` decision: a genuinely new component,
+not a repurposing of that deleted shell. Phase 4 ("deer" runtimes) remains
+unscoped, as planned. See `docs/plans/plan_ai_model_registry.md`.
+
 ---
 
 ## Tier 0 — Fix now: real bugs the audit surfaced
@@ -79,7 +90,7 @@ logged in full in `CONSIDER.md`.
 | Item | Where | Why it's Tier 0 |
 |---|---|---|
 | Recording/VOD never uploads to S3 | `packages/lcyt-backend/src/db/videos.js`, `src/routes/live.js` | `videos.storage_type` is set to `'s3'` whenever S3 is configured, but MediaMTX always writes recordings to local disk and nothing moves them to S3 afterward — an S3-configured deployment 404s on VOD playback today, silently. Fix: either wire an uploader (reuse `lcyt-files`'s S3 adapter or worker-daemon's `createS3UploadFn`) into the recording-finish path, or make `storage_type` correctly reflect "local" until that's built. |
-| Dead `AiModelsSection.jsx`/`ai_model_configs` plumbing | `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`, `packages/plugins/lcyt-agent/src/routes/ai-models.js`, `ai_model_configs` table | Looks like it could be `plan_ai_model_registry.md`'s missing Phase 3 frontend but is entirely disconnected from the `ai_providers` registry that plan actually built — `getAiModelConfig()` has zero callers. Decide: delete it, or repurpose it as the real Phase 3 model-picker UI (see Tier 1 below — doing this *as* that work, not before it, avoids throwaway effort). |
+| Dead `AiModelsSection.jsx`/`ai_model_configs` plumbing | `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`, `packages/plugins/lcyt-agent/src/routes/ai-models.js`, `ai_model_configs` table | Looks like it could be `plan_ai_model_registry.md`'s missing Phase 3 frontend but is entirely disconnected from the `ai_providers` registry that plan actually built — `getAiModelConfig()` has zero callers. **Resolved:** deleted whole, then Phase 3's real model-picker UI (`AiRoleModelsSection.jsx`) was built fresh against the actual registry — see "Recently closed" above. |
 
 ---
 
@@ -91,7 +102,6 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 | Plan | What's left | Why it matters |
 |---|---|---|
 | `plan_team_org_backend.md` | `getEffectiveProjectAccessLevel()` org-baseline-plus-project-override resolver, and the sweep of existing per-project auth checks (`project-features.js`, `keys.js`, `device-roles.js`, `middleware/project-access.js`) onto it | The `/team` org UI and CRUD are fully live, but org membership today grants **zero** baseline access to any individual project's resources (captions, DSK, cues, STT, etc.) — only to org-level surfaces. A user can be shown as a team member and still be locked out of every project the team owns. This is the single most consequential gap in the whole backlog because it's a half-shipped, user-facing feature, not a deferred nice-to-have. Auth-sensitive — scope carefully, needs its own full route-level test pass, probably shouldn't run in parallel with other `lcyt-backend` auth-adjacent work. |
-| `plan_ai_model_registry.md` | Phase 3 frontend: wire `provider_id`/`model_name` into the Setup Hub role-config UI (backend `resolveRoleProviderSettings()`/`invokeModelCall()` is done and tested) | Today a role's model can only be set by a direct API call. Fold in the Tier 0 decision about `AiModelsSection.jsx` — either delete-and-rebuild clean or repurpose its shell. Phase 4 ("deer" in-process runtimes) stays unscoped pending inspection of the actual `jsilvanus/deer` package APIs — don't start it speculatively. |
 | `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
 | `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
 
@@ -181,13 +191,11 @@ Non-overlapping lanes, grouped by package ownership per §0:
   `plan_team_org_backend.md` resolver — touches `middleware/project-access.js` and
   several route files; don't pair with another `lcyt-backend` auth-adjacent lane in
   the same batch.
-- **Lane 3 (`lcyt-web`, Setup Hub — AI model picker):** Tier 1's
-  `plan_ai_model_registry.md` Phase 3 frontend, folding in the Tier 0
-  `AiModelsSection.jsx` decision.
 - **Lane 4 (`lcyt-web`, Setup Hub / Assets — chat panels):** Tier 1's
-  `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. **Coordinate with
-  Lane 3** if both touch `SetupHubPage.jsx`'s layout — confirm section ordering
-  before either lands, or sequence them.
+  `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. Lane 3 (the AI
+  model picker, `plan_ai_model_registry.md` Phase 3 frontend) already landed —
+  confirm `SetupHubPage.jsx`'s "AI & integrations" section ordering against the
+  now-mounted `AiRoleModelsSection.jsx` before adding these chat panels there.
 - **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 (new package, isolated):** Begin `plan_env_to_ui_settings.md` similarly —

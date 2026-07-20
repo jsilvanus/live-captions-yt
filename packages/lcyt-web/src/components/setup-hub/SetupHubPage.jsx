@@ -16,6 +16,7 @@ import { SttSection } from './SttSection.jsx';
 import { StorageSection } from './StorageSection.jsx';
 import { McpAccessSection } from './McpAccessSection.jsx';
 import { ConnectorsSection } from './ConnectorsSection.jsx';
+import { AiRoleModelsSection } from './AiRoleModelsSection.jsx';
 import { useCardFavorites } from '../../lib/cardFavorites.js';
 import { useUserAuth } from '../../hooks/useUserAuth.js';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
@@ -118,6 +119,7 @@ export function SetupHubPage() {
         {/* ── AI & integrations ── */}
         {isVisible('mcp-access') && <McpAccessSection />}
         {isVisible('connectors') && <ConnectorsSection />}
+        {isVisible('ai-roles') && <AiRoleModelsSection />}
 
         {/* ── Workflows — always visible regardless of the active filter
              pill (matches the mockup's own "Workflows (always visible)"
