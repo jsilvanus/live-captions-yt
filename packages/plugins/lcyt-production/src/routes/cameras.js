@@ -138,7 +138,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const {
       name, mixerInput, controlType = 'none', controlConfig = {},
       sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
-      cameraKey = null,
+      cameraKey = null, label = null, zone = null, overlapLinks = [],
     } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
@@ -155,9 +155,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     // auth wired in (e.g. existing route-level tests).
     const ownerApiKey = req.session?.apiKey ?? null;
     db.prepare(`
-      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey);
+      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey, label, zone, JSON.stringify(overlapLinks));
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
@@ -181,6 +181,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       bridgeInstanceId = existing.bridge_instance_id,
       connectionSource = existing.connection_source ?? 'backend',
       cameraKey        = existing.camera_key,
+      label            = existing.label,
+      zone             = existing.zone,
+      overlapLinks     = JSON.parse(existing.overlap_links || '[]'),
     } = req.body;
 
     if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
@@ -193,10 +196,12 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     db.prepare(`
       UPDATE prod_cameras
       SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
-          bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?
+          bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?,
+          label = ?, zone = ?, overlap_links = ?
       WHERE id = ?
     `).run(name, mixerInput ?? null, controlType, JSON.stringify(controlConfig),
-           bridgeInstanceId ?? null, sortOrder, connectionSource, cameraKey ?? null, id);
+           bridgeInstanceId ?? null, sortOrder, connectionSource, cameraKey ?? null,
+           label, zone, JSON.stringify(overlapLinks), id);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>

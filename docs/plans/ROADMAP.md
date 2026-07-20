@@ -229,12 +229,14 @@ Non-overlapping lanes, grouped by package ownership per §0:
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 — done.** `plan_env_to_ui_settings.md` shipped 2026-07-21, all six
   phases — see "Recently closed" below.
-- **Lane 9 (`lcyt-agent` + new tables, isolated):** `plan_video_perception.md`
-  Phase 1 (schema + camera metadata + World State skeleton, no perception
-  producer yet), and now also Phase 2/3 (the fps30 producer + shared-feed
-  resolver) — their dependency on `plan_vertical_crop.md` Phase 4's
-  `onProgramChanged`/`onCameraPresetRecalled` callbacks is satisfied, that
-  phase has landed (see "Recently closed" above).
+- **Lane 9 (`lcyt-production` + `lcyt-agent`, isolated):** `plan_video_perception.md`
+  Phase 1 — **done** (camera/preset metadata in `prod_cameras` — `label`, `zone`,
+  `overlap_links` columns with CRUD routes; World State skeleton in `lcyt-agent`
+  with `GET /scene/state` returning per-project snapshots, shipped 2026-07-20).
+  Phases 2/3 pending dispatch (the fps30 producer requires a `tmp_plan` first to
+  resolve the CV runner process-boundary choice; shared-feed resolver recommends
+  but doesn't require promoting `DeviceRegistry.onProgramChanged()`/
+  `onCameraPresetRecalled()` to EventBus topics first).
 - **Lane 10 (`lcyt-web` + `lcyt-agent`, isolated):** `plan_ai_observability.md`
   Stage 1 — **done** (live overlay + capture/replay + prompt sandbox against
   today's Tracker/Describer; see "Recently closed" above). Don't start its

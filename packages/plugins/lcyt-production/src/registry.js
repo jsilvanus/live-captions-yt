@@ -344,6 +344,9 @@ export function parseCamera(row) {
     sortOrder:        row.sort_order,
     cameraKey:        row.camera_key ?? null,
     thumbnailCapturedAt: row.thumbnail_captured_at ?? null,
+    label:            row.label ?? null,
+    zone:             row.zone ?? null,
+    overlapLinks:     JSON.parse(row.overlap_links || '[]'),
     createdAt:        row.created_at,
     isOwned:          owner_api_key != null,
   };

@@ -54,6 +54,8 @@ export function createCamera(db, registry, fields = {}) {
     // purpose. Available here for any future in-process caller that does
     // have real project context to pass along.
     ownerApiKey = null,
+    // Video perception metadata (plan_video_perception.md Phase 1)
+    label = null, zone = null, overlapLinks = [],
   } = fields;
   if (!name || typeof name !== 'string') return { ok: false, error: 'name is required' };
   if (!CAMERA_CONTROL_TYPES.includes(controlType)) {
@@ -64,9 +66,9 @@ export function createCamera(db, registry, fields = {}) {
   }
   const id = randomUUID();
   db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, ownerApiKey);
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, ownerApiKey, label, zone, JSON.stringify(overlapLinks));
   registry.reloadCamera(id).catch((err) => console.warn(`[production-control] reloadCamera after create: ${err.message}`));
   return { ok: true, camera: getCameraById(db, id) };
 }
@@ -83,6 +85,9 @@ export function updateCamera(db, registry, id, patch = {}) {
   const bridgeInstanceId = patch.bridgeInstanceId !== undefined ? patch.bridgeInstanceId : existing.bridge_instance_id;
   const connectionSource = patch.connectionSource ?? existing.connection_source ?? 'backend';
   const cameraKey = patch.cameraKey !== undefined ? patch.cameraKey : existing.camera_key;
+  const label = patch.label !== undefined ? patch.label : existing.label;
+  const zone = patch.zone !== undefined ? patch.zone : existing.zone;
+  const overlapLinks = patch.overlapLinks !== undefined ? patch.overlapLinks : JSON.parse(existing.overlap_links || '[]');
 
   if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
     return { ok: false, error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` };
@@ -94,9 +99,10 @@ export function updateCamera(db, registry, id, patch = {}) {
   db.prepare(`
     UPDATE prod_cameras
     SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
-        bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?
+        bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?,
+        label = ?, zone = ?, overlap_links = ?
     WHERE id = ?
-  `).run(name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, id);
+  `).run(name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, label, zone, JSON.stringify(overlapLinks), id);
 
   registry.reloadCamera(id).catch((err) => console.warn(`[production-control] reloadCamera after update: ${err.message}`));
   return { ok: true, camera: getCameraById(db, id) };

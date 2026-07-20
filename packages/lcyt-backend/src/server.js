@@ -82,8 +82,8 @@ import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
-  createPlannerRouter,
-  isServerEmbeddingAvailable, getAiConfigRaw,
+  createPlannerRouter, createSceneRouter,
+  isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
 import {
@@ -669,6 +669,7 @@ app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddl
 app.use('/roles', createRolesRouter(db, scopedAuth('role')));
 app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
 app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
+app.use('/scene', createSceneRouter(scopedAuth('role')));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },

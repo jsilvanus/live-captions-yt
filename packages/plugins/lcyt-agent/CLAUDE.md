@@ -68,6 +68,10 @@ app.use('/roles/planner', createPlannerRouter(db, auth, agent));
 - `routes/planner.js` — `POST /roles/planner/assist { currentPlan?, goal, templateId? }` → `{ ok, content }`. Supersedes `POST /agent/generate-rundown`/`edit-rundown` (removed from `routes/agent.js`) — currentPlan omitted/empty generates from scratch (optionally seeded from `AgentEngine.RUNDOWN_TEMPLATE_LIBRARY[templateId]` or `harness_config.defaultTemplateId`); present, edits it per `goal`. `harness_config.systemPromptOverride` is appended after the built-in metacode-reference guidelines, not a full replacement (the model still needs that reference for valid output). `GET/PUT /roles/planner/config` needed no new code — `routes/roles.js`'s config CRUD is already generic per role.
 - `routes/agent.js` — `GET /agent/status`, `GET/POST/DELETE /agent/context`, `GET /agent/events`, `POST /agent/generate-template`/`edit-template`/`suggest-styles` (unchanged — DSK generation stays on `ai_config`, out of scope for the roles migration). `generate-rundown`/`edit-rundown` removed (see `routes/planner.js`).
 
+**World State / Scene State (plan_video_perception.md Phase 1 Stream B):**
+- `scene-state.js` — `SceneState` class: in-memory per-project snapshots of the current scene understanding. One snapshot per `apiKey`, created lazily on first access, never persisted. Snapshot shape per the plan's §2: `{ activeSpeaker: {personId, cameraId, confidence, since}|null, cameras: {[cameraId]: {visible, lastSeenAt, labels, framingScore}}, segmentGuess: {label, confidence, since}|null, updatedAt }`. Snapshot-only in Phase 1; history log deferred (plan's open question about retention sizing). Updated by handlers wired in Phase 2/3; currently just returns empty/idle state.
+- `routes/scene.js` — `createSceneRouter(auth)`: `GET /scene/state` (scoped-auth protected), returns the per-project snapshot. Mounted at `/scene` from the backend (so the path is `GET /scene/state`), same auth scope as the roles routes.
+
 **Backward compatibility:** `packages/lcyt-backend/src/ai/index.js` re-exports from `lcyt-agent`.
 
 **Environment variables:**
