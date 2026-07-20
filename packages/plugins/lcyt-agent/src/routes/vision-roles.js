@@ -6,6 +6,13 @@
  *   POST /roles/:roleCode/start   { } — start the loop for the session's api_key
  *   POST /roles/:roleCode/stop
  *   GET  /roles/:roleCode/status
+ *
+ * AI Observability (plan_ai_observability.md Stage 1) — capture/replay,
+ * dev/admin-only:
+ *
+ *   GET  /roles/:roleCode/captures                  — browse the ring buffer
+ *   GET  /roles/:roleCode/captures/:id/frame         — the captured JPEG
+ *   POST /roles/:roleCode/captures/:id/replay        — prompt sandbox re-run
  */
 
 import { Router } from 'express';
@@ -72,6 +79,44 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     const { roleCode } = req.params;
     if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
     res.json({ ok: true, ...manager.status(apiKey, roleCode) });
+  });
+
+  router.get('/:roleCode/captures', (req, res) => {
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
+    const { roleCode } = req.params;
+    if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
+    res.json({ ok: true, captures: manager.getCaptures(apiKey, roleCode) });
+  });
+
+  router.get('/:roleCode/captures/:id/frame', (req, res) => {
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
+    const { roleCode, id } = req.params;
+    if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
+    const capture = manager.getCapture(apiKey, roleCode, id);
+    if (!capture || !capture.frame) return res.status(404).json({ error: 'Capture not found' });
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
+    res.send(capture.frame);
+  });
+
+  router.post('/:roleCode/captures/:id/replay', async (req, res) => {
+    const loaded = loadConfigOr503(req, res);
+    if (!loaded) return;
+    const { apiKey, roleCode, config, providerRow } = loaded;
+    const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
+    if (!apiSettings) {
+      return res.status(503).json({ error: 'AI provider not configured or unsupported' });
+    }
+    const { promptOverride } = req.body || {};
+    const result = await manager.replay(apiKey, roleCode, req.params.id, {
+      apiSettings, vendor: providerRow.vendor, promptOverride,
+    });
+    if (!result.ok) {
+      return res.status(result.error === 'Capture not found' ? 404 : 503).json(result);
+    }
+    res.json(result);
   });
 
   return router;

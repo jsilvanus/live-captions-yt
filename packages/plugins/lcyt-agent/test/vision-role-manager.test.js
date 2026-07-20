@@ -155,6 +155,206 @@ describe('VisionRoleManager — describer', () => {
   });
 });
 
+describe('VisionRoleManager — capture ring buffer', () => {
+  test('records a capture (prompt + result) per successful frame, most recent first', async () => {
+    mockPreviewAndVisionApi({
+      visionResponse: { choices: [{ message: { content: '{"objects":[{"label":"person","confidence":0.5,"bbox":{"x":0,"y":0,"w":1,"h":1}}]}' } }] },
+    });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15, targetLabel: 'goalkeeper' },
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    manager.stop('key1', 'tracker');
+
+    const captures = manager.getCaptures('key1', 'tracker');
+    assert.ok(captures.length >= 2, 'more than one poll happened');
+    for (const c of captures) {
+      assert.ok(c.id);
+      assert.ok(c.ts);
+      assert.match(c.prompt, /goalkeeper/);
+      assert.equal(c.error, null);
+      assert.deepEqual(c.result.json.objects[0].label, 'person');
+      assert.equal(c.frame, undefined, 'list entries omit the raw frame buffer');
+    }
+    // newest first
+    assert.ok(captures[0].ts >= captures[captures.length - 1].ts);
+  });
+
+  test('bounds the buffer to the last 20 entries per (apiKey, roleCode), evicting the oldest', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: '{"objects":[]}' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 5 },
+    });
+    await new Promise((r) => setTimeout(r, 250)); // well over 20 polls at 5ms
+    manager.stop('key1', 'tracker');
+
+    const captures = manager.getCaptures('key1', 'tracker');
+    assert.ok(captures.length <= 20, `expected <= 20 captures, got ${captures.length}`);
+    assert.equal(captures.length, 20, 'buffer fills to the cap given enough polls');
+  });
+
+  test('captures are isolated per (apiKey, roleCode) and survive stop()', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: 'a scene' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'describer', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    manager.stop('key1', 'describer');
+
+    assert.ok(manager.getCaptures('key1', 'describer').length > 0);
+    assert.deepEqual(manager.getCaptures('key1', 'tracker'), []);
+    assert.deepEqual(manager.getCaptures('key2', 'describer'), []);
+  });
+
+  test('a failed analysis is still captured, with the error recorded and no result', async () => {
+    let call = 0;
+    global.fetch = async (url) => {
+      if (typeof url === 'string' && url.includes('/preview/')) {
+        return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('x') };
+      }
+      call++;
+      return { ok: false, status: 500, text: async () => 'boom' };
+    };
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    manager.stop('key1', 'tracker');
+
+    const captures = manager.getCaptures('key1', 'tracker');
+    assert.ok(captures.length > 0);
+    assert.equal(captures[0].result, null);
+    assert.match(captures[0].error, /500/);
+  });
+
+  test('getCapture() returns the full entry including the frame buffer; unknown id returns null', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: '{"objects":[]}' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    manager.stop('key1', 'tracker');
+
+    const [summary] = manager.getCaptures('key1', 'tracker');
+    const full = manager.getCapture('key1', 'tracker', summary.id);
+    assert.ok(Buffer.isBuffer(full.frame));
+    assert.equal(manager.getCapture('key1', 'tracker', 'nonexistent'), null);
+  });
+});
+
+describe('VisionRoleManager — replay (prompt sandbox)', () => {
+  test('re-runs analyse() against the captured frame with an overridden prompt and diffs against the original', async () => {
+    let seenPrompts = [];
+    global.fetch = async (url, init) => {
+      if (typeof url === 'string' && url.includes('/preview/')) {
+        return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('jpeg-bytes') };
+      }
+      const body = JSON.parse(init.body);
+      const promptText = body.messages[0].content.find((c) => c.type === 'text').text;
+      seenPrompts.push(promptText);
+      const label = promptText.includes('OVERRIDE') ? 'dog' : 'person';
+      return { ok: true, json: async () => ({ choices: [{ message: { content: `{"objects":[{"label":"${label}","confidence":0.9,"bbox":{"x":0,"y":0,"w":1,"h":1}}]}` } }] }) };
+    };
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    manager.stop('key1', 'tracker');
+
+    const [capture] = manager.getCaptures('key1', 'tracker');
+    const result = await manager.replay('key1', 'tracker', capture.id, {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai',
+      promptOverride: 'OVERRIDE: find the dog instead',
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.original.result.json.objects[0].label, 'person');
+    assert.equal(result.replay.result.json.objects[0].label, 'dog');
+    assert.equal(result.replay.prompt, 'OVERRIDE: find the dog instead');
+    assert.doesNotMatch(seenPrompts[0], /OVERRIDE/, 'the original poll used the built prompt, not the override');
+  });
+
+  test('an empty/whitespace promptOverride falls back to the original prompt', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: '{"objects":[]}' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    manager.stop('key1', 'tracker');
+
+    const [capture] = manager.getCaptures('key1', 'tracker');
+    const result = await manager.replay('key1', 'tracker', capture.id, {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai',
+      promptOverride: '   ',
+    });
+    assert.equal(result.replay.prompt, capture.prompt);
+  });
+
+  test('returns { ok: false } for an unknown capture id', async () => {
+    const manager = new VisionRoleManager(new RolesBus());
+    const result = await manager.replay('key1', 'tracker', 'nonexistent', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai',
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /not found/i);
+  });
+
+  test('returns { ok: false } for an unknown vendor', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: '{"objects":[]}' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    manager.stop('key1', 'tracker');
+    const [capture] = manager.getCaptures('key1', 'tracker');
+    const result = await manager.replay('key1', 'tracker', capture.id, {
+      apiSettings: { apiUrl: 'https://x', apiKey: 'k', model: 'm' },
+      vendor: 'nonsense',
+    });
+    assert.equal(result.ok, false);
+  });
+
+  test('does not increase the poll loop cadence or capture count — replay is a one-shot call', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: '{"objects":[]}' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 30));
+    manager.stop('key1', 'tracker');
+    const before = manager.getCaptures('key1', 'tracker').length;
+
+    const [capture] = manager.getCaptures('key1', 'tracker');
+    await manager.replay('key1', 'tracker', capture.id, {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai',
+      promptOverride: 'something else',
+    });
+
+    assert.equal(manager.getCaptures('key1', 'tracker').length, before, 'replay does not add a new ring-buffer entry');
+  });
+});
+
 describe('VisionRoleManager — error resilience', () => {
   test('an adapter error during analysis does not crash the loop or stop the fetcher', async () => {
     let call = 0;

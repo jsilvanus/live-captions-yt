@@ -24,6 +24,16 @@ const DESCRIBER_PROMPT_DEFAULT = 'Describe what is happening in this frame in on
 const DESCRIBER_PROMPT_JSON = 'Describe what is happening in this frame. Respond with JSON matching the requested schema.';
 
 /**
+ * How many (prompt, frame, result) captures to retain per (apiKey, roleCode)
+ * for the AI Observability page's capture/replay ring buffer
+ * (plan_ai_observability.md Stage 1 §2). Deliberately small and in-memory —
+ * not a persisted table — per the plan's own "start small, revisit later"
+ * open question; 20 is enough to browse "what did it see a minute ago"
+ * without holding onto an unbounded number of JPEG frames in memory.
+ */
+const CAPTURE_LIMIT = 20;
+
+/**
  * @param {string} roleCode — 'tracker' | 'describer'
  */
 function buildPrompt(roleCode, harnessConfig) {
@@ -43,10 +53,86 @@ export class VisionRoleManager {
     this._rolesBus = rolesBus;
     /** @type {Map<string, { fetcher: VisionFrameFetcher, adapter: object, roleCode: string, lastUpdateAt: number|null, lastError: string|null }>} */
     this._sessions = new Map();
+    /**
+     * Capture ring buffers, keyed the same way as `_sessions`. Each entry:
+     * `{ id, ts, prompt, frame: Buffer, outputMode, jsonSchema, result: {text,json}|null, error: string|null }`.
+     * Survives stop()/start() (post-hoc debugging is the whole point) — only
+     * evicted by size, never by session lifecycle.
+     * @type {Map<string, Array<object>>}
+     */
+    this._captures = new Map();
   }
 
   _key(apiKey, roleCode) {
     return `${apiKey}:${roleCode}`;
+  }
+
+  _recordCapture(apiKey, roleCode, entry) {
+    const key = this._key(apiKey, roleCode);
+    let list = this._captures.get(key);
+    if (!list) { list = []; this._captures.set(key, list); }
+    list.push(entry);
+    while (list.length > CAPTURE_LIMIT) list.shift();
+  }
+
+  /**
+   * List captures for (apiKey, roleCode), newest first, with the raw frame
+   * buffer stripped (fetch it separately via `getCapture()` — keeps the
+   * browse-list response small).
+   * @returns {Array<object>}
+   */
+  getCaptures(apiKey, roleCode) {
+    const list = this._captures.get(this._key(apiKey, roleCode)) || [];
+    return list.map(({ frame, ...meta }) => meta).reverse();
+  }
+
+  /**
+   * @returns {object|null} the full capture entry (including `frame`), or null
+   */
+  getCapture(apiKey, roleCode, captureId) {
+    const list = this._captures.get(this._key(apiKey, roleCode)) || [];
+    return list.find((c) => c.id === captureId) || null;
+  }
+
+  /**
+   * Prompt sandbox / replay (plan_ai_observability.md Stage 1 §3): re-run
+   * `adapter.analyse()` against a previously captured frame, optionally with
+   * an edited prompt, and return both the original live result and the new
+   * one for diffing. Never persists `promptOverride` back to harness_config
+   * and never touches the running poll loop — a bounded, explicit, one-shot
+   * inference call outside the sampled continuous-vision cadence.
+   *
+   * @param {string} apiKey
+   * @param {string} roleCode
+   * @param {string} captureId
+   * @param {{ apiSettings: object, vendor: string, promptOverride?: string }} opts
+   * @returns {Promise<{ ok: boolean, error?: string, original?: object, replay?: object }>}
+   */
+  async replay(apiKey, roleCode, captureId, { apiSettings, vendor, promptOverride }) {
+    const capture = this.getCapture(apiKey, roleCode, captureId);
+    if (!capture) return { ok: false, error: 'Capture not found' };
+
+    let adapter;
+    try {
+      adapter = createVisionAdapter(vendor, apiSettings);
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+
+    const prompt = promptOverride && promptOverride.trim() ? promptOverride : capture.prompt;
+    try {
+      const result = await adapter.analyse([capture.frame], prompt, {
+        outputMode: capture.outputMode,
+        jsonSchema: capture.jsonSchema,
+      });
+      return {
+        ok: true,
+        original: { prompt: capture.prompt, result: capture.result, error: capture.error },
+        replay: { prompt, result: { text: result.text ?? null, json: result.json ?? null } },
+      };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   }
 
   /**
@@ -74,15 +160,19 @@ export class VisionRoleManager {
     this._sessions.set(key, session);
 
     const prompt = buildPrompt(roleCode, harnessConfig);
+    const outputMode = roleCode === 'tracker' ? 'json' : (harnessConfig.outputMode ?? 'text');
+    const jsonSchema = harnessConfig.jsonSchema;
 
     fetcher.on('frame', async (buf) => {
+      const capture = {
+        id: randomUUID(), ts: Date.now(), prompt, frame: buf, outputMode, jsonSchema,
+        result: null, error: null,
+      };
       try {
-        const result = await adapter.analyse([buf], prompt, {
-          outputMode: roleCode === 'tracker' ? 'json' : (harnessConfig.outputMode ?? 'text'),
-          jsonSchema: harnessConfig.jsonSchema,
-        });
+        const result = await adapter.analyse([buf], prompt, { outputMode, jsonSchema });
         session.lastUpdateAt = Date.now();
         session.lastError = null;
+        capture.result = { text: result.text ?? null, json: result.json ?? null };
 
         if (roleCode === 'tracker') {
           const objects = Array.isArray(result.json?.objects) ? result.json.objects.map((o) => ({
@@ -99,7 +189,10 @@ export class VisionRoleManager {
         }
       } catch (err) {
         session.lastError = err.message;
+        capture.error = err.message;
         logger.warn(`[agent] ${roleCode} vision analysis failed for ${apiKey}: ${err.message}`);
+      } finally {
+        this._recordCapture(apiKey, roleCode, capture);
       }
     });
 
