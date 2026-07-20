@@ -3,7 +3,7 @@ id: plan/dock-ffmpeg
 title: "FFmpeg Compute Containers → Distributed Hetzner Architecture"
 status: implemented
 summary: "All phases implemented: DockerFfmpegRunner abstraction behind FFMPEG_RUNNER env flag (local/docker/worker runners), pipe-utils for CEA-708. lcyt-orchestrator (worker registry, job routing, Hetzner autoscaling) and lcyt-worker-daemon (job execution, FIFO caption injection, S3 upload, self-registration) fully wired, with WorkerFfmpegRunner falling back to spawn/docker when the orchestrator is unreachable. See docs/distributed-compute.md for an operator-facing summary."
-supersedes: "plan/rtmp (partially: execution model — replaces bare spawn() with Docker containers)"
+supersedes: "plan/rtmp (partially: execution model — adds Docker/worker as opt-in alternative execution runners alongside the still-default bare spawn(); see 'Key constraints' below)"
 ---
 
 # Plan: FFmpeg Compute Containers → Distributed Hetzner Architecture
