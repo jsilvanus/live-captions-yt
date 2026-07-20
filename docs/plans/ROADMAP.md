@@ -1,6 +1,6 @@
 ---
 status: reference
-summary: "Prioritised way-forward across every plan in docs/PLANS.md as of 2026-07-18: what to work next, and — the point of this doc — which pieces of work can run in parallel across multiple simultaneous agents without touching the same files. Organised into tiers (finish what's in-progress, close high-value gaps in 'done' plans, small independent gap-closers, new/draft features, and one cross-cutting item that must run alone) plus a set of concrete, non-overlapping lanes for parallel dispatch. Also records two operational lessons learned from this session's subagent batch (isolation-worktree reliability, package.json `exports` fragility) that any future parallel dispatch should account for."
+summary: "Prioritised way-forward across every plan in docs/PLANS.md, rebuilt 2026-07-20 from a full repo-wide frontmatter/status audit of docs/plans/*.md (every 'implemented' claim verified against actual code) plus three newly merged draft plans (plan_broadcast_platform_sync.md, plan_local_stt.md, plan_env_to_ui_settings.md). Organised into tiers — fix the two real bugs the audit surfaced, finish what's genuinely in-progress, schedule the new draft features by value, then a long tail of deliberately-deferred residual items — plus concrete non-overlapping lanes for parallel dispatch."
 ---
 
 # Roadmap — Way Forward
@@ -10,271 +10,174 @@ per-plan detail and status) and turns it into an ordering: what to do next, and 
 can be done *at the same time* by independent agents without merge conflicts.
 
 Re-check `docs/PLANS.md` before acting on this document — it decays as work lands.
+Every status below reflects a 2026-07-20 pass that read the actual source for every
+`in-progress`/`implemented`-with-"Not done" plan; nothing here is copied from a plan's
+own possibly-stale self-description.
 
-> **Staleness note (added 2026-07-20, doc otherwise last dated 2026-07-18):** verified
-> against a full repo-wide audit of `docs/plans/*.md` completed today. **All seven Tier 3
-> rows below are now done** — every one shipped via `tmp_plan_tier3.md` on 2026-07-18,
-> the same day this document was written, so the "Suggested parallel dispatch" section's
-> pointer at Tier 3 as the next available work ("HLS `putObject`/`publicUrl` wiring, or
-> the DSK editor's rotation handle") is stale — both already shipped. Tiers 1 and 2 above
-> were already self-updating with "done" markers as of the 2026-07-18 text and remain
-> accurate. **The next real work is Tier 4** (`plan_translate.md`, `plan_mixer_feed_sources.md`,
-> `plan_live_variables.md`) — though note `plan_translate.md` itself was also partially
-> superseded on 2026-07-20 (its STT-gap motivation was closed by a different, simpler
-> mechanism in `lcyt-rtmp`; only the non-STT client-translation gap it describes is still
-> open) — plus Tier 5 (Postgres) whenever nothing else is in flight. Don't trust this
-> note either, indefinitely — re-derive from `docs/PLANS.md` per the line above.
+**What changed since the previous version of this doc (2026-07-18):** that version's
+Tiers 1–3 were a single day's work session, all now shipped (see "Recently closed"
+below) — this rewrite drops that play-by-play and rebuilds the backlog from scratch
+against current reality, including two real bugs the audit itself surfaced and three
+brand-new draft plans (PR #287) not covered by the old version at all.
 
 ---
 
 ## 0. Operational notes before dispatching parallel agents
 
-Two things surfaced while closing out the last batch of small fixes, worth carrying
-forward into any future multi-agent dispatch:
+Two things surfaced in an earlier multi-agent batch, still worth carrying forward:
 
-1. **`isolation: "worktree"` can silently fail.** Two of five agents in the last batch
-   ended up committing directly into the primary repo checkout instead of an isolated
-   worktree, with no error surfaced — the only tell was the worktree directory being
-   untouched at its base commit while the *primary* repo's `main` branch gained a stray
-   commit. **Always verify** a background agent actually produced its own worktree
-   (`git worktree list`, check the reported path is non-empty and matches) before
-   trusting isolation held. If it didn't, the commit is still recoverable (branch it
-   off before resetting `main`) but do this check *before* running anything destructive
-   in the primary checkout.
+1. **`isolation: "worktree"` can silently fail.** Verify a background agent actually
+   produced its own worktree (`git worktree list`, check the reported path is
+   non-empty and matches) before trusting isolation held. If it didn't, the commit is
+   still recoverable (branch it off before resetting `main`) but check this *before*
+   running anything destructive in the primary checkout.
 2. **Never let an agent replace entries in a package's `"exports"` map — only add.**
-   One agent's edit to `lcyt-files/package.json` swapped an existing `exports` entry
-   for new ones its own code didn't even need (it imported via relative paths), which
-   silently broke every deep import of the old entry elsewhere in the repo
-   (`ERR_PACKAGE_PATH_NOT_EXPORTED`, three failing test files, only caught by running
-   the full `lcyt-backend` suite — package-scoped tests didn't touch the broken path).
    This repo's convention is a small, curated, explicit `exports` map per package (no
    wildcards) — before touching one, `grep -rn "from '<pkg>/` across the whole repo to
    find every existing consumer, and only add.
 
 Both are why the parallel lanes below are grouped by **package/directory ownership** —
 two agents editing the same package's shared files (a `package.json`, a composition
-root like `server.js`) at the same time is the actual collision risk, not file count.
+root like `server.js`, or in `lcyt-web`'s case a shared page like `SetupHubPage.jsx`)
+at the same time is the actual collision risk, not file count.
 
 ---
 
-## Tier 1 — Finish what's in-progress (unblocks other work)
+## Recently closed (for context, not action)
 
-These are partially built; finishing them removes a dependency several other items
-lean on.
+The previous version of this document tracked a single 2026-07-18 session in detail:
+the cue rules editor + composite condition trees (Phases 9–10 of `plan_cues.md`, PR
+#282), the AI bridge-relay vision-adapter wiring (`plan_ai_roles_framework.md`,
+`plan_ai_model_registry.md`), the vertical-crop operator UI (`plan_vertical_crop.md`
+Phase 3), and seven small Tier-3 gap-closers (`tmp_plan_tier3.md`). All of it shipped
+and was verified still-accurate by the 2026-07-20 audit. See `CONSIDER.md` and
+`tmp_plan_tier3.md`'s "Implementation notes" for the detail; it's not repeated here.
+
+---
+
+## Tier 0 — Fix now: real bugs the audit surfaced
+
+Small, isolated, and each one is a silent-failure mode in shipped code — not a
+docs-accuracy issue like the rest of the audit, an actual functional gap. Both are
+logged in full in `CONSIDER.md`.
+
+| Item | Where | Why it's Tier 0 |
+|---|---|---|
+| Recording/VOD never uploads to S3 | `packages/lcyt-backend/src/db/videos.js`, `src/routes/live.js` | `videos.storage_type` is set to `'s3'` whenever S3 is configured, but MediaMTX always writes recordings to local disk and nothing moves them to S3 afterward — an S3-configured deployment 404s on VOD playback today, silently. Fix: either wire an uploader (reuse `lcyt-files`'s S3 adapter or worker-daemon's `createS3UploadFn`) into the recording-finish path, or make `storage_type` correctly reflect "local" until that's built. |
+| Dead `AiModelsSection.jsx`/`ai_model_configs` plumbing | `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`, `packages/plugins/lcyt-agent/src/routes/ai-models.js`, `ai_model_configs` table | Looks like it could be `plan_ai_model_registry.md`'s missing Phase 3 frontend but is entirely disconnected from the `ai_providers` registry that plan actually built — `getAiModelConfig()` has zero callers. Decide: delete it, or repurpose it as the real Phase 3 model-picker UI (see Tier 1 below — doing this *as* that work, not before it, avoids throwaway effort). |
+
+---
+
+## Tier 1 — Finish what's genuinely in-progress
+
+Every plan below still has real, in-scope, unbuilt work — not a deliberately-deferred
+edge case (those are Tier 3). Ordered roughly by value/urgency.
 
 | Plan | What's left | Why it matters |
 |---|---|---|
-| `plan_ai_roles_framework.md` | Translation role — still just a flagged future gap, not spec'd | Needs a short design pass before it's implementable; not urgent, blocks nothing else. |
-| `plan_ai_model_registry.md` | Role-config model-picker UI (`GET /ai/providers/:id/models` wired into the Setup Hub) | Backend (registry, discovery, bridge-relayed inference for both the `agentic_chat` turn loop and all three vision adapters) is done and tested; today a role's `provider_id`/`model_name` can only be set by a direct API call, not through the UI. Pure `lcyt-web` frontend work. |
-| `plan_vertical_crop.md` | Production-follow phase (`crop_source_map` → mixer-switch/PTZ-preset registry callbacks, `crop_preset` named-action/cue/tool), `overridePublisher` pre-config | Backend (schema, `CropManager`, `/crop` routes, live zmq repositioning) and the operator UI (Phase 3) are done; this is the remaining auto-follow wiring + one config knob. |
-
-**Lane A — AI bridge-relay wiring** (`packages/plugins/lcyt-agent` only) is **done** —
-verified 2026-07-18: `resolveRoleProviderSettings()`/`invokeModelCall()` already dispatched
-bridge-relayed inference for the `agentic_chat` turn loop (landed 2026-07-13, `fafb55c`); this
-pass additionally routed the Google and Anthropic vision adapters through the same
-`invokeModelCall()` bridge path (previously only the OpenAI-compatible/Ollama-vendor adapter
-supported it), added bridge-relay test coverage for all three vendors in
-`test/vision-adapters.test.js`, and updated `packages/plugins/lcyt-agent/CLAUDE.md`,
-`CONSIDER.md`, `docs/PLANS.md`, and the two plan files, all of which had gone stale relative to
-the 2026-07-13 commit. No lane is needed here anymore — the only remaining piece
-(`plan_ai_model_registry.md`'s role-config model-picker UI, above) is a `lcyt-web` frontend
-task, not a `lcyt-agent` backend one.
-
-**Lane B — Vertical crop operator UI** is **done** — implemented 2026-07-18:
-`packages/lcyt-web/src/components/production/ProductionCropPage.jsx` (route
-`/production/crop`, linked from the main `/production` console header) plus
-`production/crop/{useCropEditor,CropPresetPanel,CropCanvas,CropSourcePanel}.jsx`.
-`useProductionData.js` gained one additive export (`jfetch`) so the new page
-can reuse its credentials/cameras/mixers plumbing instead of duplicating it;
-`Chrome.jsx` gained the "Vertical Crop" header link. See
-`plan_vertical_crop.md` Phase 3 for the UI shape (a three-column operator
-layout, not the plan's original sources×sets matrix-grid sketch — see that
-phase note for why). Remaining work on this plan (production-follow, Phase 4)
-is listed in Tier 1 above and is a `lcyt-rtmp`/`lcyt-production` backend lane,
-not a frontend one — no conflict with any other lane below.
+| `plan_team_org_backend.md` | `getEffectiveProjectAccessLevel()` org-baseline-plus-project-override resolver, and the sweep of existing per-project auth checks (`project-features.js`, `keys.js`, `device-roles.js`, `middleware/project-access.js`) onto it | The `/team` org UI and CRUD are fully live, but org membership today grants **zero** baseline access to any individual project's resources (captions, DSK, cues, STT, etc.) — only to org-level surfaces. A user can be shown as a team member and still be locked out of every project the team owns. This is the single most consequential gap in the whole backlog because it's a half-shipped, user-facing feature, not a deferred nice-to-have. Auth-sensitive — scope carefully, needs its own full route-level test pass, probably shouldn't run in parallel with other `lcyt-backend` auth-adjacent work. |
+| `plan_ai_model_registry.md` | Phase 3 frontend: wire `provider_id`/`model_name` into the Setup Hub role-config UI (backend `resolveRoleProviderSettings()`/`invokeModelCall()` is done and tested) | Today a role's model can only be set by a direct API call. Fold in the Tier 0 decision about `AiModelsSection.jsx` — either delete-and-rebuild clean or repurpose its shell. Phase 4 ("deer" in-process runtimes) stays unscoped pending inspection of the actual `jsilvanus/deer` package APIs — don't start it speculatively. |
+| `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
+| `plan_vertical_crop.md` | Phase 4 (production-follow: `crop_source_map` → mixer-switch/PTZ-preset registry callbacks, `crop_preset` named-action/cue/tool), Phase 5 (ops/polish — `docker/lcyt-ffmpeg/Dockerfile` still has no `libzmq`, so live reposition falls back to restart-only in that image) | Schema, `CropManager`, `/crop` routes, live zmq repositioning, and the full operator UI (`/production/crop`) are done. This is backend-only (`lcyt-production`/`lcyt-rtmp`), no `lcyt-web` conflict with the AI-frontend lanes above. |
+| `plan_mcp.md` | Register the shared `lcyt-tools` registry inside `lcyt-mcp-stdio`/`lcyt-mcp-http` (the standalone MCP server packages) — they still don't expose it; only the in-process bridge (`POST /mcp` in `lcyt-backend`) does | Isolated to two small packages, no collision with anything else in this tier. |
+| `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
 
 ---
 
-## Tier 2 — Highest-value gap in an otherwise-"done" plan: the cue rules editor
+## Tier 2 — New draft features, ranked by value
 
-`plan_cues.md` is the single biggest concentration of remaining, user-visible work.
-Phases 1–8 are fully implemented, but:
+Three brand-new plans landed via PR #287 (merged 2026-07-20), plus two pre-existing
+drafts. None have any code yet, so zero collision risk with Tier 0/1 work above — but
+`plan_broadcast_platform_sync.md` and `plan_env_to_ui_settings.md` are each big enough
+to deserve their own phase-plan pass (`/phase-planning`) before dispatch, not a single
+one-shot lane.
 
-- **Phase 10 (Assets-card cue rules editor)** — `packages/plugins/lcyt-cues/src/routes/cues.js`
-  has had a full `/cues/rules` CRUD API since Phase 1, and **nothing in `lcyt-web` calls
-  it**. Today the only way to create a persistent cue rule is a raw HTTP request. This
-  is a shipped backend feature with zero UI — the highest-leverage single fix in the
-  whole backlog.
-- **Phase 9 (composite trees + named conditions, `/cues/defs`)** — a backend extension
-  motivated by exactly this editor gap (hand-authoring composite JSON trees is what
-  makes the missing editor actually painful).
-- **Phase 8.5 (inline ↔ backend cue sync gap)** — a correctness fix, independent of
-  9/10.
-
-**Recommended order:** ship the editor (Phase 10) *first*, scoped to today's simpler
-rule types (phrase/regex/section/fuzzy) — don't wait on Phase 9. That alone closes the
-"shipped API, no UI" gap for the common case. Extend the editor once Phase 9's
-composite trees exist.
-
-**Lane C — Cue rules editor (Phase 10, current rule types only)** is **done** —
-implemented 2026-07-18: `packages/lcyt-web/src/components/CuesPage.jsx` (new,
-route `/cues`) is a CRUD editor over the existing `/cues/rules` API, scoped to
-`phrase`/`regex`/`section`/`fuzzy` as planned — no backend changes. Rules of
-other match types (`semantic`, `event_cue`, sound-cue types, future
-`composite`) still list/toggle/delete but lock their edit form with a notice
-rather than expose fields the editor doesn't support yet. `AssetsPage.jsx`'s
-existing "Global cues" card (it already had one, unlike the plan's original
-`TILES`-array sketch — see `plan_cues.md` Phase 10) now links to `/cues`
-instead of `/planner`. `plan_cues.md`, `plan_assets_page.md`, and
-`packages/lcyt-web/CLAUDE.md` updated; `test/components/CuesPage.test.jsx`
-(9 tests, Vitest) added. The composite-tree `ConditionTreeEditor` and Named
-Conditions section remain deferred to Phase 9 (Lane D), as scoped.
-
-**Same-day follow-up (also 2026-07-18):** on user feedback that cues (and
-named actions) are properties of a rundown file rather than a standalone
-library, the editor's logic was extracted into `CuesManager({ embedded })`
-(`CuesPage.jsx` is now a thin wrapper, mirroring `LanguagesManager`/
-`LanguagesPage.jsx`) and given a second home: an embedded "📋 Cues" tab in
-a new `packages/lcyt-web/src/components/planner/PlannerAssistPanel.jsx`,
-the Planner's right column, alongside an "⚡ Actions" tab and the AI
-assistant chat below both. The Actions tab reuses `NamedActionsManager.jsx`
-(`plan_named_actions.md`) — rebuilt on the same Dialog/SetupItemRow pattern
-and given its own standalone `/actions` page (linked from the Assets
-"Global actions" card, which was read-only until now) since it turned out
-to have been built earlier but never actually mounted anywhere. This
-replaced a non-functional "Cues and Actions panels coming soon" tab stub
-that was already sitting in `PlannerPage.jsx`'s narrow/mobile layout, and
-gave the desktop 3-column layout the same tabs for the first time.
-`plan_cues.md`, `plan_named_actions.md`, `plan_assets_page.md`, `docs/PLANS.md`,
-and `packages/lcyt-web/CLAUDE.md` updated; `test/components/NamedActionsManager.test.jsx`
-(7 tests) and `test/components/PlannerAssistPanel.test.jsx` (4 tests) added,
-`CuesPage.test.jsx`'s original 9 tests kept passing unmodified (pure
-extraction, no behavior change to the non-embedded default).
-
-**Lane D — Cue engine backend: Phase 8.5 sync fix + Phase 9 composite trees** is
-**done** — implemented 2026-07-18, continuing PR #282, `packages/plugins/lcyt-cues`
-only (no frontend changes). Phase 8.5 turned out to already be shipped by the time
-this lane started: `POST /cues/inline`, `CueEngine.setInlineSnapshot()`/
-`evaluateInlineCues()`, and the frontend caller in `InputBar.jsx` all already
-existed with test coverage — this doc and `plan_cues.md` had simply gone stale
-(the "operational lesson" §0 warns about exactly this: re-check before acting).
-Phase 9 backend landed fresh in this pass: `cue_named_conditions` table +
-`GET/POST/PUT/DELETE /cues/defs` (write-time cycle rejection for both
-self-reference and multi-hop cycles), `cue_rules.condition_tree` +
-`match_type: 'composite'`/`'track'` support in `/cues/rules` (non-zero default
-`cooldown_ms` for `track`/composite-with-`track`-leaf rules), and a rewritten
-async `CueEngine.evaluateComposite()` (leaf types `phrase`/`exact`/`regex`/
-`fuzzy`/`section`/`context`/`track`/`semantic`/`event`, cheap-sync-before-async
-ordering within a group, cycle-guarded `ref` resolution against the DB-backed
-named-condition cache) replacing the old inline-only, sync, `cueDefs`-only
-evaluator. New `evaluateCompositeRules()` (DB-backed composite rules — inline
-composite already worked) and `evaluateTrackerEvent()`/`createTrackerCueListener()`
-(`track:` leaves and standalone `track` rules — mirrors the sound-cue listener;
-inert until some future tracker subsystem emits `track_state`, which is out of
-scope for this plugin). 24 new tests (`cue-engine.test.js`, new
-`tracker-cues.test.js`, `routes.test.js`). `plan_cues.md`, `docs/PLANS.md`, and
-`packages/plugins/lcyt-cues/CLAUDE.md` updated. **Now unblocked:** Lane C's
-`ConditionTreeEditor`/Named Conditions extension and the frontend composite-cue/
-`cue-def:` parser work — see `plan_cues.md` Phase 9's "Frontend (not built)"
-note for the API surface to build against; not dispatched as part of this lane
-since it's frontend work.
-
-**Lane C's deferred pieces — done (2026-07-18, same day as Lane D):** the
-`ConditionTreeEditor`/Named Conditions extension Lane D's note above unblocked
-was picked up immediately rather than staying a separate dispatch. New
-`packages/lcyt-web/src/components/ConditionTreeEditor.jsx` — recursive
-leaf/group/ref editor (add-leaf buttons for exact/fuzzy/semantic/section/
-track/event, collapsible and/or/not group containers with `not` truncated to
-one child, a `ref` leaf as a validated `<select>` sourced from the named-
-conditions list, an inline warning when `not` wraps a semantic/event/ref
-child, and an exported `summarizeConditionTree()` for compact one-line
-rendering). `CuesManager` (`CuesPage.jsx`) gained: `composite` and `track`
-in its editable match-type list (composite swaps the pattern field for
-`ConditionTreeEditor`; track auto-suggests a 1000ms cooldown), and a full
-Named Conditions CRUD section wired to `/cues/defs`, including the locked
-name-after-creation field, the inline-sourced "Defined by a rundown file's
-`cue-def:` block…" notice, and its Detach button (`PUT /cues/defs/:id`
-`{ source: 'api' }`). On the parser side, `metacode-parser.js` gained the
-multi-line indented composite-block grammar itself — `CUE_BLOCK_OPEN_RE`/
-`CUE_DEF_BLOCK_OPEN_RE` detect a bare `<!-- cue(*{0,2}):` or
-`<!-- cue-def:name:` open line and collect an indented body until a closing
-`-->` (a composite `cue:` block's close may carry trailing caption text on
-the same line; a `cue-def:` block's must be bare), parsed by
-`parseIndentedConditionBlock()`/`parseBlockLeafLine()` into the same tree
-shape the pre-existing compact `|`-pipe syntax already produced — plus two
-small pre-existing bugs fixed along the way (`parseCueLeaf()` had no
-`track`/`regex` keyword cases; `~~:value`/`~:value` left a stray leading
-colon). `metacode-runtime.js`'s `buildCueMap()`/`checkCueMatch()` now
-correctly mark and skip composite cue entries — previously a composite
-cue's raw expression text was silently (and incorrectly, if harmlessly)
-substring-matched as a literal phrase. 45 new tests across
-`ConditionTreeEditor.test.jsx` (16), `fileUtils.test.js` (15), `CuesPage.test.jsx`
-(11), `metacode-runtime.test.js` (4, plus 2 existing assertions updated for
-the new `composite` field). `plan_cues.md`, `docs/PLANS.md`, and this file
-updated. Phase 9 and Phase 10 are both now fully implemented, frontend and
-backend — nothing from either phase remains dispatchable.
-
----
-
-## Tier 3 — Small, independent gap-closers (good for a parallel batch, like the last one)
-
-Each of these touches one package (plus at most one composition-root line), has no
-product-design ambiguity, and doesn't overlap any other row here or in Tiers 1–2:
-
-| Item | Package(s) | Note |
+| Plan | Value | Scope note |
 |---|---|---|
-| Wire `putObject`/`publicUrl` into the HLS manager | `lcyt-rtmp` (`hls-manager.js`) + `lcyt-files` | `plan_files3.md`; medium priority, uses `resolveStorage` the same way captions already do |
-| DSK editor: rotation handle + snap-grid visual ruler | `lcyt-web` (`DskEditorPage.jsx`) | `plan_dsk.md`; two small, unrelated UI additions — could even be two separate agents |
-| Admin Phase 3: role-tiered admin access + live-stats dashboard | `lcyt-backend` (`routes/admin.js`) + `lcyt-web` admin page | `plan_admin.md` |
-| Device role Phase 4 enhancements | `lcyt-backend` (`db/device-roles.js`) + `lcyt-web` | `plan_userprojects.md` — check with the user first; the plan doesn't specify *what* the enhancements are, only that Phase 4 is future work |
-| YouTube stream-status polling in the web client | `lcyt-web` | `plan_client.md`; small, self-contained, no backend change needed if using YouTube's public API directly — confirm auth approach first |
-| HLS ffprobe `BANDWIDTH`/`CODECS` detection | `lcyt-rtmp` (`hls-sidecar` / manifest generation) | `plan_hls_sidecar.md`; replaces the hard-coded H.264/AAC default |
-| S3 adapter tests against a mock S3 | `lcyt-files` | `plan_files3.md`; needs localstack or a custom HTTP mock — infra decision first |
-
-These are exactly the shape of task that worked well as Haiku subagents this session —
-one package, one clear spec, tests included. **Caveat from §0**: if any of these touch
-a `package.json`, diff-review it before merging.
+| `plan_broadcast_platform_sync.md` | **High** — closes `plan_broadcasts.md`'s biggest explicitly-out-of-scope gap (YouTube two-way sync), which is the most-requested-shaped missing piece in the whole broadcasts feature | New `lcyt-platforms` plugin + server-side OAuth (replacing the current browser-only implicit-token flow in `youtubeAuth.js`/`youtubeApi.js`/`YouTubeTab.jsx`) + `lcyt-web` broadcast UI. Facebook Live is explicitly deferred within this same plan — don't scope it in. |
+| `plan_env_to_ui_settings.md` | **Medium-high** — ops/quality-of-life; makes ~130 env-var-only settings admin-editable without redeploying, closes a real operability gap for self-hosted deployments | New `server_settings` table + declarative registry/service + Admin UI tab, additive by design (env > DB > default precedence keeps 12-factor deployments untouched). Mostly isolated to `lcyt-backend` config plumbing + one new Admin page; low collision risk with Tier 1 work. |
+| `plan_mixer_feed_sources.md` | Medium — niche production feature (looping-file mixer source + WHEP low-latency preview tiles) | `lcyt-production`/mixer code; its former 'encoder' source type is already covered by the implemented `plan_ingest_feeds.md`, so scope is smaller than the plan's original draft. May overlap `plan_vertical_crop.md` Phase 4's mixer-registry callbacks — check before running both at once. |
+| `plan_local_stt.md` | Depends on appetite — large, standalone infra investment (containerized faster-whisper server, Finnish fine-tuning pipeline, dependency on the separate `crowd-source-voice` platform for training data) | Self-contained new service (`lcyt-stt`), integrates via the *unchanged* `WhisperHttpAdapter`, so it's zero-risk to schedule alongside anything else — but confirm there's actually a Finnish-STT-quality driver before investing in the training pipeline half; the inference-server half alone may be worth doing independently of the training half. |
 
 ---
 
-## Tier 4 — New/draft features (each isolated to a new or rarely-touched package)
+## Tier 3 — Residual "Not done" items on already-implemented plans
 
-Not urgent, but genuinely good parallel candidates *because* they're new surface area
-with no existing consumers to break:
+Deliberately deferred, scoped, or genuinely low-priority — pick these up
+opportunistically, none of them block anything else. Grouped by rough theme.
 
-| Plan | Package | Status |
-|---|---|---|
-| `plan_translate.md` — server-side translation plugin | new `lcyt-translate` plugin | Exploratory/not scheduled; zero collision risk with anything else since the package doesn't exist yet |
-| `plan_mixer_feed_sources.md` — looping file sources, low-latency preview tiles | `lcyt-production` / mixer code | Draft; generalizes the existing mixer program bus; former 'encoder' source type now covered by the implemented `plan_ingest_feeds.md` |
-| `plan_live_variables.md` — live refresh, operator display, text-block expansion | `lcyt-connectors` + `lcyt-web` | Draft; ideas 2–3 are explicitly "design-pending" — needs a product decision before it's a Tier 3-style task |
+**Auth/broadcasts follow-ups:**
+- `plan_authentication_refactor.md` — UI adoption of user JWTs on project-scoped routes (the frontend still gets its bearer token via `POST /live`, not a direct user-JWT path).
+- `plan_broadcasts.md` — recurrence/RRULE, automated pre-broadcast asset checks (YouTube two-way sync itself is now covered by Tier 2's `plan_broadcast_platform_sync.md`, not listed twice here).
+- `plan_selfservice_config_backend.md` — `PATCH /ingestion/dsk` is a deliberate 501 until a real DSK-ingest gate is designed.
+- `plan_recording_vod.md` — phase 2, the worker-daemon ffmpeg recorder behind a swappable interface (the S3-upload half of this gap is Tier 0, not here).
 
-These can all run **simultaneously** with each other and with every lane above — none
-share a package with anything else in this document.
+**Frontend/UX long tail:**
+- `plan_dsk_viewport_settings.md` — slug migration for `/video`/`/radio`/`/preview`/viewer embeds/Android TV links, per-device display settings via device roles, URL/iframe template layer type.
+- `plan_live_variables.md` — start-of-file pointer triggers don't fire when the pointer is restored to a later line; constant-poll aggregate concurrency cap; caption-based `c` TTL enforcement.
+- `plan_web_ui_event_stream_consolidation.md` — optional Phase B (fold the caption session `/events` stream and `/stt/events` onto the shared hook).
+- `plan_server_stt.md` — live-operate-surface source-language quick-toggle (outside Setup Hub).
+- `plan_unified_external_control.md` — no web UI consumes `/operator/*` (the Hosted Operator) yet; it's API-only today.
+- `plan_profile_team_admin_reconciliation.md` — per-category "team defaults" pull-down, deliberately deferred to its own future plan.
+
+**Deliberately deferred by product decision (don't start without checking first):**
+- `plan_userprojects.md` — QR code generation for device PINs, tally-light display.
+- `plan_batch_options.md` — client-side early flush guard for the 64 kB payload limit (skipped until limits are ever actually hit).
+- `plan_cloudfleet.md` — Helm chart, Litestream, Postgres migration (overlaps Tier 4 below), CI CFCR push, native K8s Jobs runner.
+- `plan_files3.md` — a `cdn_url` config field (low value).
+- `plan_agent.md` — Phase 7 multi-modal scene understanding (same subsystem `plan_cues.md` also excludes; no active driver yet).
 
 ---
 
-## Tier 5 — Do last, alone: PostgreSQL option
+## Tier 4 — Do last, alone: PostgreSQL option
 
 `plan_postgres_option.md` touches the `db/*.js` layer of **every** package
 (`lcyt-backend` and every plugin that owns its own tables). It is the one item in this
 backlog that cannot be parallelized against anything else, including itself — every
-other lane above will be editing schema/migration files in the same packages this
-touches. Schedule it only when nothing else in Tiers 1–3 is actively in flight, or
-expect merge pain.
+Tier 1–3 lane above will be editing schema/migration files in the same packages this
+touches. Schedule it only when nothing else is actively in flight, or expect merge pain.
+
+---
+
+## Explicitly deferred — do not build without a fresh trigger
+
+- `plan_mcp_oauth.md` — reference design for LCYT as its own OAuth 2.1 authorization
+  server. Nothing built, nothing should be, until a specific hosted-MCP-client
+  integration is actually requested; `mcp_tokens` already covers the near-term audience.
+- `plan_translate.md`'s remaining API/generic-client server-translation gap — the
+  STT half of its original motivation was already closed by `plan_server_stt.md`
+  Phase 5's `translate-server.js` mechanism. What's left (`POST /captions` from
+  CLI/API/generic clients gets zero server-side translation) is real but has no
+  known driver; don't revive this doc's specific standalone-plugin architecture
+  without checking whether a lighter fix (reusing `translate-server.js` from the
+  generic-client route too) covers it instead.
 
 ---
 
 ## Suggested parallel dispatch (right now)
 
-If launching several agents today, this set has no file/package overlap:
+Non-overlapping lanes, grouped by package ownership per §0:
 
-- **Lane A** — done, see Tier 1 above; nothing left to dispatch here
-- **Lane B** — done, see Tier 1 above; the remaining vertical-crop work (production-follow) is a backend lane, not this frontend one
-- **Lane C** — done, see Tier 2 above; its deferred `ConditionTreeEditor`/Named
-  Conditions extension is also done (same-day follow-up after Lane D) — nothing
-  left to dispatch here
-- **Lane D** — done, see Tier 2 above; nothing left to dispatch here
-- One or two Tier 3 items from packages not already claimed above (e.g. HLS
-  `putObject`/`publicUrl` wiring, or the DSK editor's rotation handle)
+- **Lane 1 (isolated, small):** Tier 0's recording/S3 bug — `lcyt-backend`
+  (`db/videos.js`, `routes/live.js`) + `lcyt-files` S3 adapter reuse.
+- **Lane 2 (auth-sensitive, run solo within `lcyt-backend`):** Tier 1's
+  `plan_team_org_backend.md` resolver — touches `middleware/project-access.js` and
+  several route files; don't pair with another `lcyt-backend` auth-adjacent lane in
+  the same batch.
+- **Lane 3 (`lcyt-web`, Setup Hub — AI model picker):** Tier 1's
+  `plan_ai_model_registry.md` Phase 3 frontend, folding in the Tier 0
+  `AiModelsSection.jsx` decision.
+- **Lane 4 (`lcyt-web`, Setup Hub / Assets — chat panels):** Tier 1's
+  `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. **Coordinate with
+  Lane 3** if both touch `SetupHubPage.jsx`'s layout — confirm section ordering
+  before either lands, or sequence them.
+- **Lane 5 (`lcyt-production`/`lcyt-rtmp`, backend-only):** Tier 1's
+  `plan_vertical_crop.md` Phase 4. No `lcyt-web` conflict with Lanes 3–4.
+- **Lane 6 (`lcyt-mcp-stdio`/`lcyt-mcp-http`, isolated):** Tier 1's `plan_mcp.md`
+  registry wiring.
+- **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
+  `/phase-planning` pass first — it's too big for a single-shot dispatch.
+- **Lane 8 (new package, isolated):** Begin `plan_env_to_ui_settings.md` similarly —
+  phase-plan first, then dispatch.
 
-Do **not** add a Tier 5 (Postgres) lane to any batch that includes the above.
+Do **not** add a Tier 4 (Postgres) lane to any batch that includes the above.
