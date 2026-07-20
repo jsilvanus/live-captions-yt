@@ -30,11 +30,20 @@ let server, baseUrl, db, tokenA, tokenB;
 function sessionAuth(req, res, next) {
   const header = req.headers.authorization || '';
   try {
-    req.session = jwt.verify(header.slice(7), JWT_SECRET);
+    const payload = jwt.verify(header.slice(7), JWT_SECRET);
+    req.session = payload;
+    if (payload.userId != null) req.user = { userId: payload.userId };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
   }
+}
+
+// tokenA/tokenB's userId (1/2) are each explicit owner/admin on their own
+// project (keyA/keyB) — matches server.js's real isExplicitProjectAdmin,
+// which resolves this from project_members via getMemberAccessLevel.
+function isExplicitProjectAdmin(apiKey, userId) {
+  return (apiKey === 'keyA' && userId === 1) || (apiKey === 'keyB' && userId === 2);
 }
 
 function adminAuth(req, res, next) {
@@ -48,11 +57,11 @@ before(() => new Promise((resolve) => {
 
   const app = express();
   app.use(express.json());
-  app.use('/ai/providers', createProjectAiProvidersRouter(db, sessionAuth));
+  app.use('/ai/providers', createProjectAiProvidersRouter(db, sessionAuth, { isExplicitProjectAdmin }));
   app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, adminAuth));
 
-  tokenA = jwt.sign({ sessionId: 'sA', apiKey: 'keyA' }, JWT_SECRET, { expiresIn: '1h' });
-  tokenB = jwt.sign({ sessionId: 'sB', apiKey: 'keyB' }, JWT_SECRET, { expiresIn: '1h' });
+  tokenA = jwt.sign({ sessionId: 'sA', apiKey: 'keyA', userId: 1 }, JWT_SECRET, { expiresIn: '1h' });
+  tokenB = jwt.sign({ sessionId: 'sB', apiKey: 'keyB', userId: 2 }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
   server.listen(0, () => {
@@ -118,6 +127,55 @@ describe('project /ai/providers', () => {
     assert.equal((await req(`/ai/providers/${site.id}/models`, { token: tokenA })).status, 200);
     // Ungranted project still gets 404
     assert.equal((await req(`/ai/providers/${site.id}/models`, { token: tokenB })).status, 404);
+  });
+});
+
+describe('project /ai/providers write access requires explicit project admin', () => {
+  // Adding/editing/removing a provider stores a real credential — org-baseline
+  // access (which passes the outer session/project-access gate today) must
+  // not be enough; the router requires deps.isExplicitProjectAdmin(apiKey,
+  // userId) to say yes.
+  it('POST 403s when isExplicitProjectAdmin is not injected at all', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/ai/providers', createProjectAiProvidersRouter(db, sessionAuth)); // no deps
+    const noDepsServer = createServer(app);
+    await new Promise((resolve) => noDepsServer.listen(0, resolve));
+    const noDepsUrl = `http://localhost:${noDepsServer.address().port}`;
+    const res = await fetch(`${noDepsUrl}/ai/providers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${tokenA}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: 'api', vendor: 'openai', name: 'X', baseUrl: 'https://api.openai.com' }),
+    });
+    assert.equal(res.status, 403);
+    await new Promise((resolve) => noDepsServer.close(resolve));
+  });
+
+  it('POST 403s for a user isExplicitProjectAdmin says is not an explicit admin on this project', async () => {
+    const outsiderToken = jwt.sign({ sessionId: 'sC', apiKey: 'keyA', userId: 999 }, JWT_SECRET, { expiresIn: '1h' });
+    const res = await req('/ai/providers', {
+      method: 'POST', token: outsiderToken,
+      body: { kind: 'api', vendor: 'openai', name: 'Should fail', baseUrl: 'https://api.openai.com' },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('PUT/DELETE 403 for a non-admin even on their own project-scope provider', async () => {
+    const created = await (await req('/ai/providers', {
+      method: 'POST', token: tokenA,
+      body: { kind: 'api', vendor: 'openai', name: 'Owned', baseUrl: 'https://api.openai.com' },
+    })).json();
+    const id = created.provider.id;
+    const outsiderToken = jwt.sign({ sessionId: 'sC', apiKey: 'keyA', userId: 999 }, JWT_SECRET, { expiresIn: '1h' });
+
+    assert.equal((await req(`/ai/providers/${id}`, { method: 'PUT', token: outsiderToken, body: { name: 'X' } })).status, 403);
+    assert.equal((await req(`/ai/providers/${id}`, { method: 'DELETE', token: outsiderToken })).status, 403);
+  });
+
+  it('GET still works for a user isExplicitProjectAdmin would reject (read stays on the broader gate)', async () => {
+    const outsiderToken = jwt.sign({ sessionId: 'sC', apiKey: 'keyA', userId: 999 }, JWT_SECRET, { expiresIn: '1h' });
+    const res = await req('/ai/providers', { token: outsiderToken });
+    assert.equal(res.status, 200);
   });
 });
 

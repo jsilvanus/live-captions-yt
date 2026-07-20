@@ -16,6 +16,32 @@
 
 import { Router } from 'express';
 import { createMcpToken, listMcpTokens, updateMcpToken, revokeMcpToken } from '../db/mcp-tokens.js';
+import { getMemberAccessLevel } from '../db/project-members.js';
+
+const EXPLICIT_ADMIN_LEVELS = new Set(['owner', 'admin']);
+
+/**
+ * A personal MCP access token is a durable, exportable credential — minting
+ * or revoking one is a Setup-tier action, so org-baseline access (granted
+ * automatically to any org member via getEffectiveProjectAccessLevel()) is
+ * not enough; it requires an explicit project_members owner/admin row for
+ * the authenticated user. GET (listing) stays reachable to anyone who
+ * already passed the broader project-access gate.
+ */
+function requireExplicitAdmin(db) {
+  return (req, res, next) => {
+    const projectId = req.auth?.projectId || resolveProjectId(req);
+    // No projectId at all is the route handler's own 400 to raise, not this
+    // gate's 403 — let it through unchanged.
+    if (!projectId) return next();
+    const userId = req.user?.userId;
+    const level = userId ? getMemberAccessLevel(db, projectId, userId) : null;
+    if (!level || !EXPLICIT_ADMIN_LEVELS.has(level)) {
+      return res.status(403).json({ error: 'Explicit project owner/admin access required' });
+    }
+    next();
+  };
+}
 
 function resolveProjectId(req) {
   const header = req.headers['x-project-id'] || req.headers['x-api-key'];
@@ -35,8 +61,9 @@ function resolveProjectId(req) {
 export function createExternalTokensRouter(db, auth) {
   const router = Router();
   router.use(auth);
+  const explicitAdmin = requireExplicitAdmin(db);
 
-  router.post('/', (req, res) => {
+  router.post('/', explicitAdmin, (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     const label = typeof req.body?.label === 'string' ? req.body.label.trim() : '';
@@ -66,7 +93,7 @@ export function createExternalTokensRouter(db, auth) {
     return res.json({ ok: true, tokens: listMcpTokens(db, projectId) });
   });
 
-  router.patch('/:id', (req, res) => {
+  router.patch('/:id', explicitAdmin, (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     const id = Number.parseInt(req.params.id, 10);
@@ -82,7 +109,7 @@ export function createExternalTokensRouter(db, auth) {
     return res.json({ ok: true, ...updated });
   });
 
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', explicitAdmin, (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     const id = Number.parseInt(req.params.id, 10);

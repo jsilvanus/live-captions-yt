@@ -929,3 +929,17 @@ pass:
   shouldn't assume it's an oversight.
 
 (Found during: `/code-review` pass on PR #289, 2026-07-20.)
+
+---
+
+## Org-baseline access reaches every scopedAuth router, not just the 6 tested — interim fix + follow-up plan
+
+**Where:** `packages/lcyt-backend/src/middleware/project-access.js`, `packages/lcyt-backend/src/routes/mcp-tokens.js`, `packages/plugins/lcyt-agent/src/routes/ai-providers-project.js`, `docs/plans/plan_project_roles.md` (new)
+
+**Finding:** `getEffectiveProjectAccessLevel()`'s sweep (this same PR) was scoped/tested against 6 specific routes, but because it lives in the single shared `middleware/project-access.js` gate, it actually reaches **every** `scopedAuth('<resource>')`-mounted router — dsk, cue, token, ai, agent, role, connector, action, variable, operator, production. Two of those, `POST /mcp-tokens` (mint a personal, exportable MCP access token) and `POST/PUT/DELETE /ai/providers` (add a credentialed AI provider), do no further role check beyond "the middleware let me through" — so an org member with only baseline access (even the org `viewer` tier) could mint a durable, exportable credential for a project they were never explicitly invited to, right from the Setup Hub UI's own "Generate token" button.
+
+**Resolution:** discussed with the project owner, who specified a fuller target model (per-project visibility private/team, a configurable org-baseline ceiling of viewer/editor — never admin — a unified owner/admin/editor/viewer role vocabulary, and page-scoped write gates: Setup=explicit-admin-only, Assets=editor+, Production=still-undecided). Building that full model was explicitly scoped OUT of this PR (still evolving — the Production/operator question is open) in favor of a narrow, well-tested interim fix: `POST /mcp-tokens`/`PATCH`/`DELETE` and `POST/PUT/DELETE /ai/providers` now require **explicit** `project_members` owner/admin (`getMemberAccessLevel`, not the org-baseline-inclusive resolver) regardless of the broader gate. `GET` on both stays on the broad gate.
+
+**Left open, tracked in `docs/plans/plan_project_roles.md`:** every other Setup-shaped route still has only the broad org-baseline gate — `lcyt-dsk`'s template/viewport routers, `lcyt-connectors` (also credential-bearing, same risk class as ai/providers), `lcyt-production`'s camera/mixer/encoder/bridge CRUD (entangled with the still-undecided Production/operator question), `lcyt-rtmp`'s egress/ingestion/radio config, `targets`/`translation`/`stt config`/`icons`/`storage`. These need the same treatment once the full role model is designed.
+
+(Found during: `/code-review` pass on PR #289, 2026-07-20 — design conversation follow-up.)

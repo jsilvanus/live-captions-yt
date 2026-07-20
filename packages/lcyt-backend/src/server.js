@@ -8,6 +8,7 @@ import {
   completeBroadcast,
 } from './db.js';
 import { SessionStore } from './store.js';
+import { getMemberAccessLevel } from './db/project-members.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createSessionRouters } from './routes/session.js';
@@ -629,7 +630,13 @@ app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'm
 // Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
 // confirm/reject pending actions.
 app.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
-app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), { bridgeManager: productionBridgeManager }));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
+  bridgeManager: productionBridgeManager,
+  isExplicitProjectAdmin: (apiKey, userId) => {
+    const level = getMemberAccessLevel(db, apiKey, userId);
+    return level === 'owner' || level === 'admin';
+  },
+}));
 app.use('/ai', createAiRouter(db, scopedAuth('ai')));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
