@@ -40,18 +40,20 @@ import logger from 'lcyt/logger';
  * adapter, and create the per-key storage resolver.
  *
  * @param {import('better-sqlite3').Database} db
+ * @param {{ settings?: { get: (key: string) => * } }} [opts] - lcyt-backend's
+ *   SettingsService (plan_env_to_ui_settings.md), duck-typed.
  * @returns {Promise<{
  *   storage: import('./adapters/types.js').StorageAdapter,
  *   resolveStorage: (apiKey: string) => Promise<import('./adapters/types.js').StorageAdapter>,
  *   invalidateStorageCache: (apiKey: string) => void,
  * }>}
  */
-export async function initFilesControl(db) {
+export async function initFilesControl(db, { settings = null } = {}) {
   // Create the key_storage_config table if it doesn't exist
   runFilesDbMigrations(db);
 
   // Create the global (operator-configured) adapter
-  const storage = await createStorageAdapter();
+  const storage = await createStorageAdapter(settings);
   logger.info(storage.describe?.() ?? '✓ File storage initialised');
 
   // Create the per-key resolver (falls back to global adapter when no per-key config)

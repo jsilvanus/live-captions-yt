@@ -242,7 +242,7 @@ const {
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 // Wire into RTMP plugin so HLS segments can be published to storage.
-const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db);
+const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db, { settings });
 
 // RTMP plugin — run DB migrations, create all manager instances.
 // Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
@@ -316,7 +316,7 @@ sttManager?.setDeliveryHelpers({
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
 // The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
-const { musicManager } = await initMusicControl(db, store, { metrics });
+const { musicManager } = await initMusicControl(db, store, { metrics, settings });
 rtmp.musicManager = musicManager;
 const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 

@@ -18,10 +18,11 @@ export const CLASSIFIER_TIMEOUT_MS = 3000;
  * @param {object} [opts]
  * @param {number} [opts.sampleRate=22050]
  * @param {number} [opts.timeoutMs=CLASSIFIER_TIMEOUT_MS]
+ * @param {string} [opts.url] - defaults to raw process.env.MUSIC_CLASSIFIER_URL when omitted
+ *   (callers with a SettingsService — plan_env_to_ui_settings.md — pass the resolved value explicitly)
  * @returns {Promise<{ label: 'music'|'speech'|'silence', confidence: number|null }>}
  */
-export async function classifyExternal(pcm, { sampleRate = 22050, timeoutMs = CLASSIFIER_TIMEOUT_MS } = {}) {
-  const url = process.env.MUSIC_CLASSIFIER_URL;
+export async function classifyExternal(pcm, { sampleRate = 22050, timeoutMs = CLASSIFIER_TIMEOUT_MS, url = process.env.MUSIC_CLASSIFIER_URL } = {}) {
   if (!url) throw new Error('classifyExternal: MUSIC_CLASSIFIER_URL is not set');
 
   const wav = buildWav(pcm, sampleRate);

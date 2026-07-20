@@ -27,21 +27,26 @@ import { resolve } from 'node:path';
  * Create and return a storage adapter based on environment configuration.
  * This creates the global (operator-configured) adapter — mode 1 or 2.
  *
+ * @param {{ get: (key: string) => * }} [settings] - lcyt-backend's SettingsService
+ *   (plan_env_to_ui_settings.md), duck-typed so this plugin doesn't depend on
+ *   lcyt-backend. Falls back to raw process.env when omitted (tests, and any
+ *   standalone use of this plugin outside lcyt-backend).
  * @returns {Promise<import('./adapters/types.js').StorageAdapter>}
  */
-export async function createStorageAdapter() {
-  const mode = process.env.FILE_STORAGE || 'local';
+export async function createStorageAdapter(settings = null) {
+  const mode = settings ? settings.get('storage.file_storage') : (process.env.FILE_STORAGE || 'local');
 
   if (mode === 's3') {
-    const bucket = process.env.S3_BUCKET;
+    const bucket = settings ? settings.get('storage.s3_bucket') : process.env.S3_BUCKET;
     if (!bucket) throw new Error('S3_BUCKET must be set when FILE_STORAGE=s3');
 
-    const region   = process.env.S3_REGION    || 'auto';
-    const endpoint = process.env.S3_ENDPOINT  || undefined;
-    const prefix   = process.env.S3_PREFIX    || 'captions';
-    const credentials = process.env.S3_ACCESS_KEY_ID ? {
-      accessKeyId:     process.env.S3_ACCESS_KEY_ID,
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+    const region   = (settings ? settings.get('storage.s3_region')   : process.env.S3_REGION)   || 'auto';
+    const endpoint = (settings ? settings.get('storage.s3_endpoint') : process.env.S3_ENDPOINT) || undefined;
+    const prefix   = (settings ? settings.get('storage.s3_prefix')   : process.env.S3_PREFIX)   || 'captions';
+    const accessKeyId = settings ? settings.get('storage.s3_access_key_id') : process.env.S3_ACCESS_KEY_ID;
+    const credentials = accessKeyId ? {
+      accessKeyId,
+      secretAccessKey: (settings ? settings.get('storage.s3_secret_access_key') : process.env.S3_SECRET_ACCESS_KEY) || '',
     } : undefined;
 
     const { createS3Adapter } = await import('./adapters/s3.js');
@@ -49,7 +54,7 @@ export async function createStorageAdapter() {
   }
 
   // Default: local filesystem
-  const baseDir = resolve(process.env.FILES_DIR || '/data/files');
+  const baseDir = resolve(process.env.FILES_DIR || '/data/files'); // Tier A path — env-only
   const { createLocalAdapter } = await import('./adapters/local.js');
   return createLocalAdapter(baseDir);
 }
