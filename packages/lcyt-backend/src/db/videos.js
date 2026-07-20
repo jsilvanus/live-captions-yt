@@ -2,6 +2,8 @@ import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getMetricsInstance } from '../metrics/index.js';
+import { uploadDirectoryToS3 } from '../storage/s3.js';
+import logger from 'lcyt/logger';
 
 function safeSlug(value) {
   const input = String(value || 'project').toLowerCase();
@@ -179,6 +181,32 @@ export function finishVideoRecording(db, apiKey, id, fields = {}) {
     sizeBytes: fields.sizeBytes ?? 0,
     durationMs: fields.durationMs ?? null,
   });
+}
+
+/**
+ * Upload a finished recording's local artifacts to S3 when the video row
+ * is marked `storage_type='s3'`. MediaMTX writes recordings to local disk
+ * unconditionally, so this is what actually makes that flag true; on
+ * upload failure the row is downgraded to `storage_type='local'` so
+ * playback still works from the (already-written) local files instead of
+ * 404ing forever against an S3 location nothing populated.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {string} videoId
+ */
+export async function syncVideoRecordingToStorage(db, apiKey, videoId) {
+  const video = getVideo(db, apiKey, videoId);
+  if (!video || video.storageType !== 's3') return;
+  const dir = getVideoStorageDir(apiKey, videoId);
+  try {
+    const { totalBytes } = await uploadDirectoryToS3(dir, video.storageKey || buildVideoStorageKey(apiKey, videoId));
+    updateVideo(db, apiKey, videoId, { sizeBytes: totalBytes });
+    if (totalBytes > 0) getMetricsInstance()?.count('videos.bytes', totalBytes, { project: apiKey });
+  } catch (err) {
+    logger.warn(`[videos] S3 upload failed for recording ${videoId}, falling back to local storage: ${err?.message}`);
+    updateVideo(db, apiKey, videoId, { storageType: 'local' });
+  }
 }
 
 export function resolveVideoAssetPath(apiKey, videoId, relativePath = 'playlist.m3u8') {

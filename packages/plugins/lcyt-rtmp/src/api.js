@@ -61,6 +61,9 @@ export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { NginxManager } from './nginx-manager.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
+// crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side
+// helpers only; mutation goes through CropManager.applyPosition() itself.
+export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
 
 /**
  * Initialize the RTMP relay plugin.

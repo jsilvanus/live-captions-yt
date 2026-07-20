@@ -8,6 +8,7 @@ import {
   completeBroadcast,
 } from './db.js';
 import { SessionStore } from './store.js';
+import { getMemberAccessLevel } from './db/project-members.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createSessionRouters } from './routes/session.js';
@@ -36,7 +37,7 @@ import {
   initDskControl, createDskRouters,
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
-import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -79,7 +80,7 @@ import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
-  createAiModelsRouter, createPlannerRouter,
+  createPlannerRouter,
   isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
@@ -241,6 +242,26 @@ const { storage, resolveStorage, invalidateStorageCache } = await initFilesContr
 const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
+// Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer
+// program switch or camera PTZ-preset recall performed by a given project's
+// session re-applies that project's crop_source_map mapping live, when
+// crop_config.follow_program is enabled. apiKey comes from the session that
+// performed the switch/recall — prod_mixers/prod_cameras are not
+// project-scoped tables (see lcyt-production's db.js), so there is no other
+// notion of "which project" a given mixer/camera belongs to. A null apiKey
+// (auth not configured, or the call came from an unauthenticated route) is
+// a no-op — crop following has no meaning without a project to scope it to.
+productionRegistry.onProgramChanged(({ apiKey, mixerId, inputNumber }) => {
+  if (!apiKey) return;
+  rtmp.cropManager.applyForSource(db, apiKey, { mixerId, mixerInput: inputNumber })
+    .catch(err => console.warn(`[crop] follow-program (mixer switch) failed for ${apiKey.slice(0, 8)}: ${err.message}`));
+});
+productionRegistry.onCameraPresetRecalled(({ apiKey, cameraId, preset }) => {
+  if (!apiKey) return;
+  rtmp.cropManager.applyForSource(db, apiKey, { cameraId, cameraPreset: preset })
+    .catch(err => console.warn(`[crop] follow-program (camera preset) failed for ${apiKey.slice(0, 8)}: ${err.message}`));
+});
+
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
 
@@ -324,6 +345,7 @@ const _toolRegistry = createToolRegistry({
   },
   agent: _agent,
   assets: { listImages, getImageByKey, updateImageSettings, deleteImage },
+  crop: { cropManager: rtmp.cropManager, getCropConfig, getCropPreset, listCropPresets },
 });
 // Real MCP Server + in-process Client wiring (InMemoryTransport) — the
 // agentic_chat turn loop consumes tools through this bridge, exactly the
@@ -570,7 +592,6 @@ app.get('/contact', (req, res) => {
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage, mediamtxClient: productionMediamtxClient }));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled }));
 app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
-app.use('/ai/models', createAiModelsRouter(db, userAuth));
 app.use('/admin', createAdminRouter(db, jwtSecret));
 // Admin metrics: rollup time series + "right now" live panel
 // (plan_metering_audit §6.1). Same admin auth as the /admin router.
@@ -609,7 +630,13 @@ app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'm
 // Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
 // confirm/reject pending actions.
 app.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
-app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), { bridgeManager: productionBridgeManager }));
+app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
+  bridgeManager: productionBridgeManager,
+  isExplicitProjectAdmin: (apiKey, userId) => {
+    const level = getMemberAccessLevel(db, apiKey, userId);
+    return level === 'owner' || level === 'admin';
+  },
+}));
 app.use('/ai', createAiRouter(db, scopedAuth('ai')));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));

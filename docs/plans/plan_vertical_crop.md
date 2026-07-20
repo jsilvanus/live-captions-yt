@@ -1,7 +1,7 @@
 ---
 id: plan/vertical-crop
 title: "Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop"
-status: in-progress
+status: implemented
 summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 → 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) — with dedicated UI for editing positions per set (set selector, sources×sets overview grid, activate-set control) — shifted live via runtime ffmpeg filter commands (zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 → camera 2 → camera 1/preset 2, each with its own crop position)."
 related: plan/prod, plan/video_perception
 ---
@@ -362,10 +362,78 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
    toggle, set create/rename/duplicate/delete/activate, preset CRUD +
    activate, drag-to-reposition (throttled `POST /crop/position`), and
    source bind/unbind are all wired to the real `/crop/*` API.
-4. **Production follow** — `crop_source_map` + registry callbacks + server wiring +
-   `crop_preset` named-action/cue/tool registration.
-5. **Ops & polish** — ffmpeg image libzmq, docs (CLAUDE.md files, PORTS.md,
-   mediamtx.yml comment), feature-gate registration, test coverage summary update.
+4. **Production follow** ✅ core (implemented 2026-07-20) — `DeviceRegistry`
+   (`packages/plugins/lcyt-production/src/registry.js`) gained
+   `onProgramChanged(cb)`/`onCameraPresetRecalled(cb)` (subscribe) +
+   `notifyProgramChanged(data)`/`notifyCameraPresetRecalled(data)` (fire).
+   Fired from the **route handlers** (`routes/mixers.js`'s
+   `POST /:id/switch/:inputNumber`, `routes/cameras.js`'s
+   `POST /:id/preset/:presetId`) after *either* transport succeeds — direct
+   `registry.switchSource()`/`callPreset()` **or** a bridge-relayed command —
+   since a bridge-routed switch (the common case for real roland/amx/atem
+   hardware) never calls `switchSource()` at all, only the route sees both
+   paths. `apiKey` comes from the acting session
+   (`req.session.apiKey`) — `prod_mixers`/`prod_cameras` are not
+   project-scoped tables (see `lcyt-production`'s `db.js`), so "which
+   project's crop follows this switch" is the operator who performed it, not
+   a device-ownership lookup. `routes/mixers.js` previously had **no**
+   `opts.auth` wiring at all (only the camera router did); it now accepts
+   the same optional `opts.auth` as `routes/cameras.js`, with the same
+   WHIP/`sources`-kiosk unauthenticated carve-out for `LcytMixerPage.jsx`.
+   `CropManager.applyForSource(db, apiKey, { mixerId?, mixerInput?,
+   cameraId?, cameraPreset? })` (`packages/plugins/lcyt-rtmp/src/crop-manager.js`)
+   tracks, per apiKey, the last program mixer input and each camera's
+   last-recalled preset, resolves the most-specific `crop_source_map` row via
+   the existing `resolveCropPresetForSource()`, and applies it live — a
+   preset recalled while its camera is off program is remembered but not
+   applied until that camera is actually cut to program. Wired together in
+   `lcyt-backend/src/server.js`. A `crop.list_presets`/`crop.activate_preset`
+   tool pair (`packages/lcyt-tools/src/tools/crop.js`) mirrors
+   `camera.preset`/`mixer.switch` exactly and is in the Production
+   Assistant role's `available_tools` (`lcyt-agent`'s `ai-roles.js`).
+   **Schema adaptation:** `crop_source_map.camera_preset` — described above
+   as an "INTEGER... PTZ preset number" — turned out not to match how camera
+   presets actually work in this codebase: `POST /production/cameras/:id/preset/:presetId`
+   and every camera adapter (`amx.js`, `visca-ip.js`) key off an arbitrary
+   per-camera string `presetId` (`prod_cameras.control_config.presets[].id`
+   — `'wide'`, a UUID, ...), not a universal numeric PTZ preset number (AMX
+   cameras have no numeric preset concept at all, only named commands). The
+   column keeps its `INTEGER` declaration (SQLite type affinity tolerates a
+   non-numeric TEXT value in it — no migration needed) but
+   `createCropSourceMapEntry()`/`resolveCropPresetForSource()`
+   (`db/crop.js`) now treat it as an opaque string identifier, comparing
+   both sides as strings so pre-existing numeric-looking rows still resolve.
+   **Not done — premise mismatch found, not built:** the `crop_preset`
+   *named-action/cue* half of this phase. `lcyt-actions` is pure storage —
+   parsing and execution of `@name` composite macros live entirely in
+   `lcyt-web`'s `metacode-actions.js`, which has no production-control atom
+   for *any* device (camera/mixer included), only `audio:`/`api:`/persistent
+   variable-assignment atoms. Cue rules' `action` JSON is likewise
+   descriptive-only — `cue-processor.js` emits it on the `cue_fired` SSE
+   event for the frontend to interpret (rundown-pointer navigation); no
+   cue-fired action, for any type, is ever executed server-side today.
+   Building a working `crop_preset` named-action or cue action for real
+   needs either an `lcyt-web` metacode-atom change or a new backend
+   cue-action-dispatcher — both bigger, more architecturally-loaded changes
+   than "add crop_preset following the existing pattern," because no
+   existing pattern for driving production hardware from either system
+   exists to follow. Logged in `CONSIDER.md` rather than forced.
+5. **Ops & polish** ✅ (implemented 2026-07-20) — `docker/lcyt-ffmpeg/Dockerfile`
+   rebuilt as a multi-stage image that compiles ffmpeg from source with
+   `--enable-gpl --enable-libx264 --enable-libzmq` (neither Debian's nor
+   Ubuntu's official `ffmpeg` apt packages are built with libzmq — installing
+   just the `libzmq3-dev` *library* alongside the old apt-installed binary,
+   as an earlier revision of this section suggested, would not have added
+   the filter; it has to be compiled into ffmpeg's own libavfilter). Not
+   build-verified against a real `docker build` in the session that wrote it
+   (no Docker daemon in that sandbox) — verify with
+   `docker run --rm lcyt-ffmpeg:local ffmpeg -hide_banner -filters | grep zmq`
+   before relying on it in a real deployment. `PORTS.md` documents
+   `CROP_ZMQ_PORT_BASE`'s loopback-only port range; `docker/mediamtx.yml`'s
+   path-naming comment block now lists `{key}-crop`. The `crop` feature-gate
+   code (dependent on `ingest`) was already registered in
+   `lcyt-backend/src/db/project-features.js`'s `FEATURE_DEPS` as part of
+   Phase 1 — nothing left to do there.
 
 ## Open questions
 

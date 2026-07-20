@@ -3,8 +3,8 @@
  * db helpers (create/list/update/revoke/verify) and the /mcp-tokens router.
  *
  * The router is project-settings style (user JWT Bearer + explicit
- * X-Api-Key header, same convention as /ai/models) — no live caption
- * session required, matching the Setup Hub "MCP access" card's usage.
+ * X-Api-Key header) — no live caption session required, matching the
+ * Setup Hub "MCP access" card's usage.
  */
 
 import { describe, it, before, after } from 'node:test';
@@ -13,6 +13,7 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
+import { addMember } from '../src/db/project-members.js';
 import { createMcpToken, listMcpTokens, updateMcpToken, revokeMcpToken, verifyMcpToken, tokenAllowsTopic } from '../src/db/mcp-tokens.js';
 import { createUserAuthMiddleware } from '../src/middleware/user-auth.js';
 import { createMcpTokensRouter } from '../src/routes/mcp-tokens.js';
@@ -32,6 +33,16 @@ before(() => new Promise((resolve) => {
   apiKey = createKey(db, { owner: 'McpUser' }).key;
   otherKey = createKey(db, { owner: 'OtherUser' }).key;
   userToken = jwt.sign({ type: 'user', userId: 1, email: 'mcp@example.com' }, JWT_SECRET, { expiresIn: '1h' });
+  // Minting/revoking a token is a Setup-tier action (see routes/mcp-tokens.js's
+  // requireExplicitAdmin) — userId 1 needs an explicit owner/admin
+  // project_members row on both keys for the existing route tests below to
+  // keep exercising the "real project admin" path they always meant to.
+  // addMember() FK-references users(id), so it needs a real row too (the
+  // JWT alone was always enough for createUserAuthMiddleware, which never
+  // checks the users table).
+  db.prepare("INSERT INTO users (id, email, password_hash) VALUES (1, 'mcp@example.com', 'x')").run();
+  addMember(db, apiKey, 1, 'owner');
+  addMember(db, otherKey, 1, 'owner');
 
   server = createServer(app);
   server.listen(0, () => {
@@ -180,6 +191,59 @@ describe('POST /mcp-tokens', () => {
       body: JSON.stringify({ label: 'No api key' }),
     });
     assert.equal(res.status, 400);
+  });
+});
+
+describe('POST/PATCH/DELETE /mcp-tokens require explicit owner/admin access', () => {
+  // Minting or revoking a personal MCP access token is a durable, exportable
+  // credential — a Setup-tier action, so org-baseline/no-membership access
+  // must not be enough even though it now passes the broader project-access
+  // gate (getEffectiveProjectAccessLevel()) for read-shaped resources.
+  let noAccessToken, explicitMemberToken;
+
+  before(() => {
+    noAccessToken = jwt.sign({ type: 'user', userId: 999, email: 'nobody@example.com' }, JWT_SECRET, { expiresIn: '1h' });
+    explicitMemberToken = jwt.sign({ type: 'user', userId: 998, email: 'member@example.com' }, JWT_SECRET, { expiresIn: '1h' });
+    db.prepare("INSERT INTO users (id, email, password_hash) VALUES (998, 'member@example.com', 'x')").run();
+    addMember(db, apiKey, 998, 'member');
+  });
+
+  function headersFor(token) {
+    return { Authorization: `Bearer ${token}`, 'X-Api-Key': apiKey, 'Content-Type': 'application/json' };
+  }
+
+  it('POST 403s for a user with no project_members row at all', async () => {
+    const res = await fetch(`${baseUrl}/mcp-tokens`, {
+      method: 'POST', headers: headersFor(noAccessToken), body: JSON.stringify({ label: 'Should fail' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('POST 403s for an explicit member (not owner/admin)', async () => {
+    const res = await fetch(`${baseUrl}/mcp-tokens`, {
+      method: 'POST', headers: headersFor(explicitMemberToken), body: JSON.stringify({ label: 'Should fail' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('PATCH and DELETE 403 for a user with no project_members row, even on their own existing token', async () => {
+    const createRes = await fetch(`${baseUrl}/mcp-tokens`, {
+      method: 'POST', headers: headers(), body: JSON.stringify({ label: 'Owner-created' }),
+    });
+    const { id } = await createRes.json();
+
+    const patchRes = await fetch(`${baseUrl}/mcp-tokens/${id}`, {
+      method: 'PATCH', headers: headersFor(noAccessToken), body: JSON.stringify({ active: false }),
+    });
+    assert.equal(patchRes.status, 403);
+
+    const deleteRes = await fetch(`${baseUrl}/mcp-tokens/${id}`, { method: 'DELETE', headers: headersFor(noAccessToken) });
+    assert.equal(deleteRes.status, 403);
+  });
+
+  it('GET still works for a user with no explicit project_members row (read stays on the broader gate)', async () => {
+    const res = await fetch(`${baseUrl}/mcp-tokens`, { headers: headersFor(noAccessToken) });
+    assert.equal(res.status, 200);
   });
 });
 

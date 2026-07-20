@@ -72,6 +72,76 @@ export class DeviceRegistry {
     this._cameraConnections = new Map();
     /** @type {Map<string, { adapter: object, handle: object }>} mixerId → entry */
     this._mixerConnections = new Map();
+    /**
+     * Production-follow subscribers (plan_vertical_crop.md §4). Kept as
+     * plain listener arrays rather than a generic EventEmitter — the plan's
+     * own §4 note flags promoting these to real EventBus events once a
+     * second consumer needs the same signal (plan_video_perception.md);
+     * v1 has exactly one consumer (lcyt-backend wiring CropManager).
+     * @type {Array<(data: { apiKey: string|null, mixerId: string, inputNumber: number }) => void>}
+     */
+    this._programChangedListeners = [];
+    /** @type {Array<(data: { apiKey: string|null, cameraId: string, preset: string }) => void>} */
+    this._cameraPresetRecalledListeners = [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Production-follow subscription (plan_vertical_crop.md §4)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Subscribe to mixer program-source switches. Fired by routes/mixers.js
+   * after a switch actually took effect, whether dispatched directly via
+   * this registry or relayed through a bridge agent (bridge-routed switches
+   * never call switchSource() below, so the route — not switchSource() — is
+   * the one true firing point for both transports).
+   *
+   * @param {(data: { apiKey: string|null, mixerId: string, inputNumber: number }) => void} cb
+   * @returns {() => void} unsubscribe
+   */
+  onProgramChanged(cb) {
+    this._programChangedListeners.push(cb);
+    return () => {
+      this._programChangedListeners = this._programChangedListeners.filter(f => f !== cb);
+    };
+  }
+
+  /**
+   * Notify onProgramChanged subscribers. A listener error is caught and
+   * logged per-listener so one bad subscriber can't fail the HTTP response
+   * for an otherwise-successful mixer switch.
+   */
+  notifyProgramChanged(data) {
+    for (const cb of this._programChangedListeners) {
+      try { cb(data); } catch (err) {
+        console.warn(`[production-control] onProgramChanged listener error: ${err.message}`);
+      }
+    }
+  }
+
+  /**
+   * Subscribe to camera PTZ-preset recalls. Fired by routes/cameras.js
+   * after a preset recall actually took effect (direct or bridge-relayed),
+   * for the same reason onProgramChanged is fired from the route rather than
+   * from callPreset() below.
+   *
+   * @param {(data: { apiKey: string|null, cameraId: string, preset: string }) => void} cb
+   * @returns {() => void} unsubscribe
+   */
+  onCameraPresetRecalled(cb) {
+    this._cameraPresetRecalledListeners.push(cb);
+    return () => {
+      this._cameraPresetRecalledListeners = this._cameraPresetRecalledListeners.filter(f => f !== cb);
+    };
+  }
+
+  /** Notify onCameraPresetRecalled subscribers (see notifyProgramChanged). */
+  notifyCameraPresetRecalled(data) {
+    for (const cb of this._cameraPresetRecalledListeners) {
+      try { cb(data); } catch (err) {
+        console.warn(`[production-control] onCameraPresetRecalled listener error: ${err.message}`);
+      }
+    }
   }
 
   /**

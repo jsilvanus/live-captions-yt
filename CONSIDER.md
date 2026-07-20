@@ -662,7 +662,7 @@ fix.
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
 plan_ingest_feeds.md, 2026-07-19.)
 
-## `AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry
+## ~~`AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry~~ (RESOLVED)
 
 **Where:** `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`,
 `routes/ai-models.js`, standalone `ai_model_configs` table (all in
@@ -677,14 +677,27 @@ nothing in the `agentic_chat` turn loop, vision adapters, or
 `ai_providers`/`ai_provider_models`/`provider_id` registry the plan actually
 built.
 
-**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
-code-cleanup or wire-up decision (either delete the dead plumbing, or use it
-as the starting point for the actual Phase 3 model-picker UI), not something
-to fix as a side effect of correcting plan status text.
+**Resolution (ROADMAP.md Tier 0, 2026-07-20):** Took the "delete it" branch
+of the finding's own decision (repurposing into the real Phase 3 UI is
+Tier 1 scope — `plan_ai_model_registry.md` — and building it now would have
+been throwaway effort against a card that didn't exist yet). Deleted
+`AiModelsSection.jsx`, `packages/plugins/lcyt-agent/src/ai-models.js`,
+`packages/plugins/lcyt-agent/src/routes/ai-models.js`, the `/ai/models`
+mount in `lcyt-backend/src/server.js`, and the `ai_model_configs` migration
+call — existing deployments keep any already-created (now-orphaned) table,
+harmless since nothing reads it. Removed its two mount points
+(`SetupHubPage.jsx`'s `ai-models` card, `AdminAiModelsPage.jsx`) and the
+now-dead `listAiModels`/`createAiModel`/`updateAiModel`/`deleteAiModel`
+helpers from `lib/aiAdminApi.js`. `AdminAiModelsPage.jsx` (`/admin/ai-models`
+— hidden from the Admin tab bar, still reachable by direct URL, see
+`HIDDEN.md`) keeps its route and now hosts only `McpAccessSection`, which
+was already independently mounted on the Setup Hub. Updated the stale
+"Phase 3 not done" callout in `plan_ai_model_registry.md` and the two other
+plan docs that referenced this card by name.
 
-(Found during: docs/plans frontmatter audit, 2026-07-20.)
+(Found during: docs/plans frontmatter audit, 2026-07-20. Resolved same day.)
 
-## Recording/VOD marks `storage_type='s3'` but nothing ever uploads the segments there
+## ~~Recording/VOD marks `storage_type='s3'` but nothing ever uploads the segments there~~ (RESOLVED)
 
 **Where:** `packages/lcyt-backend/src/db/videos.js` (`startVideoRecording`/
 `finishVideoRecording`), `packages/lcyt-backend/src/routes/live.js`
@@ -700,9 +713,233 @@ would 404 on VOD playback for any broadcast recorded this way, since
 `GET /videos/:id/playlist.m3u8` would look for segments at an S3 location
 nothing ever populated.
 
-**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
-functional bug requiring either wiring an uploader into the recording path
-or making `storage_type` correctly reflect "local, even though S3 is
-configured" until that's built.
+**Resolution (ROADMAP.md Tier 0, 2026-07-20):** Added `uploadDirectoryToS3()`
+to `packages/lcyt-backend/src/storage/s3.js` — a small authenticated
+PutObject-based uploader (`@aws-sdk/client-s3`, added as an optional
+dependency mirroring `lcyt-files`' pattern) that walks a local recording
+directory and uploads every file under the same `${storageKey}/<relative
+path>` layout the existing (unsigned-fetch) playback read path already
+expects, so no change was needed on the read side. `db/videos.js` gained
+`syncVideoRecordingToStorage(db, apiKey, videoId)`, which uploads and
+records the real `size_bytes`, or — on upload failure — downgrades the row
+to `storage_type='local'` so playback still works against the local files
+MediaMTX already wrote, instead of the previous silent 404. Wired into both
+recording-finish paths in `routes/live.js` (`stopSessionRecording()` and the
+`DELETE /live` teardown handler) via `scheduleRecordingStorageSync()`, which
+waits `RECORDING_UPLOAD_DELAY_MS` (default 3000ms) before reading the
+directory to give MediaMTX's `record:no` patch time to flush the final
+segment to disk. Deliberately kept the existing key/URL scheme (not
+`lcyt-files`' `S3_PREFIX`-based `keyDir()` layout) rather than reusing that
+adapter directly, since the two were never aligned to begin with and
+reusing it would have required also rewriting the already-working read
+path. Tests: `packages/lcyt-backend/test/videos.test.js` (upload success,
+upload-failure fallback, local-storage no-op) against a new lightweight
+mock S3 server (`test/helpers/mock-s3-server.js`, PUT-only).
 
-(Found during: docs/plans frontmatter audit, 2026-07-20.)
+(Found during: docs/plans frontmatter audit, 2026-07-20. Resolved same day.)
+
+---
+
+## `crop_preset` has no working named-action or cue-triggered path — premise mismatch, not built
+
+**Where:** `packages/plugins/lcyt-actions` (named actions), `packages/plugins/lcyt-cues`
+(cue engine), `packages/lcyt-web/src/lib/metacode-actions.js` (named-action execution)
+
+**Finding:** `docs/plans/plan_vertical_crop.md` Phase 4 asked for a `crop_preset`
+"named-action/cue/tool" — recall a crop preset "the same way other production
+actions are today," by analogy with `camera.preset`/`mixer.switch`. Investigating
+before implementing (per this session's instructions) found that analogy doesn't
+hold:
+
+- **Named actions execute entirely client-side.** `lcyt-actions`' own `CLAUDE.md`
+  states it plainly: "Parsing, `@`-ref expansion..., and send-time execution all
+  live in the web client." `lcyt-web/src/lib/metacode-actions.js`'s `applyAtoms()`
+  only knows `api:`/`!api:`/`api!:` (connector triggers), `audio:start`/`stop`, and
+  generic persistent variable/graphics/section assignment atoms — there is no
+  camera/mixer/production-control atom at all, for *any* device, today. Adding
+  `crop_preset:` as the first one would mean inventing that category, and doing it
+  requires an `lcyt-web` change — explicitly out of scope for the session that did
+  this work ("no `lcyt-web` conflict").
+- **Cue-fired actions are descriptive-only.** `cue_rules.action` (and
+  `cue_events.action`) is arbitrary JSON, but `cue-processor.js` only ever does one
+  thing with it: attach it to the `cue_fired` SSE event for the *frontend* to
+  interpret (today: jump the rundown pointer). No cue firing, for any action type,
+  executes a backend side effect. Making `crop_preset` the first one would mean
+  building a new backend cue-action-dispatcher — a bigger, more architecturally-loaded
+  change than "follow the existing pattern," since there is no existing pattern of
+  a cue driving hardware to follow.
+
+**What *was* built instead:** the one piece of "recall a crop preset the same way
+other production actions are today" that has a real, precedented, backend-only
+mechanism — a `crop.list_presets`/`crop.activate_preset` AI-tool pair
+(`packages/lcyt-tools/src/tools/crop.js`), registered exactly like
+`camera.preset`/`mixer.switch` and added to the Production Assistant role's
+`available_tools` (`packages/plugins/lcyt-agent/src/ai-roles.js`).
+
+**Why skipped:** forcing the named-action/cue halves would mean either violating
+this task's explicit `lcyt-web`-untouched constraint, or inventing new
+cue-execution architecture speculatively (against this repo's "no speculative
+abstractions beyond what's asked" convention) for a single action type with no
+sibling to generalize from yet. A future pass that actually wants
+cue/named-action-driven device control should design that capability for
+camera/mixer/crop together, not bolt one narrow case onto an architecture that
+doesn't support the concept at all.
+
+(Found during: `plan_vertical_crop.md` Phase 4/5 implementation, 2026-07-20.)
+
+---
+
+## AI-tool-driven mixer switches / camera preset recalls don't trigger vertical-crop follow
+
+**Where:** `packages/lcyt-tools/src/tools/mixers.js` (`mixer.switch`),
+`packages/lcyt-tools/src/tools/cameras.js` (`camera.preset`),
+`packages/plugins/lcyt-production/src/routes/mixers.js` and `routes/cameras.js`
+
+**Finding:** `plan_vertical_crop.md` Phase 4's production-follow notifications
+(`registry.notifyProgramChanged()`/`notifyCameraPresetRecalled()`) are fired from
+the **HTTP route handlers** in `lcyt-production`, not from
+`DeviceRegistry.switchSource()`/`callPreset()` themselves — this is deliberate:
+a bridge-relayed switch (the common case for real roland/amx/atem/monarch_hdx
+hardware) returns early from the route without ever calling `switchSource()`, so
+the route is the only place that sees both the direct and bridge-relayed
+transports succeed. But `lcyt-tools`' `mixer.switch`/`camera.preset` tool
+handlers (used by the Production Assistant AI role and any MCP client) call
+`registry.switchSource()`/`callPreset()` **directly**, bypassing the HTTP route
+entirely — so an AI-tool-driven or MCP-driven mixer switch or PTZ preset recall
+never fires the production-follow notification, and the vertical crop will not
+follow it, even though the operator-UI-driven equivalent does.
+
+**Why skipped:** out of scope for this task, which was scoped to
+`lcyt-production`/`lcyt-rtmp` and asked to hook into "wherever mixer-switch and
+PTZ-preset-recall events already fire in `lcyt-production`" — that's the routes,
+which is what got wired. Closing this gap would mean adding the same
+`registry.notifyProgramChanged()`/`notifyCameraPresetRecalled()` calls to
+`tools/mixers.js`'s `mixer.switch` and `tools/cameras.js`'s `camera.preset`
+handlers (both already receive `ctx.apiKey`, they just don't use it today since
+cameras/mixers are project-wide tables) — a small, mechanical follow-up, not a
+design question, whenever AI-tool-driven crop-follow parity is wanted.
+
+(Found during: `plan_vertical_crop.md` Phase 4 implementation, 2026-07-20.)
+
+---
+
+## No frontend UI to create/configure `ai_providers` rows — admin-side CRUD is API-only
+
+**Where:** `packages/plugins/lcyt-agent/src/routes/ai-providers-admin.js`,
+`packages/lcyt-web/src/components/setup-hub/AiRoleModelsSection.jsx`
+
+**Finding:** while building the Setup Hub AI role→model picker
+(`plan_ai_model_registry.md` Phase 3), confirmed the admin-level provider CRUD
+routes are fully implemented and tested — create/update/delete a provider,
+model discovery, per-project grants (`ai-providers-admin.js`) — but no page in
+`lcyt-web` ever calls any of them. `AiRoleModelsSection.jsx` reads providers via
+the project-scoped `GET /ai/providers` (providers already granted to the
+project) and shows an empty-state note when there are none, but there's no
+"add a provider" flow anywhere in the UI — a provider has to be created by a
+direct API call today, same shape of gap `plan_ai_model_registry.md`'s original
+Tier 1 line described for role config before this pass closed that half.
+
+**Why skipped:** out of scope for the Phase 3 task, which was scoped to wiring
+*existing* providers into role config, not building provider CRUD itself.
+Building it would need a new admin-facing page/section (provider list, create
+dialog with per-vendor auth fields, model-discovery trigger, per-project grant
+management) — a real, separately-schedulable chunk of UI work, not a small
+addition to the role-picker card.
+
+(Found during: `plan_ai_model_registry.md` Phase 3 implementation, 2026-07-20.)
+
+---
+
+## `/code-review` findings on PR #289, fixed vs. logged (2026-07-20)
+
+A full 8-angle `/code-review` pass on the Tier 0 + Tier 1 batch (mcp docs,
+vertical-crop Phase 4/5, AI model registry UI, org-baseline resolver)
+surfaced several real bugs — fixed directly (see the fix commit's message
+for the full list: `auth.js` client-supplied `projectRole` privilege cap,
+`mixers.js`'s `/switch` route dropped from the auth carve-out breaking
+`LcytMixerPage.jsx`'s kiosk cut button, `cameras.js`'s preset-recall
+notification using the wrong identifier so vertical-crop production-follow
+via camera preset silently never matched a row bound through the real UI,
+`getEffectiveProjectAccessLevel()`'s redundant DB round-trips on the
+owner/admin fast path, `CropManager._followState`'s unbounded per-apiKey
+growth, `videos.bytes` metering not counting S3-uploaded recordings, and
+sequential (not bounded-concurrent) S3 segment uploads) — plus several real
+but lower-priority findings logged here instead of rushed into the same
+pass:
+
+- **Duplicated ownership-gate pattern.** The `row.user_id !== user.userId
+  ? getEffectiveProjectAccessLevel(...) : <owner shortcut>` gate is
+  copy-pasted (minor variations) across `routes/project-features.js` (×2),
+  `routes/project-slug.js`, `routes/project-observability.js`, and
+  `routes/device-roles.js`'s local `requireOwnerOrAdmin`. A shared
+  `requireProjectAccess(db, req, res, { minLevel })` helper would make the
+  next access-model change a one-place edit instead of five. Not extracted
+  now — touching all five auth-critical files for a pure refactor right
+  before a CI-gate-then-merge added more regression risk than the cleanup
+  was worth in that window.
+- **Duplicated `useApi()` hook.** `packages/lcyt-web/src/components/setup-hub/AiRoleModelsSection.jsx`
+  copies `ConnectorsSection.jsx`'s `useApi()` hook (token check, header
+  building, fetch, JSON-parse, error-throw) verbatim instead of a shared
+  module. Matches this directory's existing (undocumented) per-file
+  convention, so not a new regression, but worth extracting if a third
+  Setup Hub section needs the same pattern.
+- **Duplicated S3 client construction.** `packages/lcyt-backend/src/storage/s3.js`'s
+  `createS3Client()` reimplements the same region/endpoint/credentials
+  wiring as `packages/plugins/lcyt-files/src/adapters/s3.js`'s
+  `createS3Adapter()`. The two adapters deliberately use different key
+  schemes (already documented above in this file), but that doesn't require
+  duplicating client construction — a shared helper could serve both.
+- **Duplicated mock S3 test server.** `packages/lcyt-backend/test/helpers/mock-s3-server.js`
+  is a trimmed copy of `packages/plugins/lcyt-files/test/helpers/mock-s3-server.js`
+  rather than an import/reuse of it.
+- **`console.warn` vs. `lcyt/logger`.** The root `CLAUDE.md` says to use
+  `lcyt/logger` over `console.*`, but `packages/lcyt-backend/src/server.js`
+  (41 `console.*` calls, zero `logger` usage) and all of
+  `packages/plugins/lcyt-production` (`bridge-manager.js`, `crud.js`,
+  `registry.js`) use `console.warn`/`console.error`/`console.info`
+  exclusively — a pre-existing, file-and-package-wide gap this session's new
+  code matched rather than deviated from. Fixing just the newly-added lines
+  would be inconsistent with their own surrounding code; a real fix needs a
+  dedicated migration pass per package (and, for `lcyt-production`, adding
+  `lcyt` as a declared dependency, which it doesn't have today).
+- **Unanchored `/whip` carve-out regex.** Both `routes/cameras.js`'s
+  `isUnauthenticatedCameraRoute()` and `routes/mixers.js`'s
+  `isUnauthenticatedMixerRoute()` use `/\/whip(-url)?(\/|$)/`, which matches
+  any path segment literally named `whip`/`whip-url`, not just the
+  `/:id/whip` route — currently unexploitable since ids are
+  server-generated `randomUUID()`s, but the guard itself provides no defense
+  if that ever changes (e.g. custom/slug ids). Pre-existing pattern in
+  `cameras.js`, copied (not introduced) by `mixers.js`'s new carve-out.
+- **`CropManager.applyForSource()`'s camera-preset-recall branch never
+  passes `mixerId`** to `resolveCropPresetForSource()` (defaults to `null`),
+  so a `crop_source_map` row that specifies *both* `cameraId` and `mixerId`
+  gets excluded on a preset-recall event even when its camera/preset match.
+  Narrow: `lcyt-web`'s crop editor (`useCropEditor.js`) never sets `mixerId`
+  on a camera-preset binding created through the UI — only reachable via a
+  direct `POST /crop/source-map` call that deliberately combines both
+  fields.
+- **Org member listing stays explicit-only.** The Altitude angle flagged
+  that `routes/project-members.js` (`GET /keys/:key/members` etc.) was
+  deliberately left off the `getEffectiveProjectAccessLevel()` sweep — an
+  org-baseline `member` can now read captions/DSK/cues/etc. on a project but
+  still gets 403 listing that project's explicit members. This is the
+  intended design (membership management is an ownership-tier concern, see
+  `plan_team_org_backend.md`'s "One place this must NOT apply"), not a bug —
+  noted here only because a future reader re-auditing the sweep list
+  shouldn't assume it's an oversight.
+
+(Found during: `/code-review` pass on PR #289, 2026-07-20.)
+
+---
+
+## Org-baseline access reaches every scopedAuth router, not just the 6 tested — interim fix + follow-up plan
+
+**Where:** `packages/lcyt-backend/src/middleware/project-access.js`, `packages/lcyt-backend/src/routes/mcp-tokens.js`, `packages/plugins/lcyt-agent/src/routes/ai-providers-project.js`, `docs/plans/plan_project_roles.md` (new)
+
+**Finding:** `getEffectiveProjectAccessLevel()`'s sweep (this same PR) was scoped/tested against 6 specific routes, but because it lives in the single shared `middleware/project-access.js` gate, it actually reaches **every** `scopedAuth('<resource>')`-mounted router — dsk, cue, token, ai, agent, role, connector, action, variable, operator, production. Two of those, `POST /mcp-tokens` (mint a personal, exportable MCP access token) and `POST/PUT/DELETE /ai/providers` (add a credentialed AI provider), do no further role check beyond "the middleware let me through" — so an org member with only baseline access (even the org `viewer` tier) could mint a durable, exportable credential for a project they were never explicitly invited to, right from the Setup Hub UI's own "Generate token" button.
+
+**Resolution:** discussed with the project owner, who specified a fuller target model (per-project visibility private/team, a configurable org-baseline ceiling of viewer/editor — never admin — a unified owner/admin/editor/viewer role vocabulary, and page-scoped write gates: Setup=explicit-admin-only, Assets=editor+, Production=still-undecided). Building that full model was explicitly scoped OUT of this PR (still evolving — the Production/operator question is open) in favor of a narrow, well-tested interim fix: `POST /mcp-tokens`/`PATCH`/`DELETE` and `POST/PUT/DELETE /ai/providers` now require **explicit** `project_members` owner/admin (`getMemberAccessLevel`, not the org-baseline-inclusive resolver) regardless of the broader gate. `GET` on both stays on the broad gate.
+
+**Left open, tracked in `docs/plans/plan_project_roles.md`:** every other Setup-shaped route still has only the broad org-baseline gate — `lcyt-dsk`'s template/viewport routers, `lcyt-connectors` (also credential-bearing, same risk class as ai/providers), `lcyt-production`'s camera/mixer/encoder/bridge CRUD (entangled with the still-undecided Production/operator question), `lcyt-rtmp`'s egress/ingestion/radio config, `targets`/`translation`/`stt config`/`icons`/`storage`. These need the same treatment once the full role model is designed.
+
+(Found during: `/code-review` pass on PR #289, 2026-07-20 — design conversation follow-up.)

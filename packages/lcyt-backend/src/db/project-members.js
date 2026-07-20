@@ -9,6 +9,8 @@
  * Permission overrides are stored in project_member_permissions as delta
  * on top of the role bundle (granted=1 adds, granted=0 explicitly revokes).
  */
+import { getKey } from './keys.js';
+import { getOrgMembership } from './orgs.js';
 
 const ROLE_BUNDLES = {
   owner:  new Set([
@@ -198,6 +200,54 @@ export function getMemberAccessLevel(db, apiKey, userId) {
   if (keyRow?.user_id === userId) return 'owner';
 
   return null;
+}
+
+/**
+ * Resolve the *effective* access level a user has on a project, combining
+ * org-membership baseline with explicit project membership. Returns the
+ * higher of the two, or null if the user has neither.
+ *
+ * Org membership contributes a flat project-baseline of 'member' regardless
+ * of which of the 5 org roles (owner/admin/editor/operator/viewer, see
+ * `ROLE_ORDER` in routes/orgs.js) the user holds there — org roles do not
+ * cascade into a higher project baseline. That cascade (e.g. org owner ->
+ * project admin) is explicitly deferred; see plan_team_org_backend.md's
+ * "Future extension (not in scope now)" section.
+ *
+ * A project with `restricted = 1` gets zero org-baseline contribution even
+ * when the user is a real org member — only explicit project_members rows
+ * grant access on a restricted project. A project with no org_id behaves
+ * exactly like `getMemberAccessLevel()` (no org to draw a baseline from).
+ *
+ * This resolver is for day-to-day *operational* access only. Irreversible/
+ * ownership-only actions (transfer ownership, delete project, revoke a key)
+ * must keep calling `getMemberAccessLevel()` directly so an org-wide
+ * baseline of 'member' can never escalate into a destructive right.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} apiKey
+ * @param {number} userId
+ * @returns {'owner'|'admin'|'member'|null}
+ */
+export const PROJECT_ROLE_ORDER = { member: 1, admin: 2, owner: 3 };
+
+export function getEffectiveProjectAccessLevel(db, apiKey, userId) {
+  const explicit = getMemberAccessLevel(db, apiKey, userId);
+  // 'owner'/'admin' already beats (or ties) anything an org baseline could
+  // ever contribute ('member') — skip the getKey()/getOrgMembership() lookups
+  // entirely for the common case (this runs on every authenticated request
+  // via middleware/project-access.js).
+  if (explicit === 'owner' || explicit === 'admin') return explicit;
+
+  const project = getKey(db, apiKey);
+  if (!project?.org_id || project.restricted) return explicit;
+
+  const membership = getOrgMembership(db, project.org_id, userId);
+  if (!membership) return explicit;
+
+  const orgBaseline = 'member';
+  if (!explicit) return orgBaseline;
+  return PROJECT_ROLE_ORDER[explicit] >= PROJECT_ROLE_ORDER[orgBaseline] ? explicit : orgBaseline;
 }
 
 /**

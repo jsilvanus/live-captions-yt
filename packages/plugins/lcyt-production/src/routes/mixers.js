@@ -6,9 +6,60 @@ import { buildSwitchCommand } from '../crud.js';
 
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
+// Whether a request carries anything auth() would recognise as a credential
+// (Authorization header, x-api-key, a query-string token, or an auth
+// cookie) — mirrors middleware/project-access.js's extractAuthToken() plus
+// the x-api-key project-id hint it also reads.
+function hasAuthCredentials(req) {
+  if (req.headers.authorization) return true;
+  if (req.headers['x-api-key']) return true;
+  if (req.query?.token) return true;
+  const cookie = req.headers.cookie || '';
+  if (/(?:^|;\s*)(lcyt_project|lcyt_identity)=/.test(cookie)) return true;
+  return false;
+}
+
+// Routes that must stay unauthenticated even after opts.auth is supplied:
+// LcytMixerPage.jsx (the LCYT software-mixer output page) is a capability-URL
+// kiosk page with no login flow — it plain-`fetch()`s /sources and
+// /whip-url with no Authorization header, then posts/patches/deletes /whip
+// for the WebRTC session itself. Mirrors routes/cameras.js's
+// isUnauthenticatedCameraRoute().
+//
+// /switch/:inputNumber is a special case: the SAME kiosk page also POSTs it
+// with no credentials at all (to cut its own program source), but the real
+// operator workspace UI hits the identical route WITH an Authorization
+// header and needs auth to run normally so production-follow gets a real
+// apiKey (plan_vertical_crop.md §4) — an unconditional bypass here would
+// silently break production-follow for every switch, not just the kiosk's.
+// So /switch only skips auth when the request carries no credentials at all;
+// a credentialed request still goes through auth() as normal.
+function isUnauthenticatedMixerRoute(req) {
+  const path = req.path;
+  if (/\/whip(-url)?(\/|$)/.test(path) || /\/sources$/.test(path)) return true;
+  if (/\/switch\/[^/]+$/.test(path)) return !hasAuthCredentials(req);
+  return false;
+}
+
 export function createMixersRouter(db, registry, bridgeManager = null, opts = {}) {
   const mediamtxClient = opts.mediamtxClient ?? null;
+  // Real session/user/device auth (createProjectAccessMiddleware), same
+  // opt-in pattern as routes/cameras.js's opts.auth: optional so existing
+  // route-level tests that construct this router directly keep working
+  // unauthenticated unless they explicitly opt in; server.js always supplies
+  // it in production. Previously this router received no auth at all, so
+  // req.session.apiKey was never available here — needed now so a mixer
+  // switch can report which project's session performed it to
+  // registry.onProgramChanged() (plan_vertical_crop.md §4 production-follow).
+  const auth = opts.auth ?? null;
   const router = Router();
+
+  if (auth) {
+    router.use((req, res, next) => {
+      if (isUnauthenticatedMixerRoute(req)) return next();
+      return auth(req, res, next);
+    });
+  }
 
   // -------------------------------------------------------------------------
   // Text body parser for WHIP SDP routes
@@ -133,6 +184,11 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
     try {
       const mixer = parseMixer(row);
+      // Whichever project's session performed this switch — production-follow
+      // (plan_vertical_crop.md §4) scopes the crop_source_map lookup to it.
+      // prod_mixers has no project/owner column of its own (see db.js), so
+      // "which project" is the acting session, not the mixer's ownership.
+      const apiKey = req.session?.apiKey ?? null;
 
       // Bridge routing: if mixer is assigned to a bridge, relay via SSE
       if (mixer.bridgeInstanceId && bridgeManager) {
@@ -143,12 +199,14 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
         // lcyt mixer returns null — skip bridge dispatch, fall through to registry
         if (command !== null) {
           await bridgeManager.sendCommand(mixer.bridgeInstanceId, command);
+          registry.notifyProgramChanged({ apiKey, mixerId: id, inputNumber: input });
           return res.json({ ok: true, mixerId: id, activeSource: input });
         }
       }
 
       // Direct via registry (handles lcyt in-memory tracking and all non-bridge cases)
       await registry.switchSource(id, input);
+      registry.notifyProgramChanged({ apiKey, mixerId: id, inputNumber: input });
       res.json({ ok: true, mixerId: id, activeSource: input });
     } catch (err) {
       const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;

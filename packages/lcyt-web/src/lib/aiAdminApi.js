@@ -56,34 +56,3 @@ export async function deleteMcpToken({ backendUrl, token, apiKey, id }) {
     method: 'DELETE',
   });
 }
-
-export async function listAiModels({ backendUrl, token, apiKey }) {
-  const data = await requestJson(backendUrl, '/ai/models', { token, apiKey });
-  return data.models || [];
-}
-
-export async function createAiModel({ backendUrl, token, apiKey, roleCode = 'assistant', provider, modelName, apiUrl, apiKeyValue, enabled = true }) {
-  return requestJson(backendUrl, '/ai/models', {
-    token,
-    apiKey,
-    method: 'POST',
-    body: { roleCode, provider, modelName, apiUrl, apiKeyValue, enabled },
-  });
-}
-
-export async function updateAiModel({ backendUrl, token, apiKey, id, roleCode, provider, modelName, apiUrl, apiKeyValue, enabled }) {
-  return requestJson(backendUrl, `/ai/models/${id}`, {
-    token,
-    apiKey,
-    method: 'PATCH',
-    body: { roleCode, provider, modelName, apiUrl, apiKeyValue, enabled },
-  });
-}
-
-export async function deleteAiModel({ backendUrl, token, apiKey, id }) {
-  return requestJson(backendUrl, `/ai/models/${id}`, {
-    token,
-    apiKey,
-    method: 'DELETE',
-  });
-}

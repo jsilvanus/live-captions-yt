@@ -24,7 +24,7 @@ import { discoverProvider } from '../discovery.js';
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth — session JWT middleware
- * @param {{ bridgeManager?: object }} [deps]
+ * @param {{ bridgeManager?: object, isExplicitProjectAdmin?: (apiKey: string, userId: number) => boolean }} [deps]
  * @returns {import('express').Router}
  */
 export function createProjectAiProvidersRouter(db, auth, deps = {}) {
@@ -35,6 +35,27 @@ export function createProjectAiProvidersRouter(db, auth, deps = {}) {
     if (!req.session?.apiKey) return res.status(401).json({ error: 'No API key in session' });
     next();
   });
+
+  /**
+   * Adding/editing/removing a project AI provider means storing a real
+   * credential (an API key, or a bridge-relayed endpoint) — a Setup-tier
+   * action, so org-baseline access (granted automatically to any org member
+   * via the shared project-access middleware) is not enough; it requires an
+   * explicit project_members owner/admin row for the authenticated user.
+   * lcyt-agent has no direct access to lcyt-backend's project_members table
+   * (plugin boundary), so this check is injected from the composition root.
+   * GET/discover/models stay reachable to anyone who already passed the
+   * broader project-access gate.
+   */
+  function requireExplicitAdmin(req, res, next) {
+    if (typeof deps.isExplicitProjectAdmin !== 'function') {
+      return res.status(403).json({ error: 'Explicit project owner/admin access required' });
+    }
+    if (!req.user?.userId || !deps.isExplicitProjectAdmin(req.session.apiKey, req.user.userId)) {
+      return res.status(403).json({ error: 'Explicit project owner/admin access required' });
+    }
+    next();
+  }
 
   /** Loads a provider visible to this project or 404s. */
   function loadVisible(req, res) {
@@ -64,7 +85,7 @@ export function createProjectAiProvidersRouter(db, auth, deps = {}) {
     res.json({ ok: true, providers: listVisibleProviders(db, req.session.apiKey) });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', requireExplicitAdmin, (req, res) => {
     const input = { ...req.body, scope: 'project', ownerApiKey: req.session.apiKey };
     const err = validateProviderInput(input);
     if (err) return res.status(400).json({ error: err });
@@ -72,7 +93,7 @@ export function createProjectAiProvidersRouter(db, auth, deps = {}) {
     res.status(201).json({ ok: true, provider });
   });
 
-  router.put('/:id', (req, res) => {
+  router.put('/:id', requireExplicitAdmin, (req, res) => {
     if (!loadOwned(req, res)) return;
     const err = validateProviderInput(req.body, { partial: true });
     if (err) return res.status(400).json({ error: err });
@@ -80,7 +101,7 @@ export function createProjectAiProvidersRouter(db, auth, deps = {}) {
     res.json({ ok: true, provider });
   });
 
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', requireExplicitAdmin, (req, res) => {
     if (!loadOwned(req, res)) return;
     deleteProvider(db, req.params.id);
     res.json({ ok: true });

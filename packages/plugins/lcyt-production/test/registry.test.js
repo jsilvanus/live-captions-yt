@@ -295,3 +295,81 @@ describe('DeviceRegistry', () => {
     await registry.stop();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Production-follow subscription (plan_vertical_crop.md §4)
+// ---------------------------------------------------------------------------
+
+describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
+  it('onProgramChanged: fires every subscriber with the switch payload', () => {
+    const registry = new DeviceRegistry(makeDb());
+    const calls = [];
+    registry.onProgramChanged(data => calls.push(data));
+    registry.onProgramChanged(data => calls.push({ second: true, ...data }));
+
+    registry.notifyProgramChanged({ apiKey: 'key1', mixerId: 'mix1', inputNumber: 2 });
+
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0], { apiKey: 'key1', mixerId: 'mix1', inputNumber: 2 });
+    assert.equal(calls[1].second, true);
+  });
+
+  it('onProgramChanged: unsubscribe stops further notifications', () => {
+    const registry = new DeviceRegistry(makeDb());
+    const calls = [];
+    const unsubscribe = registry.onProgramChanged(data => calls.push(data));
+
+    registry.notifyProgramChanged({ apiKey: 'key1', mixerId: 'mix1', inputNumber: 1 });
+    unsubscribe();
+    registry.notifyProgramChanged({ apiKey: 'key1', mixerId: 'mix1', inputNumber: 2 });
+
+    assert.equal(calls.length, 1);
+  });
+
+  it('onProgramChanged: a throwing listener does not stop other listeners or throw', () => {
+    const registry = new DeviceRegistry(makeDb());
+    const calls = [];
+    registry.onProgramChanged(() => { throw new Error('boom'); });
+    registry.onProgramChanged(data => calls.push(data));
+
+    assert.doesNotThrow(() => registry.notifyProgramChanged({ apiKey: 'k', mixerId: 'm', inputNumber: 1 }));
+    assert.equal(calls.length, 1);
+  });
+
+  it('notifyProgramChanged with no subscribers is a silent no-op', () => {
+    const registry = new DeviceRegistry(makeDb());
+    assert.doesNotThrow(() => registry.notifyProgramChanged({ apiKey: 'k', mixerId: 'm', inputNumber: 1 }));
+  });
+
+  it('onCameraPresetRecalled: fires subscribers with the recall payload', () => {
+    const registry = new DeviceRegistry(makeDb());
+    const calls = [];
+    registry.onCameraPresetRecalled(data => calls.push(data));
+
+    registry.notifyCameraPresetRecalled({ apiKey: 'key1', cameraId: 'cam1', preset: 'wide' });
+
+    assert.equal(calls.length, 1);
+    assert.deepEqual(calls[0], { apiKey: 'key1', cameraId: 'cam1', preset: 'wide' });
+  });
+
+  it('onCameraPresetRecalled: unsubscribe stops further notifications', () => {
+    const registry = new DeviceRegistry(makeDb());
+    const calls = [];
+    const unsubscribe = registry.onCameraPresetRecalled(data => calls.push(data));
+
+    unsubscribe();
+    registry.notifyCameraPresetRecalled({ apiKey: 'key1', cameraId: 'cam1', preset: 'wide' });
+
+    assert.equal(calls.length, 0);
+  });
+
+  it('onCameraPresetRecalled: a throwing listener does not stop other listeners or throw', () => {
+    const registry = new DeviceRegistry(makeDb());
+    const calls = [];
+    registry.onCameraPresetRecalled(() => { throw new Error('boom'); });
+    registry.onCameraPresetRecalled(data => calls.push(data));
+
+    assert.doesNotThrow(() => registry.notifyCameraPresetRecalled({ apiKey: 'k', cameraId: 'c', preset: 'p' }));
+    assert.equal(calls.length, 1);
+  });
+});

@@ -132,10 +132,13 @@ two items only shipped partially:
   no DSK-ingest gate exists yet), per that plan's own header.
 - **Multi-role AI Models** — partially shipped. `plan_ai_roles_framework.md`
   (status: in-progress) built the real backend (`GET /roles/catalog`,
-  per-role `GET/PUT /roles/:roleCode/config`, per-key `ai_models` CRUD), but
-  the frontend (`AiModelsSection.jsx`) still only exposes a single hardcoded
-  `assistant` role — Setup Assistant and Asset Control Assistant have no
-  frontend surface yet.
+  per-role `GET/PUT /roles/:roleCode/config`, per-key `ai_models` CRUD).
+  The old frontend (`AiModelsSection.jsx`) only ever exposed a single
+  hardcoded `assistant` role against a disconnected `ai_model_configs` table
+  no inference code read from, and was deleted 2026-07-20 (ROADMAP.md
+  Tier 0) — Setup Assistant and Asset Control Assistant, and a real
+  registry-backed model picker for all roles, still have no frontend
+  surface (`plan_ai_model_registry.md` Phase 3).
 - **Real org/Team data model** — mostly shipped. `plan_team_org_backend.md`
   (status: in-progress) added real `organizations`/`org_members` tables, and
   `TeamPage.jsx` now does real aggregation against `/orgs*` routes (no longer

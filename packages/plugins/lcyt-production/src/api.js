@@ -55,7 +55,7 @@ export async function initProductionControl(db) {
  * @param {MediaMtxClient} [opts.mediamtxClient]  MediaMTX REST client (optional)
  * @param {object} [opts.cameraThumbnail]  Overrides for camera-thumbnail.js's defaults (thumbnailsDir/previewBaseUrl) — tests only, env vars suffice in production
  * @param {object} [opts.metrics]  Optional backend metrics handle (plan_metering_audit §3.2: production.commands)
- * @param {import('express').RequestHandler} [opts.auth]  Session/user/device auth middleware (createProjectAccessMiddleware) applied to the camera CRUD routes only — plan_ingest_feeds.md's cross-tenant review finding. Omit to keep this router's historical fully-open behavior (e.g. existing route-level tests).
+ * @param {import('express').RequestHandler} [opts.auth]  Session/user/device auth middleware (createProjectAccessMiddleware) applied to the camera CRUD routes (plan_ingest_feeds.md's cross-tenant review finding) and the mixer routes (plan_vertical_crop.md §4 — a mixer switch needs the acting session's apiKey to report to registry.onProgramChanged()); WHIP/thumbnail/sources kiosk routes stay unauthenticated in both routers. Omit to keep this router's historical fully-open behavior (e.g. existing route-level tests).
  * @returns {import('express').Router}
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
@@ -79,7 +79,7 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   });
 
   router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: opts.cameraThumbnail, auth: opts.auth }));
-  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient }));
+  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, auth: opts.auth }));
   router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl));
   router.use('/encoders', createEncodersRouter(db, bridgeManager));
 

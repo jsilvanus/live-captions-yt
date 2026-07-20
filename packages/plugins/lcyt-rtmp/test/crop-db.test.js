@@ -11,7 +11,7 @@ import {
   listCropSets, createCropSet, updateCropSet, deleteCropSet,
   listCropPresets, getCropPreset, createCropPreset, updateCropPreset, deleteCropPreset,
   listCropSourceMap, createCropSourceMapEntry, deleteCropSourceMapEntry,
-  resolveCropPresetForSource,
+  resolveCropPresetForSource, resolveCameraIdForMixerInput,
 } from '../src/db/crop.js';
 
 const KEY = 'testkey1';
@@ -223,9 +223,54 @@ describe('source map + resolution', () => {
     assert.equal(resolveCropPresetForSource(db, KEY, { mixerInput: 2, cameraId: 'cam1', cameraPreset: 3 })?.id, p.preset.id);
   });
 
-  test('non-integer mixerInput/cameraPreset are rejected on insert', () => {
+  test('non-integer mixerInput is rejected on insert; cameraPreset accepts any opaque identifier', () => {
     const p = createCropPreset(db, KEY, { name: 'p' });
     assert.equal(createCropSourceMapEntry(db, KEY, { mixerInput: 'abc', presetId: p.preset.id }).ok, false);
-    assert.equal(createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 1.5, presetId: p.preset.id }).ok, false);
+    // cameraPreset is the camera's own presetId (lcyt-production's
+    // prod_cameras.control_config.presets[].id — 'wide', 'close', a UUID),
+    // not a universal numeric PTZ preset number — any non-empty value is a
+    // valid opaque identifier, including a non-integer-looking one.
+    const r = createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 'wide-shot', presetId: p.preset.id });
+    assert.equal(r.ok, true);
+    assert.equal(r.entry.cameraPreset, 'wide-shot');
+    assert.equal(resolveCropPresetForSource(db, KEY, { cameraId: 'cam1', cameraPreset: 'wide-shot' })?.id, p.preset.id);
+  });
+
+  test('a legacy numeric-looking cameraPreset still resolves via string comparison', () => {
+    // Rows created before camera_preset became an opaque string (or simply
+    // holding a preset whose id happens to look like a number) are stored
+    // by SQLite's INTEGER-affinity conversion as a real INTEGER — resolution
+    // must still match a same-valued string query (and vice versa).
+    const p = createCropPreset(db, KEY, { name: 'p' });
+    const e = createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 2, presetId: p.preset.id });
+    assert.equal(e.ok, true);
+    assert.equal(e.entry.cameraPreset, 2);
+    assert.equal(resolveCropPresetForSource(db, KEY, { cameraId: 'cam1', cameraPreset: '2' })?.id, p.preset.id);
+  });
+});
+
+describe('resolveCameraIdForMixerInput', () => {
+  test('null when no prod_cameras table exists', () => {
+    // hasProdCamerasTable() caches its probe per db instance (see
+    // db/relay.js) — use a dedicated db here rather than the shared
+    // beforeEach `db` so this doesn't poison the cache for the next test.
+    assert.equal(resolveCameraIdForMixerInput(db, 1), null);
+  });
+
+  test('resolves a camera by mixer_input; null when no match', () => {
+    db.exec(`
+      CREATE TABLE prod_cameras (
+        id TEXT PRIMARY KEY,
+        mixer_input INTEGER
+      )
+    `);
+    db.prepare("INSERT INTO prod_cameras (id, mixer_input) VALUES ('cam-altar', 1)").run();
+    db.prepare("INSERT INTO prod_cameras (id, mixer_input) VALUES ('cam-pulpit', 2)").run();
+    db.prepare("INSERT INTO prod_cameras (id, mixer_input) VALUES ('cam-overview', NULL)").run();
+
+    assert.equal(resolveCameraIdForMixerInput(db, 1), 'cam-altar');
+    assert.equal(resolveCameraIdForMixerInput(db, 2), 'cam-pulpit');
+    assert.equal(resolveCameraIdForMixerInput(db, 3), null, 'no camera on that input');
+    assert.equal(resolveCameraIdForMixerInput(db, null), null);
   });
 });

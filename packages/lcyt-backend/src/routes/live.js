@@ -7,7 +7,7 @@ import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourly
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
-import { startVideoRecording, finishVideoRecording, getVideoStorageDir } from '../db/videos.js';
+import { startVideoRecording, finishVideoRecording, getVideoStorageDir, syncVideoRecordingToStorage } from '../db/videos.js';
 import { isS3Enabled } from '../storage/s3.js';
 import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
 import { getMetricsInstance } from '../metrics/index.js';
@@ -131,6 +131,19 @@ async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, 
   }
 }
 
+// MediaMTX may still be flushing the final segment to disk right after the
+// record:no patch is acknowledged; give it a brief grace window before an
+// S3-backed recording's local artifacts are read for upload.
+const RECORDING_UPLOAD_DELAY_MS = Number(process.env.RECORDING_UPLOAD_DELAY_MS) || 3000;
+
+function scheduleRecordingStorageSync(db, apiKey, videoId) {
+  setTimeout(() => {
+    syncVideoRecordingToStorage(db, apiKey, videoId).catch((err) => {
+      logger.warn(`[videos] recording storage sync failed (videoId=${videoId}): ${err?.message}`);
+    });
+  }, RECORDING_UPLOAD_DELAY_MS).unref?.();
+}
+
 async function startSessionRecording(db, session, { mediamtxClient }) {
   if (!session?.apiKey) return { ok: false, status: 400, error: 'apiKey missing' };
   if (session.recordingVideoId) {
@@ -176,6 +189,7 @@ async function stopSessionRecording(db, session, { mediamtxClient }) {
     enabled: false,
   });
   session.recordingVideoId = null;
+  scheduleRecordingStorageSync(db, session.apiKey, recordingVideoId);
   return { ok: true, active: false };
 }
 
@@ -572,6 +586,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
             videoDir: getVideoStorageDir(removed.apiKey, removed.recordingVideoId),
             enabled: false,
           });
+          scheduleRecordingStorageSync(db, removed.apiKey, removed.recordingVideoId);
         } catch (err) {
           logger.warn(`[videos] finishVideoRecording failed (videoId=${removed.recordingVideoId})`, err);
         }

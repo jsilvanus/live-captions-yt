@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser, getUserAccountExport, deleteOwnedProjectsForUser, deleteUserAccount } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
-import { getMemberAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel, PROJECT_ROLE_ORDER } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { writeAuditLog } from '../db/audit-log.js';
 import { getMetricsInstance } from '../metrics/index.js';
@@ -168,20 +168,35 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
       return res.status(400).json({ error: 'projectId is required' });
     }
-    const accessLevel = getMemberAccessLevel(db, projectId.trim(), req.user.userId);
+    const accessLevel = getEffectiveProjectAccessLevel(db, projectId.trim(), req.user.userId);
     if (!accessLevel) {
       return res.status(403).json({ error: 'Not a project member' });
+    }
+    // projectRole is client-supplied. middleware/project-access.js's
+    // normalizeProjectRole() only ever branches specially on 'owner'/'admin'
+    // — every other value (org-tier labels like 'editor'/'operator'/
+    // 'viewer', or anything unrecognized, which normalizeProjectRole falls
+    // back to 'member' for) behaves identically to 'member' at every
+    // project-route access check, so there's nothing to escalate by
+    // requesting one of those (e.g. a real owner deliberately minting a
+    // token labeled 'editor' is fine, and expected). Only a request for
+    // 'owner' or 'admin' needs capping to what getEffectiveProjectAccessLevel
+    // actually resolved, so a lower-privileged caller can't self-grant one
+    // of those two labels.
+    let grantedRole = projectRole || accessLevel;
+    if (grantedRole === 'owner' || grantedRole === 'admin') {
+      if (PROJECT_ROLE_ORDER[accessLevel] < PROJECT_ROLE_ORDER[grantedRole]) grantedRole = accessLevel;
     }
     const activeBroadcastId = getActiveBroadcastId(db, projectId.trim());
     const token = issueProjectToken(jwtSecret, {
       userId: req.user.userId,
       email: req.user.email,
       projectId: projectId.trim(),
-      projectRole: projectRole || accessLevel,
+      projectRole: grantedRole,
       scopes,
       activeBroadcastId,
     });
-    return res.json({ token, projectId: projectId.trim(), projectRole: projectRole || accessLevel, accessLevel, activeBroadcastId });
+    return res.json({ token, projectId: projectId.trim(), projectRole: grantedRole, accessLevel, activeBroadcastId });
   });
 
   // GET /auth/me — requires user token

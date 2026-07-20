@@ -58,7 +58,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/admin/projects` | `AdminProjectsPage` | Project list, search, batch actions (feature-gated: `admin`) |
 | `/admin/projects/:key` | `AdminProjectDetailPage` | Project detail, features, members (feature-gated: `admin`) |
 | `/admin/audit-log` | `AdminAuditLogPage` | Admin audit log (feature-gated: `admin`; removed from sidebar nav, route still live) |
-| `/admin/ai-models` | `AdminAiModelsPage` | Site-scope AI provider/model management (feature-gated: `admin`) |
+| `/admin/ai-models` | `AdminAiModelsPage` | MCP personal access token management (`McpAccessSection`, same card as `/setup`'s "MCP access"); route name is a holdover from a deleted AI-models card (feature-gated: `admin`) |
 | `/admin/site-features` | `AdminSiteFeaturesPage` | Tri-state site feature policies + per-org overrides (feature-gated: `admin`) |
 | `/admin/teams` | `AdminTeamsPage` | All orgs on the deployment (`GET /admin/orgs`), feature overrides (feature-gated: `admin`) |
 
@@ -139,8 +139,8 @@ Embed pages that own a session (`/embed/audio`, `/embed/input`, `/embed/file-dro
 ## Test Coverage
 
 **Test commands:**
-- `npm test -w packages/lcyt-web` → `node --test test/*.test.js` — pure utility functions (441 tests)
-- `npm run test:components -w packages/lcyt-web` → `vitest run` — React hooks/components (384 tests via jsdom)
+- `npm test -w packages/lcyt-web` → `node --test test/*.test.js` — pure utility functions (461 tests)
+- `npm run test:components -w packages/lcyt-web` → `vitest run` — React hooks/components (437 tests via jsdom)
 
 **Test files (node:test):** `test/api.test.js`, `test/formatting.test.js`, `test/viewer.test.js`, `test/fileUtils.test.js` (includes `describe('parseFileContent() — API connector triggers')`, added alongside `lcyt-connectors`; and `describe('parseFileContent() — {{name[N]}} variable block markers')`, plan_live_variables.md), `test/i18n.test.js`, `test/metacode-variables.test.js` (added alongside `lcyt-connectors` — `interpolateVariables()`), `test/metacode-varblocks.test.js` (`parseVarBlockMarker`/`wrapValue`/`expandVarBlocks`/`hasVarBlocks`/`pendingVarBlockNames`, incl. one-shot-code stripping on non-first segments — plan_live_variables.md §3), `test/cropGeometry.test.js` (pure geometry: window derivation, container-fraction conversion + its inverse, clamping, zero-travel edge case — `lib/cropGeometry.js`).
 **Test files (Vitest):** `test/components/useSession.test.jsx` (25 tests), `test/components/useFileStore.test.jsx` (35 tests), `test/components/AppProviders.test.jsx` (15 tests) — all added 2026-03-16.
@@ -166,6 +166,10 @@ Embed pages that own a session (`/embed/audio`, `/embed/input`, `/embed/file-dro
 - `test/components/PlannerAssistPanel.test.jsx` (4 tests) — the Planner right-column panel: Cues tab active by default, switching to the Actions tab swaps rendered content, the AI assistant chat renders below the active tab and stays visible across tab switches.
 - `test/fileUtils.test.js` additions (15 new cases) — the multi-line composite `cue:`/`cue-def:` block grammar (`parseFileContent()`): explicit `or:`, implicit top-level or (flat leaf list), nested `and:` inside `or:`, `not:` + bare `@ref`, `track:`/`event:` leaves, a bare no-prefix leaf line, `cue*:`/`cue**:` block modifiers, a single-leaf block, a `cue-def:` block feeding later `@ref` cues, single-line `cue-def:` falling back to the compact expression parser for non-JSON values (and still accepting raw JSON), plus `track:`/`regex:` keyword terms in the pre-existing compact `|`-pipe syntax.
 - `test/metacode-runtime.test.js` additions (4 new cases, plus 2 existing `buildCueMap()` assertions updated for the new field) — `checkCueMatch()` skips `composite` entries the same way it skips `semantic`/`events`; `buildCueMap()` marks `composite: true`/`false` correctly.
+
+**Added 2026-07-20 (Vitest):**
+- `test/components/AiRoleModelsSection.test.jsx` (5 tests) — the Setup Hub "AI role models" card (`AiRoleModelsSection.jsx`, plan_ai_model_registry.md Phase 3 frontend): connect prompt when disconnected, listing only `agentic_chat` roles (continuous_vision roles like Tracker excluded) with a provider/model summary per row (`GET /roles/catalog` + `GET /ai/providers` + one `GET /roles/:roleCode/config` per role), the row's quick enable/disable toggle (`PUT /roles/:roleCode/config` with just `{enabled}`), the settings-dialog full save path (pick a provider, free-text model name for an `api`-kind provider, `PUT /roles/:roleCode/config` with `{enabled, providerId, modelName}`), and the discovered-model dropdown that appears for an `ollama`-kind provider (`GET /ai/providers/:id/models`) instead of free text.
+- `test/components/SetupHubPage.test.jsx` — added the new section to the mocked-section list and the "renders every device/service section" assertion.
 
 **Gaps (Low):**
 - **React components** — 30+ leaf components (App, panels, modals, all pages) have no tests.

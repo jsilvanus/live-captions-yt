@@ -16,6 +16,7 @@
  * ON DELETE CASCADE declarations are inert — deletes cascade manually here.
  */
 import { randomUUID } from 'node:crypto';
+import { hasProdCamerasTable } from './relay.js';
 
 export function runCropMigrations(db) {
   db.exec(`
@@ -89,6 +90,46 @@ function toIntOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isInteger(n) ? n : NaN;
+}
+
+/**
+ * Normalise a camera-preset identifier to a trimmed string or null.
+ *
+ * Camera presets in this codebase (`lcyt-production`'s
+ * `prod_cameras.control_config.presets[].id`, the value
+ * `POST /production/cameras/:id/preset/:presetId` and
+ * `registry.callPreset()`/`onCameraPresetRecalled` actually pass around) are
+ * arbitrary per-camera string ids ('wide', 'close', a UUID — see that
+ * plugin's amx.js/visca-ip.js adapters), not a universal numeric PTZ preset
+ * number. `crop_source_map.camera_preset` therefore stores that opaque id
+ * verbatim rather than coercing it to an integer — the column keeps its
+ * INTEGER declaration for legacy compatibility (SQLite's type affinity does
+ * not reject a non-numeric TEXT value in an INTEGER-affinity column, it just
+ * stores it as-is), and `resolveCropPresetForSource()` compares both sides
+ * as strings so a pre-existing numeric-camera_preset row still matches.
+ */
+function toPresetKeyOrNull(v) {
+  if (v === null || v === undefined || v === '') return null;
+  return String(v).trim() || null;
+}
+
+/**
+ * Resolve which camera (if any) is wired to a given mixer program-input
+ * number — used by CropManager.applyForSource() (plan_vertical_crop.md §4)
+ * to turn a bare onProgramChanged({ inputNumber }) into a cameraId for
+ * crop_source_map resolution. Cross-plugin query, same guarded pattern as
+ * resolveRelaySourceCameraKey()/getApiKeysReferencingCamera() below.
+ * prod_cameras.mixer_input is not itself scoped to a specific mixer id
+ * (lcyt-production has no camera→mixer FK — see routes/mixers.js's
+ * GET /:id/sources, which reads it the same unscoped way), so this only
+ * takes the input number.
+ * @returns {string|null}
+ */
+export function resolveCameraIdForMixerInput(db, mixerInput) {
+  if (mixerInput === null || mixerInput === undefined) return null;
+  if (!hasProdCamerasTable(db)) return null;
+  const row = db.prepare('SELECT id FROM prod_cameras WHERE mixer_input = ?').get(mixerInput);
+  return row?.id ?? null;
 }
 
 function formatConfig(row) {
@@ -354,9 +395,8 @@ export function createCropSourceMapEntry(db, apiKey, { mixerId = null, mixerInpu
   if (!preset) return { ok: false, error: 'presetId does not reference one of this project\'s presets' };
 
   const normMixerInput   = toIntOrNull(mixerInput);
-  const normCameraPreset = toIntOrNull(cameraPreset);
+  const normCameraPreset = toPresetKeyOrNull(cameraPreset);
   if (Number.isNaN(normMixerInput))   return { ok: false, error: 'mixerInput must be an integer' };
-  if (Number.isNaN(normCameraPreset)) return { ok: false, error: 'cameraPreset must be an integer' };
   const normMixerId  = mixerId  != null && mixerId  !== '' ? String(mixerId)  : null;
   const normCameraId = cameraId != null && cameraId !== '' ? String(cameraId) : null;
 
@@ -389,9 +429,8 @@ export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerIn
   // Normalise caller-provided values (JSON bodies often carry numbers as
   // strings) so the strict comparisons below match the normalised DB values.
   mixerInput   = toIntOrNull(mixerInput);
-  cameraPreset = toIntOrNull(cameraPreset);
+  cameraPreset = toPresetKeyOrNull(cameraPreset);
   if (Number.isNaN(mixerInput))   mixerInput = null;
-  if (Number.isNaN(cameraPreset)) cameraPreset = null;
   mixerId  = mixerId  != null && mixerId  !== '' ? String(mixerId)  : null;
   cameraId = cameraId != null && cameraId !== '' ? String(cameraId) : null;
 
@@ -406,7 +445,10 @@ export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerIn
       if (row.camera_id !== cameraId) continue;
       score += 4;
       if (row.camera_preset !== null) {
-        if (row.camera_preset !== cameraPreset) continue;
+        // String comparison — camera_preset is an opaque per-camera preset
+        // id (see toPresetKeyOrNull above), not always stored as TEXT (a
+        // pre-existing row may hold a plain SQLite INTEGER).
+        if (cameraPreset === null || String(row.camera_preset) !== String(cameraPreset)) continue;
         score += 4;
       }
     }

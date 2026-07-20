@@ -85,7 +85,7 @@ export const BUILTIN_ROLES = [
     input_types: ['tracker_events', 'describer_events', 'stt_transcript', 'user_text'],
     output_type: 'suggestion',
     runtime_kind: 'agentic_chat',
-    available_tools: ['camera.preset', 'mixer.switch'],
+    available_tools: ['camera.preset', 'mixer.switch', 'crop.list_presets', 'crop.activate_preset'],
   },
 ];
 

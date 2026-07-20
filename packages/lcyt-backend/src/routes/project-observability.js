@@ -8,7 +8,7 @@
  */
 import { Router } from 'express';
 import { getKey } from '../db/keys.js';
-import { getMemberAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 import { queryAuditLog } from '../db/audit-log.js';
@@ -29,7 +29,7 @@ function requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel }, req, re
   // The key's owning user always has access (same shortcut as the features
   // routes); everyone else needs a membership row.
   if (row.user_id !== user.userId) {
-    const level = getMemberAccessLevel(db, req.params.key, user.userId);
+    const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
     if (!level) return res.status(403).json({ error: 'Not a project member' });
     if (minLevel === 'admin' && level !== 'owner' && level !== 'admin') {
       return res.status(403).json({ error: 'owner or admin required' });

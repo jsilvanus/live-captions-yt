@@ -25,6 +25,7 @@
 import { spawn } from 'node:child_process';
 import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
 import logger from 'lcyt/logger';
+import { getCropConfig, resolveCropPresetForSource, resolveCameraIdForMixerInput } from './db/crop.js';
 
 const DEFAULT_MEDIAMTX_RTSP = (process.env.MEDIAMTX_RTSP_BASE_URL || 'rtsp://127.0.0.1:8554').replace(/\/$/, '');
 const DEFAULT_MEDIAMTX_RTMP = (process.env.MEDIAMTX_RTMP_BASE_URL || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
@@ -146,6 +147,17 @@ export class CropManager {
     this._sessions = new Map();
     this._nextZmqOffset = 0;
 
+    /**
+     * Production-follow state (plan_vertical_crop.md §4), per apiKey:
+     * { mixerInput: number|null, presetByCamera: Map<cameraId, presetKey|null> }
+     * — the last-known program mixer input and each camera's last-recalled
+     * preset, so a preset recalled while its camera is off program is
+     * remembered and correctly resolved once that camera comes back on
+     * program (see applyForSource()).
+     * @type {Map<string, { mixerInput: number|null, presetByCamera: Map<string, string|null> }>}
+     */
+    this._followState = new Map();
+
     /** null = not checked yet; boolean once the lazy import has settled. */
     this._zmqModuleAvailable = null;
     this._zmqLoad = undefined;
@@ -221,7 +233,11 @@ export class CropManager {
       xNorm: clampNorm(position?.xNorm ?? previous?.position.xNorm ?? 0.5),
       yNorm: clampNorm(position?.yNorm ?? previous?.position.yNorm ?? 0),
     };
-    await this.stop(apiKey);
+    // This restarts ffmpeg (a fresh start, or applyPosition()'s restart-mode
+    // fallback re-invoking start() to move the crop window) — not a caller
+    // asking to actually stop following, so the per-apiKey production-follow
+    // memory (_followState) must survive this internal stop/start cycle.
+    await this.stop(apiKey, { keepFollowState: true });
 
     const srcUrl = `${DEFAULT_MEDIAMTX_RTSP}/${encodeURIComponent(apiKey)}`;
     // Reuse the previous session's successfully-probed resolution on restarts
@@ -363,10 +379,82 @@ export class CropManager {
     return { ok: true, mode: 'restart', xNorm: target.xNorm, yNorm: target.yNorm };
   }
 
-  async stop(apiKey) {
+  /**
+   * Production-follow hook (plan_vertical_crop.md §4). Called by
+   * lcyt-backend/src/server.js wiring `lcyt-production`'s
+   * registry.onProgramChanged()/onCameraPresetRecalled() callbacks: resolves
+   * the most-specific `crop_source_map` row for the current (mixer input,
+   * camera, camera preset) state and applies its preset live, when
+   * crop_config.follow_program is enabled and the renderer is running.
+   *
+   * Exactly one of `mixerInput` (a program-changed event) or `cameraId`
+   * (a preset-recalled event) is expected to be the fresh fact for a given
+   * call — the other dimension is filled in from the tracked follow-state so
+   * "camera 1 back on program, now on preset 2" resolves correctly
+   * regardless of whether the preset was recalled while off program.
+   *
+   * @param {import('better-sqlite3').Database} db
+   * @param {string} apiKey
+   * @param {{ mixerId?: string|null, mixerInput?: number|null, cameraId?: string|null, cameraPreset?: string|null }} source
+   * @returns {Promise<object|null>} the applyPosition() result, or null when
+   *   follow_program is off, nothing is running, or no mapping resolved.
+   */
+  async applyForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
+    const config = getCropConfig(db, apiKey);
+    if (!config.followProgram) return null;
+    if (!this.isRunning(apiKey)) return null;
+
+    let state = this._followState.get(apiKey);
+    if (!state) {
+      state = { mixerInput: null, presetByCamera: new Map() };
+      this._followState.set(apiKey, state);
+    }
+
+    let resolvedCameraId = cameraId;
+    let resolvedCameraPreset = cameraPreset;
+
+    if (mixerInput !== null && mixerInput !== undefined) {
+      // Program-changed: this is the fresh fact — remember it and derive
+      // which camera (if any) is now on program from it.
+      state.mixerInput = mixerInput;
+      resolvedCameraId = resolveCameraIdForMixerInput(db, mixerInput);
+      resolvedCameraPreset = resolvedCameraId != null
+        ? (state.presetByCamera.get(resolvedCameraId) ?? null)
+        : null;
+    } else if (cameraId) {
+      // Preset-recalled: remember it regardless of whether this camera is on
+      // program right now — only re-apply live when it actually is.
+      state.presetByCamera.set(cameraId, cameraPreset ?? null);
+      const currentCameraId = state.mixerInput != null ? resolveCameraIdForMixerInput(db, state.mixerInput) : null;
+      if (currentCameraId !== cameraId) return null;
+      resolvedCameraPreset = cameraPreset ?? null;
+    } else {
+      return null;
+    }
+
+    const preset = resolveCropPresetForSource(db, apiKey, {
+      mixerId, mixerInput: state.mixerInput, cameraId: resolvedCameraId, cameraPreset: resolvedCameraPreset,
+    });
+    if (!preset) return null;
+
+    return this.applyPosition(apiKey, {
+      xNorm: preset.xNorm,
+      yNorm: preset.yNorm,
+      transitionMs: config.transitionMs,
+      activePresetId: preset.id,
+    });
+  }
+
+  async stop(apiKey, { keepFollowState = false } = {}) {
     const session = this._sessions.get(apiKey);
     if (!session) return;
     this._cleanupSession(apiKey, session);
+    // Only forget which preset was last recalled per camera on a real stop
+    // (stopAll(), or an external caller actually turning the renderer off).
+    // start() passes keepFollowState:true for its own internal stop/restart
+    // cycle (a fresh start, or applyPosition()'s restart-mode fallback) —
+    // that isn't the caller asking to stop following.
+    if (!keepFollowState) this._followState.delete(apiKey);
     try {
       if (typeof session.handle?.stop === 'function') await session.handle.stop(3000);
     } catch {}

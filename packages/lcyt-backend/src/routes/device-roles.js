@@ -31,7 +31,7 @@ import {
   getActiveDeviceRolesForKey,
 } from '../db/device-roles.js';
 import { getKey } from '../db/keys.js';
-import { getMemberAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 import { writeAuditLog } from '../db/audit-log.js';
@@ -39,7 +39,7 @@ import { writeAuditLog } from '../db/audit-log.js';
 const BCRYPT_ROUNDS = 10;
 
 function requireOwnerOrAdmin(db, apiKey, user) {
-  const level = getMemberAccessLevel(db, apiKey, user.userId);
+  const level = getEffectiveProjectAccessLevel(db, apiKey, user.userId);
   return level === 'owner' || level === 'admin';
 }
 
@@ -92,7 +92,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      const level = getMemberAccessLevel(db, req.params.key, user.userId);
+      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (!level) return res.status(403).json({ error: 'Not a project member' });
     }
     const roles = getDeviceRoles(db, req.params.key);

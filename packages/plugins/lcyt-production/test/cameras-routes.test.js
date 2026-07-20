@@ -320,3 +320,113 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
     assert.notEqual(res.status, 401);
   });
 });
+
+// ---------------------------------------------------------------------------
+// PTZ preset trigger → registry.notifyCameraPresetRecalled (plan_vertical_crop.md §4)
+// ---------------------------------------------------------------------------
+
+describe('POST /:id/preset/:presetId — production-follow notification', () => {
+  function makePresetRegistryStub() {
+    const notified = [];
+    return {
+      notified,
+      reloadCamera: async () => {},
+      removeCamera: async () => {},
+      getActiveSource: () => null,
+      callPreset: async () => {},
+      notifyCameraPresetRecalled(data) { notified.push(data); },
+    };
+  }
+
+  it('direct (non-bridge) recall notifies with the array index (AMX presets have no presetNumber), not the raw preset id', async () => {
+    // cameraPresetSources() (lcyt-web's crop editor) binds crop_source_map
+    // by presetNumber-or-array-index, never by the preset's `.id` — the
+    // notification must use the same key or production-follow can never
+    // match a row bound through the real UI.
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const registry = makePresetRegistryStub();
+    await startApp(registry, null, { auth: fakeAuth });
+    const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
+
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(registry.notified, [{ apiKey: 'proj-a', cameraId: id, preset: 0 }]);
+  });
+
+  it('direct recall of a VISCA preset notifies with presetNumber, not array index or the raw preset id', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const registry = makePresetRegistryStub();
+    await startApp(registry, null, { auth: fakeAuth });
+    const id = insertCamera({
+      control_type: 'visca-ip',
+      control_config: { presets: [
+        { id: 'home', name: 'Home', presetNumber: 0 },
+        { id: 'far', name: 'Far', presetNumber: 7 },
+      ] },
+    });
+
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/far`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(registry.notified, [{ apiKey: 'proj-a', cameraId: id, preset: 7 }]);
+  });
+
+  it('bridge-relayed recall also notifies, after the bridge command succeeds', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    db.prepare(`INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)`)
+      .run('bridge-1', 'Bridge 1', 'tok-bridge-1');
+    const registry = makePresetRegistryStub();
+    const bridgeManager = {
+      isConnected: () => true,
+      sendCommand: async () => ({ ok: true }),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use('/production/cameras', createCamerasRouter(
+      db, registry, bridgeManager, { cameraThumbnail: { thumbnailsDir }, auth: fakeAuth },
+    ));
+    await new Promise((resolve) => {
+      server = createServer(app);
+      server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
+    });
+    const id = insertCamera({
+      control_type: 'amx',
+      control_config: { host: 'h', port: 1, presets: [{ id: 'wide', name: 'Wide', command: 'X' }] },
+    });
+    // insertCamera()'s column list doesn't cover bridge_instance_id — set it
+    // directly so the route takes the bridge-relay branch.
+    db.prepare('UPDATE prod_cameras SET bridge_instance_id = ? WHERE id = ?').run('bridge-1', id);
+
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-b' },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(registry.notified, [{ apiKey: 'proj-b', cameraId: id, preset: 0 }]);
+  });
+
+  it('no notification when the preset trigger fails (unknown camera)', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const registry = makePresetRegistryStub();
+    await startApp(registry, null, { auth: fakeAuth });
+
+    const res = await fetch(`${baseUrl}/production/cameras/does-not-exist/preset/wide`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 404);
+    assert.deepEqual(registry.notified, []);
+  });
+
+  it('apiKey is null when auth is not configured (historical open behavior)', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const registry = makePresetRegistryStub();
+    await startApp(registry); // no auth opt
+    const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
+
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, { method: 'POST' });
+    assert.equal(res.status, 200);
+    assert.deepEqual(registry.notified, [{ apiKey: null, cameraId: id, preset: 0 }]);
+  });
+});

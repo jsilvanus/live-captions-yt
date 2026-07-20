@@ -23,7 +23,7 @@ The mockup's sidebar order (Setup → Assets → Planner → Graphics → Broadc
 | Production — Visual | `/production/visual` | Sub-item of the old "Production" group | |
 | Production — Devices | `/production/devices` | Sub-item of the old "Production" group | |
 | Admin — Audit Log | `/admin/audit-log` | Tab in `AdminTabShell` | The mockup's Admin screen has tabs for Site Features / Teams / Projects / Users — no Audit Log tab. Route/component untouched, still reachable by direct URL. |
-| Admin — AI Models | `/admin/ai-models` | Tab in `AdminTabShell` | Same reasoning as Audit Log — not one of the mockup's four Admin tabs. Route/component untouched, still reachable by direct URL. |
+| Admin — AI Models | `/admin/ai-models` | Tab in `AdminTabShell` | Same reasoning as Audit Log — not one of the mockup's four Admin tabs, still reachable by direct URL. Its "AI models" card (`AiModelsSection.jsx`) was dead-end plumbing and was deleted 2026-07-20 (ROADMAP.md Tier 0); the page now hosts only `McpAccessSection` and the route name is a holdover. |
 
 The "Graphics" and "Admin" sidebar groups were also flattened to single items (pointing at `/graphics/editor` and `/admin/users` respectively) to match the mockup, which shows them as single icons rather than expandable groups.
 

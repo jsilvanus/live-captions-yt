@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { getMemberAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
 import { verifyMcpToken, tokenHasScope } from '../db/mcp-tokens.js';
 import { isDeviceRoleActive } from '../db/device-roles.js';
 
@@ -146,7 +146,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           return res.status(400).json({ error: 'projectId is required' });
         }
         const projectRole = payload.projectRole || payload.role || null;
-        const accessLevel = projectRole ? normalizeProjectRole(projectRole) : getMemberAccessLevel(db, resolvedProjectId, user.userId);
+        const accessLevel = projectRole ? normalizeProjectRole(projectRole) : getEffectiveProjectAccessLevel(db, resolvedProjectId, user.userId);
         if (!accessLevel) {
           return res.status(403).json({ error: 'Not a project member' });
         }

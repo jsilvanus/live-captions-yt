@@ -38,6 +38,9 @@
     "lcyt-tools": "*",
     "prom-client": "^15.1.3"
   },
+  "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0"
+  },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "",
   "engines": {
