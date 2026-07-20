@@ -3,7 +3,23 @@ id: plan/prod
 title: "Production Control (cameras, mixers, bridge)"
 status: implemented
 summary: "Pluggable production control layer: PTZ camera presets, video mixer source switching, lcyt-bridge TCP relay agent, MCP tools."
+related: plan/ingest_feeds, plan/vertical-crop, plan/video_perception
 ---
+
+> **Planned extension (`plan_video_perception.md`, draft, 2026-07-20):** the `Camera`
+> schema below gains project-editable metadata per camera/preset — a free-text
+> `label` (e.g. `"pulpit"`, `"choir"`), an optional coarse `zone` tag, and
+> `overlaps_with`/`alternate_for` links to other camera+preset pairs — consumed by
+> that plan's Scene Understanding prompt context and World State candidate lookup,
+> and by `plan_vertical_crop.md` Phase 4's production-follow. Deliberately structured
+> labels/links rather than a geometric floor-plan editor — see that plan's "Camera/
+> preset metadata" section for the reasoning. Also flagged there: `getActiveSource()`
+> (below) is poll-only today — no adapter or `lcyt-production` code publishes an
+> EventBus event when the active mixer source changes (verified 2026-07-20, no
+> `eventBus`/`publish` calls anywhere in `packages/plugins/lcyt-production/src/`).
+> `plan_vertical_crop.md` Phase 4's `onProgramChanged`/`onCameraPresetRecalled`
+> callbacks are the planned fix; both that plan and `plan_video_perception.md` are
+> real consumers of the eventual event, so build it once, not per-consumer.
 
 # Production Control — LCYT Feature Plan
 
@@ -56,6 +72,9 @@ Camera
   bridgeInstanceId UUID FK → BridgeInstance (nullable)
   sortOrder       INTEGER
   createdAt       TIMESTAMPTZ
+  -- Planned (plan_video_perception.md): controlConfig.presets[i] and the camera
+  -- itself gain `label`, optional `zone`, and `overlapsWith`/`alternateFor`
+  -- (camera+preset references) — see that plan's "Camera/preset metadata" section.
 
 Mixer
   id              UUID PK

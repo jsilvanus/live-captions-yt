@@ -1,6 +1,6 @@
 ---
 status: reference
-summary: "Prioritised way-forward across every plan in docs/PLANS.md, rebuilt 2026-07-20 from a full repo-wide frontmatter/status audit of docs/plans/*.md (every 'implemented' claim verified against actual code) plus three newly merged draft plans (plan_broadcast_platform_sync.md, plan_local_stt.md, plan_env_to_ui_settings.md). Organised into tiers — fix the two real bugs the audit surfaced, finish what's genuinely in-progress, schedule the new draft features by value, then a long tail of deliberately-deferred residual items — plus concrete non-overlapping lanes for parallel dispatch."
+summary: "Prioritised way-forward across every plan in docs/PLANS.md, rebuilt 2026-07-20 from a full repo-wide frontmatter/status audit of docs/plans/*.md (every 'implemented' claim verified against actual code) plus four newly drafted plans (plan_broadcast_platform_sync.md, plan_local_stt.md, plan_env_to_ui_settings.md merged via PR #287, and plan_video_perception.md — the fps30 tracker/World State/AI-observability plan, same day). Organised into tiers — fix the two real bugs the audit surfaced, finish what's genuinely in-progress, schedule the new draft features by value (noting plan_video_perception.md's real sequencing dependency on plan_vertical_crop.md Phase 4), then a long tail of deliberately-deferred residual items — plus concrete non-overlapping lanes for parallel dispatch."
 ---
 
 # Roadmap — Way Forward
@@ -86,17 +86,19 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 
 ## Tier 2 — New draft features, ranked by value
 
-Three brand-new plans landed via PR #287 (merged 2026-07-20), plus two pre-existing
-drafts. None have any code yet, so zero collision risk with Tier 0/1 work above — but
-`plan_broadcast_platform_sync.md` and `plan_env_to_ui_settings.md` are each big enough
-to deserve their own phase-plan pass (`/phase-planning`) before dispatch, not a single
+Three brand-new plans landed via PR #287 (merged 2026-07-20), plus `plan_video_perception.md`
+(drafted the same day, see below) and two pre-existing drafts. None have any code
+yet, so zero collision risk with Tier 0/1 work above — but `plan_broadcast_platform_sync.md`,
+`plan_env_to_ui_settings.md`, and `plan_video_perception.md` are each big enough to
+deserve their own phase-plan pass (`/phase-planning`) before dispatch, not a single
 one-shot lane.
 
 | Plan | Value | Scope note |
 |---|---|---|
 | `plan_broadcast_platform_sync.md` | **High** — closes `plan_broadcasts.md`'s biggest explicitly-out-of-scope gap (YouTube two-way sync), which is the most-requested-shaped missing piece in the whole broadcasts feature | New `lcyt-platforms` plugin + server-side OAuth (replacing the current browser-only implicit-token flow in `youtubeAuth.js`/`youtubeApi.js`/`YouTubeTab.jsx`) + `lcyt-web` broadcast UI. Facebook Live is explicitly deferred within this same plan — don't scope it in. |
 | `plan_env_to_ui_settings.md` | **Medium-high** — ops/quality-of-life; makes ~130 env-var-only settings admin-editable without redeploying, closes a real operability gap for self-hosted deployments | New `server_settings` table + declarative registry/service + Admin UI tab, additive by design (env > DB > default precedence keeps 12-factor deployments untouched). Mostly isolated to `lcyt-backend` config plumbing + one new Admin page; low collision risk with Tier 1 work. |
-| `plan_mixer_feed_sources.md` | Medium — niche production feature (looping-file mixer source + WHEP low-latency preview tiles) | `lcyt-production`/mixer code; its former 'encoder' source type is already covered by the implemented `plan_ingest_feeds.md`, so scope is smaller than the plan's original draft. May overlap `plan_vertical_crop.md` Phase 4's mixer-registry callbacks — check before running both at once. |
+| `plan_video_perception.md` | **High but large** — the fps30 tracker subsystem `plan_cues.md` has anticipated (and left an inert consumer contract for) since before this doc existed, plus a World State fusion service; the biggest single scope item in this tier | New per-camera CV pipeline (deploys as a new job type on the existing `lcyt-orchestrator`/`lcyt-worker-daemon`, not a new ops story) + World State service + camera/preset metadata + a separate AI-observability page. **Real sequencing dependency, not just scope note:** its shared/single-feed camera handling needs `plan_vertical_crop.md` Phase 4's `onProgramChanged`/`onCameraPresetRecalled` callbacks (Tier 1, not yet built) — that plan's write-up now recommends promoting them to real EventBus events once this plan is a second consumer. Sequence Tier 1's vertical-crop Phase 4 before or alongside this plan's Phase 3 (shared-feed resolver), not after. Its Phase 1 (schema + camera metadata + World State skeleton, no perception producer) has no such dependency and can start immediately. |
+| `plan_mixer_feed_sources.md` | Medium — niche production feature (looping-file mixer source + WHEP low-latency preview tiles) | `lcyt-production`/mixer code; its former 'encoder' source type is already covered by the implemented `plan_ingest_feeds.md`, so scope is smaller than the plan's original draft. May overlap `plan_vertical_crop.md` Phase 4's mixer-registry callbacks — check before running both at once. `plan_video_perception.md`'s observability page also wants this plan's WHEP preview-tile work as its video source — a second reason to land this one earlier rather than later in the tier. |
 | `plan_local_stt.md` | Depends on appetite — large, standalone infra investment (containerized faster-whisper server, Finnish fine-tuning pipeline, dependency on the separate `crowd-source-voice` platform for training data) | Self-contained new service (`lcyt-stt`), integrates via the *unchanged* `WhisperHttpAdapter`, so it's zero-risk to schedule alongside anything else — but confirm there's actually a Finnish-STT-quality driver before investing in the training pipeline half; the inference-server half alone may be worth doing independently of the training half. |
 
 ---
@@ -179,5 +181,11 @@ Non-overlapping lanes, grouped by package ownership per §0:
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 (new package, isolated):** Begin `plan_env_to_ui_settings.md` similarly —
   phase-plan first, then dispatch.
+- **Lane 9 (`lcyt-agent` + new tables, isolated):** `plan_video_perception.md`
+  Phase 1 only (schema + camera metadata + World State skeleton, no perception
+  producer yet) — has no dependency on Lane 5 and can start now. Do **not** start
+  that plan's Phase 2/3 (the actual fps30 producer) until Lane 5
+  (`plan_vertical_crop.md` Phase 4) has landed or is running in the same batch — see
+  Tier 2's dependency note.
 
 Do **not** add a Tier 4 (Postgres) lane to any batch that includes the above.

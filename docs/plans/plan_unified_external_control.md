@@ -121,6 +121,15 @@ the event-bus `subscribe()` mechanism (`plan_pubsub_event_bus.md`) — to a
 session-long agent: relevant events become turns in its context, it decides whether
 to act (with cooldowns), and executes via the tool registry with
 **confirm-by-default** staging (`GET/POST /operator/pending/:id/confirm|reject`).
+
+**Planned (`plan_video_perception.md`, draft):** that plan's World State service will
+publish `scene.*` topics (active speaker, best framing, segment change) onto this
+same event bus — `OperatorManager`'s existing arbitrary-topic `subscribe()` needs no
+new code to consume them, it's just a richer topic pattern to subscribe to. This is
+deliberately **not** a new "director" component — the multi-camera AI production
+brief's Layer 4 (production director) maps onto this already-shipped Hosted Operator
+plus the Production Assistant role in `plan_ai_roles_framework.md`, fed better
+inputs, not replaced.
 Start/stop/status is `POST /operator/start`, `POST /operator/stop`,
 `GET /operator/status` (`packages/lcyt-backend/src/routes/operator.js`, scoped
 `operator` resource, covered by `packages/lcyt-backend/test/operator.test.js`). The

@@ -3,6 +3,7 @@ id: plan/vertical-crop
 title: "Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop"
 status: in-progress
 summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 → 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) — with dedicated UI for editing positions per set (set selector, sources×sets overview grid, activate-set control) — shifted live via runtime ffmpeg filter commands (zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 → camera 2 → camera 1/preset 2, each with its own crop position)."
+related: plan/prod, plan/video_perception
 ---
 
 # Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop
@@ -260,6 +261,19 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
 - **Named Actions / cues:** register a `crop_preset` fire in the `lcyt-actions`
   registry (and a matching tool in `lcyt-tools`), so `@name` macros, cue rules, and
   the AI Production Assistant can drive the crop like everything else.
+- **Shared dependency with `plan_video_perception.md` (draft):** that plan's
+  perception layer needs the same "which camera is currently on program" signal for
+  cameras with no independent video feed of their own (tag detections with the
+  active camera from the shared program feed). Rather than each plan wiring its own
+  callback into `lcyt-production`, **promote `onProgramChanged`/
+  `onCameraPresetRecalled` from ad-hoc setter-injected callbacks to real EventBus
+  events** (e.g. `production.source_changed`) when this phase is built — with two
+  real consumers now needing the same signal, a shared bus event avoids each plan
+  wiring its own direct callback into `lcyt-production`. That plan's camera/preset
+  `overlaps_with` metadata is also the intended
+  future input for smarter follow logic here (which camera to follow to, not just
+  whether to follow) — not required for this phase's `crop_source_map` v1, worth
+  keeping in mind before treating the source-map schema as final.
 
 ## 5. Web UI (`packages/lcyt-web`)
 
