@@ -847,3 +847,85 @@ management) — a real, separately-schedulable chunk of UI work, not a small
 addition to the role-picker card.
 
 (Found during: `plan_ai_model_registry.md` Phase 3 implementation, 2026-07-20.)
+
+---
+
+## `/code-review` findings on PR #289, fixed vs. logged (2026-07-20)
+
+A full 8-angle `/code-review` pass on the Tier 0 + Tier 1 batch (mcp docs,
+vertical-crop Phase 4/5, AI model registry UI, org-baseline resolver)
+surfaced several real bugs — fixed directly (see the fix commit's message
+for the full list: `auth.js` client-supplied `projectRole` privilege cap,
+`mixers.js`'s `/switch` route dropped from the auth carve-out breaking
+`LcytMixerPage.jsx`'s kiosk cut button, `cameras.js`'s preset-recall
+notification using the wrong identifier so vertical-crop production-follow
+via camera preset silently never matched a row bound through the real UI,
+`getEffectiveProjectAccessLevel()`'s redundant DB round-trips on the
+owner/admin fast path, `CropManager._followState`'s unbounded per-apiKey
+growth, `videos.bytes` metering not counting S3-uploaded recordings, and
+sequential (not bounded-concurrent) S3 segment uploads) — plus several real
+but lower-priority findings logged here instead of rushed into the same
+pass:
+
+- **Duplicated ownership-gate pattern.** The `row.user_id !== user.userId
+  ? getEffectiveProjectAccessLevel(...) : <owner shortcut>` gate is
+  copy-pasted (minor variations) across `routes/project-features.js` (×2),
+  `routes/project-slug.js`, `routes/project-observability.js`, and
+  `routes/device-roles.js`'s local `requireOwnerOrAdmin`. A shared
+  `requireProjectAccess(db, req, res, { minLevel })` helper would make the
+  next access-model change a one-place edit instead of five. Not extracted
+  now — touching all five auth-critical files for a pure refactor right
+  before a CI-gate-then-merge added more regression risk than the cleanup
+  was worth in that window.
+- **Duplicated `useApi()` hook.** `packages/lcyt-web/src/components/setup-hub/AiRoleModelsSection.jsx`
+  copies `ConnectorsSection.jsx`'s `useApi()` hook (token check, header
+  building, fetch, JSON-parse, error-throw) verbatim instead of a shared
+  module. Matches this directory's existing (undocumented) per-file
+  convention, so not a new regression, but worth extracting if a third
+  Setup Hub section needs the same pattern.
+- **Duplicated S3 client construction.** `packages/lcyt-backend/src/storage/s3.js`'s
+  `createS3Client()` reimplements the same region/endpoint/credentials
+  wiring as `packages/plugins/lcyt-files/src/adapters/s3.js`'s
+  `createS3Adapter()`. The two adapters deliberately use different key
+  schemes (already documented above in this file), but that doesn't require
+  duplicating client construction — a shared helper could serve both.
+- **Duplicated mock S3 test server.** `packages/lcyt-backend/test/helpers/mock-s3-server.js`
+  is a trimmed copy of `packages/plugins/lcyt-files/test/helpers/mock-s3-server.js`
+  rather than an import/reuse of it.
+- **`console.warn` vs. `lcyt/logger`.** The root `CLAUDE.md` says to use
+  `lcyt/logger` over `console.*`, but `packages/lcyt-backend/src/server.js`
+  (41 `console.*` calls, zero `logger` usage) and all of
+  `packages/plugins/lcyt-production` (`bridge-manager.js`, `crud.js`,
+  `registry.js`) use `console.warn`/`console.error`/`console.info`
+  exclusively — a pre-existing, file-and-package-wide gap this session's new
+  code matched rather than deviated from. Fixing just the newly-added lines
+  would be inconsistent with their own surrounding code; a real fix needs a
+  dedicated migration pass per package (and, for `lcyt-production`, adding
+  `lcyt` as a declared dependency, which it doesn't have today).
+- **Unanchored `/whip` carve-out regex.** Both `routes/cameras.js`'s
+  `isUnauthenticatedCameraRoute()` and `routes/mixers.js`'s
+  `isUnauthenticatedMixerRoute()` use `/\/whip(-url)?(\/|$)/`, which matches
+  any path segment literally named `whip`/`whip-url`, not just the
+  `/:id/whip` route — currently unexploitable since ids are
+  server-generated `randomUUID()`s, but the guard itself provides no defense
+  if that ever changes (e.g. custom/slug ids). Pre-existing pattern in
+  `cameras.js`, copied (not introduced) by `mixers.js`'s new carve-out.
+- **`CropManager.applyForSource()`'s camera-preset-recall branch never
+  passes `mixerId`** to `resolveCropPresetForSource()` (defaults to `null`),
+  so a `crop_source_map` row that specifies *both* `cameraId` and `mixerId`
+  gets excluded on a preset-recall event even when its camera/preset match.
+  Narrow: `lcyt-web`'s crop editor (`useCropEditor.js`) never sets `mixerId`
+  on a camera-preset binding created through the UI — only reachable via a
+  direct `POST /crop/source-map` call that deliberately combines both
+  fields.
+- **Org member listing stays explicit-only.** The Altitude angle flagged
+  that `routes/project-members.js` (`GET /keys/:key/members` etc.) was
+  deliberately left off the `getEffectiveProjectAccessLevel()` sweep — an
+  org-baseline `member` can now read captions/DSK/cues/etc. on a project but
+  still gets 403 listing that project's explicit members. This is the
+  intended design (membership management is an ownership-tier concern, see
+  `plan_team_org_backend.md`'s "One place this must NOT apply"), not a bug —
+  noted here only because a future reader re-auditing the sweep list
+  shouldn't assume it's an oversight.
+
+(Found during: `/code-review` pass on PR #289, 2026-07-20.)

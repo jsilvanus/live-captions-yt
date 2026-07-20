@@ -202,6 +202,7 @@ export async function syncVideoRecordingToStorage(db, apiKey, videoId) {
   try {
     const { totalBytes } = await uploadDirectoryToS3(dir, video.storageKey || buildVideoStorageKey(apiKey, videoId));
     updateVideo(db, apiKey, videoId, { sizeBytes: totalBytes });
+    if (totalBytes > 0) getMetricsInstance()?.count('videos.bytes', totalBytes, { project: apiKey });
   } catch (err) {
     logger.warn(`[videos] S3 upload failed for recording ${videoId}, falling back to local storage: ${err?.message}`);
     updateVideo(db, apiKey, videoId, { storageType: 'local' });

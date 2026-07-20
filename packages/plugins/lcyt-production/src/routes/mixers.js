@@ -6,14 +6,39 @@ import { buildSwitchCommand } from '../crud.js';
 
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
+// Whether a request carries anything auth() would recognise as a credential
+// (Authorization header, x-api-key, a query-string token, or an auth
+// cookie) — mirrors middleware/project-access.js's extractAuthToken() plus
+// the x-api-key project-id hint it also reads.
+function hasAuthCredentials(req) {
+  if (req.headers.authorization) return true;
+  if (req.headers['x-api-key']) return true;
+  if (req.query?.token) return true;
+  const cookie = req.headers.cookie || '';
+  if (/(?:^|;\s*)(lcyt_project|lcyt_identity)=/.test(cookie)) return true;
+  return false;
+}
+
 // Routes that must stay unauthenticated even after opts.auth is supplied:
 // LcytMixerPage.jsx (the LCYT software-mixer output page) is a capability-URL
 // kiosk page with no login flow — it plain-`fetch()`s /sources and
 // /whip-url with no Authorization header, then posts/patches/deletes /whip
 // for the WebRTC session itself. Mirrors routes/cameras.js's
 // isUnauthenticatedCameraRoute().
-function isUnauthenticatedMixerRoute(path) {
-  return /\/whip(-url)?(\/|$)/.test(path) || /\/sources$/.test(path);
+//
+// /switch/:inputNumber is a special case: the SAME kiosk page also POSTs it
+// with no credentials at all (to cut its own program source), but the real
+// operator workspace UI hits the identical route WITH an Authorization
+// header and needs auth to run normally so production-follow gets a real
+// apiKey (plan_vertical_crop.md §4) — an unconditional bypass here would
+// silently break production-follow for every switch, not just the kiosk's.
+// So /switch only skips auth when the request carries no credentials at all;
+// a credentialed request still goes through auth() as normal.
+function isUnauthenticatedMixerRoute(req) {
+  const path = req.path;
+  if (/\/whip(-url)?(\/|$)/.test(path) || /\/sources$/.test(path)) return true;
+  if (/\/switch\/[^/]+$/.test(path)) return !hasAuthCredentials(req);
+  return false;
 }
 
 export function createMixersRouter(db, registry, bridgeManager = null, opts = {}) {
@@ -31,7 +56,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
   if (auth) {
     router.use((req, res, next) => {
-      if (isUnauthenticatedMixerRoute(req.path)) return next();
+      if (isUnauthenticatedMixerRoute(req)) return next();
       return auth(req, res, next);
     });
   }

@@ -233,7 +233,11 @@ export class CropManager {
       xNorm: clampNorm(position?.xNorm ?? previous?.position.xNorm ?? 0.5),
       yNorm: clampNorm(position?.yNorm ?? previous?.position.yNorm ?? 0),
     };
-    await this.stop(apiKey);
+    // This restarts ffmpeg (a fresh start, or applyPosition()'s restart-mode
+    // fallback re-invoking start() to move the crop window) — not a caller
+    // asking to actually stop following, so the per-apiKey production-follow
+    // memory (_followState) must survive this internal stop/start cycle.
+    await this.stop(apiKey, { keepFollowState: true });
 
     const srcUrl = `${DEFAULT_MEDIAMTX_RTSP}/${encodeURIComponent(apiKey)}`;
     // Reuse the previous session's successfully-probed resolution on restarts
@@ -441,10 +445,16 @@ export class CropManager {
     });
   }
 
-  async stop(apiKey) {
+  async stop(apiKey, { keepFollowState = false } = {}) {
     const session = this._sessions.get(apiKey);
     if (!session) return;
     this._cleanupSession(apiKey, session);
+    // Only forget which preset was last recalled per camera on a real stop
+    // (stopAll(), or an external caller actually turning the renderer off).
+    // start() passes keepFollowState:true for its own internal stop/restart
+    // cycle (a fresh start, or applyPosition()'s restart-mode fallback) —
+    // that isn't the caller asking to stop following.
+    if (!keepFollowState) this._followState.delete(apiKey);
     try {
       if (typeof session.handle?.stop === 'function') await session.handle.stop(3000);
     } catch {}

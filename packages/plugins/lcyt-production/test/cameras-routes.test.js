@@ -338,7 +338,11 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     };
   }
 
-  it('direct (non-bridge) recall notifies with the acting session apiKey', async () => {
+  it('direct (non-bridge) recall notifies with the array index (AMX presets have no presetNumber), not the raw preset id', async () => {
+    // cameraPresetSources() (lcyt-web's crop editor) binds crop_source_map
+    // by presetNumber-or-array-index, never by the preset's `.id` — the
+    // notification must use the same key or production-follow can never
+    // match a row bound through the real UI.
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
     await startApp(registry, null, { auth: fakeAuth });
@@ -348,7 +352,26 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(registry.notified, [{ apiKey: 'proj-a', cameraId: id, preset: 'wide' }]);
+    assert.deepEqual(registry.notified, [{ apiKey: 'proj-a', cameraId: id, preset: 0 }]);
+  });
+
+  it('direct recall of a VISCA preset notifies with presetNumber, not array index or the raw preset id', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const registry = makePresetRegistryStub();
+    await startApp(registry, null, { auth: fakeAuth });
+    const id = insertCamera({
+      control_type: 'visca-ip',
+      control_config: { presets: [
+        { id: 'home', name: 'Home', presetNumber: 0 },
+        { id: 'far', name: 'Far', presetNumber: 7 },
+      ] },
+    });
+
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/far`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(registry.notified, [{ apiKey: 'proj-a', cameraId: id, preset: 7 }]);
   });
 
   it('bridge-relayed recall also notifies, after the bridge command succeeds', async () => {
@@ -381,7 +404,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
       method: 'POST', headers: { 'x-api-key': 'proj-b' },
     });
     assert.equal(res.status, 200);
-    assert.deepEqual(registry.notified, [{ apiKey: 'proj-b', cameraId: id, preset: 'wide' }]);
+    assert.deepEqual(registry.notified, [{ apiKey: 'proj-b', cameraId: id, preset: 0 }]);
   });
 
   it('no notification when the preset trigger fails (unknown camera)', async () => {
@@ -404,6 +427,6 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, { method: 'POST' });
     assert.equal(res.status, 200);
-    assert.deepEqual(registry.notified, [{ apiKey: null, cameraId: id, preset: 'wide' }]);
+    assert.deepEqual(registry.notified, [{ apiKey: null, cameraId: id, preset: 0 }]);
   });
 });

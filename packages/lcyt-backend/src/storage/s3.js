@@ -84,18 +84,24 @@ export async function uploadDirectoryToS3(localDir, storageKeyPrefix) {
     walkFiles(localDir),
   ]);
 
+  const UPLOAD_CONCURRENCY = 8;
   let totalBytes = 0;
-  for (const { fullPath, relativePath } of files) {
-    const body = await readFile(fullPath);
-    const key = sanitizeS3KeyPath(`${storageKeyPrefix}/${relativePath}`);
-    await client.send(new PutObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      Body: body,
-      ContentType: guessContentType(fullPath),
-    }));
-    totalBytes += body.byteLength;
+  let cursor = 0;
+  async function uploadNext() {
+    while (cursor < files.length) {
+      const { fullPath, relativePath } = files[cursor++];
+      const body = await readFile(fullPath);
+      const key = sanitizeS3KeyPath(`${storageKeyPrefix}/${relativePath}`);
+      await client.send(new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ContentType: guessContentType(fullPath),
+      }));
+      totalBytes += body.byteLength;
+    }
   }
+  await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, files.length) }, uploadNext));
   return { fileCount: files.length, totalBytes };
 }
 

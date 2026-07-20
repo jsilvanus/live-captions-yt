@@ -229,18 +229,25 @@ export function getMemberAccessLevel(db, apiKey, userId) {
  * @param {number} userId
  * @returns {'owner'|'admin'|'member'|null}
  */
+export const PROJECT_ROLE_ORDER = { member: 1, admin: 2, owner: 3 };
+
 export function getEffectiveProjectAccessLevel(db, apiKey, userId) {
   const explicit = getMemberAccessLevel(db, apiKey, userId);
+  // 'owner'/'admin' already beats (or ties) anything an org baseline could
+  // ever contribute ('member') — skip the getKey()/getOrgMembership() lookups
+  // entirely for the common case (this runs on every authenticated request
+  // via middleware/project-access.js).
+  if (explicit === 'owner' || explicit === 'admin') return explicit;
+
   const project = getKey(db, apiKey);
   if (!project?.org_id || project.restricted) return explicit;
 
   const membership = getOrgMembership(db, project.org_id, userId);
   if (!membership) return explicit;
 
-  const ORDER = { member: 1, admin: 2, owner: 3 };
   const orgBaseline = 'member';
   if (!explicit) return orgBaseline;
-  return ORDER[explicit] >= ORDER[orgBaseline] ? explicit : orgBaseline;
+  return PROJECT_ROLE_ORDER[explicit] >= PROJECT_ROLE_ORDER[orgBaseline] ? explicit : orgBaseline;
 }
 
 /**

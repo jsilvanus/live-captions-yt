@@ -263,14 +263,26 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       // owner_api_key but it's optional/legacy, not what "which project is
       // driving this camera right now" means for the crop follow.
       const apiKey = req.session?.apiKey ?? null;
+      // The crop editor's cameraPresetSources() (lcyt-web) binds
+      // crop_source_map.camera_preset to a preset's presetNumber (VISCA) or
+      // array index (AMX, which carries no numeric id) — never to `.id`,
+      // which is what :presetId/req.params actually is here. Recompute the
+      // same key the frontend used so production-follow can actually match
+      // a row (plan_vertical_crop.md §4) instead of comparing a UUID to an
+      // index/number, which would never match.
+      const allPresets = camera.controlConfig?.presets ?? [];
+      const presetIndex = allPresets.findIndex(p => p.id === presetId);
+      const presetForFollow = presetIndex === -1 ? null : allPresets[presetIndex];
+      const presetKey = presetForFollow
+        ? (Number.isInteger(presetForFollow.presetNumber) ? presetForFollow.presetNumber : presetIndex)
+        : presetId;
 
       // Bridge routing: if camera is assigned to a bridge, relay via SSE
       if (camera.bridgeInstanceId && bridgeManager) {
         if (!bridgeManager.isConnected(camera.bridgeInstanceId)) {
           return res.status(503).json({ error: 'Bridge is not connected' });
         }
-        const presets = camera.controlConfig?.presets ?? [];
-        const preset  = presets.find(p => p.id === presetId);
+        const preset = presetForFollow;
         if (!preset) {
           return res.status(400).json({ error: `Unknown preset '${presetId}'` });
         }
@@ -284,7 +296,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
         await registry.callPreset(id, presetId);
       }
 
-      registry.notifyCameraPresetRecalled({ apiKey, cameraId: id, preset: presetId });
+      registry.notifyCameraPresetRecalled({ apiKey, cameraId: id, preset: presetKey });
       res.json({ ok: true, cameraId: id, presetId });
     } catch (err) {
       const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;

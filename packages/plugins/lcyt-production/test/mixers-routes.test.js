@@ -116,6 +116,16 @@ describe('mixers router — auth wiring', () => {
     const whipUrl = await fetch(`${baseUrl}/production/mixers/${id}/whip-url`);
     assert.notEqual(whipUrl.status, 401);
   });
+
+  it('opts.auth configured: POST /:id/switch/:inputNumber stays unauthenticated (LcytMixerPage kiosk cut button)', async () => {
+    // LcytMixerPage.jsx plain-fetch()s this route with no Authorization
+    // header, same as /sources and /whip-url — regression test for the
+    // switch route having been accidentally left out of the carve-out.
+    const id = insertMixer({ type: 'lcyt' });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
+    assert.notEqual(res.status, 401);
+  });
 });
 
 describe('POST /:id/switch/:inputNumber — production-follow notification', () => {
