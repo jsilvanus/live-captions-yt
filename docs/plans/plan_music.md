@@ -1,13 +1,13 @@
 ---
 id: plan/music
 title: "Music Detection Plugin (`lcyt-music`)"
-status: implemented (Phase 1, 2 & 3)
-summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS or RTMP via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE."
+status: implemented
+summary: "Separate plugin for detecting when music is playing and estimating BPM. Two analysis paths: server-side (HLS or RTMP via lcyt-music plugin) and client-side (browser mic via Web Audio API in lcyt-web). No song identification. Events feed into the caption pipeline and are exposed via SSE. All four phases are implemented, including Phase 4 (GET /music/events/history, MUSIC_CLASSIFIER_URL external-classifier hook, server- and client-side auto-calibration, and the MusicHistoryPanel event timeline in lcyt-web) — verified against current code 2026-07-20; the Todo checklist below had gone stale showing Phase 1/4 items unchecked."
 ---
 
 # Music Detection Plugin (`lcyt-music`)
 
-**Status:** Phase 1 (client-side browser-mic detection), Phase 2 (server-side HLS audio analysis), and Phase 3 (RTMP audio-source fallback) are all implemented and wired into `lcyt-backend`. Phase 4 (tuning/export) remains unimplemented — see Todo below.
+**Status:** All four phases are implemented and wired into `lcyt-backend`: Phase 1 (client-side browser-mic detection + UI), Phase 2 (server-side HLS audio analysis), Phase 3 (RTMP audio-source fallback), and Phase 4 (tuning/export — `GET /music/events/history`, `MUSIC_CLASSIFIER_URL` external-classifier hook, server- and client-side auto-calibration, and the `MusicHistoryPanel` event timeline). Verified against current code 2026-07-20 — the Todo checklist below had gone stale, still showing Phase 1 and Phase 4 items unchecked after they shipped.
 **Scope:** New plugin `packages/plugins/lcyt-music`; new `/music` routes in `packages/lcyt-backend`; client-side detection in `packages/lcyt-web` using the browser microphone via Web Audio API.
 
 ---
@@ -938,32 +938,32 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 ### Phase 1 — Frontend sound detection and UI
 
 **Backend (processor only)**
-- [ ] `packages/plugins/lcyt-music/src/sound-caption-processor.js` — createSoundCaptionProcessor()
-- [ ] `packages/plugins/lcyt-music/src/db.js` — `music_events` table migration + helpers
-- [ ] `packages/plugins/lcyt-music/src/api.js` — exports createSoundCaptionProcessor + db init
-- [ ] `packages/lcyt-backend/src/routes/session.js` — accept and apply `soundCaptionProcessor`
-- [ ] `packages/lcyt-backend/src/server.js` — wire soundCaptionProcessor
+- [x] `packages/plugins/lcyt-music/src/sound-caption-processor.js` — createSoundCaptionProcessor()
+- [x] `packages/plugins/lcyt-music/src/db.js` — `music_events` table migration + helpers
+- [x] `packages/plugins/lcyt-music/src/api.js` — exports createSoundCaptionProcessor + db init
+- [x] `packages/lcyt-backend/src/routes/session.js` — accept and apply `soundCaptionProcessor`
+- [x] `packages/lcyt-backend/src/server.js` — wire soundCaptionProcessor
 
 **Backend tests**
-- [ ] `packages/plugins/lcyt-music/test/sound-caption-processor.test.js`
+- [x] `packages/plugins/lcyt-music/test/sound-caption-processor.test.js`
 
 **UI (lcyt-web) — shared analysis**
-- [ ] `src/lib/musicAnalysis.js` — `classifyFromFrequency()` + `detectBpmFromPcm()`
+- [x] `src/lib/musicAnalysis.js` — `classifyFromFrequency()` + `detectBpmFromPcm()`
 
 **UI (lcyt-web) — hooks**
-- [ ] `src/hooks/useMusicDetector.js` — analysis loop; emits `<!-- sound:... -->` metacodes via captionContext.send
-- [ ] `src/hooks/useMusic.js` — SSE listener; unified state
+- [x] `src/hooks/useMusicDetector.js` — analysis loop; emits `<!-- sound:... -->` metacodes via captionContext.send
+- [x] `src/hooks/useMusic.js` — SSE listener; unified state
 
 **UI (lcyt-web) — components**
-- [ ] `src/components/MusicChip.jsx` — StatusBar chip
-- [ ] `src/components/panels/MusicPanel.jsx` — settings panel (mic path)
-- [ ] `src/lib/storageKeys.js` — add `KEYS.audio.musicDetect*` keys
-- [ ] `src/locales/en.js` — i18n strings (`settings.music.*`)
-- [ ] `src/components/AudioPanel.jsx` — increase `analyserRef` fftSize to 2048
+- [x] `src/components/MusicChip.jsx` — StatusBar chip
+- [x] `src/components/panels/MusicPanel.jsx` — settings panel (mic path)
+- [x] `src/lib/storageKeys.js` — `KEYS.audio.musicDetect*` keys
+- [x] `src/locales/en.js` — i18n strings (`settings.music.*`)
+- [x] `src/components/AudioPanel.jsx` — `analyserRef` fftSize increased to 2048
 
 **Frontend tests (Vitest)**
-- [ ] `test/components/musicAnalysis.test.js`
-- [ ] `test/components/useMusicDetector.test.jsx`
+- [x] `test/components/musicAnalysis.test.js`
+- [x] `test/components/useMusicDetector.test.jsx`
 
 ---
 
@@ -1005,10 +1005,10 @@ A new `MusicPanel` component (alongside `SttPanel`, `VadPanel`) with settings fo
 ### Phase 4 — Tuning and export
 
 **Backend**
-- [ ] `GET /music/events/history` — paginated event log
-- [ ] Ambient noise floor auto-calibration window
-- [ ] Optional `MUSIC_CLASSIFIER_URL` HTTP hook for external classifiers
+- [x] `GET /music/events/history` — paginated event log (`packages/plugins/lcyt-music/src/routes/music.js`)
+- [x] Ambient noise floor auto-calibration window (`MusicManager._accumulateCalibration()` in `music-manager.js`; opt-in per-key `auto_calibrate` config column, `calibrated` SSE event)
+- [x] Optional `MUSIC_CLASSIFIER_URL` HTTP hook for external classifiers (`src/analyser/external-classifier.js`)
 
 **UI (lcyt-web)**
-- [ ] Event timeline in MusicPanel
-- [ ] Client-side auto-calibration (5 s silence sampling on mic open)
+- [x] Event timeline — `src/components/panels/MusicHistoryPanel.jsx` (paginated, self-fetching via `getMusicEventsHistory()`)
+- [x] Client-side auto-calibration (5 s RMS sampling on mic open, mirrors the server-side thresholds) — `useMusicDetector.js`

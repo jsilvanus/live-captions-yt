@@ -32,10 +32,18 @@ packages/plugins/lcyt-files/
 │   ├── routes/
 │   │   └── files.js                ← GET/DELETE /file, GET/PUT/DELETE /file/storage-config
 │   └── adapters/
+│       ├── key-segment.js          ← keySegment(): shared per-project path-segment sanitizer
 │       ├── local.js                ← local FS adapter
-│       └── s3.js                   ← S3-compatible adapter (AWS, R2, MinIO, B2)
+│       ├── s3.js                   ← S3-compatible adapter (AWS, R2, MinIO, B2)
+│       └── webdav.js               ← WebDAV adapter (remote file storage)
 └── test/
-    └── local-adapter.test.js       ← 17 tests (real tmp dir, no mocking)
+    ├── local-adapter.test.js       ← adapter methods, writeToBackendFile, closeFileHandles
+    ├── key-segment.test.js         ← path sanitization + collision-resistance
+    ├── s3-adapter.test.js          ← full S3 adapter coverage vs. a mock node:http S3 server
+    ├── vtt.test.js                 ← shiftVttContent() cue-time shifting
+    ├── storage-resolver.cache.test.js
+    ├── caption-files.error-handling.test.js
+    └── migrate-keys.test.js
 ```
 
 ### Storage adapter interface
@@ -62,8 +70,9 @@ Both adapters implement the same interface:
 
 - **Local:** `storedKey` = full filesystem path. `openRead` calls `statSync` synchronously before creating the ReadStream so ENOENT throws before headers are sent.
 - **S3:** `storedKey` = S3 object key. `openAppend` keeps a multipart upload open for the session lifetime; `close()` completes it. AWS SDK is imported dynamically so it is never loaded in local-only deployments.
+- **WebDAV:** per-key only (no build-time/global mode). `createWebdavAdapter({ url, username, password })` wraps a WebDAV client for remote file storage.
 
-### Three storage modes
+### Four storage modes
 
 `initFilesControl(db)` returns `{ storage, resolveStorage, invalidateStorageCache }`.
 
@@ -71,9 +80,10 @@ Both adapters implement the same interface:
 |---|---|---|
 | **1 — Local** (default) | `FILE_STORAGE` absent or `local` | `FILES_DIR` env var |
 | **2 — Build-time S3** | `FILE_STORAGE=s3` | `S3_*` env vars (operator-level) |
-| **3 — User-defined S3** | Per-key row in `key_storage_config` | Set via `PUT /file/storage-config`; requires `custom-storage` project feature |
+| **3 — User-defined S3** | Per-key row in `key_storage_config` (`storage_type='s3'`) | Set via `PUT /file/storage-config`; requires the `files-custom-bucket` project feature |
+| **4 — User-defined WebDAV** | Per-key row in `key_storage_config` (`storage_type='webdav'`) | Set via `PUT /file/storage-config`; requires the `files-webdav` project feature |
 
-`resolveStorage(apiKey)` checks the DB for a per-key config; creates and caches a per-key S3 adapter if found; falls back to the global adapter otherwise. `invalidateStorageCache(apiKey)` clears the cache entry after a config change.
+`resolveStorage(apiKey)` checks the DB for a per-key config; creates and caches a per-key S3 or WebDAV adapter if found; falls back to the global adapter otherwise. `invalidateStorageCache(apiKey)` clears the cache entry after a config change.
 
 ### Per-key S3 config DB table
 
@@ -100,11 +110,11 @@ GET    /file/:id              — download a file (Bearer token or ?token= for d
 DELETE /file/:id              — delete a file (DB row + storage object)
 
 GET    /file/storage-config   — get current per-key S3 config (credentials masked)
-PUT    /file/storage-config   — set per-key S3 config (requires "custom-storage" project feature)
+PUT    /file/storage-config   — set per-key S3/WebDAV config (requires "files-custom-bucket" or "files-webdav" project feature)
 DELETE /file/storage-config   — remove per-key config (reverts to global default)
 ```
 
-`PUT /file/storage-config` enforces the `custom-storage` project feature flag via `hasFeature(db, apiKey, 'custom-storage')`. The admin grants this flag.
+`PUT /file/storage-config` enforces the `files-custom-bucket` project feature flag (for `storage_type='s3'`) or `files-webdav` (for `storage_type='webdav'`) via `hasFeature(db, apiKey, ...)`. The admin grants these flags.
 
 ### Write path
 
