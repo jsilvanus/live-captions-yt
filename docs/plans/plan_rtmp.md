@@ -4,11 +4,21 @@ title: "RTMP Processing Pipeline"
 status: implemented
 summary: "Orchestrate ffmpeg subprocesses from a single RTMP ingest: audio-only HLS, video+audio HLS, RTMP relay/fan-out, DSK overlays, thumbnails."
 superseded_by:
-  - "plan/dock-ffmpeg (partially: execution model — bare spawn replaced by Docker containers)"
-  - "plan/mediamtx (partially: RTMP ingest and HLS distribution path replaced by MediaMTX)"
+  - "plan/dock-ffmpeg (partially: adds an opt-in Docker/worker execution alternative via FFMPEG_RUNNER; bare spawn() is still the default runner — see plan_dock_ffmpeg.md's own 'Key constraints' note)"
+  - "plan/mediamtx (radio/audio-HLS §1a and stream previews §2b are now fully MediaMTX-only — no ffmpeg fallback remains in radio-manager.js/preview-manager.js; video HLS §2a also defaults to MediaMTX, with ffmpeg passthrough only when a local RTMP source is explicitly configured. RTMP relay fan-out §3a-3e, CEA-708 §3e, and DSK overlay §3c remain ffmpeg-driven in RtmpRelayManager, with MediaMTX used only as an optional target broker there)"
 ---
 
 # RTMP Processing Pipeline — Plan
+
+> **Current-state note (2026-07-20):** Sections 1a (Internet Radio) and 2b (HLS Previews) below
+> describe the original ffmpeg-based implementation; that code has since been fully replaced by
+> MediaMTX (`radio-manager.js` and `preview-manager.js` now contain no ffmpeg code path at all —
+> see `packages/plugins/lcyt-rtmp/src/api.js`'s header comment: "HLS and radio are served by
+> MediaMTX... ffmpeg is only used for CEA-708 caption injection and DSK overlay composition").
+> Section 2a (HLS video embed) also now defaults to MediaMTX (`hls-manager.js`), falling back to a
+> local ffmpeg passthrough only when explicitly configured. See `plan_mediamtx.md` for the current
+> architecture; the ffmpeg descriptions below are retained as the historical baseline this plan
+> originally implemented.
 
 ## Overview
 

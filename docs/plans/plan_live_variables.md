@@ -1,8 +1,8 @@
 ---
 id: plan/live_variables
 title: "Live Variables — Continuous Refresh, Live Operator Display, and Text-Block Expansion"
-status: in-progress
-summary: "Forward-looking variable behaviours split out of plan_metacode_variable_unification so that plan can finish on its implemented core (registry/namespace/TTL). Three ideas: (1) the settled connector-fetch-timing decision (no load tier — a pointer-tier trigger on the first line covers 'on load'); (2) an always-updated variable that the operator sees live and normalized — implemented: bus-pushed {{name}} chip rendering in CaptionView (no polling, shared VariablesContext) plus a Production-page watchlist widget, AND a session-long, pointer-independent background refresh ('constant poll') as a deliberately separate opt-in mechanism (server-side PollScheduler) rather than any change to the !api:/api:/api!: metacode tiers, which stay pointer-scoped exactly as before — the interactive toggle lives in a Production workspace widget (ConnectorPollsPane, dialog-driven 'add an API call' + highlight-on-poll buttons), not the Setup Hub, since starting/stopping a poll is a live operational decision, not connector configuration; (3) variable-backed text blocks — implemented in a scoped form: {{name[N]}}/{{name[N*]}} (reusing the {{ }} sigil with a bracket length modifier, decided over the earlier <!-- lines: name --> marker sketch), block-only, materialize-once-then-freeze (a stronger, simpler freeze than 'freeze only while inside, re-expand on next arrival' — deferred as a follow-on), virtual lines displayed with a 20:1-style compound gutter number rather than borrowing new raw integers."
+status: implemented
+summary: "Forward-looking variable behaviours split out of plan_metacode_variable_unification so that plan can finish on its implemented core (registry/namespace/TTL). Three ideas: (1) the settled connector-fetch-timing decision (no load tier — a pointer-tier trigger on the first line covers 'on load'); (2) an always-updated variable that the operator sees live and normalized — implemented: bus-pushed {{name}} chip rendering in CaptionView (no polling, shared VariablesContext) plus a Production-page watchlist widget, AND a session-long, pointer-independent background refresh ('constant poll') as a deliberately separate opt-in mechanism (server-side PollScheduler) rather than any change to the !api:/api:/api!: metacode tiers, which stay pointer-scoped exactly as before — the interactive toggle lives in a Production workspace widget (ConnectorPollsPane, dialog-driven 'add an API call' + highlight-on-poll buttons), not the Setup Hub, since starting/stopping a poll is a live operational decision, not connector configuration; (3) variable-backed text blocks — implemented in a scoped form: {{name[N]}}/{{name[N*]}} (reusing the {{ }} sigil with a bracket length modifier, decided over the earlier <!-- lines: name --> marker sketch), block-only, materialize-once-then-freeze (a stronger, simpler freeze than 'freeze only while inside, re-expand on next arrival' — deferred as a follow-on), virtual lines displayed with a 20:1-style compound gutter number rather than borrowing new raw integers. Not done: idea 1's 'fire start-of-file triggers even under a restored pointer' robustness detail is decided but not wired into code (`InputBar.jsx`'s pointer-trigger effect keys only off the file's current pointer line, with no line-1-on-open path; verified 2026-07-20 audit); an aggregate cap on concurrently-polling constant-poll requests; live re-expand-on-arrival for {{name[N]}} blocks (kept as materialize-once-then-freeze); and caption-based ('c') TTL enforcement, deferred to ride on the Pub/Sub Event Bus's first caption.sent consumer."
 related: plan/api_connectors_variables, plan/metacode_variable_unification, plan/pubsub_event_bus, plan/cues, plan/dsk
 ---
 
@@ -33,6 +33,19 @@ session — the start-line triggers run on open, then the saved pointer position
 applied. This closes the "reopen the file and it never refreshes" gap (a restored
 non-zero pointer would otherwise skip the line-1 trigger) without adding a tier.
 Settled — do not revisit "on load".
+
+**Not implemented (found in 2026-07-20 audit):** the paragraph above describes
+intended behavior, but `InputBar.jsx`'s pointer-trigger effect (the one that
+fires `!api:`/`api!:` triggers, around its `prefetchIntervalRef` `useEffect`)
+keys only off `file.lineCodes[file.pointer]?.apiTriggers` — the file's
+*current* pointer line — on every `fileStore.activeFile` change, including the
+initial load with a restored non-zero pointer. There is no separate code path
+that fires line-1's pointer-tier triggers before the saved pointer is applied,
+and `onFileLoaded` (the `useFileStore`/`FileContext` callback that could carry
+this) has no consumer anywhere in `InputBar.jsx` or `FileContext.jsx` today. A
+file reopened with a saved pointer on line 40 does not refresh whatever
+connector line 1 was meant to warm — the gap this section describes as closed
+is still open in code.
 
 > This is about *refreshing* a variable from a connector. `{{name}}` itself is a
 > pure read, resolved at send; it never fetches.
@@ -324,11 +337,16 @@ with other text is left unexpanded by design (#1), not a bug.
 
 ## Dependencies & sequencing
 
-- **Idea 1** is decided; it constrains the connectors frontend wiring only.
+- **Idea 1** is decided; it constrains the connectors frontend wiring only —
+  the fetch-timing model itself needs no further code, but the file-open
+  robustness detail (firing line-1 triggers under a restored pointer) is
+  decided and not yet wired (see §1's "Not implemented" note).
 - **Idea 2** depended on `plan_pubsub_event_bus.md` (live push) — the bus has
-  since shipped, and the live-display half is now implemented on top of it
-  (`variable.*` topic via the shared `useVariables()`/`VariablesContext`). The
-  background-refresh half remains open (see "Not done" above).
+  since shipped, and both halves are now implemented on top of it: the
+  live-display half (`variable.*` topic via the shared
+  `useVariables()`/`VariablesContext`) and the background-refresh half
+  (server-side constant poll, see above). Only the aggregate
+  concurrently-polling cap remains open (see "Not done" above).
 - **Idea 3** depended on the file/pointer-model work; that dependency turned
   out to be avoidable — expansion runs as a pure post-processing pass over
   `parseFileContent()`'s output rather than requiring changes to
@@ -345,5 +363,5 @@ with other text is left unexpanded by design (#1), not a bug.
 ## Index Entry
 
 ```
-| [plan_live_variables.md](plans/plan_live_variables.md) | Live Variables — Continuous Refresh, Live Operator Display, Text-Block Expansion | (1) DECIDED fetch-timing (no load tier — a first-line pointer trigger covers "on load"). (2) Live display implemented: bus-pushed `{{name}}` chip rendering in CaptionView (shared `VariablesContext`, no polling) + a Production-page `variables` watchlist widget (pane model extended to per-instance settings); session-long background refresh implemented as "constant poll" — a deliberately separate opt-in mechanism (server-side `PollScheduler`), not any change to the `!api:`/`api:`/`api!:` metacode tiers, with its interactive toggle placed in a Production workspace widget (`connectorPolls` pane — dialog-driven "add an API call", highlight-on-poll buttons) rather than Setup Hub, since starting/stopping a poll is a live decision, not connector config. (3) `{{name[N]}}`/`{{name[N*]}}` variable-backed text blocks implemented (block-only, soft/hard wrap, virtual lines via a pure post-parse expansion pass — no `useFileStore` pointer-model changes needed, `20:1`-style gutter display); materializes once then freezes rather than live re-expand-on-arrival (deferred follow-on). | |
+| [plan_live_variables.md](plans/plan_live_variables.md) | Live Variables — Continuous Refresh, Live Operator Display, Text-Block Expansion | (1) DECIDED fetch-timing (no load tier — a first-line pointer trigger covers "on load"). (2) Live display implemented: bus-pushed `{{name}}` chip rendering in CaptionView (shared `VariablesContext`, no polling) + a Production-page `variables` watchlist widget (pane model extended to per-instance settings); session-long background refresh implemented as "constant poll" — a deliberately separate opt-in mechanism (server-side `PollScheduler`), not any change to the `!api:`/`api:`/`api!:` metacode tiers, with its interactive toggle placed in a Production workspace widget (`connectorPolls` pane — dialog-driven "add an API call", highlight-on-poll buttons) rather than Setup Hub, since starting/stopping a poll is a live decision, not connector config. (3) `{{name[N]}}`/`{{name[N*]}}` variable-backed text blocks implemented (block-only, soft/hard wrap, virtual lines via a pure post-parse expansion pass — no `useFileStore` pointer-model changes needed, `20:1`-style gutter display); materializes once then freezes rather than live re-expand-on-arrival (deferred follow-on). **Not done:** idea 1's file-open-under-restored-pointer robustness fix (decided, not wired); an aggregate constant-poll concurrency cap; live re-expand-on-arrival; caption-based (`c`) TTL enforcement (rides on the event bus). | |
 ```

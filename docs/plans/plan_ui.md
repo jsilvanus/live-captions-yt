@@ -2,7 +2,7 @@
 id: plan/ui
 title: "Frontend & UI Plans"
 status: in-progress
-summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard, core implemented, remaining P0/P1 items), v3 (component split, completed)."
+summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, and virtual scrolling all implemented; onboarding auto-trigger, context-aware layouts, detachable panels, and mobile-first redesign still outstanding), v3 (component split, completed)."
 ---
 
 # Frontend & UI Plans — `packages/lcyt-web`
@@ -683,7 +683,7 @@ const [fabSide, setFabSide] = useState(
 ## v2 — Frontend Flow Improvement (Sidebar Navigation + Dashboard)
 
 **Date:** 2026-03-17
-**Status:** In progress — core sidebar, dashboard, settings page, route restructuring all implemented. Remaining P0/P1 items (auto-reconnect, unsaved work protection) pending.
+**Status:** In progress — core sidebar, dashboard, settings page, route restructuring, auto-reconnect, unsaved-work protection, command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all implemented (re-audited 2026-07-20, see Implementation Status below). Remaining: onboarding auto-trigger (no `lcyt:onboarded` flag or no-config redirect exists), context-aware layout modes, detachable panels, and the mobile-first caption-flow redesign.
 
 ---
 
@@ -1326,7 +1326,9 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 ## Implementation Status & Priority
 
-> **Last audited: 2026-03-27**
+> **Last audited: 2026-07-20** (previous audit: 2026-03-27 — several P2/P3 items
+> below were incorrectly marked pending at that time and have been moved to
+> Done; see notes on 5a/5b/7a/7c)
 
 ### ✅ Done
 
@@ -1345,34 +1347,34 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 | **7b. Context splitting** | `SessionContext` split into `ConnectionContext` / `CaptionContext` / `SessionApiContext` — reduces re-renders |
 | **8a. Two-phase login** | `LoginPage` rewritten: backend preset selector (Normal/Minimal/Custom) → probe `/health` → feature-aware auth (login form for full backends, API key for minimal) |
 | **8b. Feature-based sidebar** | Sidebar nav items and groups annotated with `feature` property; filtered by `backendFeatures` from `ConnectionContext`. Minimal backends hide Broadcast, Graphics, Production, Projects, Account |
+| **5a. Command palette** (Ctrl/Cmd+K) | `CommandPalette.jsx` — searchable flattened nav list from `NAV_ITEMS`/`NAV_GROUPS`/`NAV_BOTTOM`, arrow-key navigation, Enter to navigate, Escape to close; wired via `SidebarLayout.jsx` and the top-bar button in `sidebar/Sidebar.jsx`. Was miscategorized as P2/not-done in the 2026-03-27 audit — confirmed fully implemented 2026-07-20 |
+| **5b. Keyboard shortcuts help** (`?` overlay) | `KeyboardShortcutsHelp.jsx` — sectioned shortcut list (Navigation, Caption file, App shortcuts, Input shortcuts) incl. `?` itself; wired via `SidebarLayout.jsx`. Was miscategorized as P2/not-done in the 2026-03-27 audit — confirmed fully implemented 2026-07-20 |
+| **7a. Virtual scrolling SentPanel** | `SentPanel.jsx` — `VIRTUAL_THRESHOLD = 100`, windowed slice rendering (`ITEM_HEIGHT`, `OVERSCAN`, scroll-driven start/end index, padding divs). Was miscategorized as P3/not-done in the 2026-03-27 audit — confirmed fully implemented 2026-07-20 |
+| **7c. Lazy-load heavy pages (mostly done)** | `DskEditorPage` and `ProductionOperatorPage` are lazy-loaded via `lazyImport()` in `main.jsx`. `BroadcastModal.jsx` is no longer routed/imported anywhere active — superseded by `BroadcastPage.jsx`/`broadcast/*` — so lazy-loading it is moot rather than outstanding |
 
 ### 🟠 P1 — Next up
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P1** | **2a. Guided setup flow** — step-by-step wizard (server → auth → target → test) when no config exists; `lcyt:onboarded` flag skips for returning users | High — unblocks new users | Medium |
-| **P1** | **2b. Empty-state guidance** — contextual cards in Dashboard/Captions when no file loaded and no session active | Medium — reduces confusion for new users | Low |
+| **P1** | **2a. Guided setup flow** — *partial*: `SetupWizardPage` (feature selection → target/translation/relay/CEA/embed/STT config → review) is fully implemented and routed at `/setup/wizard` (see `plan_setup_wizard.md`, status: implemented), reachable from the `/setup` hub via "Run setup wizard." What's still missing is the auto-trigger: no `lcyt:onboarded` flag exists anywhere in the codebase, and nothing redirects a new/unconfigured user into the wizard automatically — it remains purely opt-in via nav | High — unblocks new users | Low (trigger only; the wizard itself is done) |
+| **P1** | **2b. Empty-state guidance** — *partial*: `broadcast/LiveTab.jsx` (the `/` console) has a real empty-state card (icon/title/description + actions) when no panels are configured. `CaptionView.jsx` and `dashboard/FileWidget.jsx` only show plain "No file loaded" text, not contextual cards, and none of these key off "no session active" specifically as the original proposal described | Medium — reduces confusion for new users | Low |
 
 ### 🟡 P2 — Nice to have
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P2** | **5a. Command palette** (Ctrl/Cmd+K) — searchable action list (sync, heartbeat, language, DSK, shortcuts) | Medium — power user productivity | Medium |
 | **P2** | **4a. Context-aware layout modes** — left/right panel content adapts to active section (Caption/Audio/Broadcast/Graphics/Production) | Medium — better screen use | High |
-| **P2** | **5b. Keyboard shortcuts help** (`?` or Ctrl+/) — overlay listing all shortcuts | Low — discoverability | Low |
 
 ### 🔵 P3 — Backlog
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P3** | **4b. Detachable panels** — "Pop out" button on panels using `BroadcastChannel` (infrastructure already exists) | Low — niche use case | Medium |
-| **P3** | **4c. Mobile-first redesign** — swipeable card layout for captions, bottom sheet for file tabs, FAB for quick actions | Medium — mobile usability | High |
-| **P3** | **5e. Workflow presets** — named localStorage configs (e.g. "Sunday service") | Low — convenience | Medium |
-| **P3** | **5d. DSK metacode helper** — `<!--` autocomplete in input bar fetching template/viewport names | Low — niche | Medium |
-| **P3** | **7a. Virtual scrolling SentPanel** — only needed when entries > 100 | Low — edge case | Low |
-| **P3** | **7c. Lazy-load heavy pages** — `React.lazy()` for DskEditorPage, ProductionOperatorPage, BroadcastModal | Low — marginal gains | Low |
-| **P3** | **2c. Inline hints on first use** — `lcyt:hints-dismissed` set, tooltips on feature first touch | Low — nice to have | Low |
-| **P3** | **6d. localStorage quota monitoring** — `navigator.storage.estimate()` warning | Low — edge case | Low |
+| **P3** | **4b. Detachable panels** — "Pop out" button on panels using `BroadcastChannel`. Confirmed not done for dashboard/console panels: `BroadcastChannel` is used only for `/embed/*` widget-page coordination, not tied to any pop-out button on a live panel | Low — niche use case | Medium |
+| **P3** | **4c. Mobile-first redesign** — *partial*: `SwipeablePages.jsx` (touch-swipe carousel) exists but is used in `PlannerPage.jsx`/`DskEditorPage.jsx`, not the captions flow; `MobileAudioBar.jsx` is the pre-existing voice-input bar this item explicitly says doesn't cover file-based captioning. No FAB, no bottom sheet for file tabs exist anywhere in the codebase | Medium — mobile usability | High |
+| **P3** | **5e. Workflow presets** — named localStorage configs (e.g. "Sunday service"). Confirmed not done — `LiveTab.jsx`'s `PresetPicker`/`applyPreset` only covers dashboard *panel layout* presets, a narrower feature, not named save/restore of full workflow configs | Low — convenience | Medium |
+| **P3** | **5d. DSK metacode helper** — `<!--` autocomplete in input bar fetching template/viewport names. Confirmed not done — `InputBar.jsx` has no such autocomplete; `metacode-parser.js` only parses, doesn't suggest | Low — niche | Medium |
+| **P3** | **2c. Inline hints on first use** — `lcyt:hints-dismissed` set, tooltips on feature first touch. Confirmed not done | Low — nice to have | Low |
+| **P3** | **6d. localStorage quota monitoring** — `navigator.storage.estimate()` warning. Confirmed not done — no reference anywhere in `src/` | Low — edge case | Low |
 
 ---
 
@@ -1380,7 +1382,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support.
 
-**As of 2026-03-27, the structural foundation and feature-based UI are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, and context splitting are all shipped. The remaining work is onboarding (guided setup, empty-state cards) and power-user features (command palette, context-aware layouts, keyboard shortcuts help).
+**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. The remaining genuine gaps are: onboarding automation (the setup wizard itself exists at `/setup/wizard`, but nothing auto-triggers it for new users), context-aware layout modes, detachable/pop-out panels, and the mobile-first redesign of the caption flow specifically (general swipe/mobile-bar infrastructure exists but isn't applied there).
 
 ---
 ---

@@ -3,6 +3,7 @@ id: plan/captions
 title: "Caption Sending Pipeline"
 status: implemented
 summary: "End-to-end caption delivery: input sources, composition, target fan-out, sequence tracking, clock sync, and SSE result reporting."
+related: [plan_batch_options.md, plan_selfservice_config_backend.md, plan_sync.md]
 ---
 
 # Plan: Caption Sending Pipeline
@@ -38,6 +39,8 @@ Receives:
 ```
 
 The returned `token` is a HS256 JWT with payload `{ sessionId, apiKey }`, signed by the server's `JWT_SECRET`.
+
+`targets` here is an explicit override — when omitted entirely (not an empty array), the server loads the project's saved, enabled `caption_targets` rows instead (`plan_selfservice_config_backend.md` §1), so a thin client can start a session with just `{ apiKey, domain }`. This document's examples all pass `targets` explicitly for clarity.
 
 ### 1.2 Server-Side Session Storage (`store.js`)
 
@@ -146,11 +149,11 @@ Before delivery the backend composes the final text that YouTube receives.
 
 | Condition | Composed text |
 |-----------|--------------|
-| No translation | `text` |
-| Translation, `showOriginal = true` | `text + '\n' + translations[captionLang]` |
+| No translation, or `translations[captionLang]` equals `text` | `text` |
+| Translation, `showOriginal = true` | `` text + '<br>' + translations[captionLang] `` |
 | Translation, `showOriginal = false` | `translations[captionLang]` |
 
-The `<br>` separator is a literal newline in the YouTube caption payload. YouTube renders it as a line break in the closed-caption display. The viewer SSE payload uses the string `"<br>"` as a separator so clients can split it correctly.
+The `<br>` separator is the literal 4-character string `"<br>"` (not a newline character) inserted into the YouTube caption payload text — confirmed in `composeCaptionText()` (`packages/lcyt-backend/src/caption-files.js`). YouTube's closed-caption renderer treats it as a line break. The viewer SSE payload uses the same literal `"<br>"` string as a separator so clients can split it correctly.
 
 ---
 
@@ -401,6 +404,8 @@ sender.construct('Line 1');
 sender.construct('Line 2');
 const result = await sender.sendBatch();  // flushes queue
 ```
+
+`construct()` also accepts the same `translations`/`captionLang`/`showOriginal`/`codes`/`fileFormats` options as `send()` and stamps omitted timestamps at queue time rather than at flush time — see `plan_batch_options.md` for the client-side fix that made per-caption options and cue-time timestamps survive batch-interval queuing.
 
 ### Audio batch interval
 

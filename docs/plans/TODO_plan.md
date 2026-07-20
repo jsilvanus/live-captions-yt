@@ -7,6 +7,16 @@ summary: "Resolve open TODO.md items: Python stderr logging, MCP auto-sync and t
 
 # Plan: Implement TODO.md items
 
+> **Verified 2026-07-20:** all four items below shipped and remain present in the
+> codebase (`python-packages/lcyt/lcyt/logger.py`; `get_status` auto-sync and the
+> `time`-offset field in the MCP server; docs moved out of root). One path reference
+> is now stale: `packages/lcyt-mcp/src/server.js` was later split into
+> `packages/lcyt-mcp-stdio` and `packages/lcyt-mcp-http` (unrelated later work) — the
+> `get_status`/`time`-field logic now lives in `packages/lcyt-mcp-stdio/src/server.js`.
+> Root `TODO.md` still exists and carries no new unimplemented items in this plan's
+> original scope (Python/MCP/docs-reorg/CLAUDE.md) — its one remaining line is an
+> unrelated timestamp-parsing caution note, not an action item.
+
 ## Context
 
 Implementing all open items from `TODO.md`:

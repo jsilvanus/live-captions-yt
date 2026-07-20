@@ -47,9 +47,9 @@ External bus *writes* are therefore deliberately limited to a fenced `external.*
 |---|---|---|---|
 | **REST** (scoped) | scripts / integrations | request/response CRUD | ✅ shipped |
 | **`GET /events/stream`** | any subscriber | subscribe (feedback) | ✅ shipped |
-| **`POST /events` (`external.*`)** | third parties emitting signals | push an event in | 🔲 Phase 3 |
-| **In-process MCP endpoint** | BYO-harness agent (e.g. Claude Desktop) | interactive tool calls | 🔲 Phase 1 |
-| **Hosted operator** | autonomous, event-fed agent | pushed events → reacts | 🔲 Phase 2 |
+| **`POST /events` (`external.*`)** | third parties emitting signals | push an event in | ✅ shipped (Phase 3) |
+| **In-process MCP endpoint** | BYO-harness agent (e.g. Claude Desktop) | interactive tool calls | ✅ shipped (Phase 1) |
+| **Hosted operator** | autonomous, event-fed agent | pushed events → reacts | ✅ shipped (Phase 2) |
 
 **The unifying thread:** a token's scopes decide what it can do across *all* doors at
 once — which tools (`camera:write`), which topics (`dsk.*`), which REST
@@ -88,12 +88,15 @@ EventBus + `/events/stream` + `/events/topics` catalog + per-variable topics +
 `tokenAllowsTopic`) + Setup Hub scope picker. The tool registry and Production
 Assistant/confirm-auto already existed.
 
-### Phase 1 — In-process MCP endpoint (BYO-harness door)
-Mount an MCP-over-HTTP/SSE transport **inside `lcyt-backend`**, backed by the same
-`_toolRegistry` the composition root already builds (`server.js:283` — live
+### Phase 1 — In-process MCP endpoint (BYO-harness door) — ✅ shipped
+Mounted at `POST /mcp` (`packages/lcyt-backend/src/routes/mcp-endpoint.js`,
+wired in `server.js`, `requiredScope: 'mcp:connect'`), backed by the same
+`_toolRegistry` the composition root already builds (live
 `productionRegistry`/`bridgeManager`/RTMP managers/`AgentEngine`). This resolves the
 `CONSIDER.md` "external MCP transport" gap (decision: in-process, not a separate
-process proxying HTTP).
+process proxying HTTP; see `CONSIDER.md`, marked RESOLVED). Tool-level scope
+derivation, destructive-tool confirm-staging, and rate limiting are all implemented
+and covered by `packages/lcyt-backend/test/mcp-endpoint.test.js`.
 - **Auth:** `createProjectAccessMiddleware(..., { requiredScope: 'mcp:connect' })`;
   `apiKey = req.auth.projectId` fed into `callToolAs`.
 - **Tool-level authz = the scope model, lifted to tools.** Each tool declares
@@ -111,25 +114,41 @@ process proxying HTTP).
 - **Fate of standalone `lcyt-mcp-http`:** deprecate or redirect live-control clients
   to the in-process endpoint (open Q).
 
-### Phase 2 — Hosted operator (autonomous door)
-Wire `eventBus.subscribe(projectId, topics, handler)` to feed a **session-long
-Production-Assistant-style operator**: relevant events become turns in its context
-(`agent_context`), it decides whether to act (with cooldowns — the Assistant already
-has this), and executes via the tool registry with **confirm-by-default**. BYO
-model/key via the existing provider registry / per-role model config. The genuinely
-new piece is the *persistent, event-fed session* (today the Assistant fires
-per-trigger). Optionally run the operator's brain on Claude directly (Anthropic API /
-Agent SDK) instead of the OpenAI-compatible `agentic-turn` loop — same architecture,
-different engine.
+### Phase 2 — Hosted operator (autonomous door) — ✅ shipped
+`OperatorManager` (`packages/lcyt-backend/src/operator-manager.js`) wires
+`eventBus.subscribe(projectId, topics, handler)` — a real in-process consumer of
+the event-bus `subscribe()` mechanism (`plan_pubsub_event_bus.md`) — to a
+session-long agent: relevant events become turns in its context, it decides whether
+to act (with cooldowns), and executes via the tool registry with
+**confirm-by-default** staging (`GET/POST /operator/pending/:id/confirm|reject`).
 
-### Phase 3 — `external.*` bus write (third-party-signal door)
-Additive `POST /events` publishing to the bus, **fenced** to an `external.*`
-namespace (internal domains `caption`/`cue`/`dsk`/`session`/`role`/`variable`/`stt`/
-`bridge` can only be published by internal code). Gated on `events:write` (+ optional
-topic patterns via `tokenAllowsTopic`); envelope stamped `source:'external'` +
-`tokenId`; size/rate limited; always audited. First consumer: an "external event
-cue" match type (or an in-process `subscribe()` handler) so `external.*` can drive
-internal reactions — opt-in.
+**Planned (`plan_video_perception.md`, draft):** that plan's World State service will
+publish `scene.*` topics (active speaker, best framing, segment change) onto this
+same event bus — `OperatorManager`'s existing arbitrary-topic `subscribe()` needs no
+new code to consume them, it's just a richer topic pattern to subscribe to. This is
+deliberately **not** a new "director" component — the multi-camera AI production
+brief's Layer 4 (production director) maps onto this already-shipped Hosted Operator
+plus the Production Assistant role in `plan_ai_roles_framework.md`, fed better
+inputs, not replaced.
+Start/stop/status is `POST /operator/start`, `POST /operator/stop`,
+`GET /operator/status` (`packages/lcyt-backend/src/routes/operator.js`, scoped
+`operator` resource, covered by `packages/lcyt-backend/test/operator.test.js`). The
+operator's brain runs the existing OpenAI-compatible `agentic-turn` loop (not the
+Claude Agent SDK alternative floated below). **Not yet built:** a Setup Hub / web UI
+surface to start/stop the operator or review pending actions — today it's API-only
+(see "Cross-cutting" below).
+
+### Phase 3 — `external.*` bus write (third-party-signal door) — ✅ shipped
+`POST /events` (`packages/lcyt-backend/src/routes/events-publish.js`, wired in
+`server.js`) publishes to the bus, **fenced** to an `external.*` namespace (internal
+domains `caption`/`cue`/`dsk`/`session`/`role`/`variable`/`stt`/`bridge`/`operator`/
+`mcp`/`target`/`translation`/`music` can only be published by internal code). Gated
+on `events:write` (+ optional topic patterns via `tokenAllowsTopic`); envelope
+stamped `source:'external'` + `tokenId`; size-limited (4KB) and rate-limited (60/min
+per token); always audited. Covered by
+`packages/lcyt-backend/test/events-publish.test.js`. The "external event cue" match
+type consumer is not yet built — an in-process `subscribe()` handler could drive one
+whenever a concrete need shows up.
 
 ### Cross-cutting
 Extend the scope picker + catalog with tool/write scopes; production actions emit bus
@@ -150,11 +169,17 @@ Phase 2).
 
 ## Open questions
 
-- MCP transport flavour (Streamable HTTP vs HTTP+SSE) — Streamable HTTP preferred.
-- Where the confirmation surface lives (reuse Assistant suggestions queue vs a
-  dedicated external-actions tray; which page).
-- Operator engine: existing `agentic-turn` vs Claude Agent SDK.
-- Fate of standalone `lcyt-mcp-http`.
+- ~~MCP transport flavour~~ — resolved: Streamable HTTP (JSON-RPC 2.0 over POST),
+  shipped at `POST /mcp`.
+- Where the confirmation surface lives in the UI — `/operator/pending` exists as an
+  API but has no Setup Hub / web page consuming it yet (reuse Assistant suggestions
+  queue vs a dedicated external-actions tray; which page).
+- ~~Operator engine~~ — resolved for now: the shipped `OperatorManager` runs the
+  existing OpenAI-compatible `agentic-turn` loop; a Claude Agent SDK-backed engine
+  remains a possible future alternative, not built.
+- Fate of standalone `lcyt-mcp-http`/`lcyt-mcp-stdio` — still open; they do not
+  register the shared `lcyt-tools` registry (see `plan_mcp.md`), unlike the shipped
+  in-process `POST /mcp` endpoint.
 - Whether "setup" needs a distinct `provision`/`device-manager` scope beyond
   `settings:write`.
 
@@ -175,5 +200,6 @@ Phase 2).
 
 One core (bus + tool registry + scope model + confirm/auto), four doors (REST,
 `/events/stream`, `POST /events`, MCP), two agent shapes (hosted-autonomous vs
-BYO-interactive) — all sharing the same scoped tokens. Phase 0 is shipped; Phases
-1–3 are independent and build only on the shipped core.
+BYO-interactive) — all sharing the same scoped tokens. Phases 0–3 are all shipped
+at the API/backend level; remaining work is UX polish (a web UI for
+`/operator/*` start/stop/confirm, and connection-setup docs), not core mechanism.

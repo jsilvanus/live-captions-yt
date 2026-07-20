@@ -2,7 +2,8 @@
 id: plan/stt
 title: "Speech-to-Text (STT) Integration"
 status: implemented
-summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and Google Cloud STT engines, client-side VAD, translation pipeline, MCP speech sessions, and embed widget."
+summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and Google Cloud STT engines, client-side VAD, translation pipeline, MCP speech sessions, and embed widget. AudioPanel also has a third `server` engine mode that displays server-side STT transcripts (capture/recognition happens on the backend) — see plan_server_stt.md, the actual STT source."
+related: [plan_server_stt.md]
 ---
 
 # Speech-to-Text (STT) Integration
@@ -13,12 +14,13 @@ summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and 
 
 ## Overview
 
-All STT happens in the browser. The backend receives final transcript text — it is never involved in audio capture or recognition. Two recognition engines are available; the user picks one in the CC → STT settings tab.
+For the **webkit** and **cloud** engines described below, all STT happens in the browser — the backend receives final transcript text and is never involved in audio capture or recognition. `AudioPanel` also supports a third engine, `server` (`engine === 'server'`), which is a thin client for server-side STT (`plan_server_stt.md`'s `SttManager`): the browser does no capture at all in this mode, it just polls `GET /stt/status` and subscribes to `GET /stt/events` (SSE) to render a live transcript panel (`serverTranscripts` state, `.server-transcript-panel`). The user picks one of the three engines in the CC → STT settings tab.
 
 | Engine | How it works | Credentials needed |
 |---|---|---|
-| **webkit** (default) | Native browser `SpeechRecognition` API (Chrome, Edge, Safari) | None |
+| **webkit** (default) | Native browser `SpeechRecognition` API (Chrome, Edge, Safari), via the `useWebSpeech` hook | None |
 | **cloud** | `MediaRecorder` → 5-second WEBM\_OPUS chunks → Google Cloud Speech-to-Text REST API | Google OAuth 2.0 token |
+| **server** | No browser capture — displays transcripts produced by the backend's `SttManager` (`plan_server_stt.md`) via SSE | None (server-side credentials only) |
 
 Engine choice and all STT settings persist in `localStorage`.
 
@@ -28,7 +30,9 @@ Engine choice and all STT settings persist in `localStorage`.
 
 | File | Purpose |
 |---|---|
-| `src/components/AudioPanel.jsx` | Main STT component — mic capture, recognition, metering, translation, sending |
+| `src/components/AudioPanel.jsx` | Main STT component — mic capture, recognition, metering, translation, sending; also renders the `server`-engine live transcript panel fed by `GET /stt/events` |
+| `src/hooks/useWebSpeech.js` | WebKit `SpeechRecognition` state machine (start/stop/error-recovery), used by `AudioPanel` |
+| `src/hooks/useSourceLanguages.js` | Reads the shared, server-persisted `stt_source_languages` list (`plan_server_stt.md` Phase 5); `AudioPanel`'s language selector falls back to `sttConfig.js`'s `COMMON_LANGUAGES` when disconnected/empty |
 | `src/lib/sttConfig.js` | STT preference helpers (engine, language, cloud config, VAD flag) |
 | `src/lib/translate.js` | Translation engine dispatch (`translateText`, `translateAll`) |
 | `src/lib/translationConfig.js` | Translation target config helpers (localStorage) |

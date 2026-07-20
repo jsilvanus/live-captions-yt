@@ -2,10 +2,13 @@
 id: plan/client
 title: "Web GUI Client (lcyt-web)"
 status: implemented
-summary: "Browser-based React SPA connecting to lcyt-backend: file management, session lifecycle, STT integration, embed widgets."
+summary: "Original MVP plan for lcyt-web (file management, session lifecycle, STT integration, embed widgets); shipped as described here as a vanilla-JS SPA, then rewritten onto React + wouter — see plan_ui.md and packages/lcyt-web/CLAUDE.md for the current architecture."
+related: [plan_ui.md, plan_stt.md]
 ---
 
 # Web GUI Client Plan — `lcyt-web`
+
+> **Historical note:** this document is the original MVP plan and describes a **vanilla JS, no-framework** implementation (see "Architecture" below). That plan was carried out and shipped, but `lcyt-web` was subsequently rewritten onto **React + Vite + wouter** (sidebar navigation, dozens of routed pages) across the v2/v3/v4 iterations documented in `plan_ui.md` — see `packages/lcyt-web/CLAUDE.md` for the current architecture and route table. The feature set this plan describes (file management, session lifecycle, STT integration) still exists in the current app, just not in the vanilla-JS file layout below. Phase 2 (browser STT) also shipped, superseded/extended by `plan_stt.md`.
 
 ## Overview
 

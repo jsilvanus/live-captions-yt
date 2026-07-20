@@ -1,14 +1,14 @@
 ---
 id: plan/cues
 title: "Cue Engine Enhanced Capabilities"
-status: in-progress
-summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, AI event cues, and AI agent for video inference. Implemented work includes compact inline cue syntax, a multi-line indented composite-block authoring grammar, backend composite/context evaluation, inline cue snapshot sync (Phase 8.5), composite trees + reusable named conditions + tracker-state leaves end-to-end (Phase 9, backend and frontend), and a full Cue Rules editor UI including the ConditionTreeEditor and Named Conditions section (Phase 10); remaining work is multi-modal cues and the fps30 tracker subsystem itself (out of scope for this plan)."
-related: plan/agent, plan/ai_roles_framework
+status: implemented
+summary: "Cue engine with inline metacodes, auto-send, wildcards, next-cue-only modifiers, fuzzy/embedding matching, sound detection cues, semantic cues, and AI event cues — all in-scope work is implemented. Implemented work includes compact inline cue syntax, a multi-line indented composite-block authoring grammar, backend composite/context evaluation, inline cue snapshot sync (Phase 8.5), composite trees + reusable named conditions + tracker-state leaves end-to-end (Phase 9, backend and frontend), and a full Cue Rules editor UI including the ConditionTreeEditor and Named Conditions section (Phase 10). **Not done** (out of scope for this plan): multi-modal scene understanding / vision-backed event cues — Phase 6's unfinished vision-LLM checklist items, which `lcyt-agent`'s own plan (`plan_agent.md`, Phase 7) owns — and the fps30 tracker subsystem itself (whatever would emit `track_state`) — now drafted in `plan_video_perception.md` (2026-07-20), not yet built."
+related: plan/agent, plan/ai_roles_framework, plan/video_perception
 ---
 
 # Cue Engine Enhanced Capabilities
 
-**Status:** In progress (core cue implementation is shipped; remaining roadmap items are future work)
+**Status:** Implemented (all in-scope cue-engine work — matching modes, composite/named conditions, the tracker-consumer side, and the Cue Rules editor UI — is shipped; the two items left below are out of scope for this plan, not future work within it)
 **Scope:** `packages/plugins/lcyt-cues`, `packages/plugins/lcyt-agent`, `packages/lcyt-web/src/lib/metacode-runtime.js`, `packages/lcyt-web/src/lib/metacode-parser.js`, `packages/lcyt-web/src/components/InputBar.jsx`, `packages/lcyt-web/src/components/AiSettingsPage.jsx`
 **Related plans:** [AI Agent Plan](plan_agent.md) (lcyt-agent owns AI config, embeddings, LLM calls, and future features including SVG graphics AI and rundown generation)
 
@@ -27,8 +27,10 @@ related: plan/agent, plan/ai_roles_framework
 
 ## Remaining roadmap
 
-- Multi-modal scene understanding and vision-backed event cues.
-- The fps30 tracker subsystem itself (whatever emits `track_state` events) — out of scope for `lcyt-cues`, which only implements the cue-engine-facing consumer side (`track:` leaves, `match_type: 'track'` rules, `createTrackerCueListener()`). Nothing in this repo produces `track_state` yet.
+**Not done (out of scope for this plan):**
+
+- Multi-modal scene understanding and vision-backed event cues — this is Phase 6's unfinished checklist (preview JPEG fetching, vision LLM integration, scene description SSE emission, video keyframe extraction). `lcyt-agent` owns this as its own Phase 7 ("Multi-Modal Scene Understanding," `plan_agent.md`, still `Planned` there) — per this doc's "Related plans" note, `lcyt-agent` owns AI config/embeddings/LLM calls and future AI features, not `plan_cues.md`.
+- The fps30 tracker subsystem itself (whatever emits `track_state` events) — out of scope for `lcyt-cues`, which only implements the cue-engine-facing consumer side (`track:` leaves, `match_type: 'track'` rules, `createTrackerCueListener()`). Nothing in this repo produces `track_state` yet, but `plan_video_perception.md` (draft, 2026-07-20) is now the specced producer. That plan deliberately keeps this project-level `track_state` contract unchanged (`{ apiKey, ts, labels: [{ label, confidence }] }`, no camera dimension, matching `CueEngine._trackerState`'s existing `Map<apiKey, state>` shape exactly) — multi-camera detail (`cameraId`, `visible`, bbox) is a separate `camera.track_state` event for its own World State service, not pushed through this flat contract.
 - A lint/warning pass for indirect `not:`+async cycles through a `ref` chain (the `ConditionTreeEditor` only warns on a `not` group's direct child) — a UI nicety gap, not a correctness one.
 
 ---
@@ -280,6 +282,8 @@ Some cue phrases require semantic understanding beyond string similarity. Embedd
 
 ## Phase 6 — AI Agent: Video/Image Inference (`lcyt-agent` Plugin) (In Progress)
 
+*(Scope note: the AI-config/embedding/routing plumbing below is implemented; the remaining vision-LLM checklist items are the same out-of-scope, `lcyt-agent`-owned work called out in "Remaining roadmap" above — tracked as `plan_agent.md`'s own Phase 7, not left open within this plan.)*
+
 ### Motivation
 
 A vision-capable LLM can describe what is happening on screen by analysing preview JPEGs or video frames. This enables:
@@ -440,7 +444,11 @@ Inline cues should be expressible in a compact single-line form and evaluated by
 
 ---
 
-## Phase 9 — Multi-Modal Scene Understanding (Planned)
+## Phase 8 — Multi-Modal Scene Understanding (Planned, out of scope for this plan)
+
+*(Numbering note: this section was mislabeled "Phase 9" — the Phase Summary table below has always numbered this Phase 8, immediately after Phase 7's AI event cues and before Phase 8.5. Corrected here; no content change.)*
+
+Superseded in ownership by `plan_agent.md`'s own Phase 7 of the same name — see the "Remaining roadmap" section above and this doc's "Related plans" note. Kept here for historical motivation/design context only; this plan does not need to implement it.
 
 ### Motivation
 

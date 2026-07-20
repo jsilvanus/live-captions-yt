@@ -113,6 +113,44 @@ this pass (every corresponding UI element is visibly marked "Coming soon"):
   exists server-side; today's feature flags are always per-project or
   per-user.
 
+### Follow-up status (updated 2026-07-20)
+
+Most of the above has since shipped via later dedicated plans, and the
+corresponding UI is no longer a "Coming soon" stub — but not all of it, and
+two items only shipped partially:
+
+- **Name-edit endpoint** — shipped. `AccountPage`'s `AccountInfoForm` calls
+  a real `PATCH /auth/me`.
+- **Account deletion / data export** — shipped. `DangerZonePanel` wires
+  "Export data" / "Remove all data" / "Delete account" to real
+  `GET /auth/me/export`, `DELETE /auth/me/data`, `DELETE /auth/me`.
+- **Ingestion + Web Radio config endpoints** — shipped via
+  `plan_selfservice_config_backend.md` (`GET/PATCH /ingestion/config`,
+  `GET/PUT /radio/config`), consumed by the Setup Hub's
+  `setup-hub/IngestionSection.jsx` / `WebRadioSection.jsx`. One sub-piece
+  remains a deliberate `501` (`PATCH /ingestion/config`'s `dsk` sub-object —
+  no DSK-ingest gate exists yet), per that plan's own header.
+- **Multi-role AI Models** — partially shipped. `plan_ai_roles_framework.md`
+  (status: in-progress) built the real backend (`GET /roles/catalog`,
+  per-role `GET/PUT /roles/:roleCode/config`, per-key `ai_models` CRUD), but
+  the frontend (`AiModelsSection.jsx`) still only exposes a single hardcoded
+  `assistant` role — Setup Assistant and Asset Control Assistant have no
+  frontend surface yet.
+- **Real org/Team data model** — mostly shipped. `plan_team_org_backend.md`
+  (status: in-progress) added real `organizations`/`org_members` tables, and
+  `TeamPage.jsx` now does real aggregation against `/orgs*` routes (no longer
+  a placeholder). The gap keeping that plan in-progress: org membership today
+  grants no baseline access to individual member projects' resources — the
+  designed `getEffectiveProjectAccessLevel()` resolver doesn't exist yet.
+- **Admin "Site Features"** — shipped, via `plan_site_feature_policies.md`
+  (status: implemented). `AdminSiteFeaturesPage.jsx` is wired to real
+  `GET/PUT /admin/feature-policies` and `.../orgs/:id/feature-overrides`.
+
+Net: the claim that these items "have all since shipped via later plans" is
+accurate for four of six and an overstatement for two — AI Models and
+Team/Org shipped at the backend-and-partial-frontend level, but their own
+plans are still `status: in-progress`, not `implemented`.
+
 ## Files touched
 
 See the individual phase commits on `feat/signup-redesign` for the full diff;

@@ -661,3 +661,48 @@ fix.
 
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
 plan_ingest_feeds.md, 2026-07-19.)
+
+## `AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry
+
+**Where:** `packages/lcyt-web/src/components/setup-hub/AiModelsSection.jsx`,
+`routes/ai-models.js`, standalone `ai_model_configs` table (all in
+`packages/plugins/lcyt-agent`).
+
+**Finding:** While auditing `plan_ai_model_registry.md`'s frontmatter, found
+that this component + route + table look like they could be Phase 3's
+still-missing role-config model-picker UI, but they're entirely separate
+plumbing: `getAiModelConfig()` has zero call sites outside its own module —
+nothing in the `agentic_chat` turn loop, vision adapters, or
+`project_ai_role_configs` reads from it. It never got wired to the
+`ai_providers`/`ai_provider_models`/`provider_id` registry the plan actually
+built.
+
+**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
+code-cleanup or wire-up decision (either delete the dead plumbing, or use it
+as the starting point for the actual Phase 3 model-picker UI), not something
+to fix as a side effect of correcting plan status text.
+
+(Found during: docs/plans frontmatter audit, 2026-07-20.)
+
+## Recording/VOD marks `storage_type='s3'` but nothing ever uploads the segments there
+
+**Where:** `packages/lcyt-backend/src/db/videos.js` (`startVideoRecording`/
+`finishVideoRecording`), `packages/lcyt-backend/src/routes/live.js`
+(`configureMediaMtxRecording`).
+
+**Finding:** While auditing `plan_recording_vod.md`'s frontmatter, found that
+`isS3Enabled()` being true makes a `videos` row get `storage_type='s3'`, but
+MediaMTX always writes recorded HLS/fMP4 segments to local disk — no
+watcher/uploader moves them to S3 afterward (the plan called for reusing
+worker-daemon's `createS3UploadFn` or the `lcyt-files` S3 adapter, but
+neither is invoked from the recording path). An S3-configured deployment
+would 404 on VOD playback for any broadcast recorded this way, since
+`GET /videos/:id/playlist.m3u8` would look for segments at an S3 location
+nothing ever populated.
+
+**Why skipped:** out of scope for a frontmatter/docs audit — this is a real
+functional bug requiring either wiring an uploader into the recording path
+or making `storage_type` correctly reflect "local, even though S3 is
+configured" until that's built.
+
+(Found during: docs/plans frontmatter audit, 2026-07-20.)

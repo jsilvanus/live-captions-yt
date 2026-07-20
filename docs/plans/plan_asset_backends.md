@@ -99,7 +99,13 @@ screenshot) — reusing this code rather than the continuous screenshot→ffmpeg
 loop used for live overlays. The containerised `docker/lcyt-dsk-renderer` image
 covers the same path for isolated rendering.
 
-### Schema — new `thumbnails` table
+### Schema — new `dsk_thumbnails` table
+
+> **As implemented** (`packages/plugins/lcyt-dsk/src/db.js`, `src/db/thumbnails.js`) — the table
+> is named `dsk_thumbnails` (not `thumbnails`), the PNG path column is `storage_path` (not
+> `disk_filename`), and there is **no `broadcast_id` column** — the "cover thumbnail" linkage
+> described below in "Assets card + editor flow" and in "Cross-plan alignment" was not built.
+> Verified in code 2026-07-20; SQL below is the original design sketch, kept for context.
 
 ```sql
 CREATE TABLE IF NOT EXISTS thumbnails (
@@ -138,9 +144,10 @@ kept: the PNG is served fast; the template ref lets "Edit" reopen the source.
 The **Thumbnails** card lists rows with a small preview; **Create thumbnail**
 picks a template and renders; **Edit** opens the source template in the graphics
 editor (`/graphics/editor?template=:template_id`) and offers "re-render this
-thumbnail" on save. Because a thumbnail keeps `broadcast_id`, a broadcast can
-optionally carry a cover thumbnail (aligns with `plan_broadcasts.md`, without
-forcing it).
+thumbnail" on save. **Not implemented:** the `broadcast_id`-as-cover-thumbnail
+idea below was never built — `dsk_thumbnails` has no `broadcast_id` column, so
+a broadcast cannot carry a thumbnail as its cover image today (verified in code
+2026-07-20).
 
 ## Cross-plan alignment
 
@@ -148,7 +155,8 @@ forcing it).
   cards to real, backed cards (Rundowns folded into the Caption/rundown files
   card; Thumbnails its own card).
 - **`plan_broadcasts.md`** — `rundown_file_id` FK confirmed (caption_files,
-  `type='rundown'`); optional `broadcast_id` on thumbnails for a cover image.
+  `type='rundown'`); the optional `broadcast_id` on thumbnails for a cover image
+  was **not implemented** (see Part B note above).
 - **`plan_recording_vod.md`** — the remaining placeholder (Stored videos).
 
 ## Out of scope

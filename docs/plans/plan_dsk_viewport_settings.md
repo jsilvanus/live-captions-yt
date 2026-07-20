@@ -1,6 +1,13 @@
 # DSK Viewports v2 — Slug URLs, UI-Based Display Settings, Multi-Renderer Streaming, RTMP Colorkey
 
-**Status:** in-progress (Phases 1–3 implemented)
+**Status:** implemented (Phases 1–5) — project slugs (`api_keys.public_slug`, `project_slug_policy`),
+viewport display settings (`display_settings_json`), per-viewport multi-renderer streams
+(`renderer.js`'s `startViewportStream`/`stopViewportStream`/`listViewportStreams`), and RTMP
+colorkey compositing (`buildDskCompositeFilter` in `lcyt-rtmp/src/rtmp-manager.js`) are all present
+in code, verified 2026-07-20. Phase 4/5's live browser+ffmpeg capture path was flagged in-plan as
+needing manual validation beyond the unit-tested pure helpers — that caveat is unchanged, but all
+five phases' code is shipped, so "in-progress (Phases 1–3)" was stale against this file's own
+per-phase ✅ headings below.
 **Scope:** `packages/lcyt-backend` (api_keys slug, org slug policy, routes), `packages/plugins/lcyt-dsk` (schema, routes, renderer), `packages/lcyt-web` (`DskPage`, `DskViewportsPage`, `ProjectSettingsPage`), `packages/plugins/lcyt-rtmp` (`RtmpRelayManager` colorkey)
 
 ## Problem
