@@ -820,3 +820,30 @@ cameras/mixers are project-wide tables) — a small, mechanical follow-up, not a
 design question, whenever AI-tool-driven crop-follow parity is wanted.
 
 (Found during: `plan_vertical_crop.md` Phase 4 implementation, 2026-07-20.)
+
+---
+
+## No frontend UI to create/configure `ai_providers` rows — admin-side CRUD is API-only
+
+**Where:** `packages/plugins/lcyt-agent/src/routes/ai-providers-admin.js`,
+`packages/lcyt-web/src/components/setup-hub/AiRoleModelsSection.jsx`
+
+**Finding:** while building the Setup Hub AI role→model picker
+(`plan_ai_model_registry.md` Phase 3), confirmed the admin-level provider CRUD
+routes are fully implemented and tested — create/update/delete a provider,
+model discovery, per-project grants (`ai-providers-admin.js`) — but no page in
+`lcyt-web` ever calls any of them. `AiRoleModelsSection.jsx` reads providers via
+the project-scoped `GET /ai/providers` (providers already granted to the
+project) and shows an empty-state note when there are none, but there's no
+"add a provider" flow anywhere in the UI — a provider has to be created by a
+direct API call today, same shape of gap `plan_ai_model_registry.md`'s original
+Tier 1 line described for role config before this pass closed that half.
+
+**Why skipped:** out of scope for the Phase 3 task, which was scoped to wiring
+*existing* providers into role config, not building provider CRUD itself.
+Building it would need a new admin-facing page/section (provider list, create
+dialog with per-vendor auth fields, model-discovery trigger, per-project grant
+management) — a real, separately-schedulable chunk of UI work, not a small
+addition to the role-picker card.
+
+(Found during: `plan_ai_model_registry.md` Phase 3 implementation, 2026-07-20.)
