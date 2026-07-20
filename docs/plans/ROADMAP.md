@@ -11,6 +11,20 @@ can be done *at the same time* by independent agents without merge conflicts.
 
 Re-check `docs/PLANS.md` before acting on this document — it decays as work lands.
 
+> **Staleness note (added 2026-07-20, doc otherwise last dated 2026-07-18):** verified
+> against a full repo-wide audit of `docs/plans/*.md` completed today. **All seven Tier 3
+> rows below are now done** — every one shipped via `tmp_plan_tier3.md` on 2026-07-18,
+> the same day this document was written, so the "Suggested parallel dispatch" section's
+> pointer at Tier 3 as the next available work ("HLS `putObject`/`publicUrl` wiring, or
+> the DSK editor's rotation handle") is stale — both already shipped. Tiers 1 and 2 above
+> were already self-updating with "done" markers as of the 2026-07-18 text and remain
+> accurate. **The next real work is Tier 4** (`plan_translate.md`, `plan_mixer_feed_sources.md`,
+> `plan_live_variables.md`) — though note `plan_translate.md` itself was also partially
+> superseded on 2026-07-20 (its STT-gap motivation was closed by a different, simpler
+> mechanism in `lcyt-rtmp`; only the non-STT client-translation gap it describes is still
+> open) — plus Tier 5 (Postgres) whenever nothing else is in flight. Don't trust this
+> note either, indefinitely — re-derive from `docs/PLANS.md` per the line above.
+
 ---
 
 ## 0. Operational notes before dispatching parallel agents

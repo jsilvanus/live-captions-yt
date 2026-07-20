@@ -2,7 +2,7 @@
 id: plan/backend-split
 title: "lcyt-backend Modularization & Plugin Extraction Assessment"
 status: reference
-summary: "Structural analysis of lcyt-backend: plugin extraction complete (lcyt-rtmp, lcyt-dsk, lcyt-production, lcyt-files). Internal refactoring done (route group factories, DB module split). lcyt-translate plugin proposal remains exploratory."
+summary: "Structural analysis of lcyt-backend: plugin extraction complete for exactly 4 plugins traceable to this document — lcyt-rtmp, lcyt-dsk, lcyt-production (already extracted pre-analysis) and lcyt-files (recommended here as a candidate, later built via plan_files3.md, which cites this doc as its origin). docs/PLANS.md's index line for this file (lcyt-rtmp, lcyt-dsk, lcyt-agent, lcyt-music, lcyt-cues) is wrong — lcyt-agent/lcyt-music/lcyt-cues are unrelated plugins with their own separate plan docs, never discussed anywhere in this file. Internal refactoring done (route group factories, DB module split). The lcyt-translate plugin proposal was never built as designed; its STT gap was closed by a simpler mechanism inside lcyt-rtmp instead — see plan_translate.md's 2026-07-20 status note."
 ---
 
 # lcyt-backend — Modularization Assessment
@@ -349,9 +349,9 @@ Migrating fully to server-side translation is a separate future decision. Initia
 | Group routes into 3 sub-routers (`session/`, `account/`, `content/`) | Medium | Internal refactor | Small | ✅ Done |
 | Move DSK event/state out of `store.js` into DskBus | Low | Internal refactor | Small | ✅ Done |
 | Split `src/db/index.js` schema from barrel | Low | Internal refactor | Trivial | ✅ Done |
-| Extract caption file storage into `lcyt-files` plugin | Medium | Plugin | Medium | Pending (defer until S3 needed) |
-| Add server-side translation as `lcyt-translate` plugin | Medium | Plugin | Medium | Pending (prioritise for STT gap) |
+| Extract caption file storage into `lcyt-files` plugin | Medium | Plugin | Medium | ✅ Done — via `plan_files3.md` (local/S3/WebDAV adapters, `packages/plugins/lcyt-files`) |
+| Add server-side translation as `lcyt-translate` plugin | Medium | Plugin | Medium | Superseded — the STT gap was closed via `packages/plugins/lcyt-rtmp/src/translate-server.js` instead of a standalone plugin package; see `plan_translate.md`'s 2026-07-20 status note. The non-STT gap (API/generic/CLI clients with no server-side translation) remains open. |
 | Extract user/IAM cluster into `lcyt-authz` plugin | Not recommended | Plugin | Large | — |
 | Extract analytics into `lcyt-analytics` plugin | Not recommended | Plugin | Small | — |
 
-**The backend is not monolithic in a problematic sense.** The three internal refactors (route groups, DskBus, db split) are now done. Two new plugins are warranted by concrete upcoming needs: `lcyt-files` when S3 storage is needed, and `lcyt-translate` to close the translation gap for server-side STT. Both have clean injection points already defined in `captions.js` and `SttManager`.
+**The backend is not monolithic in a problematic sense.** The three internal refactors (route groups, DskBus, db split) are now done. Of the two candidate plugins this document proposed: `lcyt-files` shipped (via `plan_files3.md`), and `lcyt-translate`'s STT-gap motivation was satisfied without a new plugin package (see `plan_translate.md`). This document's own plugin-extraction scope is therefore fully resolved — 4 plugins total (`lcyt-rtmp`, `lcyt-dsk`, `lcyt-production`, `lcyt-files`), not the 5 currently listed in `docs/PLANS.md`'s index line for this file.
