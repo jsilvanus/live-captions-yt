@@ -79,7 +79,6 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 | `plan_ai_model_registry.md` | Phase 3 frontend: wire `provider_id`/`model_name` into the Setup Hub role-config UI (backend `resolveRoleProviderSettings()`/`invokeModelCall()` is done and tested) | Today a role's model can only be set by a direct API call. Fold in the Tier 0 decision about `AiModelsSection.jsx` — either delete-and-rebuild clean or repurpose its shell. Phase 4 ("deer" in-process runtimes) stays unscoped pending inspection of the actual `jsilvanus/deer` package APIs — don't start it speculatively. |
 | `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
 | `plan_vertical_crop.md` | Phase 4 (production-follow: `crop_source_map` → mixer-switch/PTZ-preset registry callbacks, `crop_preset` named-action/cue/tool), Phase 5 (ops/polish — `docker/lcyt-ffmpeg/Dockerfile` still has no `libzmq`, so live reposition falls back to restart-only in that image) | Schema, `CropManager`, `/crop` routes, live zmq repositioning, and the full operator UI (`/production/crop`) are done. This is backend-only (`lcyt-production`/`lcyt-rtmp`), no `lcyt-web` conflict with the AI-frontend lanes above. |
-| `plan_mcp.md` | Register the shared `lcyt-tools` registry inside `lcyt-mcp-stdio`/`lcyt-mcp-http` (the standalone MCP server packages) — they still don't expose it; only the in-process bridge (`POST /mcp` in `lcyt-backend`) does | Isolated to two small packages, no collision with anything else in this tier. |
 | `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
 
 ---
@@ -177,8 +176,6 @@ Non-overlapping lanes, grouped by package ownership per §0:
   before either lands, or sequence them.
 - **Lane 5 (`lcyt-production`/`lcyt-rtmp`, backend-only):** Tier 1's
   `plan_vertical_crop.md` Phase 4. No `lcyt-web` conflict with Lanes 3–4.
-- **Lane 6 (`lcyt-mcp-stdio`/`lcyt-mcp-http`, isolated):** Tier 1's `plan_mcp.md`
-  registry wiring.
 - **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 (new package, isolated):** Begin `plan_env_to_ui_settings.md` similarly —

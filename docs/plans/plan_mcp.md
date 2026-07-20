@@ -1,7 +1,7 @@
 ---
 id: plan/mcp
 title: "MCP Tools for lcyt"
-status: in-progress
+status: implemented
 summary: "Model Context Protocol servers for stdio and Streamable HTTP transports exposing caption, production, and DSK graphics tools to AI assistants. The original caption/production/DSK tool surface is implemented and unchanged. Implemented: packages/lcyt-tools, a shared tool-schema/handler registry (caption_target/camera/mixer/dsk_template/asset tools, destructiveHint/readOnlyHint annotations) registered on a real MCP Server, consumed in-process by lcyt-agent's agentic_chat roles over InMemoryTransport; and personal mcp_tokens credentials (table + routes + lcyt-mcp-http auth) so people can drive LCYT from their own Claude subscription outside the LCYT UI. The external-facing transport gap is now closed: the shared registry is exposed via an in-process Streamable HTTP MCP endpoint at POST /mcp inside lcyt-backend (see CONSIDER.md, resolved), and the Setup Hub MCP access card (McpAccessSection.jsx) ships the token-management UI."
 related: plan/ai_roles_framework, plan/agent
 ---
@@ -29,7 +29,7 @@ MCP support is implemented in the repository. The current surface area is:
   - `X-API-Key` for DSK tools
 - `lcyt-mcp-http`'s own `authenticate()` also accepts `X-Api-Key` directly against `api_keys`, scoping every tool call to that connection's project (`createMcpServer(apiKey)`) — confirmed as the existing, already-working per-project auth model this plan's `mcp_tokens` addition extends rather than replaces.
 
-## Implemented: a shared tool-schema module, used by in-app chat (external MCP wiring still pending)
+## Implemented: a shared tool-schema module, used by in-app chat and external clients
 
 `plan/ai_roles_framework` gives `lcyt-agent` five chat-with-tools roles (Setup Assistant, Asset Control Assistant, Planner Assistant, Graphics Editor Assistant, Production Assistant) that each need a tool-calling LLM turn against a project's real data (Setup Hub CRUD, `prod_cameras`/`prod_mixers`, DSK templates). Rather than that plan defining its own second tool-invocation mechanism alongside this one, every tool used by any `agentic_chat` role is defined **once**, here, and reused by both surfaces.
 
@@ -50,10 +50,10 @@ Tool ids match `ai_roles.available_tools`/`harness_config.toolAllowlist` from `p
 
 `packages/lcyt-tools`' `createToolRegistry({ db, captionTargets, production, agent, assets })` builds the tool list + handlers; `createInProcessMcpBridge(registry)` registers it on **one real `@modelcontextprotocol/sdk` `Server` instance** and connects an in-process **`Client`** to it over `InMemoryTransport.createLinkedPair()` — real `tools/list`/`tools/call` semantics (verified end-to-end in `test/in-process-bridge.test.js`), so the schema `lcyt-agent`'s turn loop sees is *exactly* the schema an external MCP client would see.
 
-- `lcyt-agent`'s composition root (`lcyt-backend/src/server.js`) is the only consumer wired up today: it builds the registry from `lcyt-backend`'s caption-target helpers, `lcyt-production`'s device CRUD/registry, `lcyt-dsk`'s image helpers, and the running `AgentEngine`, then wraps it in `createInProcessMcpBridge` for the `agentic_chat` turn loop.
-- `lcyt-mcp-stdio` / `lcyt-mcp-http` do **not** yet register this same `Server` object for external clients — that's the piece still pending. `lcyt-mcp-http` is a separate OS process with no in-process handle to the live `DeviceRegistry`/`BridgeManager`/`AgentEngine` instances these new tools need (unlike its existing production/graphics tools, which proxy over HTTP with a static global `X-Admin-Key`/`X-API-Key`, not the new registry's per-connection `apiKey` scoping) — see CONSIDER.md for the open architecture question (does a new MCP-reachable endpoint belong inside `lcyt-backend` itself, or does `lcyt-mcp-http` grow real in-process access) that needs resolving before that half is built.
+- `lcyt-agent`'s composition root (`lcyt-backend/src/server.js`) builds the registry from `lcyt-backend`'s caption-target helpers, `lcyt-production`'s device CRUD/registry, `lcyt-dsk`'s image helpers, and the running `AgentEngine`, then wraps it in `createInProcessMcpBridge` for the `agentic_chat` turn loop.
+- **`lcyt-mcp-stdio` / `lcyt-mcp-http` deliberately do not also register this registry.** The open architecture question this section used to flag (does the external-facing endpoint belong inside `lcyt-backend`, or does `lcyt-mcp-http` grow real in-process access to `DeviceRegistry`/`BridgeManager`/`AgentEngine`?) was resolved on 2026-07-12 — see CONSIDER.md's "packages/lcyt-tools's shared registry isn't wired into an external-facing MCP transport yet" entry (RESOLVED) — in favor of an in-process `POST /mcp` Streamable HTTP JSON-RPC endpoint inside `lcyt-backend` itself (`packages/lcyt-backend/src/routes/mcp-endpoint.js`, `plan_unified_external_control.md` Phase 1), backed by the same `_toolRegistry`, with per-tool scope enforcement, destructive-tool confirmation staging, rate limiting, and audit. `lcyt-mcp-stdio`/`lcyt-mcp-http` stay separate OS processes with no in-process handle to that live state, and were intentionally *not* grown a second, weaker path to the same tools.
 
-Once that gap closes, the original design goal holds structurally already: build the tool-calling mechanism once, as real MCP, so both "in-app agentic chat" and "external AI client, outside our UI" get it from the same schema, rather than a second bespoke protocol only the in-app chat could ever use.
+The original design goal holds structurally: the tool-calling mechanism is built once, as real MCP, so both "in-app agentic chat" (in-process bridge) and "external AI client, outside our UI" (`POST /mcp`) get it from the same schema — the second surface just lives inside `lcyt-backend` rather than inside the standalone stdio/HTTP server packages.
 
 ### Tool annotations: the external-client equivalent of a confirm dialog
 
