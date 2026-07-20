@@ -202,4 +202,3 @@ When `features` is included alongside `action`, features are updated for all mat
       `AdminUsersPage.jsx`/`AdminProjectsPage.jsx`/`AdminUserDetailPage.jsx`/`AdminProjectDetailPage.jsx`.
 - [x] Real-time live-stats dashboard — delivered separately by `plan_metering_audit.md`
       (`AdminMetricsPage.jsx`, `GET /admin/metrics/live`), not this plan.
-- [ ] Real-time admin dashboard with live stats
