@@ -2,8 +2,8 @@
 id: plan/mediamtx
 title: "MediaMTX Integration"
 status: implemented
-summary: "Opt-in MediaMTX media broker as alternative to ffmpeg-based RTMP/HLS flows; NginxManager for slug-based public URLs."
-supersedes: "plan/rtmp (partially: RTMP ingest and HLS distribution path replaced by MediaMTX for radio/HLS mode)"
+summary: "MediaMTX media broker, now the sole (no-fallback) backend for radio/audio-HLS and stream previews and the default for video HLS; RTMP relay fan-out/CEA-708/DSK still run via ffmpeg with MediaMTX as an optional target broker. NginxManager for slug-based public URLs."
+supersedes: "plan/rtmp (radio/audio-HLS §1a and stream previews §2b are now fully replaced — no ffmpeg fallback remains in radio-manager.js/preview-manager.js; video HLS §2a defaults to MediaMTX too, with ffmpeg passthrough only when explicitly configured. RTMP relay fan-out §3a-3e, CEA-708 §3e, and DSK overlay §3c remain ffmpeg-driven in RtmpRelayManager, with MediaMTX available there only as an optional per-relay target broker)"
 ---
 
 # MediaMTX Integration Plan
@@ -133,6 +133,19 @@ assert.calledWith(mockClient.kickPath, 'mykey');
 ```
 
 ### Remaining work
+
+> **Status update (2026-07-20):** The items below describe the originally-planned mechanism
+> (`RTMP_RELAY_TYPE=mediamtx`, `MEDIAMTX_RTMP_URL`/`MEDIAMTX_RTMP_APP`). That specific env-var
+> design was never built; the codebase instead gates every manager on whether a `MediaMtxClient`
+> is present (constructor-injected or auto-created from `MEDIAMTX_API_URL` in
+> `packages/plugins/lcyt-rtmp/src/api.js`). Under that actual mechanism the work below is done and
+> then some: `RtmpRelayManager` (plain relay, CEA-708, transcode, and DSK-out all branch on
+> `this._mediamtx`), `RadioManager` and `PreviewManager` (MediaMTX-only, no ffmpeg fallback at
+> all), `HlsManager` (MediaMTX by default), and `CropManager`/named-feed relay sourcing (which
+> *require* MediaMTX — no fallback exists for those). `packages/lcyt-bridge/src/bridge.js` was not
+> touched and has no MediaMTX-awareness — bridge/production hardware control is a separate control
+> plane from the media path this plan covers, so that item no longer applies. The list below is
+> kept for historical context only.
 
 - `packages/plugins/lcyt-rtmp/src/rtmp-manager.js`
   - Add `MEDIAMTX_RTMP_URL` / `MEDIAMTX_RTMP_APP` env var support so `start()` composes the push
