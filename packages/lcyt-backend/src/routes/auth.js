@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { createUser, getUserByEmail, getUserById, updateUserPassword, updateUser, getUserAccountExport, deleteOwnedProjectsForUser, deleteUserAccount } from '../db/users.js';
 import { provisionDefaultUserFeatures } from '../db/project-features.js';
-import { getMemberAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
 import { createUserAuthMiddleware } from '../middleware/user-auth.js';
 import { writeAuditLog } from '../db/audit-log.js';
 import { getMetricsInstance } from '../metrics/index.js';
@@ -168,7 +168,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
       return res.status(400).json({ error: 'projectId is required' });
     }
-    const accessLevel = getMemberAccessLevel(db, projectId.trim(), req.user.userId);
+    const accessLevel = getEffectiveProjectAccessLevel(db, projectId.trim(), req.user.userId);
     if (!accessLevel) {
       return res.status(403).json({ error: 'Not a project member' });
     }

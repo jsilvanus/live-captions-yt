@@ -152,6 +152,10 @@ export function initDb(dbPath) {
   if (!existingCols.has('graphics_enabled'))  db.exec('ALTER TABLE api_keys ADD COLUMN graphics_enabled INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('user_id'))           db.exec('ALTER TABLE api_keys ADD COLUMN user_id INTEGER REFERENCES users(id)');
   if (!existingCols.has('org_id'))            db.exec('ALTER TABLE api_keys ADD COLUMN org_id INTEGER REFERENCES organizations(id)');
+  // Escape hatch from org-baseline access (plan_team_org_backend.md): when 1, org
+  // membership alone grants no baseline access to this project — only explicit
+  // project_members rows do. Irrelevant for org_id-less (personal) projects.
+  if (!existingCols.has('restricted'))        db.exec('ALTER TABLE api_keys ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0');
   // RTMP/relay extension columns (used by lcyt-rtmp plugin; kept here so createKey always works)
   if (!existingCols.has('relay_allowed'))     db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');

@@ -101,7 +101,6 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 
 | Plan | What's left | Why it matters |
 |---|---|---|
-| `plan_team_org_backend.md` | `getEffectiveProjectAccessLevel()` org-baseline-plus-project-override resolver, and the sweep of existing per-project auth checks (`project-features.js`, `keys.js`, `device-roles.js`, `middleware/project-access.js`) onto it | The `/team` org UI and CRUD are fully live, but org membership today grants **zero** baseline access to any individual project's resources (captions, DSK, cues, STT, etc.) — only to org-level surfaces. A user can be shown as a team member and still be locked out of every project the team owns. This is the single most consequential gap in the whole backlog because it's a half-shipped, user-facing feature, not a deferred nice-to-have. Auth-sensitive — scope carefully, needs its own full route-level test pass, probably shouldn't run in parallel with other `lcyt-backend` auth-adjacent work. |
 | `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
 | `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
 
@@ -187,10 +186,12 @@ Non-overlapping lanes, grouped by package ownership per §0:
 
 - **Lane 1 (isolated, small):** Tier 0's recording/S3 bug — `lcyt-backend`
   (`db/videos.js`, `routes/live.js`) + `lcyt-files` S3 adapter reuse.
-- **Lane 2 (auth-sensitive, run solo within `lcyt-backend`):** Tier 1's
-  `plan_team_org_backend.md` resolver — touches `middleware/project-access.js` and
-  several route files; don't pair with another `lcyt-backend` auth-adjacent lane in
-  the same batch.
+- **Lane 2 (auth-sensitive, `lcyt-backend`):** `plan_team_org_backend.md`'s
+  `getEffectiveProjectAccessLevel()` resolver — **done.** Landed on
+  `middleware/project-access.js`, `routes/project-features.js`,
+  `routes/device-roles.js`, `routes/project-slug.js`,
+  `routes/project-observability.js`, and `routes/auth.js`'s
+  `POST /auth/project-token`, plus the `api_keys.restricted` escape-hatch column.
 - **Lane 4 (`lcyt-web`, Setup Hub / Assets — chat panels):** Tier 1's
   `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. Lane 3 (the AI
   model picker, `plan_ai_model_registry.md` Phase 3 frontend) already landed —

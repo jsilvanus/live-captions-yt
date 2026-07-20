@@ -19,7 +19,7 @@ import {
   applyFeatureDeps,
   resolveFeaturePolicy,
 } from '../db/project-features.js';
-import { getMemberAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 
@@ -74,7 +74,7 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
     const row = getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
 
-    const level = getMemberAccessLevel(db, req.params.key, user.userId);
+    const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
     if (!level) return res.status(403).json({ error: 'Not a project member' });
 
     return _listFeatures(db, req, res);
@@ -93,7 +93,7 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
     const row = getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
     if (row.user_id !== user.userId) {
-      const level = getMemberAccessLevel(db, req.params.key, user.userId);
+      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (level !== 'owner' && level !== 'admin') {
         return res.status(403).json({ error: 'settings-manager permission required' });
       }
@@ -115,7 +115,7 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
     const row = getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
     if (row.user_id !== user.userId) {
-      const level = getMemberAccessLevel(db, req.params.key, user.userId);
+      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (level !== 'owner' && level !== 'admin') {
         return res.status(403).json({ error: 'settings-manager permission required' });
       }
