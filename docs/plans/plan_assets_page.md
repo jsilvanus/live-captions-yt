@@ -2,7 +2,7 @@
 id: plan/assets_page
 title: "Assets Page — Content Library of Project Assets"
 status: implemented
-summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit affordance opening the relevant editor/dialog, and clickable rows. v1 ships six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. Broadcasts are now a first-class /broadcasts system, VODs are a future dedicated system that stays placeholder-only, and thumbnail generation is part of the graphics pipeline rather than a separate tracked asset."
+summary: "Rebuilds /assets from a placeholder count-tile grid into a SetupCard/SetupItemRow-style content library. Distinguishes Setup (infra every broadcast needs) from Assets (the actual video content a project produces and reuses). Cards render real item rows with a top-right edit affordance opening the relevant editor/dialog, and clickable rows. v1 shipped six real, backed cards (Graphics, Global cues, Global actions, Icons, Caption/rundown files, Broadcasts) plus dashed placeholder cards for un-backed types (Stored videos, Thumbnails, Rundowns). Completed translations are folded into Caption files as a language badge, not a separate card. Broadcasts are now a first-class /broadcasts system; Stored videos and Thumbnails have since gained real backends (plan_recording_vod.md's `videos` table + plan_asset_backends.md's DSK thumbnail flows) and are no longer placeholder cards — AssetsPage.jsx now renders 8 real cards with no dashed placeholders left; Rundowns never became its own card, folding into Caption/rundown files as this plan originally noted it might."
 related: plan/dashboard_console_redesign, plan/ai_roles_framework, plan/cues, plan/selfservice_config_backend
 ---
 
@@ -74,9 +74,9 @@ wanted later (e.g. thumbnail previews for Icons/Graphics), it can be added to
 | **Icons** | Reusable | `icons` | icons route | `/setup/icons` | ✅ |
 | **Caption / rundown files** | Produced | `caption_files` | `GET /file` | `/captions` | ✅ (a translation is a file with a `lang` badge — decision 2) |
 | **Broadcasts** | Produced | `broadcasts` | `GET /broadcasts` | read-only + Watch-on-YouTube link | ✅ |
-| **Stored videos** | Produced | `videos` table (recording pipeline) | `GET /videos` | HLS player | 🔜 backend in `plan_recording_vod.md` (dedicated VOD system) |
-| **Thumbnails** | Reusable | `thumbnails` table (DSK render) | `GET /:key/thumbnails` | `/graphics/editor` | 🔜 backend in `plan_asset_backends.md` (thumbnail generation is now part of the graphics pipeline) |
-| **Rundowns** | Produced | `caption_files` (`type='rundown'`) | `GET /file?type=rundown` | `/planner` | 🔜 backend in `plan_asset_backends.md` (folds into the Caption/rundown files card) |
+| **Stored videos** | Produced | `videos` table (recording pipeline) | `GET /videos` | HLS player (`/videos`) | ✅ shipped via `plan_recording_vod.md` (phase 1) — real card, no longer placeholder |
+| **Thumbnails** | Reusable | `thumbnails` table (DSK render) | `GET /:key/thumbnails` | `/graphics/editor` | ✅ shipped via `plan_asset_backends.md` (thumbnail generation is part of the graphics pipeline) — real card, no longer placeholder |
+| **Rundowns** | Produced | `caption_files` (`type='rundown'`) | `GET /file?type=rundown` | `/planner` | Folded into the Caption/rundown files card as this plan anticipated — never became its own card |
 
 > **Update:** the three "placeholder" cards below now have accepted backend
 > plans — `plan_asset_backends.md` (Rundowns, Thumbnails) and

@@ -1,6 +1,6 @@
 ---
 id: plan/broadcasts_next
-title: "Broadcasts — "
+title: "Broadcasts — Activatable Broadcast + Unified Planner File-Management Panel"
 status: implemented
 summary: "Next step after broadcasts entity: Activatable broadcast + unified Planner file-management panel + DSK graphics browser, header context, production status controls"
 related: plan/broadcasts
