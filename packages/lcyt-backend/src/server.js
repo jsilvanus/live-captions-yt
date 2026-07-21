@@ -286,7 +286,7 @@ const graphicsEnabled = settings.get('graphics.enabled');
 let _dskCaptionProcessor = null;
 let stopDsk = async () => {};
 if (graphicsEnabled) {
-  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics }));
+  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics, settings }));
 }
 
 // Background metric pollers: storage gauges, MediaMTX egress deltas, and
@@ -481,7 +481,7 @@ const userAuth = createUserAuthMiddleware(jwtSecret);
 // subscribers use the unified `/events/stream` instead.
 const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, { metrics });
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, { metrics, settings });
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));

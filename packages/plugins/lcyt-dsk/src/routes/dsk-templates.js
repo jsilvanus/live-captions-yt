@@ -54,6 +54,31 @@ const DSK_RTMP_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9 _-]{0,63}$/;
 const THUMBNAIL_ROOT = process.env.DSK_THUMBNAILS_DIR || resolve(process.cwd(), 'data', 'dsk-thumbnails');
 const DSK_LOCAL_SERVER = (process.env.DSK_LOCAL_SERVER || process.env.DSK_PAGE_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+
+/**
+ * Resolve the local RTMP base, preserving the legacy DSK_LOCAL_RTMP →
+ * RADIO_LOCAL_RTMP → literal-default fallback chain (same helper as
+ * dsk-rtmp.js — duplicated rather than imported to keep this plugin's
+ * modules independent, matching this file's existing "matches the env vars
+ * used by dsk-rtmp.js" convention above).
+ * @param {{ get: (key: string) => *, source: (key: string) => string }} [settings]
+ */
+function resolveDskLocalRtmp(settings) {
+  if (!settings) return LOCAL_RTMP_BASE;
+  if (settings.source('graphics.dsk_local_rtmp') !== 'default') return settings.get('graphics.dsk_local_rtmp');
+  return settings.get('media.radio_local_rtmp');
+}
+
+/**
+ * Resolve the renderer's local server URL, preserving the legacy
+ * DSK_LOCAL_SERVER → DSK_PAGE_BASE_URL → literal-default fallback chain.
+ * @param {{ get: (key: string) => *, source: (key: string) => string }} [settings]
+ */
+function resolveDskLocalServer(settings) {
+  if (!settings) return DSK_LOCAL_SERVER;
+  if (settings.source('graphics.dsk_local_server') !== 'default') return settings.get('graphics.dsk_local_server').replace(/\/$/, '');
+  return (settings.get('graphics.dsk_page_base_url') || 'http://localhost:3000').replace(/\/$/, '');
+}
 const thumbnailRateLimit = rateLimit({
   windowMs: 60_000,
   max: 60,
@@ -79,8 +104,11 @@ function makeThumbnailFilename(name) {
   return `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
 }
 
-export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics = null) {
+export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics = null, settings = null) {
   const router = Router();
+  const localRtmpBase = resolveDskLocalRtmp(settings);
+  const dskRtmpApp = settings ? settings.get('graphics.dsk_rtmp_app') : DSK_RTMP_APP;
+  const localServerUrl = resolveDskLocalServer(settings);
   const combinedAuth = editorAuthOrBearer(auth, editorAuth);
 
   // Verify that the token owner matches the URL apikey (prevents cross-key access).
@@ -308,7 +336,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     }
 
     try {
-      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: widthPx, height: heightPx });
+      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: localServerUrl, width: widthPx, height: heightPx });
       const dir = thumbnailStorageDir(apiKey);
       const fileName = makeThumbnailFilename(name);
       const fullPath = join(dir, fileName);
@@ -367,7 +395,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     }
 
     try {
-      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: DSK_LOCAL_SERVER, width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
+      const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: localServerUrl, width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
       const dir = thumbnailStorageDir(apiKey);
       const fileName = makeThumbnailFilename(name || existing.name || 'thumbnail');
       const fullPath = join(dir, fileName);
@@ -430,7 +458,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
           slug, viewport,
           dimensions: { width: vp.width, height: vp.height },
           displaySettings,
-          rtmpBase: LOCAL_RTMP_BASE, rtmpApp: DSK_RTMP_APP,
+          rtmpBase: localRtmpBase, rtmpApp: dskRtmpApp,
           pushUrls: displaySettings?.stream?.pushUrls ?? [],
         });
         return res.json({ ok: true, viewport });
@@ -440,9 +468,9 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
       }
     }
 
-    const rtmpUrl = `${LOCAL_RTMP_BASE}/${DSK_RTMP_APP}/${apiKey}`;
+    const rtmpUrl = `${localRtmpBase}/${dskRtmpApp}/${apiKey}`;
     try {
-      await startRtmpStream(apiKey, LOCAL_RTMP_BASE, DSK_RTMP_APP);
+      await startRtmpStream(apiKey, localRtmpBase, dskRtmpApp);
       // Wire the Playwright RTMP output directly into the relay overlay pipeline.
       if (relayManager) {
         await relayManager.setDskRtmpSource(apiKey, rtmpUrl);

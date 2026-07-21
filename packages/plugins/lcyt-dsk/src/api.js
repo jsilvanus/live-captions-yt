@@ -45,9 +45,11 @@ export { deleteAllImages, listImages, getImageByKey, updateImageSettings, delete
  * @param {import('better-sqlite3').Database} db
  * @param {object} dskBus  — DskBus instance (addDskSubscriber / emitDskEvent / graphics state)
  * @param {object|null} relayManager  — RtmpRelayManager instance (or null if relay inactive)
+ * @param {{ metrics?: object, settings?: { get: (key: string) => * } }} [opts] -
+ *   settings is lcyt-backend's SettingsService (plan_env_to_ui_settings.md), duck-typed
  * @returns {Promise<{ captionProcessor: Function, stop: Function }>}
  */
-export async function initDskControl(db, dskBus, relayManager, { metrics = null } = {}) {
+export async function initDskControl(db, dskBus, relayManager, { metrics = null, settings = null } = {}) {
   runMigrations(db);
   if (metrics) {
     const { setFfmpegAccountingSink } = await import('./ffmpeg-accounting.js');
@@ -65,22 +67,24 @@ export async function initDskControl(db, dskBus, relayManager, { metrics = null 
  * @param {object} dskBus  — DskBus instance
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager
- * @param {{ metrics?: object }} [opts] — optional backend metrics handle
- *   (plan_metering_audit §3.2: dsk.template_activations / dsk.broadcasts)
+ * @param {{ metrics?: object, settings?: { get: (key: string) => * } }} [opts] —
+ *   optional backend metrics handle (plan_metering_audit §3.2:
+ *   dsk.template_activations / dsk.broadcasts) and lcyt-backend's
+ *   SettingsService (plan_env_to_ui_settings.md, duck-typed)
  * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
-export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null } = {}) {
+export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null, settings = null } = {}) {
   const editorAuth = createEditorAuth(db);
   return {
     /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, dskBus),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics, settings),
     /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
     dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth)),
     /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */
-    imagesRouter: createImagesRouter(db, editorAuthOrBearer(auth, editorAuth)),
+    imagesRouter: createImagesRouter(db, editorAuthOrBearer(auth, editorAuth), settings),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */
-    dskRtmpRouter: createDskRtmpRouter(db, relayManager),
+    dskRtmpRouter: createDskRtmpRouter(db, relayManager, settings),
   };
 }

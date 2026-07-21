@@ -50,6 +50,8 @@ const TIER_A = [
   { key: 'bootstrap.metrics_token', env: 'METRICS_TOKEN', type: 'secret', default: '', secret: true, category: 'bootstrap', description: 'Bearer token required for GET /metrics; endpoint 404s when unset.' },
   { key: 'bootstrap.ffmpeg_wrapper', env: 'FFMPEG_WRAPPER', type: 'string', default: '', category: 'bootstrap', description: 'Custom ffmpeg wrapper script path (executed).' },
   { key: 'bootstrap.ffmpeg_image', env: 'FFMPEG_IMAGE', type: 'string', default: '', category: 'bootstrap', description: 'Docker image reference for ffmpeg when FFMPEG_RUNNER=docker.' },
+  { key: 'bootstrap.dsk_renderer_image', env: 'DSK_RENDERER_IMAGE', type: 'string', default: 'lcyt-dsk-renderer:latest', category: 'bootstrap', description: 'Docker image reference for the DSK renderer container (lcyt-dsk/src/renderer-container.js).' },
+  { key: 'bootstrap.dsk_thumbnails_dir', env: 'DSK_THUMBNAILS_DIR', type: 'string', default: '', category: 'bootstrap', description: 'Directory for DSK template thumbnail images.' },
   { key: 'bootstrap.playwright_dsk_chromium', env: 'PLAYWRIGHT_DSK_CHROMIUM', type: 'string', default: '', category: 'bootstrap', description: 'Path to the Chromium binary used by the DSK Playwright renderer.' },
   { key: 'bootstrap.google_application_credentials', env: 'GOOGLE_APPLICATION_CREDENTIALS', type: 'string', default: '', category: 'bootstrap', description: 'Path to a Google service-account JSON file (OAuth2 STT).' },
   { key: 'bootstrap.nginx_radio_config_path', env: 'NGINX_RADIO_CONFIG_PATH', type: 'string', default: '', category: 'bootstrap', description: 'Path to the nginx include file NginxManager writes; empty = no-op mode.' },
@@ -157,6 +159,7 @@ const TIER_B = [
   { key: 'graphics.max_file_bytes', env: 'GRAPHICS_MAX_FILE_BYTES', type: 'int', default: 5 * 1024 * 1024, category: 'graphics', apply: 'hot', description: 'Max uploaded image size in bytes.' },
   { key: 'graphics.max_storage_bytes', env: 'GRAPHICS_MAX_STORAGE_BYTES', type: 'int', default: 50 * 1024 * 1024, category: 'graphics', apply: 'hot', description: 'Max total image storage per key in bytes.' },
   { key: 'graphics.dsk_local_server', env: 'DSK_LOCAL_SERVER', type: 'string', default: '', category: 'graphics', apply: 'restart', description: 'Local server URL used by the DSK renderer. Captured at module load — restart required.' },
+  { key: 'graphics.dsk_page_base_url', env: 'DSK_PAGE_BASE_URL', type: 'string', default: '', category: 'graphics', apply: 'restart', description: "Base URL the renderer loads per-viewport display pages from (/dsk/<slug>/<viewport>); falls back to graphics.dsk_local_server. Not in the original lcyt-backend/CLAUDE.md table (documented only in lcyt-dsk's own CLAUDE.md) — added once the actual read sites were checked." },
   { key: 'graphics.dsk_local_rtmp', env: 'DSK_LOCAL_RTMP', type: 'string', default: 'rtmp://127.0.0.1:1935', category: 'graphics', apply: 'manager', description: 'Local nginx-rtmp base URL for DSK RTMP output.' },
   { key: 'graphics.dsk_rtmp_app', env: 'DSK_RTMP_APP', type: 'string', default: 'dsk', category: 'graphics', apply: 'manager', description: "RTMP application name for DSK renderer output. Code default is 'dsk' — packages/lcyt-backend/CLAUDE.md's table incorrectly said 'live' before this was checked against every actual read site." },
 

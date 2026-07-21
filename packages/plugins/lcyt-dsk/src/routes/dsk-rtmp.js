@@ -38,12 +38,28 @@ const DEFAULT_DSK_APP    = process.env.DSK_RTMP_APP   || 'dsk';
 const API_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
 
 /**
+ * Resolve the local RTMP base, preserving the legacy DSK_LOCAL_RTMP →
+ * RADIO_LOCAL_RTMP → literal-default fallback chain: graphics.dsk_local_rtmp
+ * only "wins" over media.radio_local_rtmp when it was actually set (env or
+ * DB), not just resolved to its own registry default.
+ * @param {{ get: (key: string) => *, source: (key: string) => string }} [settings]
+ */
+function resolveDskLocalRtmp(settings) {
+  if (!settings) return DEFAULT_LOCAL_RTMP;
+  if (settings.source('graphics.dsk_local_rtmp') !== 'default') return settings.get('graphics.dsk_local_rtmp');
+  return settings.get('media.radio_local_rtmp');
+}
+
+/**
  * Build the local RTMP URL for a DSK stream.
  * @param {string} apiKey
+ * @param {{ get: (key: string) => *, source: (key: string) => string }} [settings]
  * @returns {string}
  */
-function dskSourceUrl(apiKey) {
-  return `${DEFAULT_LOCAL_RTMP}/${DEFAULT_DSK_APP}/${apiKey}`;
+function dskSourceUrl(apiKey, settings = null) {
+  const localRtmp = resolveDskLocalRtmp(settings);
+  const dskApp = settings ? settings.get('graphics.dsk_rtmp_app') : DEFAULT_DSK_APP;
+  return `${localRtmp}/${dskApp}/${apiKey}`;
 }
 
 /**
@@ -65,9 +81,11 @@ function resolveApiKeyFromIngestStreamKey(db, name) {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {{ get: (key: string) => *, source: (key: string) => string }} [settings] -
+ *   lcyt-backend's SettingsService (plan_env_to_ui_settings.md), duck-typed.
  * @returns {Router}
  */
-export function createDskRtmpRouter(db, relayManager) {
+export function createDskRtmpRouter(db, relayManager, settings = null) {
   const router = Router();
 
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
@@ -93,7 +111,7 @@ export function createDskRtmpRouter(db, relayManager) {
     }
 
     const apiKey = resolveApiKeyFromIngestStreamKey(db, name);
-    const rtmpUrl = dskSourceUrl(apiKey);
+    const rtmpUrl = dskSourceUrl(apiKey, settings);
 
     if (call === 'publish') {
       // Phase 5: key the program composite with the composite viewport's chromaKey (if any).
