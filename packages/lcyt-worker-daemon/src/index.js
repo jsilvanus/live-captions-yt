@@ -6,6 +6,7 @@ import { makeFifo, createFifoWriter } from 'lcyt-backend/ffmpeg/pipe-utils';
 
 import createUploader from './uploader.js';
 import { createS3UploadFn } from './s3-uploader.js';
+import { createPerceptionJob } from './perception-job.js';
 
 const DEFAULT_PORT = process.env.PORT || 5000;
 const WORKER_ID = process.env.WORKER_ID || 'worker-0';
@@ -221,6 +222,28 @@ export function createApp() {
       workerId: WORKER_ID
     };
     jobs.set(jobId, record);
+
+    // Perception jobs (plan_video_perception.md Phase 2 Stream B) are a
+    // distinct job type dispatched to the same /jobs endpoint — no ffmpeg
+    // subprocess, no fifo/uploader wiring, so they branch out early rather
+    // than threading `plan.type` checks through the ffmpeg-specific code
+    // below (which stays exactly as it was for the default/`ffmpeg` type).
+    if (plan.type === 'perception') {
+      try {
+        const runner = createPerceptionJob(plan, jobId);
+        runner.start();
+        record.runner = runner;
+        record.status = 'running';
+        record.startedAt = Date.now();
+      } catch (err) {
+        record.status = 'error';
+        record.error = err && err.message;
+        jobs.delete(jobId);
+        console.error(`perception job ${jobId} failed to start:`, err && err.message);
+        return res.status(502).json({ error: 'failed to start job', message: err && err.message });
+      }
+      return res.json({ jobId, workerId: WORKER_ID });
+    }
 
     // If in test mode, don't spawn a real process
     if (process.env.NODE_ENV === 'test') {

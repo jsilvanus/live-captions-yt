@@ -17,6 +17,8 @@ import { createCamerasRouter } from './routes/cameras.js';
 import { createMixersRouter } from './routes/mixers.js';
 import { createBridgeRouter } from './routes/bridge.js';
 import { createEncodersRouter } from './routes/encoders.js';
+import { createPerceptionManager, isPerceptionDispatchAvailable, SHARED_FEED_CAMERA_ID } from './perception-manager.js';
+import { DEFAULT_PREVIEW_BASE_URL } from './camera-thumbnail.js';
 
 /**
  * Run DB migrations and start the device registry and bridge manager.
@@ -68,6 +70,7 @@ export async function initProductionControl(db, { settings = null } = {}) {
  * @param {object} [opts.cameraThumbnail]  Overrides for camera-thumbnail.js's defaults (thumbnailsDir/previewBaseUrl) — tests only, env vars suffice in production
  * @param {object} [opts.metrics]  Optional backend metrics handle (plan_metering_audit §3.2: production.commands)
  * @param {import('express').RequestHandler} [opts.auth]  Session/user/device auth middleware (createProjectAccessMiddleware) applied to the camera CRUD routes (plan_ingest_feeds.md's cross-tenant review finding) and the mixer routes (plan_vertical_crop.md §4 — a mixer switch needs the acting session's apiKey to report to registry.onProgramChanged()); WHIP/thumbnail/sources kiosk routes stay unauthenticated in both routers. Omit to keep this router's historical fully-open behavior (e.g. existing route-level tests).
+ * @param {ReturnType<typeof createPerceptionManager>} [opts.perceptionManager]  fps30 tracker job dispatch (plan_video_perception.md Phase 2) — omit to 503 the /cameras/:id/perception/* routes (e.g. tests, or a deployment with no ORCHESTRATOR_URL/WORKER_DAEMON_URL configured)
  * @returns {import('express').Router}
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
@@ -90,7 +93,7 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
     next();
   });
 
-  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: opts.cameraThumbnail, auth: opts.auth }));
+  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: opts.cameraThumbnail, auth: opts.auth, perceptionManager: opts.perceptionManager }));
   router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, auth: opts.auth }));
   router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl));
   router.use('/encoders', createEncodersRouter(db, bridgeManager));
@@ -100,6 +103,9 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
 
 // Re-export OBSClient for use by bridge and adapters
 export { OBSClient };
+
+// fps30 tracker subsystem job dispatch (plan_video_perception.md Phase 2/3)
+export { createPerceptionManager, isPerceptionDispatchAvailable, SHARED_FEED_CAMERA_ID, DEFAULT_PREVIEW_BASE_URL };
 
 // Plain, directly-callable camera/mixer CRUD (for packages/lcyt-tools — plan/mcp)
 export {

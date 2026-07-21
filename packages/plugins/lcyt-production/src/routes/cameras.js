@@ -32,6 +32,7 @@ function isUnauthenticatedCameraRoute(path) {
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {
   const mediamtxClient = opts.mediamtxClient ?? null;
   const cameraThumbnailOpts = opts.cameraThumbnail ?? {};
+  const perceptionManager = opts.perceptionManager ?? null;
   // Real session/user/device auth (createProjectAccessMiddleware, same as
   // every other project-scoped router) — optional so existing route-level
   // tests that construct this router directly keep working unauthenticated
@@ -307,6 +308,52 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
       res.status(status).json({ error: err.message });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // fps30 tracker subsystem dispatch (plan_video_perception.md Phase 2)
+  // -------------------------------------------------------------------------
+
+  // POST /production/cameras/:id/perception/start — start a per-camera
+  // perception job on the compute orchestration layer. Dedicated-feed
+  // cameras only (needs a cameraKey) — shared/mixer-only cameras are
+  // Phase 3's job, not this route's.
+  router.post('/:id/perception/start', async (req, res) => {
+    if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+
+    const camera = parseCamera(row);
+    const apiKey = req.session?.apiKey ?? row.owner_api_key ?? null;
+    if (!apiKey) return res.status(400).json({ error: 'No apiKey available for this camera (unowned camera needs an authenticated session)' });
+
+    try {
+      const result = await perceptionManager.start(apiKey, camera, { emitIntervalMs: req.body?.emitIntervalMs });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      if (err.code === 'NOT_CONFIGURED') return res.status(503).json({ error: err.message });
+      if (err.code === 'NO_FEED') return res.status(400).json({ error: err.message });
+      res.status(502).json({ error: 'Failed to start perception job', message: err.message });
+    }
+  });
+
+  // POST /production/cameras/:id/perception/stop
+  router.post('/:id/perception/stop', async (req, res) => {
+    if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+
+    const stopped = await perceptionManager.stop(req.params.id);
+    res.json({ ok: true, stopped });
+  });
+
+  // GET /production/cameras/:id/perception/status
+  router.get('/:id/perception/status', (req, res) => {
+    if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+
+    res.json({ ok: true, status: perceptionManager.status(req.params.id) });
   });
 
   // -------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 ---
-status: reference
-summary: "Phase-planning pass for docs/plans/ROADMAP.md's Lane 9 (plan_video_perception.md Phases 1-3), produced 2026-07-20 per ROADMAP's own note that this is the biggest single scope item in Tier 2 and needs a /phase-planning pass before dispatch, not a single-shot agent lane. Turns the plan's high-level 'Suggested phase order' into concrete, package-grounded phases/streams/sync points, verified against current source (prod_cameras migration pattern in lcyt-production/src/db.js, EventBus in lcyt/src/event-bus.js, RolesBus in lcyt-agent, CueEngine's already-inert track_state listener in lcyt-cues, worker-daemon's single hardcoded ffmpeg job type). One correction to ROADMAP's Lane 9 package tag: World State + its new tables belong in lcyt-agent as ROADMAP says, but the camera/preset metadata columns belong in lcyt-production (prod_cameras is owned there) — Phase 1 is two-package, not one. Confirms Phase 1 has no blocker and Phase 3's dependency (plan_vertical_crop.md Phase 4's onProgramChanged/onCameraPresetRecalled) is now available as plain callbacks in lcyt-production's DeviceRegistry — EventBus promotion is recommended before Phase 3, not a hard blocker."
+status: implemented
+summary: "Phase-planning pass for docs/plans/ROADMAP.md's Lane 9 (plan_video_perception.md Phases 1-3), produced 2026-07-20 per ROADMAP's own note that this is the biggest single scope item in Tier 2 and needs a /phase-planning pass before dispatch, not a single-shot agent lane. Turns the plan's high-level 'Suggested phase order' into concrete, package-grounded phases/streams/sync points, verified against current source (prod_cameras migration pattern in lcyt-production/src/db.js, EventBus in lcyt/src/event-bus.js, RolesBus in lcyt-agent, CueEngine's already-inert track_state listener in lcyt-cues, worker-daemon's single hardcoded ffmpeg job type). One correction to ROADMAP's Lane 9 package tag: World State + its new tables belong in lcyt-agent as ROADMAP says, but the camera/preset metadata columns belong in lcyt-production (prod_cameras is owned there) — Phase 1 is two-package, not one. Confirms Phase 1 has no blocker and Phase 3's dependency (plan_vertical_crop.md Phase 4's onProgramChanged/onCameraPresetRecalled) is now available as plain callbacks in lcyt-production's DeviceRegistry — EventBus promotion is recommended before Phase 3, not a hard blocker. **All three phases dispatched and shipped 2026-07-20/21** — see 'Implementation notes' at the end of this file for what shipped, what deviated from the plan (Haiku's Phase 1 used a module singleton instead of the repo's DI convention, caught and fixed in review; the EventBus-promotion sub-step of Phase 3 was skipped entirely, not just made optional), and what's left (the real CV model, deliberately not this pass's job)."
 ---
 
 # Phase Plan: Video Perception — Phases 1-3 (`ROADMAP.md` Lane 9)
@@ -338,3 +338,89 @@ Phase 1, both streams in parallel (they're small, independent, and low-risk — 
 first work for two agents or two sequential sessions). Do not start Phase 2 Stream B
 or C until Stream A's process-boundary decision is written down; that decision is the
 one piece of this plan a coding agent shouldn't have to re-derive mid-implementation.
+
+---
+
+## Implementation notes (2026-07-20/21)
+
+Phase 1 was dispatched to a Haiku subagent (per this doc's own recommendation that
+it's small/low-risk enough for that); Phases 2-3 were implemented directly in the
+orchestrating session rather than dispatched, since Phase 2 Stream A's
+process-boundary decision and the cross-package wiring across `lcyt-worker-daemon`
+→ `lcyt-production` → `lcyt-backend` benefited from one continuous context. All
+tests green post-implementation: `lcyt-backend` 1098, `lcyt-production` 179,
+`lcyt-agent` 207, `lcyt-cues` 110, `lcyt-worker-daemon` 5 — plus a `server.js` boot
+smoke test (no automated test imports the full composition root, per that package's
+own documented coverage gap).
+
+**Phase 1 — one real finding, fixed:** Haiku's `scene-state.js`/`routes/scene.js`
+built `SceneState` behind a hidden module-level `getSceneState()` singleton instead
+of following the exact DI convention this plugin already establishes
+(`visionRoleManager`/`assistantManager` are constructed once in `initAgent()` and
+threaded through explicitly to route factories). Caught in review, not by tests —
+both patterns pass tests fine, it's an architectural consistency issue, not a
+correctness bug. Fixed: `initAgent()` now constructs `SceneState` and returns it
+alongside the other managers; `createSceneRouter(auth, sceneState)` takes it as a
+parameter. Also missed on the first pass: `GET /scene/state` never made it into
+`lcyt-backend/CLAUDE.md`'s route table (only `lcyt-agent/CLAUDE.md` got it) —
+added in the same fix-up commit. This is exactly the class of gap dispatching a
+smaller model without a human/stronger-model review pass would let ship silently —
+see the parent conversation's broader point about which lanes suit which model.
+
+**Phase 2 Stream A's process-boundary decision, made concretely:** in-process Node,
+not a subprocess/sidecar — resolved down from "should decide based on what the CV
+integration actually needs" to "there is no real CV integration in this pass, so
+there's nothing to isolate into its own process." `lcyt-worker-daemon/src/perception/`
+ships a swappable `{ detect(frame) }` backend interface with exactly one
+implementation, a deterministic stub (`stub-backend.js`) — no YOLO/ByteTrack, no new
+runtime dependency, no Docker image. A real model backend remains a documented,
+scoped follow-on that can revisit the process-boundary question with an actual
+workload to measure, per this doc's own "resolve with a stub, not the real model"
+recommendation.
+
+**Frame source turned out to need no new endpoint at all.** Grounding for Phase 2
+confirmed a dedicated-feed camera's `cameraKey` (`lcyt-production`'s `prod_cameras`
+column, populated via WHIP or `lcyt-rtmp`'s feed-RTMP resolver) IS the same MediaMTX
+path name the already-public `GET /preview/:key/incoming` route serves — the exact
+endpoint Tracker/Describer already poll, just keyed differently. So Phase 2's frame
+acquisition is a second consumer of existing infrastructure, not new surface.
+
+**Phase 2 output contract, built exactly as specced:**
+`packages/lcyt-backend/src/perception-aggregator.js` emits the project-level
+`track_state` union (via `session.emitter.emit('event', {type, data})` — the exact
+shape `lcyt-cues`'s `_attachTrackerListener()` already expected, verified against its
+source rather than assumed) and per-camera `camera.track_state` (EventBus +
+`SceneState` update) as two genuinely distinct emissions, with a regression test
+proving one camera's tick doesn't clobber another's contribution to the union — the
+exact bug this doc's Risk Register flagged as the one correctness trap in this phase.
+
+**Phase 2's job-type dispatch surface ended up bigger than "one conditional":**
+beyond the worker-daemon `POST /jobs` branch, shipping something a human/AI could
+actually trigger needed a dispatch manager (`lcyt-production/src/perception-manager.js`,
+reusing `FFMPEG_RUNNER=worker`'s exact `ORCHESTRATOR_URL`/`WORKER_DAEMON_URL` dispatch
+pattern rather than inventing a third knob) and camera-scoped start/stop/status
+routes. Not scoped in this doc's original Stream B description, which focused only on
+the worker-daemon half — a gap in this phase plan's own foresight, not a deviation
+found necessary mid-build.
+
+**Phase 3 — the EventBus-promotion sub-step was skipped entirely, not just made
+optional.** This doc's Phase 3 step 1 recommended promoting
+`DeviceRegistry.onProgramChanged`/`onCameraPresetRecalled` to a real
+`production.source_changed` EventBus topic (since this resolver is the second
+consumer that was supposed to trigger that promotion), while allowing the plain
+callback API as a fallback. In practice the resolver just registers its own
+`onProgramChanged`/`onCameraPresetRecalled` listeners directly, same as
+`plan_vertical_crop.md`'s existing `CropManager.applyForSource()` consumer — simpler,
+zero risk to the already-shipped consumer, and avoids introducing the repo's first
+`production.*` EventBus topic on spec rather than on demonstrated need. The promotion
+recommendation still stands as a good idea if a *third* consumer ever shows up.
+
+**Shared-feed camera resolution, concretely:** `onProgramChanged` fires
+`{ apiKey, mixerId, inputNumber }` — a mixer input number, not a camera id — so the
+resolver looks up `prod_cameras` by `mixer_input` to find which camera (if any) is
+mapped to that input. `onCameraPresetRecalled` fires `{ apiKey, cameraId }` directly.
+Both update the same per-project "currently active camera" state; a change emits a
+synthetic `visible: false` `camera.track_state` for the outgoing camera before
+tracking the new one, per the plan's explicit "confirmed absent, not silence"
+requirement — verified by test, including that switching to the same input twice is
+a no-op (no spurious re-emission).

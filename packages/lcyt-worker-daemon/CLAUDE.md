@@ -6,14 +6,18 @@ Minimal ESM Express service that runs on worker VMs. Receives job lifecycle comm
 **Port:** `process.env.PORT` (default 5000)
 
 **Source files (`src/`):**
-- `index.js` — `createApp()` (returns Express app) + `startServer(port)`. In-memory `jobs` map. `NODE_ENV=test` skips real subprocess spawning. Optional `X-Worker-Auth` header authentication via `WORKER_AUTH_TOKEN`.
+- `index.js` — `createApp()` (returns Express app) + `startServer(port)`. In-memory `jobs` map. `POST /jobs` branches on `plan.type`: `'perception'` (see below) is a distinct job type handled entirely by `perception-job.js`, no ffmpeg subprocess/fifo/uploader involved; every other/absent type keeps the original ffmpeg path unchanged, including its `NODE_ENV=test` no-op-spawn short-circuit (perception jobs run for real even under `NODE_ENV=test` — no subprocess is spawned, only in-process timers + `fetch`, so tests exercise the real code path and must explicitly `DELETE /jobs/:id` to stop them, or leave dangling timers). Optional `X-Worker-Auth` header authentication via `WORKER_AUTH_TOKEN`.
 - `uploader.js` — `createUploader({ watchDir, prefix, uploadFn })`: watches a directory for new files and uploads them via `uploadFn`.
 - `s3-uploader.js` — `createS3UploadFn({ baseKey })`: creates an upload function using `@aws-sdk/client-s3`.
+- `perception-job.js` — `createPerceptionJob(plan, jobId)`: wires `perception/frame-source.js` + `perception/stub-backend.js` into `perception/runner.js`, POSTing each detection to `plan.callbackUrl` (`X-Internal-Auth: plan.internalToken` if set). One job per dedicated-feed camera (`plan_video_perception.md` Phase 2 Stream B).
+- `perception/runner.js` — `createPerceptionRunner(cameraId, frameSource, { emitIntervalMs, backend, onDetection, onError })`: the fps30 tracker subsystem's swappable runner interface (`start()`/`stop()`, bounded-rate `{cameraId, ts, objects, framing, visible}` emission). **Process-boundary decision, documented in the module itself:** in-process Node, not a subprocess/sidecar — Phase 2 ships only a stub detector (no real CV model in this repo yet), so there's nothing to isolate into its own process; a real model backend is a follow-on task that can relocate the process boundary without changing this contract.
+- `perception/frame-source.js` — `createHttpFrameSource(frameUrl)`: polls a JPEG URL (the existing public `GET /preview/:key/incoming` route, keyed by a camera's `camera_key` rather than the project `api_key`); `null` on any non-200/error (camera not currently publishing, not a hard failure).
+- `perception/stub-backend.js` — `createStubDetector()`: deterministic fake detections (one "person" object with a slowly-oscillating bbox) — no real ML, see `runner.js`'s module doc.
 
 **API routes:**
 ```
-POST   /jobs           — create job; spawns subprocess (or no-op in test mode)
-DELETE /jobs/:id       — stop job, kill subprocess
+POST   /jobs           — create job; spawns subprocess (or no-op in test mode) for the default/ffmpeg type; plan.type: 'perception' starts a perception job instead (real in every mode, see above)
+DELETE /jobs/:id       — stop job (kills the ffmpeg subprocess, or calls the perception runner's stop())
 POST   /jobs/:id/caption — append caption payload to job record
 GET    /stats          — running/total job counts
 GET    /health         — status + workerId
@@ -26,7 +30,7 @@ GET    /_jobs          — debug: list all jobs
 | `WORKER_ID` | This worker's identifier (default `worker-0`) |
 | `WORKER_AUTH_TOKEN` / `BACKEND_INTERNAL_TOKEN` | Optional auth token for all `/jobs` endpoints |
 
-**Tests:** `test/daemon.basic.test.js`.
+**Tests:** `test/daemon.basic.test.js`, `test/perception.test.js` (frame-source/stub-backend/runner unit tests + a `POST /jobs`+`DELETE /jobs/:id` route test with `fetch` mocked for the frame/callback URLs).
 
 ## Test Coverage
 

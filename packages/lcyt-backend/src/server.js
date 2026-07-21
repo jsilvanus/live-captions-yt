@@ -31,7 +31,7 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter,
+  initProductionControl, createProductionRouter, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
 } from 'lcyt-production';
@@ -95,6 +95,9 @@ import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
+import { createPerceptionAggregator } from './perception-aggregator.js';
+import { createSharedFeedResolver } from './shared-feed-resolver.js';
+import { createPerceptionRouter } from './routes/perception.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
 import { createWriteAuditMiddleware } from './middleware/write-audit.js';
@@ -682,6 +685,27 @@ app.use('/actions', createActionsRouter(db, scopedAuth('action')));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
+// fps30 tracker subsystem (plan_video_perception.md Phase 2/3): job dispatch
+// (start/stop a per-camera or shared-feed perception job on the
+// orchestrator/worker daemon) and the ingest side (a worker POSTs
+// detections back here, fanning into the cue engine's track_state contract
+// + World State's camera.track_state — see perception-aggregator.js's
+// module doc for why this composition-root module, not a plugin, owns that
+// fan-out). The shared-feed resolver (Phase 3) re-tags mixer-only cameras'
+// detections with whichever camera DeviceRegistry says is currently on
+// program before they reach the aggregator.
+const _perceptionManager = createPerceptionManager({
+  previewBaseUrl: DEFAULT_PREVIEW_BASE_URL,
+  callbackBaseUrl: DEFAULT_PREVIEW_BASE_URL,
+});
+const _perceptionAggregator = createPerceptionAggregator({ store, eventBus, sceneState: _sceneState });
+const _sharedFeedResolver = createSharedFeedResolver({ db, registry: productionRegistry, aggregator: _perceptionAggregator });
+app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
+  perceptionManager: _perceptionManager,
+  internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
+  auth: scopedAuth('production'),
+}));
+
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
@@ -691,6 +715,7 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   // routes/cameras.js's isUnauthenticatedCameraRoute() (plan_ingest_feeds.md
   // cross-tenant review finding).
   auth: scopedAuth('production'),
+  perceptionManager: _perceptionManager,
 }));
 
 // RTMP relay routes — media.rtmp_relay_active is hot: always mounted (the
