@@ -5,6 +5,7 @@ import { TopBar, Sidebar } from './sidebar/Sidebar.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp.jsx';
 import { ConnectionStatusMonitor } from './ConnectionStatusMonitor.jsx';
+import { StorageQuotaMonitor } from './StorageQuotaMonitor.jsx';
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -107,6 +108,7 @@ export function SidebarLayout({ children }) {
       />
       <ReconnectBanner />
       <ConnectionStatusMonitor />
+      <StorageQuotaMonitor />
       <div className="sidebar-body">
         <Sidebar onNavigate={path => navigate(path)} />
         <MobileDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)} />

@@ -2080,6 +2080,34 @@
   color: var(--color-text-dim);
 }
 
+/* ─── Onboarding banner (plan_ui.md v2 §2a auto-trigger) ───────── */
+
+.onboarding-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 16px 20px 0;
+  padding: 12px 16px;
+  border: 1.5px solid var(--color-accent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-accent) 10%, var(--color-surface-elevated));
+}
+
+.onboarding-banner__text {
+  font-size: 13px;
+  color: var(--color-text);
+  flex: 1;
+  min-width: 220px;
+}
+
+.onboarding-banner__actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 /* ─── Setup hub ───────────────────────────────────────────────── */
 
 /* Wraps .setup-hub-page + a RoleAssistantPanel side column (Setup/Asset

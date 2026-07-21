@@ -2,7 +2,7 @@
 id: plan/ui
 title: "Frontend & UI Plans"
 status: in-progress
-summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, and virtual scrolling all implemented; onboarding auto-trigger, context-aware layouts, detachable panels, and mobile-first redesign still outstanding), v3 (component split, completed)."
+summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, virtual scrolling, onboarding auto-trigger, and localStorage quota monitoring all implemented; context-aware layouts, detachable panels, mobile-first redesign, workflow presets, and the DSK metacode autocomplete helper still outstanding), v3 (component split, completed)."
 ---
 
 # Frontend & UI Plans — `packages/lcyt-web`
@@ -1135,17 +1135,7 @@ There is no wizard, no empty-state guidance, and no contextual help.
 
 ### Proposals
 
-**2a. Guided setup flow for new users.** When no config is persisted (`lcyt-config` absent from localStorage), show a step-by-step setup instead of the raw UI:
-
-```
-Step 1: Server — Enter backend URL (or use default)
-Step 2: Auth — Enter API key, or create account / sign in
-Step 3: Target — Add at least one caption target (YouTube / Viewer / Generic)
-Step 4: Test — Send a test caption to verify the connection
-→ Done — Show main UI
-```
-
-Store a `lcyt:onboarded` flag so returning users skip this.
+**2a. Guided setup flow for new users — implemented 2026-07-21, adapted to the codebase that grew since this proposal was written.** The literal sketch above (a blocking full-screen Server/Auth/Target/Test wizard gating the raw UI) predates `/setup/wizard`, which already exists today as a real, more thorough guided flow (feature selection → per-feature config panels → review). Rebuilding a second, narrower wizard would duplicate it. Instead: `OnboardingBanner.jsx` (mounted in `RootRoute.jsx`, above a connected project's summary) checks `GET /targets` and shows a dismissible nudge — "This project isn't configured yet. Run the setup wizard…" — when a project has zero caption targets configured, backed by a per-project `lcyt.onboarded.<apiKey>` flag (`lib/onboarding.js`, the `lcyt:onboarded` flag this proposal specced, scoped per-project since a user can own several). The flag is set either by dismissing the banner or by finishing the wizard (`setup-wizard/hooks/useWizardState.js`'s `handleFinish`), so a returning user never sees it again for that project. Deliberately non-blocking (a dismissible nudge, not a forced gate) — a project connecting via API key only (no `login` feature, e.g. an embedded device) never needs a full onboarding flow at all, and gating the whole UI behind it would break that path.
 
 **2b. Empty-state guidance** in the main view. When no file is loaded and no session is active, show contextual cards:
 - "Drop a caption file here or create a new one"
@@ -1294,7 +1284,7 @@ Store as JSON in localStorage (and optionally sync to backend per user account).
 
 Show a browser confirmation dialog if any are detected.
 
-**6d. localStorage quota monitoring.** Before writing, check `navigator.storage.estimate()` (where available). If quota is low, warn the user and suggest clearing old sent logs or removing unused files.
+**6d. localStorage quota monitoring — implemented 2026-07-21, adapted from "before writing" to periodic.** There is no browser API to intercept an individual `localStorage.setItem()` call before it lands, and `navigator.storage.estimate()` reports origin-wide storage (localStorage + IndexedDB + caches combined), not localStorage in isolation — so `lib/storageQuota.js`'s `getStorageEstimate()` is checked periodically instead (`components/StorageQuotaMonitor.jsx`, mounted once in `SidebarLayout.jsx`: on mount + every 5 minutes) rather than gated per-write. When usage crosses `WARN_RATIO` (0.8), it shows a persistent toast — "Browser storage is N% full — clear old sent logs or remove unused files to free space" — debounced to once per tab session via a `sessionStorage` flag so it doesn't repeat every 5 minutes while still over threshold, but does warn again in a fresh tab.
 
 ---
 
@@ -1374,7 +1364,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 | **P3** | **5e. Workflow presets** — named localStorage configs (e.g. "Sunday service"). Confirmed not done — `LiveTab.jsx`'s `PresetPicker`/`applyPreset` only covers dashboard *panel layout* presets, a narrower feature, not named save/restore of full workflow configs | Low — convenience | Medium |
 | **P3** | **5d. DSK metacode helper** — `<!--` autocomplete in input bar fetching template/viewport names. Confirmed not done — `InputBar.jsx` has no such autocomplete; `metacode-parser.js` only parses, doesn't suggest | Low — niche | Medium |
 | **P3** | **2c. Inline hints on first use** — `lcyt:hints-dismissed` set, tooltips on feature first touch. Confirmed not done | Low — nice to have | Low |
-| **P3** | **6d. localStorage quota monitoring** — `navigator.storage.estimate()` warning. Confirmed not done — no reference anywhere in `src/` | Low — edge case | Low |
+| ~~**P3**~~ | ~~**6d. localStorage quota monitoring**~~ — **done 2026-07-21**, see §6d above (`lib/storageQuota.js` + `components/StorageQuotaMonitor.jsx`) | — | — |
 
 ---
 
@@ -1382,7 +1372,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support.
 
-**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. The remaining genuine gaps are: onboarding automation (the setup wizard itself exists at `/setup/wizard`, but nothing auto-triggers it for new users), context-aware layout modes, detachable/pop-out panels, and the mobile-first redesign of the caption flow specifically (general swipe/mobile-bar infrastructure exists but isn't applied there).
+**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. Onboarding automation (§2a) and localStorage quota monitoring (§6d) shipped 2026-07-21. The remaining genuine gaps are: context-aware layout modes, detachable/pop-out panels, and the mobile-first redesign of the caption flow specifically (general swipe/mobile-bar infrastructure exists but isn't applied there).
 
 ---
 ---
