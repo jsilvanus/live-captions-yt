@@ -1,4 +1,5 @@
-import { app, db, store, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics } from './server.js';
+import logger from 'lcyt/logger';
+import { app, db, store, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics } from './server.js';
 import { cleanRevokedKeys } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
@@ -9,73 +10,83 @@ import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 const PORT = Number(process.env.PORT) || 3000;
 
 const server = app.listen(PORT, () => {
-  console.log(`Listening on port ${PORT}`);
+  logger.info(`Listening on port ${PORT}`);
 });
+
+/**
+ * A `setInterval` whose delay is re-read from `getIntervalMs()` before each
+ * firing (via recursive `setTimeout`) instead of frozen once at creation, so
+ * a DB-saved retention/cleanup-interval setting takes effect within one
+ * cycle — no restart, no explicit `settings.changed` subscription needed.
+ * Starting/stopping the loop itself (e.g. a retention count going from 0 to
+ * enabled) still requires a restart — the `if (…Days > 0)` gate below is
+ * only evaluated once, at boot.
+ */
+function scheduleRearmable(getIntervalMs, fn) {
+  let timer;
+  function tick() {
+    try { fn(); } finally {
+      timer = setTimeout(tick, getIntervalMs());
+      timer.unref();
+    }
+  }
+  timer = setTimeout(tick, getIntervalMs());
+  timer.unref();
+  return () => clearTimeout(timer);
+}
 
 // ---------------------------------------------------------------------------
 // Database backup
 // ---------------------------------------------------------------------------
 
-const BACKUP_DAYS = parseBackupDays(process.env.BACKUP_DAYS);
-const BACKUP_DIR = process.env.BACKUP_DIR || '/backups';
-const BACKUP_INTERVAL = 86_400_000; // 24 h
+const BACKUP_DAYS = parseBackupDays(settings.get('retention.backup_days')); // caps at MAX_BACKUP_DAYS
+const BACKUP_DIR = process.env.BACKUP_DIR || '/backups'; // Tier A path
 
 if (BACKUP_DAYS > 0) {
   async function doBackup() {
     try {
       const dir = await runBackup(db, BACKUP_DIR);
-      console.log(`[backup] Saved database to ${dir}`);
-      const removed = await cleanOldBackups(BACKUP_DIR, BACKUP_DAYS);
-      if (removed > 0) console.log(`[backup] Removed ${removed} backup(s) older than ${BACKUP_DAYS} days`);
+      logger.info(`[backup] Saved database to ${dir}`);
+      const days = parseBackupDays(settings.get('retention.backup_days'));
+      const removed = await cleanOldBackups(BACKUP_DIR, days);
+      if (removed > 0) logger.info(`[backup] Removed ${removed} backup(s) older than ${days} days`);
     } catch (err) {
-      console.error('[backup] Error:', err.message);
+      logger.error('[backup] Error:', err.message);
     }
   }
   doBackup();
-  const backupTimer = setInterval(doBackup, BACKUP_INTERVAL);
-  // unref() prevents the timer from keeping the process alive during graceful shutdown
-  backupTimer.unref();
+  scheduleRearmable(() => 86_400_000, doBackup); // 24h — not itself a registry setting
 }
 
 // ---------------------------------------------------------------------------
 // Revoked key cleanup
 // ---------------------------------------------------------------------------
 
-const REVOKED_KEY_TTL_DAYS = Number(process.env.REVOKED_KEY_TTL_DAYS ?? 30);
-const REVOKED_KEY_CLEANUP_INTERVAL = Number(process.env.REVOKED_KEY_CLEANUP_INTERVAL ?? 86_400_000);
-
-if (REVOKED_KEY_TTL_DAYS > 0) {
-  const cleanupTimer = setInterval(() => {
-    const { count } = cleanRevokedKeys(db, REVOKED_KEY_TTL_DAYS);
-    if (count > 0) console.log(`[cleanup] Purged ${count} revoked key(s) older than ${REVOKED_KEY_TTL_DAYS} days`);
-  }, REVOKED_KEY_CLEANUP_INTERVAL);
-  cleanupTimer.unref();
+if (settings.get('retention.revoked_key_ttl_days') > 0) {
+  scheduleRearmable(() => settings.get('retention.revoked_key_cleanup_interval'), () => {
+    const days = settings.get('retention.revoked_key_ttl_days');
+    if (days <= 0) return;
+    const { count } = cleanRevokedKeys(db, days);
+    if (count > 0) logger.info(`[cleanup] Purged ${count} revoked key(s) older than ${days} days`);
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Event-bus audit log retention (mirrors the revoked-key cleanup pattern)
 // ---------------------------------------------------------------------------
 
-const EVENT_LOG_RETENTION_DAYS = Number(process.env.EVENT_LOG_RETENTION_DAYS ?? 30);
-const EVENT_LOG_CLEANUP_INTERVAL = Number(process.env.EVENT_LOG_CLEANUP_INTERVAL ?? 86_400_000);
-
-if (EVENT_LOG_RETENTION_DAYS > 0) {
-  const busEventsTimer = setInterval(() => {
-    const { count } = deleteBusEventsOlderThan(db, EVENT_LOG_RETENTION_DAYS);
-    if (count > 0) console.log(`[cleanup] Purged ${count} bus event(s) older than ${EVENT_LOG_RETENTION_DAYS} days`);
-  }, EVENT_LOG_CLEANUP_INTERVAL);
-  busEventsTimer.unref();
+if (settings.get('retention.event_log_retention_days') > 0) {
+  scheduleRearmable(() => settings.get('retention.event_log_cleanup_interval'), () => {
+    const days = settings.get('retention.event_log_retention_days');
+    if (days <= 0) return;
+    const { count } = deleteBusEventsOlderThan(db, days);
+    if (count > 0) logger.info(`[cleanup] Purged ${count} bus event(s) older than ${days} days`);
+  });
 }
 
 // ---------------------------------------------------------------------------
 // Usage-rollup compaction + audit-log / stats retention (plan_metering_audit §3.5, §5.5)
 // ---------------------------------------------------------------------------
-
-const USAGE_ROLLUP_HOURLY_RETENTION_DAYS = Number(process.env.USAGE_ROLLUP_HOURLY_RETENTION_DAYS ?? 90);
-const AUDIT_LOG_RETENTION_DAYS = Number(process.env.AUDIT_LOG_RETENTION_DAYS ?? 365);
-// Opt-in sweep of the historical per-fact stats tables; 0 = keep forever.
-const STATS_RETENTION_DAYS = Number(process.env.STATS_RETENTION_DAYS ?? 0);
-const ROLLUP_MAINTENANCE_INTERVAL = Number(process.env.ROLLUP_MAINTENANCE_INTERVAL ?? 86_400_000);
 
 // caption_usage is deliberately excluded: it is the quota source of truth.
 // `type` picks the cutoff representation: ISO timestamp string, date-only
@@ -95,24 +106,28 @@ const STATS_TABLES = [
 ];
 
 function runRollupMaintenance() {
-  if (USAGE_ROLLUP_HOURLY_RETENTION_DAYS > 0) {
+  const usageRollupHourlyRetentionDays = settings.get('retention.usage_rollup_hourly_retention_days');
+  const auditLogRetentionDays = settings.get('retention.audit_log_retention_days');
+  const statsRetentionDays = settings.get('retention.stats_retention_days');
+
+  if (usageRollupHourlyRetentionDays > 0) {
     try {
-      const compacted = compactHourlyRollups(db, { olderThanDays: USAGE_ROLLUP_HOURLY_RETENTION_DAYS, kindForMetric });
-      if (compacted > 0) console.log(`[cleanup] Compacted ${compacted} hourly usage rollup(s) into daily rows`);
+      const compacted = compactHourlyRollups(db, { olderThanDays: usageRollupHourlyRetentionDays, kindForMetric });
+      if (compacted > 0) logger.info(`[cleanup] Compacted ${compacted} hourly usage rollup(s) into daily rows`);
     } catch (err) {
-      console.error('[cleanup] Rollup compaction failed:', err.message);
+      logger.error('[cleanup] Rollup compaction failed:', err.message);
     }
   }
-  if (AUDIT_LOG_RETENTION_DAYS > 0) {
+  if (auditLogRetentionDays > 0) {
     try {
-      const { count } = deleteAuditLogOlderThan(db, AUDIT_LOG_RETENTION_DAYS);
-      if (count > 0) console.log(`[cleanup] Purged ${count} audit log row(s) older than ${AUDIT_LOG_RETENTION_DAYS} days`);
+      const { count } = deleteAuditLogOlderThan(db, auditLogRetentionDays);
+      if (count > 0) logger.info(`[cleanup] Purged ${count} audit log row(s) older than ${auditLogRetentionDays} days`);
     } catch (err) {
-      console.error('[cleanup] Audit log retention failed:', err.message);
+      logger.error('[cleanup] Audit log retention failed:', err.message);
     }
   }
-  if (STATS_RETENTION_DAYS > 0) {
-    const cutoffMs = Date.now() - STATS_RETENTION_DAYS * 86_400_000;
+  if (statsRetentionDays > 0) {
+    const cutoffMs = Date.now() - statsRetentionDays * 86_400_000;
     const cutoffs = {
       iso: new Date(cutoffMs).toISOString(),
       date: new Date(cutoffMs).toISOString().slice(0, 10),
@@ -121,7 +136,7 @@ function runRollupMaintenance() {
     for (const { table, column, type } of STATS_TABLES) {
       try {
         const info = db.prepare(`DELETE FROM ${table} WHERE ${column} < ?`).run(cutoffs[type]);
-        if (info.changes > 0) console.log(`[cleanup] Purged ${info.changes} row(s) from ${table} older than ${STATS_RETENTION_DAYS} days`);
+        if (info.changes > 0) logger.info(`[cleanup] Purged ${info.changes} row(s) from ${table} older than ${statsRetentionDays} days`);
       } catch {
         // Table may not exist on this install (plugin not migrated) — skip.
       }
@@ -129,15 +144,14 @@ function runRollupMaintenance() {
   }
 }
 
-const rollupMaintenanceTimer = setInterval(runRollupMaintenance, ROLLUP_MAINTENANCE_INTERVAL);
-rollupMaintenanceTimer.unref();
+scheduleRearmable(() => settings.get('retention.rollup_maintenance_interval'), runRollupMaintenance);
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown
 // ---------------------------------------------------------------------------
 
 async function shutdown() {
-  console.log('Shutting down...');
+  logger.info('Shutting down...');
   await stopDsk();
   await relayManager.stopAll();
   await radioManager.stopAll();

@@ -17,13 +17,13 @@ import { createProjectObservabilityRouter } from './project-observability.js';
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {string} jwtSecret
- * @param {{ loginEnabled?: boolean }} [opts]
+ * @param {{ loginEnabled?: boolean, settings?: import('../settings/service.js').SettingsService }} [opts]
  * @returns {Router}
  */
-export function createAccountRouters(db, jwtSecret, { loginEnabled = true } = {}) {
+export function createAccountRouters(db, jwtSecret, { loginEnabled = true, settings = null } = {}) {
   const router = Router();
   router.use('/auth', createAuthRouter(db, jwtSecret, { loginEnabled }));
-  router.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret }));
+  router.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret, settings }));
   // Sub-key routes — routers use mergeParams:true so :key propagates correctly
   router.use('/keys/:key/features', createProjectFeaturesRouter(db, { loginEnabled, jwtSecret }));
   router.use('/keys/:key/members',  createProjectMembersRouter(db, { loginEnabled, jwtSecret }));

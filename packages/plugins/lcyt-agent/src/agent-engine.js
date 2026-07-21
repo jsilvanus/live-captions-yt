@@ -52,10 +52,13 @@ export class AgentEngine {
   /**
    * @param {import('better-sqlite3').Database} db
    * @param {object} [opts]
+   * @param {{ get: (key: string) => * }} [opts.settings] - lcyt-backend's
+   *   SettingsService (plan_env_to_ui_settings.md), duck-typed.
    */
   constructor(db, opts = {}) {
     /** @type {import('better-sqlite3').Database} */
     this._db = db;
+    this._settings = opts.settings ?? null;
 
     /**
      * Per-API-key context window: recent STT transcripts + explanations.
@@ -116,11 +119,11 @@ export class AgentEngine {
   }
 
   /**
-   * Check if server-level embedding is available (env vars configured).
+   * Check if server-level embedding is available (env/DB configured).
    * @returns {boolean}
    */
   isServerEmbeddingAvailable() {
-    return isServerEmbeddingAvailable();
+    return this._settings ? !!this._settings.get('ai.embedding_api_key') : isServerEmbeddingAvailable();
   }
 
   // -------------------------------------------------------------------------
@@ -137,6 +140,7 @@ export class AgentEngine {
    */
   async computeEmbeddings(texts, apiKey) {
     const opts = {};
+    let usesServerDefault = true;
     if (apiKey) {
       const cfg = getAiConfigRaw(this._db, apiKey);
       if (cfg) {
@@ -147,9 +151,20 @@ export class AgentEngine {
           opts.apiKey = cfg.embeddingApiKey;
           opts.model = cfg.embeddingModel;
           if (cfg.embeddingApiUrl) opts.apiUrl = cfg.embeddingApiUrl;
+          usesServerDefault = false;
         }
-        // 'server' provider uses env vars (no override needed)
+        // 'server' provider falls through to the server-default block below.
       }
+    }
+    // Per-project config (above) always wins; only fill in the server-level
+    // default (env > DB > default via SettingsService) when nothing per-project
+    // overrode it — matches this method's own doc: "'server' provider uses env
+    // vars", now settings-aware instead of computeEmbeddings() reading
+    // process.env directly.
+    if (usesServerDefault && this._settings) {
+      opts.apiUrl = this._settings.get('ai.embedding_api_url');
+      opts.apiKey = this._settings.get('ai.embedding_api_key') || undefined;
+      opts.model = this._settings.get('ai.embedding_model');
     }
     return computeEmbeddings(texts, opts);
   }

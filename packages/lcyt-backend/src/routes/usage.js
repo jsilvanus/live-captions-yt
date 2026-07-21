@@ -21,14 +21,16 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
  *   domain      string      Filter to a specific domain.
  *
  * @param {import('better-sqlite3').Database} db
+ * @param {import('../settings/service.js').SettingsService} [settings] - falls back to raw env when omitted (tests)
  * @returns {Router}
  */
-export function createUsageRouter(db) {
+export function createUsageRouter(db, settings = null) {
   const router = Router();
 
   router.get('/', (req, res) => {
+    const usagePublic = settings ? settings.get('app.usage_public') : !!process.env.USAGE_PUBLIC;
     // Auth: skip if USAGE_PUBLIC is set, otherwise require admin key
-    if (!process.env.USAGE_PUBLIC) {
+    if (!usagePublic) {
       const adminKey = process.env.ADMIN_KEY;
       if (!adminKey) {
         return res.status(503).json({ error: 'Usage stats are not publicly available. Set USAGE_PUBLIC or ADMIN_KEY.' });
@@ -79,7 +81,7 @@ export function createUsageRouter(db) {
       from,
       to,
       granularity,
-      public: Boolean(process.env.USAGE_PUBLIC),
+      public: usagePublic,
       data,
       viewerStats,
     });

@@ -53,14 +53,17 @@ function ensureImageDir(apiKey) {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
+ * @param {{ get: (key: string) => * }} [settings] - lcyt-backend's SettingsService
+ *   (plan_env_to_ui_settings.md), duck-typed. Falls back to raw process.env when omitted.
  * @returns {Router}
  */
-export function createImagesRouter(db, auth) {
+export function createImagesRouter(db, auth, settings = null) {
   const router = Router();
 
   // POST /images — upload
   router.post('/', auth, (req, res) => {
-    if (process.env.GRAPHICS_ENABLED !== '1') {
+    const graphicsEnabled = settings ? settings.get('graphics.enabled') : process.env.GRAPHICS_ENABLED === '1';
+    if (!graphicsEnabled) {
       return res.status(503).json({ error: 'Graphics upload is not enabled on this server' });
     }
 
@@ -72,11 +75,14 @@ export function createImagesRouter(db, auth) {
       return res.status(403).json({ error: 'Graphics upload not enabled for this API key' });
     }
 
+    const maxFileBytes = settings ? settings.get('graphics.max_file_bytes') : MAX_FILE_BYTES;
+    const maxStorageBytes = settings ? settings.get('graphics.max_storage_bytes') : MAX_STORAGE_BYTES;
+
     // Check total storage quota before accepting the upload
     const usedBytes = getTotalImageStorageBytes(db, apiKey);
-    if (usedBytes >= MAX_STORAGE_BYTES) {
+    if (usedBytes >= maxStorageBytes) {
       return res.status(413).json({
-        error: `Storage quota exceeded (${(MAX_STORAGE_BYTES / 1024 / 1024).toFixed(0)} MB limit per key)`,
+        error: `Storage quota exceeded (${(maxStorageBytes / 1024 / 1024).toFixed(0)} MB limit per key)`,
       });
     }
 
@@ -106,7 +112,7 @@ export function createImagesRouter(db, auth) {
 
     let bb;
     try {
-      bb = busboy({ headers: req.headers, limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 5 } });
+      bb = busboy({ headers: req.headers, limits: { fileSize: maxFileBytes, files: 1, fields: 5 } });
     } catch (err) {
       return res.status(400).json({ error: 'Invalid multipart request' });
     }
@@ -153,7 +159,7 @@ export function createImagesRouter(db, auth) {
       });
 
       fileStream.on('limit', () => {
-        abort(413, `File exceeds maximum size of ${(MAX_FILE_BYTES / 1024 / 1024).toFixed(0)} MB`);
+        abort(413, `File exceeds maximum size of ${(maxFileBytes / 1024 / 1024).toFixed(0)} MB`);
         fileStream.resume();
       });
 
@@ -200,7 +206,7 @@ export function createImagesRouter(db, auth) {
 
       // Re-check quota including this file (race condition guard)
       const nowUsed = getTotalImageStorageBytes(db, apiKey);
-      if (nowUsed + uploadedBytes > MAX_STORAGE_BYTES) {
+      if (nowUsed + uploadedBytes > maxStorageBytes) {
         if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(413).json({ error: 'Storage quota would be exceeded' });
       }

@@ -11,13 +11,14 @@ import { Router } from 'express';
  *   YOUTUBE_CLIENT_ID — Google OAuth 2.0 Web application client ID
  *
  * @param {import('express').RequestHandler} auth - Pre-created auth middleware
+ * @param {import('../settings/service.js').SettingsService} [settings] - falls back to raw env when omitted (tests)
  * @returns {Router}
  */
-export function createYouTubeRouter(auth) {
+export function createYouTubeRouter(auth, settings = null) {
   const router = Router();
 
   router.get('/config', auth, (req, res) => {
-    const clientId = process.env.YOUTUBE_CLIENT_ID;
+    const clientId = settings ? settings.get('app.youtube_client_id') : process.env.YOUTUBE_CLIENT_ID;
     if (!clientId) {
       return res.status(503).json({
         error: 'YouTube OAuth not configured on this server (YOUTUBE_CLIENT_ID not set)',

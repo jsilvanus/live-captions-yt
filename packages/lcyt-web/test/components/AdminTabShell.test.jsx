@@ -11,10 +11,10 @@ import { AdminTabShell } from '../../src/components/AdminTabShell.jsx';
 beforeEach(() => vi.clearAllMocks());
 
 describe('AdminTabShell', () => {
-  it('renders the admin tabs in order (mock four + Metrics/Audit Log from plan_metering_audit)', () => {
+  it('renders the admin tabs in order (mock four + Metrics/Audit Log/Server)', () => {
     render(<AdminTabShell active="users"><div>content</div></AdminTabShell>);
     const tabs = screen.getAllByRole('button').map(b => b.textContent);
-    expect(tabs).toEqual(['Site Features', 'Teams', 'Projects', 'Users', 'Metrics', 'Audit Log']);
+    expect(tabs).toEqual(['Site Features', 'Teams', 'Projects', 'Users', 'Metrics', 'Audit Log', 'Server']);
   });
 
   it('does not render AI Models (kept as a direct-URL-only route)', () => {

@@ -104,18 +104,27 @@ export class MusicManager extends EventEmitter {
    * @param {(apiKey: string, text: string) => string} soundProcessor
    *   Built via createSoundCaptionProcessor({ store, db }) — called directly
    *   with synthesised metacode text. Never routed through session._sendQueue.
+   * @param {{ settings?: { get: (key: string) => * } }} [opts] - lcyt-backend's
+   *   SettingsService (plan_env_to_ui_settings.md), duck-typed. Falls back to
+   *   raw process.env when omitted.
    */
-  constructor(db, store, soundProcessor) {
+  constructor(db, store, soundProcessor, { settings = null } = {}) {
     super();
     this._db = db;
     this._store = store;
     this._soundProcessor = soundProcessor;
+    this._settings = settings;
     /** @type {Map<string, MusicSession>} */
     this._sessions = new Map();
     /** @type {{ major: number, minor: number }|null} */
     this.ffmpegVersion = null;
 
     probeFfmpegVersion().then((v) => { this.ffmpegVersion = v; }).catch(() => {});
+  }
+
+  /** @returns {string|undefined} the external classifier URL, settings-aware. */
+  _classifierUrl() {
+    return this._settings ? this._settings.get('music.classifier_url') || undefined : process.env.MUSIC_CLASSIFIER_URL;
   }
 
   /**
@@ -164,7 +173,7 @@ export class MusicManager extends EventEmitter {
     this._sessions.set(apiKey, session);
 
     if (audioSource === 'hls') {
-      const hlsBase = process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE;
+      const hlsBase = (this._settings ? this._settings.get('mediamtx.hls_base_url') : process.env.MEDIAMTX_HLS_BASE_URL) || DEFAULT_MEDIAMTX_HLS_BASE;
       const fetcher = new HlsSegmentFetcher({ hlsBase, streamKey: effectiveStreamKey });
       session.fetcher = fetcher;
 
@@ -194,8 +203,8 @@ export class MusicManager extends EventEmitter {
    * @param {string} streamKey
    */
   _startRtmp(apiKey, session, streamKey) {
-    const rtmpBase = (process.env.HLS_LOCAL_RTMP || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
-    const rtmpApp  = process.env.HLS_RTMP_APP || 'live';
+    const rtmpBase = ((this._settings ? this._settings.get('media.hls_local_rtmp') : process.env.HLS_LOCAL_RTMP) || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
+    const rtmpApp  = (this._settings ? this._settings.get('media.hls_rtmp_app') : process.env.HLS_RTMP_APP) || 'live';
     const inputUrl = `${rtmpBase}/${rtmpApp}/${streamKey}`;
 
     const ffmpegArgs = [
@@ -358,7 +367,7 @@ export class MusicManager extends EventEmitter {
     // afterward with no await. When MUSIC_CLASSIFIER_URL is set, route
     // through session.processingQueue so windows arriving in the same
     // chunk are classified (and their events emitted) in strict order.
-    if (process.env.MUSIC_CLASSIFIER_URL) {
+    if (this._classifierUrl()) {
       session.processingQueue = (session.processingQueue ?? Promise.resolve())
         .then(() => this._analysePcm(apiKey, session, pcm))
         .catch((err) => { this.emit('error', { apiKey, error: err }); });
@@ -401,9 +410,10 @@ export class MusicManager extends EventEmitter {
     };
 
     let rawLabel, confidence;
-    if (process.env.MUSIC_CLASSIFIER_URL) {
+    const classifierUrl = this._classifierUrl();
+    if (classifierUrl) {
       try {
-        ({ label: rawLabel, confidence } = await classifyExternal(pcm, { sampleRate: SAMPLE_RATE }));
+        ({ label: rawLabel, confidence } = await classifyExternal(pcm, { sampleRate: SAMPLE_RATE, url: classifierUrl }));
       } catch {
         ({ label: rawLabel, confidence } = classify(pcm, classifyOpts));
       }

@@ -15,9 +15,7 @@ try {
   BRIDGE_VERSION = 'latest';
 }
 
-const GITHUB_RELEASES_BASE =
-  process.env.BRIDGE_DOWNLOAD_BASE_URL ||
-  'https://github.com/jsilvanus/live-captions-yt/releases/latest/download';
+const DEFAULT_GITHUB_RELEASES_BASE = 'https://github.com/jsilvanus/live-captions-yt/releases/latest/download';
 
 const PLATFORMS = {
   win:   `lcyt-bridge-${BRIDGE_VERSION}.exe`,
@@ -35,8 +33,9 @@ const PLATFORMS = {
  * No query param → 400 with list of supported platforms.
  *
  * Override the base URL via env var BRIDGE_DOWNLOAD_BASE_URL.
+ * @param {import('../settings/service.js').SettingsService} [settings] - falls back to raw env when omitted (tests)
  */
-export function createBridgeDownloadRouter() {
+export function createBridgeDownloadRouter(settings = null) {
   const router = Router();
 
   router.get('/', (req, res) => {
@@ -50,8 +49,11 @@ export function createBridgeDownloadRouter() {
       });
     }
 
+    const base = settings
+      ? settings.get('app.bridge_download_base_url') || DEFAULT_GITHUB_RELEASES_BASE
+      : process.env.BRIDGE_DOWNLOAD_BASE_URL || DEFAULT_GITHUB_RELEASES_BASE;
     const filename = PLATFORMS[platform];
-    const url = `${GITHUB_RELEASES_BASE}/${filename}`;
+    const url = `${base}/${filename}`;
     res.redirect(302, url);
   });
 

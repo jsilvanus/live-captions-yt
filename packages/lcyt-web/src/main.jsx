@@ -72,6 +72,7 @@ const AdminAuditLogPage      = lazyImport(() => import('./components/AdminAuditL
 const AdminMetricsPage       = lazyImport(() => import('./components/AdminMetricsPage').then(m => ({ default: m.AdminMetricsPage })));
 const AdminAiModelsPage      = lazyImport(() => import('./components/AdminAiModelsPage.jsx').then(m => ({ default: m.AdminAiModelsPage })));
 const AdminSiteFeaturesPage  = lazyImport(() => import('./components/AdminSiteFeaturesPage').then(m => ({ default: m.AdminSiteFeaturesPage })));
+const AdminServerSettingsPage = lazyImport(() => import('./components/AdminServerSettingsPage').then(m => ({ default: m.AdminServerSettingsPage })));
 const AdminTeamsPage         = lazyImport(() => import('./components/AdminTeamsPage').then(m => ({ default: m.AdminTeamsPage })));
 
 // Standalone / path-gated pages
@@ -220,6 +221,7 @@ function SidebarApp() {
             <Route path="/admin/metrics" component={AdminMetricsPage} />
             <Route path="/admin/ai-models" component={AdminAiModelsPage} />
             <Route path="/admin/site-features" component={AdminSiteFeaturesPage} />
+            <Route path="/admin/server-settings" component={AdminServerSettingsPage} />
             <Route path="/admin/teams" component={AdminTeamsPage} />
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/projects/:key" component={ProjectSettingsPage} />

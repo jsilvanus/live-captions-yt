@@ -14,9 +14,10 @@ import { isServerEmbeddingAvailable } from '../embeddings.js';
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth — JWT Bearer auth middleware
+ * @param {import('../../../lcyt-backend/src/settings/service.js').SettingsService} [settings] — optional settings service for server-level defaults
  * @returns {import('express').Router}
  */
-export function createAiRouter(db, auth) {
+export function createAiRouter(db, auth, settings = null) {
   const router = Router();
 
   /** GET /ai/config — get AI config for the authenticated session's API key */
@@ -70,8 +71,8 @@ export function createAiRouter(db, auth) {
   router.get('/status', (req, res) => {
     res.set('Cache-Control', 'private, max-age=3600, stale-while-revalidate=3600');
     return res.json({
-      serverEmbeddingAvailable: isServerEmbeddingAvailable(),
-      serverEmbeddingModel: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+      serverEmbeddingAvailable: settings ? !!settings.get('ai.embedding_api_key') : isServerEmbeddingAvailable(),
+      serverEmbeddingModel: settings ? settings.get('ai.embedding_model') : (process.env.EMBEDDING_MODEL || 'text-embedding-3-small'),
       providers: VALID_PROVIDERS,
     });
   });

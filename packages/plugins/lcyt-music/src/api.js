@@ -48,11 +48,13 @@ export { MusicManager } from './music-manager.js';
  * @param {import('../../lcyt-backend/src/store.js').SessionStore} [store]
  *   Only required if server-side analysis routes will be mounted; Phase-1-only
  *   callers (caption metacode processing alone) may omit it.
- * @param {{ metrics?: object }} [opts] — optional backend metrics handle
- *   (plan_metering_audit §4.1: ffmpeg.process_seconds.music / .pcm)
+ * @param {{ metrics?: object, settings?: { get: (key: string) => * } }} [opts]
+ *   optional backend metrics handle (plan_metering_audit §4.1:
+ *   ffmpeg.process_seconds.music / .pcm) and lcyt-backend's SettingsService
+ *   (plan_env_to_ui_settings.md, duck-typed)
  * @returns {Promise<{ musicManager: MusicManager|null }>}
  */
-export async function initMusicControl(db, store = null, { metrics = null } = {}) {
+export async function initMusicControl(db, store = null, { metrics = null, settings = null } = {}) {
   const { runMigrations } = await import('./db.js');
   runMigrations(db);
 
@@ -64,7 +66,7 @@ export async function initMusicControl(db, store = null, { metrics = null } = {}
   if (!store) return { musicManager: null };
 
   const soundProcessor = createSoundCaptionProcessor({ store, db });
-  const musicManager = new MusicManager(db, store, soundProcessor);
+  const musicManager = new MusicManager(db, store, soundProcessor, { settings });
   return { musicManager };
 }
 

@@ -12,6 +12,7 @@ const TABS = [
   { id: 'users',         label: 'Users',         path: '/admin/users' },
   { id: 'metrics',       label: 'Metrics',       path: '/admin/metrics' },
   { id: 'audit-log',     label: 'Audit Log',     path: '/admin/audit-log' },
+  { id: 'server-settings', label: 'Server',      path: '/admin/server-settings' },
 ];
 
 /**

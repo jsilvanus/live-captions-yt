@@ -23,17 +23,29 @@ import { createEncodersRouter } from './routes/encoders.js';
  * Call once at server startup before mounting routes.
  *
  * @param {import('better-sqlite3').Database} db
+ * @param {{ settings?: { get: (key: string) => * } }} [opts] - lcyt-backend's
+ *   SettingsService (plan_env_to_ui_settings.md), duck-typed.
  * @returns {Promise<{ registry: DeviceRegistry, bridgeManager: BridgeManager, mediamtxClient: MediaMtxClient|null }>}
  */
-export async function initProductionControl(db) {
+export async function initProductionControl(db, { settings = null } = {}) {
   runMigrations(db);
   const bridgeManager = new BridgeManager(db);
   const registry = new DeviceRegistry(db);
   await registry.start();
 
-  // Instantiate MediaMTX client only when the API URL is configured
-  const mediamtxClient = process.env.MEDIAMTX_API_URL
-    ? new MediaMtxClient()
+  // Instantiate MediaMTX client only when the API URL is configured.
+  // MediaMtxClient's constructor already accepts explicit
+  // { baseUrl, webrtcBaseUrl, user, password } opts, falling back to
+  // process.env only when a given opt is omitted, so settings-resolved
+  // values are passed through here rather than widening that class further.
+  const mediamtxApiUrl = settings ? settings.get('mediamtx.api_url') : process.env.MEDIAMTX_API_URL;
+  const mediamtxClient = mediamtxApiUrl
+    ? new MediaMtxClient(settings ? {
+        baseUrl: mediamtxApiUrl,
+        webrtcBaseUrl: settings.get('mediamtx.webrtc_base_url') || undefined,
+        user: settings.get('mediamtx.api_user') || null,
+        password: settings.get('mediamtx.api_password') || null,
+      } : undefined)
     : null;
 
   if (mediamtxClient) {

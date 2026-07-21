@@ -5,12 +5,13 @@ import logger from 'lcyt/logger';
 import { reportFfmpegRun } from 'lcyt-backend/ffmpeg';
 
 export class HlsManager {
-  constructor({ hlsRoot = '/tmp/hls', localRtmp = null, rtmpApp = 'live', mediamtxClient = null, resolveStorage = null } = {}) {
+  constructor({ hlsRoot = '/tmp/hls', localRtmp = null, rtmpApp = 'live', mediamtxClient = null, resolveStorage = null, settings = null } = {}) {
     this._hlsRoot = hlsRoot;
     this._local = localRtmp;
     this._app = rtmpApp;
     this._mediamtx = mediamtxClient;
     this._resolveStorage = resolveStorage;
+    this._settings = settings;
     this._procs = new Map();
     this._watchers = new Map();
     /** Keys started in MediaMTX / no-local-rtmp mode (no local ffmpeg process). */
@@ -440,7 +441,7 @@ export class HlsManager {
 
   // Backwards-compatible helper used by stream-hls route
   getInternalHlsUrl(hlsKey) {
-    const base = (process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
+    const base = (this._settings ? this._settings.get('mediamtx.hls_base_url') : (process.env.MEDIAMTX_HLS_BASE_URL || 'http://127.0.0.1:8080')).replace(/\/$/, '');
     return `${base}/${encodeURIComponent(hlsKey)}`;
   }
 }

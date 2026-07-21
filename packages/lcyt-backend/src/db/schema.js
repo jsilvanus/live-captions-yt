@@ -690,6 +690,21 @@ export function initDb(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_project ON bus_events(project_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_ts ON bus_events(ts)');
 
+  // ── Server settings (plan_env_to_ui_settings.md) ──────────────────────────
+  // Site-scope, one row per explicitly-saved setting. Absence of a row means
+  // "fall through to env/default" — this table never mirrors defaults, so a
+  // registry default change takes effect for every deployment without a
+  // migration. Value is JSON-encoded so a single TEXT column covers every
+  // registry type (string/int/bool/enum/csv/secret). See src/settings/registry.js.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS server_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_by TEXT
+    )
+  `);
+
   // Back-fill project_features from legacy api_keys columns (idempotent)
   const DEFAULT_FEATURES = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations'];
   const LEGACY_FEATURE_MAP = [

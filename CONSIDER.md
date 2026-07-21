@@ -11,6 +11,42 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
+## ~~Server settings (plan_env_to_ui_settings.md) Phase 5 — plugin call-site migration is partial~~ (RESOLVED)
+
+**Where:** `packages/plugins/lcyt-rtmp`, `packages/plugins/lcyt-dsk`, `packages/plugins/lcyt-production`'s `MediaMtxClient`, `packages/plugins/lcyt-agent`'s embedding functions, plus `lcyt-files`/`lcyt-music` from the first Phase 5 pass.
+
+**Resolved 2026-07-21:** all four originally-deferred plugins are now wired to a duck-typed `settings` param, following the same pattern established for `lcyt-files`/`lcyt-music`:
+- **`lcyt-rtmp`** — `RtmpRelayManager`, `CropManager`, `SttManager`, `RadioManager`, `HlsManager`, `PreviewManager`, `NginxManager`, `HlsSubsManager` all accept `settings`. Most of this turned out to be `initRtmpControl()` finally passing settings-resolved values into constructor overrides those classes already supported (`mediamtxHlsBase`, `webrtcBase`, `segmentDuration`, etc.) — not new class surface. Where a value truly was module-load-time (RTMP host/app defaults, CEA-708 timing, crop's ZMQ port base) or read fresh per call with no constructor path (`SttManager`'s STT provider/language/audioSource, `GoogleSttAdapter`'s apiKey/mode), the read site itself now consults `this._settings` first. CEA-708 offset/duration/max-backtrack went from restart-only to genuinely hot (read per caption).
+- **`lcyt-dsk`** — `images.js` (`GRAPHICS_ENABLED` gate + upload size/quota limits, now hot, read per-request), `dsk-rtmp.js`/`dsk-templates.js` (RTMP host/app + renderer local-server URL, resolved once at router construction, including the `DSK_LOCAL_RTMP → RADIO_LOCAL_RTMP` and `DSK_LOCAL_SERVER → DSK_PAGE_BASE_URL` cross-setting fallback chains, preserved via a small resolver checking `settings.source()`). `renderer.js`'s own module-load-time `DSK_LOCAL_SERVER` (the Playwright singleton) is deliberately still untouched — genuinely construction-time-only, correctly `apply: 'restart'`, and restructuring a long-lived renderer process wasn't worth it for this pass.
+- **`lcyt-production`'s `MediaMtxClient`** — the "half-fix risk" reasoning in this entry's original text was wrong: both `MediaMtxClient` copies (`lcyt-production`, `lcyt-rtmp`) already accept explicit `{ baseUrl, webrtcBaseUrl, user, password }` constructor opts, falling back to `process.env` only when a given opt is omitted. Wiring it was just passing settings-resolved values at each `new MediaMtxClient()` call site (`initProductionControl`, `initRtmpControl`) — no widening needed at all.
+- **`lcyt-agent`** — `AgentEngine` now takes `settings` in its constructor opts (`initAgent(db, opts)` already forwarded `opts` wholesale, so no signature change there), used by `isServerEmbeddingAvailable()`/`computeEmbeddings()` for the server-default provider path only — per-project `ai_config` overrides still always win. Wiring this surfaced a real, separate bug (see next entry) in how `server.js` called `computeEmbeddings`.
+
+**Still open, smaller and newly discovered along the way** (each registered in `registry.js` for admin-UI visibility, but not yet read through `settings` anywhere): `VISION_PREVIEW_BASE_URL` (`lcyt-agent`'s `VisionFrameFetcher`) and `CAMERA_PREVIEW_BASE_URL`/`CAMERA_THUMBNAILS_DIR` (`lcyt-production`'s `camera-thumbnail.js`) — neither was in the original lcyt-backend/CLAUDE.md env table (documented only in each plugin's own CLAUDE.md), found only once every actual read site across the repo was checked. Small, contained, same recipe as everything above — just not done yet.
+
+Full test sweep after this pass: all 18 Node.js workspaces pass (`npm test` at repo root), including 1106 lcyt-backend, 247 lcyt-rtmp, 106 lcyt-dsk, 181 lcyt-agent, 110 lcyt-cues, 158 lcyt-production tests.
+
+---
+
+## Bug found while resolving the above: `computeEmbeddings` credential collision in cue semantic matching — RESOLVED
+
+**Where:** `packages/lcyt-backend/src/server.js` (was `_cueEngine.setEmbeddingFn(computeEmbeddings)`), `packages/plugins/lcyt-cues/src/cue-engine.js` (`_embedFn(texts, { apiKey, rule })`), `packages/plugins/lcyt-agent/src/embeddings.js` (`computeEmbeddings(texts, opts)`).
+
+**Finding:** `CueEngine` calls its injected `_embedFn` with `{ apiKey, rule }`, where `apiKey` is the *project's* api_key (used elsewhere in the same evaluator for tracker-state/ai-config lookups). `server.js` wired this directly to the bare `computeEmbeddings` function from `embeddings.js`, whose `opts.apiKey` means something completely different: the *embedding provider's credential*, sent as `Authorization: Bearer ${apiKey}`. Every `cue[semantic]:phrase` match was therefore sending the project's api_key as the embeddings API bearer token instead of `EMBEDDING_API_KEY` — silently breaking semantic cue matching whenever a real embedding key was configured (auth failure) rather than using it.
+
+**Fixed:** rewired through `AgentEngine.computeEmbeddings(texts, apiKey)`, which already correctly keeps the two meanings apart (resolves per-project `ai_config` first, only falls back to the server-level default for the `'server'` provider) — matching what `lcyt-agent/src/api.js`'s own doc comment recommended all along. Found and fixed as a side effect of adding `SettingsService` support to the same method, not a separate pass.
+
+---
+
+## `createOrgNetworkRulesRouter` mounted at `/` swallows unmatched requests as 401, not 404
+
+**Where:** `packages/lcyt-backend/src/server.js` — `app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)))`, no path prefix (matches every request path); `packages/plugins/lcyt-connectors/src/routes/network-rules.js`'s org-scoped router applies `router.use(userAuth)` unconditionally, with no path scoping of its own.
+
+**Finding:** Because this router is mounted at `/` (not e.g. `/orgs/:orgId/connector-network-rules`), every request that reaches this point in `server.js`'s middleware chain without a valid user Bearer token gets a 401 `"Missing or invalid Authorization header"` from this router's internal auth check — even for paths this router has no route for at all, and even for requests where the *intended* behavior is a plain 404 (an unmounted/disabled route). Confirmed via `plan_env_to_ui_settings.md`'s Phase 4 work: converting `RTMP_RELAY_ACTIVE`'s route-mount `if` into a request-time hot gate (`packages/lcyt-backend/src/server.js`'s `/rtmp` mount) revealed that `GET /rtmp` with RTMP disabled and no auth returns 401 from this router, not a 404 — but a same-environment boot of the pre-Phase-4 code (`git stash`, same request) reproduces the identical 401, so this is pre-existing and not a regression from the hot-gate change.
+
+**Why skipped:** out of scope for the settings migration — fixing it means either scoping this router's mount path properly or moving `router.use(userAuth)` to only the routes that need it inside `network-rules.js`, both of which are `lcyt-connectors`-plugin changes unrelated to server settings. Flagging here since any future work relying on "an unmounted/disabled route 404s" (like the settings plan's own hot-gate design assumption) should know this specific global-catch-all sits ahead of most late-mounted routers in `server.js`'s file order and will intercept first.
+
+---
+
 ## DSK Control chrome still ignores the site's light/dark theme
 
 **Where:** `packages/lcyt-web/src/components/DskControlPage.jsx`
