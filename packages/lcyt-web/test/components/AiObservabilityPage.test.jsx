@@ -97,7 +97,7 @@ describe('AiObservabilityPage', () => {
 
     await waitFor(() => expect(screen.getByText('tracker', { selector: 'strong' })).toBeInTheDocument());
     expect(screen.getByText('describer', { selector: 'strong' })).toBeInTheDocument();
-    expect(screen.getByText('running')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('running')).toBeInTheDocument());
     expect(screen.getByText(/stopped/)).toBeInTheDocument();
     expect(screen.getByText(/boom/)).toBeInTheDocument();
   });
