@@ -75,11 +75,15 @@ export class SttManager extends EventEmitter {
    *   The backend session store — used to inject transcripts into session._sendQueue.
    * @param {import('better-sqlite3').Database} [db]
    *   Optional: required for server-side translation in Phase 5.
+   * @param {{ get: (key: string) => * }} [settings]
+   *   lcyt-backend's SettingsService (plan_env_to_ui_settings.md), duck-typed.
+   *   Falls back to raw process.env when omitted.
    */
-  constructor(store, db = null) {
+  constructor(store, db = null, settings = null) {
     super();
     this._store = store;
     this._db = db;
+    this._settings = settings;
     this._getTranslationVendorConfig = null;
     this._getTranslationTargets = null;
     this._writeBackendCaptionFiles = null;
@@ -146,9 +150,9 @@ export class SttManager extends EventEmitter {
    * @param {string} [opts.streamKey]  MediaMTX path; defaults to apiKey
    */
   async start(apiKey, {
-    provider             = 'google',
-    language             = process.env.STT_DEFAULT_LANGUAGE || 'en-US',
-    audioSource          = process.env.STT_AUDIO_SOURCE    || 'hls',
+    provider             = (this._settings ? this._settings.get('stt.provider') : 'google'),
+    language             = (this._settings ? this._settings.get('stt.default_language') : process.env.STT_DEFAULT_LANGUAGE) || 'en-US',
+    audioSource          = (this._settings ? this._settings.get('stt.audio_source') : process.env.STT_AUDIO_SOURCE) || 'hls',
     streamKey            = null,
     confidenceThreshold  = null,
   } = {}) {
@@ -158,14 +162,29 @@ export class SttManager extends EventEmitter {
 
     const effectiveStreamKey = streamKey || apiKey;
 
-    // Create adapter
+    // Create adapter. Each adapter already accepts explicit config overrides
+    // (falling back to raw process.env only when omitted) — settings-resolved
+    // values are passed through here rather than widening those classes further.
     let adapter;
     if (provider === 'google') {
-      adapter = new GoogleSttAdapter({ language });
+      adapter = new GoogleSttAdapter({
+        language,
+        apiKey: this._settings ? this._settings.get('stt.google_stt_key') || undefined : undefined,
+        mode: this._settings ? this._settings.get('stt.google_stt_mode') : undefined,
+      });
     } else if (provider === 'whisper_http') {
-      adapter = new WhisperHttpAdapter({ language });
+      adapter = new WhisperHttpAdapter({
+        language,
+        serverUrl: this._settings ? this._settings.get('stt.whisper_http_url') || undefined : undefined,
+        model: this._settings ? this._settings.get('stt.whisper_http_model') || undefined : undefined,
+      });
     } else if (provider === 'openai') {
-      adapter = new OpenAiAdapter({ language });
+      adapter = new OpenAiAdapter({
+        language,
+        baseUrl: this._settings ? this._settings.get('stt.openai_stt_url') || undefined : undefined,
+        apiKey: this._settings ? this._settings.get('stt.openai_stt_api_key') || undefined : undefined,
+        model: this._settings ? this._settings.get('stt.openai_stt_model') || undefined : undefined,
+      });
     } else {
       throw new Error(`SttManager: unsupported provider "${provider}". Supported: google, whisper_http, openai`);
     }
@@ -211,7 +230,7 @@ export class SttManager extends EventEmitter {
 
     // ── Audio source ──────────────────────────────────────────────────────
     if (audioSource === 'hls') {
-      const hlsBase = process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE;
+      const hlsBase = (this._settings ? this._settings.get('mediamtx.hls_base_url') : process.env.MEDIAMTX_HLS_BASE_URL) || DEFAULT_MEDIAMTX_HLS_BASE;
       const fetcher = new HlsSegmentFetcher({ hlsBase, streamKey: effectiveStreamKey });
       session.fetcher = fetcher;
 
@@ -367,12 +386,12 @@ export class SttManager extends EventEmitter {
    */
   _buildFfmpegInputUrl(audioSource, streamKey) {
     if (audioSource === 'rtmp') {
-      const rtmpBase = (process.env.HLS_LOCAL_RTMP || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
-      const rtmpApp  = process.env.HLS_RTMP_APP || 'live';
+      const rtmpBase = ((this._settings ? this._settings.get('media.hls_local_rtmp') : process.env.HLS_LOCAL_RTMP) || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
+      const rtmpApp  = (this._settings ? this._settings.get('media.hls_rtmp_app') : process.env.HLS_RTMP_APP) || 'live';
       return `${rtmpBase}/${rtmpApp}/${streamKey}`;
     }
     // whep — served by MediaMTX's WebRTC HTTP server (default :8889), not the HLS port
-    const mediamtxBase = (process.env.MEDIAMTX_WEBRTC_BASE_URL || DEFAULT_MEDIAMTX_WEBRTC_BASE).replace(/\/$/, '');
+    const mediamtxBase = ((this._settings ? this._settings.get('mediamtx.webrtc_base_url') : process.env.MEDIAMTX_WEBRTC_BASE_URL) || DEFAULT_MEDIAMTX_WEBRTC_BASE).replace(/\/$/, '');
     return `${mediamtxBase}/${streamKey}/whep`;
   }
 

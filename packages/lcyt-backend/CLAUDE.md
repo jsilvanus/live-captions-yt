@@ -101,7 +101,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `PLAYWRIGHT_DSK_CHROMIUM` | Path to Chromium binary for DSK renderer | Playwright cache path |
 | `DSK_LOCAL_SERVER` | Local server URL used by DSK renderer | `http://localhost:$PORT` |
 | `DSK_LOCAL_RTMP` | Local nginx-rtmp base URL for DSK RTMP output | `rtmp://127.0.0.1:1935` |
-| `DSK_RTMP_APP` | RTMP application name for DSK renderer output | `live` |
+| `DSK_RTMP_APP` | RTMP application name for DSK renderer output | `dsk` |
 | `STT_PROVIDER` | Default STT provider: `google`, `whisper_http`, `openai` | `google` |
 | `STT_DEFAULT_LANGUAGE` | Default BCP-47 language tag for STT | `en-US` |
 | `STT_AUDIO_SOURCE` | Default audio source for STT: `hls`, `rtmp`, `whep` | `hls` |

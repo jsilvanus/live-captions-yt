@@ -25,11 +25,13 @@ export class RadioManager {
    * @param {{
    *   mediamtxClient?: import('./mediamtx-client.js').MediaMtxClient,
    *   nginxManager?:   NginxManager,
+   *   settings?:       { get: (key: string) => * },
    * }} [opts]
    */
-  constructor({ mediamtxClient, nginxManager } = {}) {
+  constructor({ mediamtxClient, nginxManager, settings = null } = {}) {
     /** @type {import('./mediamtx-client.js').MediaMtxClient | null} */
     this._mediamtx = mediamtxClient ?? null;
+    this._settings = settings;
 
     /**
      * NginxManager handles writing nginx proxy locations for slug → MediaMTX.
@@ -163,7 +165,7 @@ export class RadioManager {
    * @returns {string}
    */
   getInternalHlsUrl(radioKey) {
-    const base = (process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE).replace(/\/$/, '');
+    const base = (this._settings ? this._settings.get('mediamtx.hls_base_url') : (process.env.MEDIAMTX_HLS_BASE_URL || DEFAULT_MEDIAMTX_HLS_BASE)).replace(/\/$/, '');
     return `${base}/${encodeURIComponent(radioKey)}`;
   }
 }

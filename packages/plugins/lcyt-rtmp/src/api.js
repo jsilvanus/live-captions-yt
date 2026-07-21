@@ -90,25 +90,35 @@ export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
  *   stop: () => Promise<void>
  * }>}
  */
-export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null } = {}) {
+export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null, settings = null } = {}) {
   runMigrations(db);
 
-  const ffmpegCaps = process.env.RTMP_RELAY_ACTIVE === '1'
+  const ffmpegCaps = (settings ? settings.get('media.rtmp_relay_active') : process.env.RTMP_RELAY_ACTIVE === '1')
     ? probeFfmpeg()
     : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
 
   // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
   const _rtmpStatIds = new Map();
 
-  // Build MediaMTX client when API URL is configured.
+  // Build MediaMTX client when API URL is configured. MediaMtxClient's
+  // constructor already accepts explicit { baseUrl, user, password, webrtcBaseUrl }
+  // opts, falling back to process.env only when a given opt is omitted — so
+  // settings-resolved values are passed through here rather than widening
+  // that class further.
   // Created before relayManager so the same instance can be shared across all managers.
-  const mediamtxClient = process.env.MEDIAMTX_API_URL
-    ? new MediaMtxClient()
+  const mediamtxApiUrl = settings ? settings.get('mediamtx.api_url') : process.env.MEDIAMTX_API_URL;
+  const mediamtxClient = mediamtxApiUrl
+    ? new MediaMtxClient(settings ? {
+        baseUrl: mediamtxApiUrl,
+        user: settings.get('mediamtx.api_user') || null,
+        password: settings.get('mediamtx.api_password') || null,
+      } : undefined)
     : null;
 
   const relayManager = new RtmpRelayManager({
     ffmpegCaps,
     mediamtxClient,
+    settings,
     onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
       try {
         const id = writeRtmpStreamStart(db, {
@@ -148,21 +158,30 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
 
   // NginxManager handles writing nginx proxy locations for MediaMTX radio streams.
   // When NGINX_RADIO_CONFIG_PATH is not set, NginxManager operates in no-op mode
-  // (slugs are computed but nginx config is not written).
-  const nginxManager = new NginxManager();
+  // (slugs are computed but nginx config is not written). configPath/testCmd/
+  // reloadCmd stay env-only (Tier A — executed/path); mediamtxHlsBase/prefix
+  // are Tier B, so passed through explicitly when settings is available —
+  // NginxManager already supports these as constructor overrides.
+  const nginxManager = new NginxManager(settings ? {
+    mediamtxHlsBase: settings.get('mediamtx.hls_base_url'),
+    prefix: settings.get('media.nginx_radio_prefix'),
+  } : undefined);
 
-  const radioManager   = new RadioManager({ mediamtxClient, nginxManager });
-  const hlsManager     = new HlsManager({ mediamtxClient, resolveStorage });
-  const hlsSubsManager = new HlsSubsManager();
-  const previewManager = new PreviewManager({ mediamtxClient });
-  const sttManager     = new SttManager(store, db);
-  const cropManager    = new CropManager({ ffmpegCaps, mediamtxClient });
+  const radioManager   = new RadioManager({ mediamtxClient, nginxManager, settings });
+  const hlsManager     = new HlsManager({ mediamtxClient, resolveStorage, settings });
+  const hlsSubsManager = new HlsSubsManager(settings ? {
+    segmentDuration: settings.get('media.hls_subs_segment_duration'),
+    windowSize: settings.get('media.hls_subs_window_size'),
+  } : undefined);
+  const previewManager = new PreviewManager({ mediamtxClient, webrtcBase: settings ? settings.get('mediamtx.webrtc_base_url') : undefined });
+  const sttManager     = new SttManager(store, db, settings);
+  const cropManager    = new CropManager({ ffmpegCaps, mediamtxClient, settings });
 
   if (nginxManager.isEnabled) {
     logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
   }
   if (mediamtxClient) {
-    logger.info(`[lcyt-rtmp] MediaMTX API: ${process.env.MEDIAMTX_API_URL}`);
+    logger.info(`[lcyt-rtmp] MediaMTX API: ${mediamtxApiUrl}`);
   }
 
   async function stop() {

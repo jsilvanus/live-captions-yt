@@ -105,15 +105,17 @@ export class GoogleSttAdapter extends EventEmitter {
   /**
    * @param {object} [opts]
    * @param {string} [opts.language='en-US']  BCP-47 language code
+   * @param {string} [opts.apiKey]  defaults to raw process.env.GOOGLE_STT_KEY when omitted
+   * @param {string} [opts.mode]    'rest'|'grpc'; defaults to raw process.env.GOOGLE_STT_MODE when omitted
    */
-  constructor({ language = 'en-US' } = {}) {
+  constructor({ language = 'en-US', apiKey, mode } = {}) {
     super();
     this._language       = language;
-    this._apiKey         = process.env.GOOGLE_STT_KEY || null;
+    this._apiKey         = apiKey ?? process.env.GOOGLE_STT_KEY ?? null;
     this._serviceAccount = null;
     this._token          = null;
     this._tokenExpiry    = 0; // unix seconds
-    this._mode           = (process.env.GOOGLE_STT_MODE === 'grpc' && SpeechClient) ? 'grpc' : 'rest';
+    this._mode           = ((mode ?? process.env.GOOGLE_STT_MODE) === 'grpc' && SpeechClient) ? 'grpc' : 'rest';
 
     // Track outstanding network promises so stop() can wait for them
     this._pending = new Set();

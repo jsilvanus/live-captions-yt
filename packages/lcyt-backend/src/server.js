@@ -248,7 +248,7 @@ const { storage, resolveStorage, invalidateStorageCache } = await initFilesContr
 // Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
 // Pass resolveStorage so HLS manager can publish segments/playlists to storage.
-const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage });
+const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer

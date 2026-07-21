@@ -130,12 +130,14 @@ export class CropManager {
    *   ffmpegCaps?: { available?: boolean, hasZmq?: boolean }|null,
    *   mediamtxClient?: import('./mediamtx-client.js').MediaMtxClient|null,
    *   probeResolution?: Function,   // test injection; defaults to probeInputResolution
+   *   settings?: { get: (key: string) => * },   // lcyt-backend's SettingsService, duck-typed
    * }} [opts]
    */
-  constructor({ ffmpegCaps = null, mediamtxClient = null, probeResolution } = {}) {
+  constructor({ ffmpegCaps = null, mediamtxClient = null, probeResolution, settings = null } = {}) {
     this._ffmpegCaps = ffmpegCaps;
     this._mediamtx = mediamtxClient;
     this._probeResolution = probeResolution ?? probeInputResolution;
+    this._settings = settings;
 
     /**
      * Per-key session state:
@@ -239,7 +241,8 @@ export class CropManager {
     // memory (_followState) must survive this internal stop/start cycle.
     await this.stop(apiKey, { keepFollowState: true });
 
-    const srcUrl = `${DEFAULT_MEDIAMTX_RTSP}/${encodeURIComponent(apiKey)}`;
+    const rtspBase = ((this._settings ? this._settings.get('mediamtx.rtsp_base_url') : DEFAULT_MEDIAMTX_RTSP)).replace(/\/$/, '');
+    const srcUrl = `${rtspBase}/${encodeURIComponent(apiKey)}`;
     // Reuse the previous session's successfully-probed resolution on restarts
     // (restart-mode repositioning would otherwise pay the probe on every move).
     let inW, inH, probed;
@@ -258,15 +261,17 @@ export class CropManager {
 
     const geometry = { inW, inH, probed, ...computeCropGeometry({ inW, inH, aspectW: config.aspectW, aspectH: config.aspectH }) };
     const { x, y } = normToPixels(pos, geometry);
-    const outW = config.outW ?? Number((process.env.CROP_OUTPUT_DEFAULT || '1080x1920').split('x')[0]);
-    const outH = config.outH ?? Number((process.env.CROP_OUTPUT_DEFAULT || '1080x1920').split('x')[1]);
+    const cropOutputDefault = this._settings ? this._settings.get('media.crop_output_default') : (process.env.CROP_OUTPUT_DEFAULT || '1080x1920');
+    const outW = config.outW ?? Number(cropOutputDefault.split('x')[0]);
+    const outH = config.outH ?? Number(cropOutputDefault.split('x')[1]);
 
     // zmq lands in the graph only when both the ffmpeg build and the node
     // client side are available — a bind without a client would be dead
     // weight (and a pointless port allocation), so resolve the optional
     // `zeromq` import BEFORE deciding whether to insert the filter.
     const zmqMod = this._ffmpegCaps?.hasZmq ? await this._loadZmqModule() : null;
-    const zmqPort = zmqMod ? ZMQ_PORT_BASE + (this._nextZmqOffset++ % 1000) : null;
+    const zmqPortBase = this._settings ? this._settings.get('media.crop_zmq_port_base') : ZMQ_PORT_BASE;
+    const zmqPort = zmqMod ? zmqPortBase + (this._nextZmqOffset++ % 1000) : null;
     let filter = `[0:v]crop@vcrop=${geometry.cropW}:${geometry.cropH}:${x}:${y},scale=${outW}:${outH}`;
     // Args go through spawn (no shell); only the filtergraph parser needs the
     // ':' inside the bind address escaped, so a single literal backslash.
@@ -282,11 +287,12 @@ export class CropManager {
     if (config.videoBitrate) args.push('-b:v', config.videoBitrate);
     args.push('-c:a', 'copy');
     // Bare path — MediaMTX uses the full URL path as the path name.
-    args.push('-f', 'flv', `${DEFAULT_MEDIAMTX_RTMP}/${CropManager.cropPathName(apiKey)}`);
+    const rtmpBase = ((this._settings ? this._settings.get('mediamtx.rtmp_base_url') : DEFAULT_MEDIAMTX_RTMP)).replace(/\/$/, '');
+    args.push('-f', 'flv', `${rtmpBase}/${CropManager.cropPathName(apiKey)}`);
 
     const tag = `[crop:${apiKey.slice(0, 8)}]`;
     const runner = createFfmpegRunner({
-      runner: process.env.FFMPEG_RUNNER ?? 'spawn',
+      runner: (this._settings ? this._settings.get('compute.ffmpeg_runner') : process.env.FFMPEG_RUNNER) ?? 'spawn',
       cmd: 'ffmpeg',
       args,
       name: tag,

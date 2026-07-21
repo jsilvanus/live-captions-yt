@@ -98,10 +98,14 @@ function buildSrtCue(seq, startMs, durationMs, text) {
 /**
  * Build the source RTMP URL from which nginx-rtmp is publishing.
  * @param {string} apiKey
+ * @param {{ get: (key: string) => * }} [settings] - lcyt-backend's SettingsService
+ *   (plan_env_to_ui_settings.md), duck-typed. Falls back to raw process.env when omitted.
  * @returns {string}
  */
-function sourceUrl(apiKey) {
-  return `rtmp://${DEFAULT_RTMP_HOST}/${DEFAULT_RTMP_APP}/${apiKey}`;
+function sourceUrl(apiKey, settings = null) {
+  const host = settings ? settings.get('media.rtmp_host') : DEFAULT_RTMP_HOST;
+  const app  = settings ? settings.get('media.rtmp_app')  : DEFAULT_RTMP_APP;
+  return `rtmp://${host}/${app}/${apiKey}`;
 }
 
 /**
@@ -123,10 +127,12 @@ function outPathName(apiKey, suffix = 'out') {
  * runOnPublish fan-out hook is registered on "{key}-out" and never fires.
  * @param {string} apiKey
  * @param {string} [suffix]
+ * @param {{ get: (key: string) => * }} [settings]
  * @returns {string}
  */
-function outRtmpUrl(apiKey, suffix = 'out') {
-  return `${DEFAULT_MEDIAMTX_RTMP}/${outPathName(apiKey, suffix)}`;
+function outRtmpUrl(apiKey, suffix = 'out', settings = null) {
+  const base = (settings ? settings.get('mediamtx.rtmp_base_url') : DEFAULT_MEDIAMTX_RTMP).replace(/\/$/, '');
+  return `${base}/${outPathName(apiKey, suffix)}`;
 }
 
 /**
@@ -134,10 +140,12 @@ function outRtmpUrl(apiKey, suffix = 'out') {
  * so the fan-out ffmpeg reads directly from MediaMTX rather than via an RTMP loop.
  * @param {string} apiKey
  * @param {string} [suffix]
+ * @param {{ get: (key: string) => * }} [settings]
  * @returns {string}
  */
-function outRtspUrl(apiKey, suffix = 'out') {
-  return `${DEFAULT_MEDIAMTX_RTSP}/${outPathName(apiKey, suffix)}`;
+function outRtspUrl(apiKey, suffix = 'out', settings = null) {
+  const base = (settings ? settings.get('mediamtx.rtsp_base_url') : DEFAULT_MEDIAMTX_RTSP).replace(/\/$/, '');
+  return `${base}/${outPathName(apiKey, suffix)}`;
 }
 
 /** Shared validation regexes used when building runOnPublish fan-out commands. */
@@ -204,9 +212,17 @@ export class RtmpRelayManager {
    *   rtmpControlUrl?: string|null,
    *   rtmpApplication?: string,
    *   mediamtxClient?: import('./mediamtx-client.js').MediaMtxClient|null,
+   *   settings?: { get: (key: string) => * },
    * }} [opts]
    */
-  constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication, ffmpegCaps, mediamtxClient } = {}) {
+  constructor({ onStreamStarted, onStreamEnded, rtmpControlUrl, rtmpApplication, ffmpegCaps, mediamtxClient, settings } = {}) {
+    /**
+     * lcyt-backend's SettingsService (plan_env_to_ui_settings.md), duck-typed
+     * so this plugin doesn't depend on lcyt-backend. Null in standalone/test
+     * use, in which case every settings-aware read below falls back to raw
+     * process.env exactly as before this was wired.
+     */
+    this._settings = settings ?? null;
     /**
      * One ffmpeg process per API key (CEA-708, DSK overlay, or per-slot transcode).
      * @type {Map<string, import('node:child_process').ChildProcess>}
@@ -276,13 +292,26 @@ export class RtmpRelayManager {
 
     this._onStreamStarted = onStreamStarted ?? null;
     this._onStreamEnded   = onStreamEnded   ?? null;
-    this._controlUrl = rtmpControlUrl ?? process.env.RTMP_CONTROL_URL ?? null;
-    this._rtmpApp    = rtmpApplication ?? process.env.RTMP_APPLICATION ?? DEFAULT_RTMP_APP;
+    this._controlUrl = rtmpControlUrl ?? (this._settings ? (this._settings.get('media.rtmp_control_url') || null) : (process.env.RTMP_CONTROL_URL ?? null));
+    this._rtmpApp    = rtmpApplication ?? (this._settings ? (this._settings.get('media.rtmp_application') || undefined) : process.env.RTMP_APPLICATION) ?? (this._settings ? this._settings.get('media.rtmp_app') : DEFAULT_RTMP_APP);
     this._ffmpegCaps = ffmpegCaps ?? null;
     // MediaMTX REST API client. When provided (or MEDIAMTX_API_URL is set), `dropPublisher`
     // uses the MediaMTX `/v3/paths/kick` endpoint instead of the nginx-rtmp control URL.
+    // MediaMtxClient's constructor already accepts explicit opts (falling back to
+    // process.env only when a given opt is omitted), so passing settings-resolved
+    // values here doesn't need any change to that class.
+    const mediamtxApiUrl = this._settings ? this._settings.get('mediamtx.api_url') : process.env.MEDIAMTX_API_URL;
     this._mediamtx = mediamtxClient
-      ?? (process.env.MEDIAMTX_API_URL ? new MediaMtxClient() : null);
+      ?? (mediamtxApiUrl ? new MediaMtxClient(this._settings ? {
+        baseUrl: mediamtxApiUrl,
+        user: this._settings.get('mediamtx.api_user') || null,
+        password: this._settings.get('mediamtx.api_password') || null,
+      } : undefined) : null);
+  }
+
+  /** @returns {string} MediaMTX RTSP base URL, trailing slash stripped, settings-aware. */
+  _rtspBase() {
+    return (this._settings ? this._settings.get('mediamtx.rtsp_base_url') : DEFAULT_MEDIAMTX_RTSP).replace(/\/$/, '');
   }
 
   // ---------------------------------------------------------------------------
@@ -411,7 +440,7 @@ export class RtmpRelayManager {
       const dskState = !hasCea708 && !hasTranscode ? (this._dskState.get(apiKey) ?? null) : null;
       const hasDsk = !!(dskState && (dskState.imagePaths?.length > 0 || dskState.rtmpUrl));
 
-      const src = sourceUrl(apiKey);
+      const src = sourceUrl(apiKey, this._settings);
       
       logger.info(`[rtmp] Starting relay (${relays.length} slot(s), cea708=${hasCea708}, transcode=${hasTranscode}, dsk=${hasDsk}): ${src}`);
 
@@ -441,9 +470,9 @@ export class RtmpRelayManager {
 
         if (this._mediamtx) {
           // Single output back into MediaMTX; MediaMTX fans out via runOnPublish.
-          args.push('-f', 'flv', outRtmpUrl(apiKey));
+          args.push('-f', 'flv', outRtmpUrl(apiKey, 'out', this._settings));
           const teeTargets = _buildTeeTargets(relays);
-          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey)} -c copy -f tee "${teeTargets}"`;
+          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey, 'out', this._settings)} -c copy -f tee "${teeTargets}"`;
           try {
             await this._upsertPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
@@ -506,7 +535,7 @@ export class RtmpRelayManager {
           const slotPaths = [];
           const teeTargets = relays.map((r, i) => {
             const suffix = `t${i}`;
-            return `[f=flv:select=v:${i}+a:${i}]${outRtmpUrl(apiKey, suffix)}`;
+            return `[f=flv:select=v:${i}+a:${i}]${outRtmpUrl(apiKey, suffix, this._settings)}`;
           }).join('|');
           args.push('-f', 'tee', teeTargets);
 
@@ -518,7 +547,7 @@ export class RtmpRelayManager {
             if (!nameOk || !SAFE_RTMP_RE.test(targetUrl)) {
               throw new Error(`Target URL or name unsafe for transcode slot ${i}: ${String(targetUrl).slice(0, 80)}`);
             }
-            const cmd = `ffmpeg -re -i ${outRtspUrl(apiKey, suffix)} -c copy -f flv ${targetUrl}`;
+            const cmd = `ffmpeg -re -i ${outRtspUrl(apiKey, suffix, this._settings)} -c copy -f flv ${targetUrl}`;
             try {
               await this._upsertPath(outPathName(apiKey, suffix), { runOnPublish: cmd, runOnPublishRestart: true });
               slotPaths.push(outPathName(apiKey, suffix));
@@ -541,8 +570,9 @@ export class RtmpRelayManager {
         if (dskState.rtmpUrl) {
           // DSK stream pushed by renderer to MediaMTX; read it back via RTSP to avoid an
           // RTMP push/pull conflict on the same path when MediaMTX is the broker.
+          const dskRtmpApp = this._settings ? this._settings.get('graphics.dsk_rtmp_app') : DEFAULT_DSK_RTMP_APP;
           const dskInput = this._mediamtx
-            ? `${DEFAULT_MEDIAMTX_RTSP}/${DEFAULT_DSK_RTMP_APP}/${encodeURIComponent(apiKey)}`
+            ? `${this._rtspBase()}/${dskRtmpApp}/${encodeURIComponent(apiKey)}`
             : dskState.rtmpUrl;
           args = ['-re', '-i', src, '-re', '-i', dskInput];
           args.push('-filter_complex', buildDskCompositeFilter(dskState.chromaKey));
@@ -574,9 +604,9 @@ export class RtmpRelayManager {
 
         if (this._mediamtx) {
           // Single output back into MediaMTX; fan-out via runOnPublish.
-          args.push('-f', 'flv', outRtmpUrl(apiKey));
+          args.push('-f', 'flv', outRtmpUrl(apiKey, 'out', this._settings));
           const teeTargets = _buildTeeTargets(relays);
-          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey)} -c copy -f tee "${teeTargets}"`;
+          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey, 'out', this._settings)} -c copy -f tee "${teeTargets}"`;
           try {
             await this._upsertPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
@@ -612,7 +642,7 @@ export class RtmpRelayManager {
 
         // Escape double-quotes as a safety measure (shouldn't be present after validation).
         const safeTee = teeTargets.replace(/"/g, '');
-        const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${encodeURIComponent(apiKey)} -c copy -f tee "${safeTee}"`;
+        const runOnPublish = `ffmpeg -re -i ${this._rtspBase()}/${encodeURIComponent(apiKey)} -c copy -f tee "${safeTee}"`;
 
         try {
           await this._upsertPath(apiKey, { runOnPublish, runOnPublishRestart: true });
@@ -816,7 +846,7 @@ export class RtmpRelayManager {
       throw new Error(`'${pathName}' contains unsafe characters for MediaMTX runOnPublish`);
     }
     const teeTargets = _buildTeeTargets(slots);
-    const runOnPublish = `ffmpeg -re -i ${DEFAULT_MEDIAMTX_RTSP}/${pathName} -c copy -f tee "${teeTargets}"`;
+    const runOnPublish = `ffmpeg -re -i ${this._rtspBase()}/${pathName} -c copy -f tee "${teeTargets}"`;
     try {
       await this._upsertPath(pathName, { runOnPublish, runOnPublishRestart: true });
       logger.info(`[rtmp] ${logLabel} configured via MediaMTX on '${pathName}' (${slots.length} slot(s))`);
@@ -1090,27 +1120,33 @@ export class RtmpRelayManager {
     // timestamps must be shifted forward by the same amount to align with the delayed frames.
     const delayMs = meta.cea708DelayMs || 0;
 
+    // Settings-aware, read fresh per caption (genuinely hot once wired — these
+    // were module-load-time constants before this was migrated to settings).
+    const offsetMs       = this._settings ? this._settings.get('media.cea708_offset_ms')        : CEA708_OFFSET_MS;
+    const durationMs     = this._settings ? this._settings.get('media.cea708_duration_ms')      : CEA708_DURATION_MS;
+    const maxBacktrackMs = this._settings ? this._settings.get('media.cea708_max_backtrack_ms')  : CEA708_MAX_BACKTRACK_MS;
+
     let cueStartMs;
     if (speechStart !== undefined && speechStart !== null) {
       // VAD onset — use as cue start, shifted by video delay
       cueStartMs = Math.max(0, toStreamMs(speechStart) + delayMs);
     } else if (timestamp !== undefined && timestamp !== null) {
       // ASR finalisation minus pre-roll offset, shifted by video delay
-      cueStartMs = Math.max(0, toStreamMs(timestamp) - CEA708_OFFSET_MS + delayMs);
+      cueStartMs = Math.max(0, toStreamMs(timestamp) - offsetMs + delayMs);
     } else {
       // No timing info — shift back from current stream time, compensating for video delay
-      cueStartMs = Math.max(0, streamTimeMs - CEA708_OFFSET_MS + delayMs);
+      cueStartMs = Math.max(0, streamTimeMs - offsetMs + delayMs);
     }
 
     // Don't backtrack too far — decoders typically discard stale SEI data.
     // The reference point is the delayed stream time (current video PTS seen by the decoder).
     const delayedStreamTimeMs = streamTimeMs + delayMs;
-    const minStartMs = Math.max(0, delayedStreamTimeMs - CEA708_MAX_BACKTRACK_MS);
+    const minStartMs = Math.max(0, delayedStreamTimeMs - maxBacktrackMs);
     cueStartMs = Math.max(minStartMs, cueStartMs);
 
     meta.srtSeq += 1;
     meta.captionsSent = (meta.captionsSent || 0) + 1;
-    const cue = buildSrtCue(meta.srtSeq, cueStartMs, CEA708_DURATION_MS, text);
+    const cue = buildSrtCue(meta.srtSeq, cueStartMs, durationMs, text);
 
     try {
       const meta = this._meta.get(apiKey);
