@@ -213,7 +213,7 @@ if (settings.get('media.rtmp_relay_active')) {
   console.info('  RTMP relay is inactive. Set RTMP_RELAY_ACTIVE=1 and configure nginx-rtmp to enable it.');
 }
 
-const metrics = createMetrics(db);
+const metrics = createMetrics(db, settings);
 setMetricsInstance(metrics);
 // One shared pub/sub bus for the whole backend. Every per-project SSE registry
 // (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
@@ -702,7 +702,7 @@ app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // hands out to the DSK renderer for the same reason — not
 // DEFAULT_PREVIEW_BASE_URL, which defaults to http://localhost:$PORT and is
 // only correct for lcyt-production's own in-process preview fetches.
-const _perceptionBackendUrl = process.env.BACKEND_URL || DEFAULT_PREVIEW_BASE_URL;
+const _perceptionBackendUrl = settings.get('app.backend_url') || DEFAULT_PREVIEW_BASE_URL;
 const _perceptionManager = createPerceptionManager({
   previewBaseUrl: _perceptionBackendUrl,
   callbackBaseUrl: _perceptionBackendUrl,
@@ -737,6 +737,7 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   // cross-tenant review finding).
   auth: scopedAuth('production'),
   perceptionManager: _perceptionManager,
+  settings,
 }));
 
 // RTMP relay routes — media.rtmp_relay_active is hot: always mounted (the

@@ -134,14 +134,12 @@ async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, 
 // MediaMTX may still be flushing the final segment to disk right after the
 // record:no patch is acknowledged; give it a brief grace window before an
 // S3-backed recording's local artifacts are read for upload.
-const RECORDING_UPLOAD_DELAY_MS = Number(process.env.RECORDING_UPLOAD_DELAY_MS) || 3000;
-
-function scheduleRecordingStorageSync(db, apiKey, videoId) {
+function scheduleRecordingStorageSync(db, apiKey, videoId, delayMs = 3000) {
   setTimeout(() => {
     syncVideoRecordingToStorage(db, apiKey, videoId).catch((err) => {
       logger.warn(`[videos] recording storage sync failed (videoId=${videoId}): ${err?.message}`);
     });
-  }, RECORDING_UPLOAD_DELAY_MS).unref?.();
+  }, delayMs).unref?.();
 }
 
 async function startSessionRecording(db, session, { mediamtxClient }) {
@@ -168,7 +166,7 @@ async function startSessionRecording(db, session, { mediamtxClient }) {
   return { ok: true, active: true, video: videoResult.video };
 }
 
-async function stopSessionRecording(db, session, { mediamtxClient }) {
+async function stopSessionRecording(db, session, { mediamtxClient }, recordingUploadDelayMs = 3000) {
   if (!session?.recordingVideoId) {
     return { ok: true, active: false };
   }
@@ -189,7 +187,7 @@ async function stopSessionRecording(db, session, { mediamtxClient }) {
     enabled: false,
   });
   session.recordingVideoId = null;
-  scheduleRecordingStorageSync(db, session.apiKey, recordingVideoId);
+  scheduleRecordingStorageSync(db, session.apiKey, recordingVideoId, recordingUploadDelayMs);
   return { ok: true, active: false };
 }
 
@@ -207,7 +205,7 @@ async function stopSessionRecording(db, session, { mediamtxClient }) {
  * @param {{ mediamtxClient?: object | null }} [opts]
  * @returns {Router}
  */
-export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null } = {}) {
+export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, settings = null } = {}) {
   const router = Router();
   const auth = createAuthMiddleware(jwtSecret);
   const recordingLimiter = rateLimit({
@@ -216,6 +214,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     standardHeaders: true,
     legacyHeaders: false,
   });
+  const recordingUploadDelayMs = settings ? settings.get('retention.recording_upload_delay_ms') : (Number(process.env.RECORDING_UPLOAD_DELAY_MS) || 3000);
 
   // POST /live — Register session
   router.post('/', async (req, res) => {
@@ -283,7 +282,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
 
       // Re-issue JWT when missing (e.g. after server restart + rehydrate)
       if (!existing.jwt) {
-        const sessionTtlMs = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000;
+        const sessionTtlMs = settings ? settings.get('retention.session_ttl') : (Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000);
         const newToken = jwt.sign({ sessionId, apiKey }, jwtSecret, { expiresIn: Math.floor(sessionTtlMs / 1000) });
         existing.jwt = newToken;
         // Persist updated metadata so future rehydrates have consistent state
@@ -383,7 +382,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
     }
 
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
-    const sessionTtlMs = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000;
+    const sessionTtlMs = settings ? settings.get('retention.session_ttl') : (Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000);
     const token = jwt.sign({ sessionId, apiKey }, jwtSecret, { expiresIn: Math.floor(sessionTtlMs / 1000) });
 
     // Store session
@@ -447,7 +446,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to start recording' });
       return res.status(200).json({ ok: true, recording: true });
     }
-    const result = await stopSessionRecording(db, session, { mediamtxClient });
+    const result = await stopSessionRecording(db, session, { mediamtxClient }, recordingUploadDelayMs);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to stop recording' });
     return res.status(200).json({ ok: true, recording: false });
   });
@@ -586,7 +585,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null }
             videoDir: getVideoStorageDir(removed.apiKey, removed.recordingVideoId),
             enabled: false,
           });
-          scheduleRecordingStorageSync(db, removed.apiKey, removed.recordingVideoId);
+          scheduleRecordingStorageSync(db, removed.apiKey, removed.recordingVideoId, recordingUploadDelayMs);
         } catch (err) {
           logger.warn(`[videos] finishVideoRecording failed (videoId=${removed.recordingVideoId})`, err);
         }

@@ -43,7 +43,7 @@ function sendEvent(res, eventName, data) {
  * @param {import('better-sqlite3').Database} db
  * @param {string} jwtSecret — for verifying the SSE ?token= / Bearer session JWT
  */
-export function createSttRouter(auth, sttManager, db, jwtSecret) {
+export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null) {
   const router = Router();
 
   // Meter STT wall-clock time per project (plan_metering_audit §3.2). One
@@ -66,9 +66,9 @@ export function createSttRouter(auth, sttManager, db, jwtSecret) {
   router.post('/start', auth, async (req, res) => {
     const { apiKey } = req.session;
     const {
-      provider             = process.env.STT_PROVIDER          || 'google',
-      language             = process.env.STT_DEFAULT_LANGUAGE  || 'en-US',
-      audioSource          = process.env.STT_AUDIO_SOURCE      || 'hls',
+      provider             = (settings ? settings.get('stt.provider') : null) || 'google',
+      language             = (settings ? settings.get('stt.default_language') : null) || 'en-US',
+      audioSource          = (settings ? settings.get('stt.audio_source') : null) || 'hls',
       streamKey            = null,
       confidenceThreshold  = null,
     } = req.body || {};
@@ -161,9 +161,9 @@ export function createSttRouter(auth, sttManager, db, jwtSecret) {
     res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
     if (!cfg) {
       return res.json({
-        provider:            process.env.STT_PROVIDER         || 'google',
-        language:            process.env.STT_DEFAULT_LANGUAGE || 'en-US',
-        audioSource:         process.env.STT_AUDIO_SOURCE     || 'hls',
+        provider:            (settings ? settings.get('stt.provider') : null) || 'google',
+        language:            (settings ? settings.get('stt.default_language') : null) || 'en-US',
+        audioSource:         (settings ? settings.get('stt.audio_source') : null) || 'hls',
         streamKey:           null,
         autoStart:           false,
         confidenceThreshold: null,
