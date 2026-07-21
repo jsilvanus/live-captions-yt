@@ -237,7 +237,7 @@ const {
   registry: productionRegistry,
   bridgeManager: productionBridgeManager,
   mediamtxClient: productionMediamtxClient,
-} = await initProductionControl(db);
+} = await initProductionControl(db, { settings });
 
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
