@@ -5,6 +5,7 @@ import { applyDeps } from '../lib/applyDeps.js';
 import { readLocalSettings } from '../lib/readLocalSettings.js';
 import { saveWizard } from '../lib/saveWizard.js';
 import { DRAFT_KEY } from '../lib/constants.js';
+import { markOnboarded } from '../../../lib/onboarding.js';
 
 /**
  * useWizardState — all state and actions for the setup wizard.
@@ -126,6 +127,7 @@ export function useWizardState(backendUrl, token, apiKey) {
         initialConfigs:    initialConfigsRef.current    || {},
         hasBackend: !!(backendUrl && token && apiKey),
       });
+      markOnboarded(apiKey);
       window.location.href = '/projects';
     } catch (err) {
       setSaveError(err.message || 'Save failed');

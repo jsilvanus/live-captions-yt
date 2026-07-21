@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { SetupCard } from './SetupCard.jsx';
 import { CaptionTargetsIcon } from './icons.jsx';
 import { CaptionTargetsManager } from '../TargetCaptionsPage.jsx';
+import { useGuidedActionTargets } from '../../hooks/useGuidedAction.jsx';
 
 /**
  * CaptionTargetsSection — embeds the same full add/edit/delete CRUD used at
@@ -14,6 +15,13 @@ import { CaptionTargetsManager } from '../TargetCaptionsPage.jsx';
  */
 export function CaptionTargetsSection() {
   const managerRef = useRef(null);
+
+  useGuidedActionTargets({
+    'caption_target.create': (args) => managerRef.current?.openAddPrefilled(args),
+    'caption_target.update': ({ id, ...fields }) => managerRef.current?.openEditPrefilled(id, fields),
+    'caption_target.delete': ({ id }) => managerRef.current?.openDeleteConfirm(id),
+  });
+
   return (
     <SetupCard
       id="caption-targets"

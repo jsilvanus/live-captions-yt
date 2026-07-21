@@ -96,6 +96,50 @@ newly-discovered settings (`VISION_PREVIEW_BASE_URL`, `CAMERA_PREVIEW_BASE_URL`/
 `CAMERA_THUMBNAILS_DIR`) are registered but not yet wired — see `CONSIDER.md`.
 Full monorepo test sweep (`npm test`, all 18 Node.js workspaces) passes.
 
+`plan_ai_roles_framework.md`'s remaining Tier 1 item (former Lane 4) shipped
+2026-07-21: `useGuidedAction.jsx` (`GuidedActionProvider`/
+`useGuidedActionTargets`/`useGuidedActionDispatcher`, `lcyt-web/src/hooks/`)
+implements the dialog-driving primitive the plan specced but never built, and
+`RoleAssistantPanel.jsx` (`POST /roles/:roleCode/message` wired to
+`<AgentChatPanel>`) is now mounted for `setup_assistant` in `SetupHubPage.jsx`
+and `asset_control_assistant` in `AssetsPage.jsx`, each wrapped in a
+`GuidedActionProvider`. `CaptionTargetsManager`/`CamerasManager`/
+`MixersManager` each gained `openAddPrefilled`/`openEditPrefilled`/
+`openDeleteConfirm` on their existing `useImperativeHandle`, registered by
+their Setup Hub section components — a `confirm`-mode staged tool call now
+opens the real Add/Edit/Delete dialog pre-filled, and the human still clicks
+that dialog's own submit button. **Not done:** Asset Control Assistant's
+tools (`asset.update`/`asset.delete`) target `lcyt-dsk`'s image-asset
+library, which `AssetsPage.jsx` renders no dialog for — a real page-ownership
+question (should it move to `DskEditorPage.jsx`'s Media Library, or should
+`AssetsPage.jsx` grow one?), not a build gap; see `CONSIDER.md`. Full
+`packages/lcyt-web` test sweep passes (447 Vitest + 461 node:test).
+
+`plan_ui.md`'s remaining backlog also cleared out 2026-07-21, item by item,
+each re-audited against actual current code before touching anything (not
+just implemented off the original, sometimes-stale proposal text):
+onboarding auto-trigger (`OnboardingBanner.jsx` + `lib/onboarding.js`, a
+dismissible per-project nudge rather than the originally-sketched blocking
+wizard, since `/setup/wizard` already exists as a fuller flow); localStorage
+quota monitoring (`StorageQuotaMonitor.jsx` + `lib/storageQuota.js`, periodic
+`navigator.storage.estimate()` checks rather than a per-write gate, since no
+browser API can intercept an individual `localStorage.setItem()` call); the
+DSK metacode autocomplete helper (`lib/metacodeAutocomplete.js` +
+`hooks/useDskMetacodeSources.js`, wired into `InputBar.jsx` — corrected the
+proposal's "template names" to image shorthand names, the thing
+`graphics:` actually resolves against); context-aware layout modes (its
+premise was superseded by the sidebar routing model — 4 of 5 rows were
+already true; the one real gap, a Production caption input, closed via a new
+`captionInput` pane type); detachable/pop-out panels (`PopOutButton.jsx`,
+wired to the Sent Captions panel via the already-existing `/embed/*`
+`BroadcastChannel` infrastructure, now also broadcast by the main
+`SidebarApp` not just `/embed/*` pages); and the mobile-first caption flow's
+actual gap — re-auditing found the file viewer was never hidden on mobile,
+only the free-text input was (`#footer` was unconditionally hidden below
+768px) — fixed with a ⌨ toggle on `MobileAudioBar.jsx` that reveals the same
+`InputBar` instance rather than a swipeable-card rebuild. Only workflow
+presets (named localStorage config bundles) remains open in this plan.
+
 `plan_ai_observability.md` Stage 1 (Lane 10) also landed since the 2026-07-20
 audit: a bounded 20-entry-per-`(apiKey,roleCode)` capture ring buffer in
 `VisionRoleManager`, three new routes (`GET /roles/:roleCode/captures[/:id/frame]`,
@@ -155,8 +199,8 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 
 | Plan | What's left | Why it matters |
 |---|---|---|
-| `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
-| `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
+| `plan_ai_roles_framework.md` | **Done, 2026-07-21** — `RoleAssistantPanel.jsx` + `useGuidedAction.jsx` shipped, mounted in `SetupHubPage.jsx`/`AssetsPage.jsx`. Only remaining gap: Asset Control Assistant's tools have no dialog on `AssetsPage.jsx` to drive (page-ownership question, see CONSIDER.md), not a build gap. | — |
+| `plan_ui.md` | **Done except workflow presets, 2026-07-21** — onboarding auto-trigger, localStorage quota monitoring, DSK metacode autocomplete, context-aware layout modes, detachable/pop-out panels, and the mobile-first caption flow's core functional gap all shipped this pass. Only workflow presets (named localStorage config bundles) remains. | — |
 
 ---
 
@@ -248,11 +292,10 @@ Non-overlapping lanes, grouped by package ownership per §0:
   `routes/device-roles.js`, `routes/project-slug.js`,
   `routes/project-observability.js`, and `routes/auth.js`'s
   `POST /auth/project-token`, plus the `api_keys.restricted` escape-hatch column.
-- **Lane 4 (`lcyt-web`, Setup Hub / Assets — chat panels):** Tier 1's
-  `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. Lane 3 (the AI
-  model picker, `plan_ai_model_registry.md` Phase 3 frontend) already landed —
-  confirm `SetupHubPage.jsx`'s "AI & integrations" section ordering against the
-  now-mounted `AiRoleModelsSection.jsx` before adding these chat panels there.
+- **Lane 4 — done.** Tier 1's `plan_ai_roles_framework.md` Setup/Asset
+  Assistant frontend shipped 2026-07-21: `RoleAssistantPanel.jsx` +
+  `useGuidedAction.jsx`, mounted in `SetupHubPage.jsx`/`AssetsPage.jsx` —
+  see "Recently closed" below.
 - **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 — done.** `plan_env_to_ui_settings.md` shipped 2026-07-21, all six

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { SetupCard } from './SetupCard.jsx';
 import { CamerasIcon } from './icons.jsx';
 import { CamerasManager } from '../ProductionCamerasPage.jsx';
+import { useGuidedActionTargets } from '../../hooks/useGuidedAction.jsx';
 
 /**
  * CameraSection — embeds the same CRUD logic used at the standalone
@@ -12,6 +13,13 @@ import { CamerasManager } from '../ProductionCamerasPage.jsx';
  */
 export function CameraSection() {
   const managerRef = useRef(null);
+
+  useGuidedActionTargets({
+    'camera.create': (args) => managerRef.current?.openAddPrefilled(args),
+    'camera.update': ({ id, ...fields }) => managerRef.current?.openEditPrefilled(id, fields),
+    'camera.delete': ({ id }) => managerRef.current?.openDeleteConfirm(id),
+  });
+
   return (
     <SetupCard
       id="cameras"

@@ -1,5 +1,12 @@
 /**
  * Mobile-only fixed bottom bar with mic controls, live preview, and file navigation.
+ *
+ * `textInputOpen`/`onToggleTextInput` (plan_ui.md v2 §4c): on mobile, the
+ * only way to send a caption was speaking or stepping through a loaded
+ * file's lines — the desktop free-text input (`#footer`/`InputBar`) was
+ * fully hidden, with nothing standing in for it. The ⌨ button here reveals
+ * that same `InputBar` instance (docked above this bar, `#footer.footer--
+ * mobile-open`) instead of duplicating its send logic in a second component.
  */
 export function MobileAudioBar({
   fileStore,
@@ -15,6 +22,8 @@ export function MobileAudioBar({
   mobileBarMeterRef,
   audioPanelRef,
   inputBarRef,
+  textInputOpen,
+  onToggleTextInput,
 }) {
   const file = fileStore.activeFile;
   const hasFile = !!file;
@@ -96,6 +105,13 @@ export function MobileAudioBar({
         disabled={!canGoNext}
         title="Next line"
       >+</button>
+      <button
+        className={`mobile-bar__kbd-btn${textInputOpen ? ' mobile-bar__kbd-btn--active' : ''}`}
+        onClick={onToggleTextInput}
+        aria-pressed={!!textInputOpen}
+        aria-label={textInputOpen ? 'Hide text input' : 'Type a caption'}
+        title={textInputOpen ? 'Hide text input' : 'Type a caption'}
+      >⌨</button>
     </div>
   );
 }

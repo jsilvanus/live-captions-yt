@@ -205,7 +205,7 @@ body {
     touch-action: none;
   }
 
-  /* Fixed bottom bar: meter | mic | prev | send | next */
+  /* Fixed bottom bar: meter | mic | prev | send | next | keyboard-toggle */
   #mobile-audio-bar {
     position: fixed;
     bottom: 0;
@@ -216,12 +216,29 @@ body {
     background: var(--color-surface);
     border-top: 1px solid var(--color-border);
     display: grid;
-    grid-template-columns: 56px 1fr auto 1fr auto;
+    grid-template-columns: 56px 1fr auto 1fr auto auto;
     grid-auto-rows: auto;
     align-items: center;
     gap: 6px;
     padding: 0 8px;
     z-index: 60;
+  }
+
+  /* Compact free-text caption input (plan_ui.md v2 §4c) — reuses the
+     desktop #footer/InputBar as-is (same ref, same handleSend/triggerSend
+     path), toggled into view by MobileAudioBar's ⌨ button rather than
+     always occupying screen space. Slides up to dock directly above the
+     fixed mobile bar. */
+  #footer.footer--mobile-open {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--mobile-bar-height, 52px);
+    background: var(--color-surface);
+    border-top: 1px solid var(--color-border);
+    padding: 8px;
+    z-index: 65;
   }
 
   /* Live interim transcript bar inside the mobile audio bar */

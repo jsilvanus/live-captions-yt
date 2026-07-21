@@ -5,6 +5,7 @@ import { TopBar, Sidebar } from './sidebar/Sidebar.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp.jsx';
 import { ConnectionStatusMonitor } from './ConnectionStatusMonitor.jsx';
+import { StorageQuotaMonitor } from './StorageQuotaMonitor.jsx';
 
 const MOBILE_BREAKPOINT = 768;
 
@@ -52,7 +53,21 @@ export function SidebarLayout({ children }) {
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+
+  // First-login privacy gate: AccountPage.jsx owns the actual Privacy &
+  // Terms & Data dialog and auto-opens it once `lcyt:privacyAccepted` is
+  // missing — this redirects every sidebar route to /account until that
+  // flag is set, so a first-time login lands there regardless of which
+  // page they'd otherwise have reached (rather than only showing it on the
+  // classic caption layout, which most of the app never visits).
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('lcyt:privacyAccepted') && location !== '/account') {
+        navigate('/account');
+      }
+    } catch { /* localStorage unavailable — nothing to gate on */ }
+  }, [location, navigate]);
 
   // The persistent desktop sidebar is icon-only at a fixed width, so there's
   // nothing to toggle there — the hamburger only opens the mobile drawer
@@ -107,6 +122,7 @@ export function SidebarLayout({ children }) {
       />
       <ReconnectBanner />
       <ConnectionStatusMonitor />
+      <StorageQuotaMonitor />
       <div className="sidebar-body">
         <Sidebar onNavigate={path => navigate(path)} />
         <MobileDrawer open={mobileDrawerOpen} onClose={() => setMobileDrawerOpen(false)} />

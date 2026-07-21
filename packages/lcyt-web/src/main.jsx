@@ -189,7 +189,12 @@ function StubPage({ icon, title, description }) {
 
 function SidebarApp() {
   return (
-    <AppProviders>
+    // embed: broadcasts the session token + sent captions over
+    // BroadcastChannel('lcyt-embed') even though this is the full app, not
+    // an /embed/* widget page — the same channel a popped-out /embed/sentlog
+    // window (SentPanel.jsx's "Pop out" button, plan_ui.md v2 §4b) listens
+    // on to receive the session and mirror captions without owning one.
+    <AppProviders embed>
       <AudioProvider>
       <Router>
         <SidebarLayout>

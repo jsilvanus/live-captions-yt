@@ -63,7 +63,7 @@ export function defaultViews() {
     },
     captions: {
       name: 'Captions', kind: 'builtin', cols: [
-        { frac: 0.20, rows: [makeRow(1, ['general'])] },
+        { frac: 0.20, rows: [makeRow(0.6, ['general']), makeRow(0.4, ['captionInput'])] },
         { frac: 0.50, rows: [makeRow(1, ['rundown'])] },
         { frac: 0.30, rows: [makeRow(0.5, ['sent']), makeRow(0.5, ['chat'])] },
       ],

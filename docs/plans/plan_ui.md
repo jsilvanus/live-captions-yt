@@ -2,7 +2,7 @@
 id: plan/ui
 title: "Frontend & UI Plans"
 status: in-progress
-summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, and virtual scrolling all implemented; onboarding auto-trigger, context-aware layouts, detachable panels, and mobile-first redesign still outstanding), v3 (component split, completed)."
+summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, virtual scrolling, onboarding auto-trigger, localStorage quota monitoring, and the DSK metacode autocomplete helper all implemented; context-aware layout modes reassessed and closed 2026-07-21 — its premise was superseded by the routing model, its one real gap (Production caption input) fixed with a new pane type; detachable panels shipped 2026-07-21 for the Sent Captions panel, generalizable to others later; mobile-first redesign's core functional gap (no free-text caption input on mobile) closed 2026-07-21, remaining swipeable-card/bottom-sheet polish optional; only workflow presets still outstanding), v3 (component split, completed)."
 ---
 
 # Frontend & UI Plans — `packages/lcyt-web`
@@ -683,7 +683,7 @@ const [fabSide, setFabSide] = useState(
 ## v2 — Frontend Flow Improvement (Sidebar Navigation + Dashboard)
 
 **Date:** 2026-03-17
-**Status:** In progress — core sidebar, dashboard, settings page, route restructuring, auto-reconnect, unsaved-work protection, command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all implemented (re-audited 2026-07-20, see Implementation Status below). Remaining: onboarding auto-trigger (no `lcyt:onboarded` flag or no-config redirect exists), context-aware layout modes, detachable panels, and the mobile-first caption-flow redesign.
+**Status:** In progress — core sidebar, dashboard, settings page, route restructuring, auto-reconnect, unsaved-work protection, command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all implemented (re-audited 2026-07-20, see Implementation Status below). Onboarding auto-trigger, localStorage quota monitoring, the DSK metacode autocomplete helper, context-aware layout modes, detachable panels, and the mobile-first caption flow's core functional gap all shipped 2026-07-21. Only workflow presets remains.
 
 ---
 
@@ -1135,17 +1135,7 @@ There is no wizard, no empty-state guidance, and no contextual help.
 
 ### Proposals
 
-**2a. Guided setup flow for new users.** When no config is persisted (`lcyt-config` absent from localStorage), show a step-by-step setup instead of the raw UI:
-
-```
-Step 1: Server — Enter backend URL (or use default)
-Step 2: Auth — Enter API key, or create account / sign in
-Step 3: Target — Add at least one caption target (YouTube / Viewer / Generic)
-Step 4: Test — Send a test caption to verify the connection
-→ Done — Show main UI
-```
-
-Store a `lcyt:onboarded` flag so returning users skip this.
+**2a. Guided setup flow for new users — implemented 2026-07-21, adapted to the codebase that grew since this proposal was written.** The literal sketch above (a blocking full-screen Server/Auth/Target/Test wizard gating the raw UI) predates `/setup/wizard`, which already exists today as a real, more thorough guided flow (feature selection → per-feature config panels → review). Rebuilding a second, narrower wizard would duplicate it. Instead: `OnboardingBanner.jsx` (mounted in `RootRoute.jsx`, above a connected project's summary) checks `GET /targets` and shows a dismissible nudge — "This project isn't configured yet. Run the setup wizard…" — when a project has zero caption targets configured, backed by a per-project `lcyt.onboarded.<apiKey>` flag (`lib/onboarding.js`, the `lcyt:onboarded` flag this proposal specced, scoped per-project since a user can own several). The flag is set either by dismissing the banner or by finishing the wizard (`setup-wizard/hooks/useWizardState.js`'s `handleFinish`), so a returning user never sees it again for that project. Deliberately non-blocking (a dismissible nudge, not a forced gate) — a project connecting via API key only (no `login` feature, e.g. an embedded device) never needs a full onboarding flow at all, and gating the whole UI behind it would break that path.
 
 **2b. Empty-state guidance** in the main view. When no file is loaded and no session is active, show contextual cards:
 - "Drop a caption file here or create a new one"
@@ -1207,24 +1197,13 @@ Panel resize is manual (drag handle) and the resize state is lost when switching
 
 ### Proposals
 
-**4a. Context-aware layout modes.** Let the active section determine the panel layout:
-
-| Mode | Left panel | Right panel |
-|------|-----------|-------------|
-| **Caption (file)** | File viewer + pointer | Sent log |
-| **Caption (audio)** | Audio waveform / STT status | Sent log |
-| **Broadcast** | RTMP relay / Encoder config | Stream status + logs |
-| **Graphics** | DSK editor canvas | Template list / properties |
-| **Production** | Operator surface (camera/mixer grid) | Caption input (mini) |
+**4a. Context-aware layout modes — reassessed 2026-07-21: the original premise no longer applies; the one real gap it named is fixed.** This proposal predates the v2 sidebar migration below it in this same document — it describes a *single shared two-panel shell* whose left/right content should swap based on an active "mode." That shell (`App.jsx`'s legacy two-panel layout) has since been superseded: Caption (file), Caption (audio), Broadcast, and Graphics are now each their own dedicated route/page (`/captions`, `/audio`, `/broadcast`, `/graphics/editor`) with a layout purpose-built for that content — exactly what this proposal was asking for, just delivered via routing instead of a mode switch inside one shell. Re-auditing the table above against today's actual pages: four of five rows are already true. The one row that wasn't — **Production: operator surface + caption input (mini)** — is now fixed: a new `captionInput` pane type (`production/workspace/panes/index.jsx`'s `CaptionInputPane`, a direct `CaptionContext.send()` line-sender, deliberately not `InputBar.jsx`'s full file/metacode/batch/translation pipeline) is part of the built-in "Captions" workspace view's left column (stacked under `general`/Controls) and available to any custom view via the pane-type picker — the Production operator console already has the pluggable multi-pane architecture this proposal wanted, it just didn't have a caption-input pane type until now. Rebuilding a mode-switching single-shell layout on top of the routing model that already solves the same problem would be net-negative, not a gap to close.
 
 This avoids showing irrelevant panels and gives each mode the space it needs.
 
-**4b. Detachable panels.** Allow the sent log (and other panels) to be "popped out" into a separate browser window or moved to a different position. The embed page infrastructure (`BroadcastChannel`) already supports this — expose it as a first-class feature with a "Pop out" button on each panel.
+**4b. Detachable panels — implemented 2026-07-21 for the panel this proposal named, generalizable to more later.** `PopOutButton.jsx` (`window.open('/embed/:page', '_blank', 'width=…,height=…')`) is the reusable "pop out" trigger; `main.jsx`'s `SidebarApp` now passes `embed` to its own `<AppProviders>` (previously only the `/embed/*` widget pages did), so the main app also broadcasts its session token and sent captions over `BroadcastChannel('lcyt-embed')` — the exact mechanism this proposal pointed at, just not turned on for the main app before. `SentPanel.jsx`'s header wires a `PopOutButton` to `/embed/sentlog`; the popped-out window needs no URL params since `EmbedSentLogPage` already requests the session over the channel on mount. Scoped to the one panel named explicitly (Sent Captions) and the one panel that already had a matching `/embed/*` page to pop into — most other in-app panels (file viewer, audio meter, DSK properties, Production workspace panes) have no embed-page counterpart today, so `PopOutButton` isn't wired to them yet; extending this is now "give the panel an `/embed/*` route + one `<PopOutButton>` call," not new infrastructure.
 
-**4c. Mobile-first redesign for the caption flow.** The current mobile experience hides the file viewer and shows a `MobileAudioBar` at the bottom. This works for voice input but not for file-based captioning. Consider:
-- A swipeable card layout: swipe left for file viewer, center for input, swipe right for sent log
-- Bottom sheet for file tabs (pull up to select, swipe down to dismiss)
-- Floating action button for quick actions (send, sync, load file)
+**4c. Mobile-first redesign for the caption flow — scoped to the one real functional gap, 2026-07-21.** Re-audited: the file viewer is *not* actually hidden on mobile (both the file/caption panel and the sent log are visible, stacked top/bottom in a manually-resizable split — `App.jsx`'s `.panel--left`/`.panel--right`, `layout.css`'s mobile media query) — this proposal's premise was stale even before this pass. What genuinely was true: `#footer`/`InputBar` (the only *free-text* caption input) was unconditionally `display:none` below 768px, replaced entirely by `MobileAudioBar` — voice input and stepping through a loaded file's lines, with no way to type and send arbitrary custom text at all. Fixed with the smallest correct change rather than the sketched swipeable-card/bottom-sheet/FAB rebuild: `MobileAudioBar.jsx` gained a ⌨ toggle button (`textInputOpen`/`onToggleTextInput`) that reveals the *same* `#footer`/`InputBar` instance — not a duplicate input, so `handleSend()`/`triggerSend()`/metacode autocomplete (§5d) all behave identically — as a `#footer.footer--mobile-open` bar docked directly above the fixed mobile bar, auto-focusing on open. The swipeable-card layout and bottom sheet for file tabs remain unbuilt but are no longer blocking anything — the concrete "can't type a caption on mobile" gap is closed; those two are now purely a layout-polish upgrade over an already-functional mobile flow, not a functional requirement.
 
 ---
 
@@ -1260,7 +1239,7 @@ This is the standard power-user discoverability pattern (VS Code, Figma, Linear)
 - Mic status (claimed/unclaimed for collaborative sessions)
 - A subtle "what's new" indicator when features are added
 
-**5d. Inline DSK metacode helper.** When the cursor is in the input bar and the user types `<!--`, offer an autocomplete dropdown for DSK metacodes with available template names and viewport names fetched from the backend.
+**5d. Inline DSK metacode helper — implemented 2026-07-21, "template names" corrected to image shorthand names.** When the cursor sits inside an unclosed `<!-- ... -->` in `InputBar.jsx`'s caption field, `lib/metacodeAutocomplete.js`'s pure `getMetacodeContext()`/`getMetacodeOptions()` detect which of three stages is being typed and `MetacodeAutocompleteDropdown.jsx` offers completions: the bare keyword stage suggests `graphics: ` / `graphics[`; the bracket stage suggests viewport names (`hooks/useDskMetacodeSources.js`'s `GET /dsk/:apikey/viewports`) plus the built-in `landscape`/`default`/`main` aliases; the value stage (after `graphics:`, including delta-mode `+`/`-` prefixes) suggests image shorthand names (`GET /images`) — corrected from this proposal's original "template names" wording, since `graphics:`'s values actually resolve against `getImageByShorthand()` in `lcyt-dsk`'s `caption-processor.js`, which never addresses graphics by DSK template name. Arrow keys/Enter/Tab navigate and select (intercepted ahead of `InputBar`'s existing Enter-to-send/ArrowUp-ArrowDown-pointer-navigation bindings, only while the dropdown is open); Escape or blur dismisses it.
 
 **5e. Workflow presets.** Let users save and restore named workflow configurations:
 - "Sunday service" — specific API key, file loaded, viewer target, Finnish language
@@ -1294,7 +1273,7 @@ Store as JSON in localStorage (and optionally sync to backend per user account).
 
 Show a browser confirmation dialog if any are detected.
 
-**6d. localStorage quota monitoring.** Before writing, check `navigator.storage.estimate()` (where available). If quota is low, warn the user and suggest clearing old sent logs or removing unused files.
+**6d. localStorage quota monitoring — implemented 2026-07-21, adapted from "before writing" to periodic.** There is no browser API to intercept an individual `localStorage.setItem()` call before it lands, and `navigator.storage.estimate()` reports origin-wide storage (localStorage + IndexedDB + caches combined), not localStorage in isolation — so `lib/storageQuota.js`'s `getStorageEstimate()` is checked periodically instead (`components/StorageQuotaMonitor.jsx`, mounted once in `SidebarLayout.jsx`: on mount + every 5 minutes) rather than gated per-write. When usage crosses `WARN_RATIO` (0.8), it shows a persistent toast — "Browser storage is N% full — clear old sent logs or remove unused files to free space" — debounced to once per tab session via a `sessionStorage` flag so it doesn't repeat every 5 minutes while still over threshold, but does warn again in a fresh tab.
 
 ---
 
@@ -1363,18 +1342,18 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P2** | **4a. Context-aware layout modes** — left/right panel content adapts to active section (Caption/Audio/Broadcast/Graphics/Production) | Medium — better screen use | High |
+| ~~**P2**~~ | ~~**4a. Context-aware layout modes**~~ — **reassessed and closed 2026-07-21**, see §4a above: the routing model already delivers 4 of 5 rows; the 5th (Production caption input) shipped as a new `captionInput` pane type | — | — |
 
 ### 🔵 P3 — Backlog
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P3** | **4b. Detachable panels** — "Pop out" button on panels using `BroadcastChannel`. Confirmed not done for dashboard/console panels: `BroadcastChannel` is used only for `/embed/*` widget-page coordination, not tied to any pop-out button on a live panel | Low — niche use case | Medium |
-| **P3** | **4c. Mobile-first redesign** — *partial*: `SwipeablePages.jsx` (touch-swipe carousel) exists but is used in `PlannerPage.jsx`/`DskEditorPage.jsx`, not the captions flow; `MobileAudioBar.jsx` is the pre-existing voice-input bar this item explicitly says doesn't cover file-based captioning. No FAB, no bottom sheet for file tabs exist anywhere in the codebase | Medium — mobile usability | High |
+| ~~**P3**~~ | ~~**4b. Detachable panels**~~ — **done 2026-07-21 for Sent Captions**, see §4b above (`PopOutButton.jsx`, `SentPanel.jsx`, `main.jsx`'s `embed`-enabled `SidebarApp`); other panels need their own `/embed/*` page first | — | — |
+| **P3** | **4c. Mobile-first redesign** — **core functional gap closed 2026-07-21** (see §4c above: `MobileAudioBar.jsx`'s ⌨ toggle reveals the real `#footer`/`InputBar` on mobile — typing custom text was previously impossible there). Remaining as pure layout polish, not a functional requirement: a swipeable card layout and a bottom-sheet file-tab picker (`SwipeablePages.jsx` exists but is used by `PlannerPage.jsx`/`DskEditorPage.jsx`, not wired to the captions flow) | Low — cosmetic upgrade over an already-functional flow | Medium |
 | **P3** | **5e. Workflow presets** — named localStorage configs (e.g. "Sunday service"). Confirmed not done — `LiveTab.jsx`'s `PresetPicker`/`applyPreset` only covers dashboard *panel layout* presets, a narrower feature, not named save/restore of full workflow configs | Low — convenience | Medium |
-| **P3** | **5d. DSK metacode helper** — `<!--` autocomplete in input bar fetching template/viewport names. Confirmed not done — `InputBar.jsx` has no such autocomplete; `metacode-parser.js` only parses, doesn't suggest | Low — niche | Medium |
+| ~~**P3**~~ | ~~**5d. DSK metacode helper**~~ — **done 2026-07-21**, see §5d above (`lib/metacodeAutocomplete.js` + `hooks/useDskMetacodeSources.js` + `MetacodeAutocompleteDropdown.jsx`, wired into `InputBar.jsx`) | — | — |
 | **P3** | **2c. Inline hints on first use** — `lcyt:hints-dismissed` set, tooltips on feature first touch. Confirmed not done | Low — nice to have | Low |
-| **P3** | **6d. localStorage quota monitoring** — `navigator.storage.estimate()` warning. Confirmed not done — no reference anywhere in `src/` | Low — edge case | Low |
+| ~~**P3**~~ | ~~**6d. localStorage quota monitoring**~~ — **done 2026-07-21**, see §6d above (`lib/storageQuota.js` + `components/StorageQuotaMonitor.jsx`) | — | — |
 
 ---
 
@@ -1382,7 +1361,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support.
 
-**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. The remaining genuine gaps are: onboarding automation (the setup wizard itself exists at `/setup/wizard`, but nothing auto-triggers it for new users), context-aware layout modes, detachable/pop-out panels, and the mobile-first redesign of the caption flow specifically (general swipe/mobile-bar infrastructure exists but isn't applied there).
+**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. Onboarding automation (§2a), localStorage quota monitoring (§6d), the DSK metacode autocomplete helper (§5d), context-aware layout modes (§4a — reassessed rather than literally rebuilt, since the routing model already delivers most of it), detachable/pop-out panels (§4b, for the Sent Captions panel), and the mobile-first caption flow's core functional gap (§4c — mobile could not send free-text captions at all until now) shipped 2026-07-21. The one remaining genuine gap is workflow presets.
 
 ---
 ---

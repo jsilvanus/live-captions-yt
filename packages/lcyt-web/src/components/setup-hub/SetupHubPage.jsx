@@ -23,6 +23,8 @@ import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useProjectFeatures } from '../../hooks/useProjectFeatures.js';
 import { useProjectRequired } from '../../hooks/useProjectRequired.js';
 import { cardIdsForEnabledFeatures } from '../../lib/workflowFeatureMap.js';
+import { GuidedActionProvider } from '../../hooks/useGuidedAction.jsx';
+import { RoleAssistantPanel } from '../agent/RoleAssistantPanel.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -73,71 +75,83 @@ export function SetupHubPage() {
   }
 
   return (
-    <div className="setup-hub-page">
-      <div className="setup-hub-page__header">
-        <h1 className="setup-hub-page__title">Setup</h1>
-      </div>
-      <p className="setup-hub-page__desc">
-        Everything for this project's devices, services, and integrations in one place.
-      </p>
+    <GuidedActionProvider>
+      <div className="setup-hub-page-layout">
+        <div className="setup-hub-page">
+          <div className="setup-hub-page__header">
+            <h1 className="setup-hub-page__title">Setup</h1>
+          </div>
+          <p className="setup-hub-page__desc">
+            Everything for this project's devices, services, and integrations in one place.
+          </p>
 
-      <div className="setup-hub-page__pills">
-        {FILTERS.map(f => (
-          <button
-            key={f.id}
-            type="button"
-            className={`setup-hub-page__pill${filter === f.id ? ' setup-hub-page__pill--active' : ''}`}
-            onClick={() => setFilter(f.id)}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+          <div className="setup-hub-page__pills">
+            {FILTERS.map(f => (
+              <button
+                key={f.id}
+                type="button"
+                className={`setup-hub-page__pill${filter === f.id ? ' setup-hub-page__pill--active' : ''}`}
+                onClick={() => setFilter(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-      <div className="setup-hub-page__grid">
-        {/* ── Production devices ── */}
-        {isVisible('cameras') && <CameraSection />}
-        {isVisible('mixers') && <MixerSection />}
-        {isVisible('encoders') && <EncoderSection />}
-        {isVisible('bridges') && <BridgeSection />}
+          <div className="setup-hub-page__grid">
+            {/* ── Production devices ── */}
+            {isVisible('cameras') && <CameraSection />}
+            {isVisible('mixers') && <MixerSection />}
+            {isVisible('encoders') && <EncoderSection />}
+            {isVisible('bridges') && <BridgeSection />}
 
-        {/* ── Streaming & graphics ── */}
-        {isVisible('egress') && <EgressSection />}
-        {isVisible('ingestion') && <IngestionSection />}
-        {isVisible('radio') && <WebRadioSection />}
-        {isVisible('viewports') && <ViewportsSection />}
+            {/* ── Streaming & graphics ── */}
+            {isVisible('egress') && <EgressSection />}
+            {isVisible('ingestion') && <IngestionSection />}
+            {isVisible('radio') && <WebRadioSection />}
+            {isVisible('viewports') && <ViewportsSection />}
 
-        {/* ── Captions & language ── */}
-        {isVisible('caption-targets') && <CaptionTargetsSection />}
-        {isVisible('icons') && <IconsSection />}
-        {isVisible('languages') && <LanguagesSection />}
+            {/* ── Captions & language ── */}
+            {isVisible('caption-targets') && <CaptionTargetsSection />}
+            {isVisible('icons') && <IconsSection />}
+            {isVisible('languages') && <LanguagesSection />}
 
-        {/* ── Speech & storage ── */}
-        {isVisible('stt') && <SttSection />}
-        {isVisible('storage') && <StorageSection />}
+            {/* ── Speech & storage ── */}
+            {isVisible('stt') && <SttSection />}
+            {isVisible('storage') && <StorageSection />}
 
-        {/* ── AI & integrations ── */}
-        {isVisible('mcp-access') && <McpAccessSection />}
-        {isVisible('connectors') && <ConnectorsSection />}
-        {isVisible('ai-roles') && <AiRoleModelsSection />}
+            {/* ── AI & integrations ── */}
+            {isVisible('mcp-access') && <McpAccessSection />}
+            {isVisible('connectors') && <ConnectorsSection />}
+            {isVisible('ai-roles') && <AiRoleModelsSection />}
 
-        {/* ── Workflows — always visible regardless of the active filter
-             pill (matches the mockup's own "Workflows (always visible)"
-             comment). Now folds in the Setup Wizard directly (replacing both
-             the old "Coming soon" placeholder and the page-level wizard
-             link) as a solid accent-filled CTA card — a different kind of
-             card, signalling "this is an action" rather than a status
-             display. ── */}
-        <SetupCard
-          id="workflows"
-          icon={WorkflowsIcon}
-          color="accent"
-          variant="cta"
-          title="Workflows"
-          description="Guided, curated setup for a specific goal — pick what you need."
-          headerAction={{ label: 'Run setup wizard', href: '/setup/wizard' }}
+            {/* ── Workflows — always visible regardless of the active filter
+                 pill (matches the mockup's own "Workflows (always visible)"
+                 comment). Now folds in the Setup Wizard directly (replacing both
+                 the old "Coming soon" placeholder and the page-level wizard
+                 link) as a solid accent-filled CTA card — a different kind of
+                 card, signalling "this is an action" rather than a status
+                 display. ── */}
+            <SetupCard
+              id="workflows"
+              icon={WorkflowsIcon}
+              color="accent"
+              variant="cta"
+              title="Workflows"
+              description="Guided, curated setup for a specific goal — pick what you need."
+              headerAction={{ label: 'Run setup wizard', href: '/setup/wizard' }}
+            />
+          </div>
+        </div>
+
+        {/* Setup Assistant (plan_ai_roles_framework.md) — chat drives the
+            Add/Edit/Delete dialogs of the cards above via useGuidedAction. */}
+        <RoleAssistantPanel
+          roleCode="setup_assistant"
+          title="Setup Assistant"
+          subtitle="Describe what you want configured — targets, cameras, mixers — and I'll open the right form filled in."
         />
       </div>
-    </div>
+    </GuidedActionProvider>
   );
 }

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { Redirect } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { hasProjectSessionConfig } from '../lib/projectSession.js';
+import { OnboardingBanner } from './OnboardingBanner.jsx';
 
 // Mirrors main.jsx's lazyImport() chunk-reload-on-stale-deploy behavior,
 // duplicated locally (rather than imported from main.jsx) so this module has
@@ -49,6 +50,7 @@ export function RootRoute() {
   if ((connected || hasPersistedProject) && hasCredentials) {
     return (
       <Suspense fallback={null}>
+        <OnboardingBanner />
         <ProjectSettingsPage implicitKey />
       </Suspense>
     );

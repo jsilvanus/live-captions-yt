@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { SetupCard } from './SetupCard.jsx';
 import { MixersIcon } from './icons.jsx';
 import { MixersManager } from '../ProductionMixersPage.jsx';
+import { useGuidedActionTargets } from '../../hooks/useGuidedAction.jsx';
 
 /**
  * MixerSection — embeds the same CRUD logic used at the standalone
@@ -11,6 +12,13 @@ import { MixersManager } from '../ProductionMixersPage.jsx';
  */
 export function MixerSection() {
   const managerRef = useRef(null);
+
+  useGuidedActionTargets({
+    'mixer.create': (args) => managerRef.current?.openAddPrefilled(args),
+    'mixer.update': ({ id, ...fields }) => managerRef.current?.openEditPrefilled(id, fields),
+    'mixer.delete': ({ id }) => managerRef.current?.openDeleteConfirm(id),
+  });
+
   return (
     <SetupCard
       id="mixers"

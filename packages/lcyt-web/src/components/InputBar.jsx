@@ -1,4 +1,4 @@
-import { useState, useRef, useMemo, forwardRef, useImperativeHandle, useEffect } from 'react';
+import { useState, useRef, useMemo, forwardRef, useImperativeHandle, useEffect, useLayoutEffect } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useFileContext } from '../contexts/FileContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
@@ -14,8 +14,11 @@ import { drainActions, findLineIndexForRaw, performFileSwitchAction, buildCueMap
 import { interpolateVariables } from '../lib/metacode-variables.js';
 import { extractPersistentCodes, NON_PERSISTENT_CODE_KEYS } from '../lib/metacode-registry.js';
 import { expandActionItems, applyAtoms } from '../lib/metacode-actions.js';
+import { getMetacodeContext, getMetacodeOptions, applyMetacodeSuggestion } from '../lib/metacodeAutocomplete.js';
 import { useVariablesContext } from '../contexts/VariablesContext.jsx';
 import { useActions } from '../hooks/useActions.js';
+import { useDskMetacodeSources } from '../hooks/useDskMetacodeSources.js';
+import { MetacodeAutocompleteDropdown } from './MetacodeAutocompleteDropdown.jsx';
 
 // Matches [lang-code] at the start of input, e.g. "[fi-FI]"
 const LANG_CODE_RE = /^\[([a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?)\]\s*$/i;
@@ -51,6 +54,48 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   const [langQuery, setLangQuery] = useState('');
   const inputRef = useRef(null);
   const langPickerRef = useRef(null);
+
+  // ── DSK metacode autocomplete (plan_ui.md v2 §5d) ─────────────────────────
+  const [metacodeContext, setMetacodeContext] = useState(null);
+  const [metacodeActiveIndex, setMetacodeActiveIndex] = useState(0);
+  const dskSources = useDskMetacodeSources({ session });
+  const pendingCursorRef = useRef(null);
+
+  const metacodeOptions = useMemo(
+    () => getMetacodeOptions(metacodeContext, dskSources),
+    [metacodeContext, dskSources.shorthands, dskSources.viewports] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  function refreshMetacodeContext(value, cursorPos) {
+    const ctx = getMetacodeContext(value, cursorPos);
+    setMetacodeContext(ctx);
+    setMetacodeActiveIndex(0);
+    if (ctx) dskSources.ensureLoaded();
+  }
+
+  function selectMetacodeOption(opt) {
+    if (!metacodeContext) return;
+    const { text, cursorPos } = applyMetacodeSuggestion(inputValue, metacodeContext, opt.insertText);
+    pendingCursorRef.current = cursorPos;
+    setInputValue(text);
+    // Immediately re-derive context against the post-insertion text/cursor —
+    // e.g. picking "graphics: " should drop straight into the value stage
+    // (shorthand suggestions) rather than requiring another keystroke.
+    refreshMetacodeContext(text, cursorPos);
+  }
+
+  // Apply the cursor position queued by selectMetacodeOption() once the
+  // controlled <input>'s value has actually re-rendered with the new text.
+  useLayoutEffect(() => {
+    if (pendingCursorRef.current == null) return;
+    const pos = pendingCursorRef.current;
+    pendingCursorRef.current = null;
+    const el = inputRef.current;
+    if (el) {
+      el.focus();
+      el.setSelectionRange(pos, pos);
+    }
+  }, [inputValue]);
 
   // Ref always pointing to latest handleSend — used by the timer auto-advance.
   const handleSendRef = useRef(null);
@@ -453,6 +498,29 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
   }
 
   function onKeyDown(e) {
+    if (metacodeContext && metacodeOptions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMetacodeActiveIndex(i => (i + 1) % metacodeOptions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMetacodeActiveIndex(i => (i - 1 + metacodeOptions.length) % metacodeOptions.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        selectMetacodeOption(metacodeOptions[metacodeActiveIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMetacodeContext(null);
+        return;
+      }
+    }
+
     if (e.key === 'Enter') {
       e.preventDefault();
       handleSend();
@@ -464,6 +532,12 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
       e.preventDefault();
       const file = fileStore.activeFile;
       if (file) fileStore.advancePointer(file.id);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') {
+      // Cursor-moving keys don't change inputValue (no onChange fires), so
+      // recompute the metacode context on the next tick once the browser has
+      // actually moved the caret.
+      const el = e.currentTarget;
+      setTimeout(() => refreshMetacodeContext(el.value, el.selectionStart), 0);
     }
   }
 
@@ -524,16 +598,27 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
         )}
       </div>
 
-      <input
-        ref={inputRef}
-        className={inputCls}
-        type="text"
-        placeholder="Enter: send current line | Type: send custom text | [lang-code] to set language"
-        disabled={!session.connected}
-        value={inputValue}
-        onChange={e => setInputValue(e.target.value)}
-        onKeyDown={onKeyDown}
-      />
+      <div className="input-bar__input-wrap">
+        <input
+          ref={inputRef}
+          className={inputCls}
+          type="text"
+          placeholder="Enter: send current line | Type: send custom text | [lang-code] to set language"
+          disabled={!session.connected}
+          value={inputValue}
+          onChange={e => { setInputValue(e.target.value); refreshMetacodeContext(e.target.value, e.target.selectionStart); }}
+          onClick={e => refreshMetacodeContext(e.target.value, e.target.selectionStart)}
+          onBlur={() => setMetacodeContext(null)}
+          onKeyDown={onKeyDown}
+        />
+        {metacodeContext && (
+          <MetacodeAutocompleteDropdown
+            options={metacodeOptions}
+            activeIndex={metacodeActiveIndex}
+            onSelect={selectMetacodeOption}
+          />
+        )}
+      </div>
       {batchCount > 0 && (
         <span className="input-bar__batch-badge">{batchCount}</span>
       )}

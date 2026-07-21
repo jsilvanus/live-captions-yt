@@ -1,13 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'wouter';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { KEYS } from '../lib/storageKeys.js';
 import { applyTheme } from '../lib/settings.js';
 import { initialsFromName } from '../lib/avatar.js';
+import { PrivacyModal } from './PrivacyModal';
 
 // ─── Anonymous state ──────────────────────────────────────────────────────────
 
-function AnonymousPanel() {
+function AnonymousPanel({ onOpenPrivacy }) {
   return (
     <div className="account-page__panel">
       <div className="account-page__anon-icon">👤</div>
@@ -18,6 +19,25 @@ function AnonymousPanel() {
       <div className="account-page__anon-actions">
         <Link href="/login" className="btn btn--primary">Sign in</Link>
         <Link href="/register" className="btn btn--ghost">Create account</Link>
+      </div>
+      <button type="button" className="btn btn--ghost btn--sm" onClick={onOpenPrivacy} style={{ marginTop: 16 }}>
+        Privacy &amp; Terms &amp; Data
+      </button>
+    </div>
+  );
+}
+
+// ─── Privacy & data section (logged-in profile view) ─────────────────────────
+
+function PrivacyPanel({ onOpenPrivacy }) {
+  return (
+    <div className="account-page__section">
+      <div className="account-page__danger-row">
+        <div>
+          <p className="account-page__danger-row-title">Privacy &amp; Terms &amp; Data</p>
+          <p className="account-page__section-desc">What this app stores, third-party services used, and your data rights.</p>
+        </div>
+        <button className="btn btn--secondary" onClick={onOpenPrivacy} type="button">View</button>
       </div>
     </div>
   );
@@ -345,7 +365,7 @@ function DangerZonePanel({ exportData, removeData, deleteAccount, logout }) {
 
 // ─── Logged-in profile view ───────────────────────────────────────────────────
 
-function ProfilePanel({ user, logout, changePassword, updateProfile, exportData, removeData, deleteAccount }) {
+function ProfilePanel({ user, logout, changePassword, updateProfile, exportData, removeData, deleteAccount, onOpenPrivacy }) {
   return (
     <div className="account-page__profile">
       <div className="account-page__header">
@@ -359,6 +379,7 @@ function ProfilePanel({ user, logout, changePassword, updateProfile, exportData,
       <AccountInfoForm user={user} updateProfile={updateProfile} />
       <ChangePasswordForm changePassword={changePassword} />
       <AppearancePanel />
+      <PrivacyPanel onOpenPrivacy={onOpenPrivacy} />
       <DangerZonePanel exportData={exportData} removeData={removeData} deleteAccount={deleteAccount} logout={logout} />
 
       <div className="account-page__section" style={{ border: 'none', boxShadow: 'none' }}>
@@ -381,33 +402,71 @@ function ProfilePanel({ user, logout, changePassword, updateProfile, exportData,
  *
  * Shows a sign-in / register prompt when the user is not authenticated, or
  * a profile view (avatar, display name, email, password change, appearance,
- * danger zone, sign-out) when they are logged in.  Keeps `/login` and
- * `/register` as separate standalone routes for direct-link access.
+ * privacy, danger zone, sign-out) when they are logged in. Keeps `/login`
+ * and `/register` as separate standalone routes for direct-link access.
+ *
+ * Also owns the Privacy & Terms & Data dialog (moved here from the classic
+ * caption layout, `App.jsx` — that layout isn't reachable from most of the
+ * app today, so a user who never visited `/captions` never saw it). Auto-
+ * opens once, with acceptance required, on a first visit with no
+ * `lcyt:privacyAccepted` flag; `SidebarLayout.jsx` redirects every route to
+ * `/account` until that flag is set, so a first-time login lands here
+ * regardless of which page they'd otherwise have landed on. Reachable again
+ * afterwards via the "View" button in `PrivacyPanel`/`AnonymousPanel`.
  */
 export function AccountPage() {
   const { user, loading, logout, changePassword, updateProfile, exportData, removeData, deleteAccount } = useUserAuth();
 
-  if (loading) {
-    return (
-      <div className="account-page account-page--loading">
-        Loading…
-      </div>
-    );
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (!localStorage.getItem('lcyt:privacyAccepted')) {
+        setPrivacyRequireAcceptance(true);
+        setPrivacyOpen(true);
+      }
+    } catch { /* localStorage unavailable — nothing to gate on */ }
+  }, []);
+
+  function handleOpenPrivacy() {
+    setPrivacyRequireAcceptance(false);
+    setPrivacyOpen(true);
+  }
+
+  function handlePrivacyAccept() {
+    try { localStorage.setItem('lcyt:privacyAccepted', '1'); } catch { /* best effort */ }
+    setPrivacyRequireAcceptance(false);
+    setPrivacyOpen(false);
   }
 
   return (
     <div className="account-page">
-      {user
-        ? <ProfilePanel
-            user={user}
-            logout={logout}
-            changePassword={changePassword}
-            updateProfile={updateProfile}
-            exportData={exportData}
-            removeData={removeData}
-            deleteAccount={deleteAccount}
-          />
-        : <AnonymousPanel />}
+      {loading ? (
+        <div className="account-page account-page--loading">
+          Loading…
+        </div>
+      ) : user ? (
+        <ProfilePanel
+          user={user}
+          logout={logout}
+          changePassword={changePassword}
+          updateProfile={updateProfile}
+          exportData={exportData}
+          removeData={removeData}
+          deleteAccount={deleteAccount}
+          onOpenPrivacy={handleOpenPrivacy}
+        />
+      ) : (
+        <AnonymousPanel onOpenPrivacy={handleOpenPrivacy} />
+      )}
+
+      <PrivacyModal
+        isOpen={privacyOpen}
+        onClose={() => setPrivacyOpen(false)}
+        requireAcceptance={privacyRequireAcceptance}
+        onAccept={handlePrivacyAccept}
+      />
     </div>
   );
 }

@@ -9,6 +9,8 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { SetupCard, SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { CATEGORY_COLORS } from './setup-hub/icons.jsx';
+import { GuidedActionProvider } from '../hooks/useGuidedAction.jsx';
+import { RoleAssistantPanel } from './agent/RoleAssistantPanel.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -494,50 +496,65 @@ export function AssetsPage() {
   ].filter(card => filter === 'all' || card.section === filter);
 
   return (
-    <div className="setup-hub-page">
-      <div className="setup-hub-page__header">
-        <h1 className="setup-hub-page__title">Assets</h1>
-      </div>
-      <p className="setup-hub-page__desc">
-        A library view of the content this project has accumulated across reusable
-        and produced assets.
-      </p>
+    <GuidedActionProvider>
+      <div className="setup-hub-page-layout">
+        <div className="setup-hub-page">
+          <div className="setup-hub-page__header">
+            <h1 className="setup-hub-page__title">Assets</h1>
+          </div>
+          <p className="setup-hub-page__desc">
+            A library view of the content this project has accumulated across reusable
+            and produced assets.
+          </p>
 
-      <div className="setup-hub-page__pills">
-        {FILTERS.map(f => (
-          <button
-            key={f.id}
-            type="button"
-            className={`setup-hub-page__pill${filter === f.id ? ' setup-hub-page__pill--active' : ''}`}
-            onClick={() => setFilter(f.id)}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
+          <div className="setup-hub-page__pills">
+            {FILTERS.map(f => (
+              <button
+                key={f.id}
+                type="button"
+                className={`setup-hub-page__pill${filter === f.id ? ' setup-hub-page__pill--active' : ''}`}
+                onClick={() => setFilter(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-      <div className="setup-hub-page__grid">
-        {visibleCards.map(card => (
-          <SetupCard
-            key={card.key}
-            id={card.key}
-            icon={card.icon}
-            color={card.color}
-            title={card.title}
-            description={card.description}
-            status={card.status}
-            statusLabel={card.statusLabel}
-            placeholder={card.placeholder}
-            headerAction={card.headerAction}
-          >
-            {card.body}
-          </SetupCard>
-        ))}
-      </div>
+          <div className="setup-hub-page__grid">
+            {visibleCards.map(card => (
+              <SetupCard
+                key={card.key}
+                id={card.key}
+                icon={card.icon}
+                color={card.color}
+                title={card.title}
+                description={card.description}
+                status={card.status}
+                statusLabel={card.statusLabel}
+                placeholder={card.placeholder}
+                headerAction={card.headerAction}
+              >
+                {card.body}
+              </SetupCard>
+            ))}
+          </div>
 
-      <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 20 }}>
-        Looking for device/service configuration instead? See <Link href="/setup">Setup</Link>.
-      </p>
-    </div>
+          <p style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 20 }}>
+            Looking for device/service configuration instead? See <Link href="/setup">Setup</Link>.
+          </p>
+        </div>
+
+        {/* Asset Control Assistant (plan_ai_roles_framework.md). Its tools
+            (asset.update/delete) operate on lcyt-dsk's image-layer asset
+            library, which this page doesn't render a dialog for today (see
+            CONSIDER.md) — proposed actions surface as plain chat text rather
+            than a driven dialog until that gap is closed. */}
+        <RoleAssistantPanel
+          roleCode="asset_control_assistant"
+          title="Asset Control Assistant"
+          subtitle="Ask about or manage the image assets used by DSK overlays."
+        />
+      </div>
+    </GuidedActionProvider>
   );
 }
