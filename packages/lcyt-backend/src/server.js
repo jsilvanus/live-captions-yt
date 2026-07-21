@@ -83,7 +83,7 @@ import {
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
   createPlannerRouter,
-  isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
+  isServerEmbeddingAvailable, getAiConfigRaw,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
 import {
@@ -337,7 +337,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
-} = await initAgent(db, { eventBus, metrics });
+} = await initAgent(db, { eventBus, metrics, settings });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
@@ -388,8 +388,17 @@ const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsSc
 initActions(db);
 
 // Wire the agent's embedding capabilities into the CueEngine for
-// fuzzy semantic matching via cue[semantic]:phrase metacodes.
-_cueEngine.setEmbeddingFn(computeEmbeddings);
+// fuzzy semantic matching via cue[semantic]:phrase metacodes. Routed through
+// agent.computeEmbeddings(texts, apiKey) rather than the bare module
+// function — CueEngine's _embedFn(texts, { apiKey, rule }) passes the
+// *project's* apiKey for ai_config lookup, but computeEmbeddings(texts, opts)
+// treats opts.apiKey as the *embedding provider's credential*; passing the
+// bare function let a project's api_key silently override EMBEDDING_API_KEY
+// as the Bearer token on every semantic cue match. agent.computeEmbeddings
+// keeps those two meanings of "apiKey" apart correctly, and is also the
+// settings-aware path (falls back to SettingsService for the server-default
+// provider instead of computeEmbeddings() reading process.env directly).
+_cueEngine.setEmbeddingFn((texts, opts) => _agent.computeEmbeddings(texts, opts?.apiKey));
 _cueEngine.setAiConfigFn((apiKey) => _agent.getAiConfig(apiKey));
 // Wire the agent's event cue evaluation for cue[events]:description metacodes.
 _cueEngine.setAgentEvaluateFn((apiKey, desc, opts) => _agent.evaluateEventCue(apiKey, desc, opts));
