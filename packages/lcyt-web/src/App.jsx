@@ -83,6 +83,10 @@ export function AppLayout({ standalone = true }) {
   const [micHoldToSpeak, setMicHoldToSpeak] = useState(
     () => { try { return localStorage.getItem('lcyt:hold-to-speak') === '1'; } catch { return false; } }
   );
+  // Mobile-only: reveals the same #footer/InputBar desktop uses, toggled by
+  // MobileAudioBar's ⌨ button (plan_ui.md v2 §4c) — hidden by default so it
+  // doesn't compete with the file viewer/sent log for screen space.
+  const [mobileTextInputOpen, setMobileTextInputOpen] = useState(false);
 
   const inputBarRef = useRef(null);
   const audioPanelRef = useRef(null);
@@ -234,6 +238,17 @@ export function AppLayout({ standalone = true }) {
     setMobileInterimText(text);
   }
 
+  function handleToggleMobileTextInput() {
+    setMobileTextInputOpen(v => {
+      const next = !v;
+      if (next) {
+        // Focus after the reveal transition's layout settles.
+        setTimeout(() => inputBarRef.current?.focus(), 0);
+      }
+      return next;
+    });
+  }
+
   // Keep ref in sync so resize closures always read the latest value
   useEffect(() => { rightPanelWRef.current = rightPanelW; }, [rightPanelW]);
 
@@ -329,12 +344,14 @@ export function AppLayout({ standalone = true }) {
         </div>
       </main>
 
-      {/* Desktop footer — input bar only */}
-      <footer id="footer">
+      {/* Desktop: always the footer input bar. Mobile: hidden unless toggled
+          open via MobileAudioBar's ⌨ button (plan_ui.md v2 §4c) — same
+          InputBar instance/ref either way, no separate mobile input. */}
+      <footer id="footer" className={mobileTextInputOpen ? 'footer--mobile-open' : ''}>
         <InputBar ref={inputBarRef} />
       </footer>
 
-      {/* Mobile fixed bottom bar — meter | mic | prev | send | next */}
+      {/* Mobile fixed bottom bar — meter | mic | prev | send | next | keyboard */}
       <MobileAudioBar
         fileStore={fileStore}
         session={session}
@@ -349,6 +366,8 @@ export function AppLayout({ standalone = true }) {
         mobileBarMeterRef={mobileBarMeterRef}
         audioPanelRef={audioPanelRef}
         inputBarRef={inputBarRef}
+        textInputOpen={mobileTextInputOpen}
+        onToggleTextInput={handleToggleMobileTextInput}
       />
 
       {controlsOpen && <ControlsPanel onClose={() => setControlsOpen(false)} />}

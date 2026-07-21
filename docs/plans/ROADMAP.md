@@ -115,6 +115,31 @@ question (should it move to `DskEditorPage.jsx`'s Media Library, or should
 `AssetsPage.jsx` grow one?), not a build gap; see `CONSIDER.md`. Full
 `packages/lcyt-web` test sweep passes (447 Vitest + 461 node:test).
 
+`plan_ui.md`'s remaining backlog also cleared out 2026-07-21, item by item,
+each re-audited against actual current code before touching anything (not
+just implemented off the original, sometimes-stale proposal text):
+onboarding auto-trigger (`OnboardingBanner.jsx` + `lib/onboarding.js`, a
+dismissible per-project nudge rather than the originally-sketched blocking
+wizard, since `/setup/wizard` already exists as a fuller flow); localStorage
+quota monitoring (`StorageQuotaMonitor.jsx` + `lib/storageQuota.js`, periodic
+`navigator.storage.estimate()` checks rather than a per-write gate, since no
+browser API can intercept an individual `localStorage.setItem()` call); the
+DSK metacode autocomplete helper (`lib/metacodeAutocomplete.js` +
+`hooks/useDskMetacodeSources.js`, wired into `InputBar.jsx` — corrected the
+proposal's "template names" to image shorthand names, the thing
+`graphics:` actually resolves against); context-aware layout modes (its
+premise was superseded by the sidebar routing model — 4 of 5 rows were
+already true; the one real gap, a Production caption input, closed via a new
+`captionInput` pane type); detachable/pop-out panels (`PopOutButton.jsx`,
+wired to the Sent Captions panel via the already-existing `/embed/*`
+`BroadcastChannel` infrastructure, now also broadcast by the main
+`SidebarApp` not just `/embed/*` pages); and the mobile-first caption flow's
+actual gap — re-auditing found the file viewer was never hidden on mobile,
+only the free-text input was (`#footer` was unconditionally hidden below
+768px) — fixed with a ⌨ toggle on `MobileAudioBar.jsx` that reveals the same
+`InputBar` instance rather than a swipeable-card rebuild. Only workflow
+presets (named localStorage config bundles) remains open in this plan.
+
 ---
 
 ## Tier 0 — Fix now: real bugs the audit surfaced
@@ -138,7 +163,7 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 | Plan | What's left | Why it matters |
 |---|---|---|
 | `plan_ai_roles_framework.md` | **Done, 2026-07-21** — `RoleAssistantPanel.jsx` + `useGuidedAction.jsx` shipped, mounted in `SetupHubPage.jsx`/`AssetsPage.jsx`. Only remaining gap: Asset Control Assistant's tools have no dialog on `AssetsPage.jsx` to drive (page-ownership question, see CONSIDER.md), not a build gap. | — |
-| `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
+| `plan_ui.md` | **Done except workflow presets, 2026-07-21** — onboarding auto-trigger, localStorage quota monitoring, DSK metacode autocomplete, context-aware layout modes, detachable/pop-out panels, and the mobile-first caption flow's core functional gap all shipped this pass. Only workflow presets (named localStorage config bundles) remains. | — |
 
 ---
 

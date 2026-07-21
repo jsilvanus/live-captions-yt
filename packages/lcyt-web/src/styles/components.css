@@ -1511,6 +1511,26 @@
   opacity: 0.4;
 }
 
+.mobile-bar__kbd-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--color-surface-elevated);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.mobile-bar__kbd-btn--active {
+  background: var(--color-accent);
+  color: #fff;
+  border-color: var(--color-accent);
+}
+
 /* ─── Panel resize handle ────────────────────────────────── */
 
 .panel-resize-handle::after {
