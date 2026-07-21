@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSentLogContext } from '../contexts/SentLogContext';
 import { formatTime } from '../lib/formatting';
+import { PopOutButton } from './PopOutButton.jsx';
 
 const ITEM_HEIGHT = 28; // px — must match the min-height of .sent-item in components.css
 const VIRTUAL_THRESHOLD = 100; // enable windowing above this many entries
@@ -137,6 +138,7 @@ export function SentPanel() {
           <input type="checkbox" checked={wordWrap} onChange={toggleWordWrap} />
           <span>Wrap</span>
         </label>
+        <PopOutButton embedPath="/embed/sentlog" title="Pop out sent log into a separate window" />
         <button
           className="sent-panel__clear-btn"
           title="Clear sent captions log"

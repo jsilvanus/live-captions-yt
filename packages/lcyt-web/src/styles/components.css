@@ -2655,6 +2655,24 @@
   box-sizing: border-box;
 }
 
+/* ─── Pop-out button (plan_ui.md v2 §4b) ────────────────── */
+
+.pop-out-btn {
+  font-size: 12px;
+  line-height: 1;
+  padding: 3px 7px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.pop-out-btn:hover {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
 /* ─── Sent panel clear button ───────────────────────────── */
 
 .sent-panel__clear-btn {
