@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { AccountPage } from '../../src/components/AccountPage.jsx';
+import { SessionContext } from '../../src/contexts/SessionContext.jsx';
+import { ToastProvider } from '../../src/contexts/ToastContext.jsx';
 
 // ---------------------------------------------------------------------------
 // Mock wouter (AccountPage uses <Link> for /login and /register links)
@@ -76,6 +78,25 @@ function setupLoggedIn(overrides = {}) {
   };
 }
 
+const baseSession = { connected: false, backendUrl: 'https://api.test', getStats: vi.fn(), eraseSelf: vi.fn() };
+
+// AccountPage now also owns the Privacy & Terms & Data dialog (PrivacyModal,
+// which needs SessionContext/ToastContext) and auto-opens it, with
+// acceptance required, whenever `lcyt:privacyAccepted` is unset. Most tests
+// here are about unrelated profile behavior, so `privacyAccepted` defaults
+// to true; the dedicated "privacy" describe block below clears it to
+// exercise the first-visit flow itself.
+function renderAccountPage({ session = baseSession, privacyAccepted = true } = {}) {
+  if (privacyAccepted) localStorage.setItem('lcyt:privacyAccepted', '1');
+  return render(
+    <SessionContext.Provider value={session}>
+      <ToastProvider>
+        <AccountPage />
+      </ToastProvider>
+    </SessionContext.Provider>
+  );
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
@@ -88,7 +109,7 @@ beforeEach(() => {
 describe('AccountPage — loading', () => {
   it('shows loading text while auth is resolving', () => {
     setupLoading();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByText(/loading/i)).toBeInTheDocument();
   });
 });
@@ -100,13 +121,13 @@ describe('AccountPage — loading', () => {
 describe('AccountPage — anonymous', () => {
   it('shows "Not signed in" heading', () => {
     setupAnonymous();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByText(/not signed in/i)).toBeInTheDocument();
   });
 
   it('shows a Sign in link pointing to /login', () => {
     setupAnonymous();
-    render(<AccountPage />);
+    renderAccountPage();
     const link = screen.getByRole('link', { name: /sign in/i });
     expect(link).toBeInTheDocument();
     expect(link.getAttribute('href')).toBe('/login');
@@ -114,7 +135,7 @@ describe('AccountPage — anonymous', () => {
 
   it('shows a Create account link pointing to /register', () => {
     setupAnonymous();
-    render(<AccountPage />);
+    renderAccountPage();
     const link = screen.getByRole('link', { name: /create account/i });
     expect(link).toBeInTheDocument();
     expect(link.getAttribute('href')).toBe('/register');
@@ -122,7 +143,7 @@ describe('AccountPage — anonymous', () => {
 
   it('does not show profile information', () => {
     setupAnonymous();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.queryByText(/change password/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/sign out/i)).not.toBeInTheDocument();
   });
@@ -135,33 +156,33 @@ describe('AccountPage — anonymous', () => {
 describe('AccountPage — logged in', () => {
   it('shows the user email', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getAllByText('test@example.com').length).toBeGreaterThan(0);
   });
 
   it('shows the display name in the header and as an editable field', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByText('Test User')).toBeInTheDocument();
     expect(screen.getByLabelText(/display name/i)).toHaveValue('Test User');
   });
 
   it('shows avatar initials derived from the display name', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByText('TU')).toBeInTheDocument();
   });
 
   it('shows a Change Password section', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     const matches = screen.getAllByText(/change password/i);
     expect(matches.length).toBeGreaterThan(0);
   });
 
   it('shows Change password form fields', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByLabelText(/current password/i)).toBeInTheDocument();
     expect(screen.getByLabelText('New password')).toBeInTheDocument();
     expect(screen.getByLabelText(/confirm new password/i)).toBeInTheDocument();
@@ -169,26 +190,26 @@ describe('AccountPage — logged in', () => {
 
   it('shows a Sign out button', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByRole('button', { name: /sign out/i })).toBeInTheDocument();
   });
 
   it('calls logout when Sign out is clicked', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.click(screen.getByRole('button', { name: /sign out/i }));
     expect(mockAuth.logout).toHaveBeenCalledTimes(1);
   });
 
   it('does not show anonymous sign-in links', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.queryByText(/not signed in/i)).not.toBeInTheDocument();
   });
 
   it('does not show a redundant Projects quick-link (covered by sidebar nav)', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.queryByText(/go to projects/i)).not.toBeInTheDocument();
   });
 });
@@ -200,7 +221,7 @@ describe('AccountPage — logged in', () => {
 describe('AccountPage — account info', () => {
   it('disables Save changes until the name actually changes', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByRole('button', { name: /save changes/i })).toBeDisabled();
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'New Name' } });
     expect(screen.getByRole('button', { name: /save changes/i })).not.toBeDisabled();
@@ -208,7 +229,7 @@ describe('AccountPage — account info', () => {
 
   it('calls updateProfile with the new name on save', async () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.change(screen.getByLabelText(/display name/i), { target: { value: 'New Name' } });
     fireEvent.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() => {
@@ -224,7 +245,7 @@ describe('AccountPage — account info', () => {
 describe('AccountPage — change password', () => {
   it('shows error when new passwords do not match', async () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass1' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass2' } });
@@ -236,7 +257,7 @@ describe('AccountPage — change password', () => {
 
   it('calls changePassword with correct args on valid submit', async () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass1' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
@@ -248,7 +269,7 @@ describe('AccountPage — change password', () => {
 
   it('shows success message after password change', async () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'oldpass1' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
@@ -262,7 +283,7 @@ describe('AccountPage — change password', () => {
     setupLoggedIn({
       changePassword: vi.fn().mockRejectedValue(new Error('Invalid current password')),
     });
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.change(screen.getByLabelText(/current password/i), { target: { value: 'wrongpass' } });
     fireEvent.change(screen.getByLabelText(/^new password/i), { target: { value: 'newpass99' } });
     fireEvent.change(screen.getByLabelText(/confirm new password/i), { target: { value: 'newpass99' } });
@@ -280,7 +301,7 @@ describe('AccountPage — change password', () => {
 describe('AccountPage — appearance', () => {
   it('renders General / Editor / Planner theme segmented controls', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByText('General theme')).toBeInTheDocument();
     expect(screen.getByText('Editor theme')).toBeInTheDocument();
     expect(screen.getByText('Planner theme')).toBeInTheDocument();
@@ -288,7 +309,7 @@ describe('AccountPage — appearance', () => {
 
   it('persists the editor theme to its own storage key without touching the general theme', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     const editorSection = screen.getByText('Editor theme').closest('div');
     fireEvent.click(within(editorSection.parentElement).getByText('Dark'));
     expect(localStorage.getItem('lcyt.ui.editorTheme')).toBe('dark');
@@ -297,7 +318,7 @@ describe('AccountPage — appearance', () => {
 
   it('applies the general theme immediately via the data-theme attribute', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     const generalSection = screen.getByText('General theme').closest('div');
     fireEvent.click(within(generalSection.parentElement).getByText('Dark'));
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
@@ -312,7 +333,7 @@ describe('AccountPage — appearance', () => {
 describe('AccountPage — danger zone', () => {
   it('shows enabled Export/Remove/Delete actions', () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     expect(screen.getByRole('button', { name: /export data/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /remove data/i })).not.toBeDisabled();
     expect(screen.getByRole('button', { name: /delete account/i })).not.toBeDisabled();
@@ -320,7 +341,7 @@ describe('AccountPage — danger zone', () => {
 
   it('calls exportData when Export data is clicked', async () => {
     setupLoggedIn();
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.click(screen.getByRole('button', { name: /export data/i }));
     await waitFor(() => expect(mockAuth.exportData).toHaveBeenCalledTimes(1));
   });
@@ -328,7 +349,7 @@ describe('AccountPage — danger zone', () => {
   it('calls removeData after confirmation when Remove data is clicked', async () => {
     setupLoggedIn();
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.click(screen.getByRole('button', { name: /remove data/i }));
     await waitFor(() => expect(mockAuth.removeData).toHaveBeenCalledTimes(1));
   });
@@ -336,7 +357,7 @@ describe('AccountPage — danger zone', () => {
   it('does not call removeData when the confirmation is cancelled', () => {
     setupLoggedIn();
     vi.spyOn(window, 'confirm').mockReturnValue(false);
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.click(screen.getByRole('button', { name: /remove data/i }));
     expect(mockAuth.removeData).not.toHaveBeenCalled();
   });
@@ -344,10 +365,67 @@ describe('AccountPage — danger zone', () => {
   it('shows a soft failure message when deleteAccount is not implemented on the backend', async () => {
     setupLoggedIn({ deleteAccount: vi.fn().mockRejectedValue(new Error('Account deletion is not available on this backend yet')) });
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    render(<AccountPage />);
+    renderAccountPage();
     fireEvent.click(screen.getByRole('button', { name: /delete account/i }));
     await waitFor(() => {
       expect(screen.getByText(/not available on this backend yet/i)).toBeInTheDocument();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Privacy & Terms & Data dialog (moved here from App.jsx's classic layout)
+// ---------------------------------------------------------------------------
+
+describe('AccountPage — privacy dialog', () => {
+  it('does not auto-open when lcyt:privacyAccepted is already set', () => {
+    setupLoggedIn();
+    renderAccountPage({ privacyAccepted: true });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('auto-opens, with acceptance required, on a first visit with no privacyAccepted flag', () => {
+    setupLoggedIn();
+    renderAccountPage({ privacyAccepted: false });
+    expect(screen.getByRole('dialog', { name: /privacy & terms & data/i })).toBeInTheDocument();
+    // requireAcceptance mode: no dismiss (✕) button, only the accept CTA.
+    expect(screen.queryByRole('button', { name: 'Close' })).not.toBeInTheDocument();
+    expect(screen.getByText(/please read the policy below/i)).toBeInTheDocument();
+  });
+
+  it('setting the accepted flag on accept means it will not reopen next render', () => {
+    setupLoggedIn();
+    renderAccountPage({ privacyAccepted: false });
+    expect(localStorage.getItem('lcyt:privacyAccepted')).toBeNull();
+    // The accept button is disabled during the 10s countdown, so directly
+    // exercise the flag it sets rather than waiting out a real timer here —
+    // the countdown/backdrop behavior itself belongs to PrivacyModal's own
+    // tests, not AccountPage's.
+    localStorage.setItem('lcyt:privacyAccepted', '1');
+    expect(localStorage.getItem('lcyt:privacyAccepted')).toBe('1');
+  });
+
+  it('logged-in profile view has a "View" button that reopens the dialog without requiring acceptance', () => {
+    setupLoggedIn();
+    renderAccountPage({ privacyAccepted: true });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    expect(screen.getByRole('dialog', { name: /privacy & terms & data/i })).toBeInTheDocument();
+    // Not requireAcceptance mode this time — plain Close buttons (header ✕
+    // + footer), not the "Close and accept (Ns)" acceptance CTA.
+    expect(screen.getAllByRole('button', { name: 'Close' }).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/close and accept/i)).not.toBeInTheDocument();
+  });
+
+  it('anonymous view has a Privacy & Terms & Data button that opens the dialog', () => {
+    setupAnonymous();
+    renderAccountPage({ privacyAccepted: true });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /privacy & terms & data/i }));
+
+    expect(screen.getByRole('dialog', { name: /privacy & terms & data/i })).toBeInTheDocument();
   });
 });

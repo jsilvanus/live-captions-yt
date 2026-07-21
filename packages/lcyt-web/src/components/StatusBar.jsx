@@ -8,7 +8,7 @@ import { readPersistedSessionConfig, savePersistedSessionConfig } from '../lib/p
 
 const STT_POLL_INTERVAL_MS = 10_000;
 
-export function StatusBar({ onControlsOpen, onPrivacyOpen, onSettingsOpen, onCCOpen }) {
+export function StatusBar({ onControlsOpen, onSettingsOpen, onCCOpen }) {
   const [, navigate] = useLocation();
   const session = useSessionContext();
   const { showToast } = useToastContext();

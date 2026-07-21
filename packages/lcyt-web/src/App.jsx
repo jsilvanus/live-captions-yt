@@ -5,7 +5,6 @@ import { useFileContext } from './contexts/FileContext';
 import { useLang } from './contexts/LangContext';
 import { StatusBar } from './components/StatusBar';
 import { ControlsPanel } from './components/ControlsPanel';
-import { PrivacyModal } from './components/PrivacyModal';
 import { SettingsModal } from './components/SettingsModal';
 import { CCModal } from './components/CCModal';
 import { DropZone } from './components/DropZone';
@@ -19,7 +18,7 @@ import { MobileAudioBar } from './components/MobileAudioBar';
 import { hasProjectSessionConfig } from './lib/projectSession';
 
 // Persistent banner shown when the backend cannot be reached
-function NetworkBanner({ privacyPending }) {
+function NetworkBanner() {
   const { healthStatus, checkHealth, connected, getAutoConnect, getPersistedConfig, connect } = useSessionContext();
   const { t } = useLang();
 
@@ -31,12 +30,12 @@ function NetworkBanner({ privacyPending }) {
     }
   }, [checkHealth, getAutoConnect, getPersistedConfig, connect]);
 
-  // Auto-retry every 30 s while unreachable (only after privacy modal is accepted)
+  // Auto-retry every 30 s while unreachable
   useEffect(() => {
-    if (healthStatus !== 'unreachable' || privacyPending) return;
+    if (healthStatus !== 'unreachable') return;
     const id = setInterval(retry, 30_000);
     return () => clearInterval(id);
-  }, [healthStatus, retry, privacyPending]);
+  }, [healthStatus, retry]);
 
   if (connected || healthStatus !== 'unreachable') return null;
 
@@ -60,8 +59,6 @@ export function AppLayout({ standalone = true }) {
   const [controlsOpen, setControlsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ccOpen, setCcOpen] = useState(false);
-  const [privacyOpen, setPrivacyOpen] = useState(false);
-  const [privacyRequireAcceptance, setPrivacyRequireAcceptance] = useState(false);
   const [dropZoneVisible, setDropZoneVisible] = useState(true);
   const [micListening, setMicListening] = useState(false);
   const [micHolding, setMicHolding] = useState(false);
@@ -174,16 +171,6 @@ export function AppLayout({ standalone = true }) {
     return () => window.removeEventListener('beforeunload', onBeforeUnload);
   }, [micListening]);
 
-  // Auto-open privacy modal on first visit (before user has accepted)
-  useEffect(() => {
-    try {
-      if (!localStorage.getItem('lcyt:privacyAccepted')) {
-        setPrivacyOpen(true);
-        setPrivacyRequireAcceptance(true);
-      }
-    } catch {}
-  }, []);
-
   // Health check on startup; auto-connect only if backend is reachable
   useEffect(() => {
     const cfg = session.getPersistedConfig();
@@ -212,17 +199,6 @@ export function AppLayout({ standalone = true }) {
     window.addEventListener('lcyt:stt-config-changed', onCfgChange);
     return () => window.removeEventListener('lcyt:stt-config-changed', onCfgChange);
   }, []);
-
-  function handlePrivacyOpen() {
-    setPrivacyRequireAcceptance(false);
-    setPrivacyOpen(true);
-  }
-
-  function handlePrivacyAccept() {
-    try { localStorage.setItem('lcyt:privacyAccepted', '1'); } catch {}
-    setPrivacyRequireAcceptance(false);
-    setPrivacyOpen(false);
-  }
 
   function handleLineSend(text, fileId, lineIndex) {
     inputBarRef.current?.sendText(text, fileId, lineIndex);
@@ -299,12 +275,11 @@ export function AppLayout({ standalone = true }) {
       {standalone && (
         <StatusBar
           onControlsOpen={() => setControlsOpen(true)}
-          onPrivacyOpen={handlePrivacyOpen}
           onSettingsOpen={() => setSettingsOpen(true)}
           onCCOpen={() => setCcOpen(true)}
         />
       )}
-      <NetworkBanner privacyPending={privacyOpen && privacyRequireAcceptance} />
+      <NetworkBanner />
 
       <main id="main">
         {/* Left panel */}
@@ -373,12 +348,6 @@ export function AppLayout({ standalone = true }) {
       {controlsOpen && <ControlsPanel onClose={() => setControlsOpen(false)} />}
       {standalone && <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />}
       {standalone && <CCModal isOpen={ccOpen} onClose={() => setCcOpen(false)} connected={session.connected} />}
-      <PrivacyModal
-        isOpen={privacyOpen}
-        onClose={() => setPrivacyOpen(false)}
-        requireAcceptance={privacyRequireAcceptance}
-        onAccept={handlePrivacyAccept}
-      />
       <ToastContainer />
     </div>
   );
