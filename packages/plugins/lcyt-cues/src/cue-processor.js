@@ -235,11 +235,12 @@ function _attachSoundListener(session, engine, store) {
  *
  * Mirrors createSoundCueListener() exactly, but for `track:` cue rules: a fast
  * local tracker subsystem (out of scope for this plugin — see plan_cues.md
- * Phase 9 "Tracker-state leaves") is expected to emit `track_state` events
- * shaped like `{ labels: [{ label, confidence, region? }], ts }` on the
- * session emitter, the same way lcyt-music emits `sound_label`. Nothing in
- * this repo emits `track_state` yet; this listener is inert (attaches, never
- * fires) until such a producer exists.
+ * Phase 9 "Tracker-state leaves") emits `track_state` events shaped like
+ * `{ labels: [{ label, confidence, region? }], ts }` on the session emitter,
+ * the same way lcyt-music emits `sound_label`. Producer:
+ * `packages/lcyt-backend/src/perception-aggregator.js` (plan_video_perception.md
+ * Phase 2), fed by dedicated-feed cameras only so far — Phase 3's shared-feed
+ * resolver is the only other planned producer of this event.
  *
  * Call once after the session store is available.
  *

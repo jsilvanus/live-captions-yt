@@ -32,6 +32,7 @@ function isUnauthenticatedCameraRoute(path) {
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {
   const mediamtxClient = opts.mediamtxClient ?? null;
   const cameraThumbnailOpts = opts.cameraThumbnail ?? {};
+  const perceptionManager = opts.perceptionManager ?? null;
   // Real session/user/device auth (createProjectAccessMiddleware, same as
   // every other project-scoped router) — optional so existing route-level
   // tests that construct this router directly keep working unauthenticated
@@ -136,9 +137,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // POST /production/cameras — create camera
   router.post('/', (req, res) => {
     const {
-      name, mixerInput, controlType = 'none', controlConfig = {},
+      name, mixerInput, mixerId = null, controlType = 'none', controlConfig = {},
       sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
-      cameraKey = null,
+      cameraKey = null, label = null, zone = null, overlapLinks = [],
     } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
@@ -155,9 +156,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     // auth wired in (e.g. existing route-level tests).
     const ownerApiKey = req.session?.apiKey ?? null;
     db.prepare(`
-      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey);
+      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links, mixer_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey, label, zone, JSON.stringify(overlapLinks), mixerId);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
@@ -175,12 +176,16 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const {
       name             = existing.name,
       mixerInput       = existing.mixer_input,
+      mixerId          = existing.mixer_id,
       controlType      = existing.control_type,
       controlConfig    = JSON.parse(existing.control_config),
       sortOrder        = existing.sort_order,
       bridgeInstanceId = existing.bridge_instance_id,
       connectionSource = existing.connection_source ?? 'backend',
       cameraKey        = existing.camera_key,
+      label            = existing.label,
+      zone             = existing.zone,
+      overlapLinks     = JSON.parse(existing.overlap_links || '[]'),
     } = req.body;
 
     if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
@@ -193,10 +198,12 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     db.prepare(`
       UPDATE prod_cameras
       SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
-          bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?
+          bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?,
+          label = ?, zone = ?, overlap_links = ?, mixer_id = ?
       WHERE id = ?
     `).run(name, mixerInput ?? null, controlType, JSON.stringify(controlConfig),
-           bridgeInstanceId ?? null, sortOrder, connectionSource, cameraKey ?? null, id);
+           bridgeInstanceId ?? null, sortOrder, connectionSource, cameraKey ?? null,
+           label, zone, JSON.stringify(overlapLinks), mixerId ?? null, id);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
@@ -302,6 +309,52 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
       res.status(status).json({ error: err.message });
     }
+  });
+
+  // -------------------------------------------------------------------------
+  // fps30 tracker subsystem dispatch (plan_video_perception.md Phase 2)
+  // -------------------------------------------------------------------------
+
+  // POST /production/cameras/:id/perception/start — start a per-camera
+  // perception job on the compute orchestration layer. Dedicated-feed
+  // cameras only (needs a cameraKey) — shared/mixer-only cameras are
+  // Phase 3's job, not this route's.
+  router.post('/:id/perception/start', async (req, res) => {
+    if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+
+    const camera = parseCamera(row);
+    const apiKey = req.session?.apiKey ?? row.owner_api_key ?? null;
+    if (!apiKey) return res.status(400).json({ error: 'No apiKey available for this camera (unowned camera needs an authenticated session)' });
+
+    try {
+      const result = await perceptionManager.start(apiKey, camera, { emitIntervalMs: req.body?.emitIntervalMs });
+      res.json({ ok: true, ...result });
+    } catch (err) {
+      if (err.code === 'NOT_CONFIGURED') return res.status(503).json({ error: err.message });
+      if (err.code === 'NO_FEED') return res.status(400).json({ error: err.message });
+      res.status(502).json({ error: 'Failed to start perception job', message: err.message });
+    }
+  });
+
+  // POST /production/cameras/:id/perception/stop
+  router.post('/:id/perception/stop', async (req, res) => {
+    if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+
+    const stopped = await perceptionManager.stop(req.params.id);
+    res.json({ ok: true, stopped });
+  });
+
+  // GET /production/cameras/:id/perception/status
+  router.get('/:id/perception/status', (req, res) => {
+    if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+
+    res.json({ ok: true, status: perceptionManager.status(req.params.id) });
   });
 
   // -------------------------------------------------------------------------

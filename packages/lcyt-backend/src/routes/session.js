@@ -32,7 +32,7 @@ export function createSessionRouters(db, store, jwtSecret, auth, { relayManager 
   const requireCaptions = createRequireFeature(db, 'captions', settings);
   const requireMicLock  = createRequireFeature(db, 'mic-lock', settings);
 
-  router.use('/live',     createLiveRouter(db, store, jwtSecret, { mediamtxClient }));
+  router.use('/live',     createLiveRouter(db, store, jwtSecret, { mediamtxClient, settings }));
   router.use('/captions', requireCaptions, createCaptionsRouter(store, auth, db, relayManager, dskCaptionProcessor, resolveStorage, soundCaptionProcessor, cueProcessor));
   router.use('/events',   createEventsRouter(store, jwtSecret));
   router.use('/sync',     createSyncRouter(store, auth));

@@ -15,7 +15,7 @@ function promName(metric) {
   return metric.replace(/[^a-zA-Z0-9_:]+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
 }
 
-export function createMetrics(db) {
+export function createMetrics(db, settings = null) {
   const promRegistry = new Registry();
   collectDefaultMetrics({ register: promRegistry });
   const buffer = createUsageBuffer({ db });
@@ -23,7 +23,7 @@ export function createMetrics(db) {
   const gauges = new Map();
   const sseGauges = new Map();
   // Bounded-cardinality guard: label business series by project unless opted out.
-  const projectLabels = process.env.METRICS_PROJECT_LABELS !== '0';
+  const projectLabels = settings ? settings.get('metrics.project_labels') : (process.env.METRICS_PROJECT_LABELS !== '0');
 
   function projectLabel(labels = {}) {
     if (!projectLabels) return 'all';

@@ -98,6 +98,36 @@ export function runMigrations(db) {
   if (!cameraCols4.includes('owner_api_key')) {
     db.exec('ALTER TABLE prod_cameras ADD COLUMN owner_api_key TEXT');
   }
+
+  // label: free text describing the camera (e.g. 'pulpit', 'choir', 'wide')
+  // zone: optional coarse tag for camera placement (front/back/left/right/wide)
+  // overlap_links: JSON array of { cameraId, presetId?, kind: 'overlaps_with'|'alternate_for' }
+  //   representing cameras/presets that can cover the same subject
+  const cameraCols5 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols5.includes('label')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN label TEXT');
+  }
+  const cameraCols6 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols6.includes('zone')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN zone TEXT');
+  }
+  const cameraCols7 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols7.includes('overlap_links')) {
+    db.exec("ALTER TABLE prod_cameras ADD COLUMN overlap_links TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  // mixer_id: which prod_mixers row mixer_input refers to. Nullable — NULL
+  // means "unscoped/legacy" (every camera created before this column
+  // existed, or a single-mixer deployment that never needed to
+  // disambiguate). Added because mixer_input alone is only unique within
+  // one mixer; a deployment with >1 mixer could otherwise have two
+  // different cameras both claim input 3 with no way to tell them apart
+  // (plan_video_perception.md Phase 3's shared-feed resolver is the first
+  // consumer that actually needs this disambiguation — code-review finding).
+  const cameraCols8 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraCols8.includes('mixer_id')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN mixer_id TEXT REFERENCES prod_mixers(id) ON DELETE SET NULL');
+  }
 }
 
 /**

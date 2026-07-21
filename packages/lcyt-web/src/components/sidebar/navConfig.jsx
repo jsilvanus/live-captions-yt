@@ -58,6 +58,13 @@ const AdminIcon = () => (
   </svg>
 );
 
+const ObservabilityIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+    <path d="M1 8C1 8 3.8 3 8 3C12.2 3 15 8 15 8C15 8 12.2 13 8 13C3.8 13 1 8 1 8Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    <circle cx="8" cy="8" r="2.2" stroke="currentColor" strokeWidth="1.3" />
+  </svg>
+);
+
 const LegacyIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
     <path d="M3 2H13C13.5523 2 14 2.44772 14 3V13C14 13.5523 13.5523 14 13 14H3C2.44772 14 2 13.5523 2 13V3C2 2.44772 2.44772 2 3 2Z" stroke="currentColor" strokeWidth="1.3" />
@@ -118,5 +125,6 @@ export const NAV_BOTTOM = [
   { id: 'projects', icon: <ProjectsIcon />, label: 'Projects', path: '/projects',    feature: 'login' },
   { id: 'team',     icon: <TeamIcon />,     label: 'Team',     path: '/team',        feature: 'login' },
   { id: 'admin',    icon: <AdminIcon />,    label: 'Admin',    path: '/admin/users', feature: 'admin' },
+  { id: 'ai-observability', icon: <ObservabilityIcon />, label: 'AI Observability', path: '/admin/ai-observability', feature: 'admin' },
   { id: 'account',  icon: <AccountIcon />,  label: 'Account',  path: '/account',     feature: 'login' },
 ];

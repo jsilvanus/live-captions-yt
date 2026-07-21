@@ -5,7 +5,7 @@ import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast,
+  completeBroadcast, onKeyDeleted,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { getMemberAccessLevel } from './db/project-members.js';
@@ -31,7 +31,7 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter,
+  initProductionControl, createProductionRouter, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
 } from 'lcyt-production';
@@ -77,13 +77,13 @@ try {
     createMusicRouters = () => [];
   }
 }
-import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
+import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener, createTrackerCueListener } from 'lcyt-cues';
 import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
   createRolesChatRouter, createProductionAssistantRouter, createVisionRolesRouter,
-  createPlannerRouter,
-  isServerEmbeddingAvailable, getAiConfigRaw,
+  createPlannerRouter, createSceneRouter,
+  isServerEmbeddingAvailable, getAiConfigRaw, computeEmbeddings,
 } from 'lcyt-agent';
 import { createToolRegistry, createInProcessMcpBridge } from 'lcyt-tools';
 import {
@@ -95,6 +95,9 @@ import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
+import { createPerceptionAggregator } from './perception-aggregator.js';
+import { createSharedFeedResolver } from './shared-feed-resolver.js';
+import { createPerceptionRouter } from './routes/perception.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
 import { createWriteAuditMiddleware } from './middleware/write-audit.js';
@@ -210,7 +213,7 @@ if (settings.get('media.rtmp_relay_active')) {
   console.info('  RTMP relay is inactive. Set RTMP_RELAY_ACTIVE=1 and configure nginx-rtmp to enable it.');
 }
 
-const metrics = createMetrics(db);
+const metrics = createMetrics(db, settings);
 setMetricsInstance(metrics);
 // One shared pub/sub bus for the whole backend. Every per-project SSE registry
 // (DskBus, VariablesBus, RolesBus) and the per-session event stream publish
@@ -329,6 +332,7 @@ const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
 // Wire sound_label events (from lcyt-music) to cue engine for
 // music_start, music_stop, and silence cue rules.
 createSoundCueListener({ store, engine: _cueEngine });
+createTrackerCueListener({ store, engine: _cueEngine });
 
 // AI Agent — central AI service. Owns AI configuration, embedding calls,
 // context window management, and future vision/LLM features.
@@ -337,6 +341,7 @@ createSoundCueListener({ store, engine: _cueEngine });
 const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
+  sceneState: _sceneState,
 } = await initAgent(db, { eventBus, metrics, settings });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
@@ -669,6 +674,7 @@ app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddl
 app.use('/roles', createRolesRouter(db, scopedAuth('role')));
 app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
 app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
+app.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry },
@@ -680,6 +686,47 @@ app.use('/actions', createActionsRouter(db, scopedAuth('action')));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
+// fps30 tracker subsystem (plan_video_perception.md Phase 2/3): job dispatch
+// (start/stop a per-camera or shared-feed perception job on the
+// orchestrator/worker daemon) and the ingest side (a worker POSTs
+// detections back here, fanning into the cue engine's track_state contract
+// + World State's camera.track_state — see perception-aggregator.js's
+// module doc for why this composition-root module, not a plugin, owns that
+// fan-out). The shared-feed resolver (Phase 3) re-tags mixer-only cameras'
+// detections with whichever camera DeviceRegistry says is currently on
+// program before they reach the aggregator.
+// A perception job may run on a remote worker (ORCHESTRATOR_URL/
+// WORKER_DAEMON_URL, the whole point of the compute-orchestration layer),
+// so its frameUrl/callbackUrl must resolve to this backend's real,
+// externally-reachable URL — BACKEND_URL, the same env var routes/video.js
+// hands out to the DSK renderer for the same reason — not
+// DEFAULT_PREVIEW_BASE_URL, which defaults to http://localhost:$PORT and is
+// only correct for lcyt-production's own in-process preview fetches.
+const _perceptionBackendUrl = settings.get('app.backend_url') || DEFAULT_PREVIEW_BASE_URL;
+const _perceptionManager = createPerceptionManager({
+  previewBaseUrl: _perceptionBackendUrl,
+  callbackBaseUrl: _perceptionBackendUrl,
+});
+const _perceptionAggregator = createPerceptionAggregator({ store, eventBus, sceneState: _sceneState });
+const _sharedFeedResolver = createSharedFeedResolver({ db, registry: productionRegistry, aggregator: _perceptionAggregator });
+
+// Release per-project in-memory state (capture buffers, World State
+// snapshots, tracked cameras) when a project is permanently deleted —
+// otherwise these Maps have no eviction at all and grow for the process
+// lifetime (code-review fix). Single registration point covers every
+// deleteKey() call site (routes/keys.js, routes/admin.js, db/users.js's
+// deleteOwnedProjectsForUser) without threading a callback through each.
+onKeyDeleted((apiKey) => {
+  _visionRoleManager?.clearProject?.(apiKey);
+  _sceneState?.clearProject?.(apiKey);
+  _perceptionAggregator?.clearProject?.(apiKey);
+});
+app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
+  perceptionManager: _perceptionManager,
+  internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
+  auth: scopedAuth('production'),
+}));
+
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
@@ -689,6 +736,8 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   // routes/cameras.js's isUnauthenticatedCameraRoute() (plan_ingest_feeds.md
   // cross-tenant review finding).
   auth: scopedAuth('production'),
+  perceptionManager: _perceptionManager,
+  settings,
 }));
 
 // RTMP relay routes — media.rtmp_relay_active is hot: always mounted (the

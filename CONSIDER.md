@@ -33,7 +33,7 @@ Each entry: what was found, why it was skipped, and where.
 - **`lcyt-production`'s `MediaMtxClient`** — the "half-fix risk" reasoning in this entry's original text was wrong: both `MediaMtxClient` copies (`lcyt-production`, `lcyt-rtmp`) already accept explicit `{ baseUrl, webrtcBaseUrl, user, password }` constructor opts, falling back to `process.env` only when a given opt is omitted. Wiring it was just passing settings-resolved values at each `new MediaMtxClient()` call site (`initProductionControl`, `initRtmpControl`) — no widening needed at all.
 - **`lcyt-agent`** — `AgentEngine` now takes `settings` in its constructor opts (`initAgent(db, opts)` already forwarded `opts` wholesale, so no signature change there), used by `isServerEmbeddingAvailable()`/`computeEmbeddings()` for the server-default provider path only — per-project `ai_config` overrides still always win. Wiring this surfaced a real, separate bug (see next entry) in how `server.js` called `computeEmbeddings`.
 
-**Still open, smaller and newly discovered along the way** (each registered in `registry.js` for admin-UI visibility, but not yet read through `settings` anywhere): `VISION_PREVIEW_BASE_URL` (`lcyt-agent`'s `VisionFrameFetcher`) and `CAMERA_PREVIEW_BASE_URL`/`CAMERA_THUMBNAILS_DIR` (`lcyt-production`'s `camera-thumbnail.js`) — neither was in the original lcyt-backend/CLAUDE.md env table (documented only in each plugin's own CLAUDE.md), found only once every actual read site across the repo was checked. Small, contained, same recipe as everything above — just not done yet.
+**Resolved 2026-07-21 (second pass):** `VISION_PREVIEW_BASE_URL` (`lcyt-agent`'s `VisionFrameFetcher`) and `CAMERA_PREVIEW_BASE_URL` (`lcyt-production`'s `camera-thumbnail.js`) are now wired — `VisionRoleManager` takes `settings` in its constructor and resolves `ai.vision_preview_base_url` once per `start()` call, threaded into the fetcher's constructor opts; `createProductionRouter()` resolves `production.camera_preview_base_url` once at construction, threaded into `captureCameraThumbnail()`'s opts. `CAMERA_THUMBNAILS_DIR` was never actually part of this gap — it's deliberately Tier A/env-only (`registry.js`'s `bootstrap.camera_thumbnails_dir`), left untouched.
 
 Full test sweep after this pass: all 18 Node.js workspaces pass (`npm test` at repo root), including 1106 lcyt-backend, 247 lcyt-rtmp, 106 lcyt-dsk, 181 lcyt-agent, 110 lcyt-cues, 158 lcyt-production tests.
 
@@ -991,3 +991,31 @@ pass:
 **Left open, tracked in `docs/plans/plan_project_roles.md`:** every other Setup-shaped route still has only the broad org-baseline gate — `lcyt-dsk`'s template/viewport routers, `lcyt-connectors` (also credential-bearing, same risk class as ai/providers), `lcyt-production`'s camera/mixer/encoder/bridge CRUD (entangled with the still-undecided Production/operator question), `lcyt-rtmp`'s egress/ingestion/radio config, `targets`/`translation`/`stt config`/`icons`/`storage`. These need the same treatment once the full role model is designed.
 
 (Found during: `/code-review` pass on PR #289, 2026-07-20 — design conversation follow-up.)
+
+---
+
+## Perception job dispatch/auth-header logic duplicated across three packages
+
+**Where:** `packages/lcyt-backend/src/ffmpeg/worker-runner.js` (pre-existing), `packages/plugins/lcyt-production/src/perception-manager.js`, `packages/lcyt-worker-daemon/src/perception-job.js` (both new, `plan_video_perception.md` Phase 2)
+
+**Finding:** All three files independently implement the same shape — "JSON headers + an optional internal-auth token header + POST/DELETE to whichever of `ORCHESTRATOR_URL`/`WORKER_DAEMON_URL` is configured, preferring the orchestrator" — with three different error-handling conventions (`worker-runner.js` throws, `perception-manager.js` throws, `perception-job.js` logs-and-swallows). `perception-manager.js` already factors its own internal `_headers()`/`_post()`/`_delete()` helpers cleanly; the duplication is *across* files, not within any one of them. A future change to how the internal-auth token is passed (signed header, rotated secret, etc.) needs to be found and updated in three places by hand instead of one.
+
+**Why skipped:** the three files live in three different npm workspace packages (`lcyt-backend`, `lcyt-production`, `lcyt-worker-daemon`). A real fix means either extracting the shared logic into the common `lcyt` core library (touching a dependency all three packages share) or accepting the duplication as a cost of the package boundary. `worker-runner.js` in particular is pre-existing, stable, tested ffmpeg-job-dispatch code with no relationship to this PR's actual diff — refactoring it here to shave duplication off a brand-new, unrelated feature (perception jobs) is a real regression-risk-to-payoff mismatch for a cosmetic finding, not a correctness bug. Worth doing as its own focused pass if/when a fourth dispatch consumer shows up (the repo's own stated threshold for promoting a duplicated pattern, per `ROADMAP.md` §0's precedent for `DeviceRegistry`'s callback-to-EventBus promotion question) or when the auth-token scheme actually needs to change and the duplication becomes a real maintenance cost rather than a theoretical one.
+
+(Found during: `/code-review` pass on `plan_video_perception.md` Phases 2-3, 2026-07-21 — reuse angle.)
+
+---
+
+## Server settings (plan_env_to_ui_settings.md) Phase 5 — two small env-only gaps remain unregistered
+
+**Where:** `packages/lcyt-backend/src/storage/s3.js` (5 raw `process.env.S3_*` reads: `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`), `packages/plugins/lcyt-cues/src/cue-engine.js` (3 raw `process.env.CUE_EVENT_TIMEOUT_MS` reads)
+
+**Finding:** Both are real remaining `process.env` direct-reads that haven't been migrated to the settings system or registered in `registry.js`. `S3_*` are used by `packages/lcyt-backend/src/storage/s3.js`'s `isS3Enabled()`, `buildS3Url()`, and `uploadDirectoryToS3()` functions, which are called from `packages/lcyt-backend/src/db/videos.js`'s `syncVideoRecordingToStorage()` — the S3 upload path for recorded videos. `CUE_EVENT_TIMEOUT_MS` is an undeclared env var with no registry entry at all (defaults to `'5000'` via `parseInt(..., 10)` in three places inside the cue evaluator), used to timeout event-cue matching when a `match_timeout` field is set on a rule.
+
+**Why skipped:** Each needs a different resolution:
+- **S3 configuration:** All five `S3_*` vars are infrastructure/credentials; `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` should probably be Tier A (env-only, never DB) like other secrets. But `isS3Enabled()`, `buildS3Url()`, and `uploadDirectoryToS3()` have no `settings` parameter threaded through them — they're called from deeply-nested DB helpers, not route/plugin composition roots. Wiring settings down through the call chain (`db/videos.js` → storage helpers → settings) or lifting the S3-check/build logic out of these generic helpers would both be invasive and non-local to this pass. Worth its own, focused threading pass once a future change does need these to be reconfigurable without restart.
+- **`CUE_EVENT_TIMEOUT_MS`:** No registry entry exists at all. Adding one (`retention.cue_event_timeout_ms`? — needs a category/description choice and a default value decision: the current implicit `5000` or something else?), registering it in `registry.js`, and threading `settings` into `CueEngine` would be straightforward individually but are three separate decisions (categorization, default, threading location) that feel like a `lcyt-cues`-specific pass rather than a finishing touch on the backend settings refactor that this phase is.
+
+**Recommendation:** Log both in a future pass specifically scoped to S3/storage configuration and cue-engine behavior — they're real, confirmed, non-speculative gaps, just not part of the current phase's already-tight scope (app URL, retention, STT/metrics/AI defaults).
+
+(Found during: settings migration Phase 5 completion audit, 2026-07-21.)
