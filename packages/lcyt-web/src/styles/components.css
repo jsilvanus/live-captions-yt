@@ -697,8 +697,15 @@
   width: 100%;
 }
 
-.input-bar__input {
+.input-bar__input-wrap {
+  position: relative;
   flex: 1;
+  min-width: 0;
+}
+
+.input-bar__input {
+  width: 100%;
+  box-sizing: border-box;
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border);
   border-radius: 6px;
@@ -708,6 +715,40 @@
   color: var(--color-text);
   outline: none;
   transition: border-color 0.15s;
+}
+
+/* ─── DSK metacode autocomplete (plan_ui.md v2 §5d) ────────────────────── */
+
+.input-bar__metacode-dropdown {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 4px 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.input-bar__metacode-option {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--color-text);
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.input-bar__metacode-option:hover,
+.input-bar__metacode-option--active {
+  background: var(--color-surface-elevated);
 }
 
 .input-bar__input::placeholder {
