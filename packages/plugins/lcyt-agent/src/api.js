@@ -34,6 +34,7 @@ export { createRolesChatRouter, CHAT_DIALOG_ROLES, resolveToolAllowlist } from '
 export { createProductionAssistantRouter } from './routes/production-assistant.js';
 export { createVisionRolesRouter, VISION_ROLES } from './routes/vision-roles.js';
 export { createPlannerRouter } from './routes/planner.js';
+export { createSceneRouter } from './routes/scene.js';
 export { runMigrations } from './db.js';
 
 // Vision roles (Tracker & Describer, plan_ai_roles_framework.md Runtime Shape 1)
@@ -87,7 +88,7 @@ export {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {object} [opts]
- * @returns {Promise<{ agent, providerRegistry, rolesBus, assistantManager }>}
+ * @returns {Promise<{ agent, providerRegistry, rolesBus, assistantManager, visionRoleManager, sceneState }>}
  */
 export async function initAgent(db, opts = {}) {
   const { runMigrations } = await import('./db.js');
@@ -123,9 +124,11 @@ export async function initAgent(db, opts = {}) {
   const { RolesBus } = await import('./roles-bus.js');
   const { ProductionAssistantManager } = await import('./production-assistant.js');
   const { VisionRoleManager } = await import('./vision-role-manager.js');
+  const { SceneState } = await import('./scene-state.js');
   const rolesBus = new RolesBus(opts.eventBus);
   const assistantManager = new ProductionAssistantManager(db, rolesBus);
   const visionRoleManager = new VisionRoleManager(rolesBus);
+  const sceneState = new SceneState();
 
   // Small handle for the provider registry. The bridge manager (from
   // lcyt-production) is injected by the composition root (server.js) after
@@ -145,5 +148,5 @@ export async function initAgent(db, opts = {}) {
     },
   };
 
-  return { agent, providerRegistry, rolesBus, assistantManager, visionRoleManager };
+  return { agent, providerRegistry, rolesBus, assistantManager, visionRoleManager, sceneState };
 }

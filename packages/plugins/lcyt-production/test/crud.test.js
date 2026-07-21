@@ -114,6 +114,40 @@ describe('camera CRUD', () => {
     const legacy = createCamera(db, registry, { name: 'Legacy', controlType: 'none' });
     assert.equal(legacy.camera.isOwned, false);
   });
+
+  it('accepts and persists label, zone, overlapLinks fields (plan_video_perception.md Phase 1)', () => {
+    const db = makeDb();
+    const registry = makeRegistryStub();
+    const overlapLinksData = [
+      { cameraId: 'cam-2', kind: 'overlaps_with' },
+      { cameraId: 'cam-3', presetId: 'wide', kind: 'alternate_for' },
+    ];
+    const created = createCamera(db, registry, {
+      name: 'Pulpit',
+      controlType: 'none',
+      label: 'pulpit',
+      zone: 'front',
+      overlapLinks: overlapLinksData,
+    });
+    assert.equal(created.ok, true);
+    assert.equal(created.camera.label, 'pulpit');
+    assert.equal(created.camera.zone, 'front');
+    assert.deepEqual(created.camera.overlapLinks, overlapLinksData);
+
+    const updated = updateCamera(db, registry, created.camera.id, { label: 'pulpit-cam' });
+    assert.equal(updated.ok, true);
+    assert.equal(updated.camera.label, 'pulpit-cam');
+    assert.equal(updated.camera.zone, 'front');
+    assert.deepEqual(updated.camera.overlapLinks, overlapLinksData);
+  });
+
+  it('migrations are idempotent — running them twice does not error', () => {
+    const db = makeDb();
+    // runMigrations was already called in makeDb(); calling again should succeed
+    runMigrations(db);
+    const result = createCamera(db, makeRegistryStub(), { name: 'Test', controlType: 'none', label: 'test' });
+    assert.equal(result.ok, true);
+  });
 });
 
 describe('mixer CRUD', () => {

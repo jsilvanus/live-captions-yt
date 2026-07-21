@@ -1,8 +1,8 @@
 ---
 id: plan/video_perception
 title: "Video Perception — Per-Camera fps30 Tracker, World State, and AI Observability"
-status: draft
-summary: "Specs the two genuinely new AI layers a multi-camera (1-10) production system needs on top of LCYT's existing AI infrastructure: (1) the fps30 tracker subsystem — a local, GPU-light, per-camera CV pipeline (detection/tracking/pose/framing) that `plan_cues.md` already anticipated and left an inert consumer contract for (`track:` leaves, `track_state` event) — handling both dedicated-feed cameras and cameras only visible via a shared/mixer feed (visibility/staleness state, feed→active-camera resolver reusing `plan_vertical_crop.md` Phase 4's not-yet-built onProgramChanged/onCameraPresetRecalled callbacks); (2) a World State / Scene State service that fuses per-camera observations into queryable structured state, exposed as new EventBus topics rather than a knowledge graph. Also specs project-editable camera/preset metadata (label + overlaps_with/alternate_for, not a geometric floor-plan map). Explicitly does NOT introduce a new 'Production Director' — richer input from this plan feeds the existing Production Assistant / Hosted Operator (`plan_ai_roles_framework.md`, `plan_unified_external_control.md`), which already receives structured (non-video) state and decides camera/mixer actions. The AI observability/prompt-sculpting page originally specced as part of this plan was split out to `plan_ai_observability.md` (2026-07-20) since it doesn't need to wait for anything here — see that plan's Stage 3 for how it extends to this plan's `camera.track_state` once built."
+status: implemented
+summary: "Specs the two genuinely new AI layers a multi-camera (1-10) production system needs on top of LCYT's existing AI infrastructure: (1) the fps30 tracker subsystem — a local, GPU-light, per-camera CV pipeline (detection/tracking/pose/framing) that `plan_cues.md` already anticipated and left an inert consumer contract for (`track:` leaves, `track_state` event) — handling both dedicated-feed cameras and cameras only visible via a shared/mixer feed (visibility/staleness state, feed→active-camera resolver reusing `plan_vertical_crop.md` Phase 4's onProgramChanged/onCameraPresetRecalled callbacks); (2) a World State / Scene State service that fuses per-camera observations into queryable structured state, exposed as new EventBus topics rather than a knowledge graph. Also specs project-editable camera/preset metadata (label + overlaps_with/alternate_for, not a geometric floor-plan map). Explicitly does NOT introduce a new 'Production Director' — richer input from this plan feeds the existing Production Assistant / Hosted Operator (`plan_ai_roles_framework.md`, `plan_unified_external_control.md`), which already receives structured (non-video) state and decides camera/mixer actions. The AI observability/prompt-sculpting page originally specced as part of this plan was split out to `plan_ai_observability.md` (2026-07-20) since it doesn't need to wait for anything here — see that plan's Stage 3 for how it extends to this plan's `camera.track_state` once built. **All three phases shipped 2026-07-20-21** (see `docs/plans/tmp_plan_video_perception.md` for the phase-by-phase implementation record): Phase 1 — camera/preset metadata fields + World State snapshot service (`GET /scene/state`); Phase 2 — the fps30 runner interface + job-type dispatch (`lcyt-worker-daemon`'s new `type: 'perception'` jobs) + the aggregator producing both `track_state` (the cue engine's contract) and `camera.track_state` (World State); Phase 3 — the shared-feed resolver, wired to `DeviceRegistry`'s existing plain-callback signals (not promoted to EventBus — see that doc's note on why). **Not done:** the fps30 runner's `backend.detect()` is a deterministic stub, not a real YOLO/ByteTrack (or any) CV model — a documented, deliberate follow-on (see `lcyt-worker-daemon/src/perception/runner.js`'s module doc for the process-boundary reasoning); framing/shot-quality scoring beyond the stub's placeholder value; the `bus_events`-backed World State history log (deferred open question, unchanged)."
 related: plan/cues, plan/ai_roles_framework, plan/prod, plan/pubsub_event_bus, plan/dock_ffmpeg, plan/vertical_crop, plan/unified_external_control, plan/mixer_feed_sources, plan/agent, plan/ai_observability
 ---
 
@@ -297,24 +297,32 @@ their owning plans instead of a competing description here:
   `getActiveSource()` is poll-only today (verified: no EventBus emission anywhere in
   `lcyt-production` as of this writing) — Phase 4 of vertical-crop is what's expected
   to close that gap, not this plan.
-- **`plan_cues.md`** — update its "nothing in this repo produces `track_state` yet"
-  note to point at this plan as the drafted (not yet built) producer.
+- **`plan_cues.md`** — **done.** `lcyt-cues`'s `_attachTrackerListener()`/`createTrackerCueListener()` doc comments and `CLAUDE.md` no longer say "nothing emits `track_state` yet" — they point at `packages/lcyt-backend/src/perception-aggregator.js` as the producer.
 
 ---
 
-## Suggested phase order (within this plan)
+## Suggested phase order (within this plan) — all three shipped 2026-07-20/21
 
-1. **Schema + camera metadata + World State skeleton** — `label`/`overlaps_with` on
-   `prod_cameras`/presets, `SceneState` in-memory structure + `GET /scene/state`
-   snapshot, no perception producer yet (World State starts empty/idle — cheap to
-   ship ahead of the harder perception work, and unblocks UI/prompt work against a
-   real API shape).
-2. **fps30 producer for dedicated-feed cameras** — the local CV runner, one instance
-   per independently-fed camera, emitting `track_state`. Shared-feed cameras deferred
-   to the next phase since they depend on vertical-crop's Phase 4 callbacks.
-3. **Shared/single-feed resolver** — once `plan_vertical_crop.md` Phase 4's
-   `onProgramChanged`/`onCameraPresetRecalled` ship (ideally as EventBus events per
-   the promotion recommendation above), wire the feed→active-camera tagging.
+1. **Schema + camera metadata + World State skeleton** — **shipped.** `label`/`zone`/
+   `overlap_links` on `prod_cameras`/presets (`lcyt-production`), `SceneState`
+   in-memory structure + `GET /scene/state` snapshot (`lcyt-agent`).
+2. **fps30 producer for dedicated-feed cameras** — **shipped**, with one deliberate
+   scope cut: the runner interface, job-type dispatch, and aggregator are real and
+   tested end-to-end, but `backend.detect()` is a documented stub (no real
+   YOLO/ByteTrack model) — see `lcyt-worker-daemon/src/perception/runner.js`'s module
+   doc for the process-boundary reasoning behind deferring that. Shared-feed cameras
+   handled in the next phase, as planned.
+3. **Shared/single-feed resolver** — **shipped**, wired to `plan_vertical_crop.md`
+   Phase 4's `onProgramChanged`/`onCameraPresetRecalled` **as the existing plain
+   callbacks**, not promoted to EventBus events — the promotion recommendation above
+   was weighed and deliberately deferred (see `docs/plans/tmp_plan_video_perception.md`
+   Phase 3's note: promoting the *existing* consumer, `CropManager.applyForSource()`,
+   was scoped out to avoid a cross-plan refactor of already-shipped code; this
+   resolver just registers its own listener alongside it instead). Revisit the
+   promotion if a third consumer ever shows up.
+
+See `docs/plans/tmp_plan_video_perception.md` for the full phase-by-phase
+implementation record (file paths, test files, what was deliberately simplified).
 
 The AI observability page is no longer phased here — see `plan_ai_observability.md`'s
 own staging, which starts independently of this plan and only picks up a dependency

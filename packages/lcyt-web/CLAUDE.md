@@ -59,6 +59,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/admin/projects/:key` | `AdminProjectDetailPage` | Project detail, features, members (feature-gated: `admin`) |
 | `/admin/audit-log` | `AdminAuditLogPage` | Admin audit log (feature-gated: `admin`; removed from sidebar nav, route still live) |
 | `/admin/ai-models` | `AdminAiModelsPage` | MCP personal access token management (`McpAccessSection`, same card as `/setup`'s "MCP access"); route name is a holdover from a deleted AI-models card (feature-gated: `admin`) |
+| `/admin/ai-observability` | `AiObservabilityPage` | AI Observability / prompt-sculpting page (`plan_ai_observability.md` Stage 1) — live canvas overlay of `tracker_update`/`describer_update` over the polled preview-JPEG feed (subscribes directly to `role.tracker.*`/`role.describer.*` on `/events/stream`, no new backend for the overlay itself), a capture browser against the backend's per-role ring buffer (`GET /roles/:roleCode/captures[/:id/frame]`), and a prompt-edit/replay diff sandbox (`POST /roles/:roleCode/captures/:id/replay`, never persisted). Gated like `/admin/ai-models` (`AdminKeyGate` + `useProjectRequired`); nav entry gated on the `admin` feature (feature-gated: `admin`) |
 | `/admin/site-features` | `AdminSiteFeaturesPage` | Tri-state site feature policies + per-org overrides (feature-gated: `admin`) |
 | `/admin/teams` | `AdminTeamsPage` | All orgs on the deployment (`GET /admin/orgs`), feature overrides (feature-gated: `admin`) |
 

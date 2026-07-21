@@ -373,3 +373,41 @@ describe('deleteKey() under live FK enforcement', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// onKeyDeleted() hook (code-review fix): a single registration point so
+// composition-root-level in-memory stores keyed by api_key outside the DB
+// (VisionRoleManager, SceneState, perception-aggregator) can release state
+// when a project is permanently deleted, without deleteKey()'s callers
+// (routes/keys.js, routes/admin.js, db/users.js) each needing to remember
+// to wire it individually.
+// ---------------------------------------------------------------------------
+
+describe('onKeyDeleted()', () => {
+  it('fires every registered hook, with the deleted key, only on a real deletion', async () => {
+    const { onKeyDeleted } = await import('../src/db/keys.js');
+    const { key } = createKey(db, { owner: 'Hook Test' });
+
+    const calls = [];
+    onKeyDeleted((apiKey) => calls.push(apiKey));
+
+    // Deleting a key that doesn't exist must not fire the hook.
+    deleteKeyDirect(db, 'does-not-exist-at-all');
+    assert.strictEqual(calls.length, 0);
+
+    deleteKeyDirect(db, key);
+    assert.deepStrictEqual(calls, [key]);
+  });
+
+  it('does not let one hook throwing stop the others from running or deleteKey() from returning', async () => {
+    const { onKeyDeleted } = await import('../src/db/keys.js');
+    const { key } = createKey(db, { owner: 'Hook Throw Test' });
+
+    let secondHookRan = false;
+    onKeyDeleted(() => { throw new Error('boom'); });
+    onKeyDeleted(() => { secondHookRan = true; });
+
+    assert.strictEqual(deleteKeyDirect(db, key), true);
+    assert.strictEqual(secondHookRan, true);
+  });
+});

@@ -71,6 +71,7 @@ const AdminProjectDetailPage = lazyImport(() => import('./components/AdminProjec
 const AdminAuditLogPage      = lazyImport(() => import('./components/AdminAuditLogPage').then(m => ({ default: m.AdminAuditLogPage })));
 const AdminMetricsPage       = lazyImport(() => import('./components/AdminMetricsPage').then(m => ({ default: m.AdminMetricsPage })));
 const AdminAiModelsPage      = lazyImport(() => import('./components/AdminAiModelsPage.jsx').then(m => ({ default: m.AdminAiModelsPage })));
+const AiObservabilityPage    = lazyImport(() => import('./components/AiObservabilityPage.jsx').then(m => ({ default: m.AiObservabilityPage })));
 const AdminSiteFeaturesPage  = lazyImport(() => import('./components/AdminSiteFeaturesPage').then(m => ({ default: m.AdminSiteFeaturesPage })));
 const AdminServerSettingsPage = lazyImport(() => import('./components/AdminServerSettingsPage').then(m => ({ default: m.AdminServerSettingsPage })));
 const AdminTeamsPage         = lazyImport(() => import('./components/AdminTeamsPage').then(m => ({ default: m.AdminTeamsPage })));
@@ -220,6 +221,7 @@ function SidebarApp() {
             <Route path="/admin/audit-log" component={AdminAuditLogPage} />
             <Route path="/admin/metrics" component={AdminMetricsPage} />
             <Route path="/admin/ai-models" component={AdminAiModelsPage} />
+            <Route path="/admin/ai-observability" component={AiObservabilityPage} />
             <Route path="/admin/site-features" component={AdminSiteFeaturesPage} />
             <Route path="/admin/server-settings" component={AdminServerSettingsPage} />
             <Route path="/admin/teams" component={AdminTeamsPage} />

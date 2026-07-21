@@ -6,6 +6,7 @@ import { makeFifo, createFifoWriter } from 'lcyt-backend/ffmpeg/pipe-utils';
 
 import createUploader from './uploader.js';
 import { createS3UploadFn } from './s3-uploader.js';
+import { createPerceptionJob } from './perception-job.js';
 
 const DEFAULT_PORT = process.env.PORT || 5000;
 const WORKER_ID = process.env.WORKER_ID || 'worker-0';
@@ -178,6 +179,19 @@ export function createApp() {
   });
   void jobsRunningGauge;
   const jobsTotal = new Counter({ name: 'worker_jobs_total', help: 'Jobs by terminal status', labelNames: ['status'], registers: [promRegistry] });
+  // A perception job retries forever by design (a camera/backend outage is
+  // often transient, so auto-terminating on error would be wrong) — but
+  // that means it never reaches finishJob()'s terminal accounting on its
+  // own, and a permanently-failing job would otherwise be invisible (still
+  // 'running' in GET /stats/_jobs, zero signal in Prometheus). This counter
+  // is that signal (code-review fix); DELETE /jobs/:id still accounts a
+  // manually-stopped perception job via the normal finishJob() path.
+  const perceptionErrorsTotal = new Counter({
+    name: 'worker_perception_job_errors_total',
+    help: 'Perception job tick errors (frame fetch, detect, or callback delivery), by kind',
+    labelNames: ['kind'],
+    registers: [promRegistry],
+  });
   const jobDuration = new Histogram({
     name: 'worker_job_duration_seconds',
     help: 'Job wall-clock duration',
@@ -221,6 +235,35 @@ export function createApp() {
       workerId: WORKER_ID
     };
     jobs.set(jobId, record);
+
+    // Perception jobs (plan_video_perception.md Phase 2 Stream B) are a
+    // distinct job type dispatched to the same /jobs endpoint — no ffmpeg
+    // subprocess, no fifo/uploader wiring, so they branch out early rather
+    // than threading `plan.type` checks through the ffmpeg-specific code
+    // below (which stays exactly as it was for the default/`ffmpeg` type).
+    if (plan.type === 'perception') {
+      try {
+        const runner = createPerceptionJob(plan, jobId, {
+          onJobError: (kind, err) => {
+            perceptionErrorsTotal.inc({ kind });
+            record.errorCount = (record.errorCount || 0) + 1;
+            record.lastError = err && err.message;
+            record.lastErrorAt = Date.now();
+          },
+        });
+        runner.start();
+        record.runner = runner;
+        record.status = 'running';
+        record.startedAt = Date.now();
+      } catch (err) {
+        record.status = 'error';
+        record.error = err && err.message;
+        jobs.delete(jobId);
+        console.error(`perception job ${jobId} failed to start:`, err && err.message);
+        return res.status(502).json({ error: 'failed to start job', message: err && err.message });
+      }
+      return res.json({ jobId, workerId: WORKER_ID });
+    }
 
     // If in test mode, don't spawn a real process
     if (process.env.NODE_ENV === 'test') {
@@ -338,7 +381,10 @@ export function createApp() {
 
   // Expose jobs - for debugging; not required but useful in tests
   app.get('/_jobs', (req, res) => {
-    const out = Array.from(jobs.values()).map(j => ({ id: j.id, status: j.status, createdAt: j.createdAt, pid: j.pid }));
+    const out = Array.from(jobs.values()).map(j => ({
+      id: j.id, status: j.status, createdAt: j.createdAt, pid: j.pid,
+      errorCount: j.errorCount, lastError: j.lastError, lastErrorAt: j.lastErrorAt,
+    }));
     res.json(out);
   });
 
