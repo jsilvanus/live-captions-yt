@@ -22,7 +22,9 @@ function coerceEnvString(def, raw) {
     }
     case 'int': {
       const n = Number(raw);
-      return Number.isFinite(n) ? n : def.default;
+      if (!Number.isFinite(n)) return def.default;
+      if (n === 0 && def.zeroIsInvalid) return def.default;
+      return n;
     }
     case 'csv':
       return raw === '' ? [] : raw.split(',').map(s => s.trim()).filter(Boolean);
@@ -43,7 +45,10 @@ function coerceEnvString(def, raw) {
  * @param {*} value
  */
 function coerceDbValue(def, value) {
-  if (def.type === 'int') return typeof value === 'number' ? value : Number(value);
+  if (def.type === 'int') {
+    const n = typeof value === 'number' ? value : Number(value);
+    return (n === 0 && def.zeroIsInvalid) ? def.default : n;
+  }
   if (def.type === 'bool') return Boolean(value);
   if (def.type === 'csv') return Array.isArray(value) ? value : [];
   return value;

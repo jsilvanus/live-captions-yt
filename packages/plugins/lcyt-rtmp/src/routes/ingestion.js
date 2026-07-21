@@ -56,8 +56,8 @@ function hasIngestFeature(db, apiKey) {
  * No new env vars — reuses RTMP_HOST/RTMP_APPLICATION/RTMP_APP the same way
  * GET /health's `rtmpIngest` object already does.
  */
-function buildIngestUrl(app, streamName) {
-  const host = process.env.RTMP_HOST || 'rtmp.lcyt.fi';
+function buildIngestUrl(app, streamName, settings = null) {
+  const host = settings ? settings.get('media.rtmp_host') : (process.env.RTMP_HOST || 'rtmp.lcyt.fi');
   return `rtmp://${host}/${app}/${streamName}`;
 }
 
@@ -65,16 +65,17 @@ function buildIngestUrl(app, streamName) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {{ get: (key: string) => * }} [settings]  lcyt-backend's SettingsService (plan_env_to_ui_settings.md)
  * @returns {import('express').Router}
  */
-export function createIngestionRouter(db, auth, relayManager) {
+export function createIngestionRouter(db, auth, relayManager, settings = null) {
   const router = Router();
   router.use(auth);
 
   function buildConfig(apiKey) {
     const keyRow = getKey(db, apiKey) || {};
-    const videoApp = process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream';
-    const dskApp = process.env.DSK_RTMP_APP || 'dsk';
+    const videoApp = settings ? (settings.get('media.rtmp_application') || settings.get('media.rtmp_app')) : (process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream');
+    const dskApp = settings ? settings.get('graphics.dsk_rtmp_app') : (process.env.DSK_RTMP_APP || 'dsk');
     const videoStreamKey = keyRow.ingest_stream_key || apiKey;
 
     return {
@@ -82,7 +83,7 @@ export function createIngestionRouter(db, auth, relayManager) {
         enabled:    keyRow.relay_allowed === 1,
         active:     keyRow.relay_active === 1,
         streamKey:  videoStreamKey,
-        ingestUrl:  buildIngestUrl(videoApp, videoStreamKey),
+        ingestUrl:  buildIngestUrl(videoApp, videoStreamKey, settings),
         rotatable:  true,
         live:       relayManager.isPublishing(apiKey),
       },
@@ -91,7 +92,7 @@ export function createIngestionRouter(db, auth, relayManager) {
         // graphics_enabled is a broader feature entitlement, not an ingest-specific
         // one, surfaced here read-only until that's untangled (see plan §2a).
         enabled:    keyRow.graphics_enabled === 1,
-        ingestUrl:  buildIngestUrl(dskApp, apiKey),
+        ingestUrl:  buildIngestUrl(dskApp, apiKey, settings),
         // No publish-tracking exists in lcyt-dsk yet — null means "unknown",
         // not "offline" (the frontend renders it as a dim/neutral status dot).
         live:       null,
@@ -131,8 +132,8 @@ export function createIngestionRouter(db, auth, relayManager) {
     const apiKey = req.session.apiKey;
     const streamKey = randomUUID();
     db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run(streamKey, apiKey);
-    const videoApp = process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream';
-    res.json({ streamKey, ingestUrl: buildIngestUrl(videoApp, streamKey) });
+    const videoApp = settings ? (settings.get('media.rtmp_application') || settings.get('media.rtmp_app')) : (process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream');
+    res.json({ streamKey, ingestUrl: buildIngestUrl(videoApp, streamKey, settings) });
   });
 
   return router;

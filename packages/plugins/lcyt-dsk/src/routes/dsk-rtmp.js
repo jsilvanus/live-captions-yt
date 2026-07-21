@@ -46,8 +46,9 @@ const API_KEY_RE = /^[a-zA-Z0-9_-]{3,}$/;
  */
 function resolveDskLocalRtmp(settings) {
   if (!settings) return DEFAULT_LOCAL_RTMP;
-  if (settings.source('graphics.dsk_local_rtmp') !== 'default') return settings.get('graphics.dsk_local_rtmp');
-  return settings.get('media.radio_local_rtmp');
+  const primary = settings.get('graphics.dsk_local_rtmp');
+  if (primary) return primary;
+  return settings.get('media.radio_local_rtmp') || DEFAULT_LOCAL_RTMP;
 }
 
 /**

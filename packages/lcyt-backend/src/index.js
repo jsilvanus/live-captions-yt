@@ -1,3 +1,4 @@
+import logger from 'lcyt/logger';
 import { app, db, store, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics } from './server.js';
 import { cleanRevokedKeys } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
@@ -9,7 +10,7 @@ import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 const PORT = Number(process.env.PORT) || 3000;
 
 const server = app.listen(PORT, () => {
-  console.log(`Listening on port ${PORT}`);
+  logger.info(`Listening on port ${PORT}`);
 });
 
 /**
@@ -45,12 +46,12 @@ if (BACKUP_DAYS > 0) {
   async function doBackup() {
     try {
       const dir = await runBackup(db, BACKUP_DIR);
-      console.log(`[backup] Saved database to ${dir}`);
+      logger.info(`[backup] Saved database to ${dir}`);
       const days = parseBackupDays(settings.get('retention.backup_days'));
       const removed = await cleanOldBackups(BACKUP_DIR, days);
-      if (removed > 0) console.log(`[backup] Removed ${removed} backup(s) older than ${days} days`);
+      if (removed > 0) logger.info(`[backup] Removed ${removed} backup(s) older than ${days} days`);
     } catch (err) {
-      console.error('[backup] Error:', err.message);
+      logger.error('[backup] Error:', err.message);
     }
   }
   doBackup();
@@ -66,7 +67,7 @@ if (settings.get('retention.revoked_key_ttl_days') > 0) {
     const days = settings.get('retention.revoked_key_ttl_days');
     if (days <= 0) return;
     const { count } = cleanRevokedKeys(db, days);
-    if (count > 0) console.log(`[cleanup] Purged ${count} revoked key(s) older than ${days} days`);
+    if (count > 0) logger.info(`[cleanup] Purged ${count} revoked key(s) older than ${days} days`);
   });
 }
 
@@ -79,7 +80,7 @@ if (settings.get('retention.event_log_retention_days') > 0) {
     const days = settings.get('retention.event_log_retention_days');
     if (days <= 0) return;
     const { count } = deleteBusEventsOlderThan(db, days);
-    if (count > 0) console.log(`[cleanup] Purged ${count} bus event(s) older than ${days} days`);
+    if (count > 0) logger.info(`[cleanup] Purged ${count} bus event(s) older than ${days} days`);
   });
 }
 
@@ -112,17 +113,17 @@ function runRollupMaintenance() {
   if (usageRollupHourlyRetentionDays > 0) {
     try {
       const compacted = compactHourlyRollups(db, { olderThanDays: usageRollupHourlyRetentionDays, kindForMetric });
-      if (compacted > 0) console.log(`[cleanup] Compacted ${compacted} hourly usage rollup(s) into daily rows`);
+      if (compacted > 0) logger.info(`[cleanup] Compacted ${compacted} hourly usage rollup(s) into daily rows`);
     } catch (err) {
-      console.error('[cleanup] Rollup compaction failed:', err.message);
+      logger.error('[cleanup] Rollup compaction failed:', err.message);
     }
   }
   if (auditLogRetentionDays > 0) {
     try {
       const { count } = deleteAuditLogOlderThan(db, auditLogRetentionDays);
-      if (count > 0) console.log(`[cleanup] Purged ${count} audit log row(s) older than ${auditLogRetentionDays} days`);
+      if (count > 0) logger.info(`[cleanup] Purged ${count} audit log row(s) older than ${auditLogRetentionDays} days`);
     } catch (err) {
-      console.error('[cleanup] Audit log retention failed:', err.message);
+      logger.error('[cleanup] Audit log retention failed:', err.message);
     }
   }
   if (statsRetentionDays > 0) {
@@ -135,7 +136,7 @@ function runRollupMaintenance() {
     for (const { table, column, type } of STATS_TABLES) {
       try {
         const info = db.prepare(`DELETE FROM ${table} WHERE ${column} < ?`).run(cutoffs[type]);
-        if (info.changes > 0) console.log(`[cleanup] Purged ${info.changes} row(s) from ${table} older than ${statsRetentionDays} days`);
+        if (info.changes > 0) logger.info(`[cleanup] Purged ${info.changes} row(s) from ${table} older than ${statsRetentionDays} days`);
       } catch {
         // Table may not exist on this install (plugin not migrated) — skip.
       }
@@ -150,7 +151,7 @@ scheduleRearmable(() => settings.get('retention.rollup_maintenance_interval'), r
 // ---------------------------------------------------------------------------
 
 async function shutdown() {
-  console.log('Shutting down...');
+  logger.info('Shutting down...');
   await stopDsk();
   await relayManager.stopAll();
   await radioManager.stopAll();

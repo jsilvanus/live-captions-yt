@@ -30,9 +30,10 @@ import logger from 'lcyt/logger';
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @param {import('../crop-manager.js').CropManager} [cropManager]  Vertical-crop renderer lifecycle
  * @param {import('lcyt-music/src/music-manager.js').MusicManager} [musicManager]  Music detection manager
+ * @param {{ get: (key: string) => * }} [settings]  lcyt-backend's SettingsService (plan_env_to_ui_settings.md)
  * @returns {Router}
  */
-export function createRtmpRouter(db, relayManager, cropManager = null, musicManager = null) {
+export function createRtmpRouter(db, relayManager, cropManager = null, musicManager = null, settings = null) {
   const router = Router();
 
   // Parse application/x-www-form-urlencoded bodies (nginx-rtmp format)
@@ -103,7 +104,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
       }
 
       // Music detection: auto-start if enabled (best-effort, parallel to others).
-      if (musicManager && process.env.MUSIC_DETECTION_ACTIVE === '1') {
+      if (musicManager && (settings ? settings.get('music.detection_active') : process.env.MUSIC_DETECTION_ACTIVE === '1')) {
         try {
           // Defer getMusicConfig import to avoid hard dependency on lcyt-music
           // (the music plugin may not be installed in minimal deployments)

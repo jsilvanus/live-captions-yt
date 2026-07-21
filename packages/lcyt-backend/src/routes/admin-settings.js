@@ -108,7 +108,9 @@ export function createAdminSettingsRouter(db, settings) {
       });
     }
 
-    res.json({ ok: true, updated: entries.map(([key]) => key), snapshot: settings.snapshot() });
+    const updatedKeys = new Set(entries.map(([key]) => key));
+    const snapshot = settings.snapshot().filter(s => updatedKeys.has(s.key));
+    res.json({ ok: true, updated: entries.map(([key]) => key), snapshot });
   });
 
   /**
@@ -134,7 +136,7 @@ export function createAdminSettingsRouter(db, settings) {
       actorId: req.adminUser?.userId ?? null,
     });
 
-    const entry = settings.snapshot().find(s => s.key === key);
+    const entry = settings.snapshot().filter(s => s.key === key)[0];
     res.json({ ok: true, key, ...entry });
   });
 

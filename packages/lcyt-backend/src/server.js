@@ -663,7 +663,7 @@ app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
     return level === 'owner' || level === 'admin';
   },
 }));
-app.use('/ai', createAiRouter(db, scopedAuth('ai')));
+app.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
 app.use('/roles', createRolesRouter(db, scopedAuth('role')));
@@ -706,7 +706,7 @@ function gatedRouter(getEnabled) {
 {
   const rtmpGate = gatedRouter(() => settings.get('media.rtmp_relay_active'));
   const { rtmpRouter, feedRtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
-    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics });
+    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings });
   app.use('/rtmp',       rtmpGate(rtmpRouter));
   app.use('/feed-rtmp',  rtmpGate(feedRtmpRouter));
   app.use('/ingestion',  rtmpGate(ingestionRouter));

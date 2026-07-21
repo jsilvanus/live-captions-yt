@@ -284,7 +284,8 @@ function SettingRow({ entry, readOnly, onChange, onClear }) {
           onChange={e => setDraft(e.target.value)}
           onBlur={() => {
             const arr = draft === '' ? [] : draft.split(',').map(s => s.trim()).filter(Boolean);
-            onChange(arr);
+            const isEqual = Array.isArray(entry.value) && entry.value.length === arr.length && entry.value.every((v, i) => v === arr[i]);
+            if (!isEqual) onChange(arr);
           }}
           style={{ fontSize: 13, width: '100%' }}
         />

@@ -293,7 +293,7 @@ export class RtmpRelayManager {
     this._onStreamStarted = onStreamStarted ?? null;
     this._onStreamEnded   = onStreamEnded   ?? null;
     this._controlUrl = rtmpControlUrl ?? (this._settings ? (this._settings.get('media.rtmp_control_url') || null) : (process.env.RTMP_CONTROL_URL ?? null));
-    this._rtmpApp    = rtmpApplication ?? (this._settings ? (this._settings.get('media.rtmp_application') || undefined) : process.env.RTMP_APPLICATION) ?? (this._settings ? this._settings.get('media.rtmp_app') : DEFAULT_RTMP_APP);
+    this._rtmpApp    = rtmpApplication ?? (this._settings ? (this._settings.get('media.rtmp_application') || undefined) : (process.env.RTMP_APPLICATION || undefined)) ?? (this._settings ? this._settings.get('media.rtmp_app') : DEFAULT_RTMP_APP);
     this._ffmpegCaps = ffmpegCaps ?? null;
     // MediaMTX REST API client. When provided (or MEDIAMTX_API_URL is set), `dropPublisher`
     // uses the MediaMTX `/v3/paths/kick` endpoint instead of the nginx-rtmp control URL.

@@ -65,8 +65,9 @@ const DSK_LOCAL_SERVER = (process.env.DSK_LOCAL_SERVER || process.env.DSK_PAGE_B
  */
 function resolveDskLocalRtmp(settings) {
   if (!settings) return LOCAL_RTMP_BASE;
-  if (settings.source('graphics.dsk_local_rtmp') !== 'default') return settings.get('graphics.dsk_local_rtmp');
-  return settings.get('media.radio_local_rtmp');
+  const primary = settings.get('graphics.dsk_local_rtmp');
+  if (primary) return primary;
+  return settings.get('media.radio_local_rtmp') || LOCAL_RTMP_BASE;
 }
 
 /**
@@ -76,7 +77,8 @@ function resolveDskLocalRtmp(settings) {
  */
 function resolveDskLocalServer(settings) {
   if (!settings) return DSK_LOCAL_SERVER;
-  if (settings.source('graphics.dsk_local_server') !== 'default') return settings.get('graphics.dsk_local_server').replace(/\/$/, '');
+  const primary = settings.get('graphics.dsk_local_server');
+  if (primary) return primary.replace(/\/$/, '');
   return (settings.get('graphics.dsk_page_base_url') || 'http://localhost:3000').replace(/\/$/, '');
 }
 const thumbnailRateLimit = rateLimit({

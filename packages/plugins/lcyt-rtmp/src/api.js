@@ -206,7 +206,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
  * @param {{ relayManager: RtmpRelayManager, hlsManager: HlsManager, radioManager: RadioManager, previewManager: PreviewManager }} managers
- * @param {{ allowedRtmpDomains?: string, metrics?: object }} [opts]
+ * @param {{ allowedRtmpDomains?: string, metrics?: object, settings?: object }} [opts]
  * @returns {{
  *   rtmpRouter: import('express').Router,
  *   feedRtmpRouter: import('express').Router,
@@ -217,11 +217,11 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null, settings = null } = {}) {
   return {
-    rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager),
+    rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager, settings),
     feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
-    ingestionRouter: createIngestionRouter(db, auth, relayManager),
+    ingestionRouter: createIngestionRouter(db, auth, relayManager, settings),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),
     radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics),
