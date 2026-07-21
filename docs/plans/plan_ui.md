@@ -2,7 +2,7 @@
 id: plan/ui
 title: "Frontend & UI Plans"
 status: in-progress
-summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, virtual scrolling, onboarding auto-trigger, localStorage quota monitoring, and the DSK metacode autocomplete helper all implemented; context-aware layouts, detachable panels, mobile-first redesign, and workflow presets still outstanding), v3 (component split, completed)."
+summary: "Three iterations of frontend UI planning: v1 (two-column layout, superseded), v2 (sidebar navigation + dashboard; core, command palette, keyboard shortcuts help, virtual scrolling, onboarding auto-trigger, localStorage quota monitoring, and the DSK metacode autocomplete helper all implemented; context-aware layout modes reassessed and closed 2026-07-21 — its premise was superseded by the routing model, its one real gap (Production caption input) fixed with a new pane type; detachable panels, mobile-first redesign, and workflow presets still outstanding), v3 (component split, completed)."
 ---
 
 # Frontend & UI Plans — `packages/lcyt-web`
@@ -1197,15 +1197,7 @@ Panel resize is manual (drag handle) and the resize state is lost when switching
 
 ### Proposals
 
-**4a. Context-aware layout modes.** Let the active section determine the panel layout:
-
-| Mode | Left panel | Right panel |
-|------|-----------|-------------|
-| **Caption (file)** | File viewer + pointer | Sent log |
-| **Caption (audio)** | Audio waveform / STT status | Sent log |
-| **Broadcast** | RTMP relay / Encoder config | Stream status + logs |
-| **Graphics** | DSK editor canvas | Template list / properties |
-| **Production** | Operator surface (camera/mixer grid) | Caption input (mini) |
+**4a. Context-aware layout modes — reassessed 2026-07-21: the original premise no longer applies; the one real gap it named is fixed.** This proposal predates the v2 sidebar migration below it in this same document — it describes a *single shared two-panel shell* whose left/right content should swap based on an active "mode." That shell (`App.jsx`'s legacy two-panel layout) has since been superseded: Caption (file), Caption (audio), Broadcast, and Graphics are now each their own dedicated route/page (`/captions`, `/audio`, `/broadcast`, `/graphics/editor`) with a layout purpose-built for that content — exactly what this proposal was asking for, just delivered via routing instead of a mode switch inside one shell. Re-auditing the table above against today's actual pages: four of five rows are already true. The one row that wasn't — **Production: operator surface + caption input (mini)** — is now fixed: a new `captionInput` pane type (`production/workspace/panes/index.jsx`'s `CaptionInputPane`, a direct `CaptionContext.send()` line-sender, deliberately not `InputBar.jsx`'s full file/metacode/batch/translation pipeline) is part of the built-in "Captions" workspace view's left column (stacked under `general`/Controls) and available to any custom view via the pane-type picker — the Production operator console already has the pluggable multi-pane architecture this proposal wanted, it just didn't have a caption-input pane type until now. Rebuilding a mode-switching single-shell layout on top of the routing model that already solves the same problem would be net-negative, not a gap to close.
 
 This avoids showing irrelevant panels and gives each mode the space it needs.
 
@@ -1353,7 +1345,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 | Priority | Item | Impact | Effort |
 |----------|------|--------|--------|
-| **P2** | **4a. Context-aware layout modes** — left/right panel content adapts to active section (Caption/Audio/Broadcast/Graphics/Production) | Medium — better screen use | High |
+| ~~**P2**~~ | ~~**4a. Context-aware layout modes**~~ — **reassessed and closed 2026-07-21**, see §4a above: the routing model already delivers 4 of 5 rows; the 5th (Production caption input) shipped as a new `captionInput` pane type | — | — |
 
 ### 🔵 P3 — Backlog
 
@@ -1372,7 +1364,7 @@ This prevents caption-send re-renders from triggering settings UI re-renders.
 
 The frontend has solid foundations: clean context-based state management, a flexible embed system, and strong keyboard support.
 
-**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. Onboarding automation (§2a), localStorage quota monitoring (§6d), and the DSK metacode autocomplete helper (§5d) shipped 2026-07-21. The remaining genuine gaps are: context-aware layout modes, detachable/pop-out panels, the mobile-first redesign of the caption flow specifically (general swipe/mobile-bar infrastructure exists but isn't applied there), and workflow presets.
+**As of 2026-07-20, the structural foundation, feature-based UI, and most power-user features are complete.** The two-phase login (backend preset selection → `/health` probe → feature-aware login/API-key flow) gates the entire UI. Backend features (`backendFeatures` from `ConnectionContext`) drive sidebar navigation visibility: minimal backends (Python) show only Dashboard, Captions, Audio, and Settings; full-featured backends (Node.js) show the complete sidebar including Broadcast, Graphics, Production, Projects, and Account. Auto-reconnect with exponential backoff, unsaved-work protection, context splitting, the command palette, keyboard shortcuts help, and SentPanel virtual scrolling are all shipped — the last three were incorrectly still marked P2/P3-pending as of the 2026-03-27 audit. Onboarding automation (§2a), localStorage quota monitoring (§6d), the DSK metacode autocomplete helper (§5d), and context-aware layout modes (§4a — reassessed rather than literally rebuilt, since the routing model already delivers most of it) shipped 2026-07-21. The remaining genuine gaps are: detachable/pop-out panels, the mobile-first redesign of the caption flow specifically (general swipe/mobile-bar infrastructure exists but isn't applied there), and workflow presets.
 
 ---
 ---

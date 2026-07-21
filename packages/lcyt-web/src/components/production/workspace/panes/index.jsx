@@ -2,6 +2,8 @@ import { useRef, useEffect, useState, useId } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
 import { Dialog } from '../../../Dialog.jsx';
+import { useCaptionContext } from '../../../../contexts/CaptionContext';
+import { useConnectionContext } from '../../../../contexts/ConnectionContext';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -399,6 +401,57 @@ function ChatPane({ D }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// CAPTION INPUT (mini) — plan_ui.md v2 §4a's "Production: operator surface +
+// caption input" row. A direct, no-frills line-send (CaptionContext.send()) —
+// deliberately not InputBar's full file/metacode/batch/translation pipeline,
+// same "small, single-purpose widget" scope as ChatPane/ControlsPane above.
+// ═══════════════════════════════════════════════════════════════════════════
+
+function CaptionInputPane() {
+  const { send } = useCaptionContext();
+  const { connected } = useConnectionContext();
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    const text = draft.trim();
+    if (!text || sending || !connected) return;
+    setSending(true);
+    setError('');
+    try {
+      await send(text, Date.now());
+      setDraft('');
+    } catch (err) {
+      setError(err?.message || 'Send failed');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 9, height: '100%', justifyContent: 'flex-end' }}>
+      {!connected && <div style={{ fontSize: '.68rem', color: C.textMuted }}>Not connected.</div>}
+      {error && <div style={{ fontSize: '.68rem', color: C.live }}>{error}</div>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <input
+          type="text"
+          value={draft}
+          disabled={!connected}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+          placeholder="Send a caption…"
+          style={{ flex: 1, background: C.inputBg, border: `1px solid ${C.inputBorder}`, borderRadius: 7, padding: '7px 9px', fontSize: '.72rem', color: '#ddd' }}
+        />
+        <button onClick={submit} disabled={!connected || sending || !draft.trim()} style={{ padding: '0 14px', borderRadius: 7, background: ACC, color: '#fff', fontSize: '.72rem', fontWeight: 600, opacity: (!connected || sending || !draft.trim()) ? 0.5 : 1 }}>
+          {sending ? '…' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // CONTROLS
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -675,6 +728,7 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
     case 'lowerthirds': return <LowerThirdsPane D={D} />;
     case 'variables':   return <VariablesPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
+    case 'captionInput': return <CaptionInputPane />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }
