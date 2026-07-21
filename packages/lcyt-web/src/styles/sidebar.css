@@ -2082,6 +2082,16 @@
 
 /* ─── Setup hub ───────────────────────────────────────────────── */
 
+/* Wraps .setup-hub-page + a RoleAssistantPanel side column (Setup/Asset
+   Control Assistant, plan_ai_roles_framework.md) — same row-flex footprint
+   as .planner-page's main+assist-column split. */
+.setup-hub-page-layout {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  overflow: hidden;
+}
+
 .setup-hub-page {
   padding: 24px 28px;
   overflow-y: auto;
@@ -2092,6 +2102,18 @@
 @media (max-width: 768px) {
   .setup-hub-page {
     padding: 16px 12px;
+  }
+}
+
+@media (max-width: 860px) {
+  /* Stack the RoleAssistantPanel below the card grid instead of beside it —
+     .agent-chat itself already switches to full-width/border-top at this
+     breakpoint (components.css); this just makes the row wrap into a column
+     so that full-width panel doesn't get squeezed beside the grid. */
+  .setup-hub-page-layout {
+    flex-direction: column;
+    height: auto;
+    overflow: visible;
   }
 }
 

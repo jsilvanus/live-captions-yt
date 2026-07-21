@@ -350,6 +350,7 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
   const [error,         setError]         = useState(null);
   const [editing,       setEditing]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [prefillNew,    setPrefillNew]    = useState(null);
 
   const headers = {
     'Content-Type': 'application/json',
@@ -390,7 +391,25 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useImperativeHandle(ref, () => ({ openAdd: () => setEditing('new') }));
+  // Guided-action support (plan_ai_roles_framework.md's Setup Assistant):
+  // opens this manager's own Add/Edit/Delete dialog pre-filled from an
+  // AI-proposed tool call's args, then stops for the human's own submit click.
+  useImperativeHandle(ref, () => ({
+    openAdd: () => { setEditing('new'); setPrefillNew(null); },
+    openAddPrefilled: (fields = {}) => { setEditing('new'); setPrefillNew(fields); },
+    openEditPrefilled: (id, fields = {}) => {
+      const camera = cameras.find(c => String(c.id) === String(id));
+      if (!camera) return false;
+      setEditing({ ...camera, ...fields });
+      return true;
+    },
+    openDeleteConfirm: (id) => {
+      const camera = cameras.find(c => String(c.id) === String(id));
+      if (!camera) return false;
+      setConfirmDelete(camera);
+      return true;
+    },
+  }), [cameras]);
 
   async function handleSave(data) {
     const isNew = editing === 'new';
@@ -433,7 +452,7 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
       {editing && (
         <Dialog title={editing === 'new' ? 'Add camera' : `Edit: ${editing.name}`} onClose={() => setEditing(null)} width={640}>
           <CameraForm
-            initial={editing === 'new' ? null : editing}
+            initial={editing === 'new' ? prefillNew : editing}
             bridges={bridges}
             onSave={handleSave}
             onCancel={() => setEditing(null)}

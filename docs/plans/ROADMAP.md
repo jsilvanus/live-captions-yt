@@ -96,6 +96,25 @@ newly-discovered settings (`VISION_PREVIEW_BASE_URL`, `CAMERA_PREVIEW_BASE_URL`/
 `CAMERA_THUMBNAILS_DIR`) are registered but not yet wired — see `CONSIDER.md`.
 Full monorepo test sweep (`npm test`, all 18 Node.js workspaces) passes.
 
+`plan_ai_roles_framework.md`'s remaining Tier 1 item (former Lane 4) shipped
+2026-07-21: `useGuidedAction.jsx` (`GuidedActionProvider`/
+`useGuidedActionTargets`/`useGuidedActionDispatcher`, `lcyt-web/src/hooks/`)
+implements the dialog-driving primitive the plan specced but never built, and
+`RoleAssistantPanel.jsx` (`POST /roles/:roleCode/message` wired to
+`<AgentChatPanel>`) is now mounted for `setup_assistant` in `SetupHubPage.jsx`
+and `asset_control_assistant` in `AssetsPage.jsx`, each wrapped in a
+`GuidedActionProvider`. `CaptionTargetsManager`/`CamerasManager`/
+`MixersManager` each gained `openAddPrefilled`/`openEditPrefilled`/
+`openDeleteConfirm` on their existing `useImperativeHandle`, registered by
+their Setup Hub section components — a `confirm`-mode staged tool call now
+opens the real Add/Edit/Delete dialog pre-filled, and the human still clicks
+that dialog's own submit button. **Not done:** Asset Control Assistant's
+tools (`asset.update`/`asset.delete`) target `lcyt-dsk`'s image-asset
+library, which `AssetsPage.jsx` renders no dialog for — a real page-ownership
+question (should it move to `DskEditorPage.jsx`'s Media Library, or should
+`AssetsPage.jsx` grow one?), not a build gap; see `CONSIDER.md`. Full
+`packages/lcyt-web` test sweep passes (447 Vitest + 461 node:test).
+
 ---
 
 ## Tier 0 — Fix now: real bugs the audit surfaced
@@ -118,7 +137,7 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 
 | Plan | What's left | Why it matters |
 |---|---|---|
-| `plan_ai_roles_framework.md` | Frontend chat panel + a `useGuidedAction` primitive for the Setup Assistant and Asset Control Assistant roles (Planner and Graphics Editor Assistant already have theirs — `AgentChatPanel` is shipped for 2 of 5 `agentic_chat` roles, not all 5) | Backend (`POST /roles/:roleCode/message`) is identical and already built for all three chat-dialog roles; this is pure `lcyt-web` frontend work, mounting into `SetupHubPage.jsx`/`AssetsPage.jsx`. Translation role remains a flagged, unspec'd future gap — needs a short design pass before it's even schedulable, not urgent. |
+| `plan_ai_roles_framework.md` | **Done, 2026-07-21** — `RoleAssistantPanel.jsx` + `useGuidedAction.jsx` shipped, mounted in `SetupHubPage.jsx`/`AssetsPage.jsx`. Only remaining gap: Asset Control Assistant's tools have no dialog on `AssetsPage.jsx` to drive (page-ownership question, see CONSIDER.md), not a build gap. | — |
 | `plan_ui.md` | Context-aware layout modes, detachable/pop-out panels, mobile-first caption-flow redesign, workflow presets, DSK metacode autocomplete, localStorage quota monitoring, onboarding auto-trigger (`lcyt:onboarded` flag) | Real but lower-urgency UX polish on an otherwise-mature `lcyt-web`. Good filler work between the higher-value items above; each sub-item is independently schedulable. |
 
 ---
@@ -210,11 +229,10 @@ Non-overlapping lanes, grouped by package ownership per §0:
   `routes/device-roles.js`, `routes/project-slug.js`,
   `routes/project-observability.js`, and `routes/auth.js`'s
   `POST /auth/project-token`, plus the `api_keys.restricted` escape-hatch column.
-- **Lane 4 (`lcyt-web`, Setup Hub / Assets — chat panels):** Tier 1's
-  `plan_ai_roles_framework.md` Setup/Asset Assistant frontend. Lane 3 (the AI
-  model picker, `plan_ai_model_registry.md` Phase 3 frontend) already landed —
-  confirm `SetupHubPage.jsx`'s "AI & integrations" section ordering against the
-  now-mounted `AiRoleModelsSection.jsx` before adding these chat panels there.
+- **Lane 4 — done.** Tier 1's `plan_ai_roles_framework.md` Setup/Asset
+  Assistant frontend shipped 2026-07-21: `RoleAssistantPanel.jsx` +
+  `useGuidedAction.jsx`, mounted in `SetupHubPage.jsx`/`AssetsPage.jsx` —
+  see "Recently closed" below.
 - **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
 - **Lane 8 — done.** `plan_env_to_ui_settings.md` shipped 2026-07-21, all six

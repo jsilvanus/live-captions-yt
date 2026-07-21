@@ -378,6 +378,7 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
   const [error,         setError]         = useState(null);
   const [editing,       setEditing]       = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [prefillNew,    setPrefillNew]    = useState(null);
 
   const headers = {
     'Content-Type': 'application/json',
@@ -405,7 +406,25 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useImperativeHandle(ref, () => ({ openAdd: () => setEditing('new') }));
+  // Guided-action support (plan_ai_roles_framework.md's Setup Assistant):
+  // opens this manager's own Add/Edit/Delete dialog pre-filled from an
+  // AI-proposed tool call's args, then stops for the human's own submit click.
+  useImperativeHandle(ref, () => ({
+    openAdd: () => { setEditing('new'); setPrefillNew(null); },
+    openAddPrefilled: (fields = {}) => { setEditing('new'); setPrefillNew(fields); },
+    openEditPrefilled: (id, fields = {}) => {
+      const mixer = mixers.find(m => String(m.id) === String(id));
+      if (!mixer) return false;
+      setEditing({ ...mixer, ...fields });
+      return true;
+    },
+    openDeleteConfirm: (id) => {
+      const mixer = mixers.find(m => String(m.id) === String(id));
+      if (!mixer) return false;
+      setConfirmDelete(mixer);
+      return true;
+    },
+  }), [mixers]);
 
   async function handleSave(data) {
     const isNew = editing === 'new';
@@ -449,7 +468,7 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
       {editing && (
         <Dialog title={editing === 'new' ? 'Add mixer' : `Edit: ${editing.name}`} onClose={() => setEditing(null)} width={640}>
           <MixerForm
-            initial={editing === 'new' ? null : editing}
+            initial={editing === 'new' ? prefillNew : editing}
             bridges={bridges}
             onSave={handleSave}
             onCancel={() => setEditing(null)}

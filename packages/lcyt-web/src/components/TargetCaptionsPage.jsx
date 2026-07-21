@@ -82,8 +82,6 @@ export const CaptionTargetsManager = forwardRef(function CaptionTargetsManager({
     session.listIcons?.().then(data => setIcons(data.icons || [])).catch(() => setIcons([]));
   }, [session?.connected, session]);
 
-  useImperativeHandle(ref, () => ({ openAdd: () => { setEditing('new'); setDraft(EMPTY_NEW); } }));
-
   function openEdit(target) {
     setEditing(target);
     // TargetRow's textarea models `headers` as a raw JSON string; the server
@@ -91,6 +89,28 @@ export const CaptionTargetsManager = forwardRef(function CaptionTargetsManager({
     // formatRow()) — stringify for display, parsed again on save below.
     setDraft({ ...target, headers: target.headers ? JSON.stringify(target.headers, null, 2) : '' });
   }
+
+  // Guided-action support (plan_ai_roles_framework.md's Setup Assistant):
+  // openAddPrefilled/openEditPrefilled/openDeleteConfirm open this manager's
+  // own dialogs pre-filled from an AI-proposed tool call's args, then stop —
+  // the human still clicks the dialog's own Create/Save/Delete button.
+  useImperativeHandle(ref, () => ({
+    openAdd: () => { setEditing('new'); setDraft(EMPTY_NEW); },
+    openAddPrefilled: (fields = {}) => { setEditing('new'); setDraft({ ...EMPTY_NEW, ...fields }); },
+    openEditPrefilled: (id, fields = {}) => {
+      const target = targets.find(t => String(t.id) === String(id));
+      if (!target) return false;
+      openEdit(target);
+      setDraft(prev => ({ ...prev, ...fields }));
+      return true;
+    },
+    openDeleteConfirm: (id) => {
+      const target = targets.find(t => String(t.id) === String(id));
+      if (!target) return false;
+      setConfirmDelete(target);
+      return true;
+    },
+  }), [targets]);
 
   async function handleSave() {
     if (!draft || !isValidTarget(draft)) return;
