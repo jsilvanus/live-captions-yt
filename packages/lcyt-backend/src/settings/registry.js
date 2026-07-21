@@ -52,6 +52,7 @@ const TIER_A = [
   { key: 'bootstrap.ffmpeg_image', env: 'FFMPEG_IMAGE', type: 'string', default: '', category: 'bootstrap', description: 'Docker image reference for ffmpeg when FFMPEG_RUNNER=docker.' },
   { key: 'bootstrap.dsk_renderer_image', env: 'DSK_RENDERER_IMAGE', type: 'string', default: 'lcyt-dsk-renderer:latest', category: 'bootstrap', description: 'Docker image reference for the DSK renderer container (lcyt-dsk/src/renderer-container.js).' },
   { key: 'bootstrap.dsk_thumbnails_dir', env: 'DSK_THUMBNAILS_DIR', type: 'string', default: '', category: 'bootstrap', description: 'Directory for DSK template thumbnail images.' },
+  { key: 'bootstrap.camera_thumbnails_dir', env: 'CAMERA_THUMBNAILS_DIR', type: 'string', default: '/data/camera-thumbnails', category: 'bootstrap', description: 'Local directory for captured camera thumbnail JPEGs (lcyt-production).' },
   { key: 'bootstrap.playwright_dsk_chromium', env: 'PLAYWRIGHT_DSK_CHROMIUM', type: 'string', default: '', category: 'bootstrap', description: 'Path to the Chromium binary used by the DSK Playwright renderer.' },
   { key: 'bootstrap.google_application_credentials', env: 'GOOGLE_APPLICATION_CREDENTIALS', type: 'string', default: '', category: 'bootstrap', description: 'Path to a Google service-account JSON file (OAuth2 STT).' },
   { key: 'bootstrap.nginx_radio_config_path', env: 'NGINX_RADIO_CONFIG_PATH', type: 'string', default: '', category: 'bootstrap', description: 'Path to the nginx include file NginxManager writes; empty = no-op mode.' },
@@ -179,10 +180,14 @@ const TIER_B = [
   { key: 'ai.embedding_api_url', env: 'EMBEDDING_API_URL', type: 'string', default: 'https://api.openai.com', category: 'ai', apply: 'hot', description: 'Base URL for the server-level default embedding API. Per-project overrides in ai_config still win for their project.' },
   { key: 'ai.embedding_api_key', env: 'EMBEDDING_API_KEY', type: 'secret', default: '', secret: true, category: 'ai', apply: 'hot', description: 'API key for the server-level default embedding provider.' },
   { key: 'ai.embedding_model', env: 'EMBEDDING_MODEL', type: 'string', default: 'text-embedding-3-small', category: 'ai', apply: 'hot', description: 'Server-level default embedding model name.' },
+  { key: 'ai.vision_preview_base_url', env: 'VISION_PREVIEW_BASE_URL', type: 'string', default: '', category: 'ai', apply: 'restart', description: "Base URL VisionFrameFetcher (Tracker/Describer roles) polls for preview JPEGs; falls back to http://localhost:$PORT. Not in the original lcyt-backend/CLAUDE.md table (documented only in lcyt-agent's own CLAUDE.md) — registered but not yet wired to SettingsService, see CONSIDER.md." },
 
   // --- Music ---------------------------------------------------------------
   { key: 'music.detection_active', env: 'MUSIC_DETECTION_ACTIVE', type: 'bool', boolStyle: 'is1', default: false, category: 'music', apply: 'hot', description: 'Mounts the /music server-side HLS audio analysis routes.' },
   { key: 'music.classifier_url', env: 'MUSIC_CLASSIFIER_URL', type: 'string', default: '', category: 'music', apply: 'hot', description: 'External classifier hook URL for music/speech/silence detection.' },
+
+  // --- Production control ---------------------------------------------
+  { key: 'production.camera_preview_base_url', env: 'CAMERA_PREVIEW_BASE_URL', type: 'string', default: '', category: 'production', apply: 'restart', description: "Base URL lcyt-production's camera-thumbnail capture fetches /preview/:key/incoming from; falls back to http://localhost:$PORT. Not in the original lcyt-backend/CLAUDE.md table (documented only in lcyt-production's own CLAUDE.md) — registered but not yet wired to SettingsService, see CONSIDER.md." },
 
   // --- Metrics ---------------------------------------------------------
   { key: 'metrics.project_labels', env: 'METRICS_PROJECT_LABELS', type: 'bool', boolStyle: 'not0', default: true, category: 'metrics', apply: 'hot', description: 'Include the per-project label on Prometheus business series. Disable to bound cardinality on large fleets.' },

@@ -79,6 +79,23 @@ fold-in of Tier 0's `AiModelsSection.jsx` decision: a genuinely new component,
 not a repurposing of that deleted shell. Phase 4 ("deer" runtimes) remains
 unscoped, as planned. See `docs/plans/plan_ai_model_registry.md`.
 
+`plan_env_to_ui_settings.md` (former Tier 2 Lane 8) shipped in full 2026-07-21:
+`server_settings` table + declarative registry (`src/settings/registry.js`,
+~105 entries, cross-checked against every actual read site rather than the
+drifting CLAUDE.md tables — several defaults/env-var names were wrong or
+missing and got fixed along the way) + `SettingsService` + admin API + Admin →
+Server UI tab, then call-site migration across `lcyt-backend` itself,
+`lcyt-files`, `lcyt-music`, `lcyt-rtmp`, `lcyt-dsk`, `lcyt-production`'s
+`MediaMtxClient`, and `lcyt-agent`'s embedding functions. `RTMP_RELAY_ACTIVE`/
+`MUSIC_DETECTION_ACTIVE` route gates and CEA-708 caption timing are genuinely
+hot now (DB write takes effect with no restart, verified end-to-end). Also
+surfaced and fixed a real pre-existing bug: `computeEmbeddings`'s credential
+vs. project-apiKey collision in cue semantic matching (a project's api_key
+was being sent as the embeddings API bearer token). **Not done:** two small,
+newly-discovered settings (`VISION_PREVIEW_BASE_URL`, `CAMERA_PREVIEW_BASE_URL`/
+`CAMERA_THUMBNAILS_DIR`) are registered but not yet wired — see `CONSIDER.md`.
+Full monorepo test sweep (`npm test`, all 18 Node.js workspaces) passes.
+
 ---
 
 ## Tier 0 — Fix now: real bugs the audit surfaced
@@ -111,16 +128,16 @@ edge case (those are Tier 3). Ordered roughly by value/urgency.
 Three brand-new plans landed via PR #287 (merged 2026-07-20), plus `plan_video_perception.md`
 and `plan_ai_observability.md` (drafted the same day, the latter split out of the
 former — see below) and two pre-existing drafts. None have any code yet, so zero
-collision risk with Tier 0/1 work above — but `plan_broadcast_platform_sync.md`,
-`plan_env_to_ui_settings.md`, and `plan_video_perception.md` are each big enough to
-deserve their own phase-plan pass (`/phase-planning`) before dispatch, not a single
-one-shot lane.
+collision risk with Tier 0/1 work above — but `plan_broadcast_platform_sync.md`
+and `plan_video_perception.md` are each big enough to deserve their own phase-plan
+pass (`/phase-planning`) before dispatch, not a single one-shot lane.
+(`plan_env_to_ui_settings.md`, the third plan this note used to name, shipped
+2026-07-21 — see "Recently closed".)
 
 | Plan | Value | Scope note |
 |---|---|---|
 | `plan_project_roles.md` | **High, security-relevant** — replaces the flat org-baseline `member` role `plan_team_org_backend.md` shipped with a real owner/admin/editor/viewer tier system and page-scoped write gates (Setup=admin-only, Assets=editor+); an interim fix already closed the one concrete credential-minting gap (`/mcp-tokens`, `/ai/providers`), but every other Setup-shaped route (dsk, connectors, production/rtmp CRUD, targets, stt config, ...) still only has the broad baseline gate | Two open product decisions block starting (see the plan's "Open questions"): whether `project_members.access_level` literally unifies to the new vocabulary or stays parallel, and whether Production/live-operate needs its own 5th `operator` role — don't start without those answered first, per the plan's own recommendation. |
 | `plan_broadcast_platform_sync.md` | **High** — closes `plan_broadcasts.md`'s biggest explicitly-out-of-scope gap (YouTube two-way sync), which is the most-requested-shaped missing piece in the whole broadcasts feature | New `lcyt-platforms` plugin + server-side OAuth (replacing the current browser-only implicit-token flow in `youtubeAuth.js`/`youtubeApi.js`/`YouTubeTab.jsx`) + `lcyt-web` broadcast UI. Facebook Live is explicitly deferred within this same plan — don't scope it in. |
-| `plan_env_to_ui_settings.md` | **Medium-high** — ops/quality-of-life; makes ~130 env-var-only settings admin-editable without redeploying, closes a real operability gap for self-hosted deployments | **Phases 1–4 landed 2026-07-21** (registry/service/schema, admin API, Admin UI, `lcyt-backend`'s own call sites incl. a live-verified RTMP/music hot-gate rewrite). Phase 5 (plugin integration) partial — `lcyt-files`/`lcyt-music` done, `lcyt-rtmp`/`lcyt-dsk`/`lcyt-production`/`lcyt-agent` still env-only in practice, see `CONSIDER.md`. Remaining work is per-plugin call-site migration, not new architecture. |
 | `plan_video_perception.md` | **High but large** — the fps30 tracker subsystem `plan_cues.md` has anticipated (and left an inert consumer contract for) since before this doc existed, plus a World State fusion service; the biggest single scope item in this tier | New per-camera CV pipeline (deploys as a new job type on the existing `lcyt-orchestrator`/`lcyt-worker-daemon`, not a new ops story) + World State service + camera/preset metadata. Its shared/single-feed camera handling needs `plan_vertical_crop.md` Phase 4's `onProgramChanged`/`onCameraPresetRecalled` callbacks — **now implemented** (`lcyt-production`'s `DeviceRegistry`), so this plan's Phase 3 (shared-feed resolver) is unblocked; the callbacks are still plain setter-injected listeners, not real EventBus events, so a second consumer here should still weigh promoting them per that plan's §4 note. Its Phase 1 (schema + camera metadata + World State skeleton, no perception producer) has no dependency either way and can start immediately. |
 | `plan_ai_observability.md` | **Medium, high leverage-per-effort** — the prompt-sculpting/debug page, split out of `plan_video_perception.md` specifically so it isn't stuck behind that plan's dependency chain | Genuinely startable now: Stage 1 (live overlay + capture/replay + prompt sandbox) works against the already-implemented Tracker/Describer roles, no new dependency. Stage 2 (true multi-camera grid) needs `plan_ai_roles_framework.md`'s camera-scoping amendment (Tier 1). Stage 3 (extend to `camera.track_state`) needs `plan_video_perception.md` Phase 2. Small enough to skip the phase-planning-first recommendation given to the three larger Tier 2 items above. |
 | `plan_mixer_feed_sources.md` | Medium — niche production feature (looping-file mixer source + WHEP low-latency preview tiles) | `lcyt-production`/mixer code; its former 'encoder' source type is already covered by the implemented `plan_ingest_feeds.md`, so scope is smaller than the plan's original draft. May overlap `plan_vertical_crop.md` Phase 4's mixer-registry callbacks — check before running both at once. `plan_video_perception.md`'s observability page also wants this plan's WHEP preview-tile work as its video source — a second reason to land this one earlier rather than later in the tier. |
@@ -200,16 +217,8 @@ Non-overlapping lanes, grouped by package ownership per §0:
   now-mounted `AiRoleModelsSection.jsx` before adding these chat panels there.
 - **Lane 7 (new package, isolated):** Begin `plan_broadcast_platform_sync.md` with a
   `/phase-planning` pass first — it's too big for a single-shot dispatch.
-- **Lane 8 (new package, isolated):** `plan_env_to_ui_settings.md` — **Phases 1–4
-  landed 2026-07-21** (registry/service/schema, admin API, Admin UI, lcyt-backend's
-  own call-site migration incl. the RTMP/music hot-gate rewrite, verified
-  end-to-end with no restart needed). Phase 5 (plugin integration) is partial:
-  `lcyt-files`/`lcyt-music` wired; `lcyt-rtmp`/`lcyt-dsk`/`lcyt-production`'s
-  `MediaMtxClient`/`lcyt-agent`'s embedding functions still read raw env in
-  practice — see `CONSIDER.md` for the specific reason each was deferred (mostly
-  module-load-time constants needing a lazy-getter refactor). Picking this back
-  up means finishing those four plugins' call-site migration, not a fresh
-  phase-plan pass.
+- **Lane 8 — done.** `plan_env_to_ui_settings.md` shipped 2026-07-21, all six
+  phases — see "Recently closed" below.
 - **Lane 9 (`lcyt-agent` + new tables, isolated):** `plan_video_perception.md`
   Phase 1 (schema + camera metadata + World State skeleton, no perception
   producer yet), and now also Phase 2/3 (the fps30 producer + shared-feed

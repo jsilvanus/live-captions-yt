@@ -19,6 +19,7 @@ const CATEGORY_LABELS = {
   ai: 'AI / Embeddings',
   music: 'Music Detection',
   metrics: 'Metrics',
+  production: 'Production Control',
 };
 
 const APPLY_LABELS = {
