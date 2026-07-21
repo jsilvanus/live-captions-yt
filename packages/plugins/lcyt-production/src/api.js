@@ -71,12 +71,17 @@ export async function initProductionControl(db, { settings = null } = {}) {
  * @param {object} [opts.metrics]  Optional backend metrics handle (plan_metering_audit §3.2: production.commands)
  * @param {import('express').RequestHandler} [opts.auth]  Session/user/device auth middleware (createProjectAccessMiddleware) applied to the camera CRUD routes (plan_ingest_feeds.md's cross-tenant review finding) and the mixer routes (plan_vertical_crop.md §4 — a mixer switch needs the acting session's apiKey to report to registry.onProgramChanged()); WHIP/thumbnail/sources kiosk routes stay unauthenticated in both routers. Omit to keep this router's historical fully-open behavior (e.g. existing route-level tests).
  * @param {ReturnType<typeof createPerceptionManager>} [opts.perceptionManager]  fps30 tracker job dispatch (plan_video_perception.md Phase 2) — omit to 503 the /cameras/:id/perception/* routes (e.g. tests, or a deployment with no ORCHESTRATOR_URL/WORKER_DAEMON_URL configured)
+ * @param {import('../../../lcyt-backend/src/settings/service.js').SettingsService} [opts.settings]  Settings service for resolving configuration
  * @returns {import('express').Router}
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   const router = Router();
   const mediamtxClient = opts.mediamtxClient ?? null;
   const metrics = opts.metrics ?? null;
+  const settings = opts.settings ?? null;
+
+  // Compute camera preview base URL from settings or environment
+  const previewBaseUrl = settings ? (settings.get('production.camera_preview_base_url') || `http://localhost:${process.env.PORT || 3000}`) : DEFAULT_PREVIEW_BASE_URL;
 
   // Single choke point for the production.commands counter: every mutating
   // command endpoint (camera preset, mixer switch, encoder start/stop/test)
@@ -93,7 +98,7 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
     next();
   });
 
-  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: opts.cameraThumbnail, auth: opts.auth, perceptionManager: opts.perceptionManager }));
+  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: { ...opts.cameraThumbnail, previewBaseUrl }, auth: opts.auth, perceptionManager: opts.perceptionManager }));
   router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, auth: opts.auth }));
   router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl));
   router.use('/encoders', createEncodersRouter(db, bridgeManager));

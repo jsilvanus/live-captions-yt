@@ -48,9 +48,11 @@ function buildPrompt(roleCode, harnessConfig) {
 export class VisionRoleManager {
   /**
    * @param {import('./roles-bus.js').RolesBus} rolesBus
+   * @param {import('../../../lcyt-backend/src/settings/service.js').SettingsService} [settings]
    */
-  constructor(rolesBus) {
+  constructor(rolesBus, settings = null) {
     this._rolesBus = rolesBus;
+    this._settings = settings;
     /** @type {Map<string, { fetcher: VisionFrameFetcher, adapter: object, roleCode: string, lastUpdateAt: number|null, lastError: string|null }>} */
     this._sessions = new Map();
     /**
@@ -155,7 +157,8 @@ export class VisionRoleManager {
       return { ok: false, error: err.message };
     }
 
-    const fetcher = new VisionFrameFetcher({ apiKey, pollIntervalMs: harnessConfig.pollIntervalMs });
+    const previewBaseUrl = this._settings ? (this._settings.get('ai.vision_preview_base_url') || `http://localhost:${process.env.PORT || 3000}`) : undefined;
+    const fetcher = new VisionFrameFetcher({ apiKey, pollIntervalMs: harnessConfig.pollIntervalMs, previewBaseUrl });
     const session = { fetcher, adapter, roleCode, lastUpdateAt: null, lastError: null };
     this._sessions.set(key, session);
 

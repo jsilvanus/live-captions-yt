@@ -127,7 +127,7 @@ export async function initAgent(db, opts = {}) {
   const { SceneState } = await import('./scene-state.js');
   const rolesBus = new RolesBus(opts.eventBus);
   const assistantManager = new ProductionAssistantManager(db, rolesBus);
-  const visionRoleManager = new VisionRoleManager(rolesBus);
+  const visionRoleManager = new VisionRoleManager(rolesBus, opts.settings);
   const sceneState = new SceneState();
 
   // Small handle for the provider registry. The bridge manager (from

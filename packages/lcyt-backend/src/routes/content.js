@@ -38,7 +38,7 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/youtube',         createYouTubeRouter(auth, settings));
-  router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret));
+  router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret, settings));
   router.use('/targets',         createTargetsRouter(scoped('target'), db));
   router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
   router.use('/videos',          createVideosRouter(scoped('video'), db));
