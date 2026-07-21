@@ -8,8 +8,10 @@
  *     BACKEND_INTERNAL_TOKEN the same way lcyt-orchestrator's
  *     requireInternalAuth() gates its own inbound routes (mirrored here, not
  *     imported, since lcyt-backend has no dependency on lcyt-orchestrator).
- *     Detections tagged with the shared-feed sentinel cameraId are re-tagged
- *     via the shared-feed resolver before reaching the aggregator (Phase 3).
+ *     Detections whose job plan carries feedKind: 'shared' (cameraId null —
+ *     the runner doesn't know which camera the shared feed currently shows)
+ *     are re-tagged via the shared-feed resolver before reaching the
+ *     aggregator (Phase 3).
  *
  *   POST /shared/start|stop, GET /shared/status — project-scoped (opts.auth),
  *     dispatch/inspect the one shared-feed perception job for this project
@@ -19,7 +21,6 @@
  */
 
 import { Router } from 'express';
-import { SHARED_FEED_CAMERA_ID } from 'lcyt-production';
 
 /**
  * @param {{ ingest: (apiKey: string, detection: object) => void }} aggregator
@@ -38,13 +39,16 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
       }
     }
 
-    const { apiKey, cameraId, ts, objects, framing, visible } = req.body || {};
-    if (!apiKey || !cameraId) {
-      return res.status(400).json({ error: 'apiKey and cameraId are required' });
+    const { apiKey, cameraId, feedKind, ts, objects, framing, visible } = req.body || {};
+    if (!apiKey) {
+      return res.status(400).json({ error: 'apiKey is required' });
+    }
+    if (feedKind !== 'shared' && !cameraId) {
+      return res.status(400).json({ error: 'cameraId is required for a non-shared detection' });
     }
 
     let detection = { cameraId, ts, objects, framing, visible };
-    if (cameraId === SHARED_FEED_CAMERA_ID) {
+    if (feedKind === 'shared') {
       detection = resolver?.tagSharedDetection?.(apiKey, detection) ?? null;
       if (!detection) return res.json({ ok: true, dropped: 'no active camera resolved for this project yet' });
     }

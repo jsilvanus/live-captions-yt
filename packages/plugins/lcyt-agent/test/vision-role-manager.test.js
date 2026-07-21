@@ -212,6 +212,37 @@ describe('VisionRoleManager — capture ring buffer', () => {
     assert.deepEqual(manager.getCaptures('key2', 'describer'), []);
   });
 
+  test('clearProject() drops all captures and stops any running session for that project only (code-review fix — project-deletion cleanup, distinct from stop())', async () => {
+    mockPreviewAndVisionApi({ visionResponse: { choices: [{ message: { content: 'a scene' } }] } });
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.start('key1', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    manager.start('key1', 'describer', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    manager.start('key2', 'tracker', {
+      apiSettings: { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' },
+      vendor: 'openai', harnessConfig: { pollIntervalMs: 15 },
+    });
+    await new Promise((r) => setTimeout(r, 40));
+
+    manager.clearProject('key1');
+
+    assert.deepEqual(manager.getCaptures('key1', 'tracker'), []);
+    assert.deepEqual(manager.getCaptures('key1', 'describer'), []);
+    assert.equal(manager.status('key1', 'tracker').running, false, 'key1 sessions are stopped, not just their captures cleared');
+    assert.equal(manager.status('key1', 'describer').running, false);
+
+    // key2's session and captures are untouched.
+    assert.equal(manager.status('key2', 'tracker').running, true);
+    assert.ok(manager.getCaptures('key2', 'tracker').length > 0);
+
+    manager.stop('key2', 'tracker');
+  });
+
   test('a failed analysis is still captured, with the error recorded and no result', async () => {
     let call = 0;
     global.fetch = async (url) => {

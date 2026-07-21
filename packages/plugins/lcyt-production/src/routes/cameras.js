@@ -137,7 +137,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // POST /production/cameras — create camera
   router.post('/', (req, res) => {
     const {
-      name, mixerInput, controlType = 'none', controlConfig = {},
+      name, mixerInput, mixerId = null, controlType = 'none', controlConfig = {},
       sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
       cameraKey = null, label = null, zone = null, overlapLinks = [],
     } = req.body;
@@ -156,9 +156,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     // auth wired in (e.g. existing route-level tests).
     const ownerApiKey = req.session?.apiKey ?? null;
     db.prepare(`
-      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey, label, zone, JSON.stringify(overlapLinks));
+      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links, mixer_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey, label, zone, JSON.stringify(overlapLinks), mixerId);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>
@@ -176,6 +176,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const {
       name             = existing.name,
       mixerInput       = existing.mixer_input,
+      mixerId          = existing.mixer_id,
       controlType      = existing.control_type,
       controlConfig    = JSON.parse(existing.control_config),
       sortOrder        = existing.sort_order,
@@ -198,11 +199,11 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       UPDATE prod_cameras
       SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
           bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?,
-          label = ?, zone = ?, overlap_links = ?
+          label = ?, zone = ?, overlap_links = ?, mixer_id = ?
       WHERE id = ?
     `).run(name, mixerInput ?? null, controlType, JSON.stringify(controlConfig),
            bridgeInstanceId ?? null, sortOrder, connectionSource, cameraKey ?? null,
-           label, zone, JSON.stringify(overlapLinks), id);
+           label, zone, JSON.stringify(overlapLinks), mixerId ?? null, id);
 
     const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
     registry.reloadCamera(id).catch(err =>

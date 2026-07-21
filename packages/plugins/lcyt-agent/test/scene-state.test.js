@@ -68,4 +68,28 @@ describe('SceneState', () => {
     // updatedAt is present and is a string (ISO format)
     assert.equal(typeof snapshot.updatedAt, 'string');
   });
+
+  it('clearProject() drops a project\'s snapshot without affecting others (code-review fix)', () => {
+    const state = new SceneState();
+    const snapA = state.getState('proj-a');
+    snapA.activeSpeaker = { personId: 'p1', cameraId: 'cam1', confidence: 0.9, since: Date.now() };
+    state.getState('proj-b');
+
+    state.clearProject('proj-a');
+
+    // A fresh access after clearing returns a brand-new empty snapshot, not
+    // the mutated one — proving the old entry was actually deleted, not
+    // just returned as-is.
+    const freshA = state.getState('proj-a');
+    assert.equal(freshA.activeSpeaker, null);
+    assert.notStrictEqual(freshA, snapA);
+
+    // proj-b is untouched.
+    assert.ok(state.getState('proj-b'));
+  });
+
+  it('clearProject() is a safe no-op for a project with no snapshot', () => {
+    const state = new SceneState();
+    assert.doesNotThrow(() => state.clearProject('never-existed'));
+  });
 });

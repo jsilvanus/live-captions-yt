@@ -77,5 +77,16 @@ export function createPerceptionAggregator({ store, eventBus, sceneState }) {
     }
   }
 
-  return { ingest };
+  /**
+   * Drop a project's tracked cameras — for use when the project itself is
+   * deleted (code-review fix: `byProject` had no eviction, so every project
+   * that ever had a perception job report a detection would keep a
+   * permanent entry for the lifetime of the process).
+   * @param {string} apiKey
+   */
+  function clearProject(apiKey) {
+    byProject.delete(apiKey);
+  }
+
+  return { ingest, clearProject };
 }

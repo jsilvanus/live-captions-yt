@@ -17,7 +17,7 @@ import { createCamerasRouter } from './routes/cameras.js';
 import { createMixersRouter } from './routes/mixers.js';
 import { createBridgeRouter } from './routes/bridge.js';
 import { createEncodersRouter } from './routes/encoders.js';
-import { createPerceptionManager, isPerceptionDispatchAvailable, SHARED_FEED_CAMERA_ID } from './perception-manager.js';
+import { createPerceptionManager, isPerceptionDispatchAvailable } from './perception-manager.js';
 import { DEFAULT_PREVIEW_BASE_URL } from './camera-thumbnail.js';
 
 /**
@@ -105,7 +105,7 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
 export { OBSClient };
 
 // fps30 tracker subsystem job dispatch (plan_video_perception.md Phase 2/3)
-export { createPerceptionManager, isPerceptionDispatchAvailable, SHARED_FEED_CAMERA_ID, DEFAULT_PREVIEW_BASE_URL };
+export { createPerceptionManager, isPerceptionDispatchAvailable, DEFAULT_PREVIEW_BASE_URL };
 
 // Plain, directly-callable camera/mixer CRUD (for packages/lcyt-tools — plan/mcp)
 export {

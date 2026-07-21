@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPerceptionManager, isPerceptionDispatchAvailable, SHARED_FEED_CAMERA_ID } from '../src/perception-manager.js';
+import { createPerceptionManager, isPerceptionDispatchAvailable } from '../src/perception-manager.js';
 
 const CAMERA = { id: 'cam-1', cameraKey: 'feed-abc' };
 
@@ -53,6 +53,7 @@ describe('createPerceptionManager', () => {
     assert.equal(calls[0].init.headers['X-Worker-Auth'], 'tok');
     const plan = JSON.parse(calls[0].init.body);
     assert.equal(plan.type, 'perception');
+    assert.equal(plan.feedKind, 'dedicated');
     assert.equal(plan.apiKey, 'key1');
     assert.equal(plan.cameraId, 'cam-1');
     assert.equal(plan.frameUrl, 'http://backend/preview/feed-abc/incoming');
@@ -105,6 +106,45 @@ describe('createPerceptionManager', () => {
     assert.equal(mgr.status('cam-1'), null);
   });
 
+  it('stop() keeps the job tracked and returns false when the remote DELETE fails (code-review fix)', async () => {
+    let deleteResponse = { ok: false, status: 500 };
+    const fetchImpl = async (url, init) => (init.method === 'DELETE' ? deleteResponse : { ok: true });
+    const mgr = createPerceptionManager({
+      previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend',
+      env: { WORKER_DAEMON_URL: 'http://worker' },
+      fetchImpl,
+    });
+
+    const { jobId } = await mgr.start('key1', CAMERA);
+    assert.equal(await mgr.stop('cam-1'), false, 'a failed remote stop must not report success');
+    assert.equal(mgr.status('cam-1').jobId, jobId, 'the job stays tracked so it can be retried/rediscovered');
+
+    // A 404 (job already gone on the remote side) is still treated as a
+    // successful stop from the manager's perspective.
+    deleteResponse = { ok: false, status: 404 };
+    assert.equal(await mgr.stop('cam-1'), true);
+    assert.equal(mgr.status('cam-1'), null);
+  });
+
+  it('start() is idempotent — a second start for the same camera does not dispatch a new job (code-review fix)', async () => {
+    const calls = [];
+    const fetchImpl = async (url, init) => { calls.push({ url, init }); return { ok: true }; };
+    const mgr = createPerceptionManager({
+      previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend',
+      env: { WORKER_DAEMON_URL: 'http://worker' },
+      fetchImpl,
+    });
+
+    const first = await mgr.start('key1', CAMERA);
+    assert.equal(calls.length, 1);
+
+    const second = await mgr.start('key1', CAMERA);
+    assert.equal(calls.length, 1, 'no second dispatch call for a retried start');
+    assert.equal(second.jobId, first.jobId, 'the original job stays the tracked one');
+    assert.equal(second.alreadyRunning, true);
+    assert.equal(mgr.status('cam-1').jobId, first.jobId);
+  });
+
   describe('shared-feed dispatch (Phase 3)', () => {
     it('startSharedFeed() dispatches a job keyed by apiKey, not a camera', async () => {
       const calls = [];
@@ -117,7 +157,8 @@ describe('createPerceptionManager', () => {
 
       const { jobId } = await mgr.startSharedFeed('key1', { emitIntervalMs: 300 });
       const plan = JSON.parse(calls[0].init.body);
-      assert.equal(plan.cameraId, SHARED_FEED_CAMERA_ID);
+      assert.equal(plan.cameraId, null);
+      assert.equal(plan.feedKind, 'shared');
       assert.equal(plan.frameUrl, 'http://backend/preview/key1/incoming');
       assert.equal(plan.emitIntervalMs, 300);
       assert.deepEqual(mgr.sharedFeedStatus('key1'), { jobId, apiKey: 'key1', startedAt: mgr.sharedFeedStatus('key1').startedAt });

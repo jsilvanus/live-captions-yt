@@ -53,4 +53,15 @@ export class SceneState {
   status(apiKey) {
     return this.getState(apiKey);
   }
+
+  /**
+   * Drop a project's snapshot — for use when the project itself is deleted
+   * (code-review fix: `_snapshots` had no eviction at all, so every project
+   * that ever ran perception/vision roles would keep a permanent entry for
+   * the lifetime of the process). Safe to call even if no snapshot exists.
+   * @param {string} apiKey
+   */
+  clearProject(apiKey) {
+    this._snapshots.delete(apiKey);
+  }
 }

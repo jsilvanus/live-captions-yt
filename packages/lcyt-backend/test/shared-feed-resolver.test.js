@@ -10,7 +10,6 @@ import { randomUUID } from 'node:crypto';
 import Database from 'better-sqlite3';
 import { runMigrations } from '../../plugins/lcyt-production/src/db.js';
 import { createSharedFeedResolver } from '../src/shared-feed-resolver.js';
-import { SHARED_FEED_CAMERA_ID } from 'lcyt-production';
 
 let db;
 
@@ -21,11 +20,17 @@ before(() => {
 
 after(() => db.close());
 
-function insertCamera(id, mixerInput) {
+function insertCamera(id, mixerInput, mixerId = null) {
   db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order)
-    VALUES (?, ?, ?, 'visca-ip', '{}', 0)
-  `).run(id, `Cam ${id}`, mixerInput);
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, mixer_id)
+    VALUES (?, ?, ?, 'visca-ip', '{}', 0, ?)
+  `).run(id, `Cam ${id}`, mixerInput, mixerId);
+}
+
+function insertMixer(id) {
+  db.prepare(`
+    INSERT OR IGNORE INTO prod_mixers (id, name, type) VALUES (?, ?, 'lcyt')
+  `).run(id, `Mixer ${id}`);
 }
 
 function makeFakeRegistry() {
@@ -40,15 +45,15 @@ function makeFakeRegistry() {
 }
 
 describe('createSharedFeedResolver', () => {
-  it('isSharedFeedDetection() identifies the sentinel cameraId', () => {
+  it('isSharedFeedDetection() identifies detections by feedKind, not a sentinel cameraId', () => {
     const resolver = createSharedFeedResolver({ db, registry: makeFakeRegistry(), aggregator: { ingest: () => {} } });
-    assert.equal(resolver.isSharedFeedDetection({ cameraId: SHARED_FEED_CAMERA_ID }), true);
-    assert.equal(resolver.isSharedFeedDetection({ cameraId: 'cam-1' }), false);
+    assert.equal(resolver.isSharedFeedDetection({ cameraId: null, feedKind: 'shared' }), true);
+    assert.equal(resolver.isSharedFeedDetection({ cameraId: 'cam-1', feedKind: 'dedicated' }), false);
   });
 
   it('tagSharedDetection() returns null (drop) before any program-changed event has fired', () => {
     const resolver = createSharedFeedResolver({ db, registry: makeFakeRegistry(), aggregator: { ingest: () => {} } });
-    assert.equal(resolver.tagSharedDetection('key1', { cameraId: SHARED_FEED_CAMERA_ID, objects: [] }), null);
+    assert.equal(resolver.tagSharedDetection('key1', { cameraId: null, feedKind: 'shared', objects: [] }), null);
   });
 
   it('resolves the active camera from onProgramChanged via mixer_input, and re-tags subsequent detections', () => {
@@ -60,7 +65,7 @@ describe('createSharedFeedResolver', () => {
     registry.notifyProgramChanged({ apiKey: 'key1', mixerId: 'm1', inputNumber: 3 });
 
     assert.equal(resolver.activeCameraFor('key1'), camId);
-    const tagged = resolver.tagSharedDetection('key1', { cameraId: SHARED_FEED_CAMERA_ID, objects: [{ label: 'x', confidence: 0.5 }] });
+    const tagged = resolver.tagSharedDetection('key1', { cameraId: null, feedKind: 'shared', objects: [{ label: 'x', confidence: 0.5 }] });
     assert.equal(tagged.cameraId, camId);
     assert.deepEqual(tagged.objects, [{ label: 'x', confidence: 0.5 }]);
   });
@@ -116,5 +121,45 @@ describe('createSharedFeedResolver', () => {
     registry.notifyProgramChanged({ apiKey: 'proj-a', mixerId: 'm1', inputNumber: 7 });
     assert.equal(resolver.activeCameraFor('proj-a'), camA);
     assert.equal(resolver.activeCameraFor('proj-b'), null);
+  });
+
+  it('does not cross-resolve to a different mixer\'s camera sharing the same inputNumber (code-review regression)', () => {
+    insertMixer('mixer-a');
+    insertMixer('mixer-b');
+    const camOnMixerA = randomUUID();
+    const camOnMixerB = randomUUID();
+    insertCamera(camOnMixerA, 9, 'mixer-a');
+    insertCamera(camOnMixerB, 9, 'mixer-b');
+    const registry = makeFakeRegistry();
+    const resolver = createSharedFeedResolver({ db, registry, aggregator: { ingest: () => {} } });
+
+    registry.notifyProgramChanged({ apiKey: 'proj-a', mixerId: 'mixer-a', inputNumber: 9 });
+    assert.equal(resolver.activeCameraFor('proj-a'), camOnMixerA);
+
+    registry.notifyProgramChanged({ apiKey: 'proj-b', mixerId: 'mixer-b', inputNumber: 9 });
+    assert.equal(resolver.activeCameraFor('proj-b'), camOnMixerB);
+    // proj-a's resolution must not have been disturbed by proj-b's event.
+    assert.equal(resolver.activeCameraFor('proj-a'), camOnMixerA);
+  });
+
+  it('falls back to an unscoped (mixer_id IS NULL) legacy camera only when no mixer_id-scoped match exists', () => {
+    insertMixer('mixer-x');
+    insertMixer('mixer-y');
+    const legacyCam = randomUUID();
+    const scopedCam = randomUUID();
+    insertCamera(legacyCam, 11, null);
+    insertCamera(scopedCam, 11, 'mixer-x');
+    const registry = makeFakeRegistry();
+    const resolver = createSharedFeedResolver({ db, registry, aggregator: { ingest: () => {} } });
+
+    // A project whose mixer has an explicitly-scoped camera on this input
+    // must resolve to that camera, never the unrelated legacy one.
+    registry.notifyProgramChanged({ apiKey: 'proj-scoped', mixerId: 'mixer-x', inputNumber: 11 });
+    assert.equal(resolver.activeCameraFor('proj-scoped'), scopedCam);
+
+    // A different mixer with no scoped camera on this input falls back to
+    // the legacy (mixer_id IS NULL) camera.
+    registry.notifyProgramChanged({ apiKey: 'proj-legacy', mixerId: 'mixer-y', inputNumber: 11 });
+    assert.equal(resolver.activeCameraFor('proj-legacy'), legacyCam);
   });
 });

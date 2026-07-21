@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
 import { createPerceptionRouter } from '../src/routes/perception.js';
-import { SHARED_FEED_CAMERA_ID } from 'lcyt-production';
 
 let server, baseUrl;
 
@@ -76,14 +75,14 @@ describe('POST /production/perception/ingest', () => {
     assert.equal(res.status, 200);
   });
 
-  it('re-tags a shared-feed sentinel detection via the resolver before ingesting', async () => {
+  it('re-tags a shared-feed detection (feedKind: shared) via the resolver before ingesting', async () => {
     const ingestCalls = [];
     const resolver = { tagSharedDetection: (apiKey, detection) => ({ ...detection, cameraId: 'resolved-cam' }) };
     await startApp({ ingest: (apiKey, detection) => ingestCalls.push({ apiKey, detection }) }, resolver);
 
     const res = await fetch(`${baseUrl}/production/perception/ingest`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: 'key1', cameraId: SHARED_FEED_CAMERA_ID, ts: 1, objects: [] }),
+      body: JSON.stringify({ apiKey: 'key1', cameraId: null, feedKind: 'shared', ts: 1, objects: [] }),
     });
     assert.equal(res.status, 200);
     assert.equal(ingestCalls.length, 1);
@@ -97,10 +96,19 @@ describe('POST /production/perception/ingest', () => {
 
     const res = await fetch(`${baseUrl}/production/perception/ingest`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey: 'key1', cameraId: SHARED_FEED_CAMERA_ID, ts: 1, objects: [] }),
+      body: JSON.stringify({ apiKey: 'key1', cameraId: null, feedKind: 'shared', ts: 1, objects: [] }),
     });
     assert.equal(res.status, 200);
     assert.equal(ingestCalls.length, 0);
+  });
+
+  it('400s a non-shared detection with no cameraId', async () => {
+    await startApp({ ingest: () => {} });
+    const res = await fetch(`${baseUrl}/production/perception/ingest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'key1', ts: 1, objects: [] }),
+    });
+    assert.equal(res.status, 400);
   });
 });
 

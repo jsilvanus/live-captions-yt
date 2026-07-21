@@ -152,6 +152,11 @@ export class SessionStore {
         // Don't fail session create if DB persist fails; log upstream instead
       }
     }
+    // Plugin hook (lcyt-cues' createSoundCueListener/createTrackerCueListener
+    // monkey-patch this to attach per-session listeners — without this call
+    // neither ever attaches to a session created after server startup, so
+    // sound/tracker cue rules would silently never fire for a real session.
+    this.onNewSession?.(session);
     return session;
   }
 

@@ -104,4 +104,27 @@ describe('createPerceptionAggregator', () => {
     const aggregator = createPerceptionAggregator({ store: makeStore({}) });
     assert.doesNotThrow(() => aggregator.ingest('unknown-key', { cameraId: 'cam-1', objects: [] }));
   });
+
+  it('clearProject() drops a project\'s tracked cameras, so a later ingest re-starts a clean union (code-review fix)', () => {
+    const emitter = new EventEmitter();
+    const store = makeStore({ 'proj-a': { apiKey: 'proj-a', emitter } });
+    const aggregator = createPerceptionAggregator({ store });
+    const events = [];
+    emitter.on('event', (evt) => events.push(evt));
+
+    aggregator.ingest('proj-a', { cameraId: 'cam-1', ts: 1, objects: [{ label: 'person', confidence: 0.5 }], visible: true });
+    aggregator.clearProject('proj-a');
+
+    // A camera that isn't re-reported after the clear must not linger in
+    // the union — proving the tracked-cameras Map was actually emptied,
+    // not just left stale until the next update for that same camera.
+    aggregator.ingest('proj-a', { cameraId: 'cam-2', ts: 2, objects: [{ label: 'choir', confidence: 0.7 }], visible: true });
+    const last = events[events.length - 1].data.labels;
+    assert.deepEqual(last, [{ label: 'choir', confidence: 0.7 }]);
+  });
+
+  it('clearProject() is a safe no-op for a project with no tracked cameras', () => {
+    const aggregator = createPerceptionAggregator({ store: makeStore({}) });
+    assert.doesNotThrow(() => aggregator.clearProject('never-existed'));
+  });
 });

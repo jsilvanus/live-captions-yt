@@ -337,6 +337,7 @@ export function parseCamera(row) {
   return {
     ...rest,
     mixerInput:       row.mixer_input,
+    mixerId:          row.mixer_id ?? null,
     controlType:      row.control_type,
     controlConfig:    JSON.parse(row.control_config || '{}'),
     connectionSource: row.connection_source ?? 'backend',

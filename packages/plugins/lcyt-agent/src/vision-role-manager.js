@@ -221,6 +221,32 @@ export class VisionRoleManager {
   }
 
   /**
+   * Stop any running session and drop all captures for a project — for use
+   * when the *project itself* is deleted, a different lifecycle event from
+   * stop() (captures deliberately survive an ordinary stop()/start(), see
+   * `_captures`' own doc comment above; without this, a deleted project's
+   * capture buffers — real JPEG frame Buffers, not just metadata — would
+   * stay resident in memory for the lifetime of the process, unbounded
+   * across however many projects are ever created and deleted — code-review
+   * fix). Callers: `deleteKey()`'s call sites (`routes/keys.js`,
+   * `routes/admin.js`).
+   * @param {string} apiKey
+   */
+  clearProject(apiKey) {
+    const prefix = `${apiKey}:`;
+    for (const key of Array.from(this._sessions.keys())) {
+      if (!key.startsWith(prefix)) continue;
+      const session = this._sessions.get(key);
+      session.fetcher.stop();
+      session.fetcher.removeAllListeners();
+      this._sessions.delete(key);
+    }
+    for (const key of Array.from(this._captures.keys())) {
+      if (key.startsWith(prefix)) this._captures.delete(key);
+    }
+  }
+
+  /**
    * @param {string} apiKey
    * @param {string} roleCode
    * @returns {{ running: boolean, lastUpdateAt: number|null, lastError: string|null }}

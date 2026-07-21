@@ -179,6 +179,19 @@ export function createApp() {
   });
   void jobsRunningGauge;
   const jobsTotal = new Counter({ name: 'worker_jobs_total', help: 'Jobs by terminal status', labelNames: ['status'], registers: [promRegistry] });
+  // A perception job retries forever by design (a camera/backend outage is
+  // often transient, so auto-terminating on error would be wrong) — but
+  // that means it never reaches finishJob()'s terminal accounting on its
+  // own, and a permanently-failing job would otherwise be invisible (still
+  // 'running' in GET /stats/_jobs, zero signal in Prometheus). This counter
+  // is that signal (code-review fix); DELETE /jobs/:id still accounts a
+  // manually-stopped perception job via the normal finishJob() path.
+  const perceptionErrorsTotal = new Counter({
+    name: 'worker_perception_job_errors_total',
+    help: 'Perception job tick errors (frame fetch, detect, or callback delivery), by kind',
+    labelNames: ['kind'],
+    registers: [promRegistry],
+  });
   const jobDuration = new Histogram({
     name: 'worker_job_duration_seconds',
     help: 'Job wall-clock duration',
@@ -230,7 +243,14 @@ export function createApp() {
     // below (which stays exactly as it was for the default/`ffmpeg` type).
     if (plan.type === 'perception') {
       try {
-        const runner = createPerceptionJob(plan, jobId);
+        const runner = createPerceptionJob(plan, jobId, {
+          onJobError: (kind, err) => {
+            perceptionErrorsTotal.inc({ kind });
+            record.errorCount = (record.errorCount || 0) + 1;
+            record.lastError = err && err.message;
+            record.lastErrorAt = Date.now();
+          },
+        });
         runner.start();
         record.runner = runner;
         record.status = 'running';
@@ -361,7 +381,10 @@ export function createApp() {
 
   // Expose jobs - for debugging; not required but useful in tests
   app.get('/_jobs', (req, res) => {
-    const out = Array.from(jobs.values()).map(j => ({ id: j.id, status: j.status, createdAt: j.createdAt, pid: j.pid }));
+    const out = Array.from(jobs.values()).map(j => ({
+      id: j.id, status: j.status, createdAt: j.createdAt, pid: j.pid,
+      errorCount: j.errorCount, lastError: j.lastError, lastErrorAt: j.lastErrorAt,
+    }));
     res.json(out);
   });
 

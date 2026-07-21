@@ -12,10 +12,10 @@ import { createPerceptionRunner } from './perception/runner.js';
 /**
  * @param {{ cameraId: string, apiKey: string, frameUrl: string, callbackUrl?: string, internalToken?: string, emitIntervalMs?: number }} plan
  * @param {string} jobId
- * @param {{ fetchImpl?: typeof fetch }} [opts]
+ * @param {{ fetchImpl?: typeof fetch, onJobError?: (kind: 'detect'|'callback', err: Error|{message:string}) => void }} [opts]
  * @returns {{ start: () => void, stop: () => void }}
  */
-export function createPerceptionJob(plan, jobId, { fetchImpl = fetch } = {}) {
+export function createPerceptionJob(plan, jobId, { fetchImpl = fetch, onJobError } = {}) {
   const frameSource = createHttpFrameSource(plan.frameUrl, { fetchImpl });
   const backend = createStubDetector();
 
@@ -27,13 +27,15 @@ export function createPerceptionJob(plan, jobId, { fetchImpl = fetch } = {}) {
       const res = await fetchImpl(plan.callbackUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ apiKey: plan.apiKey, ...detection }),
+        body: JSON.stringify({ apiKey: plan.apiKey, feedKind: plan.feedKind, ...detection }),
       });
       if (!res.ok) {
         console.error(`perception job ${jobId} callback rejected: ${res.status}`);
+        onJobError?.('callback', { message: `callback rejected: ${res.status}` });
       }
     } catch (err) {
       console.error(`perception job ${jobId} callback failed:`, err && err.message);
+      onJobError?.('callback', err);
     }
   }
 
@@ -41,6 +43,9 @@ export function createPerceptionJob(plan, jobId, { fetchImpl = fetch } = {}) {
     emitIntervalMs: plan.emitIntervalMs,
     backend,
     onDetection: postDetection,
-    onError: (err) => console.error(`perception job ${jobId} detect error:`, err && err.message),
+    onError: (err) => {
+      console.error(`perception job ${jobId} detect error:`, err && err.message);
+      onJobError?.('detect', err);
+    },
   });
 }

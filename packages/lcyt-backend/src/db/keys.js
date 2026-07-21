@@ -371,6 +371,27 @@ export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
  * @param {string} key
  * @returns {boolean} true if a row was deleted
  */
+/**
+ * Registered by composition-root-level in-memory stores (lcyt-agent's
+ * VisionRoleManager/SceneState, lcyt-backend's perception-aggregator, etc.)
+ * that key state by `api_key` outside the DB and have no other way to learn
+ * a project was permanently deleted (code-review fix — those Maps had no
+ * eviction at all otherwise, growing unbounded for the process lifetime).
+ * A single registration point here, rather than threading a callback
+ * through every one of deleteKey()'s call sites (routes/keys.js,
+ * routes/admin.js, db/users.js's deleteOwnedProjectsForUser), so a future
+ * caller of deleteKey() can't forget to wire it.
+ * @type {Array<(apiKey: string) => void>}
+ */
+const _onKeyDeletedHooks = [];
+
+/**
+ * @param {(apiKey: string) => void} fn
+ */
+export function onKeyDeleted(fn) {
+  _onKeyDeletedHooks.push(fn);
+}
+
 export function deleteKey(db, key) {
   const result = db.transaction(() => {
     // No declared FK — orphan-row cleanup, not FK-required, but done here so
@@ -392,7 +413,13 @@ export function deleteKey(db, key) {
     // project_members(+permissions)/project_device_roles: ON DELETE CASCADE, left to the engine.
     return db.prepare('DELETE FROM api_keys WHERE key = ?').run(key);
   })();
-  return result.changes > 0;
+  const deleted = result.changes > 0;
+  if (deleted) {
+    for (const fn of _onKeyDeletedHooks) {
+      try { fn(key); } catch (err) { console.error('onKeyDeleted hook failed:', err && err.message); }
+    }
+  }
+  return deleted;
 }
 
 /**

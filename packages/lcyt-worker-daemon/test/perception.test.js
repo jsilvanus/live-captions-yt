@@ -10,10 +10,11 @@ const { createPerceptionRunner } = await import('../src/perception/runner.js');
 
 const realFetch = global.fetch;
 
-test('perception/frame-source: returns a Buffer on 200, null on non-ok or error', async () => {
+test('perception/frame-source: 200 -> Buffer, 404 -> null (camera not live), other statuses/network errors -> throw (code-review fix)', async () => {
   global.fetch = async (url) => {
     if (url === 'http://x/ok') return { ok: true, arrayBuffer: async () => Buffer.from('jpeg-bytes') };
-    if (url === 'http://x/missing') return { ok: false };
+    if (url === 'http://x/missing') return { ok: false, status: 404 };
+    if (url === 'http://x/server-error') return { ok: false, status: 502 };
     throw new Error('network down');
   };
   try {
@@ -21,10 +22,16 @@ test('perception/frame-source: returns a Buffer on 200, null on non-ok or error'
     assert.deepStrictEqual(await ok.getFrame(), Buffer.from('jpeg-bytes'));
 
     const missing = createHttpFrameSource('http://x/missing');
-    assert.strictEqual(await missing.getFrame(), null);
+    assert.strictEqual(await missing.getFrame(), null, '404 (camera not currently publishing) is expected, not an error');
+
+    // A real failure (5xx, or a network-level error) must now throw rather
+    // than silently collapse to null indistinguishable from "camera off" —
+    // runner.js's tick() already catches this and routes it to onError().
+    const serverError = createHttpFrameSource('http://x/server-error');
+    await assert.rejects(() => serverError.getFrame(), /502/);
 
     const broken = createHttpFrameSource('http://x/error');
-    assert.strictEqual(await broken.getFrame(), null);
+    await assert.rejects(() => broken.getFrame(), /network down/);
 
     const noUrl = createHttpFrameSource(null);
     assert.strictEqual(await noUrl.getFrame(), null);
@@ -122,4 +129,89 @@ test('POST /jobs with type=perception starts a job and POSTs detections to the c
   const countAtStop = callbacks.length;
   await new Promise((r) => setTimeout(r, 150));
   assert.strictEqual(callbacks.length, countAtStop, 'no further callbacks after DELETE /jobs/:id');
+});
+
+test('a perception job that keeps failing its callback stays running but surfaces errorCount/lastError and increments the Prometheus counter (code-review regression)', async (t) => {
+  const { server, stop } = startServer(0);
+  const port = server.address().port;
+  const base = `http://localhost:${port}`;
+
+  global.fetch = async (url, init) => {
+    if (typeof url === 'string' && url.startsWith(base)) return realFetch(url, init);
+    if (url === 'http://frame2.test/incoming') return { ok: true, arrayBuffer: async () => Buffer.from('jpeg') };
+    if (url === 'http://backend2.test/production/perception/ingest') return { ok: false, status: 502 };
+    throw new Error(`unexpected fetch to ${url}`);
+  };
+
+  t.after(async () => {
+    global.fetch = realFetch;
+    await stop();
+  });
+
+  const plan = {
+    id: 'perc-job-2', type: 'perception', apiKey: 'key1', cameraId: 'cam-2',
+    frameUrl: 'http://frame2.test/incoming',
+    callbackUrl: 'http://backend2.test/production/perception/ingest',
+    emitIntervalMs: 60,
+  };
+  const startRes = await fetch(`${base}/jobs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan),
+  });
+  assert.strictEqual(startRes.status, 200);
+
+  await new Promise((r) => setTimeout(r, 200));
+
+  const jobsRes = await fetch(`${base}/_jobs`);
+  const jobs = await jobsRes.json();
+  const job = jobs.find((j) => j.id === 'perc-job-2');
+  assert.ok(job, 'job still present in /_jobs');
+  assert.strictEqual(job.status, 'running', 'a retrying job stays running, not silently stuck with no signal');
+  assert.ok(job.errorCount >= 2, `expected errorCount >= 2, got ${job.errorCount}`);
+  assert.match(job.lastError, /callback rejected: 502/);
+
+  const metricsRes = await fetch(`${base}/metrics`);
+  const metricsText = await metricsRes.text();
+  assert.match(metricsText, /worker_perception_job_errors_total\{kind="callback"\} [1-9]/);
+
+  await fetch(`${base}/jobs/perc-job-2`, { method: 'DELETE' });
+});
+
+test('a perception job whose frame fetch keeps failing (5xx) counts as kind=detect, not callback', async (t) => {
+  const { server, stop } = startServer(0);
+  const port = server.address().port;
+  const base = `http://localhost:${port}`;
+
+  global.fetch = async (url, init) => {
+    if (typeof url === 'string' && url.startsWith(base)) return realFetch(url, init);
+    if (url === 'http://frame3.test/incoming') return { ok: false, status: 503 };
+    throw new Error(`unexpected fetch to ${url}`);
+  };
+
+  t.after(async () => {
+    global.fetch = realFetch;
+    await stop();
+  });
+
+  const plan = {
+    id: 'perc-job-3', type: 'perception', apiKey: 'key1', cameraId: 'cam-3',
+    frameUrl: 'http://frame3.test/incoming',
+    // No callbackUrl needed — the failure happens before postDetection runs.
+    emitIntervalMs: 60,
+  };
+  const startRes = await fetch(`${base}/jobs`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(plan),
+  });
+  assert.strictEqual(startRes.status, 200);
+
+  await new Promise((r) => setTimeout(r, 150));
+
+  const jobsRes = await fetch(`${base}/_jobs`);
+  const job = (await jobsRes.json()).find((j) => j.id === 'perc-job-3');
+  assert.ok(job.errorCount >= 1);
+  assert.match(job.lastError, /503/);
+
+  const metricsText = await (await fetch(`${base}/metrics`)).text();
+  assert.match(metricsText, /worker_perception_job_errors_total\{kind="detect"\} [1-9]/);
+
+  await fetch(`${base}/jobs/perc-job-3`, { method: 'DELETE' });
 });

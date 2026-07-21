@@ -20,14 +20,15 @@
  * available is the project's shared program feed. `startSharedFeed()`
  * dispatches one job per project against that shared feed
  * (`GET /preview/:apiKey/incoming`, the same project-scoped endpoint
- * Tracker/Describer already poll) tagged with the sentinel `cameraId`
- * `SHARED_FEED_CAMERA_ID` — the ingest side (lcyt-backend's shared-feed
- * resolver) is what actually knows which camera that feed currently shows,
- * not the runner, so it re-tags each detection before it reaches the
- * aggregator.
+ * Tracker/Describer already poll) with `cameraId: null` and
+ * `feedKind: 'shared'` on the job plan — the ingest side (lcyt-backend's
+ * shared-feed resolver) is what actually knows which camera that feed
+ * currently shows, not the runner, so it re-tags each detection before it
+ * reaches the aggregator. `feedKind` is a real, typed field on the plan
+ * (not a sentinel `cameraId` string) so nothing downstream that reads
+ * `detection.cameraId` can mistake an unresolved shared-feed detection for
+ * a real camera id — code-review fix.
  */
-
-export const SHARED_FEED_CAMERA_ID = '__shared_feed__';
 
 export function isPerceptionDispatchAvailable(env = process.env) {
   return !!(env.ORCHESTRATOR_URL || env.WORKER_DAEMON_URL);
@@ -79,7 +80,16 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
    * `key`. Both start() and startSharedFeed() reduce to this once they've
    * built their own `frameUrl`/`cameraId`.
    */
-  async function _dispatch(key, apiKey, cameraId, frameUrl, emitIntervalMs) {
+  async function _dispatch(key, apiKey, cameraId, frameUrl, emitIntervalMs, feedKind) {
+    // Idempotency guard (code-review fix): without this, a retried start
+    // request (client timeout, double form-submit) would dispatch a second
+    // job and overwrite the first job's tracked id in `running` — the first
+    // job keeps running on the worker/orchestrator but becomes permanently
+    // unstoppable via this manager (its jobId is gone). Mirrors
+    // VisionRoleManager.start()'s `if (this._sessions.has(key)) return
+    // {ok:true, alreadyRunning:true}` guard in lcyt-agent.
+    const existing = running.get(key);
+    if (existing) return { jobId: existing.jobId, alreadyRunning: true };
     if (!orchestratorUrl && !workerDaemonUrl) {
       const err = new Error('perception runner not configured (set ORCHESTRATOR_URL or WORKER_DAEMON_URL)');
       err.code = 'NOT_CONFIGURED';
@@ -91,6 +101,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
       type: 'perception',
       apiKey,
       cameraId,
+      feedKind,
       frameUrl,
       callbackUrl: `${callbackBaseUrl}/production/perception/ingest`,
       internalToken: workerToken || undefined,
@@ -111,13 +122,25 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
   async function _dispatchStop(key) {
     const entry = running.get(key);
     if (!entry) return false;
-    running.delete(key);
+    // Code-review fix: only clear local bookkeeping once the remote stop is
+    // actually confirmed (2xx, or 404 meaning the job is already gone) —
+    // previously `running.delete(key)` ran unconditionally before the
+    // DELETE call and this always returned true, so a failed remote stop
+    // (network error, 500, auth mismatch) was silently reported as success
+    // with no local record left to retry or re-discover the still-running
+    // job by.
     try {
       const path = orchestratorUrl ? `/compute/jobs/${entry.jobId}` : `/jobs/${entry.jobId}`;
-      await _delete(path);
+      const res = await _delete(path);
+      if (!res.ok && res.status !== 404) {
+        console.error(`perception stop dispatch failed for ${key}: ${res.status}`);
+        return false;
+      }
     } catch (err) {
       console.error(`perception stop dispatch failed for ${key}:`, err && err.message);
+      return false;
     }
+    running.delete(key);
     return true;
   }
 
@@ -134,7 +157,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     }
     const cameraId = String(camera.id);
     const frameUrl = `${previewBaseUrl}/preview/${encodeURIComponent(camera.cameraKey)}/incoming`;
-    return _dispatch(cameraId, apiKey, cameraId, frameUrl, emitIntervalMs);
+    return _dispatch(cameraId, apiKey, cameraId, frameUrl, emitIntervalMs, 'dedicated');
   }
 
   /**
@@ -157,7 +180,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
    */
   async function startSharedFeed(apiKey, { emitIntervalMs } = {}) {
     const frameUrl = `${previewBaseUrl}/preview/${encodeURIComponent(apiKey)}/incoming`;
-    return _dispatch(_sharedKey(apiKey), apiKey, SHARED_FEED_CAMERA_ID, frameUrl, emitIntervalMs);
+    return _dispatch(_sharedKey(apiKey), apiKey, null, frameUrl, emitIntervalMs, 'shared');
   }
 
   async function stopSharedFeed(apiKey) {

@@ -5,7 +5,7 @@ import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast,
+  completeBroadcast, onKeyDeleted,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { getMemberAccessLevel } from './db/project-members.js';
@@ -77,7 +77,7 @@ try {
     createMusicRouters = () => [];
   }
 }
-import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener } from 'lcyt-cues';
+import { initCueEngine, createCueProcessor, createCueRouter, createSoundCueListener, createTrackerCueListener } from 'lcyt-cues';
 import {
   initAgent, createAgentRouter, createAiRouter,
   createAdminAiProvidersRouter, createProjectAiProvidersRouter, createRolesRouter,
@@ -332,6 +332,7 @@ const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
 // Wire sound_label events (from lcyt-music) to cue engine for
 // music_start, music_stop, and silence cue rules.
 createSoundCueListener({ store, engine: _cueEngine });
+createTrackerCueListener({ store, engine: _cueEngine });
 
 // AI Agent — central AI service. Owns AI configuration, embedding calls,
 // context window management, and future vision/LLM features.
@@ -694,12 +695,32 @@ app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // fan-out). The shared-feed resolver (Phase 3) re-tags mixer-only cameras'
 // detections with whichever camera DeviceRegistry says is currently on
 // program before they reach the aggregator.
+// A perception job may run on a remote worker (ORCHESTRATOR_URL/
+// WORKER_DAEMON_URL, the whole point of the compute-orchestration layer),
+// so its frameUrl/callbackUrl must resolve to this backend's real,
+// externally-reachable URL — BACKEND_URL, the same env var routes/video.js
+// hands out to the DSK renderer for the same reason — not
+// DEFAULT_PREVIEW_BASE_URL, which defaults to http://localhost:$PORT and is
+// only correct for lcyt-production's own in-process preview fetches.
+const _perceptionBackendUrl = process.env.BACKEND_URL || DEFAULT_PREVIEW_BASE_URL;
 const _perceptionManager = createPerceptionManager({
-  previewBaseUrl: DEFAULT_PREVIEW_BASE_URL,
-  callbackBaseUrl: DEFAULT_PREVIEW_BASE_URL,
+  previewBaseUrl: _perceptionBackendUrl,
+  callbackBaseUrl: _perceptionBackendUrl,
 });
 const _perceptionAggregator = createPerceptionAggregator({ store, eventBus, sceneState: _sceneState });
 const _sharedFeedResolver = createSharedFeedResolver({ db, registry: productionRegistry, aggregator: _perceptionAggregator });
+
+// Release per-project in-memory state (capture buffers, World State
+// snapshots, tracked cameras) when a project is permanently deleted —
+// otherwise these Maps have no eviction at all and grow for the process
+// lifetime (code-review fix). Single registration point covers every
+// deleteKey() call site (routes/keys.js, routes/admin.js, db/users.js's
+// deleteOwnedProjectsForUser) without threading a callback through each.
+onKeyDeleted((apiKey) => {
+  _visionRoleManager?.clearProject?.(apiKey);
+  _sceneState?.clearProject?.(apiKey);
+  _perceptionAggregator?.clearProject?.(apiKey);
+});
 app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
   perceptionManager: _perceptionManager,
   internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
