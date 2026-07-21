@@ -225,7 +225,7 @@ Use the `lcyt/logger` module rather than `console.*` directly. For MCP contexts,
 
 ### Configuration
 - CLI config: `~/.lcyt-config.json`. Precedence: CLI args > config file > defaults.
-- Server config: environment variables only (12-factor style). Warn at startup if `JWT_SECRET` / `ADMIN_KEY` are missing.
+- Server config (`lcyt-backend`): env for bootstrap (ports, paths, secrets that gate the process itself, anything executed) plus overrides; DB/UI (Admin → Server, `plan_env_to_ui_settings.md`) for the rest. Precedence is env > DB > built-in default — `packages/lcyt-backend/src/settings/registry.js` is the authoritative enumeration of every setting, replacing the drifting `.env.example`/CLAUDE.md tables as the thing code actually reads against. Warn at startup if `JWT_SECRET` / `ADMIN_KEY` are missing (both stay env-only forever).
 
 ### Legacy Python Source
 `python/` at the repo root is **legacy**. Do not add code there. All Python development goes in `python-packages/`.

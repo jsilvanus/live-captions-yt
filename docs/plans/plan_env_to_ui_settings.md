@@ -1,8 +1,8 @@
 ---
 id: plan/env_to_ui_settings
 title: "Server Settings in the UI — Migrating Configuration from Env Vars to DB-Backed Admin Settings"
-status: draft
-summary: "Moves the bulk of lcyt-backend's ~130 environment variables into a DB-backed, admin-editable Server Settings surface (new server_settings table + settings registry/service + Admin UI page), with a strict precedence of env > DB > built-in default so 12-factor deployments keep working and env-set values appear UI-locked. A small bootstrap tier (ports, paths, secrets that gate the process itself, anything whose value is executed) deliberately stays env-only. The system must boot and relay captions with zero configuration — no env beyond what already auto-defaults today, and no UI setup."
+status: in-progress
+summary: "Moves the bulk of lcyt-backend's ~130 environment variables into a DB-backed, admin-editable Server Settings surface (new server_settings table + settings registry/service + Admin UI page), with a strict precedence of env > DB > built-in default so 12-factor deployments keep working and env-set values appear UI-locked. A small bootstrap tier (ports, paths, secrets that gate the process itself, anything whose value is executed) deliberately stays env-only. The system must boot and relay captions with zero configuration — no env beyond what already auto-defaults today, and no UI setup. Phases 1–4 implemented 2026-07-21 (registry/service/schema, admin API, Admin UI, lcyt-backend's own call-site migration incl. the RTMP/music hot-gate rewrite); Phase 5 partial (lcyt-files + lcyt-music wired, lcyt-rtmp/lcyt-dsk/lcyt-production/lcyt-agent deferred — see CONSIDER.md); Phase 6 done for what's implemented so far."
 related: plan/selfservice_config_backend, plan/admin, plan/setup_wizard, plan/site_feature_policies, plan/metering_audit, plan/cloudfleet
 ---
 
