@@ -24,7 +24,8 @@ live-captions-yt/
 │   ├── lcyt-tools/             # Shared AI tool-schema/handler registry (MCP + agentic_chat roles)
 │   ├── shared-styles/          # Shared CSS design tokens consumed by lcyt-site and lcyt-web
 │   ├── tools/                  # Standalone utilities
-│   │   └── tcp-echo-server/    # TCP echo server for bridge connection testing
+│   │   ├── tcp-echo-server/    # TCP echo server for bridge connection testing
+│   │   └── tcp-sender/         # TCP command sender for bridge connection testing
 │   └── plugins/                # Plugin packages (npm workspaces glob: packages/plugins/*)
 │       ├── lcyt-agent/         # AI Agent plugin (AI config, embeddings, LLM event evaluation)
 │       ├── lcyt-connectors/    # API Connectors & Variables plugin ({{ }} bindings, metacode-triggered refresh)
@@ -117,6 +118,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | Compute orchestrator | `packages/lcyt-orchestrator/CLAUDE.md` |
 | Worker daemon | `packages/lcyt-worker-daemon/CLAUDE.md` |
 | TCP echo test server | `packages/tools/tcp-echo-server/CLAUDE.md` |
+| TCP command sender test tool | `packages/tools/tcp-sender/CLAUDE.md` |
 | MCP server (stdio) | `packages/lcyt-mcp-stdio/CLAUDE.md` |
 | MCP server (Streamable HTTP) | `packages/lcyt-mcp-http/CLAUDE.md` |
 | Marketing site | `packages/lcyt-site/CLAUDE.md` |
