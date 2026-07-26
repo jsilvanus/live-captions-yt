@@ -9,16 +9,22 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
-import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware } from '../src/middleware/project-access.js';
 import { createTranslationRouter } from '../src/routes/translation.js';
 
 const JWT_SECRET = 'test-translation-secret';
 
-let server, baseUrl, db, apiKey, token;
+// Real production mounting (content.js) uses scopedAuth()/
+// createProjectAccessMiddleware, not the plain session-only auth — matters
+// here because every write now goes through requireProjectRole('setup')
+// (plan_project_roles.md, decided 2026-07-26), which needs a real userId.
+let server, baseUrl, db, apiKey, token, ownerToken;
 
 before(() => new Promise((resolve) => {
   db = initDb(':memory:');
-  const auth = createAuthMiddleware(JWT_SECRET);
+  const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'translation' });
   const app = express();
   app.use(express.json());
   app.use('/translation', createTranslationRouter(auth, db));
@@ -26,6 +32,9 @@ before(() => new Promise((resolve) => {
   const k = createKey(db, { owner: 'TranslationUser' });
   apiKey = k.key;
   token = jwt.sign({ sessionId: 'translation-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
+  const owner = createUser(db, { email: 'translation-owner@example.com', passwordHash: 'x' });
+  addMember(db, apiKey, owner.id, 'owner');
+  ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
   server.listen(0, () => {
@@ -39,20 +48,23 @@ after(() => new Promise((resolve) => {
   server.close(resolve);
 }));
 
-function bearer(tok = token) {
-  return { Authorization: `Bearer ${tok}` };
+// X-Api-Key mirrors real client behavior — see targets.test.js's matching
+// comment / CONSIDER.md for why relying solely on the JWT's embedded
+// projectId isn't safe on an :id-shaped route.
+function bearer(tok = token, key = apiKey) {
+  return { Authorization: `Bearer ${tok}`, 'X-Api-Key': key };
 }
 async function get(path) {
   return fetch(`${baseUrl}${path}`, { headers: bearer() });
 }
-async function post(path, body) {
-  return fetch(`${baseUrl}${path}`, { method: 'POST', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+async function post(path, body, tok = ownerToken) {
+  return fetch(`${baseUrl}${path}`, { method: 'POST', headers: { ...bearer(tok), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
-async function put(path, body) {
-  return fetch(`${baseUrl}${path}`, { method: 'PUT', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+async function put(path, body, tok = ownerToken) {
+  return fetch(`${baseUrl}${path}`, { method: 'PUT', headers: { ...bearer(tok), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
-async function del(path) {
-  return fetch(`${baseUrl}${path}`, { method: 'DELETE', headers: bearer() });
+async function del(path, tok = ownerToken) {
+  return fetch(`${baseUrl}${path}`, { method: 'DELETE', headers: bearer(tok) });
 }
 
 describe('GET /translation/config', () => {
@@ -171,9 +183,21 @@ describe('/translation/config/targets', () => {
   it('targets are scoped per api_key', async () => {
     const otherKey = createKey(db, { owner: 'OtherTranslationProject' });
     const otherToken = jwt.sign({ sessionId: 'other-session', apiKey: otherKey.key }, JWT_SECRET, { expiresIn: '1h' });
-    const res = await fetch(`${baseUrl}/translation/config`, { headers: bearer(otherToken) });
+    const res = await fetch(`${baseUrl}/translation/config`, { headers: bearer(otherToken, otherKey.key) });
     const body = await res.json();
     assert.deepEqual(body.targets, []);
     assert.equal(body.vendor.vendor, 'mymemory');
+  });
+});
+
+describe('Setup-tier write gate (plan_project_roles.md, decided 2026-07-26)', () => {
+  it('PUT /translation/config/vendor 403s for a session token with no explicit project role', async () => {
+    const res = await put('/translation/config/vendor', { vendor: 'deepl' }, token);
+    assert.equal(res.status, 403);
+  });
+
+  it('GET /translation/config stays open to that same session token', async () => {
+    const res = await get('/translation/config');
+    assert.equal(res.status, 200);
   });
 });

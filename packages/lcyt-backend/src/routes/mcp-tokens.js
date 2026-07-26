@@ -45,6 +45,16 @@ function resolveProjectId(req) {
 export function createExternalTokensRouter(db, auth) {
   const router = Router();
   router.use(auth);
+  // This router's auth is the plain user-JWT middleware (createUserAuthMiddleware),
+  // not scopedAuth()/createProjectAccessMiddleware — it never sets req.auth.projectId
+  // itself, project context always comes from X-Project-Id/X-Api-Key (or body/query)
+  // instead, per this file's own docblock. requireProjectRole() expects that
+  // resolution already done by the time it runs, so do it here first.
+  router.use((req, res, next) => {
+    req.auth = req.auth || {};
+    if (!req.auth.projectId) req.auth.projectId = resolveProjectId(req);
+    next();
+  });
   const explicitAdmin = requireProjectRole(db, 'setup');
 
   router.post('/', explicitAdmin, (req, res) => {

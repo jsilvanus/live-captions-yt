@@ -26,11 +26,20 @@ let server, baseUrl, db, tokenA, tokenB;
 function sessionAuth(req, res, next) {
   const header = req.headers.authorization || '';
   try {
-    req.session = jwt.verify(header.slice(7), JWT_SECRET);
+    const payload = jwt.verify(header.slice(7), JWT_SECRET);
+    req.session = payload;
+    if (payload.userId != null) req.user = { userId: payload.userId };
     next();
   } catch {
     res.status(401).json({ error: 'Invalid token' });
   }
+}
+
+// tokenA/tokenB's userId (1/2) are each explicit owner/admin on their own
+// project (keyA/keyB) — same shape as ai-providers-routes.test.js's mock.
+function checkProjectRole(tier, apiKey, userId) {
+  if (tier !== 'setup') return false;
+  return (apiKey === 'keyA' && userId === 1) || (apiKey === 'keyB' && userId === 2);
 }
 
 before(() => new Promise((resolve) => {
@@ -39,10 +48,10 @@ before(() => new Promise((resolve) => {
 
   const app = express();
   app.use(express.json());
-  app.use('/roles', createRolesRouter(db, sessionAuth));
+  app.use('/roles', createRolesRouter(db, sessionAuth, { checkProjectRole }));
 
-  tokenA = jwt.sign({ sessionId: 'sA', apiKey: 'keyA' }, JWT_SECRET, { expiresIn: '1h' });
-  tokenB = jwt.sign({ sessionId: 'sB', apiKey: 'keyB' }, JWT_SECRET, { expiresIn: '1h' });
+  tokenA = jwt.sign({ sessionId: 'sA', apiKey: 'keyA', userId: 1 }, JWT_SECRET, { expiresIn: '1h' });
+  tokenB = jwt.sign({ sessionId: 'sB', apiKey: 'keyB', userId: 2 }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
   server.listen(0, () => {

@@ -11,6 +11,30 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
+## `middleware/project-access.js`'s `resolveProjectId()` scavenges route `:id`/`:key` params generically, which is wrong on routers where that param isn't the project's api key
+
+**Where:** `packages/lcyt-backend/src/middleware/project-access.js` (`resolveProjectId()`, used by both `createProjectAccessMiddleware` at request-auth time and, deliberately *not* reused by, `requireProjectRole()` — see that function's own doc comment added 2026-07-26).
+
+**Finding:** `resolveProjectId()`'s candidate list includes generic `req.params?.id`/`req.params?.key` alongside `req.params?.apiKey`/`projectId` — fine for routes like `/keys/:key` where `:key` really is the project's api key, but actively wrong for a route like `PUT /targets/:id` where `:id` is a *target row's* id. When a request omits an explicit `X-Api-Key`/`X-Project-Id` header (relying solely on the JWT's own embedded `projectId`), `createProjectAccessMiddleware` still calls this scavenger first and picks up the wrong value — resolving to a garbage "project" that doesn't exist, so `getEffectiveProjectAccessLevel()` returns `null` and the request 403s with "Not a project member" even for a real, fully-authorized user. Also found and fixed alongside this: the scavenging loop itself had a genuine crash bug (`for (const candidate of candidates) { ... (candidate = candidate.trim()) ... }` — reassigning a `const` loop variable, `TypeError: Assignment to constant variable`), which this same investigation triggered for the first time via a previously-dead code path.
+
+**Skipped (the design issue, not the crash — that part *was* fixed):** every real caller in this codebase's own convention always sends an explicit `X-Api-Key` header (confirmed via the DSK/mcp-tokens routes' documented "JWT Bearer or X-API-Key" pattern), which short-circuits `resolveProjectId()` before it ever reaches the scavenging loop — so this is very likely dormant in production today, not a live bug. Fixing the scavenger's design properly (e.g. dropping the generic `:id`/`:key` candidates, or making callers opt in to which param names are safe to scavenge per-router) touches the core auth middleware used by every project-scoped route in the app — too broad a change to make as a side effect of the Setup/Assets/Production role-gating pass that found it. `test/targets.test.js` was updated to always send `X-Api-Key` (matching real client behavior) rather than depend on the scavenger.
+
+(Found during: Phase 2 Stream A, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## `routes/icons.js` and `lcyt-files`' `/file/storage-config` can't be gated at 'setup' tier without a broader auth-model change
+
+**Where:** `packages/lcyt-backend/src/routes/icons.js`, `packages/plugins/lcyt-files/src/routes/files.js` (the `/storage-config` GET/PUT/DELETE trio), `packages/lcyt-backend/src/server.js` (`app.use('/icons', createIconRouter(db, auth, store))`), `packages/lcyt-backend/src/routes/content.js` (`router.use('/file', createFilesRouter(db, auth, store, jwtSecret, ...))`), `docs/plans/plan_project_roles.md` Phase 2 Stream A.
+
+**Finding:** `plan_project_roles.md`'s "deliberately not touched by the interim fix" list names `icons` and "lcyt-files' storage config" alongside `targets.js`/`translation.js`/`stt.js`'s config routes as in-scope for Setup-tier gating. But both routers are mounted with the plain `createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the ephemeral session-JWT-only auth used by `/live`/`/captions`/`/mic` — not `scopedAuth()`/`createProjectAccessMiddleware`, which every other Setup-shaped route (targets, translation, stt, connectors, mcp-tokens, ai/providers) uses. The plain session middleware never populates `req.user.userId` (it only sets `req.session = { sessionId, apiKey }`), and both routers' handlers read `req.session.sessionId` + `store.get(sessionId)` directly rather than `req.auth`/`req.user`. `requireProjectRole()` (`middleware/project-access.js`) requires a real `userId` to resolve a role at all, so dropping it into either router as-is would 403 every request unconditionally, not gate it correctly.
+
+**Skipped because:** fixing it means migrating both routers off the ephemeral-session auth model onto the project-access-JWT model the other Setup routes use — a real, separate auth-plumbing change (and a check for whether anything relies on either working over a bare `/live` session with no logged-in user), not a one-line drop-in like the other routes in this same pass. Neither carries mintable credentials and both are lower risk (per the plan's own framing), so both were left ungated rather than rushed.
+
+(Found during: Phase 2 Stream A, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
 ## Asset Control Assistant's tools have no dialog to drive on the Assets page
 
 **Where:** `packages/lcyt-web/src/components/AssetsPage.jsx`, `packages/lcyt-tools/src/tools/assets.js`, `docs/plans/plan_ai_roles_framework.md`

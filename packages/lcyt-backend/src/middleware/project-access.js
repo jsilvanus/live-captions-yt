@@ -28,7 +28,9 @@ function resolveProjectId(req) {
   ];
 
   for (const candidate of candidates) {
-    if (typeof candidate === 'string' && (candidate = candidate.trim())) return candidate;
+    if (typeof candidate !== 'string') continue;
+    const trimmed = candidate.trim();
+    if (trimmed) return trimmed;
   }
 
   return req.auth?.projectId || req.project?.projectId || null;
@@ -244,6 +246,12 @@ export function hasProjectRole(db, tier, apiKey, userId) {
  * createProjectAccessMiddleware() gate — this is a *narrower* check on top of
  * it, not a replacement (a request that fails this still needs to have
  * passed the broader project-access gate first to reach here at all).
+ *
+ * Read-only (GET/HEAD/OPTIONS) is deliberately exempt at every tier — this
+ * gates *writes* only, per the 2026-07-26 decision: any project member
+ * (viewer+) who already passed the broader project-access gate can still
+ * read Setup-tier config (e.g. an editor reading caption targets while
+ * working in Assets), even though only admin+ can change it.
  * @param {import('better-sqlite3').Database} db
  * @param {'setup'|'assets'|'production'} tier
  * @returns {import('express').RequestHandler}
@@ -251,7 +259,15 @@ export function hasProjectRole(db, tier, apiKey, userId) {
 export function requireProjectRole(db, tier) {
   const minLevel = PROJECT_TIER_MIN_LEVEL[tier];
   return (req, res, next) => {
-    const apiKey = req.auth?.projectId || req.project?.projectId || resolveProjectId(req);
+    if (READ_METHODS.has(req.method)) return next();
+    // Deliberately doesn't fall back to the generic resolveProjectId() header/
+    // body/query/param scavenger above — this middleware always mounts
+    // downstream of the broad scopedAuth()/createProjectAccessMiddleware gate
+    // (see doc comment), which already resolved and attached the real
+    // projectId. Scavenging req.params again here is actively wrong on routes
+    // whose own :id param means something else entirely (e.g. PUT /targets/:id
+    // — :id is a target row id, not the project's api key).
+    const apiKey = req.auth?.projectId || req.project?.projectId;
     // No resolvable project id is the route handler's own 400 to raise, not
     // this gate's 403 — let it through unchanged (matches requireExplicitAdmin).
     if (!apiKey) return next();

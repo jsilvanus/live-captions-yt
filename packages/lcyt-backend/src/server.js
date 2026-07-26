@@ -91,7 +91,7 @@ import {
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter } from 'lcyt-actions';
 import { createAdminMiddleware } from './middleware/admin.js';
-import { createProjectAccessMiddleware, hasProjectRole } from './middleware/project-access.js';
+import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
 import { createPerceptionAggregator } from './perception-aggregator.js';
@@ -672,7 +672,9 @@ app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
 app.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, scopedAuth('role')));
+app.use('/roles', createRolesRouter(db, scopedAuth('role'), {
+  checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
+}));
 app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
 app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
 app.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
@@ -682,7 +684,10 @@ app.use('/roles/assistant', createProductionAssistantRouter(
   productionBridgeManager,
 ));
 app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
-app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
+// Setup-tier writes only (GET stays open to any project member, see
+// requireProjectRole's own doc comment) — connector auth_config can hold
+// credentials, same risk class as /ai/providers (plan_project_roles.md).
+app.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
 app.use('/actions', createActionsRouter(db, scopedAuth('action')));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
