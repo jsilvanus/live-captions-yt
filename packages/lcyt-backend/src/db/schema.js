@@ -156,6 +156,13 @@ export function initDb(dbPath) {
   // membership alone grants no baseline access to this project — only explicit
   // project_members rows do. Irrelevant for org_id-less (personal) projects.
   if (!existingCols.has('restricted'))        db.exec('ALTER TABLE api_keys ADD COLUMN restricted INTEGER NOT NULL DEFAULT 0');
+  // Ceiling on the project-level access an ordinary org member (baseline, not
+  // an org owner/admin — see getEffectiveProjectAccessLevel's unconditional
+  // override) gets on a team-visible (non-restricted) project: 'viewer' or
+  // 'editor', never 'admin' (plan_project_roles.md, decided 2026-07-26).
+  // Only meaningful when restricted = 0; irrelevant for private/org_id-less projects.
+  if (!existingCols.has('org_baseline_role'))
+    db.exec("ALTER TABLE api_keys ADD COLUMN org_baseline_role TEXT NOT NULL DEFAULT 'viewer'");
   // RTMP/relay extension columns (used by lcyt-rtmp plugin; kept here so createKey always works)
   if (!existingCols.has('relay_allowed'))     db.exec('ALTER TABLE api_keys ADD COLUMN relay_allowed INTEGER NOT NULL DEFAULT 0');
   if (!existingCols.has('relay_active'))      db.exec('ALTER TABLE api_keys ADD COLUMN relay_active INTEGER NOT NULL DEFAULT 0');
@@ -591,7 +598,7 @@ export function initDb(dbPath) {
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       api_key      TEXT    NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
       user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      access_level TEXT    NOT NULL DEFAULT 'member',
+      access_level TEXT    NOT NULL DEFAULT 'editor',
       invited_by   INTEGER REFERENCES users(id),
       joined_at    TEXT    NOT NULL DEFAULT (datetime('now')),
       UNIQUE (api_key, user_id)
@@ -599,6 +606,13 @@ export function initDb(dbPath) {
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_project_members_user ON project_members(user_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_project_members_key  ON project_members(api_key)');
+  // One-time vocabulary migration (plan_project_roles.md, decided 2026-07-26):
+  // project_members.access_level gains 'editor'/'operator'/'viewer' alongside
+  // the existing 'owner'/'admin'; every pre-existing explicit 'member' row
+  // becomes 'editor'. Idempotent — a no-op once no 'member' rows remain, so
+  // it's safe to run unconditionally on every startup rather than gating it
+  // behind a migration-version marker.
+  db.exec("UPDATE project_members SET access_level = 'editor' WHERE access_level = 'member'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_member_permissions (

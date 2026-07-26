@@ -1,7 +1,12 @@
 /**
  * getEffectiveProjectAccessLevel() — org-baseline-plus-project-override
- * resolver (plan_team_org_backend.md). Combines explicit project_members
- * roles with an org-membership baseline of 'member'.
+ * resolver. Combines explicit project_members roles (owner/admin/editor/
+ * operator/viewer) with an org-membership baseline: an org owner/admin
+ * resolves unconditionally to project 'admin' on a team-visible project;
+ * any other org role resolves to the project's configurable ceiling
+ * (api_keys.org_baseline_role, 'viewer' or 'editor', default 'viewer').
+ * (plan_project_roles.md, decided 2026-07-26 — supersedes the old flat
+ * 'member' baseline from plan_team_org_backend.md.)
  */
 import { before, after, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert';
@@ -38,43 +43,83 @@ beforeEach(() => {
 });
 
 describe('getEffectiveProjectAccessLevel', () => {
-  it('grants org baseline "member" when the user has org membership but no explicit project row', () => {
+  it('grants the default ceiling ("viewer") for an ordinary org member with no explicit project row', () => {
     const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
     createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'operator', invitedBy: owner.id });
     const key = createKey(db, { key: 'proj-1', owner: 'proj-1', user_id: owner.id, org_id: org.id });
 
     const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
-    assert.strictEqual(level, 'member');
+    assert.strictEqual(level, 'viewer');
+  });
+
+  it('grants the "editor" ceiling when the project raises it', () => {
+    const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
+    createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'editor', invitedBy: owner.id });
+    const key = createKey(db, { key: 'proj-1b', owner: 'proj-1b', user_id: owner.id, org_id: org.id });
+    db.prepare("UPDATE api_keys SET org_baseline_role = 'editor' WHERE key = ?").run(key.key);
+
+    const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
+    assert.strictEqual(level, 'editor');
+  });
+
+  it('gives an org owner project "admin" unconditionally, ignoring the ceiling', () => {
+    const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
+    const key = createKey(db, { key: 'proj-1c', owner: 'proj-1c', user_id: stranger.id, org_id: org.id });
+    // Ceiling stays at the default 'viewer' — the org owner must still get 'admin'.
+
+    const level = getEffectiveProjectAccessLevel(db, key.key, owner.id);
+    assert.strictEqual(level, 'admin');
+  });
+
+  it('gives an org admin project "admin" unconditionally, ignoring the ceiling', () => {
+    const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
+    createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'admin', invitedBy: owner.id });
+    const key = createKey(db, { key: 'proj-1d', owner: 'proj-1d', user_id: owner.id, org_id: org.id });
+
+    const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
+    assert.strictEqual(level, 'admin');
+  });
+
+  it('never gives an ordinary org member project "admin" via the ceiling, even if misconfigured', () => {
+    const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
+    createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'viewer', invitedBy: owner.id });
+    const key = createKey(db, { key: 'proj-1e', owner: 'proj-1e', user_id: owner.id, org_id: org.id });
+    // Column has no DB-level CHECK constraint; simulate a bad value and confirm the
+    // resolver still won't treat it as 'editor' (falls back to 'viewer').
+    db.prepare("UPDATE api_keys SET org_baseline_role = 'admin' WHERE key = ?").run(key.key);
+
+    const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
+    assert.strictEqual(level, 'viewer');
   });
 
   it('lets an explicit role win when it is higher than the org baseline', () => {
     const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
     createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'viewer', invitedBy: owner.id });
     const key = createKey(db, { key: 'proj-2', owner: 'proj-2', user_id: owner.id, org_id: org.id });
-    addMember(db, key.key, member.id, 'admin', owner.id);
+    addMember(db, key.key, member.id, 'operator', owner.id);
+
+    const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
+    assert.strictEqual(level, 'operator');
+  });
+
+  it('lets the org-admin override win over a lower explicit project role', () => {
+    const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
+    createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'admin', invitedBy: owner.id });
+    const key = createKey(db, { key: 'proj-3', owner: 'proj-3', user_id: owner.id, org_id: org.id });
+    addMember(db, key.key, member.id, 'editor', owner.id);
 
     const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
     assert.strictEqual(level, 'admin');
   });
 
-  it('does not escalate when the explicit role equals the org baseline (member + member = member)', () => {
-    const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
-    createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'admin', invitedBy: owner.id });
-    const key = createKey(db, { key: 'proj-3', owner: 'proj-3', user_id: owner.id, org_id: org.id });
-    addMember(db, key.key, member.id, 'member', owner.id);
-
-    const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
-    assert.strictEqual(level, 'member');
-  });
-
-  it('gives zero org-baseline contribution when the project is restricted, even with real org membership', () => {
+  it('gives zero org-baseline contribution when the project is restricted, even for an org admin', () => {
     const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
     createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'admin', invitedBy: owner.id });
     const key = createKey(db, { key: 'proj-4', owner: 'proj-4', user_id: owner.id, org_id: org.id });
     db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(key.key);
 
     const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
-    assert.strictEqual(level, null, 'org membership must not grant access to a restricted project');
+    assert.strictEqual(level, null, 'org membership must not grant access to a restricted project, admin override included');
   });
 
   it('still lets an explicit project_members row grant access on a restricted project', () => {
@@ -82,10 +127,10 @@ describe('getEffectiveProjectAccessLevel', () => {
     createOrganizationMember(db, { orgId: org.id, userId: member.id, role: 'admin', invitedBy: owner.id });
     const key = createKey(db, { key: 'proj-4b', owner: 'proj-4b', user_id: owner.id, org_id: org.id });
     db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(key.key);
-    addMember(db, key.key, member.id, 'member', owner.id);
+    addMember(db, key.key, member.id, 'editor', owner.id);
 
     const level = getEffectiveProjectAccessLevel(db, key.key, member.id);
-    assert.strictEqual(level, 'member');
+    assert.strictEqual(level, 'editor');
   });
 
   it('behaves exactly like the explicit-only lookup for a project with no org_id (regression)', () => {
@@ -96,11 +141,12 @@ describe('getEffectiveProjectAccessLevel', () => {
     assert.strictEqual(getEffectiveProjectAccessLevel(db, key.key, stranger.id), null);
   });
 
-  it('grants project baseline "member" for org membership via any of the 5 org roles', () => {
+  it('resolves each of the 5 org roles to the correct project baseline', () => {
     // Each role gets its own org (an org can only have one 'owner' row) with a
     // project created by an unrelated third user, so the role-under-test's
     // access is purely the org baseline, never an explicit row or the
     // project-creator shortcut.
+    const expected = { owner: 'admin', admin: 'admin', editor: 'viewer', operator: 'viewer', viewer: 'viewer' };
     let n = 0;
     for (const role of ['owner', 'admin', 'editor', 'operator', 'viewer']) {
       n += 1;
@@ -117,7 +163,7 @@ describe('getEffectiveProjectAccessLevel', () => {
       }
 
       const level = getEffectiveProjectAccessLevel(db, key.key, u.id);
-      assert.strictEqual(level, 'member', `org role "${role}" should still grant project baseline member`);
+      assert.strictEqual(level, expected[role], `org role "${role}" should resolve to project "${expected[role]}"`);
     }
   });
 

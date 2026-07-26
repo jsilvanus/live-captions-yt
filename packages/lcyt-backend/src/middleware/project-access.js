@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
+import { getEffectiveProjectAccessLevel, PROJECT_ROLE_ORDER } from '../db/project-members.js';
 import { verifyMcpToken, tokenHasScope } from '../db/mcp-tokens.js';
 import { isDeviceRoleActive } from '../db/device-roles.js';
 
@@ -36,7 +36,7 @@ function resolveProjectId(req) {
 
 function normalizeProjectRole(projectRole) {
   const validRoles = new Set(['owner', 'admin', 'editor', 'operator', 'viewer']);
-  return validRoles.has(projectRole) ? projectRole : 'member';
+  return validRoles.has(projectRole) ? projectRole : 'viewer';
 }
 
 function attachProjectContext(req, authInfo) {
@@ -44,7 +44,11 @@ function attachProjectContext(req, authInfo) {
   req.auth = authInfo;
   req.project = {
     projectId: authInfo.projectId,
-    projectRole: authInfo.projectRole || authInfo.deviceRole || 'member',
+    // Informational only — session/external/device token kinds don't carry a
+    // real per-user project role, so this label is display-only. Anything
+    // that needs to actually *gate* a write must call requireProjectRole()
+    // (middleware/project-access.js), which recomputes from userId, not this.
+    projectRole: authInfo.projectRole || authInfo.deviceRole || 'viewer',
     activeBroadcastId: authInfo.activeBroadcastId ?? null,
   };
   req.session = req.session || {};
@@ -188,5 +192,73 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
     } catch {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
+  };
+}
+
+/**
+ * Page-scoped write-access tiers (plan_project_roles.md, decided 2026-07-26).
+ * Each tier's minimum required effective project role, per PROJECT_ROLE_ORDER:
+ *   - 'setup'      — admin+. Only explicit project_members owner/admin, or an
+ *                    org owner/admin's unconditional override (both surface as
+ *                    'admin'/'owner' from getEffectiveProjectAccessLevel() —
+ *                    the org-baseline viewer/editor *ceiling* never reaches
+ *                    'admin', so this tier can never be satisfied by an
+ *                    ordinary org member, only by the two paths above).
+ *   - 'assets'     — editor+.
+ *   - 'production' — operator+.
+ * Generalizes the 2026-07-20 interim fix's requireExplicitAdmin() pattern
+ * (routes/mcp-tokens.js), which predates this tier system and checked
+ * explicit owner/admin only via getMemberAccessLevel() (no org-admin
+ * override) — that route is migrated to requireProjectRole('setup') as part
+ * of this generalization.
+ */
+export const PROJECT_TIER_MIN_LEVEL = { setup: 'admin', assets: 'editor', production: 'operator' };
+
+/**
+ * Non-Express helper: does this user meet the given tier's minimum role on
+ * this project? Recomputes from (apiKey, userId) via getEffectiveProjectAccessLevel()
+ * rather than trusting any role value already attached to req — session/
+ * external/device token kinds don't carry a real per-user resolved role (see
+ * attachProjectContext's projectRole comment above), so only a fresh,
+ * userId-keyed lookup is safe to gate a write on. Returns false (fail closed)
+ * for any tier that isn't a real project_members-backed identity — session
+ * tokens, external MCP tokens, and device tokens all resolve false here,
+ * exactly like the interim fix's requireExplicitAdmin() did.
+ * @param {import('better-sqlite3').Database} db
+ * @param {'setup'|'assets'|'production'} tier
+ * @param {string} apiKey
+ * @param {number|null|undefined} userId
+ * @returns {boolean}
+ */
+export function hasProjectRole(db, tier, apiKey, userId) {
+  const minLevel = PROJECT_TIER_MIN_LEVEL[tier];
+  if (!minLevel || !apiKey || !userId) return false;
+  const level = getEffectiveProjectAccessLevel(db, apiKey, userId);
+  if (!level) return false;
+  return PROJECT_ROLE_ORDER[level] >= PROJECT_ROLE_ORDER[minLevel];
+}
+
+/**
+ * Express middleware factory gating a route (or router) at one of the three
+ * page-scoped tiers above. Mount after the broad scopedAuth()/
+ * createProjectAccessMiddleware() gate — this is a *narrower* check on top of
+ * it, not a replacement (a request that fails this still needs to have
+ * passed the broader project-access gate first to reach here at all).
+ * @param {import('better-sqlite3').Database} db
+ * @param {'setup'|'assets'|'production'} tier
+ * @returns {import('express').RequestHandler}
+ */
+export function requireProjectRole(db, tier) {
+  const minLevel = PROJECT_TIER_MIN_LEVEL[tier];
+  return (req, res, next) => {
+    const apiKey = req.auth?.projectId || req.project?.projectId || resolveProjectId(req);
+    // No resolvable project id is the route handler's own 400 to raise, not
+    // this gate's 403 — let it through unchanged (matches requireExplicitAdmin).
+    if (!apiKey) return next();
+    const userId = req.user?.userId;
+    if (!hasProjectRole(db, tier, apiKey, userId)) {
+      return res.status(403).json({ error: `Explicit project ${minLevel}${minLevel === 'admin' ? '/owner' : '+'} access required` });
+    }
+    next();
   };
 }

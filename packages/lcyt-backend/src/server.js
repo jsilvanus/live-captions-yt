@@ -8,7 +8,6 @@ import {
   completeBroadcast, onKeyDeleted,
 } from './db.js';
 import { SessionStore } from './store.js';
-import { getMemberAccessLevel } from './db/project-members.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import { createAuthMiddleware } from './middleware/auth.js';
 import { createSessionRouters } from './routes/session.js';
@@ -92,7 +91,7 @@ import {
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter } from 'lcyt-actions';
 import { createAdminMiddleware } from './middleware/admin.js';
-import { createProjectAccessMiddleware } from './middleware/project-access.js';
+import { createProjectAccessMiddleware, hasProjectRole } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
 import { createPerceptionAggregator } from './perception-aggregator.js';
@@ -663,10 +662,12 @@ app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'm
 app.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
 app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
   bridgeManager: productionBridgeManager,
-  isExplicitProjectAdmin: (apiKey, userId) => {
-    const level = getMemberAccessLevel(db, apiKey, userId);
-    return level === 'owner' || level === 'admin';
-  },
+  // 'setup' tier: explicit project owner/admin, or an org owner/admin's
+  // unconditional override on a team-visible project (plan_project_roles.md,
+  // decided 2026-07-26) — broadened from the 2026-07-20 interim fix's
+  // explicit-only check now that the override exists.
+  isExplicitProjectAdmin: (apiKey, userId) => hasProjectRole(db, 'setup', apiKey, userId),
+  checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
 }));
 app.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
 app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));

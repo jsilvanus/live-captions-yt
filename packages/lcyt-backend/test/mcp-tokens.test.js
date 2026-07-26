@@ -205,7 +205,7 @@ describe('POST/PATCH/DELETE /mcp-tokens require explicit owner/admin access', ()
     noAccessToken = jwt.sign({ type: 'user', userId: 999, email: 'nobody@example.com' }, JWT_SECRET, { expiresIn: '1h' });
     explicitMemberToken = jwt.sign({ type: 'user', userId: 998, email: 'member@example.com' }, JWT_SECRET, { expiresIn: '1h' });
     db.prepare("INSERT INTO users (id, email, password_hash) VALUES (998, 'member@example.com', 'x')").run();
-    addMember(db, apiKey, 998, 'member');
+    addMember(db, apiKey, 998, 'editor');
   });
 
   function headersFor(token) {
@@ -219,7 +219,7 @@ describe('POST/PATCH/DELETE /mcp-tokens require explicit owner/admin access', ()
     assert.equal(res.status, 403);
   });
 
-  it('POST 403s for an explicit member (not owner/admin)', async () => {
+  it('POST 403s for an explicit editor (not owner/admin)', async () => {
     const res = await fetch(`${baseUrl}/mcp-tokens`, {
       method: 'POST', headers: headersFor(explicitMemberToken), body: JSON.stringify({ label: 'Should fail' }),
     });
