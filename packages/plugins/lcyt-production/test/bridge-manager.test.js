@@ -10,7 +10,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { runMigrations } from '../src/db.js';
+import { runMigrations, createBridgeSecurityRule } from '../src/db.js';
 import { BridgeManager } from '../src/bridge-manager.js';
 
 // ---------------------------------------------------------------------------
@@ -261,6 +261,108 @@ describe('BridgeManager.sendCommand', () => {
 
     mgr.receiveStatus(id, { requestId: cmdData.requestId, ok: true });
     await commandPromise;
+    mgr.disconnect(id);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendCommand — security enforcement (bridge-security.js)
+// ---------------------------------------------------------------------------
+
+describe('BridgeManager.sendCommand — security enforcement', () => {
+  it('rejects a tcp_send blocked by a deny IP rule without writing to the SSE stream', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '10.0.0.1' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'tcp_send', host: '10.0.0.1', port: 9000, payload: 'hello' }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null, 'no command event was ever written to the SSE stream');
+    mgr.disconnect(id);
+  });
+
+  it('rejects a tcp_send blocked by a deny command rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'command', ruleType: 'deny', pattern: '^FACTORY-RESET$' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'tcp_send', host: '10.0.0.1', port: 9000, payload: 'FACTORY-RESET' }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null);
+    mgr.disconnect(id);
+  });
+
+  it('allows a tcp_send that matches neither an IP nor a command deny rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '10.0.0.99' });
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'command', ruleType: 'deny', pattern: '^FACTORY-RESET$' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    const promise = mgr.sendCommand(id, { type: 'tcp_send', host: '10.0.0.1', port: 9000, payload: 'PRESET-1' });
+    const cmdData = extractCommandData(res.chunks);
+    assert.ok(cmdData, 'command was written to the SSE stream');
+    mgr.receiveStatus(id, { requestId: cmdData.requestId, ok: true });
+    await promise;
+    mgr.disconnect(id);
+  });
+
+  it('an allow-list with no match blocks even a command with no deny rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'command', ruleType: 'allow', pattern: '^PRESET-[0-9]+$' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'tcp_send', host: '10.0.0.1', port: 9000, payload: 'POWER OFF' }),
+      /Blocked by bridge security policy/,
+    );
+    mgr.disconnect(id);
+  });
+
+  it('rejects an atem_switch blocked by a deny IP rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '192.168.1.100' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'atem_switch', host: '192.168.1.100', meIndex: 0, inputNumber: 3 }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null);
+    mgr.disconnect(id);
+  });
+
+  it('rejects an http_request whose URL host is blocked by a deny IP rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '192.168.1.50:80' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'http_request', method: 'GET', url: 'http://192.168.1.50/Monarch/sdk/status' }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null);
     mgr.disconnect(id);
   });
 });

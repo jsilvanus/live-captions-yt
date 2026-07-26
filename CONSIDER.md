@@ -1019,3 +1019,17 @@ pass:
 **Recommendation:** Log both in a future pass specifically scoped to S3/storage configuration and cue-engine behavior — they're real, confirmed, non-speculative gaps, just not part of the current phase's already-tight scope (app URL, retention, STT/metrics/AI defaults).
 
 (Found during: settings migration Phase 5 completion audit, 2026-07-21.)
+
+---
+
+## Bridge security IP-allow/deny checks apply the same rule shape to http_request/model_call as to tcp_send, despite being a coarser fit
+
+**Where:** `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_checkSecurity()`/`_resolveIpTarget()`, `packages/lcyt-bridge/src/bridge.js`'s equivalent local check, `packages/plugins/lcyt-production/src/bridge-security.js`
+
+**Finding:** The new per-bridge `bridge_security_rules` `ip` rule kind (host/CIDR/wildcard pattern, optional `:port`) is evaluated identically for all five bridge command types: `tcp_send`/`atem_switch`/`obs_switch` (a real raw socket target) and `http_request`/`model_call` (an arbitrary HTTP(S) URL, parsed down to just its hostname:port for the check). This reuses one evaluator (`checkIpAllowed()`) and one rule table for both cases, which is simple and consistent, but a URL target has properties a raw TCP target doesn't — path, query string, scheme — that an operator might reasonably want to restrict (e.g. "only allow `/Monarch/sdk/*` paths") and that this rule shape can't express. It also doesn't do the DNS-resolution-based SSRF hardening `lcyt-connectors`' `network-guard.js` does for connector URLs (deliberately, per `bridge-security.js`'s doc comment — bridge targets are treated as LAN IPs/hostnames configured directly on the device, not arbitrary user-supplied URLs), which is a reasonable default for this feature's threat model but means an `http_request`/`model_call` command through a bridge doesn't get the same protection a connector's outbound fetch does.
+
+**Why skipped:** Building a second, URL-aware rule kind (path/query matching, and/or reusing `network-guard.js`'s DNS-resolving `checkUrlAllowed()`) is real additional scope beyond what this pass's plan called for (TCP command allow/deny + target IP allow/deny, the two things explicitly asked for) and would mean either importing `lcyt-connectors` into `lcyt-production` (a new cross-plugin dependency this repo's convention avoids — see `mediamtx-client.js`'s "copied to avoid a cross-plugin dependency" precedent) or duplicating `network-guard.js`'s DNS-resolution logic a second time. The current host:port-only check still closes the real gap (an unauthenticated/compromised caller directing a bridge to hit an arbitrary internal HTTP endpoint), just without path-level granularity or DNS-rebinding protection.
+
+**Recommendation:** If the bridge's `http_request`/`model_call` surface grows (more encoder types, more third-party APIs relayed through a bridge), revisit with either a `path` pattern field on `ip`-kind rules or a dedicated `url`-kind rule that wraps `network-guard.js`'s evaluator.
+
+(Found during: `plan`-driven bridge TCP command / IP security layer implementation, 2026-07-26.)

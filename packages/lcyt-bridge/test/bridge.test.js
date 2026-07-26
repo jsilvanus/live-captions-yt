@@ -22,6 +22,20 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { Bridge } from '../src/bridge.js';
 
+/**
+ * Bridge now fails closed on tcp_send/atem_switch/obs_switch/http_request/
+ * model_call until its SecurityPolicy has loaded at least once (see
+ * security-policy.test.js for that guard's own behavior). These dispatch
+ * tests care about TcpPool/fetch/etc. wiring, not the security layer, so
+ * prime an empty (default-allow) policy up front — same as a bridge that
+ * successfully fetched a bridge with no configured rules.
+ */
+function makeBridge(opts = {}) {
+  const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', ...opts });
+  bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
+  return bridge;
+}
+
 // ---------------------------------------------------------------------------
 // Mock EventSource
 //
@@ -98,8 +112,17 @@ function injectFakeEventSource(bridge) {
       this.emit('connected');
     };
 
-    fakeEs.addEventListener('connected', () => {
+    fakeEs.addEventListener('connected', (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data?.instanceId) this._instanceId = data.instanceId;
+      } catch { /* ignore */ }
       this.emit('connected');
+      this._fetchSecurityPolicy();
+    });
+
+    fakeEs.addEventListener('rules_updated', () => {
+      this._fetchSecurityPolicy();
     });
 
     fakeEs.addEventListener('command', (evt) => {
@@ -160,7 +183,7 @@ function mockFetch(bridge) {
 
 describe('Bridge — constructor and status()', () => {
   it('initialises with sse: false and no TCP entries', () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const s = bridge.status();
     assert.equal(s.sse, false);
     assert.deepEqual(s.tcp, []);
@@ -180,12 +203,12 @@ describe('Bridge — constructor and status()', () => {
 
 describe('Bridge — destroy()', () => {
   it('is safe to call before start()', () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     assert.doesNotThrow(() => bridge.destroy());
   });
 
   it('sets _destroyed = true so subsequent _connect() calls are no-ops', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     injectFakeEventSource(bridge);
     bridge.destroy();
     // _connect should return immediately without setting _es
@@ -194,7 +217,7 @@ describe('Bridge — destroy()', () => {
   });
 
   it('clears a pending reconnect timer', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     injectFakeEventSource(bridge);
     bridge.start();
     await new Promise(r => setImmediate(r));
@@ -216,7 +239,7 @@ describe('Bridge — destroy()', () => {
 
 describe('Bridge — SSE connection', () => {
   it('emits "connected" when the SSE stream opens', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const getEs = injectFakeEventSource(bridge);
     mockFetch(bridge);
 
@@ -230,7 +253,7 @@ describe('Bridge — SSE connection', () => {
   });
 
   it('emits "disconnected" and schedules reconnect on SSE error', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._reconnectDelay = 60_000; // prevent actual reconnect
     const getEs = injectFakeEventSource(bridge);
     mockFetch(bridge);
@@ -246,7 +269,7 @@ describe('Bridge — SSE connection', () => {
   });
 
   it('resets reconnect delay to initial value on successful reconnect', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const getEs = injectFakeEventSource(bridge);
     mockFetch(bridge);
 
@@ -269,7 +292,7 @@ describe('Bridge — SSE connection', () => {
 
 describe('Bridge — _handleCommand() tcp_send', () => {
   it('calls TcpPool.send() with correct host/port/payload', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
     const statusCalls = mockFetch(bridge);
 
@@ -291,7 +314,7 @@ describe('Bridge — _handleCommand() tcp_send', () => {
   });
 
   it('posts { ok: true } status after a successful tcp_send', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
     const statusCalls = mockFetch(bridge);
 
@@ -308,7 +331,7 @@ describe('Bridge — _handleCommand() tcp_send', () => {
   });
 
   it('emits "command:ok" after a successful tcp_send', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
     mockFetch(bridge);
 
@@ -330,7 +353,7 @@ describe('Bridge — _handleCommand() tcp_send', () => {
 
   it('posts { ok: false, error } when TcpPool.send() rejects', async () => {
     const sendErr = new Error('TCP write failed');
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool({ sendError: sendErr });
     const statusCalls = mockFetch(bridge);
 
@@ -350,7 +373,7 @@ describe('Bridge — _handleCommand() tcp_send', () => {
   });
 
   it('emits "command:error" when TcpPool.send() rejects', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool({ sendError: new Error('oops') });
     mockFetch(bridge);
 
@@ -380,7 +403,7 @@ describe('Bridge — _handleCommand() model_call', () => {
   afterEach(() => { global.fetch = origFetch; });
 
   it('POSTs to the endpoint and reports the parsed body via _postStatus', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
     const fetchCalls = [];
@@ -418,7 +441,7 @@ describe('Bridge — _handleCommand() model_call', () => {
   });
 
   it('fetches sourceUrl itself and attaches base64 images; json mode sets format', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
     const imageBytes = Buffer.from('fake-jpeg-bytes');
@@ -453,7 +476,7 @@ describe('Bridge — _handleCommand() model_call', () => {
   });
 
   it('reports { ok: false } when the source fetch fails', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
     global.fetch = async () => ({ ok: false, status: 404 });
 
@@ -476,7 +499,7 @@ describe('Bridge — _handleCommand() model_call', () => {
   });
 
   it('reports { ok: false } when endpoint is missing', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
     await bridge._handleCommand(JSON.stringify({
@@ -498,7 +521,7 @@ describe('Bridge — _handleCommand() model_call', () => {
 
 describe('Bridge — _handleCommand() invalid input', () => {
   it('emits "error" for non-JSON data', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
     mockFetch(bridge);
 
@@ -510,7 +533,7 @@ describe('Bridge — _handleCommand() invalid input', () => {
   });
 
   it('emits "error" for unknown command type', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
     mockFetch(bridge);
 
@@ -528,7 +551,7 @@ describe('Bridge — _handleCommand() invalid input', () => {
 
 describe('Bridge — _postStatus() network failure', () => {
   it('emits "error" when fetch throws (does not propagate exception)', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
 
     // Override fetch to throw
     const origFetch = global.fetch;
@@ -551,7 +574,7 @@ describe('Bridge — _postStatus() network failure', () => {
 
 describe('Bridge — startHeartbeat()', () => {
   it('calls _postStatus at each interval', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const calls = mockFetch(bridge);
 
     const timer = bridge.startHeartbeat(20);
@@ -564,7 +587,7 @@ describe('Bridge — startHeartbeat()', () => {
   });
 
   it('stops heartbeats after bridge.destroy()', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const calls = mockFetch(bridge);
 
     bridge.startHeartbeat(20);
@@ -584,7 +607,7 @@ describe('Bridge — startHeartbeat()', () => {
 
 describe('Bridge — TCP pool event forwarding', () => {
   it('forwards TcpPool "connected" as "tcp:connected"', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
 
     const tcpConnected = new Promise(r => bridge.once('tcp:connected', r));
     bridge._tcpPool.emit('connected', 'host:1234');
@@ -595,7 +618,7 @@ describe('Bridge — TCP pool event forwarding', () => {
   });
 
   it('forwards TcpPool "disconnected" as "tcp:disconnected"', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
 
     const tcpDisconnected = new Promise(r => bridge.once('tcp:disconnected', r));
     bridge._tcpPool.emit('disconnected', 'host:5678');
@@ -606,7 +629,7 @@ describe('Bridge — TCP pool event forwarding', () => {
   });
 
   it('forwards TcpPool "error" as "tcp:error" with key and error', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
 
     const tcpError = new Promise(r => bridge.once('tcp:error', (k, e) => r({ k, e })));
     const err = new Error('conn refused');
@@ -625,7 +648,7 @@ describe('Bridge — TCP pool event forwarding', () => {
 
 describe('Bridge — reconnectAll()', () => {
   it('closes the existing SSE connection and calls tcpPool.reconnectAll()', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     let tcpReconnectCalled = false;
     bridge._tcpPool.reconnectAll = () => { tcpReconnectCalled = true; };
 
@@ -651,7 +674,7 @@ describe('Bridge — reconnectAll()', () => {
 
 describe('Bridge — _handleCommand() http_request', () => {
   it('makes a GET request and posts { ok: true, status } on success', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
     // Stub _httpRequest directly
@@ -674,7 +697,7 @@ describe('Bridge — _handleCommand() http_request', () => {
   });
 
   it('posts { ok: false } when the HTTP request throws', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
     bridge._httpRequest = async () => {
@@ -698,7 +721,7 @@ describe('Bridge — _handleCommand() http_request', () => {
   });
 
   it('emits "command:ok" after a successful http_request', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     mockFetch(bridge);
 
     bridge._httpRequest = async () => ({ status: 200, body: {} });
@@ -719,7 +742,7 @@ describe('Bridge — _handleCommand() http_request', () => {
   });
 
   it('emits "command:error" when http_request fails', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     mockFetch(bridge);
 
     bridge._httpRequest = async () => { throw new Error('timeout'); };
@@ -740,7 +763,7 @@ describe('Bridge — _handleCommand() http_request', () => {
   });
 
   it('_httpRequest serialises object body as JSON', async () => {
-    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const bridge = makeBridge();
     bridge.destroy(); // not starting SSE
 
     const fetchCalls = [];
@@ -768,5 +791,201 @@ describe('Bridge — _handleCommand() http_request', () => {
     assert.equal(fetchCalls[0].body, JSON.stringify({ foo: 'bar' }));
     assert.equal(fetchCalls[0].headers['Content-Type'], 'application/json');
     assert.equal(fetchCalls[0].headers['Authorization'], 'Basic dXNlcjpwYXNz');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Local security enforcement (defense in depth) — see security-policy.test.js
+// for SecurityPolicy's own unit tests; these confirm Bridge._handleCommand()
+// consults it and never touches the network on a block.
+// ---------------------------------------------------------------------------
+
+describe('Bridge — local security enforcement', () => {
+  it('blocks a tcp_send matching a local deny IP rule without calling TcpPool', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-blocked', host: '10.0.0.1', port: 9000, payload: 'PRESET 1',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0, 'TcpPool.send() was never called');
+    const call = statusCalls.find(c => c.requestId === 'req-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local bridge security policy/);
+    bridge.destroy();
+  });
+
+  it('blocks a tcp_send matching a local deny command rule without calling TcpPool', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [{ ruleType: 'deny', pattern: '^FACTORY-RESET$' }] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-blocked', host: '10.0.0.1', port: 9000, payload: 'FACTORY-RESET',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0);
+    const call = statusCalls.find(c => c.requestId === 'req-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local bridge security policy/);
+    bridge.destroy();
+  });
+
+  it('allows a tcp_send that matches no local deny rule', async () => {
+    const bridge = makeBridge(); // primes an empty (default-allow) policy
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-ok', host: '10.0.0.1', port: 9000, payload: 'PRESET 1',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 1);
+    assert.ok(statusCalls.some(c => c.requestId === 'req-ok' && c.ok === true));
+    bridge.destroy();
+  });
+
+  it('fails closed on a fresh bridge whose security policy has never loaded', async () => {
+    // Deliberately no makeBridge() priming and no _connect()/'connected' event
+    // — this is the state a just-started bridge is in before its first
+    // successful GET .../security-rules/for-agent fetch resolves.
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-early', host: '10.0.0.1', port: 9000, payload: 'PRESET 1',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0, 'no unguarded startup window');
+    const call = statusCalls.find(c => c.requestId === 'req-early');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /not yet loaded/);
+    bridge.destroy();
+  });
+
+  it('blocks an http_request whose URL host matches a local deny IP rule without calling _httpRequest', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '192.168.1.50' }], commandRules: [] });
+    const statusCalls = mockFetch(bridge);
+    let httpRequestCalled = false;
+    bridge._httpRequest = async () => { httpRequestCalled = true; return { status: 200, body: {} }; };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'http_request', requestId: 'req-http-blocked', method: 'GET', url: 'http://192.168.1.50/Monarch/sdk/status',
+    }));
+
+    assert.equal(httpRequestCalled, false);
+    const call = statusCalls.find(c => c.requestId === 'req-http-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local bridge security policy/);
+    bridge.destroy();
+  });
+
+  it('an unrecognised (non-secured) command type is unaffected by the security policy', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    // No policy loaded at all — an unknown type should still just report
+    // "Unknown command type", not a security block.
+    const errEvent = new Promise(r => bridge.once('error', r));
+    await bridge._handleCommand(JSON.stringify({ type: 'not_a_real_type', requestId: 'x' }));
+    const err = await errEvent;
+    assert.match(err.message, /Unknown command type/);
+    bridge.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// _fetchSecurityPolicy() — connected/rules_updated SSE wiring
+// ---------------------------------------------------------------------------
+
+describe('Bridge — security policy fetch wiring', () => {
+  const origFetch = global.fetch;
+  afterEach(() => { global.fetch = origFetch; });
+
+  it('the "connected" event captures instanceId and fetches the policy from the right URL', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok-abc' });
+    const getEs = injectFakeEventSource(bridge);
+
+    const fetchCalls = [];
+    global.fetch = async (url) => {
+      fetchCalls.push(url);
+      return { ok: true, json: async () => ({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] }) };
+    };
+
+    bridge.start();
+    await new Promise(r => setImmediate(r));
+    getEs().simulateEvent('connected', { instanceId: 'bridge-xyz' });
+    await new Promise(r => setImmediate(r));
+
+    assert.equal(bridge._instanceId, 'bridge-xyz');
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(
+      fetchCalls[0],
+      'http://backend.test/production/bridge/instances/bridge-xyz/security-rules/for-agent?token=tok-abc',
+    );
+    assert.equal(bridge._securityPolicy.isLoaded(), true);
+    assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
+    bridge.destroy();
+  });
+
+  it('a "rules_updated" event triggers a refetch that replaces the cached policy', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const getEs = injectFakeEventSource(bridge);
+
+    let responseBody = { ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] };
+    global.fetch = async () => ({ ok: true, json: async () => responseBody });
+
+    bridge.start();
+    await new Promise(r => setImmediate(r));
+    getEs().simulateEvent('connected', { instanceId: 'bridge-1' });
+    await new Promise(r => setImmediate(r));
+    assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
+
+    responseBody = { ipRules: [], commandRules: [] }; // rule removed server-side
+    getEs().simulateEvent('rules_updated', {});
+    await new Promise(r => setImmediate(r));
+
+    assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, true, 'refetch replaced the stale rule set');
+    bridge.destroy();
+  });
+
+  it('a failed refetch keeps using the last known-good policy and emits "error"', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const getEs = injectFakeEventSource(bridge);
+
+    let shouldFail = false;
+    global.fetch = async () => {
+      if (shouldFail) throw new Error('network down');
+      return { ok: true, json: async () => ({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] }) };
+    };
+
+    bridge.start();
+    await new Promise(r => setImmediate(r));
+    getEs().simulateEvent('connected', { instanceId: 'bridge-1' });
+    await new Promise(r => setImmediate(r));
+    assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
+
+    shouldFail = true;
+    const errEvent = new Promise(r => bridge.once('error', r));
+    getEs().simulateEvent('rules_updated', {});
+    const err = await errEvent;
+
+    assert.match(err.message, /Security policy fetch failed/);
+    assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false, 'stale policy from before the failed refetch is still enforced');
+    bridge.destroy();
+  });
+
+  it('does not fetch before an instanceId has been captured', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    let fetchCalled = false;
+    global.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
+
+    await bridge._fetchSecurityPolicy();
+    assert.equal(fetchCalled, false);
+    bridge.destroy();
   });
 });

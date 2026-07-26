@@ -26,8 +26,21 @@ export function parseEncoder(row) {
   };
 }
 
-export function createEncodersRouter(db, bridgeManager = null) {
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {import('../bridge-manager.js').BridgeManager|null} [bridgeManager]
+ * @param {object} [opts]
+ * @param {import('express').RequestHandler} [opts.auth]  Session/user/device
+ *   auth middleware (createProjectAccessMiddleware), applied to every route
+ *   in this router — there is no bridge-agent-facing endpoint here to carve
+ *   out (contrast routes/bridge.js). Omit to keep this router's historical
+ *   fully-open behavior (e.g. existing route-level tests).
+ */
+export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
+  const auth = opts.auth ?? null;
   const router = Router();
+
+  if (auth) router.use(auth);
 
   // GET /production/encoders — list all encoders
   router.get('/', (_req, res) => {

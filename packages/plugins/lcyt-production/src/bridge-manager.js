@@ -11,6 +11,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { checkIpAllowed, checkCommandAllowed } from './bridge-security.js';
 
 const COMMAND_TIMEOUT_MS = 10_000;
 // Local inference on modest hardware can legitimately take 30–120s — a 10s
@@ -132,6 +133,11 @@ export class BridgeManager {
       return Promise.reject(new Error(`Bridge ${instanceId} is not connected`));
     }
 
+    const blockReason = this._checkSecurity(instanceId, command.type ?? 'tcp_send', command);
+    if (blockReason) {
+      return Promise.reject(new Error(blockReason));
+    }
+
     const requestId = randomUUID();
     const timeoutMs = opts.timeoutMs
       ?? (command.type === 'model_call' ? MODEL_CALL_TIMEOUT_MS : COMMAND_TIMEOUT_MS);
@@ -183,9 +189,68 @@ export class BridgeManager {
     }
   }
 
+  /**
+   * Notify a connected bridge that its security rules changed, so it
+   * refetches GET .../security-rules/for-agent promptly instead of waiting
+   * out its periodic fallback poll — useful for an operator revoking
+   * something mid-show. No-op if the bridge isn't currently connected (it
+   * will pick up the change on its next connect-time fetch regardless).
+   * @param {string} instanceId
+   */
+  broadcastRulesUpdated(instanceId) {
+    const conn = this._connections.get(instanceId);
+    if (!conn) return;
+    this._write(conn.res, 'rules_updated', {});
+  }
+
   // ---------------------------------------------------------------------------
   // Internal
   // ---------------------------------------------------------------------------
+
+  /**
+   * Enforce this bridge's IP/command security policy (bridge-security.js)
+   * before a command is ever written to the SSE stream — the authoritative
+   * check; lcyt-bridge's security-policy.js duplicates this locally as a
+   * second, defense-in-depth layer.
+   * @returns {string|null}  a block reason, or null if allowed
+   */
+  _checkSecurity(instanceId, type, command) {
+    const ipTarget = this._resolveIpTarget(type, command);
+    if (ipTarget) {
+      const { allowed, reason } = checkIpAllowed(this._db, instanceId, ipTarget.host, ipTarget.port);
+      if (!allowed) return `Blocked by bridge security policy: ${reason}`;
+    }
+    if (type === 'tcp_send') {
+      const { allowed, reason } = checkCommandAllowed(this._db, instanceId, command.payload ?? '');
+      if (!allowed) return `Blocked by bridge security policy: ${reason}`;
+    }
+    return null;
+  }
+
+  /**
+   * @returns {{ host: string, port: number|null }|null}  the target the
+   *   command would connect to, or null if this command type carries none
+   *   (or the target is missing/unparseable — that's a validation failure
+   *   the bridge itself will surface, not a security-policy concern)
+   */
+  _resolveIpTarget(type, command) {
+    if (type === 'tcp_send' || type === 'obs_switch' || type === 'atem_switch') {
+      if (!command.host) return null;
+      return { host: command.host, port: command.port != null ? Number(command.port) : null };
+    }
+    if (type === 'http_request' || type === 'model_call') {
+      const raw = type === 'http_request' ? command.url : command.endpoint;
+      if (!raw) return null;
+      try {
+        const u = new URL(raw);
+        const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+        return { host: u.hostname.replace(/^\[|\]$/g, ''), port };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
 
   _write(res, event, data) {
     try {

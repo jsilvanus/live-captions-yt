@@ -259,7 +259,7 @@ function SendCommandModal({ bridge, type, backendUrl, headers, onClose }) {
   );
 }
 
-function BridgeRow({ bridge, showName, onDelete, onRedownload, onSendTcp, onSendHttp }) {
+function BridgeRow({ bridge, showName, onDelete, onRedownload, onSendTcp, onSendHttp, onSecurity }) {
   const lastSeen = bridge.lastSeen
     ? new Date(bridge.lastSeen + 'Z').toLocaleString()
     : 'Never';
@@ -278,11 +278,208 @@ function BridgeRow({ bridge, showName, onDelete, onRedownload, onSendTcp, onSend
               <button className="btn btn--sm btn--ghost" onClick={() => onSendHttp(bridge)} title="Send an HTTP request via this bridge">HTTP</button>
             </>
           )}
+          <button className="btn btn--sm btn--ghost" onClick={() => onSecurity(bridge)} title="Allowed/denied TCP commands and target IPs for this bridge">🔒 Security</button>
           <button className="btn btn--sm btn--ghost" onClick={() => onRedownload(bridge)} title="Re-download .env">↓ .env</button>
         </>
       )}
       onDelete={() => onDelete(bridge)}
     />
+  );
+}
+
+/** One allow/deny rule list (either 'ip' or 'command' kind) with an inline add-row form. */
+function SecurityRuleList({ title, description, kind, patternPlaceholder, rules, backendUrl, headers, bridgeId, onChanged }) {
+  const [ruleType, setRuleType] = useState('deny');
+  const [pattern, setPattern] = useState('');
+  const [desc, setDesc] = useState('');
+  const [error, setError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const allowCount = rules.filter(r => r.ruleType === 'allow').length;
+
+  async function addRule() {
+    setError(null);
+    const trimmed = pattern.trim();
+    if (!trimmed) { setError('Pattern is required'); return; }
+    if (kind === 'command') {
+      try { new RegExp(trimmed); } catch { setError('Not a valid regular expression'); return; }
+    }
+    setSaving(true);
+    try {
+      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridgeId}/security-rules`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ ruleKind: kind, ruleType, pattern: trimmed, description: desc.trim() || undefined }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      setPattern('');
+      setDesc('');
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeRule(ruleId) {
+    setError(null);
+    try {
+      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridgeId}/security-rules/${ruleId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${r.status}`);
+      }
+      onChanged();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 13 }}>{title}</p>
+      <p style={{ margin: '0 0 8px', fontSize: 12, color: 'var(--color-text-muted)' }}>{description}</p>
+
+      {allowCount > 0 && (
+        <div style={{
+          fontSize: 12, padding: '6px 10px', borderRadius: 4, marginBottom: 8,
+          background: 'var(--color-warning-bg, rgba(234,179,8,0.12))', color: 'var(--color-warning, #b45309)',
+        }}>
+          Allow-list mode: {allowCount} pattern{allowCount !== 1 ? 's' : ''} permitted — everything else will be blocked.
+        </div>
+      )}
+
+      {rules.length === 0 ? (
+        <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '0 0 8px' }}>
+          No rules configured — {kind === 'ip' ? 'any target' : 'any command'} is allowed.
+        </p>
+      ) : (
+        <div style={{ marginBottom: 8 }}>
+          {rules.map(r => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, fontSize: 12 }}>
+              <span style={{
+                fontWeight: 600, padding: '1px 6px', borderRadius: 3, textTransform: 'uppercase', fontSize: 10,
+                color: r.ruleType === 'deny' ? 'var(--color-error)' : 'var(--color-success)',
+                background: r.ruleType === 'deny' ? 'var(--color-error-bg, rgba(239,68,68,0.1))' : 'var(--color-success-bg, rgba(16,185,129,0.1))',
+              }}>{r.ruleType}</span>
+              <code style={{ flex: 1, wordBreak: 'break-all' }}>{r.pattern}</code>
+              {r.description && <span style={{ color: 'var(--color-text-muted)' }}>{r.description}</span>}
+              <button type="button" className="btn btn--sm btn--ghost" onClick={() => removeRule(r.id)}>✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+        <select className="settings-field__input" style={{ width: 90 }} value={ruleType} onChange={e => setRuleType(e.target.value)}>
+          <option value="deny">Deny</option>
+          <option value="allow">Allow</option>
+        </select>
+        <input
+          className="settings-field__input"
+          style={{ flex: 2 }}
+          placeholder={patternPlaceholder}
+          value={pattern}
+          onChange={e => setPattern(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addRule()}
+        />
+        <input
+          className="settings-field__input"
+          style={{ flex: 1 }}
+          placeholder="Description (optional)"
+          value={desc}
+          onChange={e => setDesc(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && addRule()}
+        />
+        <button type="button" className="btn btn--secondary btn--sm" onClick={addRule} disabled={saving}>+ Add</button>
+      </div>
+      {error && <div style={{ color: 'var(--color-error)', fontSize: 12, marginTop: 4 }}>{error}</div>}
+    </div>
+  );
+}
+
+/** Modal listing/editing a bridge's TCP command and target-IP allow/deny rules. */
+function BridgeSecurityModal({ bridge, backendUrl, headers, onClose }) {
+  const [rules, setRules] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridge.id}/security-rules`, { headers });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      setRules(data.rules ?? []);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [backendUrl, bridge.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const ipRules = rules.filter(r => r.ruleKind === 'ip');
+  const commandRules = rules.filter(r => r.ruleKind === 'command');
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+    }}>
+      <div style={{
+        background: 'var(--color-surface)', borderRadius: 8, padding: 24,
+        maxWidth: 560, width: '90%', maxHeight: '85vh', overflowY: 'auto',
+      }}>
+        <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 15 }}>Security — {bridge.name}</p>
+        <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-muted)' }}>
+          Restrict which target IPs this bridge may connect to, and which TCP commands it may
+          send. A deny rule always blocks a match, even inside an allow-list. Enforced both by the
+          backend and locally by the bridge agent itself.
+        </p>
+
+        {loading ? (
+          <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+        ) : (
+          <>
+            {error && <div style={{ color: 'var(--color-error)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+            <SecurityRuleList
+              title="Target IP / Host Rules"
+              description="Exact host, *.example.com wildcard, exact IP, or CIDR — optionally with a :port suffix."
+              kind="ip"
+              patternPlaceholder="192.168.1.0/24 or *.internal:1319"
+              rules={ipRules}
+              backendUrl={backendUrl}
+              headers={headers}
+              bridgeId={bridge.id}
+              onChanged={load}
+            />
+            <SecurityRuleList
+              title="TCP Command Rules"
+              description="Regular expression tested against the outgoing command payload."
+              kind="command"
+              patternPlaceholder="^PRESET-[0-9]+"
+              rules={commandRules}
+              backendUrl={backendUrl}
+              headers={headers}
+              bridgeId={bridge.id}
+              onChanged={load}
+            />
+          </>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+          <button className="btn btn--ghost" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -330,6 +527,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
   const [newBridge, setNewBridge] = useState(null);     // { id, name, envContent } shown after create
   const [confirmDelete, setConfirmDelete] = useState(null); // { bridge, cameras, mixers }
   const [sendCommand, setSendCommand] = useState(null);  // { bridge, type: 'tcp'|'http' }
+  const [securityBridge, setSecurityBridge] = useState(null); // bridge currently showing the security modal
 
   const headers = {
     'Content-Type': 'application/json',
@@ -448,9 +646,19 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
               onRedownload={handleRedownload}
               onSendTcp={bridge => setSendCommand({ bridge, type: 'tcp' })}
               onSendHttp={bridge => setSendCommand({ bridge, type: 'http' })}
+              onSecurity={bridge => setSecurityBridge(bridge)}
             />
           ))}
         </div>
+      )}
+
+      {securityBridge && (
+        <BridgeSecurityModal
+          bridge={securityBridge}
+          backendUrl={backendUrl}
+          headers={headers}
+          onClose={() => setSecurityBridge(null)}
+        />
       )}
 
       {confirmDelete && (

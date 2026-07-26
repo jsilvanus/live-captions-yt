@@ -10,9 +10,15 @@ import { EventEmitter } from 'node:events';
 import { TcpPool } from './tcp-pool.js';
 import { AtemPool } from './atem-pool.js';
 import { ObsPool } from './obs-pool.js';
+import { SecurityPolicy } from './security-policy.js';
 
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_DELAY_MAX_MS = 60_000;
+// Fallback refresh in case a rules_updated SSE event is ever missed (proxy
+// buffering, brief disconnect). The SSE push keeps this from mattering in
+// the common case.
+const SECURITY_POLICY_REFRESH_MS = 60_000;
+const SECURED_COMMAND_TYPES = new Set(['tcp_send', 'atem_switch', 'obs_switch', 'http_request', 'model_call']);
 
 export class Bridge extends EventEmitter {
   /**
@@ -25,10 +31,16 @@ export class Bridge extends EventEmitter {
     this._tcpPool = new TcpPool();
     this._atemPool = new AtemPool();
     this._obsPool = new ObsPool();
+    this._securityPolicy = new SecurityPolicy();
+    this._instanceId = null;
     this._es = null;
     this._destroyed = false;
     this._reconnectDelay = RECONNECT_DELAY_MS;
     this._reconnectTimer = null;
+    this._securityPolicyTimer = setInterval(() => {
+      if (!this._destroyed && this._instanceId) this._fetchSecurityPolicy();
+    }, SECURITY_POLICY_REFRESH_MS);
+    this._securityPolicyTimer.unref?.();
 
     // Forward TCP pool events
     this._tcpPool.on('connected',    (key) => { this.emit('tcp:connected', key); });
@@ -62,6 +74,7 @@ export class Bridge extends EventEmitter {
   destroy() {
     this._destroyed = true;
     if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
+    if (this._securityPolicyTimer) clearInterval(this._securityPolicyTimer);
     if (this._es) { try { this._es.close(); } catch { /* ignore */ } }
     this._tcpPool.destroy();
     this._atemPool.destroy();
@@ -112,8 +125,17 @@ export class Bridge extends EventEmitter {
       this.emit('connected');
     };
 
-    es.addEventListener('connected', () => {
+    es.addEventListener('connected', (evt) => {
+      try {
+        const data = JSON.parse(evt.data);
+        if (data?.instanceId) this._instanceId = data.instanceId;
+      } catch { /* ignore */ }
       this.emit('connected');
+      this._fetchSecurityPolicy();
+    });
+
+    es.addEventListener('rules_updated', () => {
+      this._fetchSecurityPolicy();
     });
 
     es.addEventListener('command', (evt) => {
@@ -142,6 +164,15 @@ export class Bridge extends EventEmitter {
     } catch {
       this.emit('error', new Error(`Received non-JSON command: ${rawData}`));
       return;
+    }
+
+    if (SECURED_COMMAND_TYPES.has(cmd.type)) {
+      const blockReason = this._checkSecurity(cmd.type, cmd);
+      if (blockReason) {
+        await this._postStatus({ requestId: cmd.requestId, ok: false, error: blockReason });
+        this.emit('command:error', { type: cmd.type, error: blockReason });
+        return;
+      }
     }
 
     if (cmd.type === 'tcp_send') {
@@ -200,6 +231,64 @@ export class Bridge extends EventEmitter {
       }
     } else {
       this.emit('error', new Error(`Unknown command type: ${cmd.type}`));
+    }
+  }
+
+  /**
+   * Local defense-in-depth check, mirroring BridgeManager._checkSecurity()
+   * on the backend (which already ran this before the command was ever put
+   * on the SSE stream). Returns a block reason, or null if allowed.
+   */
+  _checkSecurity(type, cmd) {
+    const ipTarget = this._resolveIpTarget(type, cmd);
+    if (ipTarget) {
+      const { allowed, reason } = this._securityPolicy.checkIp(ipTarget.host, ipTarget.port);
+      if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
+    }
+    if (type === 'tcp_send') {
+      const { allowed, reason } = this._securityPolicy.checkCommand(cmd.payload ?? '');
+      if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
+    }
+    return null;
+  }
+
+  /** @returns {{ host: string, port: number|null }|null} */
+  _resolveIpTarget(type, cmd) {
+    if (type === 'tcp_send' || type === 'obs_switch' || type === 'atem_switch') {
+      if (!cmd.host) return null;
+      return { host: cmd.host, port: cmd.port != null ? Number(cmd.port) : null };
+    }
+    if (type === 'http_request' || type === 'model_call') {
+      const raw = type === 'http_request' ? cmd.url : cmd.endpoint;
+      if (!raw) return null;
+      try {
+        const u = new URL(raw);
+        const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+        return { host: u.hostname.replace(/^\[|\]$/g, ''), port };
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Fetch this instance's security rules from the backend
+   * (GET .../security-rules/for-agent, authenticated by bridge token) and
+   * cache them locally. A failure keeps using the last known-good policy —
+   * see SecurityPolicy's fail-safe doc comment.
+   */
+  async _fetchSecurityPolicy() {
+    if (!this._instanceId) return;
+    try {
+      const url = `${this._backendUrl}/production/bridge/instances/${encodeURIComponent(this._instanceId)}/security-rules/for-agent?token=${encodeURIComponent(this._token)}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      this._securityPolicy.update(body);
+      this.emit('security-policy:updated');
+    } catch (err) {
+      this.emit('error', new Error(`Security policy fetch failed: ${err.message}`));
     }
   }
 

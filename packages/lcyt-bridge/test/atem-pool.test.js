@@ -305,6 +305,7 @@ describe('Bridge — atem_switch command handling', () => {
   it('dispatches atem_switch to AtemPool and posts ok status', async () => {
     const { Bridge } = await import('../src/bridge.js');
     const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
 
     // Capture status posts
     const statusPosts = [];
@@ -338,6 +339,7 @@ describe('Bridge — atem_switch command handling', () => {
   it('defaults meIndex to 0 when omitted', async () => {
     const { Bridge } = await import('../src/bridge.js');
     const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
     bridge._postStatus = async () => {};
 
     const switched = [];
@@ -360,6 +362,7 @@ describe('Bridge — atem_switch command handling', () => {
   it('posts ok:false and emits command:error when AtemPool throws', async () => {
     const { Bridge } = await import('../src/bridge.js');
     const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
 
     const statusPosts = [];
     bridge._postStatus = async (body) => { statusPosts.push(body); };
@@ -391,6 +394,7 @@ describe('Bridge — atem_switch command handling', () => {
   it('does not reach unknown-type handler for atem_switch', async () => {
     const { Bridge } = await import('../src/bridge.js');
     const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
     bridge._postStatus = async () => {};
 
     const unknownErrors = [];

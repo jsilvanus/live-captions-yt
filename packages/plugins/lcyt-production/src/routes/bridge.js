@@ -1,5 +1,34 @@
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
+import {
+  listBridgeSecurityRules, createBridgeSecurityRule, getBridgeSecurityRule, deleteBridgeSecurityRule,
+} from '../db.js';
+import { isValidHostPattern, isValidCommandPattern } from '../bridge-security.js';
+
+const VALID_RULE_KINDS = ['ip', 'command'];
+const VALID_RULE_TYPES = ['allow', 'deny'];
+
+function validateRuleBody(body) {
+  const { ruleKind, ruleType, pattern } = body || {};
+  if (!VALID_RULE_KINDS.includes(ruleKind)) return `ruleKind must be one of: ${VALID_RULE_KINDS.join(', ')}`;
+  if (!VALID_RULE_TYPES.includes(ruleType)) return `ruleType must be one of: ${VALID_RULE_TYPES.join(', ')}`;
+  if (!pattern || typeof pattern !== 'string') return 'pattern is required';
+  if (ruleKind === 'command' && !isValidCommandPattern(pattern)) return 'pattern is not a valid regular expression';
+  if (ruleKind === 'ip' && !isValidHostPattern(pattern)) return 'pattern is not a valid host/IP/CIDR pattern';
+  return null;
+}
+
+function serializeRule(row) {
+  return {
+    id:               row.id,
+    bridgeInstanceId: row.bridge_instance_id,
+    ruleKind:         row.rule_kind,
+    ruleType:         row.rule_type,
+    pattern:          row.pattern,
+    description:      row.description,
+    createdAt:        row.created_at,
+  };
+}
 
 // Simple in-memory rate limiter: max 30 command requests per minute per IP
 const _commandRateCounts = new Map(); // ip → { count, resetAt }
@@ -18,14 +47,38 @@ function commandRateLimit(req, res, next) {
   next();
 }
 
+// Routes that must stay unauthenticated even after opts.auth is supplied —
+// these are hit by the bridge *agent* process, not a logged-in user, and
+// already authenticate via bridgeManager.authenticate(token)/X-Bridge-Token
+// (a bridge instance's own secret, unrelated to a user session). Mirrors
+// routes/cameras.js's isUnauthenticatedCameraRoute() carve-out.
+function isUnauthenticatedBridgeRoute(path) {
+  return /^\/commands(\/|$)/.test(path)
+    || /^\/status(\/|$)/.test(path)
+    || /\/security-rules\/for-agent(\/|$)/.test(path);
+}
+
 /**
  * @param {import('better-sqlite3').Database} db
  * @param {import('../bridge-manager.js').BridgeManager} bridgeManager
  * @param {string} [publicUrl]  Backend's public URL, used when generating .env files
+ * @param {object} [opts]
+ * @param {import('express').RequestHandler} [opts.auth]  Session/user/device
+ *   auth middleware (createProjectAccessMiddleware), applied to every route
+ *   except the bridge-agent-facing ones (see isUnauthenticatedBridgeRoute).
+ *   Omit to keep this router's historical fully-open behavior (e.g. existing
+ *   route-level tests that construct it directly).
  */
-export function createBridgeRouter(db, bridgeManager, publicUrl = '') {
-
+export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {}) {
+  const auth = opts.auth ?? null;
   const router = Router();
+
+  if (auth) {
+    router.use((req, res, next) => {
+      if (isUnauthenticatedBridgeRoute(req.path)) return next();
+      return auth(req, res, next);
+    });
+  }
 
   // ── SSE stream: bridge agent connects here ────────────────────────────────
 
@@ -148,6 +201,67 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '') {
       'Content-Disposition': `attachment; filename="lcyt-bridge-${row.name.replace(/\s+/g, '-')}.env"`,
     });
     res.send(content);
+  });
+
+  // ── Security rules: allow/deny lists for TCP commands and target IPs ─────
+
+  // GET /production/bridge/instances/:id/security-rules/for-agent — the
+  // bridge agent's own fetch of its policy, authenticated by bridge token
+  // (not opts.auth — see isUnauthenticatedBridgeRoute). Deliberately resolves
+  // the instance from the token itself, not req.params.id, so a token can
+  // never be used to read another instance's rules by mismatched :id.
+  router.get('/instances/:id/security-rules/for-agent', (req, res) => {
+    const token = req.query.token ?? req.headers['x-bridge-token'];
+    const instance = bridgeManager.authenticate(token);
+    if (!instance) {
+      return res.status(401).json({ error: 'Invalid bridge token' });
+    }
+    res.json({
+      ipRules:      listBridgeSecurityRules(db, instance.id, 'ip').map(serializeRule),
+      commandRules: listBridgeSecurityRules(db, instance.id, 'command').map(serializeRule),
+    });
+  });
+
+  // GET /production/bridge/instances/:id/security-rules[?kind=ip|command]
+  router.get('/instances/:id/security-rules', (req, res) => {
+    const { id } = req.params;
+    const existing = db.prepare('SELECT id FROM prod_bridge_instances WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
+
+    const { kind } = req.query;
+    if (kind && !VALID_RULE_KINDS.includes(kind)) {
+      return res.status(400).json({ error: `kind must be one of: ${VALID_RULE_KINDS.join(', ')}` });
+    }
+    res.json({ rules: listBridgeSecurityRules(db, id, kind || null).map(serializeRule) });
+  });
+
+  // POST /production/bridge/instances/:id/security-rules
+  // Body: { ruleKind: 'ip'|'command', ruleType: 'allow'|'deny', pattern, description? }
+  router.post('/instances/:id/security-rules', (req, res) => {
+    const { id } = req.params;
+    const existing = db.prepare('SELECT id FROM prod_bridge_instances WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
+
+    const error = validateRuleBody(req.body);
+    if (error) return res.status(400).json({ error });
+
+    const { ruleKind, ruleType, pattern, description } = req.body;
+    const row = createBridgeSecurityRule(db, {
+      id: randomUUID(), bridgeInstanceId: id, ruleKind, ruleType, pattern, description: description ?? null,
+    });
+    bridgeManager.broadcastRulesUpdated(id);
+    res.status(201).json({ rule: serializeRule(row) });
+  });
+
+  // DELETE /production/bridge/instances/:id/security-rules/:ruleId
+  router.delete('/instances/:id/security-rules/:ruleId', (req, res) => {
+    const { id, ruleId } = req.params;
+    const rule = getBridgeSecurityRule(db, ruleId);
+    if (!rule || rule.bridge_instance_id !== id) return res.status(404).json({ error: 'Unknown rule' });
+
+    deleteBridgeSecurityRule(db, ruleId);
+    bridgeManager.broadcastRulesUpdated(id);
+    res.json({ ok: true });
   });
 
   return router;
