@@ -84,6 +84,19 @@ describe('bridge router — auth wiring', () => {
     assert.equal(authed.status, 200);
   });
 
+  it('POST /instances/:id/command maps a security-policy block to 403, not 502', async () => {
+    const { id } = insertInstance();
+    bridgeManager.isConnected = () => true;
+    bridgeManager.sendCommand = async () => { throw new Error('Blocked by bridge security policy: Blocked by deny rule (10.0.0.1)'); };
+    await startApp();
+
+    const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/command`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'tcp_send', host: '10.0.0.1', port: 9000, payload: 'x' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
   it('opts.auth configured: POST /instances/:id/command requires it', async () => {
     const { id } = insertInstance();
     await startApp({ auth: fakeAuth });
@@ -127,10 +140,9 @@ describe('bridge router — auth wiring', () => {
     assert.equal(res.status, 401);
   });
 
-  it('opts.auth configured: GET .../security-rules/for-agent still reaches bridge-token auth', async () => {
-    const { id } = insertInstance();
+  it('opts.auth configured: GET /security-rules/for-agent still reaches bridge-token auth', async () => {
     await startApp({ auth: fakeAuth });
-    const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules/for-agent`);
+    const res = await fetch(`${baseUrl}/production/bridge/security-rules/for-agent`);
     assert.equal(res.status, 401);
     const body = await res.json();
     assert.equal(body.error, 'Invalid bridge token');
@@ -251,18 +263,17 @@ describe('bridge router — security-rules CRUD', () => {
 });
 
 // ---------------------------------------------------------------------------
-// GET .../security-rules/for-agent — bridge-token identity, not :id
+// GET /security-rules/for-agent — bridge-token identity, no :id at all
 // ---------------------------------------------------------------------------
 
 describe('bridge router — security-rules for-agent', () => {
   it('401s with no/invalid token', async () => {
-    const { id } = insertInstance();
     await startApp();
-    const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules/for-agent`);
+    const res = await fetch(`${baseUrl}/production/bridge/security-rules/for-agent`);
     assert.equal(res.status, 401);
   });
 
-  it('returns ip/command rules for the token-resolved instance, ignoring the :id param', async () => {
+  it('returns ip/command rules for the token-resolved instance only', async () => {
     const real = insertInstance();
     const other = insertInstance();
     await startApp();
@@ -281,9 +292,7 @@ describe('bridge router — security-rules for-agent', () => {
       body: JSON.stringify({ ruleKind: 'ip', ruleType: 'deny', pattern: '10.0.0.99' }),
     });
 
-    // Deliberately query using `other`'s :id in the URL but `real`'s token —
-    // the route must resolve rules by token, not by the path param.
-    const res = await fetch(`${baseUrl}/production/bridge/instances/${other.id}/security-rules/for-agent?token=${real.token}`);
+    const res = await fetch(`${baseUrl}/production/bridge/security-rules/for-agent?token=${real.token}`);
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.ipRules.length, 1);

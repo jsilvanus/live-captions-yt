@@ -12,6 +12,7 @@
 
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { isSecurityBlockError } from '../bridge-security.js';
 
 const ENCODER_TYPES = ['monarch_hd', 'monarch_hdx'];
 const VALID_CONNECTION_SOURCES = ['backend', 'frontend', 'bridge'];
@@ -148,7 +149,8 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
       }
       res.json({ ok: true, encoderId: encoder.id });
     } catch (err) {
-      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 502;
+      const status = isSecurityBlockError(err) ? 403
+        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 502;
       res.status(status).json({ error: err.message });
     }
   });
@@ -174,7 +176,8 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
       }
       res.json({ ok: true, encoderId: encoder.id });
     } catch (err) {
-      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 502;
+      const status = isSecurityBlockError(err) ? 403
+        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 502;
       res.status(status).json({ error: err.message });
     }
   });

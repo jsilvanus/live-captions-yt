@@ -350,6 +350,46 @@ describe('BridgeManager.sendCommand — security enforcement', () => {
     mgr.disconnect(id);
   });
 
+  it('rejects a model_call whose sourceUrl host is blocked by a deny IP rule, even when endpoint is allowed', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '169.254.169.254' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    await assert.rejects(
+      () => mgr.sendCommand(id, {
+        type: 'model_call',
+        endpoint: 'http://ollama:11434/api/generate',
+        sourceUrl: 'http://169.254.169.254/latest/meta-data/',
+      }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null, 'blocked before ever reaching the bridge, despite endpoint being allowed');
+    mgr.disconnect(id);
+  });
+
+  it('allows a model_call when both endpoint and sourceUrl pass the IP check', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '169.254.169.254' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    const promise = mgr.sendCommand(id, {
+      type: 'model_call',
+      endpoint: 'http://ollama:11434/api/generate',
+      sourceUrl: 'http://backend.test/preview/key1/incoming.jpg',
+    });
+    const cmdData = extractCommandData(res.chunks);
+    assert.ok(cmdData, 'command reached the bridge');
+    mgr.receiveStatus(id, { requestId: cmdData.requestId, ok: true });
+    await promise;
+    mgr.disconnect(id);
+  });
+
   it('rejects an http_request whose URL host is blocked by a deny IP rule', async () => {
     const db = makeDb();
     const { id } = insertInstance(db);

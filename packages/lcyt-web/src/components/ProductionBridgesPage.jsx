@@ -430,56 +430,48 @@ function BridgeSecurityModal({ bridge, backendUrl, headers, onClose }) {
   const commandRules = rules.filter(r => r.ruleKind === 'command');
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-    }}>
-      <div style={{
-        background: 'var(--color-surface)', borderRadius: 8, padding: 24,
-        maxWidth: 560, width: '90%', maxHeight: '85vh', overflowY: 'auto',
-      }}>
-        <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 15 }}>Security — {bridge.name}</p>
-        <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-muted)' }}>
-          Restrict which target IPs this bridge may connect to, and which TCP commands it may
-          send. A deny rule always blocks a match, even inside an allow-list. Enforced both by the
-          backend and locally by the bridge agent itself.
-        </p>
+    <Dialog
+      title={`Security — ${bridge.name}`}
+      onClose={onClose}
+      width={560}
+      footer={<button className="btn btn--ghost" onClick={onClose}>Close</button>}
+    >
+      <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--color-text-muted)' }}>
+        Restrict which target IPs this bridge may connect to, and which TCP commands it may
+        send. A deny rule always blocks a match, even inside an allow-list. Enforced both by the
+        backend and locally by the bridge agent itself.
+      </p>
 
-        {loading ? (
-          <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
-        ) : (
-          <>
-            {error && <div style={{ color: 'var(--color-error)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
-            <SecurityRuleList
-              title="Target IP / Host Rules"
-              description="Exact host, *.example.com wildcard, exact IP, or CIDR — optionally with a :port suffix."
-              kind="ip"
-              patternPlaceholder="192.168.1.0/24 or *.internal:1319"
-              rules={ipRules}
-              backendUrl={backendUrl}
-              headers={headers}
-              bridgeId={bridge.id}
-              onChanged={load}
-            />
-            <SecurityRuleList
-              title="TCP Command Rules"
-              description="Regular expression tested against the outgoing command payload."
-              kind="command"
-              patternPlaceholder="^PRESET-[0-9]+"
-              rules={commandRules}
-              backendUrl={backendUrl}
-              headers={headers}
-              bridgeId={bridge.id}
-              onChanged={load}
-            />
-          </>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
-          <button className="btn btn--ghost" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
+      {loading ? (
+        <p style={{ color: 'var(--color-text-muted)' }}>Loading…</p>
+      ) : (
+        <>
+          {error && <div style={{ color: 'var(--color-error)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+          <SecurityRuleList
+            title="Target IP / Host Rules"
+            description="Exact host, *.example.com wildcard, exact IP, or CIDR — optionally with a :port suffix."
+            kind="ip"
+            patternPlaceholder="192.168.1.0/24 or *.internal:1319"
+            rules={ipRules}
+            backendUrl={backendUrl}
+            headers={headers}
+            bridgeId={bridge.id}
+            onChanged={load}
+          />
+          <SecurityRuleList
+            title="TCP Command Rules"
+            description="Regular expression tested against the outgoing command payload."
+            kind="command"
+            patternPlaceholder="^PRESET-[0-9]+"
+            rules={commandRules}
+            backendUrl={backendUrl}
+            headers={headers}
+            bridgeId={bridge.id}
+            onChanged={load}
+          />
+        </>
+      )}
+    </Dialog>
   );
 }
 
@@ -591,8 +583,26 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
     }
   }
 
-  function handleRedownload(bridge) {
-    window.open(`${backendUrl}/production/bridge/instances/${bridge.id}/env`, '_blank');
+  // GET .../env now requires the same project auth as every other route
+  // here (closed alongside the security-rules feature) — window.open() has
+  // no way to attach an Authorization header, so this fetches with headers
+  // and downloads the response as a blob, same as EnvDownloadBanner's
+  // downloadEnv() already does for the just-created bridge's envContent.
+  async function handleRedownload(bridge) {
+    try {
+      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridge.id}/env`, { headers });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const content = await r.text();
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `lcyt-bridge-${bridge.name.replace(/\s+/g, '-')}.env`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(e.message);
+    }
   }
 
   const showNames = bridges.length >= 2;

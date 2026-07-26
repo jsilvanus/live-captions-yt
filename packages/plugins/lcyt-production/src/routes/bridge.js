@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import {
   listBridgeSecurityRules, createBridgeSecurityRule, getBridgeSecurityRule, deleteBridgeSecurityRule,
 } from '../db.js';
-import { isValidHostPattern, isValidCommandPattern } from '../bridge-security.js';
+import { isValidHostPattern, isValidCommandPattern, isSecurityBlockError } from '../bridge-security.js';
 
 const VALID_RULE_KINDS = ['ip', 'command'];
 const VALID_RULE_TYPES = ['allow', 'deny'];
@@ -55,7 +55,7 @@ function commandRateLimit(req, res, next) {
 function isUnauthenticatedBridgeRoute(path) {
   return /^\/commands(\/|$)/.test(path)
     || /^\/status(\/|$)/.test(path)
-    || /\/security-rules\/for-agent(\/|$)/.test(path);
+    || /^\/security-rules\/for-agent(\/|$)/.test(path);
 }
 
 /**
@@ -102,6 +102,27 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
     }
     bridgeManager.receiveStatus(instance.id, req.body ?? {});
     res.json({ ok: true });
+  });
+
+  // GET /production/bridge/security-rules/for-agent — the bridge agent's own
+  // fetch of its policy, authenticated by bridge token like /commands and
+  // /status above (not opts.auth). Deliberately a top-level route, not
+  // nested under /instances/:id/ — the instance is entirely determined by
+  // the token, so there is no :id to get right or wrong. lcyt-bridge fetches
+  // this immediately on start(), in parallel with opening the SSE
+  // connection, rather than waiting on the SSE 'connected' event first — it
+  // doesn't need an instanceId to build this URL, which meaningfully
+  // shortens the fail-closed window right after a (re)connect.
+  router.get('/security-rules/for-agent', (req, res) => {
+    const token = req.query.token ?? req.headers['x-bridge-token'];
+    const instance = bridgeManager.authenticate(token);
+    if (!instance) {
+      return res.status(401).json({ error: 'Invalid bridge token' });
+    }
+    res.json({
+      ipRules:      listBridgeSecurityRules(db, instance.id, 'ip').map(serializeRule),
+      commandRules: listBridgeSecurityRules(db, instance.id, 'command').map(serializeRule),
+    });
   });
 
   // ── Bridge instance CRUD ──────────────────────────────────────────────────
@@ -186,7 +207,8 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
       const result = await bridgeManager.sendCommand(id, { type, ...rest });
       res.json(result);
     } catch (err) {
-      res.status(502).json({ error: err.message });
+      const status = isSecurityBlockError(err) ? 403 : 502;
+      res.status(status).json({ error: err.message });
     }
   });
 
@@ -204,23 +226,6 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   });
 
   // ── Security rules: allow/deny lists for TCP commands and target IPs ─────
-
-  // GET /production/bridge/instances/:id/security-rules/for-agent — the
-  // bridge agent's own fetch of its policy, authenticated by bridge token
-  // (not opts.auth — see isUnauthenticatedBridgeRoute). Deliberately resolves
-  // the instance from the token itself, not req.params.id, so a token can
-  // never be used to read another instance's rules by mismatched :id.
-  router.get('/instances/:id/security-rules/for-agent', (req, res) => {
-    const token = req.query.token ?? req.headers['x-bridge-token'];
-    const instance = bridgeManager.authenticate(token);
-    if (!instance) {
-      return res.status(401).json({ error: 'Invalid bridge token' });
-    }
-    res.json({
-      ipRules:      listBridgeSecurityRules(db, instance.id, 'ip').map(serializeRule),
-      commandRules: listBridgeSecurityRules(db, instance.id, 'command').map(serializeRule),
-    });
-  });
 
   // GET /production/bridge/instances/:id/security-rules[?kind=ip|command]
   router.get('/instances/:id/security-rules', (req, res) => {

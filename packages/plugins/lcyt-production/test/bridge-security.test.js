@@ -75,6 +75,16 @@ describe('matchesHostPattern', () => {
   it('returns false for a malformed pattern instead of throwing', () => {
     assert.equal(matchesHostPattern('not a valid /// pattern', '192.168.1.50', 80), false);
   });
+
+  it('a CIDR pattern with an empty prefix never matches (does not silently become /0)', () => {
+    assert.equal(matchesHostPattern('10.0.0.0/', '8.8.8.8', 80), false);
+    assert.equal(matchesHostPattern('10.0.0.0/', '10.0.0.1', 80), false);
+  });
+
+  it('exact IP matching is case-insensitive for IPv6 literals', () => {
+    assert.equal(matchesHostPattern('2001:DB8::1', '2001:db8::1', 80), true);
+    assert.equal(matchesHostPattern('2001:db8::1', '2001:DB8::1', 80), true);
+  });
 });
 
 // ---------------------------------------------------------------------------

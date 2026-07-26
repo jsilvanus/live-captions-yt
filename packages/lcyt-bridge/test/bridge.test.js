@@ -112,11 +112,7 @@ function injectFakeEventSource(bridge) {
       this.emit('connected');
     };
 
-    fakeEs.addEventListener('connected', (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        if (data?.instanceId) this._instanceId = data.instanceId;
-      } catch { /* ignore */ }
+    fakeEs.addEventListener('connected', () => {
       this.emit('connected');
       this._fetchSecurityPolicy();
     });
@@ -176,6 +172,26 @@ function mockFetch(bridge) {
   };
   return calls;
 }
+
+// ---------------------------------------------------------------------------
+// bridge.start() now fires a real _fetchSecurityPolicy() fetch immediately
+// (not gated on the SSE 'connected' event — see "security policy fetch
+// wiring" below). Every test in this file gets a benign default mock for
+// global.fetch so a test that merely calls start()/simulateOpen() without
+// caring about the security-policy fetch doesn't hit the real network;
+// tests that DO care override global.fetch themselves within the test body,
+// which simply wins for the rest of that test (assigned after this hook
+// runs), same as the pre-existing local per-describe overrides already in
+// this file.
+// ---------------------------------------------------------------------------
+
+const REAL_FETCH = global.fetch;
+beforeEach(() => {
+  global.fetch = async () => ({ ok: true, json: async () => ({ ipRules: [], commandRules: [] }) });
+});
+afterEach(() => {
+  global.fetch = REAL_FETCH;
+});
 
 // ---------------------------------------------------------------------------
 // Constructor / status()
@@ -868,6 +884,26 @@ describe('Bridge — local security enforcement', () => {
     bridge.destroy();
   });
 
+  it('blocks a model_call whose sourceUrl host matches a local deny IP rule, even when endpoint is allowed', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '169.254.169.254' }], commandRules: [] });
+    const statusCalls = mockFetch(bridge);
+    let modelCallCalled = false;
+    bridge._modelCall = async () => { modelCallCalled = true; return { status: 200, body: {} }; };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call', requestId: 'req-mc-blocked',
+      endpoint: 'http://ollama:11434/api/generate',
+      sourceUrl: 'http://169.254.169.254/latest/meta-data/',
+    }));
+
+    assert.equal(modelCallCalled, false, 'blocked before ever fetching sourceUrl, despite endpoint being allowed');
+    const call = statusCalls.find(c => c.requestId === 'req-mc-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local bridge security policy/);
+    bridge.destroy();
+  });
+
   it('blocks an http_request whose URL host matches a local deny IP rule without calling _httpRequest', async () => {
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
     bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '192.168.1.50' }], commandRules: [] });
@@ -906,9 +942,9 @@ describe('Bridge — security policy fetch wiring', () => {
   const origFetch = global.fetch;
   afterEach(() => { global.fetch = origFetch; });
 
-  it('the "connected" event captures instanceId and fetches the policy from the right URL', async () => {
+  it('start() fetches the policy immediately, from an instanceId-less URL, without waiting on SSE connect', async () => {
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok-abc' });
-    const getEs = injectFakeEventSource(bridge);
+    injectFakeEventSource(bridge); // SSE never opened/simulated in this test
 
     const fetchCalls = [];
     global.fetch = async (url) => {
@@ -918,17 +954,34 @@ describe('Bridge — security policy fetch wiring', () => {
 
     bridge.start();
     await new Promise(r => setImmediate(r));
-    getEs().simulateEvent('connected', { instanceId: 'bridge-xyz' });
-    await new Promise(r => setImmediate(r));
 
-    assert.equal(bridge._instanceId, 'bridge-xyz');
     assert.equal(fetchCalls.length, 1);
     assert.equal(
       fetchCalls[0],
-      'http://backend.test/production/bridge/instances/bridge-xyz/security-rules/for-agent?token=tok-abc',
+      'http://backend.test/production/bridge/security-rules/for-agent?token=tok-abc',
     );
     assert.equal(bridge._securityPolicy.isLoaded(), true);
     assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
+    bridge.destroy();
+  });
+
+  it('the "connected" event triggers an additional refetch', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const getEs = injectFakeEventSource(bridge);
+
+    let fetchCount = 0;
+    global.fetch = async () => {
+      fetchCount += 1;
+      return { ok: true, json: async () => ({ ipRules: [], commandRules: [] }) };
+    };
+
+    bridge.start(); // 1st fetch
+    await new Promise(r => setImmediate(r));
+    assert.equal(fetchCount, 1);
+
+    getEs().simulateEvent('connected', {}); // 2nd fetch
+    await new Promise(r => setImmediate(r));
+    assert.equal(fetchCount, 2);
     bridge.destroy();
   });
 
@@ -940,8 +993,6 @@ describe('Bridge — security policy fetch wiring', () => {
     global.fetch = async () => ({ ok: true, json: async () => responseBody });
 
     bridge.start();
-    await new Promise(r => setImmediate(r));
-    getEs().simulateEvent('connected', { instanceId: 'bridge-1' });
     await new Promise(r => setImmediate(r));
     assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
 
@@ -965,8 +1016,6 @@ describe('Bridge — security policy fetch wiring', () => {
 
     bridge.start();
     await new Promise(r => setImmediate(r));
-    getEs().simulateEvent('connected', { instanceId: 'bridge-1' });
-    await new Promise(r => setImmediate(r));
     assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
 
     shouldFail = true;
@@ -979,13 +1028,28 @@ describe('Bridge — security policy fetch wiring', () => {
     bridge.destroy();
   });
 
-  it('does not fetch before an instanceId has been captured', async () => {
+  it('a slower, older fetch resolving after a newer one does not clobber the fresher policy', async () => {
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
-    let fetchCalled = false;
-    global.fetch = async () => { fetchCalled = true; return { ok: true, json: async () => ({}) }; };
 
-    await bridge._fetchSecurityPolicy();
-    assert.equal(fetchCalled, false);
+    // First fetch (in-flight, slow): would report a deny rule.
+    // Second fetch (fires after, resolves first): reports no rules.
+    // The slow first response arriving last must NOT overwrite the second's result.
+    const responses = [
+      { delayMs: 30, body: { ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] } },
+      { delayMs: 5,  body: { ipRules: [], commandRules: [] } },
+    ];
+    let call = 0;
+    global.fetch = async () => {
+      const { delayMs, body } = responses[call++];
+      await new Promise(r => setTimeout(r, delayMs));
+      return { ok: true, json: async () => body };
+    };
+
+    const first = bridge._fetchSecurityPolicy();
+    const second = bridge._fetchSecurityPolicy();
+    await Promise.all([first, second]);
+
+    assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, true, 'the newer (empty-rules) fetch must win, not the slower stale one');
     bridge.destroy();
   });
 });

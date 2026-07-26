@@ -32,13 +32,13 @@ export class Bridge extends EventEmitter {
     this._atemPool = new AtemPool();
     this._obsPool = new ObsPool();
     this._securityPolicy = new SecurityPolicy();
-    this._instanceId = null;
+    this._policyFetchSeq = 0;
     this._es = null;
     this._destroyed = false;
     this._reconnectDelay = RECONNECT_DELAY_MS;
     this._reconnectTimer = null;
     this._securityPolicyTimer = setInterval(() => {
-      if (!this._destroyed && this._instanceId) this._fetchSecurityPolicy();
+      if (!this._destroyed) this._fetchSecurityPolicy();
     }, SECURITY_POLICY_REFRESH_MS);
     this._securityPolicyTimer.unref?.();
 
@@ -58,9 +58,17 @@ export class Bridge extends EventEmitter {
     this._obsPool.on('obs:error',        (key, err) => { this.emit('obs:error', key, err); });
   }
 
-  /** Start the SSE connection. */
+  /**
+   * Start the SSE connection. Also fires the first security-policy fetch
+   * immediately, in parallel — it doesn't need an instanceId (the policy
+   * endpoint resolves the instance from the bridge token alone), so it
+   * doesn't have to wait on the SSE 'connected' event first. This shortens
+   * the fail-closed window right after a (re)start to roughly one HTTP
+   * round trip instead of "SSE connect, then a separate fetch after that".
+   */
   start() {
     this._connect();
+    this._fetchSecurityPolicy();
   }
 
   /** Trigger reconnect of all SSE and TCP connections. */
@@ -125,12 +133,11 @@ export class Bridge extends EventEmitter {
       this.emit('connected');
     };
 
-    es.addEventListener('connected', (evt) => {
-      try {
-        const data = JSON.parse(evt.data);
-        if (data?.instanceId) this._instanceId = data.instanceId;
-      } catch { /* ignore */ }
+    es.addEventListener('connected', () => {
       this.emit('connected');
+      // Extra refresh trigger on (re)connect, on top of start()'s immediate
+      // fetch and the periodic/rules_updated ones — cheap, and covers a
+      // rules_updated push that arrived while this bridge was disconnected.
       this._fetchSecurityPolicy();
     });
 
@@ -237,54 +244,71 @@ export class Bridge extends EventEmitter {
   /**
    * Local defense-in-depth check, mirroring BridgeManager._checkSecurity()
    * on the backend (which already ran this before the command was ever put
-   * on the SSE stream). Returns a block reason, or null if allowed.
+   * on the SSE stream). Returns a block reason, or null if allowed. Never
+   * throws — an error resolving/checking a target is treated as a block.
    */
   _checkSecurity(type, cmd) {
-    const ipTarget = this._resolveIpTarget(type, cmd);
-    if (ipTarget) {
-      const { allowed, reason } = this._securityPolicy.checkIp(ipTarget.host, ipTarget.port);
-      if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
-    }
-    if (type === 'tcp_send') {
-      const { allowed, reason } = this._securityPolicy.checkCommand(cmd.payload ?? '');
-      if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
-    }
-    return null;
-  }
-
-  /** @returns {{ host: string, port: number|null }|null} */
-  _resolveIpTarget(type, cmd) {
-    if (type === 'tcp_send' || type === 'obs_switch' || type === 'atem_switch') {
-      if (!cmd.host) return null;
-      return { host: cmd.host, port: cmd.port != null ? Number(cmd.port) : null };
-    }
-    if (type === 'http_request' || type === 'model_call') {
-      const raw = type === 'http_request' ? cmd.url : cmd.endpoint;
-      if (!raw) return null;
-      try {
-        const u = new URL(raw);
-        const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
-        return { host: u.hostname.replace(/^\[|\]$/g, ''), port };
-      } catch {
-        return null;
+    try {
+      for (const target of this._resolveIpTargets(type, cmd)) {
+        const { allowed, reason } = this._securityPolicy.checkIp(target.host, target.port);
+        if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
       }
+      if (type === 'tcp_send') {
+        const { allowed, reason } = this._securityPolicy.checkCommand(cmd.payload ?? '');
+        if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
+      }
+      return null;
+    } catch (err) {
+      return `Blocked by local bridge security policy: ${err.message}`;
     }
-    return null;
   }
 
   /**
-   * Fetch this instance's security rules from the backend
-   * (GET .../security-rules/for-agent, authenticated by bridge token) and
-   * cache them locally. A failure keeps using the last known-good policy —
-   * see SecurityPolicy's fail-safe doc comment.
+   * @returns {Array<{ host: string, port: number|null }>}  every target the
+   *   command would connect to — model_call may both fetch a sourceUrl and
+   *   POST to an endpoint, and both need to be covered.
+   */
+  _resolveIpTargets(type, cmd) {
+    if (type === 'tcp_send' || type === 'obs_switch' || type === 'atem_switch') {
+      if (!cmd.host) return [];
+      return [{ host: cmd.host, port: cmd.port != null ? Number(cmd.port) : null }];
+    }
+    if (type === 'http_request' || type === 'model_call') {
+      const urls = type === 'http_request' ? [cmd.url] : [cmd.endpoint, cmd.sourceUrl];
+      const targets = [];
+      for (const raw of urls) {
+        if (!raw) continue;
+        try {
+          const u = new URL(raw);
+          const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+          targets.push({ host: u.hostname.replace(/^\[|\]$/g, ''), port });
+        } catch { /* unparseable — not a security-policy concern, skip */ }
+      }
+      return targets;
+    }
+    return [];
+  }
+
+  /**
+   * Fetch this bridge's security rules from the backend
+   * (GET /production/bridge/security-rules/for-agent, authenticated by
+   * bridge token — the instance is resolved from the token, no instanceId
+   * needed) and cache them locally. A failure keeps using the last
+   * known-good policy — see SecurityPolicy's fail-safe doc comment.
+   *
+   * Multiple fetches can be in flight at once (start(), the 'connected'
+   * event, a rules_updated push, and the fallback timer can all trigger
+   * one); a monotonic sequence number guards against a slower, older fetch
+   * resolving after a newer one and clobbering it with stale data.
    */
   async _fetchSecurityPolicy() {
-    if (!this._instanceId) return;
+    const seq = ++this._policyFetchSeq;
     try {
-      const url = `${this._backendUrl}/production/bridge/instances/${encodeURIComponent(this._instanceId)}/security-rules/for-agent?token=${encodeURIComponent(this._token)}`;
+      const url = `${this._backendUrl}/production/bridge/security-rules/for-agent?token=${encodeURIComponent(this._token)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
+      if (seq !== this._policyFetchSeq) return; // superseded by a newer fetch
       this._securityPolicy.update(body);
       this.emit('security-policy:updated');
     } catch (err) {

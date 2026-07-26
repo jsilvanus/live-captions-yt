@@ -68,6 +68,24 @@ function hostNameMatches(pattern, hostname) {
 }
 
 /**
+ * Parse a CIDR prefix length, rejecting anything that isn't a plain
+ * non-negative integer string in range — in particular an *empty* prefix
+ * (`"10.0.0.0/"`, e.g. a fat-fingered `"10.0.0.0/24"`), which `Number('')`
+ * silently coerces to `0` (a "match every address" /0 block) rather than
+ * NaN. Returns `null` for anything invalid.
+ * @param {string} prefixStr
+ * @param {'ipv4'|'ipv6'} family
+ * @returns {number|null}
+ */
+function parseCidrPrefix(prefixStr, family) {
+  if (!/^\d+$/.test(prefixStr ?? '')) return null;
+  const prefix = Number(prefixStr);
+  const maxBits = family === 'ipv6' ? 128 : 32;
+  if (prefix < 0 || prefix > maxBits) return null;
+  return prefix;
+}
+
+/**
  * @param {string} pattern  IP-rule pattern (see parseHostPattern)
  * @param {string} host     Literal host/IP a command targets
  * @param {number} port
@@ -88,14 +106,18 @@ export function matchesHostPattern(pattern, host, port) {
     return !hostIsIp && hostNameMatches(parsed.value, String(host).toLowerCase());
   }
   if (parsed.kind === 'ip') {
-    return hostIsIp && parsed.value === host;
+    // Case-insensitive: IPv6 literals are case-insensitive by spec (e.g.
+    // "2001:DB8::1" and "2001:db8::1" are the same address), but this is a
+    // plain string compare, not an IP-aware one.
+    return hostIsIp && parsed.value.toLowerCase() === String(host).toLowerCase();
   }
   // CIDR — only ever matches when the command target is itself a literal IP
   if (!hostIsIp) return false;
   try {
     const [net, prefixStr] = parsed.value.split('/');
-    const prefix = Number(prefixStr);
     const family = isIP(net) === 6 ? 'ipv6' : 'ipv4';
+    const prefix = parseCidrPrefix(prefixStr, family);
+    if (prefix == null) return false;
     const bl = new BlockList();
     bl.addSubnet(net, prefix, family);
     return bl.check(host, isIP(host) === 6 ? 'ipv6' : 'ipv4');
@@ -111,9 +133,9 @@ export function isValidHostPattern(pattern) {
     const parsed = parseHostPattern(pattern);
     if (parsed.kind === 'cidr') {
       const [net, prefixStr] = parsed.value.split('/');
-      const prefix = Number(prefixStr);
-      if (!Number.isInteger(prefix)) return false;
       const family = isIP(net) === 6 ? 'ipv6' : 'ipv4';
+      const prefix = parseCidrPrefix(prefixStr, family);
+      if (prefix == null) return false;
       new BlockList().addSubnet(net, prefix, family);
     }
     return true;
@@ -190,4 +212,17 @@ export function checkIpAllowed(db, bridgeInstanceId, host, port) {
 export function checkCommandAllowed(db, bridgeInstanceId, payload) {
   const rules = listBridgeSecurityRules(db, bridgeInstanceId, 'command');
   return evaluate(rules, (pattern) => matchesCommandPattern(pattern, payload));
+}
+
+/**
+ * Every rejection bridge-manager.js's _checkSecurity() produces is prefixed
+ * this way — used by route catch blocks (routes/bridge.js, encoders.js,
+ * cameras.js, mixers.js) to map a deliberate policy block to 403, instead
+ * of falling into whatever generic infra-error status (502/400/…) that
+ * catch block otherwise uses for "the bridge command failed".
+ * @param {Error} err
+ * @returns {boolean}
+ */
+export function isSecurityBlockError(err) {
+  return typeof err?.message === 'string' && err.message.startsWith('Blocked by bridge security policy');
 }

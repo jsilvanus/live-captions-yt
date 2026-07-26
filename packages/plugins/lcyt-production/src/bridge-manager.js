@@ -211,45 +211,56 @@ export class BridgeManager {
    * Enforce this bridge's IP/command security policy (bridge-security.js)
    * before a command is ever written to the SSE stream — the authoritative
    * check; lcyt-bridge's security-policy.js duplicates this locally as a
-   * second, defense-in-depth layer.
+   * second, defense-in-depth layer. Never throws — any error is turned into
+   * a block reason, since a caller that awaits sendCommand()'s documented
+   * Promise contract must never see a synchronous exception out of it.
    * @returns {string|null}  a block reason, or null if allowed
    */
   _checkSecurity(instanceId, type, command) {
-    const ipTarget = this._resolveIpTarget(type, command);
-    if (ipTarget) {
-      const { allowed, reason } = checkIpAllowed(this._db, instanceId, ipTarget.host, ipTarget.port);
-      if (!allowed) return `Blocked by bridge security policy: ${reason}`;
+    try {
+      for (const target of this._resolveIpTargets(type, command)) {
+        const { allowed, reason } = checkIpAllowed(this._db, instanceId, target.host, target.port);
+        if (!allowed) return `Blocked by bridge security policy: ${reason}`;
+      }
+      if (type === 'tcp_send') {
+        const { allowed, reason } = checkCommandAllowed(this._db, instanceId, command.payload ?? '');
+        if (!allowed) return `Blocked by bridge security policy: ${reason}`;
+      }
+      return null;
+    } catch (err) {
+      return `Blocked by bridge security policy: ${err.message}`;
     }
-    if (type === 'tcp_send') {
-      const { allowed, reason } = checkCommandAllowed(this._db, instanceId, command.payload ?? '');
-      if (!allowed) return `Blocked by bridge security policy: ${reason}`;
-    }
-    return null;
   }
 
   /**
-   * @returns {{ host: string, port: number|null }|null}  the target the
-   *   command would connect to, or null if this command type carries none
-   *   (or the target is missing/unparseable — that's a validation failure
-   *   the bridge itself will surface, not a security-policy concern)
+   * @returns {Array<{ host: string, port: number|null }>}  every target the
+   *   command would connect to (model_call may fetch both a sourceUrl and
+   *   POST to an endpoint — both need to be covered, not just the one the
+   *   command is nominally "for"). A target that's missing/unparseable is
+   *   simply omitted — that's a validation failure the bridge itself will
+   *   surface, not a security-policy concern.
    */
-  _resolveIpTarget(type, command) {
+  _resolveIpTargets(type, command) {
     if (type === 'tcp_send' || type === 'obs_switch' || type === 'atem_switch') {
-      if (!command.host) return null;
-      return { host: command.host, port: command.port != null ? Number(command.port) : null };
+      if (!command.host) return [];
+      return [{ host: command.host, port: command.port != null ? Number(command.port) : null }];
     }
     if (type === 'http_request' || type === 'model_call') {
-      const raw = type === 'http_request' ? command.url : command.endpoint;
-      if (!raw) return null;
-      try {
-        const u = new URL(raw);
-        const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
-        return { host: u.hostname.replace(/^\[|\]$/g, ''), port };
-      } catch {
-        return null;
+      const urls = type === 'http_request'
+        ? [command.url]
+        : [command.endpoint, command.sourceUrl]; // model_call: POST target + optional image-fetch source
+      const targets = [];
+      for (const raw of urls) {
+        if (!raw) continue;
+        try {
+          const u = new URL(raw);
+          const port = Number(u.port) || (u.protocol === 'https:' ? 443 : 80);
+          targets.push({ host: u.hostname.replace(/^\[|\]$/g, ''), port });
+        } catch { /* unparseable — not a security-policy concern, skip */ }
       }
+      return targets;
     }
-    return null;
+    return [];
   }
 
   _write(res, event, data) {

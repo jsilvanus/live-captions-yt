@@ -59,6 +59,17 @@ function hostNameMatches(pattern, hostname) {
   return pattern === hostname;
 }
 
+// See parseCidrPrefix's doc comment on the backend copy
+// (packages/plugins/lcyt-production/src/bridge-security.js) for why an
+// empty prefix must be rejected rather than silently coerced to /0.
+function parseCidrPrefix(prefixStr, family) {
+  if (!/^\d+$/.test(prefixStr ?? '')) return null;
+  const prefix = Number(prefixStr);
+  const maxBits = family === 'ipv6' ? 128 : 32;
+  if (prefix < 0 || prefix > maxBits) return null;
+  return prefix;
+}
+
 function matchesHostPattern(pattern, host, port) {
   let parsed;
   try {
@@ -74,13 +85,15 @@ function matchesHostPattern(pattern, host, port) {
     return !hostIsIp && hostNameMatches(parsed.value, String(host).toLowerCase());
   }
   if (parsed.kind === 'ip') {
-    return hostIsIp && parsed.value === host;
+    // Case-insensitive — IPv6 literals are case-insensitive by spec.
+    return hostIsIp && parsed.value.toLowerCase() === String(host).toLowerCase();
   }
   if (!hostIsIp) return false;
   try {
     const [net, prefixStr] = parsed.value.split('/');
-    const prefix = Number(prefixStr);
     const family = isIP(net) === 6 ? 'ipv6' : 'ipv4';
+    const prefix = parseCidrPrefix(prefixStr, family);
+    if (prefix == null) return false;
     const bl = new BlockList();
     bl.addSubnet(net, prefix, family);
     return bl.check(host, isIP(host) === 6 ? 'ipv6' : 'ipv4');

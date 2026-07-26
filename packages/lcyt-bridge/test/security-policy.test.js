@@ -82,6 +82,19 @@ describe('SecurityPolicy.checkIp — precedence', () => {
     assert.equal(policy.checkIp('192.168.1.99', 80).allowed, false);
     assert.equal(policy.checkIp('192.168.2.99', 80).allowed, true);
   });
+
+  it('a CIDR pattern with an empty prefix never matches (does not silently become /0)', () => {
+    const policy = new SecurityPolicy();
+    policy.update({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.0/' }] });
+    assert.equal(policy.checkIp('8.8.8.8', 80).allowed, true);
+    assert.equal(policy.checkIp('10.0.0.1', 80).allowed, true);
+  });
+
+  it('exact IP matching is case-insensitive for IPv6 literals', () => {
+    const policy = new SecurityPolicy();
+    policy.update({ ipRules: [{ ruleType: 'deny', pattern: '2001:DB8::1' }] });
+    assert.equal(policy.checkIp('2001:db8::1', 80).allowed, false);
+  });
 });
 
 describe('SecurityPolicy.checkCommand — precedence', () => {
