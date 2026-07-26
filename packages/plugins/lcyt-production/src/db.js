@@ -56,6 +56,31 @@ export function runMigrations(db) {
     )
   `);
 
+  // bridge_security_rules — per-bridge TCP command / target IP allow-deny
+  // policy. rule_kind distinguishes "IP/host the bridge may dial"
+  // ('ip', pattern syntax mirrors lcyt-connectors' connector_network_rules:
+  // exact host, *.example.com wildcard, exact IP, CIDR, optional :port) from
+  // "TCP command payload the bridge may send" ('command', pattern is a
+  // regex tested against the outgoing payload string). Evaluated by
+  // bridge-security.js: any matching 'deny' rule blocks; else if any
+  // 'allow' rule exists for that kind, only a matching 'allow' rule passes
+  // (default-deny); else default-allow (no rules configured for that kind).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bridge_security_rules (
+      id                  TEXT PRIMARY KEY,
+      bridge_instance_id  TEXT NOT NULL REFERENCES prod_bridge_instances(id) ON DELETE CASCADE,
+      rule_kind           TEXT NOT NULL CHECK (rule_kind IN ('ip','command')),
+      rule_type           TEXT NOT NULL CHECK (rule_type IN ('allow','deny')),
+      pattern             TEXT NOT NULL,
+      description         TEXT,
+      created_at          TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_bridge_security_rules_instance
+      ON bridge_security_rules(bridge_instance_id, rule_kind)
+  `);
+
   // Additive migrations: add connection_source to cameras/mixers if missing
   const cameraCols = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
   if (!cameraCols.includes('connection_source')) {
@@ -128,6 +153,59 @@ export function runMigrations(db) {
   if (!cameraCols8.includes('mixer_id')) {
     db.exec('ALTER TABLE prod_cameras ADD COLUMN mixer_id TEXT REFERENCES prod_mixers(id) ON DELETE SET NULL');
   }
+}
+
+// ---------------------------------------------------------------------------
+// bridge_security_rules CRUD
+// ---------------------------------------------------------------------------
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} bridgeInstanceId
+ * @param {'ip'|'command'} [ruleKind]  Omit to return both kinds.
+ * @returns {Array<object>}
+ */
+export function listBridgeSecurityRules(db, bridgeInstanceId, ruleKind = null) {
+  if (ruleKind) {
+    return db.prepare(
+      'SELECT * FROM bridge_security_rules WHERE bridge_instance_id = ? AND rule_kind = ? ORDER BY created_at'
+    ).all(bridgeInstanceId, ruleKind);
+  }
+  return db.prepare(
+    'SELECT * FROM bridge_security_rules WHERE bridge_instance_id = ? ORDER BY created_at'
+  ).all(bridgeInstanceId);
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {{ id: string, bridgeInstanceId: string, ruleKind: 'ip'|'command', ruleType: 'allow'|'deny', pattern: string, description?: string }} row
+ * @returns {object}  the inserted row
+ */
+export function createBridgeSecurityRule(db, { id, bridgeInstanceId, ruleKind, ruleType, pattern, description = null }) {
+  db.prepare(`
+    INSERT INTO bridge_security_rules (id, bridge_instance_id, rule_kind, rule_type, pattern, description)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(id, bridgeInstanceId, ruleKind, ruleType, pattern, description);
+  return db.prepare('SELECT * FROM bridge_security_rules WHERE id = ?').get(id);
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} id
+ * @returns {object|undefined}
+ */
+export function getBridgeSecurityRule(db, id) {
+  return db.prepare('SELECT * FROM bridge_security_rules WHERE id = ?').get(id);
+}
+
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {string} id
+ * @returns {boolean}  true if a row was deleted
+ */
+export function deleteBridgeSecurityRule(db, id) {
+  const result = db.prepare('DELETE FROM bridge_security_rules WHERE id = ?').run(id);
+  return result.changes > 0;
 }
 
 /**
