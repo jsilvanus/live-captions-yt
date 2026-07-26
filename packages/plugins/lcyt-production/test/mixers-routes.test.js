@@ -67,8 +67,13 @@ function fakeAuth(req, res, next) {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'missing api key' });
   req.session = { apiKey };
+  req.user = { userId: 1 };
   next();
 }
+
+// Permissive stand-in for the composition root's real checkProjectRole — see
+// cameras-routes.test.js's identical comment.
+const permissiveDeps = { checkProjectRole: () => true };
 
 function startApp(registry, bridgeManager = null, opts = {}) {
   const app = express();
@@ -101,7 +106,7 @@ describe('mixers router — auth wiring', () => {
 
   it('opts.auth configured: GET /:id requires it', async () => {
     const id = insertMixer();
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const unauth = await fetch(`${baseUrl}/production/mixers/${id}`);
     assert.equal(unauth.status, 401);
     const authed = await fetch(`${baseUrl}/production/mixers/${id}`, { headers: { 'x-api-key': 'proj-a' } });
@@ -110,7 +115,7 @@ describe('mixers router — auth wiring', () => {
 
   it('opts.auth configured: /sources and /whip-url stay unauthenticated (LcytMixerPage kiosk)', async () => {
     const id = insertMixer({ type: 'lcyt' });
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const sources = await fetch(`${baseUrl}/production/mixers/${id}/sources`);
     assert.notEqual(sources.status, 401);
     const whipUrl = await fetch(`${baseUrl}/production/mixers/${id}/whip-url`);
@@ -122,7 +127,7 @@ describe('mixers router — auth wiring', () => {
     // header, same as /sources and /whip-url — regression test for the
     // switch route having been accidentally left out of the carve-out.
     const id = insertMixer({ type: 'lcyt' });
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
     assert.notEqual(res.status, 401);
   });
@@ -132,7 +137,7 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
   it('direct (lcyt, non-bridge) switch notifies with the acting session apiKey', async () => {
     const id = insertMixer({ type: 'lcyt' });
     const registry = makeRegistryStub();
-    await startApp(registry, null, { auth: fakeAuth });
+    await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
 
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/2`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -151,7 +156,7 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
       isConnected: () => true,
       sendCommand: async () => ({ ok: true }),
     };
-    await startApp(registry, bridgeManager, { auth: fakeAuth });
+    await startApp(registry, bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
 
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/3`, {
       method: 'POST', headers: { 'x-api-key': 'proj-b' },
@@ -166,7 +171,7 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
     const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
     const registry = makeRegistryStub();
     const bridgeManager = { isConnected: () => false, sendCommand: async () => {} };
-    await startApp(registry, bridgeManager, { auth: fakeAuth });
+    await startApp(registry, bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
 
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -183,5 +188,77 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
     assert.equal(res.status, 200);
     assert.deepEqual(registry.notified, [{ apiKey: null, mixerId: id, inputNumber: 1 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setup/Production tier gate (plan_project_roles.md, decided 2026-07-26)
+// ---------------------------------------------------------------------------
+
+describe('Setup/Production tier gate', () => {
+  it('POST / (create) 403s when no deps.checkProjectRole is injected at all (fail closed)', async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth }); // no deps
+    const res = await fetch(`${baseUrl}/production/mixers`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Mixer', type: 'lcyt' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('POST / (create) 403s when checkProjectRole rejects the role, requesting the setup tier', async () => {
+    const seen = [];
+    await startApp(makeRegistryStub(), null, {
+      auth: fakeAuth,
+      deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } },
+    });
+    const res = await fetch(`${baseUrl}/production/mixers`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Mixer', type: 'lcyt' }),
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(seen, ['setup']);
+  });
+
+  it('POST / (create) succeeds when checkProjectRole allows it', async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const res = await fetch(`${baseUrl}/production/mixers`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Mixer', type: 'lcyt' }),
+    });
+    assert.equal(res.status, 201);
+  });
+
+  it('POST /:id/switch/:inputNumber (live control, credentialed) 403s when checkProjectRole rejects, requesting the production tier', async () => {
+    const id = insertMixer({ type: 'lcyt' });
+    const seen = [];
+    await startApp(makeRegistryStub(), null, {
+      auth: fakeAuth,
+      deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } },
+    });
+    const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(seen, ['production']);
+  });
+
+  it('POST /:id/test 403s when checkProjectRole rejects, requesting the production tier', async () => {
+    const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' } });
+    const seen = [];
+    await startApp(makeRegistryStub(), null, {
+      auth: fakeAuth,
+      deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } },
+    });
+    const res = await fetch(`${baseUrl}/production/mixers/${id}/test`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(seen, ['production']);
+  });
+
+  it('GET / stays open regardless of the gate (read is never blocked)', async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: { checkProjectRole: () => false } });
+    const res = await fetch(`${baseUrl}/production/mixers`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(res.status, 200);
   });
 });

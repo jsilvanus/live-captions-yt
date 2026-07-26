@@ -27,7 +27,7 @@ export const RESERVED_VIEWPORT_NAMES = new Set([
   'broadcast', 'renderer', 'renderer_start', 'renderer_stop',
 ]);
 
-export function createDskViewportsRouter(db, auth) {
+export function createDskViewportsRouter(db, auth, deps = {}) {
   const router = Router();
 
   function checkOwner(req, res, paramKey) {
@@ -36,6 +36,26 @@ export function createDskViewportsRouter(db, auth) {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Setup-tier gate (plan_project_roles.md, decided 2026-07-26) — same shape
+   * as dsk-templates.js's requireSetup (see its doc comment): X-API-Key auth
+   * is exempt — it already proves possession of the project's raw api_key,
+   * the strongest credential this codebase recognizes for a project, and
+   * pre-dates the user/role system entirely. A plain JWT with no
+   * req.user.userId (e.g. a caption-session token) is NOT exempt — only the
+   * X-API-Key path specifically bypasses this — recognized by
+   * req.session.authKind === 'apikey', set only by editorAuth
+   * (middleware/editor-auth.js), not by req.user's absence alone.
+   */
+  function requireSetup(req, res, next) {
+    if (req.session?.authKind === 'apikey') return next(); // X-API-Key path — see doc comment above
+    const apiKey = req.session?.apiKey;
+    if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !deps.checkProjectRole('setup', apiKey, req.user.userId)) {
+      return res.status(403).json({ error: 'Explicit project admin/owner access required' });
+    }
+    next();
   }
 
   // GET /dsk/:apikey/viewports
@@ -52,7 +72,7 @@ export function createDskViewportsRouter(db, auth) {
   });
 
   // POST /dsk/:apikey/viewports
-  router.post('/:apikey/viewports', auth, (req, res) => {
+  router.post('/:apikey/viewports', auth, requireSetup, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name, label, viewportType, width, height, textLayers, displaySettings } = req.body ?? {};
 
@@ -86,7 +106,7 @@ export function createDskViewportsRouter(db, auth) {
   });
 
   // PUT /dsk/:apikey/viewports/:name
-  router.put('/:apikey/viewports/:name', auth, (req, res) => {
+  router.put('/:apikey/viewports/:name', auth, requireSetup, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name } = req.params;
     const existing = getViewport(db, req.params.apikey, name);
@@ -131,7 +151,7 @@ export function createDskViewportsRouter(db, auth) {
   });
 
   // DELETE /dsk/:apikey/viewports/:name
-  router.delete('/:apikey/viewports/:name', auth, (req, res) => {
+  router.delete('/:apikey/viewports/:name', auth, requireSetup, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const deleted = deleteViewport(db, req.params.apikey, req.params.name);
     if (!deleted) return res.status(404).json({ error: 'Viewport not found' });

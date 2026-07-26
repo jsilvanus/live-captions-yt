@@ -131,50 +131,94 @@ under-tier, 200 on at/above-tier, GET unaffected).
 
 ## Phase 2: Apply page-scoped gates across every Setup-shaped route
 
+**Status: done, 2026-07-26** (all 5 streams — A, C first; B, D, E in a
+second pass after a subagent doing B/D/E hit a session limit mid-Stream-E
+verification with everything uncommitted but passing; the orchestrating
+session reviewed the uncommitted diff, fixed one real bug it found (see
+below), finished Stream D itself, and committed all of Phase 2 together).
+See each stream's own note below for what actually shipped vs. what got
+deliberately left ungated and logged to `CONSIDER.md` instead.
+
+**Real bug found and fixed during review, not by the original streams:**
+Stream B's first pass gated DSK template/viewport writes on `req.user.userId`
+unconditionally — but `DskEditorPage.jsx` (the real production DSK editor UI)
+authenticates via `X-API-Key`, which never populates `req.user` at all. As
+written, this would have 403'd DSK template/viewport editing for every user,
+including real owners. Fixed by having `editorAuth`
+(`lcyt-dsk/src/middleware/editor-auth.js`) mark the request
+(`req.session.authKind = 'apikey'`) and having `requireSetup` in both
+`dsk-templates.js`/`dsk-viewports.js` exempt that specific path — raw
+api_key possession already the strongest credential this codebase
+recognizes for a project — while a plain session JWT lacking `req.user`
+(a different case) still 403s normally. See `CONSIDER.md` for the full
+writeup and the deliberate-not-oversight framing.
+
 **Mode:** Parallel (5 streams)
 **Depends on:** Phase 1
 **Goal:** Every route the 2026-07-20 interim fix deliberately left
 untouched now uses `requireProjectRole()` at the correct tier.
 
-**Stream A — `lcyt-backend` + `lcyt-files` misc config (low risk, no
-credential-minting)**
-- `packages/lcyt-backend/src/routes/targets.js`, `translation.js`,
-  `stt.js` (config routes, not `/start`/`/stop` — confirm which verbs are
-  config vs. operational before gating `/start`/`/stop` at `'setup'`; those
-  may belong at `'production'` instead, verify against the plan's own
-  framing of "configuring vs. running"), `icons.js`
-- `packages/plugins/lcyt-files/src/routes/files.js` (`/storage-config` GET/PUT/DELETE)
-- `lcyt-agent`'s `roles/:roleCode/config` route — gate at `'setup'`
+**Stream A — `lcyt-backend` + `lcyt-files` misc config — done, with two
+items deliberately skipped.**
+- Done: `targets.js`, `translation.js`, `stt.js` (`PUT /config`,
+  `POST`/`PUT`/`DELETE /source-languages` only — `/start`/`/stop`/`/status`/
+  `/events`/`/config/source-language` stay ungated, Production-tier operate
+  actions), `lcyt-agent`'s `roles/:roleCode/config` PUT.
+- **Skipped, logged to `CONSIDER.md`:** `icons.js` and `lcyt-files`'
+  `/file/storage-config` — both mounted with the plain session-only
+  `createAuthMiddleware`, which never populates `req.user`, so
+  `requireProjectRole()` can never resolve a role there without a broader
+  auth-model migration.
 
-**Stream B — `lcyt-dsk`**
-- `dsk-templates.js`, `dsk-viewports.js`, `dsk-rtmp.js` — all `'setup'`
-  tier. (`dsk.js` is read-only per grounding — no write gate needed, but
-  confirm no write verbs were missed.)
+**Stream B — `lcyt-dsk` — done, with live-graphics-operate routes
+deliberately left ungated (logged to `CONSIDER.md`).**
+- Done: `dsk-templates.js`/`dsk-viewports.js` template + viewport CRUD +
+  thumbnail CRUD, gated at `'setup'`, with the X-API-Key exemption above.
+  `dsk-rtmp.js` untouched (nginx-rtmp callbacks only, nothing to gate).
+- **Left ungated:** `activate`, one-off `template` render, `broadcast`,
+  `graphics` push, `renderer/start`/`renderer/stop` — live graphics-operate
+  actions on the same router; the `/graphics` page's own access tier was
+  never decided by `plan_project_roles.md` at all (only Setup/Assets/
+  Production are named).
 
-**Stream C — `lcyt-connectors`**
-- `connectors.js` — `'setup'` tier. Same credential-bearing risk class as
-  `/ai/providers` (`auth_config` can hold secrets) — treat with the same
-  care as the original interim fix, this is not a low-risk stream despite
-  being a single file.
+**Stream C — `lcyt-connectors` — done.**
+- `connectors.js` gated at `'setup'` tier via the mount-site double-auth
+  pattern in `server.js` (plugin boundary, no router-internal changes
+  needed since GET auto-exempts).
 
-**Stream D — `lcyt-rtmp`**
-- `ingestion.js`, `radio.js`, `stream.js` — config CRUD at `'setup'`.
-  **Known ambiguity, not resolved by the source conversation:** the plan
-  doc itself flags that toggling ingest on/off *during a live show* reads
-  as Production-tier, not Setup-tier, even though the route lives next to
-  config CRUD. Default to `'setup'` for this phase (matches the plan's own
-  lean — "arguably Setup-tier config") and log the live-toggle question to
-  `CONSIDER.md` rather than blocking the stream on it.
+**Stream D — `lcyt-rtmp` — assessed, left entirely ungated (logged to
+`CONSIDER.md`), same root cause as Stream A's `icons.js`/`lcyt-files` skip.**
+- `ingestion.js`/`radio.js`/`stream.js`'s config routes were in scope, but
+  the whole router group (`/ingestion`, `/stream`, `/radio`, `/preview`,
+  `/crop`, `/rtmp`, `/feed-rtmp`, `/stream-hls`) is mounted in `server.js`
+  with the plain session-only `auth` (`createAuthMiddleware`), not
+  `scopedAuth()` — identical blocker to Stream A's two skips, just
+  discovered here instead. Migrating that router group's auth model is a
+  bigger, separate change (several of those routes are public/kiosk/nginx-
+  callback and must keep working unauthenticated) — out of scope for this
+  pass. The live-ingest-toggle-vs-config ambiguity the original plan
+  flagged turned out to be moot — nothing in this router group got gated
+  either way.
 
-**Stream E — `lcyt-production`** (highest complexity — start this one
-first within the phase, it's the likely straggler)
-- `cameras.js`, `mixers.js`, `encoders.js`, `bridge.js` — **per-route
-  split, not per-router**: CRUD/config verbs → `'setup'`; live verbs
-  (`/preset/:presetId` trigger, `/switch/:inputNumber`, `/active`,
-  `/command`, WHIP endpoints) → `'production'`. Each file needs its own
-  pass since the split isn't mechanical (verify each route body, don't
-  pattern-match on HTTP verb alone — GET `/active` is a live-status read,
-  not a CRUD read).
+**Stream E — `lcyt-production` — done**, including a real pre-existing gap
+found and fixed along the way (not part of the original scope, logged for
+the record): `encoders.js`/`bridge.js` had **no** session/user/device auth
+wired in at all before this pass (unlike `cameras.js`/`mixers.js`, which
+already had it from earlier plans) — `createProductionRouter` now threads
+`opts.auth`/`opts.deps` through all four sub-routers uniformly.
+- `cameras.js`, `mixers.js`, `encoders.js`, `bridge.js` — per-route split:
+  CRUD/config → `'setup'`; live verbs (`/preset/:presetId`,
+  `/switch/:inputNumber`, `/:id/start|stop|test`, `/instances/:id/command`)
+  → `'production'`. WHIP/thumbnail/bridge-agent-channel kiosk routes stay
+  unauthenticated as before (`route-access.js`'s gate fails *open* when
+  `req.session?.apiKey` is absent — i.e. when `opts.auth` never ran at all
+  for one of those carve-out routes — and fails *closed* once a real
+  session exists but lacks the tier).
+- **Left ungated, logged:** `cameras.js`'s `POST /:id/thumbnail/capture`
+  and `perception/start`/`perception/stop` (genuinely ambiguous tier);
+  `bridge.js`'s `GET /instances/:id/env` (a credential-disclosing read,
+  exempt from write-gating by the blanket read/write policy, but arguably
+  deserves its own exception — flagged, not fixed here).
 
 **Sync point:** every touched package's own test suite passes
 (`npm test -w packages/<name>` per stream) and a full `npm test` from repo

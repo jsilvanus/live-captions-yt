@@ -12,6 +12,7 @@
 
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import { requireTier } from '../route-access.js';
 
 const ENCODER_TYPES = ['monarch_hd', 'monarch_hdx'];
 const VALID_CONNECTION_SOURCES = ['backend', 'frontend', 'bridge'];
@@ -26,8 +27,28 @@ export function parseEncoder(row) {
   };
 }
 
-export function createEncodersRouter(db, bridgeManager = null) {
+/**
+ * @param {import('better-sqlite3').Database} db
+ * @param {object|null} bridgeManager
+ * @param {{ auth?: import('express').RequestHandler, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts]
+ *   `opts.auth` (real project-access middleware, e.g. scopedAuth('production'))
+ *   was previously never wired into this router at all — unlike
+ *   cameras.js/mixers.js, encoder CRUD + start/stop/test were fully
+ *   unauthenticated. Optional/opt-in for the same reason as those two
+ *   routers: existing route-level tests construct this router directly and
+ *   keep working unauthenticated unless they explicitly opt in; server.js
+ *   always supplies both `auth` and `deps` in production.
+ */
+export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
+  const auth = opts.auth ?? null;
   const router = Router();
+
+  if (auth) router.use(auth);
+
+  // Setup-tier CRUD vs. Production-tier live-control (plan_project_roles.md,
+  // decided 2026-07-26) — see route-access.js's doc comment.
+  const requireSetup = requireTier(opts.deps ?? {}, 'setup');
+  const requireProduction = requireTier(opts.deps ?? {}, 'production');
 
   // GET /production/encoders — list all encoders
   router.get('/', (_req, res) => {
@@ -46,7 +67,7 @@ export function createEncodersRouter(db, bridgeManager = null) {
   });
 
   // POST /production/encoders — create encoder
-  router.post('/', (req, res) => {
+  router.post('/', requireSetup, (req, res) => {
     const {
       name,
       type,
@@ -75,7 +96,7 @@ export function createEncodersRouter(db, bridgeManager = null) {
   });
 
   // PUT /production/encoders/:id — update encoder
-  router.put('/:id', (req, res) => {
+  router.put('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Encoder not found' });
@@ -105,7 +126,7 @@ export function createEncodersRouter(db, bridgeManager = null) {
   });
 
   // DELETE /production/encoders/:id — delete encoder
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Encoder not found' });
@@ -115,7 +136,7 @@ export function createEncodersRouter(db, bridgeManager = null) {
   });
 
   // POST /production/encoders/:id/start — start encoder
-  router.post('/:id/start', async (req, res) => {
+  router.post('/:id/start', requireProduction, async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
 
@@ -141,7 +162,7 @@ export function createEncodersRouter(db, bridgeManager = null) {
   });
 
   // POST /production/encoders/:id/stop — stop encoder
-  router.post('/:id/stop', async (req, res) => {
+  router.post('/:id/stop', requireProduction, async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
 
@@ -167,7 +188,7 @@ export function createEncodersRouter(db, bridgeManager = null) {
   });
 
   // POST /production/encoders/:id/test — test HTTP reachability
-  router.post('/:id/test', async (req, res) => {
+  router.post('/:id/test', requireProduction, async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
 

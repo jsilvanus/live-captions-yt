@@ -11,6 +11,64 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
+## `lcyt-rtmp`'s ingestion/radio/stream config routes can't be gated at 'setup' tier — same auth-model blocker as `icons.js`/`lcyt-files`, whole router group affected
+
+**Where:** `packages/plugins/lcyt-rtmp/src/routes/ingestion.js` (`PATCH /config`, `POST /config/rotate`), `radio.js` (`PUT /config`), `stream.js` (`POST /`, `PUT /active`, `PUT /:slot`, `DELETE /:slot`, `DELETE /`), `packages/lcyt-backend/src/server.js`'s `createRtmpRouters(db, auth, rtmp, ...)` call (mounts `/ingestion`, `/stream`, `/stream-hls`, `/radio`, `/preview`, `/crop`, `/rtmp`, `/feed-rtmp`).
+
+**Finding:** `plan_project_roles.md`'s route list names these config routes as in-scope Setup-tier writes (same class as `targets.js`/`translation.js`, which Stream A did gate). But unlike those, the entire RTMP router group is constructed with `auth` = the module-level `const auth = createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the plain session-JWT-only middleware, not `scopedAuth()`/`createProjectAccessMiddleware`. `createAuthMiddleware` only ever sets `req.session = payload` (the raw JWT payload) and **never** sets `req.user` under any circumstances, for any token kind — there is no code path in it that could populate a real `userId`. This is the identical root cause already logged for `routes/icons.js` and `lcyt-files`' `/file/storage-config` (see that entry above) — `requireProjectRole()`/`hasProjectRole()`-style gating needs a real `userId` to resolve a role at all, so applying it here would either 403 every request unconditionally (fail-closed forever, since the auth model can never satisfy it) or require migrating this entire router group onto `scopedAuth()` first.
+
+**Skipped because:** switching `createRtmpRouters`'s auth model is a bigger, separate change than adding a role gate — it affects `/ingestion`, `/stream`, `/stream-hls`, `/radio`, `/preview`, `/crop`, `/rtmp`, and `/feed-rtmp` all at once (they share the one `auth` instance), several of which (`/rtmp`, `/feed-rtmp`, `/stream-hls`, `/preview`) are public/nginx-callback/kiosk routes that must stay working exactly as they do today. Left entirely ungated (unchanged from before this pass) rather than attempting that migration as a side effect of the Setup-tier pass. A future pass wanting this gated needs to first decide whether to thread `scopedAuth('<resource>')` through per-sub-router (risking behavior changes on the public/callback routes sharing the group) or give the config-only routes (`ingestion.js`/`radio.js`/`stream.js`) their own separate, real auth middleware instance.
+
+(Found during: Phase 2 Stream D, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## DSK live-graphics-operate routes left ungated by the Setup-tier pass — the `/graphics` page's own access tier was never decided
+
+**Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` — `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`.
+
+**Finding:** `plan_project_roles.md`'s route-mapping list names `lcyt-dsk`'s `dskTemplatesRouter`/`dskViewportsRouter` as Setup Hub's "viewports" card (**template CRUD**, **viewport CRUD**) — and those are now gated at `'setup'` tier. But the same router also exposes live graphics-operate actions on the same file: activating a template live, pushing broadcast data, starting/stopping the RTMP renderer, rendering a one-off template. These read as Production-tier (or a genuinely separate `/graphics` page tier) rather than Setup config, but `plan_project_roles.md`'s decided page model only names Setup/Assets/Production — the Graphics page (`/graphics/editor`, `/graphics/control`, `/graphics/viewports` in `lcyt-web`'s routing table) was never assigned a tier at all.
+
+**Skipped because:** guessing whether these belong to `'production'`, a new tier, or should stay wide open would be inventing policy this plan never decided. Left ungated (any project member who passes the broader `scopedAuth('dsk')` gate can still trigger them, same as before this pass) rather than guessing.
+
+(Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## DSK Setup-tier write gate exempts X-API-Key (raw project key) auth — a deliberate decision, not an oversight
+
+**Where:** `packages/plugins/lcyt-dsk/src/middleware/editor-auth.js` (`req.session.authKind = 'apikey'` marker), `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` and `dsk-viewports.js`'s `requireSetup()`.
+
+**Finding:** `DskEditorPage.jsx` (the actual production DSK template/viewport editor UI) authenticates with `X-API-Key: <rawKey>`, never a JWT — it has no `req.user.userId` for a role check to key off at all. The first version of this Setup-tier gate (written by the agent that did the bulk of this stream, before session limits cut it off) blanket-403'd anything without `req.user.userId`, which would have silently broken the DSK editor entirely, for every user including real owners. Fixed by exempting the specific `editorAuth` success path (`req.session.authKind === 'apikey'`, set only by that one middleware) from the role check, while a plain session JWT that also lacks `req.user.userId` still 403s normally, same as every other Setup-tier route.
+
+**Not skipped, but worth flagging for a future pass:** this means raw `X-Api-Key` possession fully bypasses the new role system for DSK writes, same as it already implicitly could bypass everything before this plan existed (holding the key was already the strongest credential). If a future pass wants role-scoped access even for API-key holders, DSK's `editorAuth` would need its own identity/role resolution, which doesn't exist today — out of scope for this pass, which is only trying to add role gating on top of the *existing* trust model, not tighten X-API-Key itself.
+
+(Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## `lcyt-production`'s `encoders.js` and `bridge.js` had no session/user/device auth wired in at all before this pass — now fixed, but the two routers previously had a real, wide-open gap
+
+**Where:** `packages/plugins/lcyt-production/src/routes/encoders.js`, `packages/plugins/lcyt-production/src/routes/bridge.js`, `packages/plugins/lcyt-production/src/api.js` (`createProductionRouter`).
+
+**Finding (not skipped — fixed as part of this pass, logged for the record since it's a bigger change than "add a tier check"):** `cameras.js`/`mixers.js` already had `opts.auth` wiring (from earlier plans — `plan_ingest_feeds.md`'s cross-tenant review finding, `plan_vertical_crop.md` §4), but `createEncodersRouter`/`createBridgeRouter` had no `opts` parameter at all — encoder CRUD/start/stop/test and bridge instance CRUD/command-dispatch were fully unauthenticated beyond the bridge-agent's own separate per-instance token on its two SSE/callback routes. This pass threaded `opts.auth`/`opts.deps` through both routers (optional, so existing route-level tests that construct them directly keep working unauthenticated unless they opt in) and `server.js` now always supplies both in production, closing a real pre-existing hole as a side effect of adding the Setup/Production tier split.
+
+(Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## `bridge.js`'s `GET /instances/:id/env` re-downloads a bridge instance's plaintext auth token to any project member, not just admins
+
+**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`, `GET /instances/:id/env`.
+
+**Finding:** This route regenerates and returns the bridge agent's `.env` file, which contains its plaintext per-instance auth token (the credential `bridgeManager.authenticate()` checks on the agent's own SSE/callback channel). It's a GET, so it's exempt from `requireTier()`'s write-only gating by design (reads stay open to any project member who passes the broader `scopedAuth('production')` gate — same policy as every other Setup-tier route in this pass) — but unlike template/config reads, this one discloses a live credential, not configuration. A non-admin project member (editor/operator/viewer with org-baseline access) can currently re-download it.
+
+**Skipped because:** the read/write split this whole pass implements is a blanket policy decision (`plan_project_roles.md`, decided 2026-07-26: "GET stays open to any project member") — special-casing one GET route as write-tier-gated is a real, narrow exception worth making, but doing it as a drive-by inside the Setup/Production split pass risks being inconsistent with how other credential-disclosing GETs in the codebase are (or aren't) already handled. Flagged for a dedicated look rather than a one-off fix here.
+
+(Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
 ## `middleware/project-access.js`'s `resolveProjectId()` scavenges route `:id`/`:key` params generically, which is wrong on routers where that param isn't the project's api key
 
 **Where:** `packages/lcyt-backend/src/middleware/project-access.js` (`resolveProjectId()`, used by both `createProjectAccessMiddleware` at request-auth time and, deliberately *not* reused by, `requireProjectRole()` — see that function's own doc comment added 2026-07-26).

@@ -60,7 +60,7 @@ describe('createEditorAuth', () => {
     let called = false;
     auth(req, res, () => { called = true; });
     assert.equal(called, true);
-    assert.deepEqual(req.session, { apiKey: 'mykey' });
+    assert.deepEqual(req.session, { apiKey: 'mykey', authKind: 'apikey' });
   });
 
   it('unknown key returns 401', () => {
@@ -121,7 +121,7 @@ describe('editorAuthOrBearer', () => {
 
     assert.equal(jwtCalled, false, 'jwtAuth must not be called');
     assert.equal(nextCalled, true);
-    assert.deepEqual(req.session, { apiKey: 'mykey' });
+    assert.deepEqual(req.session, { apiKey: 'mykey', authKind: 'apikey' });
   });
 
   it('delegates to jwtAuth when x-api-key header is absent', () => {

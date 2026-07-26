@@ -20,7 +20,12 @@ export function createEditorAuth(db) {
       return res.status(401).json({ error: 'Invalid or inactive API key' });
     }
 
-    req.session = { apiKey: rawKey };
+    // authKind: 'apikey' lets downstream Setup-tier gates (dsk-templates.js/
+    // dsk-viewports.js's requireSetup) recognize this specific path — raw
+    // api_key possession, the strongest credential this codebase recognizes
+    // for a project — separately from a JWT session that merely lacks a
+    // resolvable req.user.userId (plan_project_roles.md, decided 2026-07-26).
+    req.session = { apiKey: rawKey, authKind: 'apikey' };
     next();
   };
 }

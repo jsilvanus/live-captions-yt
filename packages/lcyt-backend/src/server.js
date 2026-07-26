@@ -494,7 +494,13 @@ const userAuth = createUserAuthMiddleware(jwtSecret);
 // subscribers use the unified `/events/stream` instead.
 const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, { metrics, settings });
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, {
+  metrics, settings,
+  // Setup-tier writes only (plan_project_roles.md, decided 2026-07-26) —
+  // template/viewport CRUD; live-trigger routes (activate/broadcast/renderer
+  // start-stop/graphics push) stay ungated, see CONSIDER.md.
+  deps: { checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId) },
+});
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
@@ -737,13 +743,18 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
   metrics,
-  // Real session/user/device auth on the camera CRUD routes only — WHIP and
-  // thumbnail-image routes stay unauthenticated kiosk/img-tag endpoints, see
+  // Real session/user/device auth on the camera/mixer/encoder/bridge-instance
+  // CRUD routes — WHIP, thumbnail-image, and bridge-agent-channel routes stay
+  // unauthenticated kiosk/img-tag/bridge-token endpoints, see
   // routes/cameras.js's isUnauthenticatedCameraRoute() (plan_ingest_feeds.md
-  // cross-tenant review finding).
+  // cross-tenant review finding) and routes/bridge.js's
+  // isUnauthenticatedBridgeRoute().
   auth: scopedAuth('production'),
   perceptionManager: _perceptionManager,
   settings,
+  // Setup-tier CRUD vs. Production-tier live-control split
+  // (plan_project_roles.md, decided 2026-07-26) — see route-access.js.
+  deps: { checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId) },
 }));
 
 // RTMP relay routes — media.rtmp_relay_active is hot: always mounted (the
