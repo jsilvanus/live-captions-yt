@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
 import { EncoderTab } from './broadcast/EncoderTab.jsx';
 import { StreamTab } from './broadcast/StreamTab.jsx';
-import { YouTubeTab } from './broadcast/YouTubeTab.jsx';
+import { PlatformsTab } from './broadcast/PlatformsTab.jsx';
 
 const TABS = ['encoder', 'youtube', 'stream'];
 const TAB_LABELS = { encoder: 'Encoder', youtube: 'YouTube', stream: 'Stream' };
@@ -38,7 +38,7 @@ export function BroadcastModal({ isOpen, onClose, inline }) {
 
       <div className="settings-modal__body">
         {activeTab === 'encoder' && <EncoderTab />}
-        {activeTab === 'youtube' && <YouTubeTab />}
+        {activeTab === 'youtube' && <PlatformsTab />}
         {activeTab === 'stream'  && <StreamTab />}
       </div>
     </div>

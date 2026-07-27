@@ -165,6 +165,16 @@ export function ApiConnectorsIcon() {
   );
 }
 
+export function BroadcastPlatformsIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <rect x="1.5" y="3.5" width="13" height="9" rx="2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6.8 6.4L10 8L6.8 9.6V6.4Z" fill="currentColor" />
+      <path d="M5 14.5H11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" opacity="0.45" />
+    </svg>
+  );
+}
+
 export function WorkflowsIcon() {
   return (
     <svg width="15" height="15" viewBox="0 0 16 16" fill="none">

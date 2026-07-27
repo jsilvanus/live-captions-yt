@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { SetupCard } from './SetupCard.jsx';
+import { PlatformsSection } from './PlatformsSection.jsx';
 import { WorkflowsIcon } from './icons.jsx';
 import { CameraSection } from './CameraSection.jsx';
 import { MixerSection } from './MixerSection.jsx';
@@ -123,6 +124,7 @@ export function SetupHubPage() {
             {/* ── AI & integrations ── */}
             {isVisible('mcp-access') && <McpAccessSection />}
             {isVisible('connectors') && <ConnectorsSection />}
+            {isVisible('broadcast-platforms') && <PlatformsSection />}
             {isVisible('ai-roles') && <AiRoleModelsSection />}
 
             {/* ── Workflows — always visible regardless of the active filter
