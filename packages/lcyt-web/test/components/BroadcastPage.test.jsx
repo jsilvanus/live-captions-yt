@@ -19,17 +19,6 @@ vi.mock('@jsilvanus/matrox-monarch-control', () => ({
   }),
 }));
 
-vi.mock('../../src/lib/youtubeAuth.js', () => ({
-  requestYouTubeToken: vi.fn(),
-  getYouTubeToken: vi.fn(() => null),
-  revokeYouTubeToken: vi.fn(),
-}));
-vi.mock('../../src/lib/youtubeApi.js', () => ({
-  listScheduledBroadcasts: vi.fn().mockResolvedValue([]),
-  transitionBroadcast: vi.fn(),
-  enableHttpCaptions: vi.fn(),
-}));
-
 vi.mock('react-grid-layout', () => ({
   Responsive: ({ children, ...props }) => (
     <div data-testid="responsive" data-props={JSON.stringify(props)}>{children}</div>
