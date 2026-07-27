@@ -302,7 +302,12 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
 
     res.json({
       status,
-      captionSessionStarted: !!session && !sessionError,
+      // Only asserted when a session hook is actually wired. In the default
+      // deployment the frontend makes the second call itself (POST /live) —
+      // "one action from the UI, two calls under the hood" — so claiming
+      // `captionSessionStarted: false` here would be reporting a failure that
+      // never happened.
+      ...(startSession ? { captionSessionStarted: !!session && !sessionError } : {}),
       ...(sessionError ? {
         partial: true,
         warning: `The broadcast is live on ${adapter.platform}, but the caption session did not start: ${sessionError}`,
