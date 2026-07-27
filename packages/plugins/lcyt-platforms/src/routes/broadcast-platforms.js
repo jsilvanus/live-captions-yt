@@ -232,12 +232,14 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
       return res.status(400).json({ error: 'mimeType must be image/png or image/jpeg' });
     }
 
-    let buf;
-    try {
-      buf = Buffer.from(data, 'base64');
-    } catch {
+    // Buffer.from() is lenient with base64 — it silently drops invalid
+    // characters rather than throwing, so a try/catch here would be dead code
+    // and garbage would reach the provider as a short buffer. Validate the
+    // encoding explicitly instead.
+    if (typeof data !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(data.replace(/\s/g, ''))) {
       return res.status(400).json({ error: 'data is not valid base64' });
     }
+    const buf = Buffer.from(data, 'base64');
     if (!buf.length) return res.status(400).json({ error: 'Thumbnail image is empty' });
     if (buf.length > THUMBNAIL_MAX_BYTES) {
       return res.status(413).json({ error: `Thumbnail must be ${THUMBNAIL_MAX_BYTES / 1024 / 1024} MB or smaller` });

@@ -351,6 +351,17 @@ describe('broadcast platform routes', () => {
       }
     });
 
+    test('rejects data that is not valid base64', async () => {
+      // Buffer.from() would silently accept this and hand a short buffer to
+      // the provider.
+      await scheduled();
+      const { status, body } = await post('/broadcasts/b1/platforms/youtube/thumbnail', {
+        data: 'not base64!!! @@@', mimeType: 'image/png',
+      });
+      assert.equal(status, 400);
+      assert.match(body.error, /not valid base64/);
+    });
+
     test('rejects an oversized image', async () => {
       await scheduled();
       const { status } = await post('/broadcasts/b1/platforms/youtube/thumbnail', {

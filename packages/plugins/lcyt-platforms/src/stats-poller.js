@@ -96,8 +96,15 @@ export function createStatsPoller({
       return 'ok';
     } catch (err) {
       // Recorded on the link so the operator can see *why* the viewer count
-      // went stale, instead of it just silently stopping.
-      updateLink(db, link.id, { lastSyncError: err.message });
+      // went stale, instead of it just silently stopping. Guarded because a
+      // DB write inside a catch block can itself throw (a broadcast deleted
+      // mid-sweep takes its link with it), and that would escape pollLink and
+      // abandon every link still queued in this sweep.
+      try {
+        updateLink(db, link.id, { lastSyncError: err.message });
+      } catch (writeErr) {
+        logger.warn(`[platforms] could not record sync error on link ${link.id}: ${writeErr.message}`);
+      }
 
       if (err?.statusCode === 403 && QUOTA_REASONS.has(err.reason)) {
         logger.warn(`[platforms] ${link.platform} quota exceeded — backing off stats polling`);

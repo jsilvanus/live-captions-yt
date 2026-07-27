@@ -1077,3 +1077,31 @@ pass:
 **Recommendation:** If a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
 
 (Found during: code-review pass on the bridge security layer, 2026-07-26.)
+
+---
+
+## YouTube broadcast privacy and auto-start/stop are hardcoded with no way to change them
+
+**Where:** `packages/plugins/lcyt-platforms/src/adapters/youtube.js`'s `createScheduled()`
+
+**Finding:** Every broadcast this plugin schedules is created with `status.privacyStatus: 'unlisted'` and `contentDetails.enableAutoStart/enableAutoStop: false`, hardcoded. Nothing in the API, the DB, or the UI can change them. `unlisted` is a defensible safe default — a broadcast accidentally created `public` is a worse failure than one accidentally created `unlisted` — and manual start/stop matches the explicit "Go live"/"End stream" buttons this plan built. But an operator scheduling a genuinely public service stream has to go into YouTube Studio afterwards to flip the visibility, which quietly defeats part of the point of scheduling from inside LCYT.
+
+**Why skipped:** doing it properly is not a one-line default change — it needs a per-broadcast field (`broadcasts.privacy_status` or a platform-link column), a migration, plumbing through the schedule route, and a control in the broadcast panel, plus a decision about whether it is a per-broadcast or per-project setting. That is a product decision and its own small feature, not something to slip into the pass that established the adapter. The current values fail safe in the meantime.
+
+**Recommendation:** pick this up alongside the first real-channel smoke test, when it becomes obvious how operators actually want visibility defaulted.
+
+(Found during: self-review of the broadcast platform sync branch, 2026-07-27.)
+
+---
+
+## The broadcast panel's ambiguity candidate list never clears
+
+**Where:** `packages/lcyt-web/src/components/broadcast/BroadcastPlatformPanel.jsx` — the `candidates` state
+
+**Finding:** When the backend answers `409 ambiguous_credential`, the panel stores the returned candidate list and renders the account picker from it (`connectedAccounts = candidates || liveCredentialsFor(...)`). That state is never cleared afterwards, so for the rest of the panel's mounted lifetime the picker shows the candidate snapshot rather than live credential state — if a channel is disconnected in another tab meanwhile, it keeps appearing as an option. Choosing it then fails with a clear 404/409 from the backend rather than doing anything wrong, so this is a staleness annoyance, not a correctness hole.
+
+**Why skipped:** the clean fix is to re-fetch credentials on the 409 instead of trusting the inline candidate list, but the whole reason the backend returns candidates inline is to avoid that extra round-trip. Getting both (use the inline list now, refresh in the background) is fiddly state coordination for a window that closes as soon as the panel is collapsed and reopened, and the failure mode is already a clear error rather than a wrong action.
+
+**Recommendation:** revisit if multi-channel projects turn out to reconfigure accounts often enough for anyone to actually hit it.
+
+(Found during: self-review of the broadcast platform sync branch, 2026-07-27.)
