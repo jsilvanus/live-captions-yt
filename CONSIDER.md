@@ -1105,3 +1105,17 @@ pass:
 **Recommendation:** revisit if multi-channel projects turn out to reconfigure accounts often enough for anyone to actually hit it.
 
 (Found during: self-review of the broadcast platform sync branch, 2026-07-27.)
+
+---
+
+## The CI plugin lists have drifted from the actual plugin set
+
+**Where:** `.github/workflows/integration-tests.yml` — the `detect-changes` job's two hardcoded `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
+
+**Finding:** CI enumerates plugins by hand in four places, and the enumeration has fallen behind `packages/plugins/`. `lcyt-platforms` was missing (fixed in this branch — its 186 tests would otherwise never have run in CI at all), but `lcyt-connectors` and `lcyt-actions` are **still** absent from all four. Neither has ever been unit-tested by CI: on a PR touching only `packages/plugins/lcyt-connectors`, `PLUGINS` comes out empty and the package is skipped entirely; on a push to main, the full `PACKAGES` array does not list it either. Both packages have real test suites (`lcyt-connectors` has 11 test files) that pass locally and are simply never run.
+
+**Why skipped:** adding two more packages to CI in the same PR that introduces a third is a change whose failure mode lands on *this* PR — if either suite turns out to be flaky under CI's environment (they pass locally, but neither has ever run there), it would block a merge for reasons unrelated to the work. Adding `lcyt-platforms` was necessary because this branch introduces it; the pre-existing two are a separate, pre-existing gap that deserves its own PR and its own green run.
+
+**Recommendation:** add `lcyt-connectors` and `lcyt-actions` to all four spots in one focused PR, and consider replacing the hand-maintained lists with a glob over `packages/plugins/*` so the next new plugin cannot silently opt out of CI the way these did.
+
+(Found during: CI review on the broadcast platform sync branch, 2026-07-27.)

@@ -32,7 +32,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" ]]; then
             # On main: run everything
             echo "is-main=true" >> $GITHUB_OUTPUT
-            echo "plugins=lcyt-agent,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
+            echo "plugins=lcyt-agent,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-platforms,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
             echo "backend=lcyt-backend" >> $GITHUB_OUTPUT
             echo "frontend=lcyt-web" >> $GITHUB_OUTPUT
             echo "core=lcyt" >> $GITHUB_OUTPUT
@@ -47,7 +47,7 @@ jobs:
             if echo "$CHANGED" | grep -q "^\.github/workflows/"; then
               echo "has-workflow-changes=true" >> $GITHUB_OUTPUT
               echo "is-main=true" >> $GITHUB_OUTPUT
-              echo "plugins=lcyt-agent,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
+              echo "plugins=lcyt-agent,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-platforms,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
               echo "backend=lcyt-backend" >> $GITHUB_OUTPUT
               echo "frontend=lcyt-web" >> $GITHUB_OUTPUT
               echo "core=lcyt" >> $GITHUB_OUTPUT
@@ -63,6 +63,7 @@ jobs:
               echo "$CHANGED" | grep -q "^packages/plugins/lcyt-dsk" && PLUGINS="$PLUGINS,lcyt-dsk"
               echo "$CHANGED" | grep -q "^packages/plugins/lcyt-files" && PLUGINS="$PLUGINS,lcyt-files"
               echo "$CHANGED" | grep -q "^packages/plugins/lcyt-music" && PLUGINS="$PLUGINS,lcyt-music"
+              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-platforms" && PLUGINS="$PLUGINS,lcyt-platforms"
               echo "$CHANGED" | grep -q "^packages/plugins/lcyt-production" && PLUGINS="$PLUGINS,lcyt-production"
               echo "$CHANGED" | grep -q "^packages/plugins/lcyt-rtmp" && PLUGINS="$PLUGINS,lcyt-rtmp"
               PLUGINS=${PLUGINS#,}  # Remove leading comma
@@ -166,6 +167,7 @@ jobs:
               "packages/plugins/lcyt-dsk"
               "packages/plugins/lcyt-files"
               "packages/plugins/lcyt-music"
+              "packages/plugins/lcyt-platforms"
               "packages/plugins/lcyt-production"
               "packages/plugins/lcyt-rtmp"
             )
