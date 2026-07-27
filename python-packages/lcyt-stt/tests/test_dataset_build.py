@@ -1,4 +1,8 @@
-from lcyt_stt.dataset.build import DEFAULT_SPLIT_RATIOS, compute_split
+import json
+
+import pytest
+
+from lcyt_stt.dataset.build import DEFAULT_SPLIT_RATIOS, build_dataset, compute_split
 from lcyt_stt.dataset.normalize import normalize_text
 
 
@@ -71,3 +75,42 @@ def test_normalize_text_preserves_finnish_orthography_and_case():
 
 def test_normalize_text_passes_through_none():
     assert normalize_text(None) is None
+
+
+def _write_snapshot(tmp_path, rows):
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
+    for row in rows:
+        (audio_dir / row["file"]).write_bytes(b"RIFF0000WAVEfmt ")
+    (tmp_path / "recordings.json").write_text(json.dumps(rows))
+
+
+def test_build_dataset_raises_clear_error_instead_of_crashing_on_empty_split(tmp_path):
+    # Few distinct speakers under the default 90/5/5 ratios round dev/test down
+    # to 0 rows (round(6 * 0.05) == 0) — this used to reach datasets'
+    # save_to_disk() and crash with an opaque ZeroDivisionError; it must now
+    # fail fast with an actionable message instead.
+    rows = [
+        {"file": f"{i:04d}.wav", "speaker_id": f"spk{i % 3}", "text": "x", "duration": 1.0}
+        for i in range(6)
+    ]
+    _write_snapshot(tmp_path, rows)
+
+    with pytest.raises(ValueError, match="would have 0 rows"):
+        build_dataset(str(tmp_path), str(tmp_path / "out"), seed=1)
+
+
+def test_build_dataset_succeeds_and_writes_metadata_for_a_healthy_split(tmp_path):
+    rows = [
+        {"file": f"{i:04d}.wav", "speaker_id": f"spk{i % 30}", "text": f"row {i}", "duration": 1.0}
+        for i in range(120)
+    ]
+    _write_snapshot(tmp_path, rows)
+
+    out_dir = tmp_path / "out"
+    metadata = build_dataset(str(tmp_path), out_dir=str(out_dir), seed=1)
+
+    assert metadata["speaker_disjoint"] is True
+    assert all(count > 0 for count in metadata["split_sizes"].values())
+    assert sum(metadata["split_sizes"].values()) == 120
+    assert json.loads((out_dir / "build_metadata.json").read_text()) == metadata

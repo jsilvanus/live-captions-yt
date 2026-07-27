@@ -50,6 +50,23 @@ def build_dataset(snapshot_dir, out_dir, seed=42, split_ratios=None):
             "appear in both train and eval splits."
         )
 
+    split_row_counts = {
+        split_name: sum(1 for r in rows if assignment[r["file"]] == split_name) for split_name in split_ratios
+    }
+    empty_splits = [name for name, count in split_row_counts.items() if count == 0]
+    if empty_splits:
+        # Small speaker counts round down to zero under the default ratios
+        # (e.g. 3 speakers -> dev/test both get round(3*0.05)=0). Left
+        # unchecked this reaches `datasets`' save_to_disk() and crashes with
+        # an opaque ZeroDivisionError in _estimate_nbytes() for any empty
+        # split with an Audio column — fail fast with an actionable message
+        # instead of a snapshot too small for the requested split ratios.
+        raise ValueError(
+            f"Split(s) {empty_splits} would have 0 rows with split_ratios={split_ratios} "
+            f"({len(rows)} rows, speaker_disjoint={speaker_disjoint}). Use a larger snapshot, "
+            "fewer splits, or wider ratios for a dataset this small."
+        )
+
     splits = {}
     for split_name in split_ratios:
         split_rows = [r for r in rows if assignment[r["file"]] == split_name]
