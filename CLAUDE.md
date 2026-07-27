@@ -2,7 +2,7 @@
 
 ## Overview
 
-Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a DSK graphics overlay system, a production control layer for cameras/mixers, a bridge agent for AV hardware, server-side speech-to-text transcription, and a compute orchestration layer for horizontal scaling.
+Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a DSK graphics overlay system, a production control layer for cameras/mixers, a bridge agent for AV hardware, server-side speech-to-text transcription, broadcast platform sync (YouTube Live scheduling and viewer stats), and a compute orchestration layer for horizontal scaling.
 
 ---
 
@@ -33,6 +33,7 @@ live-captions-yt/
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
 │       ├── lcyt-files/         # Caption file storage plugin (local FS + S3 + WebDAV adapters)
 │       ├── lcyt-music/         # Music detection plugin (audio classification, BPM estimation)
+│       ├── lcyt-platforms/     # Broadcast platform sync (server-side OAuth, YouTube scheduling/thumbnails/stats)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
 │       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
 ├── python-packages/            # Python packages
@@ -132,6 +133,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | AI agent plugin | `packages/plugins/lcyt-agent/CLAUDE.md` |
 | Shared AI tool-schema/handler registry | `packages/lcyt-tools/CLAUDE.md` |
 | API Connectors & Variables plugin | `packages/plugins/lcyt-connectors/CLAUDE.md` |
+| Broadcast platform sync plugin | `packages/plugins/lcyt-platforms/CLAUDE.md` |
 | Named Actions plugin | `packages/plugins/lcyt-actions/CLAUDE.md` |
 | Core library (Python) | `python-packages/lcyt/CLAUDE.md` |
 | Flask backend (Python) | `python-packages/lcyt-backend/CLAUDE.md` |

@@ -1,7 +1,7 @@
 ---
 id: plan/broadcast_platform_sync_phases
 title: "Phase Plan — Broadcast Platform Sync (lcyt-platforms)"
-status: active
+status: implemented
 summary: "Executable phase plan for plan_broadcast_platform_sync.md. 7 phases (0–6). Critical path runs through the plugin foundation (schema + crypto), the YouTube adapter, the OAuth token lifecycle, then the per-broadcast lifecycle routes, backend wiring, frontend replacement, and docs. Multi-channel-per-project is threaded from Phase 0 onward per the resolved decisions, not retrofitted."
 related: plan/broadcast_platform_sync, plan/broadcasts, plan/api_connectors_variables
 ---

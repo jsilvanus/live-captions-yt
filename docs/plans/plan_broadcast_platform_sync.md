@@ -1,7 +1,7 @@
 ---
 id: plan/broadcast_platform_sync
 title: "Broadcast Platform Sync — YouTube Live Scheduling, Thumbnails & Stats (Facebook Live, deferred)"
-status: draft
+status: implemented
 summary: "Implements plan_broadcasts.md's deferred 'Phase 2' (YouTube Live two-way sync) and goes further: server-side OAuth (replacing the browser-only implicit-token flow), scheduling a broadcast directly to YouTube from the broadcasts calendar, thumbnail upload, one-click go-live/end, and viewer stats at three tiers (live concurrent viewers, post-broadcast summary, historical trend). Designed as a generic multi-platform adapter (new lcyt-platforms plugin) so a second provider — Facebook Live, explicitly scoped but deferred — is a new adapter file, not a redesign. Supersedes the ad-hoc, non-persistent client-side flow in lcyt-web's youtubeAuth.js/youtubeApi.js/YouTubeTab.jsx."
 related: plan/broadcasts, plan/broadcasts_next, plan/selfservice_config_backend, plan/metering_audit, plan/client
 ---
