@@ -48,6 +48,28 @@ node src/index.js
 | `BACKEND_URL` | Base URL of the LCYT backend (e.g., `https://api.lcyt.fi`) |
 | `BRIDGE_TOKEN` | Authentication token from `POST /production/bridge/instances` |
 
+### Local security floor (optional)
+
+Every command this bridge relays is already checked against the TCP command
+/ target IP allow-deny rules configured for it in Setup Hub → Bridges → 🔒
+Security — but those rules are fetched *from* the backend, so if the
+backend were ever genuinely compromised, it could in principle lie about
+them too.
+
+`security.local.yaml`, placed next to `.env`, is a second, independent
+layer read from local disk only — the one thing the backend can't touch.
+It's deny-only (it can only add restrictions, never grant extra permission)
+and entirely optional. Copy `security.local.yaml.example` to
+`security.local.yaml` in the same directory as the executable to enable it:
+
+```bash
+cp security.local.yaml.example security.local.yaml
+```
+
+A malformed file fails **closed** — every command is blocked until it's
+fixed or removed, rather than silently doing nothing. Loaded once at
+startup; restart the bridge to pick up an edit.
+
 ## Quick Start
 
 1. Register a bridge instance with the backend:
@@ -84,6 +106,8 @@ npm run build:linux  # → dist/lcyt-bridge-linux (Linux x64)
 | `src/index.js` | Entry point; loads config; starts the bridge; optional system tray |
 | `src/bridge.js` | `Bridge` class (EventEmitter); SSE connection; command dispatch; reconnect logic |
 | `src/tcp-pool.js` | `TcpPool`: manages named TCP connections to hardware; auto-reconnect |
+| `src/security-policy.js` | `SecurityPolicy`: local cache of the backend-synced TCP command / target IP allow-deny rules |
+| `src/local-security-floor.js` | `LocalSecurityFloor`: the optional `security.local.yaml` deny-only floor (see Configuration above) |
 | `src/tray.js` | Optional system tray icon for packaged desktop use |
 
 **Flow:**

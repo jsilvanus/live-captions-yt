@@ -20,6 +20,9 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import { join } from 'node:path';
 import { Bridge } from '../src/bridge.js';
 
 /**
@@ -930,6 +933,154 @@ describe('Bridge — local security enforcement', () => {
     await bridge._handleCommand(JSON.stringify({ type: 'not_a_real_type', requestId: 'x' }));
     const err = await errEvent;
     assert.match(err.message, /Unknown command type/);
+    bridge.destroy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// LocalSecurityFloor wiring — the deployer-controlled security.local.yaml
+// floor (see local-security-floor.test.js for the class's own unit tests).
+// These confirm Bridge actually consults it and that its block message is
+// distinguishable from the backend-synced SecurityPolicy's.
+// ---------------------------------------------------------------------------
+
+describe('Bridge — local security floor (security.local.yaml) wiring', () => {
+  let dir;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(join(os.tmpdir(), 'bridge-lsf-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  function writeYaml(content) {
+    fs.writeFileSync(join(dir, 'security.local.yaml'), content);
+  }
+
+  it('omitting localPolicyDir leaves the floor absent (backward compatible)', () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    assert.deepEqual(bridge.localSecurityFloorSummary(), { present: false, loadError: null, ipRuleCount: 0, commandRuleCount: 0 });
+    bridge.destroy();
+  });
+
+  it('loads security.local.yaml from localPolicyDir at construction time', () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "169.254.169.254"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    assert.deepEqual(bridge.localSecurityFloorSummary(), { present: true, loadError: null, ipRuleCount: 1, commandRuleCount: 0 });
+    bridge.destroy();
+  });
+
+  it('blocks a tcp_send matching a local-floor deny IP rule even though the backend policy allows everything', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "169.254.169.254"
+    description: "never allow cloud metadata"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] }); // backend layer: fully open
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-floor-blocked', host: '169.254.169.254', port: 80, payload: 'x',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0);
+    const call = statusCalls.find(c => c.requestId === 'req-floor-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local security floor/);
+    assert.match(call.error, /never allow cloud metadata/);
+    bridge.destroy();
+  });
+
+  it('blocks a tcp_send matching a local-floor deny command rule even though the backend policy allows everything', async () => {
+    writeYaml(`
+rules:
+  - kind: command
+    pattern: "^FACTORY-RESET$"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-floor-cmd-blocked', host: '10.0.0.1', port: 80, payload: 'FACTORY-RESET',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0);
+    const call = statusCalls.find(c => c.requestId === 'req-floor-cmd-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local security floor/);
+    bridge.destroy();
+  });
+
+  it('allows a command that neither the backend policy nor the local floor deny', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "169.254.169.254"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-ok', host: '10.0.0.1', port: 80, payload: 'PRESET-1',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 1);
+    assert.ok(statusCalls.some(c => c.requestId === 'req-ok' && c.ok === true));
+    bridge.destroy();
+  });
+
+  it('a malformed security.local.yaml blocks every secured command, distinct from the backend-policy message', async () => {
+    writeYaml('rules: not-a-list');
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] }); // backend layer would otherwise allow
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    assert.ok(bridge.localSecurityFloorSummary().loadError);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-malformed', host: '10.0.0.1', port: 80, payload: 'PRESET-1',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0);
+    const call = statusCalls.find(c => c.requestId === 'req-malformed');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local security floor/);
+    assert.match(call.error, /malformed/);
+    bridge.destroy();
+  });
+
+  it('the backend-synced SecurityPolicy block still reports its own distinct message when the floor would have allowed', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "8.8.8.8"
+`); // present, valid, but does not match this command's target
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-backend-blocked', host: '10.0.0.1', port: 80, payload: 'x',
+    }));
+
+    const call = statusCalls.find(c => c.requestId === 'req-backend-blocked');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local bridge security policy/);
     bridge.destroy();
   });
 });

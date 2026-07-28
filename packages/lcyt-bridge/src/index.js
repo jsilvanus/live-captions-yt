@@ -5,6 +5,9 @@
  * Reads config from .env in the same directory as the executable (or cwd).
  * Required variables: BACKEND_URL, BRIDGE_TOKEN
  *
+ * Also looks for an optional security.local.yaml in that same directory —
+ * a deployer-controlled deny-only floor (see local-security-floor.js).
+ *
  * Run:  node src/index.js
  * Exe:  lcyt-bridge.exe (built with pkg)
  */
@@ -26,17 +29,20 @@ function getModuleDir() {
 }
 
 // ---------------------------------------------------------------------------
-// Load .env from the same directory as the executable (or fallback to cwd)
+// Load .env (and locate security.local.yaml) in the same directory as the
+// executable (or fallback to cwd)
 // ---------------------------------------------------------------------------
 
-function loadConfig() {
-  // When running as a pkg exe, process.execPath is the .exe; src/index.js is
-  // compiled in, so __dirname points inside the pkg snapshot. We use
-  // process.execPath's directory for the real .env location.
-  const exeDir = process.pkg
-    ? dirname(process.execPath)
-    : getModuleDir();
+// When running as a pkg exe, process.execPath is the .exe; src/index.js is
+// compiled in, so __dirname points inside the pkg snapshot. We use
+// process.execPath's directory for the real on-disk location — this is
+// also where security.local.yaml is expected to live, alongside .env.
+function resolveExeDir() {
+  return process.pkg ? dirname(process.execPath) : getModuleDir();
+}
 
+function loadConfig() {
+  const exeDir = resolveExeDir();
   const envPath = join(exeDir, '.env');
 
   let vars = {};
@@ -54,7 +60,7 @@ function loadConfig() {
   const backendUrl = get('BACKEND_URL') || 'https://api.lcyt.fi';
   const token      = get('BRIDGE_TOKEN');
 
-  return { backendUrl, token };
+  return { backendUrl, token, exeDir };
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +98,19 @@ async function main() {
   const { Bridge } = await import('./bridge.js');
   const { createTray } = await import('./tray.js');
 
-  const bridge = new Bridge(config);
+  const bridge = new Bridge({
+    backendUrl: config.backendUrl,
+    token: config.token,
+    localPolicyDir: config.exeDir,
+  });
+
+  const floor = bridge.localSecurityFloorSummary();
+  if (floor.present && floor.loadError) {
+    console.error(`[lcyt-bridge] security.local.yaml is present but invalid: ${floor.loadError}`);
+    console.error('[lcyt-bridge] Every TCP/HTTP command will be BLOCKED by the local security floor until this file is fixed or removed.');
+  } else if (floor.present) {
+    console.info(`[lcyt-bridge] Local security floor loaded: ${floor.ipRuleCount} IP rule(s), ${floor.commandRuleCount} command rule(s).`);
+  }
 
   // System tray (optional — gracefully skipped if unavailable)
   await createTray({

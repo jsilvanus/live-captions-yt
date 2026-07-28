@@ -4,6 +4,11 @@
  * Connects to GET /production/bridge/commands?token=xxx on the LCYT backend.
  * Dispatches tcp_send commands to the TcpPool.
  * Reports results via POST /production/bridge/status.
+ *
+ * Every command is checked against two local layers before it's ever
+ * dispatched — see `_checkSecurity()`: `SecurityPolicy` (rules synced from
+ * the backend) and `LocalSecurityFloor` (an optional deployer-controlled
+ * security.local.yaml, the only layer the backend itself cannot influence).
  */
 
 import { EventEmitter } from 'node:events';
@@ -11,6 +16,7 @@ import { TcpPool } from './tcp-pool.js';
 import { AtemPool } from './atem-pool.js';
 import { ObsPool } from './obs-pool.js';
 import { SecurityPolicy } from './security-policy.js';
+import { LocalSecurityFloor } from './local-security-floor.js';
 
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_DELAY_MAX_MS = 60_000;
@@ -22,9 +28,13 @@ const SECURED_COMMAND_TYPES = new Set(['tcp_send', 'atem_switch', 'obs_switch', 
 
 export class Bridge extends EventEmitter {
   /**
-   * @param {{ backendUrl: string, token: string }} config
+   * @param {{ backendUrl: string, token: string, localPolicyDir?: string, localPolicyFilename?: string }} config
+   *   `localPolicyDir` — directory to look for an optional
+   *   security.local.yaml floor file in (see local-security-floor.js).
+   *   Omit to skip local-floor loading entirely (e.g. existing tests that
+   *   construct a Bridge directly) — behaves exactly as before this feature.
    */
-  constructor({ backendUrl, token }) {
+  constructor({ backendUrl, token, localPolicyDir, localPolicyFilename }) {
     super();
     this._backendUrl = backendUrl.replace(/\/$/, '');
     this._token = token;
@@ -32,6 +42,8 @@ export class Bridge extends EventEmitter {
     this._atemPool = new AtemPool();
     this._obsPool = new ObsPool();
     this._securityPolicy = new SecurityPolicy();
+    this._localSecurityFloor = new LocalSecurityFloor();
+    if (localPolicyDir) this._localSecurityFloor.load(localPolicyDir, localPolicyFilename);
     this._policyFetchSeq = 0;
     this._es = null;
     this._destroyed = false;
@@ -87,6 +99,11 @@ export class Bridge extends EventEmitter {
     this._tcpPool.destroy();
     this._atemPool.destroy();
     this._obsPool.destroy();
+  }
+
+  /** @returns {{ present: boolean, loadError: string|null, ipRuleCount: number, commandRuleCount: number }} */
+  localSecurityFloorSummary() {
+    return this._localSecurityFloor.summary();
   }
 
   /** @returns {{ sse: boolean, tcp: Array<{ key: string, connected: boolean }>, atem: Array<{ host: string, connected: boolean }>, obs: Array<{ key: string, connected: boolean }> }} */
@@ -244,18 +261,30 @@ export class Bridge extends EventEmitter {
   /**
    * Local defense-in-depth check, mirroring BridgeManager._checkSecurity()
    * on the backend (which already ran this before the command was ever put
-   * on the SSE stream). Returns a block reason, or null if allowed. Never
-   * throws — an error resolving/checking a target is treated as a block.
+   * on the SSE stream). Two independent local layers are consulted, either
+   * of which can block (OR, not override):
+   *   - `_securityPolicy` — rules fetched FROM the backend and cached here;
+   *     a second opinion on the backend's own authoritative check, but not
+   *     independent of it (see security-policy.js's doc comment).
+   *   - `_localSecurityFloor` — the deployer's own security.local.yaml,
+   *     read from local disk only; the one layer the backend cannot
+   *     influence at all (see local-security-floor.js's doc comment).
+   * Returns a block reason, or null if allowed. Never throws — an error
+   * resolving/checking a target is treated as a block.
    */
   _checkSecurity(type, cmd) {
     try {
       for (const target of this._resolveIpTargets(type, cmd)) {
-        const { allowed, reason } = this._securityPolicy.checkIp(target.host, target.port);
-        if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
+        const backendCheck = this._securityPolicy.checkIp(target.host, target.port);
+        if (!backendCheck.allowed) return `Blocked by local bridge security policy: ${backendCheck.reason}`;
+        const floorCheck = this._localSecurityFloor.checkIp(target.host, target.port);
+        if (!floorCheck.allowed) return `Blocked by local security floor: ${floorCheck.reason}`;
       }
       if (type === 'tcp_send') {
-        const { allowed, reason } = this._securityPolicy.checkCommand(cmd.payload ?? '');
-        if (!allowed) return `Blocked by local bridge security policy: ${reason}`;
+        const backendCheck = this._securityPolicy.checkCommand(cmd.payload ?? '');
+        if (!backendCheck.allowed) return `Blocked by local bridge security policy: ${backendCheck.reason}`;
+        const floorCheck = this._localSecurityFloor.checkCommand(cmd.payload ?? '');
+        if (!floorCheck.allowed) return `Blocked by local security floor: ${floorCheck.reason}`;
       }
       return null;
     } catch (err) {
