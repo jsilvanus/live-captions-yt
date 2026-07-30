@@ -1083,6 +1083,74 @@ rules:
     assert.match(call.error, /Blocked by local bridge security policy/);
     bridge.destroy();
   });
+
+  it('the local floor still blocks an IP target the backend allow-list explicitly allows ("allow only this")', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "10.0.0.1"
+    description: "never allow this target, no matter what the backend says"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    // Allow-list mode: only 10.0.0.1 is permitted by the backend layer, everything else is default-denied.
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'allow', pattern: '10.0.0.1' }], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-floor-vs-allowlist', host: '10.0.0.1', port: 80, payload: 'x',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0);
+    const call = statusCalls.find(c => c.requestId === 'req-floor-vs-allowlist');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local security floor/);
+    assert.match(call.error, /never allow this target/);
+    bridge.destroy();
+  });
+
+  it('the local floor still blocks a command the backend allow-list explicitly allows ("allow only this")', async () => {
+    writeYaml(`
+rules:
+  - kind: command
+    pattern: "^PRESET-1$"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    // Allow-list mode: only PRESET-1 is permitted by the backend layer, everything else is default-denied.
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [{ ruleType: 'allow', pattern: '^PRESET-1$' }] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-floor-vs-allowlist-cmd', host: '10.0.0.1', port: 80, payload: 'PRESET-1',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 0);
+    const call = statusCalls.find(c => c.requestId === 'req-floor-vs-allowlist-cmd');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local security floor/);
+    bridge.destroy();
+  });
+
+  it('the backend allow-list still passes through a different target the local floor does not deny', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "169.254.169.254"
+`); // present, valid, but does not match this command's target
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'allow', pattern: '10.0.0.1' }], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-allowlist-passthrough', host: '10.0.0.1', port: 80, payload: 'x',
+    }));
+
+    assert.equal(bridge._tcpPool._sent.length, 1);
+    assert.ok(statusCalls.some(c => c.requestId === 'req-allowlist-passthrough' && c.ok === true));
+    bridge.destroy();
+  });
 });
 
 // ---------------------------------------------------------------------------
