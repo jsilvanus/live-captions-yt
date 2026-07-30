@@ -1,0 +1,47 @@
+# lcyt-stt — CUDA inference image
+#
+# Same service as Dockerfile (CPU), on an nvidia/cuda runtime base so
+# faster-whisper/CTranslate2 can use a GPU. LCYT_STT_DEVICE=auto (the
+# default) tries CUDA/float16 first and falls back to CPU/int8 if no GPU is
+# visible at runtime, so this image also works on hosts without a GPU
+# attached — it's just larger than the CPU image for that case.
+#
+# Requires the NVIDIA Container Toolkit on the host and `--gpus all` (or the
+# docker-compose `deploy.resources.reservations.devices` stanza) to actually
+# see a GPU. Check hub.docker.com/r/nvidia/cuda for current supported tags
+# before deploying — this pins a version known to work at time of writing.
+
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN set -eux \
+  && apt-get update \
+  && apt-get install -y --no-install-recommends \
+       python3 \
+       python3-pip \
+       ffmpeg \
+       ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY pyproject.toml README.md ./
+COPY lcyt_stt ./lcyt_stt
+RUN pip3 install --no-cache-dir .
+
+ENV LCYT_STT_PORT=8090 \
+    LCYT_STT_DEVICE=auto \
+    LCYT_STT_DEFAULT_LANGUAGE=fi
+
+EXPOSE 8090
+
+CMD ["lcyt-stt", "serve"]
+
+# Build (local dev, from repo root — build context is the package source,
+# not this docker/ directory):
+#   docker build -t lcyt-stt:cuda -f docker/lcyt-stt/Dockerfile.cuda python-packages/lcyt-stt
+# Run (requires NVIDIA Container Toolkit):
+#   docker run --rm --gpus all -p 8090:8090 -v lcyt-stt-models:/models \
+#     -e LCYT_STT_MODEL_DIR=/models lcyt-stt:cuda
+# Verify GPU was actually used:
+#   curl http://localhost:8090/health   # device should read "cuda"
