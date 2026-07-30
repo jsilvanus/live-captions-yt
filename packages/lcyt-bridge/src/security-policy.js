@@ -17,6 +17,12 @@
  *     rejected — a freshly-started bridge never has an unguarded window.
  *   - A later refetch failure keeps using the last known-good policy
  *     (stale beats undefined).
+ *
+ * The pattern-matching/validation exports here (`matchesHostPattern`,
+ * `matchesCommandPattern`, `isValidHostPattern`, `isValidCommandPattern`)
+ * are also reused in-package by `local-security-floor.js` — the deployer-
+ * controlled `security.local.yaml` deny-only floor — rather than copied a
+ * third time within this same package.
  */
 import { BlockList, isIP } from 'node:net';
 
@@ -70,7 +76,13 @@ function parseCidrPrefix(prefixStr, family) {
   return prefix;
 }
 
-function matchesHostPattern(pattern, host, port) {
+/**
+ * @param {string} pattern  IP-rule pattern (see parseHostPattern)
+ * @param {string} host     Literal host/IP a command targets
+ * @param {number|null} port
+ * @returns {boolean}
+ */
+export function matchesHostPattern(pattern, host, port) {
   let parsed;
   try {
     parsed = parseHostPattern(pattern);
@@ -102,9 +114,50 @@ function matchesHostPattern(pattern, host, port) {
   }
 }
 
-function matchesCommandPattern(pattern, payload) {
+/**
+ * @param {string} pattern  regex source
+ * @param {string} payload  outgoing TCP command payload
+ * @returns {boolean}
+ */
+export function matchesCommandPattern(pattern, payload) {
   try {
     return new RegExp(pattern).test(String(payload ?? ''));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * @returns {boolean} whether `pattern` is a well-formed IP-rule pattern.
+ * Used by local-security-floor.js to validate security.local.yaml at load
+ * time — a rule that can never match (because its pattern is malformed)
+ * would give the deployer a false sense of protection, so it's treated as a
+ * load error rather than silently accepted (mirrors the backend's identical
+ * `isValidHostPattern` in packages/plugins/lcyt-production/src/bridge-security.js).
+ */
+export function isValidHostPattern(pattern) {
+  if (!pattern || typeof pattern !== 'string') return false;
+  try {
+    const parsed = parseHostPattern(pattern);
+    if (parsed.kind === 'cidr') {
+      const [net, prefixStr] = parsed.value.split('/');
+      const family = isIP(net) === 6 ? 'ipv6' : 'ipv4';
+      const prefix = parseCidrPrefix(prefixStr, family);
+      if (prefix == null) return false;
+      new BlockList().addSubnet(net, prefix, family);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** @returns {boolean} whether `pattern` compiles as a regex */
+export function isValidCommandPattern(pattern) {
+  if (!pattern || typeof pattern !== 'string') return false;
+  try {
+    new RegExp(pattern);
+    return true;
   } catch {
     return false;
   }
