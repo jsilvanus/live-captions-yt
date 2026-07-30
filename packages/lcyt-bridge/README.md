@@ -67,8 +67,12 @@ cp security.local.yaml.example security.local.yaml
 ```
 
 A malformed file fails **closed** — every command is blocked until it's
-fixed or removed, rather than silently doing nothing. Loaded once at
-startup; restart the bridge to pick up an edit.
+fixed or removed, rather than silently doing nothing. **Hot-reloaded:**
+edits, creates, and deletes of `security.local.yaml` take effect
+automatically (debounced, typically within a fraction of a second) — no
+bridge restart needed. This matters for deployments where a restart isn't
+something you can casually rely on, e.g. a bridge running headless on a
+Raspberry Pi next to the hardware it controls.
 
 ## Quick Start
 

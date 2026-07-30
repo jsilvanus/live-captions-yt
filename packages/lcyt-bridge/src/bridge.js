@@ -9,6 +9,8 @@
  * dispatched — see `_checkSecurity()`: `SecurityPolicy` (rules synced from
  * the backend) and `LocalSecurityFloor` (an optional deployer-controlled
  * security.local.yaml, the only layer the backend itself cannot influence).
+ * The floor is hot-reloaded (see LocalSecurityFloor.watch()) — edits take
+ * effect without restarting the bridge process.
  */
 
 import { EventEmitter } from 'node:events';
@@ -43,7 +45,13 @@ export class Bridge extends EventEmitter {
     this._obsPool = new ObsPool();
     this._securityPolicy = new SecurityPolicy();
     this._localSecurityFloor = new LocalSecurityFloor();
-    if (localPolicyDir) this._localSecurityFloor.load(localPolicyDir, localPolicyFilename);
+    if (localPolicyDir) {
+      this._localSecurityFloor.load(localPolicyDir, localPolicyFilename);
+      // Hot reload: picks up edits/creates/deletes of security.local.yaml
+      // without requiring a bridge restart (e.g. a bridge on a headless
+      // Raspberry Pi where a restart isn't something to rely on).
+      this._localSecurityFloor.watch((summary) => this.emit('security:floor-reloaded', summary));
+    }
     this._policyFetchSeq = 0;
     this._es = null;
     this._destroyed = false;
@@ -96,6 +104,7 @@ export class Bridge extends EventEmitter {
     if (this._reconnectTimer) clearTimeout(this._reconnectTimer);
     if (this._securityPolicyTimer) clearInterval(this._securityPolicyTimer);
     if (this._es) { try { this._es.close(); } catch { /* ignore */ } }
+    this._localSecurityFloor.close();
     this._tcpPool.destroy();
     this._atemPool.destroy();
     this._obsPool.destroy();
@@ -104,6 +113,16 @@ export class Bridge extends EventEmitter {
   /** @returns {{ present: boolean, loadError: string|null, ipRuleCount: number, commandRuleCount: number }} */
   localSecurityFloorSummary() {
     return this._localSecurityFloor.summary();
+  }
+
+  /** @returns {boolean} whether the local security floor is actively watching security.local.yaml for changes (hot reload) */
+  localSecurityFloorWatching() {
+    return this._localSecurityFloor.isWatching();
+  }
+
+  /** @returns {string|null} error setting up the local security floor's file watcher, if hot reload failed to start */
+  localSecurityFloorWatchError() {
+    return this._localSecurityFloor.watchError();
   }
 
   /** @returns {{ sse: boolean, tcp: Array<{ key: string, connected: boolean }>, atem: Array<{ host: string, connected: boolean }>, obs: Array<{ key: string, connected: boolean }> }} */

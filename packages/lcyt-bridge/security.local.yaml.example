@@ -16,7 +16,9 @@
 # blocked until the file is fixed or removed — a broken "last line of
 # defense" should never silently do nothing.
 #
-# Loaded once at startup. Restart the bridge process to pick up an edit.
+# Hot-reloaded: this file is watched, and edits (including creating or
+# removing it) take effect automatically — no need to restart the bridge
+# process to pick up a change.
 #
 # Two rule kinds, same pattern syntax the backend's own bridge security
 # rules use (Setup Hub → Bridges → 🔒 Security):

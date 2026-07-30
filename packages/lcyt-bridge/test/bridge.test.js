@@ -1151,6 +1151,70 @@ rules:
     assert.ok(statusCalls.some(c => c.requestId === 'req-allowlist-passthrough' && c.ok === true));
     bridge.destroy();
   });
+
+  it('localSecurityFloorWatching() is true once constructed with a localPolicyDir, and false after destroy()', () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    assert.equal(bridge.localSecurityFloorWatching(), true);
+    assert.equal(bridge.localSecurityFloorWatchError(), null);
+    bridge.destroy();
+    assert.equal(bridge.localSecurityFloorWatching(), false);
+  });
+
+  it('hot-reloads an edited security.local.yaml without recreating the Bridge, and emits security:floor-reloaded', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    bridge._securityPolicy.update({ ipRules: [], commandRules: [] });
+    bridge._tcpPool = makeMockTcpPool();
+    const statusCalls = mockFetch(bridge);
+
+    // 9.9.9.9 isn't denied by anything yet — passes.
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-before-reload', host: '9.9.9.9', port: 80, payload: 'x',
+    }));
+    assert.equal(bridge._tcpPool._sent.length, 1);
+
+    const reloaded = new Promise((resolve) => bridge.once('security:floor-reloaded', resolve));
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "9.9.9.9"
+`);
+    const summary = await reloaded;
+    assert.equal(summary.ipRuleCount, 1);
+    assert.equal(bridge.localSecurityFloorSummary().ipRuleCount, 1);
+
+    // Same target, same bridge instance, no restart — now blocked.
+    await bridge._handleCommand(JSON.stringify({
+      type: 'tcp_send', requestId: 'req-after-reload', host: '9.9.9.9', port: 80, payload: 'x',
+    }));
+    assert.equal(bridge._tcpPool._sent.length, 1, 'still 1 — the newly-hot-reloaded rule blocked this attempt');
+    const call = statusCalls.find(c => c.requestId === 'req-after-reload');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /Blocked by local security floor/);
+    bridge.destroy();
+  });
+
+  it('destroy() stops the floor watcher — a later edit is not picked up', async () => {
+    writeYaml('rules: []');
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
+    assert.equal(bridge.localSecurityFloorWatching(), true);
+    bridge.destroy();
+    assert.equal(bridge.localSecurityFloorWatching(), false);
+
+    let reloaded = false;
+    bridge.on('security:floor-reloaded', () => { reloaded = true; });
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(reloaded, false);
+  });
 });
 
 // ---------------------------------------------------------------------------

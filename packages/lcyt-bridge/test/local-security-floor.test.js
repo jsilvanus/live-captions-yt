@@ -7,6 +7,7 @@
  *   - parseLocalPolicyDocument() structural validation, directly
  *   - load() replaces (not merges) previous state on a second call
  *   - summary() output shape
+ *   - watch(): hot reload on edit/create/delete, no restart required
  */
 
 import { describe, it, beforeEach, afterEach } from 'node:test';
@@ -28,6 +29,16 @@ afterEach(() => {
 
 function writeYaml(content, filename = DEFAULT_LOCAL_POLICY_FILENAME) {
   fs.writeFileSync(join(dir, filename), content);
+}
+
+/** Polls `fn` until it returns truthy, or throws once `timeoutMs` elapses. */
+async function waitUntil(fn, { timeoutMs = 3000, intervalMs = 25 } = {}) {
+  const start = Date.now();
+  for (;;) {
+    if (fn()) return;
+    if (Date.now() - start > timeoutMs) throw new Error('waitUntil: timed out');
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -341,5 +352,192 @@ describe('parseLocalPolicyDocument()', () => {
     assert.equal(result.ipRules.length, 1);
     assert.equal(result.commandRules.length, 1);
     assert.equal(result.commandRules[0].description, 'no X');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// watch() — hot reload, no restart required
+// ---------------------------------------------------------------------------
+
+describe('LocalSecurityFloor — hot reload (watch)', () => {
+  it('watch() without a prior load() call is a no-op', () => {
+    const floor = new LocalSecurityFloor();
+    floor.watch();
+    assert.equal(floor.isWatching(), false);
+  });
+
+  it('isWatching()/watchError() reflect watch()/close() state', () => {
+    writeYaml('rules: []');
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    assert.equal(floor.isWatching(), false);
+    floor.watch();
+    assert.equal(floor.isWatching(), true);
+    assert.equal(floor.watchError(), null);
+    floor.close();
+    assert.equal(floor.isWatching(), false);
+  });
+
+  it('reloads automatically when the file is edited — no explicit load() call needed', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    floor.watch();
+    assert.equal(floor.checkIp('5.6.7.8', 80).allowed, true);
+
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "5.6.7.8"
+`);
+    await waitUntil(() => floor.checkIp('5.6.7.8', 80).allowed === false);
+    assert.equal(floor.checkIp('1.2.3.4', 80).allowed, true, 'old rule no longer applies — replaced, not merged');
+    floor.close();
+  });
+
+  it('invokes the onReload callback with the updated summary', async () => {
+    writeYaml('rules: []');
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    let lastSummary = null;
+    floor.watch((summary) => { lastSummary = summary; });
+
+    writeYaml(`
+rules:
+  - kind: command
+    pattern: "^X$"
+`);
+    await waitUntil(() => lastSummary !== null && lastSummary.commandRuleCount === 1);
+    assert.equal(lastSummary.present, true);
+    assert.equal(lastSummary.loadError, null);
+    floor.close();
+  });
+
+  it('picks up a file created after watch() started (initially absent)', async () => {
+    const floor = new LocalSecurityFloor();
+    floor.load(dir); // no file yet
+    floor.watch();
+    assert.equal(floor.isPresent(), false);
+
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "9.9.9.9"
+`);
+    await waitUntil(() => floor.isPresent() === true);
+    assert.equal(floor.checkIp('9.9.9.9', 80).allowed, false);
+    floor.close();
+  });
+
+  it('clears restrictions when the file is deleted while watching', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "9.9.9.9"
+`);
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    floor.watch();
+    assert.equal(floor.checkIp('9.9.9.9', 80).allowed, false);
+
+    fs.rmSync(join(dir, DEFAULT_LOCAL_POLICY_FILENAME));
+    await waitUntil(() => floor.isPresent() === false);
+    assert.equal(floor.checkIp('9.9.9.9', 80).allowed, true, 'absence changes nothing');
+    floor.close();
+  });
+
+  it('fails closed on the next reload after an edit introduces a malformed file', async () => {
+    writeYaml('rules: []');
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    floor.watch();
+    assert.equal(floor.checkIp('1.2.3.4', 80).allowed, true);
+
+    writeYaml('rules: not-a-list');
+    await waitUntil(() => floor.loadError() !== null);
+    assert.equal(floor.checkIp('1.2.3.4', 80).allowed, false);
+    assert.equal(floor.checkCommand('anything').allowed, false);
+    floor.close();
+  });
+
+  it('recovers on the next reload once a malformed file is fixed', async () => {
+    writeYaml('rules: not-a-list');
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    floor.watch();
+    assert.ok(floor.loadError());
+
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    await waitUntil(() => floor.loadError() === null);
+    assert.equal(floor.checkIp('1.2.3.4', 80).allowed, false);
+    assert.equal(floor.checkIp('5.6.7.8', 80).allowed, true);
+    floor.close();
+  });
+
+  it('close() stops watching — further edits are not picked up', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    floor.watch();
+    floor.close();
+    assert.equal(floor.isWatching(), false);
+
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "5.6.7.8"
+`);
+    // watcher was closed synchronously before this edit, so there is
+    // nothing racy to wait out — it structurally cannot have reloaded.
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(floor.checkIp('1.2.3.4', 80).allowed, false, 'stale rule set from before close() — still blocked, no reload happened');
+    assert.equal(floor.checkIp('5.6.7.8', 80).allowed, true, 'new rule never picked up');
+  });
+
+  it('a second watch() call is a no-op — the first callback keeps being used', async () => {
+    writeYaml('rules: []');
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    let calls = 0;
+    floor.watch(() => { calls += 1; });
+    floor.watch(() => { throw new Error('should never be called — watch() is a no-op once already watching'); });
+
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    await waitUntil(() => calls > 0);
+    floor.close();
+  });
+
+  it('an edit unrelated to the watched file (different filename in the same dir) is ignored', async () => {
+    writeYaml(`
+rules:
+  - kind: ip
+    pattern: "1.2.3.4"
+`);
+    const floor = new LocalSecurityFloor();
+    floor.load(dir);
+    let calls = 0;
+    floor.watch(() => { calls += 1; });
+
+    fs.writeFileSync(join(dir, 'unrelated.txt'), 'hello');
+    // Give the watcher a beat to (not) fire, then confirm the rule set is untouched.
+    await new Promise((r) => setTimeout(r, 400));
+    assert.equal(calls, 0, 'a change to a different file in the same directory must not trigger a reload');
+    floor.close();
   });
 });

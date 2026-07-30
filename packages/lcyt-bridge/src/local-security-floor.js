@@ -37,8 +37,11 @@
  *     a deployer who believes they've locked something down should never
  *     be wrong about that. `loadError()` carries the specific problem so
  *     the operator isn't left guessing why the bridge stopped working.
- *   - Loaded once at startup — no hot-reload/file-watching in v1. Restart
- *     the bridge process to pick up an edited file.
+ *   - Loaded at startup, then kept in sync via `watch()`: edits, creates,
+ *     and deletes of the file are picked up automatically (debounced),
+ *     with no bridge restart required — important for deployments where a
+ *     restart isn't something an operator can casually rely on (e.g. a
+ *     bridge running headless on a Raspberry Pi next to the hardware).
  */
 import * as fs from 'node:fs';
 import { join } from 'node:path';
@@ -46,6 +49,11 @@ import { load as parseYaml } from 'js-yaml';
 import { matchesHostPattern, matchesCommandPattern, isValidHostPattern, isValidCommandPattern } from './security-policy.js';
 
 export const DEFAULT_LOCAL_POLICY_FILENAME = 'security.local.yaml';
+
+// A single save often fires more than one fs event (write + rename, or
+// separate metadata/content events depending on platform/editor) — debounce
+// so a save only triggers one reload.
+const RELOAD_DEBOUNCE_MS = 250;
 
 /**
  * Parse and validate a loaded YAML document into { ipRules, commandRules }.
@@ -97,6 +105,10 @@ export class LocalSecurityFloor {
     this._commandRules = [];
     this._present = false;
     this._loadError = null;
+    this._dir = null;
+    this._filename = null;
+    this._watcher = null;
+    this._watchError = null;
   }
 
   /** @returns {boolean} whether a security.local.yaml file was found on disk */
@@ -123,6 +135,8 @@ export class LocalSecurityFloor {
    * @param {string} [filename]
    */
   load(dir, filename = DEFAULT_LOCAL_POLICY_FILENAME) {
+    this._dir = dir;
+    this._filename = filename;
     this._ipRules = [];
     this._commandRules = [];
     this._present = false;
@@ -140,6 +154,52 @@ export class LocalSecurityFloor {
       this._commandRules = commandRules;
     } catch (err) {
       this._loadError = err.message;
+    }
+  }
+
+  /**
+   * Start watching `<dir>/<filename>` (as passed to the prior `load()` call)
+   * for changes and reload automatically — no-op if `load()` was never
+   * called, or if already watching. Watches the containing *directory*
+   * rather than the file itself: that also catches the file being created
+   * after `watch()` starts (it may not exist yet) or deleted, and is more
+   * robust than a direct file watch against editors/deploy tools that save
+   * via a temp-file-then-rename rather than an in-place write.
+   * @param {(summary: ReturnType<LocalSecurityFloor['summary']>) => void} [onReload]
+   *   called after every debounced reload, with the fresh `summary()`.
+   */
+  watch(onReload) {
+    if (this._watcher || !this._dir) return;
+    let timer = null;
+    try {
+      this._watcher = fs.watch(this._dir, { persistent: false }, (eventType, filename) => {
+        if (filename && filename !== this._filename) return;
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+          this.load(this._dir, this._filename);
+          if (typeof onReload === 'function') onReload(this.summary());
+        }, RELOAD_DEBOUNCE_MS);
+      });
+    } catch (err) {
+      this._watchError = err.message;
+    }
+  }
+
+  /** @returns {boolean} whether watch() is actively watching for changes */
+  isWatching() {
+    return this._watcher != null;
+  }
+
+  /** @returns {string|null} error setting up the watcher, if watch() failed to start it */
+  watchError() {
+    return this._watchError;
+  }
+
+  /** Stop watching for changes, if watch() was called. Idempotent. */
+  close() {
+    if (this._watcher) {
+      try { this._watcher.close(); } catch { /* ignore */ }
+      this._watcher = null;
     }
   }
 

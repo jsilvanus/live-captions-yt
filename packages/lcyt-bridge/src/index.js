@@ -7,6 +7,7 @@
  *
  * Also looks for an optional security.local.yaml in that same directory —
  * a deployer-controlled deny-only floor (see local-security-floor.js).
+ * Hot-reloaded: edits take effect without restarting this process.
  *
  * Run:  node src/index.js
  * Exe:  lcyt-bridge.exe (built with pkg)
@@ -64,6 +65,23 @@ function loadConfig() {
 }
 
 // ---------------------------------------------------------------------------
+// Local security floor logging (initial load + hot-reload log lines share
+// this — see local-security-floor.js's watch())
+// ---------------------------------------------------------------------------
+
+function logFloorSummary(summary, { reload = false } = {}) {
+  if (summary.present && summary.loadError) {
+    console.error(`[lcyt-bridge] security.local.yaml is present but invalid: ${summary.loadError}`);
+    console.error('[lcyt-bridge] Every TCP/HTTP command will be BLOCKED by the local security floor until this file is fixed or removed.');
+  } else if (summary.present) {
+    const verb = reload ? 'reloaded' : 'loaded';
+    console.info(`[lcyt-bridge] Local security floor ${verb}: ${summary.ipRuleCount} IP rule(s), ${summary.commandRuleCount} command rule(s).`);
+  } else if (reload) {
+    console.info('[lcyt-bridge] security.local.yaml removed — local security floor cleared, no extra restrictions from this file.');
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -104,13 +122,16 @@ async function main() {
     localPolicyDir: config.exeDir,
   });
 
-  const floor = bridge.localSecurityFloorSummary();
-  if (floor.present && floor.loadError) {
-    console.error(`[lcyt-bridge] security.local.yaml is present but invalid: ${floor.loadError}`);
-    console.error('[lcyt-bridge] Every TCP/HTTP command will be BLOCKED by the local security floor until this file is fixed or removed.');
-  } else if (floor.present) {
-    console.info(`[lcyt-bridge] Local security floor loaded: ${floor.ipRuleCount} IP rule(s), ${floor.commandRuleCount} command rule(s).`);
+  logFloorSummary(bridge.localSecurityFloorSummary());
+  if (bridge.localSecurityFloorWatching()) {
+    console.info('[lcyt-bridge] Watching for security.local.yaml changes — edits take effect automatically, no bridge restart needed.');
+  } else {
+    const watchErr = bridge.localSecurityFloorWatchError();
+    if (watchErr) {
+      console.warn(`[lcyt-bridge] Could not watch ${config.exeDir} for security.local.yaml changes (${watchErr}) — edits will require a bridge restart to take effect.`);
+    }
   }
+  bridge.on('security:floor-reloaded', (summary) => logFloorSummary(summary, { reload: true }));
 
   // System tray (optional — gracefully skipped if unavailable)
   await createTray({
