@@ -348,6 +348,15 @@ export function DskEditorPage() {
 
   // ── API ──────────────────────────────────────────────────────────────────
 
+  // NOTE: still X-API-Key, not a project-scoped JWT. plan_authentication_refactor.md
+  // (2026-07-09) explicitly intended to retire this in favor of project-membership
+  // auth (see its Background table), but the frontend migration never happened —
+  // this is that unfinished item, not a deliberate design choice. It also means
+  // DSK template/viewport writes bypass plan_project_roles.md's per-user Setup-tier
+  // role check entirely (see requireSetup()'s authKind === 'apikey' exemption in
+  // lcyt-dsk/src/routes/dsk-templates.js and dsk-viewports.js). Migrating this to
+  // POST /auth/project-token (same exchange useUserAuth.js/ProjectSettingsPage.jsx
+  // already use) would let that role check actually apply here too. See CONSIDER.md.
   function apiFetch(path, opts = {}) {
     return fetch(`${serverUrl}${path}`, {
       ...opts,
@@ -975,6 +984,7 @@ export function DskEditorPage() {
   }
 
   // ── Media Library ────────────────────────────────────────────────────────
+  // Also still X-API-Key, not a project-scoped JWT — see apiFetch()'s note above.
 
   async function uploadImage(file, shorthand) {
     setImgUploading(true); setImgUploadErr('');

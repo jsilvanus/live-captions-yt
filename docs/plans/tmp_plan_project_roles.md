@@ -144,14 +144,17 @@ Stream B's first pass gated DSK template/viewport writes on `req.user.userId`
 unconditionally — but `DskEditorPage.jsx` (the real production DSK editor UI)
 authenticates via `X-API-Key`, which never populates `req.user` at all. As
 written, this would have 403'd DSK template/viewport editing for every user,
-including real owners. Fixed by having `editorAuth`
+including real owners. Stopgapped by having `editorAuth`
 (`lcyt-dsk/src/middleware/editor-auth.js`) mark the request
 (`req.session.authKind = 'apikey'`) and having `requireSetup` in both
-`dsk-templates.js`/`dsk-viewports.js` exempt that specific path — raw
-api_key possession already the strongest credential this codebase
-recognizes for a project — while a plain session JWT lacking `req.user`
-(a different case) still 403s normally. See `CONSIDER.md` for the full
-writeup and the deliberate-not-oversight framing.
+`dsk-templates.js`/`dsk-viewports.js` exempt that specific path, while a
+plain session JWT lacking `req.user` (a different case) still 403s normally.
+**This is a stopgap, not a design decision** — `plan_authentication_refactor.md`
+already intended to retire DSK's `X-API-Key` credential entirely in favor of
+project-membership JWTs, and that migration was simply never finished on the
+frontend (user-flagged 2026-07-26). See `CONSIDER.md`'s corrected entry for
+the real fix (migrate `DskEditorPage.jsx` onto project tokens, then delete
+this exemption).
 
 **Mode:** Parallel (5 streams)
 **Depends on:** Phase 1
