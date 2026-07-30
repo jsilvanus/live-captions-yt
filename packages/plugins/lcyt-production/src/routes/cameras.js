@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { parseCamera } from '../registry.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
 import { requireTier } from '../route-access.js';
+import { isSecurityBlockError } from '../bridge-security.js';
 
 // 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
 // than WHIP — no PTZ, uses camera_key/mixer_input exactly like webcam/mobile.
@@ -315,7 +316,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       registry.notifyCameraPresetRecalled({ apiKey, cameraId: id, preset: presetKey });
       res.json({ ok: true, cameraId: id, presetId });
     } catch (err) {
-      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
+      const status = isSecurityBlockError(err) ? 403
+        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 400;
       res.status(status).json({ error: err.message });
     }
   });

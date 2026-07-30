@@ -1103,3 +1103,61 @@ pass:
 **Recommendation:** Log both in a future pass specifically scoped to S3/storage configuration and cue-engine behavior — they're real, confirmed, non-speculative gaps, just not part of the current phase's already-tight scope (app URL, retention, STT/metrics/AI defaults).
 
 (Found during: settings migration Phase 5 completion audit, 2026-07-21.)
+
+---
+
+## Bridge security IP-allow/deny checks apply the same rule shape to http_request/model_call as to tcp_send, despite being a coarser fit
+
+**Where:** `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_checkSecurity()`/`_resolveIpTarget()`, `packages/lcyt-bridge/src/bridge.js`'s equivalent local check, `packages/plugins/lcyt-production/src/bridge-security.js`
+
+**Finding:** The new per-bridge `bridge_security_rules` `ip` rule kind (host/CIDR/wildcard pattern, optional `:port`) is evaluated identically for all five bridge command types: `tcp_send`/`atem_switch`/`obs_switch` (a real raw socket target) and `http_request`/`model_call` (an arbitrary HTTP(S) URL, parsed down to just its hostname:port for the check). This reuses one evaluator (`checkIpAllowed()`) and one rule table for both cases, which is simple and consistent, but a URL target has properties a raw TCP target doesn't — path, query string, scheme — that an operator might reasonably want to restrict (e.g. "only allow `/Monarch/sdk/*` paths") and that this rule shape can't express. It also doesn't do the DNS-resolution-based SSRF hardening `lcyt-connectors`' `network-guard.js` does for connector URLs (deliberately, per `bridge-security.js`'s doc comment — bridge targets are treated as LAN IPs/hostnames configured directly on the device, not arbitrary user-supplied URLs), which is a reasonable default for this feature's threat model but means an `http_request`/`model_call` command through a bridge doesn't get the same protection a connector's outbound fetch does.
+
+**Why skipped:** Building a second, URL-aware rule kind (path/query matching, and/or reusing `network-guard.js`'s DNS-resolving `checkUrlAllowed()`) is real additional scope beyond what this pass's plan called for (TCP command allow/deny + target IP allow/deny, the two things explicitly asked for) and would mean either importing `lcyt-connectors` into `lcyt-production` (a new cross-plugin dependency this repo's convention avoids — see `mediamtx-client.js`'s "copied to avoid a cross-plugin dependency" precedent) or duplicating `network-guard.js`'s DNS-resolution logic a second time. The current host:port-only check still closes the real gap (an unauthenticated/compromised caller directing a bridge to hit an arbitrary internal HTTP endpoint), just without path-level granularity or DNS-rebinding protection.
+
+**Recommendation:** If the bridge's `http_request`/`model_call` surface grows (more encoder types, more third-party APIs relayed through a bridge), revisit with either a `path` pattern field on `ip`-kind rules or a dedicated `url`-kind rule that wraps `network-guard.js`'s evaluator.
+
+**Addendum (2026-07-26 code review):** a related, separate gap in the same area — `lcyt-bridge/src/bridge.js`'s `_httpRequest()`/`_modelCall()` call plain `fetch(url, init)` with no `redirect: 'manual'`/`'error'` option, so a 3xx response is followed transparently. The IP check (both the backend's authoritative one and the bridge's local defense-in-depth one) only ever validates the pre-redirect host — an `http_request` command to an allowed host that responds `302 Location: http://10.0.0.5/admin` (a denied internal host) lands the bridge's actual outbound request on the denied host with neither layer ever seeing the second hop. Same "would need real design work, not a quick fix" reasoning as the rest of this entry applies — `redirect: 'manual'` handling would need the bridge to re-validate and re-fetch each hop itself, a larger rework of `_httpRequest`/`_modelCall`'s fetch strategy. Not implemented; revisit together with the URL-aware rule-kind work above if this surface ever needs to defend against an actively adversarial HTTP target, not just a misconfigured one.
+
+(Found during: `plan`-driven bridge TCP command / IP security layer implementation, 2026-07-26; addendum found during the follow-up code-review pass the same day.)
+
+---
+
+## Bridge security: atem_switch commands never carry a port, so a port-qualified IP rule can never match them
+
+**Where:** `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_resolveIpTargets()`, `packages/lcyt-bridge/src/bridge.js`'s duplicate, `packages/plugins/lcyt-production/src/adapters/mixer/atem.js` (builds `{ type: 'atem_switch', host, meIndex, inputNumber }` — no `port` field, since `AtemPool.switch(host, meIndex, inputNumber)` takes none)
+
+**Finding:** `_resolveIpTargets()` always resolves `port: null` for `atem_switch`, since the command object never carries one. `matchesHostPattern()`'s port-suffix check (`if (parsed.port != null && parsed.port !== port) return false`) means a rule written with a `:port` suffix (e.g. `"192.168.1.100:9910"`, the natural way to scope a deny rule to "that ATEM switcher") can never match an `atem_switch` command — the actual resolved port is always `null`, so the comparison always fails. A host-only pattern (no `:port` suffix) still works correctly and is the safe way to write an ATEM-targeting rule today.
+
+**Why skipped:** The two real fixes both have real downsides: (a) inject ATEM's well-known default UDP port (9910) into the generic dispatcher for matching purposes, which couples the security layer to protocol-specific knowledge and would be *wrong* for any deployment where the ATEM's actual configured port differs from the default; or (b) thread the real port through `atem_switch` commands end-to-end (`AtemPool`, the ATEM adapter, the command shape) even though nothing else about ATEM control needs it — a real API change to an unrelated subsystem just to serve a rule-matching edge case. Neither is a small, obviously-correct fix, and the workaround (write host-only deny/allow rules for ATEM devices, which fully protects them) is simple and already available.
+
+**Recommendation:** Document the limitation in `bridge-security.js`'s doc comment (host-only patterns for ATEM devices) and/or surface a UI hint in `SecurityRuleList` when a `:port`-suffixed pattern is added for a bridge with ATEM-type mixers assigned. Revisit only if this specific gap causes a real incident.
+
+(Found during: code-review pass on the bridge security layer, 2026-07-26.)
+
+---
+
+## Bridge security: pattern-matching and URL→host:port extraction duplicate existing code in lcyt-connectors (and elsewhere) rather than reusing it
+
+**Where:** `packages/plugins/lcyt-production/src/bridge-security.js`'s `parseHostPattern`/`matchesHostPattern` vs. `packages/plugins/lcyt-connectors/src/network-guard.js`'s `parsePattern`/`hostMatches`; `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_resolveIpTargets()` URL-to-host:port snippet vs. the same few lines already written in `network-guard.js`'s `checkUrlAllowed()` and in `packages/lcyt/src/sender.js`
+
+**Finding:** `bridge-security.js`'s pattern parser (bracket-IPv6 handling, the "trailing `:N` is a port unless the remainder itself has a colon" heuristic, `*.example.com` wildcard matching, CIDR-via-`BlockList`) is copied near-verbatim from `network-guard.js`'s `parsePattern`/`hostMatches`, including matching comments — not a coincidental similar shape, but the same logic re-typed. Separately, `{ host: u.hostname.replace(/^\[|\]$/g, ''), port: Number(u.port) || (u.protocol === 'https:' ? 443 : 80) }` (turn a `URL` into a bare host + default-aware port) is now written a third/fourth time across the codebase with no shared helper (`network-guard.js`, `lcyt/src/sender.js`, and now `bridge-manager.js`/`bridge.js`'s `_resolveIpTargets()`).
+
+**Why skipped:** This repo has an explicit, documented convention for exactly this situation — copy small, stable, protocol-level logic across package boundaries rather than adding a cross-plugin dependency (`packages/plugins/lcyt-production/src/mediamtx-client.js`'s doc comment: "Copied from lcyt-rtmp's client to avoid a cross-plugin dependency — keep in sync"; `lcyt-bridge`'s own `security-policy.js` already follows this same convention relative to `bridge-security.js` itself). `lcyt-connectors` is not currently a dependency of `lcyt-production`, and adding one just to share ~40 lines of pattern-parsing would be a heavier structural change than the duplication it removes. The real gap is that this specific instance of the convention was never written down — `CAMERA_CONTROL_TYPES`'s three-copy duplication (documented in `packages/plugins/lcyt-production/CLAUDE.md`) shows the pattern is normally expected to be logged when introduced, and this one wasn't.
+
+**Recommendation:** If this pattern-matching logic needs a bugfix in one place (as already happened once this pass — see the CIDR-empty-prefix and IPv6-case-sensitivity fixes applied 2026-07-26), check whether `network-guard.js` has (or should get) the same fix. If a fifth copy of the URL→host:port snippet ever shows up, that's the threshold to extract it into the shared `lcyt` core library instead of continuing to copy it.
+
+(Found during: code-review pass on the bridge security layer, 2026-07-26.)
+
+---
+
+## Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time
+
+**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()` (which additionally takes `req`, not `path`, and is a *conditional* bypass via `hasAuthCredentials(req)`, not a blanket one)
+
+**Finding:** Three routers now each independently implement "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function. `routes/bridge.js`'s own comment acknowledges the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper (e.g. a `createAuthWithBypass(auth, matcher)` middleware factory). The three copies aren't even structurally aligned — `mixers.js`'s version has a different signature and conditional semantics from the other two — so there's no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`."
+
+**Why skipped:** Extracting a shared bypass-middleware factory is a real, reasonable simplification, but touching three already-shipped, already-tested routers' auth wiring in the same pass that just closed a real auth gap on two of them felt like more risk than the current, narrow scope (bridge TCP command / IP security) warranted — a regression in this factoring would reopen exactly the kind of hole this pass exists to close. Better done as its own deliberate, focused refactor with its own review pass.
+
+**Recommendation:** If a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
+
+(Found during: code-review pass on the bridge security layer, 2026-07-26.)

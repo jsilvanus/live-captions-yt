@@ -166,6 +166,23 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
     assert.equal(switchSourceCalled, false, 'bridge branch must not fall through to registry.switchSource()');
   });
 
+  it('maps a security-policy block to 403, not the generic 400', async () => {
+    insertBridgeInstance('bridge-1');
+    const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
+    const registry = makeRegistryStub();
+    const bridgeManager = {
+      isConnected: () => true,
+      sendCommand: async () => { throw new Error('Blocked by bridge security policy: Blocked by deny rule (10.0.0.5)'); },
+    };
+    await startApp(registry, bridgeManager, { auth: fakeAuth });
+
+    const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(registry.notified, [], 'no production-follow notification on a blocked switch');
+  });
+
   it('no notification when the bridge is not connected (switch fails)', async () => {
     insertBridgeInstance('bridge-1');
     const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });

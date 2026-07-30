@@ -1,8 +1,8 @@
 /**
- * Route-level tests for routes/encoders.js's opts.auth wiring and the
- * Setup/Production tier gate (plan_project_roles.md, decided 2026-07-26).
- * First route-level test file for this router — previously it received no
- * auth at all (see route-access.js / api.js's doc comments).
+ * Route-level tests for routes/encoders.js's opts.auth wiring (this router
+ * previously had no auth hook in its signature at all — closed alongside the
+ * bridge security-layer work, see routes/bridge.js's equivalent tests) and
+ * the Setup/Production tier gate (plan_project_roles.md, decided 2026-07-26).
  */
 
 import { describe, it, before, after, afterEach } from 'node:test';
@@ -30,6 +30,12 @@ function insertEncoder(overrides = {}) {
     overrides.connection_source ?? 'backend',
     overrides.bridge_instance_id ?? null,
   );
+  return id;
+}
+
+function insertBridgeInstance(id = 'bridge-1') {
+  db.prepare('INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
+    .run(id, 'Bridge 1', `tok-${id}`);
   return id;
 }
 
@@ -80,6 +86,47 @@ describe('encoders router — auth wiring (previously unauthenticated)', () => {
     assert.equal(unauth.status, 401);
     const authed = await fetch(`${baseUrl}/production/encoders/${id}`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(authed.status, 200);
+  });
+
+  it('opts.auth configured: POST / requires it', async () => {
+    await startApp(null, { auth: fakeAuth });
+    const res = await fetch(`${baseUrl}/production/encoders`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Enc 1', type: 'monarch_hd' }),
+    });
+    assert.equal(res.status, 401);
+  });
+});
+
+describe('encoders router — bridge-relayed start/stop status mapping', () => {
+  it('maps a security-policy block to 403, not the generic 502', async () => {
+    const bridgeManager = {
+      isConnected: () => true,
+      sendCommand: async () => { throw new Error('Blocked by bridge security policy: Blocked by deny rule (10.0.0.9:80)'); },
+    };
+    insertBridgeInstance('bridge-1');
+    const id = insertEncoder({ connection_source: 'bridge', bridge_instance_id: 'bridge-1' });
+    await startApp(bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
+
+    const res = await fetch(`${baseUrl}/production/encoders/${id}/start`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('a real connection failure still maps to 502', async () => {
+    const bridgeManager = {
+      isConnected: () => true,
+      sendCommand: async () => { throw new Error('ECONNREFUSED'); },
+    };
+    insertBridgeInstance('bridge-1');
+    const id = insertEncoder({ connection_source: 'bridge', bridge_instance_id: 'bridge-1' });
+    await startApp(bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
+
+    const res = await fetch(`${baseUrl}/production/encoders/${id}/start`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 502);
   });
 });
 

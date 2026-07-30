@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { parseMixer } from '../registry.js';
 import { buildSwitchCommand } from '../crud.js';
 import { requireTier } from '../route-access.js';
+import { isSecurityBlockError } from '../bridge-security.js';
 
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
@@ -218,7 +219,8 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       registry.notifyProgramChanged({ apiKey, mixerId: id, inputNumber: input });
       res.json({ ok: true, mixerId: id, activeSource: input });
     } catch (err) {
-      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 400;
+      const status = isSecurityBlockError(err) ? 403
+        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 400;
       res.status(status).json({ error: err.message });
     }
   });

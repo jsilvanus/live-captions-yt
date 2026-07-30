@@ -13,6 +13,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { requireTier } from '../route-access.js';
+import { isSecurityBlockError } from '../bridge-security.js';
 
 const ENCODER_TYPES = ['monarch_hd', 'monarch_hdx'];
 const VALID_CONNECTION_SOURCES = ['backend', 'frontend', 'bridge'];
@@ -29,15 +30,20 @@ export function parseEncoder(row) {
 
 /**
  * @param {import('better-sqlite3').Database} db
- * @param {object|null} bridgeManager
+ * @param {import('../bridge-manager.js').BridgeManager|null} [bridgeManager]
  * @param {{ auth?: import('express').RequestHandler, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts]
  *   `opts.auth` (real project-access middleware, e.g. scopedAuth('production'))
  *   was previously never wired into this router at all — unlike
  *   cameras.js/mixers.js, encoder CRUD + start/stop/test were fully
- *   unauthenticated. Optional/opt-in for the same reason as those two
- *   routers: existing route-level tests construct this router directly and
- *   keep working unauthenticated unless they explicitly opt in; server.js
- *   always supplies both `auth` and `deps` in production.
+ *   unauthenticated (closed alongside the bridge security-layer work).
+ *   Applied to every route in this router — there is no bridge-agent-facing
+ *   endpoint here to carve out (contrast routes/bridge.js). `opts.deps`
+ *   (plan_project_roles.md, decided 2026-07-26) additionally splits
+ *   Setup-tier CRUD from Production-tier live-control on top of that base
+ *   auth — see route-access.js's doc comment. Both optional/opt-in: existing
+ *   route-level tests construct this router directly and keep working
+ *   unauthenticated unless they explicitly opt in; server.js always supplies
+ *   both in production.
  */
 export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
   const auth = opts.auth ?? null;
@@ -156,7 +162,8 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
       }
       res.json({ ok: true, encoderId: encoder.id });
     } catch (err) {
-      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 502;
+      const status = isSecurityBlockError(err) ? 403
+        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 502;
       res.status(status).json({ error: err.message });
     }
   });
@@ -182,7 +189,8 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
       }
       res.json({ ok: true, encoderId: encoder.id });
     } catch (err) {
-      const status = err.message.includes('not connected') || err.message.includes('timed out') ? 503 : 502;
+      const status = isSecurityBlockError(err) ? 403
+        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 502;
       res.status(status).json({ error: err.message });
     }
   });
