@@ -228,6 +228,32 @@ describe('createScheduled', () => {
     });
   });
 
+  test('applies the requested visibility', async () => {
+    respond({ id: 'bc-1' });
+    respond({ id: 'st-1', cdn: { ingestionInfo: {} } });
+    respond({ id: 'bc-1' });
+    await youtubeAdapter.createScheduled(TOKEN, {
+      title: 'x', scheduledStart: '2026-08-02T09:00:00Z', privacyStatus: 'public',
+    });
+    assert.equal(bodyOf(0).status.privacyStatus, 'public');
+  });
+
+  test('falls back to unlisted for an omitted or bogus visibility', async () => {
+    // Never inherit YouTube's own default here — an unrecognised value must
+    // not be able to publish a broadcast.
+    for (const bad of [undefined, '', 'PUBLIC', 'everyone', null]) {
+      calls.length = 0;
+      queue.length = 0;
+      respond({ id: 'bc-1' });
+      respond({ id: 'st-1', cdn: { ingestionInfo: {} } });
+      respond({ id: 'bc-1' });
+      await youtubeAdapter.createScheduled(TOKEN, {
+        title: 'x', scheduledStart: '2026-08-02T09:00:00Z', privacyStatus: bad,
+      });
+      assert.equal(bodyOf(0).status.privacyStatus, 'unlisted', `for ${JSON.stringify(bad)}`);
+    }
+  });
+
   test('requires a scheduled start time', async () => {
     await assert.rejects(() => youtubeAdapter.createScheduled(TOKEN, { title: 'x' }), /scheduled start time is required/);
     assert.equal(calls.length, 0, 'must not call the API without one');
@@ -245,6 +271,33 @@ describe('updateSchedule', () => {
     assert.equal(body.snippet.title, 'New title');
     assert.equal(body.snippet.scheduledStartTime, '2026-08-02T10:00:00Z');
     assert.equal('description' in body.snippet, false);
+  });
+
+  test('sends the status part only when a visibility was supplied', async () => {
+    // Including it unconditionally would rewrite privacyStatus on every edit,
+    // silently resetting whatever the operator set on YouTube.
+    respond({ id: 'bc-1' });
+    await youtubeAdapter.updateSchedule(TOKEN, 'bc-1', { title: 'x', scheduledStart: '2026-08-02T10:00:00Z' });
+    assert.equal(urlOf(0).searchParams.get('part'), 'snippet');
+    assert.equal('status' in bodyOf(0), false);
+  });
+
+  test('sends the status part when a visibility was supplied', async () => {
+    respond({ id: 'bc-1' });
+    await youtubeAdapter.updateSchedule(TOKEN, 'bc-1', {
+      title: 'x', scheduledStart: '2026-08-02T10:00:00Z', privacyStatus: 'private',
+    });
+    assert.equal(urlOf(0).searchParams.get('part'), 'snippet,status');
+    assert.deepEqual(bodyOf(0).status, { privacyStatus: 'private' });
+  });
+
+  test('ignores an unrecognised visibility rather than sending it', async () => {
+    respond({ id: 'bc-1' });
+    await youtubeAdapter.updateSchedule(TOKEN, 'bc-1', {
+      title: 'x', scheduledStart: '2026-08-02T10:00:00Z', privacyStatus: 'nonsense',
+    });
+    assert.equal(urlOf(0).searchParams.get('part'), 'snippet');
+    assert.equal('status' in bodyOf(0), false);
   });
 });
 

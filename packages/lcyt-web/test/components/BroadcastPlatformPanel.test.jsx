@@ -117,11 +117,15 @@ describe('BroadcastPlatformPanel', () => {
       onCall: (c) => calls.push(c),
     });
     renderPanel();
-    await userEvent.selectOptions(await screen.findByRole('combobox'), 'cred-b');
+    // Two selects coexist once several channels are connected — the account
+    // picker and the visibility control — so query by accessible name.
+    await userEvent.selectOptions(await screen.findByRole('combobox', { name: /Channel/ }), 'cred-b');
     await userEvent.click(screen.getByRole('button', { name: 'Schedule on YouTube' }));
     await waitFor(() => {
       const scheduleCall = calls.find(c => c.url.includes('/schedule'));
-      expect(scheduleCall?.body).toEqual({ credentialId: 'cred-b', bindStreamKey: false });
+      expect(scheduleCall?.body).toEqual({
+        credentialId: 'cred-b', bindStreamKey: false, privacyStatus: 'unlisted',
+      });
     });
   });
 
@@ -160,6 +164,31 @@ describe('BroadcastPlatformPanel', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Schedule on YouTube' }));
     expect(await screen.findByText(/we left it alone/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Replace it with this channel/ })).toBeInTheDocument();
+  });
+
+  it('defaults visibility to unlisted and sends the operator\'s choice', async () => {
+    const calls = [];
+    global.fetch = mockFetch({
+      responses: { schedule: { body: { link: link(), captionTarget: null } } },
+      onCall: (c) => calls.push(c),
+    });
+    renderPanel();
+
+    const select = await screen.findByRole('combobox', { name: /Visibility/ });
+    expect(select).toHaveValue('unlisted');
+
+    await userEvent.selectOptions(select, 'public');
+    await userEvent.click(screen.getByRole('button', { name: 'Schedule on YouTube' }));
+    await waitFor(() => {
+      const scheduleCall = calls.find(c => c.url.includes('/schedule'));
+      expect(scheduleCall?.body.privacyStatus).toBe('public');
+    });
+  });
+
+  it('seeds visibility from the broadcast rather than always unlisted', async () => {
+    global.fetch = mockFetch();
+    renderPanel({ ...BROADCAST, privacyStatus: 'private' });
+    expect(await screen.findByRole('combobox', { name: /Visibility/ })).toHaveValue('private');
   });
 
   it('disables the thumbnail button until the broadcast is scheduled', async () => {

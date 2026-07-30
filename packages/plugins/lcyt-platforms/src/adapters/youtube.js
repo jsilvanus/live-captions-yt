@@ -34,6 +34,9 @@ const YT_API = 'https://www.googleapis.com/youtube/v3';
 const YT_UPLOAD_API = 'https://www.googleapis.com/upload/youtube/v3';
 const YT_ANALYTICS_API = 'https://youtubeanalytics.googleapis.com/v2';
 
+/** YouTube's `status.privacyStatus` vocabulary. */
+export const PRIVACY_STATUSES = new Set(['public', 'unlisted', 'private']);
+
 /**
  * Both scopes are requested at connect time, not incrementally.
  * `yt-analytics.readonly` is only needed for the post-broadcast summary, but
@@ -274,10 +277,13 @@ export const youtubeAdapter = {
    * of the product, so it is set up front rather than left as an action the
    * operator has to remember.
    */
-  async createScheduled(accessToken, { title, description, scheduledStart } = {}) {
+  async createScheduled(accessToken, { title, description, scheduledStart, privacyStatus } = {}) {
     if (!scheduledStart) {
       throw new NetworkError('A scheduled start time is required to schedule a YouTube broadcast', null);
     }
+    // Falls back to the safe value rather than to YouTube's own default: an
+    // omitted privacyStatus must never silently publish a broadcast.
+    const privacy = PRIVACY_STATUSES.has(privacyStatus) ? privacyStatus : 'unlisted';
     const broadcast = await ytFetch(
       accessToken,
       `${YT_API}/liveBroadcasts?part=snippet,status,contentDetails`,
@@ -289,7 +295,7 @@ export const youtubeAdapter = {
             description: description || '',
             scheduledStartTime: scheduledStart,
           },
-          status: { privacyStatus: 'unlisted', selfDeclaredMadeForKids: false },
+          status: { privacyStatus: privacy, selfDeclaredMadeForKids: false },
           contentDetails: {
             enableClosedCaptions: true,
             closedCaptionsType: 'closedCaptionsHttpPost',
@@ -328,7 +334,7 @@ export const youtubeAdapter = {
     };
   },
 
-  async updateSchedule(accessToken, externalBroadcastId, { title, description, scheduledStart } = {}) {
+  async updateSchedule(accessToken, externalBroadcastId, { title, description, scheduledStart, privacyStatus } = {}) {
     const snippet = {};
     if (title !== undefined) snippet.title = title;
     if (description !== undefined) snippet.description = description;
@@ -337,9 +343,20 @@ export const youtubeAdapter = {
     // edit still has to send scheduledStartTime — YouTube rejects a snippet
     // without it. Callers pass the broadcast's current values for anything
     // they aren't changing.
-    await ytFetch(accessToken, `${YT_API}/liveBroadcasts?part=snippet`, {
+    //
+    // `status` is only sent when a visibility was actually supplied. Including
+    // the status part unconditionally would rewrite privacyStatus on every
+    // edit, which for an omitted value means silently resetting whatever the
+    // operator had set on YouTube.
+    const parts = ['snippet'];
+    const body = { id: externalBroadcastId, snippet };
+    if (PRIVACY_STATUSES.has(privacyStatus)) {
+      parts.push('status');
+      body.status = { privacyStatus };
+    }
+    await ytFetch(accessToken, `${YT_API}/liveBroadcasts?part=${parts.join(',')}`, {
       method: 'PUT',
-      body: JSON.stringify({ id: externalBroadcastId, snippet }),
+      body: JSON.stringify(body),
     });
   },
 

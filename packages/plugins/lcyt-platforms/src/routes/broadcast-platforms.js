@@ -99,6 +99,10 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     const title = req.body?.title ?? broadcast.title;
     const description = req.body?.description ?? broadcast.description ?? '';
     const scheduledStart = req.body?.scheduledStart ?? broadcast.scheduledStart;
+    // Visibility comes from the broadcast row (which defaults to 'unlisted'),
+    // with a per-request override for callers that want to set it in the same
+    // action as scheduling.
+    const privacyStatus = req.body?.privacyStatus ?? broadcast.privacyStatus;
     if (!scheduledStart) {
       return res.status(400).json({
         error: 'This broadcast has no scheduled start time — set one before scheduling it on a platform',
@@ -113,7 +117,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
         // Already scheduled externally — update in place rather than creating a
         // second external broadcast for the same LCYT one.
         await adapter.updateSchedule(accessToken, existing.external_broadcast_id, {
-          title, description, scheduledStart,
+          title, description, scheduledStart, privacyStatus,
         });
         link = upsertLink(db, {
           broadcastId: broadcast.id,
@@ -123,7 +127,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
           externalStreamId: existing.external_stream_id,
         });
       } else {
-        const created = await adapter.createScheduled(accessToken, { title, description, scheduledStart });
+        const created = await adapter.createScheduled(accessToken, { title, description, scheduledStart, privacyStatus });
         link = upsertLink(db, {
           broadcastId: broadcast.id,
           platform: adapter.platform,

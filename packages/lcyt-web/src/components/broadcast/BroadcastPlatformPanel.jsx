@@ -26,6 +26,17 @@ const PLATFORM_LABEL = 'YouTube';
 const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const THUMBNAIL_TYPES = ['image/png', 'image/jpeg'];
 
+/**
+ * YouTube's visibility vocabulary. 'unlisted' is the default the backend
+ * applies — a broadcast accidentally made public is a worse failure than one
+ * accidentally left unlisted, so going public is an explicit choice here.
+ */
+const PRIVACY_OPTIONS = [
+  { value: 'unlisted', label: 'Unlisted — anyone with the link' },
+  { value: 'public', label: 'Public — listed and searchable' },
+  { value: 'private', label: 'Private — only you' },
+];
+
 export function BroadcastPlatformPanel({ broadcast, onChanged }) {
   const api = usePlatforms();
   const { credentials, storageAvailable, reload: reloadCredentials } = usePlatformCredentials();
@@ -36,6 +47,7 @@ export function BroadcastPlatformPanel({ broadcast, onChanged }) {
   const [history, setHistory] = useState([]);
   const [liveViewers, setLiveViewers] = useState(null);
   const [credentialId, setCredentialId] = useState('');
+  const [privacyStatus, setPrivacyStatus] = useState(broadcast?.privacyStatus || 'unlisted');
   const [candidates, setCandidates] = useState(null);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
@@ -66,6 +78,12 @@ export function BroadcastPlatformPanel({ broadcast, onChanged }) {
   }, [api, broadcastId]);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Re-seed when the panel is pointed at a different broadcast, or when a
+  // refresh brings back a value changed elsewhere.
+  useEffect(() => {
+    setPrivacyStatus(broadcast?.privacyStatus || 'unlisted');
+  }, [broadcast?.id, broadcast?.privacyStatus]);
 
   // Live viewer count arrives pushed on the shared event stream — the backend
   // is already polling YouTube, so having the UI poll the backend on top of
@@ -115,7 +133,7 @@ export function BroadcastPlatformPanel({ broadcast, onChanged }) {
 
   async function schedule(bindStreamKey = false) {
     const result = await run('schedule', (creds) =>
-      api.schedule(broadcastId, PLATFORM, { ...creds, bindStreamKey }));
+      api.schedule(broadcastId, PLATFORM, { ...creds, bindStreamKey, privacyStatus }));
     if (!result) return;
     const target = result.captionTarget;
     if (target?.bound && target.created) {
@@ -216,6 +234,24 @@ export function BroadcastPlatformPanel({ broadcast, onChanged }) {
           </select>
         </label>
       )}
+
+      <label style={fieldStyle}>
+        <span style={labelStyle}>Visibility</span>
+        <select
+          value={privacyStatus}
+          disabled={!!busy}
+          onChange={e => setPrivacyStatus(e.target.value)}
+        >
+          {PRIVACY_OPTIONS.map(o => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+        {isLinked && privacyStatus !== (broadcast?.privacyStatus || 'unlisted') && (
+          <span style={{ ...mutedStyle, display: 'block', marginTop: 2 }}>
+            Applied on the next “Update on YouTube”.
+          </span>
+        )}
+      </label>
 
       {error && <p role="alert" style={errorStyle}>{error}</p>}
 

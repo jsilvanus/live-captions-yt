@@ -276,7 +276,7 @@ GET    /broadcasts/active       — active-broadcast pointer: { activeBroadcastI
 DELETE /broadcasts/active       — clear the active-broadcast pointer (Bearer token)
 POST   /broadcasts/:id/activate — set the project's active-broadcast pointer (404 unknown, 409 archived) (Bearer token)
 GET    /broadcasts/:id          — one broadcast + linked reusable assets (Bearer token)
-PUT    /broadcasts/:id          — edit title/description/schedule/status (Bearer token)
+PUT    /broadcasts/:id          — edit title/description/schedule/status/privacyStatus (Bearer token). privacyStatus is 'public'|'unlisted'|'private' (default 'unlisted'), the visibility lcyt-platforms creates the broadcast with on YouTube
 DELETE /broadcasts/:id          — first call archives (202); a second call on an already-archived broadcast hard-deletes it, but 409s until archived ≥ BROADCAST_ARCHIVE_MIN_AGE_DAYS (default 30). Hard delete nulls broadcast_id on produced rows (Bearer token)
 POST   /broadcasts/:id/restore  — un-archive (Bearer token)
 POST   /broadcasts/:id/duplicate — clone (title + reusable-asset links, never produced content); cross-project targetApiKey is 501 (deep-copy TODO) (Bearer token)

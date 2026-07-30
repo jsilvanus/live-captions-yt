@@ -58,7 +58,8 @@ describe('broadcast platform routes', () => {
     db.exec('CREATE TABLE api_keys (key TEXT PRIMARY KEY)');
     db.exec(`CREATE TABLE broadcasts (
       id TEXT PRIMARY KEY, api_key TEXT, title TEXT, description TEXT,
-      scheduled_start TEXT, youtube_broadcast_id TEXT
+      scheduled_start TEXT, youtube_broadcast_id TEXT,
+      privacy_status TEXT NOT NULL DEFAULT 'unlisted'
     )`);
     runMigrations(db);
     for (const k of ['key1', 'key2']) db.prepare('INSERT INTO api_keys (key) VALUES (?)').run(k);
@@ -79,6 +80,7 @@ describe('broadcast platform routes', () => {
         return row ? {
           id: row.id, title: row.title, description: row.description,
           scheduledStart: row.scheduled_start, youtubeBroadcastId: row.youtube_broadcast_id,
+          privacyStatus: row.privacy_status,
         } : null;
       },
       updateBroadcast: (database, apiKey, id, patch) => {
@@ -132,7 +134,7 @@ describe('broadcast platform routes', () => {
     db.exec('DELETE FROM broadcast_platform_links');
     db.exec('DELETE FROM platform_credentials');
     db.exec('DELETE FROM broadcasts');
-    db.prepare('INSERT INTO broadcasts (id, api_key, title, description, scheduled_start) VALUES (?,?,?,?,?)')
+    db.prepare("INSERT INTO broadcasts (id, api_key, title, description, scheduled_start, privacy_status) VALUES (?,?,?,?,?,'unlisted')")
       .run('b1', 'key1', 'Sunday Service', 'Weekly', '2026-08-02T09:00:00');
   });
 
@@ -241,6 +243,36 @@ describe('broadcast platform routes', () => {
       assert.equal(ref.adapter.calls[0][1], 'yt-bc-1');
       assert.equal(ref.adapter.calls[0][2].title, 'Renamed');
       assert.ok(!ref.adapter.calls.some(c => c[0] === 'createScheduled'));
+    });
+
+    test('passes the broadcast\'s stored visibility to the adapter', async () => {
+      seedCredential();
+      db.prepare('UPDATE broadcasts SET privacy_status = ? WHERE id = ?').run('public', 'b1');
+      await post('/broadcasts/b1/platforms/youtube/schedule');
+      assert.equal(ref.adapter.calls[0][1].privacyStatus, 'public');
+    });
+
+    test('defaults to unlisted when the broadcast has none', async () => {
+      seedCredential();
+      await post('/broadcasts/b1/platforms/youtube/schedule');
+      assert.equal(ref.adapter.calls[0][1].privacyStatus, 'unlisted');
+    });
+
+    test('a request-body privacyStatus overrides the stored one', async () => {
+      seedCredential();
+      await post('/broadcasts/b1/platforms/youtube/schedule', { privacyStatus: 'private' });
+      assert.equal(ref.adapter.calls[0][1].privacyStatus, 'private');
+    });
+
+    test('carries visibility through on a re-schedule', async () => {
+      // Otherwise editing a broadcast after scheduling would leave the
+      // platform on the old visibility with no way to correct it.
+      seedCredential();
+      await post('/broadcasts/b1/platforms/youtube/schedule');
+      ref.adapter.calls.length = 0;
+      await post('/broadcasts/b1/platforms/youtube/schedule', { privacyStatus: 'public' });
+      assert.equal(ref.adapter.calls[0][0], 'updateSchedule');
+      assert.equal(ref.adapter.calls[0][2].privacyStatus, 'public');
     });
 
     test('refuses a broadcast with no scheduled start', async () => {

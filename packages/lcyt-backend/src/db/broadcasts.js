@@ -20,6 +20,21 @@ export const BROADCAST_ASSET_TYPES = new Set([
   'graphic', 'cue', 'action', 'icon', 'target', 'rundown',
 ]);
 
+/**
+ * Visibility a broadcast is created with on an external platform
+ * (lcyt-platforms). These are YouTube's `status.privacyStatus` values; a
+ * future provider whose vocabulary differs maps them in its own adapter
+ * rather than widening this set.
+ */
+export const PRIVACY_STATUSES = new Set(['public', 'unlisted', 'private']);
+
+/**
+ * Deliberately not 'public'. A broadcast accidentally created public is a
+ * worse failure than one accidentally created unlisted, so the safe value is
+ * the default and going public is an explicit act.
+ */
+export const DEFAULT_PRIVACY_STATUS = 'unlisted';
+
 /** Minimum days a broadcast must be archived before it can be hard-deleted. */
 export function archiveMinAgeDays() {
   const v = Number(process.env.BROADCAST_ARCHIVE_MIN_AGE_DAYS);
@@ -45,6 +60,7 @@ function formatRow(row) {
     youtubeBroadcastId: row.youtube_broadcast_id ?? null,
     rundownFileId:      row.rundown_file_id ?? null,
     recordEnabled:      Boolean(row.record_enabled),
+    privacyStatus:      row.privacy_status ?? 'unlisted',
     archivedAt:         row.archived_at ?? null,
     createdAt:          row.created_at,
     updatedAt:          row.updated_at,
@@ -136,7 +152,7 @@ export function getBroadcast(db, apiKey, id) {
 
 /**
  * Create a broadcast.
- * @param {{ title?, description?, status?, scheduledStart?, scheduledEnd?, id?, actualStart?, youtubeBroadcastId?, rundownFileId? }} fields
+ * @param {{ title?, description?, status?, scheduledStart?, scheduledEnd?, id?, actualStart?, youtubeBroadcastId?, rundownFileId?, recordEnabled?, privacyStatus? }} fields
  * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string }}
  */
 export function createBroadcast(db, apiKey, fields = {}) {
@@ -146,20 +162,24 @@ export function createBroadcast(db, apiKey, fields = {}) {
     status = 'draft',
     scheduledStart = null, scheduledEnd = null, actualStart = null,
     youtubeBroadcastId = null, rundownFileId = null, recordEnabled = false,
+    privacyStatus = DEFAULT_PRIVACY_STATUS,
   } = fields;
 
   if (!BROADCAST_STATUSES.has(status)) {
     return { ok: false, error: `Invalid status: ${status}` };
   }
+  if (!PRIVACY_STATUSES.has(privacyStatus)) {
+    return { ok: false, error: `Invalid privacyStatus: ${privacyStatus}` };
+  }
 
   db.prepare(`
     INSERT INTO broadcasts
-      (id, api_key, title, description, status, scheduled_start, scheduled_end, actual_start, youtube_broadcast_id, rundown_file_id, record_enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, api_key, title, description, status, scheduled_start, scheduled_end, actual_start, youtube_broadcast_id, rundown_file_id, record_enabled, privacy_status)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, apiKey, title, description, status,
     scheduledStart, scheduledEnd, actualStart,
-    youtubeBroadcastId, rundownFileId, recordEnabled ? 1 : 0,
+    youtubeBroadcastId, rundownFileId, recordEnabled ? 1 : 0, privacyStatus,
   );
   return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
 }
@@ -173,6 +193,7 @@ const UPDATABLE = {
   youtubeBroadcastId: 'youtube_broadcast_id',
   rundownFileId:      'rundown_file_id',
   recordEnabled:      'record_enabled',
+  privacyStatus:      'privacy_status',
 };
 
 /**
@@ -183,6 +204,9 @@ export function updateBroadcast(db, apiKey, id, patch = {}) {
   const existing = getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
 
+  if (patch.privacyStatus !== undefined && !PRIVACY_STATUSES.has(patch.privacyStatus)) {
+    return { ok: false, error: `Invalid privacyStatus: ${patch.privacyStatus}` };
+  }
   if (patch.status !== undefined && !BROADCAST_STATUSES.has(patch.status)) {
     return { ok: false, error: `Invalid status: ${patch.status}` };
   }

@@ -88,7 +88,8 @@ GET  /platforms/:platform/oauth/callback   PUBLIC by necessity — the provider 
 POST /platforms/:platform/disconnect       { credentialId } required; no implicit "the only one"
 
 GET  /broadcasts/:id/platforms                        this broadcast's links
-POST /broadcasts/:id/platforms/:platform/schedule     create or update the external broadcast; binds the stream key
+POST /broadcasts/:id/platforms/:platform/schedule     create or update the external broadcast; binds the stream key.
+                                                      Optional { privacyStatus } overrides the broadcast's stored visibility
 POST /broadcasts/:id/platforms/:platform/thumbnail    { data: base64, mimeType } — PNG/JPEG, ≤2 MB
 POST /broadcasts/:id/platforms/:platform/go-live      transition to live
 POST /broadcasts/:id/platforms/:platform/end          transition to complete + capture the summary
@@ -115,6 +116,7 @@ Every per-broadcast route takes an optional `credentialId`. Omitted, it resolves
 ## Design notes worth knowing
 
 - **Thumbnails are base64 in a JSON body**, matching `lcyt-backend/src/routes/icons.js`. There is no multipart handling anywhere in `lcyt-backend`, and this plan was not the place to add a `multer` dependency for one endpoint.
+- **Visibility comes from `broadcasts.privacy_status`**, defaulting to `unlisted` — a broadcast accidentally created public is a worse failure than one accidentally left unlisted, so going public is an explicit act. `schedule` accepts a per-request `privacyStatus` override. `updateSchedule` sends the `status` part **only** when a visibility was actually supplied; including it unconditionally would rewrite `privacyStatus` on every edit, silently resetting whatever the operator had set on YouTube. `enableAutoStart`/`enableAutoStop` stay hardcoded `false`, matching the explicit Go Live / End Stream buttons.
 - **`schedule` mirrors `external_broadcast_id` onto the legacy `broadcasts.youtube_broadcast_id`.** That column is *not* dead: `db/broadcasts.js` surfaces it as `youtubeBroadcastId` via `formatRow()`, and the broadcasts routes accept it on create and update. A mirroring failure is logged, not fatal — `broadcast_platform_links` is authoritative.
 - **`go-live` reports partial success.** If the platform transition succeeds but the caption session does not start, the response says so (`partial: true` + `warning`) rather than 500ing — the transition cannot be undone, so "nothing happened" would be the wrong story. In the default deployment `startSession` is not wired at all (the frontend makes the second call itself), and the response then omits `captionSessionStarted` entirely rather than asserting a failure that never happened.
 - **Peak concurrent viewers are derived from our own snapshots.** YouTube Analytics exposes no peak-concurrent metric. Analytics is also batch-processed, so a summary fetched seconds after a stream ends can legitimately come back empty — the row is written anyway, carrying the peak we already measured.

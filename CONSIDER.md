@@ -1080,17 +1080,16 @@ pass:
 
 ---
 
-## YouTube broadcast privacy and auto-start/stop are hardcoded with no way to change them
+## RESOLVED — YouTube broadcast privacy is now configurable (auto-start/stop still hardcoded)
 
-**Where:** `packages/plugins/lcyt-platforms/src/adapters/youtube.js`'s `createScheduled()`
+**Where:** `packages/plugins/lcyt-platforms/src/adapters/youtube.js`'s `createScheduled()`/`updateSchedule()`, `broadcasts.privacy_status`
 
-**Finding:** Every broadcast this plugin schedules is created with `status.privacyStatus: 'unlisted'` and `contentDetails.enableAutoStart/enableAutoStop: false`, hardcoded. Nothing in the API, the DB, or the UI can change them. `unlisted` is a defensible safe default — a broadcast accidentally created `public` is a worse failure than one accidentally created `unlisted` — and manual start/stop matches the explicit "Go live"/"End stream" buttons this plan built. But an operator scheduling a genuinely public service stream has to go into YouTube Studio afterwards to flip the visibility, which quietly defeats part of the point of scheduling from inside LCYT.
+**Original finding:** every broadcast was created with `status.privacyStatus: 'unlisted'` and `contentDetails.enableAutoStart/enableAutoStop: false`, hardcoded, with no way to change them.
 
-**Why skipped:** doing it properly is not a one-line default change — it needs a per-broadcast field (`broadcasts.privacy_status` or a platform-link column), a migration, plumbing through the schedule route, and a control in the broadcast panel, plus a decision about whether it is a per-broadcast or per-project setting. That is a product decision and its own small feature, not something to slip into the pass that established the adapter. The current values fail safe in the meantime.
+**Resolved 2026-07-30** (repo owner asked for it, keeping unlisted as the default): `broadcasts.privacy_status` is a real column (additive migration, `NOT NULL DEFAULT 'unlisted'`), validated against `PRIVACY_STATUSES` on both create and update, accepted by the broadcasts routes, threaded into `createScheduled`/`updateSchedule`, and exposed as a Visibility select in the broadcast Platforms panel. `updateSchedule` only sends the `status` part when a visibility was actually supplied, so an ordinary edit cannot silently reset what the operator set on YouTube.
 
-**Recommendation:** pick this up alongside the first real-channel smoke test, when it becomes obvious how operators actually want visibility defaulted.
+**Still open:** `enableAutoStart`/`enableAutoStop` remain hardcoded to `false`. That matches the explicit Go Live / End Stream buttons this feature ships, so it is not currently a gap — revisit only if someone wants YouTube to start the broadcast automatically when the encoder connects.
 
-(Found during: self-review of the broadcast platform sync branch, 2026-07-27.)
 
 ---
 
@@ -1108,14 +1107,13 @@ pass:
 
 ---
 
-## The CI plugin lists have drifted from the actual plugin set
+## RESOLVED — the CI plugin lists have been brought back in line
 
-**Where:** `.github/workflows/integration-tests.yml` — the `detect-changes` job's two hardcoded `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
+**Where:** `.github/workflows/integration-tests.yml` — the `detect-changes` job's two `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
 
-**Finding:** CI enumerates plugins by hand in four places, and the enumeration has fallen behind `packages/plugins/`. `lcyt-platforms` was missing (fixed in this branch — its 186 tests would otherwise never have run in CI at all), but `lcyt-connectors` and `lcyt-actions` are **still** absent from all four. Neither has ever been unit-tested by CI: on a PR touching only `packages/plugins/lcyt-connectors`, `PLUGINS` comes out empty and the package is skipped entirely; on a push to main, the full `PACKAGES` array does not list it either. Both packages have real test suites (`lcyt-connectors` has 11 test files) that pass locally and are simply never run.
+**Original finding:** CI enumerated plugins by hand in four places and had fallen behind `packages/plugins/`. `lcyt-platforms` was missing entirely, and `lcyt-connectors` and `lcyt-actions` had never been unit-tested by CI at all.
 
-**Why skipped:** adding two more packages to CI in the same PR that introduces a third is a change whose failure mode lands on *this* PR — if either suite turns out to be flaky under CI's environment (they pass locally, but neither has ever run there), it would block a merge for reasons unrelated to the work. Adding `lcyt-platforms` was necessary because this branch introduces it; the pre-existing two are a separate, pre-existing gap that deserves its own PR and its own green run.
+**Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
 
-**Recommendation:** add `lcyt-connectors` and `lcyt-actions` to all four spots in one focused PR, and consider replacing the hand-maintained lists with a glob over `packages/plugins/*` so the next new plugin cannot silently opt out of CI the way these did.
+**Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
 
-(Found during: CI review on the broadcast platform sync branch, 2026-07-27.)
