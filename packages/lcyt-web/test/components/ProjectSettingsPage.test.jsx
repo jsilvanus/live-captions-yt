@@ -115,4 +115,142 @@ describe('ProjectSettingsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Features' }));
     expect(screen.getByText(/feature access/i)).toBeInTheDocument();
   });
+
+  describe('Team visibility section', () => {
+    const OWNER_PROJECT = {
+      key: 'key-vis-owner', owner: 'Owned project', createdAt: '2026-01-01T00:00:00Z',
+      myAccessLevel: 'owner', restricted: true, orgBaselineRole: 'viewer',
+    };
+    const TEAM_VISIBLE_PROJECT = {
+      key: 'key-vis-team', owner: 'Team-visible project', createdAt: '2026-01-01T00:00:00Z',
+      myAccessLevel: 'admin', restricted: false, orgBaselineRole: 'editor',
+    };
+    const MEMBER_PROJECT = {
+      key: 'key-vis-member', owner: 'Member-only project', createdAt: '2026-01-01T00:00:00Z',
+      myAccessLevel: 'editor', restricted: false, orgBaselineRole: 'viewer',
+    };
+
+    it('renders the toggle unchecked (private) with no ceiling picker for a restricted project', async () => {
+      setupAuth();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: [OWNER_PROJECT] }) });
+
+      renderPage(mockSession({ apiKey: OWNER_PROJECT.key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Owned project')).toBeInTheDocument());
+      expect(screen.getByText('Team visibility')).toBeInTheDocument();
+      const checkbox = screen.getByRole('checkbox', { name: /visible to my organization/i });
+      expect(checkbox.checked).toBe(false);
+      expect(screen.queryByText(/access ceiling for org members/i)).not.toBeInTheDocument();
+    });
+
+    it('shows the ceiling picker bound to orgBaselineRole for a team-visible project', async () => {
+      setupAuth();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: [TEAM_VISIBLE_PROJECT] }) });
+
+      renderPage(mockSession({ apiKey: TEAM_VISIBLE_PROJECT.key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Team-visible project')).toBeInTheDocument());
+      const checkbox = screen.getByRole('checkbox', { name: /visible to my organization/i });
+      expect(checkbox.checked).toBe(true);
+      const ceilingSelect = screen.getByText(/access ceiling for org members/i).nextElementSibling;
+      expect(ceilingSelect.value).toBe('editor');
+    });
+
+    // The Summary tab also mounts PublicSlugSection, which fires its own fetch
+    // on mount — a strict ordered mockResolvedValueOnce chain is fragile
+    // against that interleaving, so these two use a URL-dispatching mock.
+    function mockVisibilityBackend(initialProject) {
+      let current = { ...initialProject };
+      global.fetch = vi.fn((url, opts) => {
+        const method = opts?.method || 'GET';
+        if (url === 'https://api.test/keys' && method === 'GET') {
+          return Promise.resolve({ ok: true, json: async () => ({ keys: [current] }) });
+        }
+        if (url === `https://api.test/keys/${current.key}/visibility` && method === 'PATCH') {
+          current = { ...current, ...JSON.parse(opts.body) };
+          return Promise.resolve({ ok: true, json: async () => current });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({ error: 'not found' }) });
+      });
+      return () => current;
+    }
+
+    it('PATCHes {restricted} on toggle change and refreshes the project list', async () => {
+      setupAuth();
+      const getCurrent = mockVisibilityBackend(TEAM_VISIBLE_PROJECT);
+
+      renderPage(mockSession({ apiKey: TEAM_VISIBLE_PROJECT.key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Team-visible project')).toBeInTheDocument());
+      const checkbox = screen.getByRole('checkbox', { name: /visible to my organization/i });
+      fireEvent.click(checkbox);
+
+      await waitFor(() => expect(getCurrent().restricted).toBe(true));
+      // onProjectRefresh re-fetched /keys, so the now-restricted project hides the ceiling picker
+      await waitFor(() => expect(screen.queryByText(/access ceiling for org members/i)).not.toBeInTheDocument());
+    });
+
+    it('PATCHes {orgBaselineRole} on ceiling change', async () => {
+      setupAuth();
+      const getCurrent = mockVisibilityBackend(TEAM_VISIBLE_PROJECT);
+
+      renderPage(mockSession({ apiKey: TEAM_VISIBLE_PROJECT.key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Team-visible project')).toBeInTheDocument());
+      const ceilingSelect = screen.getByText(/access ceiling for org members/i).nextElementSibling;
+      fireEvent.change(ceilingSelect, { target: { value: 'viewer' } });
+
+      await waitFor(() => expect(getCurrent().orgBaselineRole).toBe('viewer'));
+    });
+
+    it('hides the section entirely for a non-owner/admin viewer', async () => {
+      setupAuth();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: [MEMBER_PROJECT] }) });
+
+      renderPage(mockSession({ apiKey: MEMBER_PROJECT.key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Member-only project')).toBeInTheDocument());
+      expect(screen.queryByText('Team visibility')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Team tab — role changes', () => {
+    it('PATCHes accessLevel when a member row select changes', async () => {
+      setupAuth();
+      // URL-dispatching mock: Summary tab's PublicSlugSection fires its own
+      // fetch on mount, so an ordered mockResolvedValueOnce chain isn't safe.
+      global.fetch = vi.fn((url, opts) => {
+        const method = opts?.method || 'GET';
+        if (url === 'https://api.test/keys' && method === 'GET') {
+          return Promise.resolve({ ok: true, json: async () => ({ keys: MOCK_PROJECTS }) });
+        }
+        if (url === `https://api.test/keys/${MOCK_PROJECTS[0].key}/members` && method === 'GET') {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ members: [{ userId: 'u2', email: 'member@example.com', accessLevel: 'editor', permissions: [] }] }),
+          });
+        }
+        if (url === `https://api.test/keys/${MOCK_PROJECTS[0].key}/members/u2` && method === 'PATCH') {
+          return Promise.resolve({ ok: true, json: async () => ({ userId: 'u2', accessLevel: 'operator', permissions: [] }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({ error: 'not found' }) });
+      });
+
+      renderPage(mockSession({ apiKey: MOCK_PROJECTS[0].key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Sunday service')).toBeInTheDocument());
+      fireEvent.click(screen.getByRole('button', { name: 'Team' }));
+
+      await waitFor(() => expect(screen.getByText('member@example.com')).toBeInTheDocument());
+
+      const select = screen.getByLabelText(/access level for member@example.com/i);
+      fireEvent.change(select, { target: { value: 'operator' } });
+
+      await waitFor(() => expect(select.value).toBe('operator'));
+
+      const patchCall = global.fetch.mock.calls.find(c => c[1]?.method === 'PATCH');
+      expect(patchCall).toBeTruthy();
+      expect(JSON.parse(patchCall[1].body)).toEqual({ accessLevel: 'operator' });
+    });
+  });
 });

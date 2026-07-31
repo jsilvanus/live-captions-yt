@@ -137,10 +137,78 @@ function PublicSlugSection({ project, backendUrl, token }) {
   );
 }
 
+// ── Team visibility section (Summary tab) ────────────────────────────────────
+//
+// Surfaces the existing `api_keys.restricted` column (private ↔ team-visible)
+// plus the org-baseline ceiling role a team-visible project grants ordinary
+// org members (plan_project_roles.md, decided 2026-07-26). Owner/admin only —
+// PATCH /keys/:key/visibility is Setup-tier gated server-side.
+
+function TeamVisibilitySection({ project, backendUrl, token, onProjectRefresh }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  const restricted = !!project.restricted;
+  const orgBaselineRole = project.orgBaselineRole === 'editor' ? 'editor' : 'viewer';
+  const visibilityUrl = `${backendUrl}/keys/${encodeURIComponent(project.key)}/visibility`;
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
+
+  async function patchVisibility(body) {
+    setBusy(true); setError(null);
+    try {
+      const r = await fetch(visibilityUrl, { method: 'PATCH', headers, body: JSON.stringify(body) });
+      const data = await r.json();
+      if (!r.ok) { setError(data.error || `HTTP ${r.status}`); return; }
+      await onProjectRefresh?.();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{ fontSize: 13, fontWeight: 600 }}>Team visibility</div>
+      <div style={{ fontSize: 12, color: 'var(--color-text-muted)' }}>
+        Team-visible + ceiling only matter if this project belongs to an organization —
+        they control what ordinary org members can see and do here without an explicit invite.
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+        <input
+          type="checkbox"
+          checked={!restricted}
+          disabled={busy}
+          onChange={e => patchVisibility({ restricted: !e.target.checked })}
+        />
+        Visible to my organization's team
+      </label>
+      {!restricted && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+          <span style={{ color: 'var(--color-text-muted)' }}>Access ceiling for org members</span>
+          <select
+            className="settings-field__input"
+            value={orgBaselineRole}
+            disabled={busy}
+            onChange={e => patchVisibility({ orgBaselineRole: e.target.value })}
+            style={{ width: 110 }}
+          >
+            <option value="viewer">Viewer</option>
+            <option value="editor">Editor</option>
+          </select>
+        </div>
+      )}
+      {error && <div style={{ fontSize: 12, color: 'var(--color-error)' }}>{error}</div>}
+    </div>
+  );
+}
+
 // ── Summary tab ─────────────────────────────────────────────────────────────
 
 function SummaryTab({ project, isActiveSession, backendUrl, token, onProjectRefresh }) {
   const [showKey, setShowKey] = useState(false);
+  const myLevel = project.myAccessLevel || 'member';
+  const canManageVisibility = myLevel === 'owner' || myLevel === 'admin';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -189,6 +257,10 @@ function SummaryTab({ project, isActiveSession, backendUrl, token, onProjectRefr
       </div>
 
       <PublicSlugSection project={project} backendUrl={backendUrl} token={token} />
+
+      {canManageVisibility && (
+        <TeamVisibilitySection project={project} backendUrl={backendUrl} token={token} onProjectRefresh={onProjectRefresh} />
+      )}
 
       <BroadcastsSection project={project} backendUrl={backendUrl} token={token} onActivated={onProjectRefresh} />
 
@@ -313,6 +385,21 @@ function TeamTab({ project, backendUrl, token }) {
     }
   }
 
+  async function handleChangeLevel(userId, accessLevel) {
+    try {
+      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/members/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ accessLevel }),
+      });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+      setMembers(prev => prev.map(m => (m.userId === userId ? { ...m, accessLevel: data.accessLevel } : m)));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   if (loading) return <div style={{ color: 'var(--color-text-muted)', fontSize: 13 }}>Loading…</div>;
 
   return (
@@ -320,7 +407,7 @@ function TeamTab({ project, backendUrl, token }) {
       {error && <div style={{ color: 'var(--color-error)', fontSize: 12 }}>{error}</div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {members.map(m => (
-          <MemberRow key={m.userId} member={m} currentUserAccessLevel={myLevel} onRemove={handleRemove} />
+          <MemberRow key={m.userId} member={m} currentUserAccessLevel={myLevel} onRemove={handleRemove} onChangeLevel={handleChangeLevel} />
         ))}
         {members.length === 0 && (
           <div style={{ fontSize: 13, color: 'var(--color-text-muted)' }}>No members yet.</div>

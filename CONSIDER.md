@@ -1161,3 +1161,17 @@ pass:
 **Recommendation:** If a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
 
 (Found during: code-review pass on the bridge security layer, 2026-07-26.)
+
+---
+
+## `GET /keys` only lists projects a user directly owns, hardcoding `myAccessLevel: 'owner'` — non-owner members can't reach `ProjectSettingsPage`/`ProjectsPage` at all
+
+**Where:** `packages/lcyt-backend/src/routes/keys.js`'s `_userListKeys` (~line 252, the handler behind `GET /keys`), `getKeysByUserId` (`packages/lcyt-backend/src/db/keys.js`).
+
+**Finding:** `_userListKeys` calls `getKeysByUserId(db, user.userId)`, which only returns projects the calling user directly owns, and then unconditionally sets `myAccessLevel: 'owner'` on every returned row — it never consults `getEffectiveProjectAccessLevel()`. This means an invited project member (editor/operator/viewer/admin) or an org owner/admin relying on the org-admin override (`plan_project_roles.md`, decided 2026-07-26) has no way to see that project via `GET /keys` at all: `ProjectSettingsPage.jsx`/`ProjectsPage.jsx` both build their project list exclusively from this endpoint, so a non-owner member simply never sees the project in their list, regardless of their real effective access level.
+
+**Impact on Phase 3 (this pass):** the frontend UI built in `plan_project_roles.md`'s Phase 3 — the Team-visibility toggle/ceiling picker (owner/admin-only) and the per-member role-change `<select>` (owner/admin-only) — is correctly gated against `project.myAccessLevel`, but that gate can currently only ever evaluate to `'owner'` for any project a logged-in user can see at all (since `_userListKeys` hardcodes it), so the "hide/read-only for non-owner/admin" branch of that gating logic has no way to be exercised end-to-end in the running app by a real non-owner member today. This is a real, correct implementation waiting on a backend listing fix, not a defect in the Phase 3 UI.
+
+**Why skipped:** fixing `_userListKeys`/`getKeysByUserId` to also enumerate member-accessible and org-baseline-accessible projects (via `getEffectiveProjectAccessLevel()` per candidate project, not just directly-owned rows) is a real, separate backend change — it needs to decide how to efficiently enumerate "every project this user has some access to" (direct membership rows are cheap to join; org-baseline-ceiling access requires scanning every team-visible project in the user's org) and is out of scope for "Phase 3: frontend UI" as scoped.
+
+(Found during: `plan_project_roles.md` Phase 3 — `ProjectSettingsPage.jsx` Team visibility + role-assignment UI, 2026-07-31.)
