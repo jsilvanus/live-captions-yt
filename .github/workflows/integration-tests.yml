@@ -9,6 +9,16 @@ on:
 permissions:
   contents: read
 
+# ⚠ NEW PLUGIN? The plugin list below is hand-maintained in FOUR places and
+# must be updated whenever a package is added under packages/plugins/:
+#   1. detect-changes → the push-to-main `plugins=` list
+#   2. detect-changes → the workflow-changed `plugins=` list
+#   3. detect-changes → the per-plugin `grep` chain that builds PLUGINS for PRs
+#   4. build-unit-matrix → the full `PACKAGES` array
+# A plugin missing from these runs its tests NOWHERE, and CI still reports
+# green. Three plugins were already lost this way — see CONSIDER.md for the
+# pending fix (replace the lists with a glob over packages/plugins/*).
+
 # ── Detect changed paths (for PR test partitioning) ──────────────────
 jobs:
   detect-changes:

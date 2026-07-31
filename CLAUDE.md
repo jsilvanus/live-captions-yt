@@ -212,6 +212,7 @@ Backend plugins live in `packages/plugins/` and follow this pattern:
 - Export `create*Router()` / `create*Routers()` — returns Express router(s) to mount.
 - Injected dependencies: `db` (SQLite instance), `store` (SessionStore), `auth` (JWT middleware), `relayManager` (from `lcyt-rtmp`, not inline in `lcyt-backend`).
 - Plugin packages are workspace members via the glob `packages/plugins/*` in `package.json`.
+- **Adding a new plugin? Update `.github/workflows/integration-tests.yml` in the same change.** The workspace glob above is automatic, but CI is **not** — it enumerates plugins by hand in **four** places, and a plugin missing from them has its tests run *nowhere*, silently, with CI still reporting green. The four spots are the `detect-changes` job's two `plugins=` lists (the push-to-main branch and the workflow-changed branch), the per-plugin `grep` chain that builds `PLUGINS` for PR mode, and `build-unit-matrix`'s full `PACKAGES` array. This has already bitten three plugins (`lcyt-platforms`, `lcyt-connectors`, `lcyt-actions` — see `CONSIDER.md`); replacing the lists with a glob is a pending item, so until that lands, keep them in sync by hand.
 - `lcyt-rtmp` is the canonical source for `RtmpRelayManager`, `HlsManager`, `RadioManager`, `PreviewManager`, `HlsSubsManager`, `SttManager`, `NginxManager`, and `MediaMtxClient`.
 
 See each plugin's own `CLAUDE.md` (`packages/plugins/*/CLAUDE.md`) for its specific routes, DB tables, and metacode handling.
