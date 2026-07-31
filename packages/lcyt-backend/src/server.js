@@ -5,7 +5,7 @@ import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast, onKeyDeleted,
+  completeBroadcast, getBroadcast, updateBroadcast, onKeyDeleted,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { getMemberAccessLevel } from './db/project-members.js';
@@ -91,6 +91,7 @@ import {
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter } from 'lcyt-actions';
+import { initPlatforms, createOAuthRouter as createPlatformsRouter } from 'lcyt-platforms';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
@@ -197,12 +198,17 @@ if (settings.get('media.rtmp_application')) {
   console.info('ℹ RTMP_APPLICATION not set — /rtmp will accept any application name.');
 }
 
-// YouTube OAuth configuration check
-if (settings.get('app.youtube_client_id')) {
-  console.info('✓ YouTube OAuth configured (YOUTUBE_CLIENT_ID is set).');
+// YouTube OAuth configuration check. The server-side authorization-code flow
+// needs a client *secret* too — the retired implicit flow did not, so an
+// existing deployment that only ever set YOUTUBE_CLIENT_ID needs one more var.
+if (settings.get('app.youtube_client_id') && settings.get('app.youtube_client_secret')) {
+  console.info('✓ YouTube OAuth configured (client ID and secret are set).');
+} else if (settings.get('app.youtube_client_id')) {
+  console.warn('⚠ YOUTUBE_CLIENT_SECRET is not set — connecting a YouTube account will fail.');
+  console.warn('  The server-side OAuth flow needs a client secret; the old browser-only flow did not.');
 } else {
-  console.warn('⚠ YOUTUBE_CLIENT_ID is not set — YouTube OAuth (GET /youtube/config) will return 503.');
-  console.warn('  Set YOUTUBE_CLIENT_ID to a Google OAuth 2.0 Web application client ID to enable YouTube integration.');
+  console.warn('⚠ YOUTUBE_CLIENT_ID is not set — broadcast platform sync is unavailable.');
+  console.warn('  Set YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET to enable YouTube integration.');
 }
 
 // Nginx configuration reminder
@@ -391,6 +397,69 @@ const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsSc
 });
 // Named Actions plugin — runs its own migration (action_defs table).
 initActions(db);
+
+// Broadcast Platform Sync plugin (plan_broadcast_platform_sync.md) — server-side
+// OAuth, YouTube Live scheduling/thumbnails/go-live, and viewer stats tied to
+// the `broadcasts` entity. Runs its own migrations (platform_credentials,
+// broadcast_platform_links, broadcast_platform_stats) and starts the live-stats
+// poller. Must come after the core schema: its tables carry real foreign keys
+// onto api_keys and broadcasts.
+const { tokenService: _platformTokenService, poller: _platformStatsPoller } = initPlatforms(db, {
+  eventBus,
+  getOAuthConfig: () => ({
+    clientId: settings.get('app.youtube_client_id'),
+    clientSecret: settings.get('app.youtube_client_secret'),
+  }),
+  getProjectForBroadcast: (broadcastId) => {
+    try {
+      return db.prepare('SELECT api_key FROM broadcasts WHERE id = ?').get(broadcastId)?.api_key ?? null;
+    } catch {
+      return null;
+    }
+  },
+  getIntervalMs: () => settings.get('app.platform_stats_poll_interval_s') * 1000,
+});
+
+/**
+ * Where the provider redirects back to. Must match the redirect URI registered
+ * with the provider exactly, so it is derived from one explicit setting rather
+ * than from request headers (which a proxy can rewrite).
+ */
+const platformRedirectBase = () => (
+  settings.get('app.platform_oauth_redirect_base')
+  || settings.get('app.backend_url')
+  || settings.get('app.public_url')
+  || ''
+).replace(/\/$/, '');
+
+const platformDeps = {
+  getJwtSecret: () => jwtSecret,
+  getOAuthConfig: () => ({
+    clientId: settings.get('app.youtube_client_id'),
+    clientSecret: settings.get('app.youtube_client_secret'),
+  }),
+  getRedirectUri: (platform) => `${platformRedirectBase()}/platforms/${platform}/oauth/callback`,
+  buildReturnUrl: (ok, detail) => {
+    const base = (settings.get('app.public_url') || '').replace(/\/$/, '');
+    const params = new URLSearchParams({ connected: ok ? '1' : '0', platform: detail.platform || '' });
+    if (!ok && detail.reason) params.set('reason', detail.reason);
+    if (ok && detail.account) params.set('account', detail.account);
+    return `${base}/setup/broadcast-platforms?${params}`;
+  },
+  tokenService: _platformTokenService,
+  getAccessToken: (credentialId) => _platformTokenService.getAccessToken(credentialId),
+  broadcastsApi: { getBroadcast, updateBroadcast },
+  captionTargetsApi: {
+    list: getCaptionTargets,
+    create: createCaptionTarget,
+    update: updateCaptionTarget,
+  },
+  // Deliberately absent: the frontend makes the second call (POST /live)
+  // itself, so "go live" stays one action in the UI and two calls under the
+  // hood — see plan_broadcast_platform_sync.md § "Broadcast lifecycle".
+  startSession: null,
+  eventBus,
+};
 
 // Wire the agent's embedding capabilities into the CueEngine for
 // fuzzy semantic matching via cue[semantic]:phrase metacodes. Routed through
@@ -632,7 +701,7 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings }, scopedAuth));
+app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings, platforms: platformDeps }, scopedAuth));
 app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
@@ -683,6 +752,7 @@ app.use('/roles/assistant', createProductionAssistantRouter(
 app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
 app.use('/connectors', createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
 app.use('/actions', createActionsRouter(db, scopedAuth('action')));
+app.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));

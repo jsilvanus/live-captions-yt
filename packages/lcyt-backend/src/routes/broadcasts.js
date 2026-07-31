@@ -50,9 +50,9 @@ export function createBroadcastsRouter(auth, db) {
   });
 
   router.post('/', auth, (req, res) => {
-    const { title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled } = req.body || {};
+    const { title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled, privacyStatus } = req.body || {};
     const result = createBroadcast(db, req.session.apiKey, {
-      title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled,
+      title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled, privacyStatus,
     });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.status(201).json({ ok: true, broadcast: result.broadcast });
@@ -85,9 +85,9 @@ export function createBroadcastsRouter(auth, db) {
   });
 
   router.put('/:id', auth, (req, res) => {
-    const { title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled } = req.body || {};
+    const { title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled, privacyStatus } = req.body || {};
     const result = updateBroadcast(db, req.session.apiKey, req.params.id, {
-      title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled,
+      title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled, privacyStatus,
     });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, broadcast: result.broadcast });

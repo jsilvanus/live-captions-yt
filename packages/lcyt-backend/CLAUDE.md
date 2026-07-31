@@ -84,7 +84,11 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `GRAPHICS_ENABLED` | If set to `1`, enables image upload/management | unset |
 | `GRAPHICS_MAX_FILE_BYTES` | Max uploaded image size in bytes | 5242880 (5 MB) |
 | `GRAPHICS_MAX_STORAGE_BYTES` | Max total image storage per key in bytes | 52428800 (50 MB) |
-| `YOUTUBE_CLIENT_ID` | Google OAuth 2.0 Web client ID (for client-side token flow) | none |
+| `YOUTUBE_CLIENT_ID` | Google OAuth 2.0 Web client ID (server-side authorization-code flow) | none |
+| `YOUTUBE_CLIENT_SECRET` | Google OAuth 2.0 client secret; required for the code exchange (the retired implicit flow needed none) | none |
+| `PLATFORM_OAUTH_REDIRECT_BASE` | Base URL the platform OAuth callback is reached at; must match the provider registration. Falls back to `BACKEND_URL`, then `PUBLIC_URL` | (falls back) |
+| `PLATFORM_CREDENTIAL_KEY` | Base64 32-byte AES-256-GCM key encrypting platform OAuth tokens at rest. Unset = accounts cannot be connected (warns at startup, refuses at write — never plaintext). Rotation is not built | none |
+| `PLATFORM_STATS_POLL_INTERVAL_S` | Live viewer-count poll interval; floored at 5s | 30 |
 | `CONTACT_EMAIL` | Contact info returned by `GET /contact` | none |
 | `CONTACT_NAME` | Contact name returned by `GET /contact` | none |
 | `CONTACT_PHONE` | Contact phone returned by `GET /contact` | none |
@@ -186,7 +190,16 @@ POST /dsk-rtmp/on_publish          — nginx-rtmp on_publish callback for DSK RT
 POST /dsk-rtmp/on_publish_done     — nginx-rtmp on_publish_done callback for DSK RTMP
 
 GET/POST/PUT/DELETE /images/:id — image upload/management for DSK overlays (JWT Bearer or X-API-Key)
-GET  /youtube/config      — return YOUTUBE_CLIENT_ID for client-side OAuth (Bearer token)
+GET  /platforms           — list connected broadcast-platform accounts for the project, masked; several per platform is normal (Bearer token)
+GET  /platforms/:platform/oauth/start    — begin server-side OAuth; returns { url } to navigate to (Bearer token)
+GET  /platforms/:platform/oauth/callback — provider redirect target; PUBLIC by necessity, bound to a project solely by the signed `state` param
+POST /platforms/:platform/disconnect     — revoke one account { credentialId }; calls the provider's revocation endpoint, then soft-deletes (Bearer token)
+GET    /broadcasts/:id/platforms                        — platform links for a broadcast (Bearer token)
+POST   /broadcasts/:id/platforms/:platform/schedule     — create/update the external scheduled broadcast; binds the CDN stream key into caption_targets (Bearer token)
+POST   /broadcasts/:id/platforms/:platform/thumbnail    — set the thumbnail { data: base64, mimeType } (Bearer token)
+POST   /broadcasts/:id/platforms/:platform/go-live      — transition to live (Bearer token)
+POST   /broadcasts/:id/platforms/:platform/end          — transition to complete + capture the post-broadcast summary (Bearer token)
+GET    /broadcasts/:id/platforms/:platform/stats        — latest snapshot + summary; ?history=1 for the full series (Bearer token)
 GET/POST/PUT/DELETE /rtmp — RTMP relay slot management (Bearer token)
 POST /feed-rtmp/on_publish        — nginx-rtmp on_publish callback for named-feed RTMP ingest (plan_ingest_feeds.md §2a)
 POST /feed-rtmp/on_publish_done   — nginx-rtmp on_publish_done callback for named-feed RTMP ingest
@@ -263,7 +276,7 @@ GET    /broadcasts/active       — active-broadcast pointer: { activeBroadcastI
 DELETE /broadcasts/active       — clear the active-broadcast pointer (Bearer token)
 POST   /broadcasts/:id/activate — set the project's active-broadcast pointer (404 unknown, 409 archived) (Bearer token)
 GET    /broadcasts/:id          — one broadcast + linked reusable assets (Bearer token)
-PUT    /broadcasts/:id          — edit title/description/schedule/status (Bearer token)
+PUT    /broadcasts/:id          — edit title/description/schedule/status/privacyStatus (Bearer token). privacyStatus is 'public'|'unlisted'|'private' (default 'unlisted'), the visibility lcyt-platforms creates the broadcast with on YouTube
 DELETE /broadcasts/:id          — first call archives (202); a second call on an already-archived broadcast hard-deletes it, but 409s until archived ≥ BROADCAST_ARCHIVE_MIN_AGE_DAYS (default 30). Hard delete nulls broadcast_id on produced rows (Bearer token)
 POST   /broadcasts/:id/restore  — un-archive (Bearer token)
 POST   /broadcasts/:id/duplicate — clone (title + reusable-asset links, never produced content); cross-project targetApiKey is 501 (deep-copy TODO) (Bearer token)
@@ -440,7 +453,7 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 - `src/db/translation-config.js` — Translation vendor + target DB helpers (`translation_vendor_config`/`translation_targets` tables).
 - `src/routes/stream-hls.js` — Video+audio HLS streaming (public, rate-limited).
 - `src/routes/preview.js` — RTMP → JPEG thumbnail serving (public).
-- `src/routes/youtube.js` — YouTube OAuth client ID endpoint.
+- Broadcast platform sync (`lcyt-platforms`) owns server-side OAuth, YouTube Live scheduling/thumbnails/transitions, and viewer stats. Imported via `import { initPlatforms, createOAuthRouter, createBroadcastPlatformsRouter } from 'lcyt-platforms'`. The old `src/routes/youtube.js` (`GET /youtube/config`, which handed the browser a client ID for the retired implicit-token flow) was removed by `plan_broadcast_platform_sync.md`.
 - `src/routes/video.js` — `GET /video/:key` — HLS.js player, master manifest, subtitle playlist + segment serving.
 - `src/routes/stats.js` — Per-key usage stats + GDPR erasure.
 - `src/routes/usage.js` — Per-domain caption statistics.

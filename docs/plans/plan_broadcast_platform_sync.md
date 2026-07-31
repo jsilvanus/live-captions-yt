@@ -1,7 +1,7 @@
 ---
 id: plan/broadcast_platform_sync
 title: "Broadcast Platform Sync — YouTube Live Scheduling, Thumbnails & Stats (Facebook Live, deferred)"
-status: draft
+status: implemented
 summary: "Implements plan_broadcasts.md's deferred 'Phase 2' (YouTube Live two-way sync) and goes further: server-side OAuth (replacing the browser-only implicit-token flow), scheduling a broadcast directly to YouTube from the broadcasts calendar, thumbnail upload, one-click go-live/end, and viewer stats at three tiers (live concurrent viewers, post-broadcast summary, historical trend). Designed as a generic multi-platform adapter (new lcyt-platforms plugin) so a second provider — Facebook Live, explicitly scoped but deferred — is a new adapter file, not a redesign. Supersedes the ad-hoc, non-persistent client-side flow in lcyt-web's youtubeAuth.js/youtubeApi.js/YouTubeTab.jsx."
 related: plan/broadcasts, plan/broadcasts_next, plan/selfservice_config_backend, plan/metering_audit, plan/client
 ---
@@ -120,9 +120,10 @@ redundant once OAuth is server-side (§ OAuth flow), and is removed in favor of
 ## Schema (new tables, `lcyt-platforms`-owned)
 
 ```sql
--- One row per project × platform × connected account. A project can connect
--- at most one account per platform for now (v1) — multi-channel-per-project
--- is a natural follow-on, not built here.
+-- One row per project × platform × connected account. NOTE: the
+-- UNIQUE(api_key, platform) below is SUPERSEDED by resolved decision #1 —
+-- multiple accounts per (project, platform) are supported, so uniqueness is
+-- on (api_key, platform, external_account_id) instead.
 CREATE TABLE IF NOT EXISTS platform_credentials (
   id                 TEXT PRIMARY KEY,               -- uuid
   api_key            TEXT NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
@@ -368,26 +369,54 @@ YouTube's version has shipped and proven the adapter shape holds.
    are left untouched**; the new `broadcast_platform_links` table is additive
    and generic. No migration of old data is required for v1.
 
-## Open questions (flag before implementation)
+## Open questions — RESOLVED (2026-07-26, confirmed with repo owner)
 
-- Multi-channel-per-project (`UNIQUE(api_key, platform)` currently caps it at
-  one connected account per platform) — fine for v1, but confirm this matches
-  how orgs with multiple YouTube channels per project actually operate before
-  building.
-- Where exactly the new routes are mounted (new plugin router vs. thin
-  delegation from `routes/broadcasts.js`) — either is consistent with repo
-  convention; pick based on how much the plugin needs direct access to
-  `broadcasts` DB helpers vs. calling them through an injected interface.
-- `googleapis` npm dependency vs. continuing this repo's plain-`fetch()` style
-  for the new server-side calls — the existing `youtubeApi.js` deliberately
-  has no such dependency; server-side Analytics API calls are a similar
-  surface area either way.
+All previously-open questions are now settled. These answers are binding for
+implementation; do not re-litigate them mid-build.
+
+1. **Multi-channel-per-project: build it now, not deferred.** The
+   `UNIQUE(api_key, platform)` cap is **dropped**. `platform_credentials`
+   allows multiple rows per `(api_key, platform)`, and every per-broadcast
+   route (`schedule`, `thumbnail`, `go-live`, `end`, `stats`) takes an
+   explicit credential selector; `broadcast_platform_links` records which
+   credential a link was created under. The Setup Hub card and the broadcast
+   detail panel both need an account picker. See "Schema" — the table
+   definition below is superseded on this one point.
+2. **Old client-side YouTube surface is deleted in this pass.**
+   `packages/lcyt-web/src/lib/youtubeAuth.js`, `youtubeApi.js`, and
+   `components/broadcast/YouTubeTab.jsx` are removed, and their two current
+   importers — `BroadcastModal.jsx` and `SettingsTab.jsx` — are rewired to the
+   new server-side `/platforms` flow. `packages/lcyt-backend/src/routes/youtube.js`
+   (and `test/youtube.test.js`) are absorbed as the plan already specified.
+   A clean replacement, not a parallel path.
+3. **Facebook: `facebook.js` ships as a non-wired adapter skeleton.** It
+   implements the full `adapters/base.js` interface with explicit `TODO`s and
+   throws on unimplemented calls, purely to prove the interface shape holds
+   against a second provider. It is **not** registered in the adapter
+   registry, has no OAuth app registration, and gets no frontend. Everything
+   else in "Facebook Live (deferred)" below still stands.
+4. **Verification is mocked-adapter unit tests only.** No live YouTube API
+   call is made during development. Tests use `node:test` over a fake adapter
+   plus a stubbed `fetch`, asserting request shapes against the documented
+   YouTube Data API v3 / YouTube Analytics v2 contracts. Real-channel smoke
+   testing happens post-merge, by the repo owner.
+
+### Implementer's-discretion calls (decided, recorded here for traceability)
+
+- **Route mounting:** new plugin router (`createPlatformsRouter`) owns
+  `/platforms/*`; the per-broadcast routes are mounted by the plugin too, with
+  `broadcasts` DB helpers passed in as an injected interface rather than the
+  plugin reaching into `lcyt-backend/src/db/*` directly. Keeps the plugin
+  boundary honest and matches `lcyt-connectors`.
+- **HTTP client:** plain `fetch()`, no `googleapis` dependency — matches the
+  existing `youtubeApi.js` style and keeps the stubbed-`fetch` test strategy
+  above straightforward.
 
 ## Out of scope (this plan)
 
-- Facebook Live implementation (adapter, app review, frontend) — scoped above,
-  deferred.
-- Multi-channel-per-project support.
+- Facebook Live implementation (working adapter, app review, frontend) —
+  scoped above, deferred. A non-wired `facebook.js` interface skeleton *is*
+  in scope per resolved decision #3.
 - Recurrence-aware scheduling sync (ties into `plan_broadcasts.md`'s own
   deferred recurrence item).
 - Encryption-key rotation tooling for `PLATFORM_CREDENTIAL_KEY`.

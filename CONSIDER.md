@@ -1077,3 +1077,43 @@ pass:
 **Recommendation:** If a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
 
 (Found during: code-review pass on the bridge security layer, 2026-07-26.)
+
+---
+
+## RESOLVED — YouTube broadcast privacy is now configurable (auto-start/stop still hardcoded)
+
+**Where:** `packages/plugins/lcyt-platforms/src/adapters/youtube.js`'s `createScheduled()`/`updateSchedule()`, `broadcasts.privacy_status`
+
+**Original finding:** every broadcast was created with `status.privacyStatus: 'unlisted'` and `contentDetails.enableAutoStart/enableAutoStop: false`, hardcoded, with no way to change them.
+
+**Resolved 2026-07-30** (repo owner asked for it, keeping unlisted as the default): `broadcasts.privacy_status` is a real column (additive migration, `NOT NULL DEFAULT 'unlisted'`), validated against `PRIVACY_STATUSES` on both create and update, accepted by the broadcasts routes, threaded into `createScheduled`/`updateSchedule`, and exposed as a Visibility select in the broadcast Platforms panel. `updateSchedule` only sends the `status` part when a visibility was actually supplied, so an ordinary edit cannot silently reset what the operator set on YouTube.
+
+**Still open:** `enableAutoStart`/`enableAutoStop` remain hardcoded to `false`. That matches the explicit Go Live / End Stream buttons this feature ships, so it is not currently a gap — revisit only if someone wants YouTube to start the broadcast automatically when the encoder connects.
+
+
+---
+
+## The broadcast panel's ambiguity candidate list never clears
+
+**Where:** `packages/lcyt-web/src/components/broadcast/BroadcastPlatformPanel.jsx` — the `candidates` state
+
+**Finding:** When the backend answers `409 ambiguous_credential`, the panel stores the returned candidate list and renders the account picker from it (`connectedAccounts = candidates || liveCredentialsFor(...)`). That state is never cleared afterwards, so for the rest of the panel's mounted lifetime the picker shows the candidate snapshot rather than live credential state — if a channel is disconnected in another tab meanwhile, it keeps appearing as an option. Choosing it then fails with a clear 404/409 from the backend rather than doing anything wrong, so this is a staleness annoyance, not a correctness hole.
+
+**Why skipped:** the clean fix is to re-fetch credentials on the 409 instead of trusting the inline candidate list, but the whole reason the backend returns candidates inline is to avoid that extra round-trip. Getting both (use the inline list now, refresh in the background) is fiddly state coordination for a window that closes as soon as the panel is collapsed and reopened, and the failure mode is already a clear error rather than a wrong action.
+
+**Recommendation:** revisit if multi-channel projects turn out to reconfigure accounts often enough for anyone to actually hit it.
+
+(Found during: self-review of the broadcast platform sync branch, 2026-07-27.)
+
+---
+
+## RESOLVED — the CI plugin lists have been brought back in line
+
+**Where:** `.github/workflows/integration-tests.yml` — the `detect-changes` job's two `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
+
+**Original finding:** CI enumerated plugins by hand in four places and had fallen behind `packages/plugins/`. `lcyt-platforms` was missing entirely, and `lcyt-connectors` and `lcyt-actions` had never been unit-tested by CI at all.
+
+**Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
+
+**Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
+

@@ -707,10 +707,6 @@ export function useSession({
     return api.del('/stream', { parseErrorBody: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getYouTubeConfig = useCallback(async function getYouTubeConfig() {
-    return api.get('/youtube/config');
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
   const getRelayStatus = useCallback(async function getRelayStatus() {
     return api.get('/stream');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -771,7 +767,6 @@ export function useSession({
     updateImageSettings,
     listIcons, uploadIcon, deleteIcon,
     configureRelay, updateRelay, stopRelaySlot, stopRelay, getRelayStatus, getRelayHistory, setRelayActive, toggleRecording,
-    getYouTubeConfig,
     getSttStatus, getSttConfig, updateSttConfig, startStt, stopStt,
     getMusicEventsHistory,
     getPersistedConfig, getAutoConnect, setAutoConnect, clearPersistedConfig,

@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { Dialog } from './Dialog';
+import { BroadcastPlatformPanel } from './broadcast/BroadcastPlatformPanel.jsx';
 
 function formatDate(value) {
   if (!value) return '—';
@@ -52,6 +53,7 @@ export function BroadcastsManager() {
   const [editingBroadcast, setEditingBroadcast] = useState(null);
   const [isCreating, setIsCreating] = useState(false);
   const [statusFilter, setStatusFilter] = useState('all');
+  const [platformsFor, setPlatformsFor] = useState(null);
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl || !token) return;
@@ -297,6 +299,14 @@ export function BroadcastsManager() {
                   >
                     Edit
                   </button>
+                  <button
+                    className="btn btn--sm"
+                    onClick={() => setPlatformsFor(platformsFor === broadcast.id ? null : broadcast.id)}
+                    aria-expanded={platformsFor === broadcast.id}
+                    style={{ flex: 1 }}
+                  >
+                    {platformsFor === broadcast.id ? 'Hide platforms' : 'Platforms'}
+                  </button>
                   {broadcast.status !== 'live' && (
                     <button
                       className="btn btn--danger btn--sm"
@@ -307,6 +317,16 @@ export function BroadcastsManager() {
                     </button>
                   )}
                 </div>
+
+                {/* Scheduling, thumbnail, go-live and viewer stats for this
+                    broadcast (plan_broadcast_platform_sync.md). Rendered only
+                    while expanded so a list of many broadcasts doesn't fire a
+                    links+stats fetch per card on mount. */}
+                {platformsFor === broadcast.id && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid #e5e5e5' }}>
+                    <BroadcastPlatformPanel broadcast={broadcast} onChanged={load} />
+                  </div>
+                )}
               </div>
             ))}
           </div>

@@ -1,15 +1,20 @@
 /**
  * Content router group — analytics, files, media, and auxiliary endpoints.
  *
- * Mounts: /stats, /usage, /file, /viewer, /video, /youtube, /stt, /targets,
+ * Mounts: /stats, /usage, /file, /viewer, /video, /stt, /targets,
+ *         /broadcasts (+ /broadcasts/:id/platforms), /videos,
  *         /translation, /bridge-download
+ *
+ * The old /youtube router is gone: its single route handed the browser a
+ * client ID for the implicit-token flow, which plan_broadcast_platform_sync.md
+ * replaces with server-side OAuth under /platforms.
  */
 import { Router } from 'express';
+import { createBroadcastPlatformsRouter } from 'lcyt-platforms';
 import { createStatsRouter } from './stats.js';
 import { createUsageRouter } from './usage.js';
 import { createViewerRouter } from './viewer.js';
 import { createVideoRouter } from './video.js';
-import { createYouTubeRouter } from './youtube.js';
 import { createSttRouter } from './stt.js';
 import { createTargetsRouter } from './targets.js';
 import { createBroadcastsRouter } from './broadcasts.js';
@@ -23,11 +28,11 @@ import { createFilesRouter } from 'lcyt-files';
  * @param {import('express').RequestHandler} auth
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
- * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function, settings?: import('../settings/service.js').SettingsService }} [managers]
+ * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function, settings?: import('../settings/service.js').SettingsService, platforms?: object }} [managers]
  * @param {import('express').RequestHandler} [projectAuth]
  * @returns {Router}
  */
-export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, settings = null } = {}, makeScopedAuth = null) {
+export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, settings = null, platforms = null } = {}, makeScopedAuth = null) {
   const router = Router();
   // Per-resource project access for scoped external tokens; falls back to the
   // session-JWT `auth` when no factory is supplied (isolated tests).
@@ -37,9 +42,13 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache));
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
-  router.use('/youtube',         createYouTubeRouter(auth, settings));
   router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret, settings));
   router.use('/targets',         createTargetsRouter(scoped('target'), db));
+  // Mounted before /broadcasts so the more specific path wins outright rather
+  // than relying on the broadcasts router failing to match and calling next().
+  if (platforms) {
+    router.use('/broadcasts/:id/platforms', createBroadcastPlatformsRouter(db, scoped('broadcast'), platforms));
+  }
   router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
   router.use('/videos',          createVideosRouter(scoped('video'), db));
   router.use('/translation',     createTranslationRouter(scoped('translation'), db));

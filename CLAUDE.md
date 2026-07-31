@@ -2,7 +2,7 @@
 
 ## Overview
 
-Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a DSK graphics overlay system, a production control layer for cameras/mixers, a bridge agent for AV hardware, server-side speech-to-text transcription, and a compute orchestration layer for horizontal scaling.
+Monorepo for **LCYT** — a full-featured platform for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API. Ships as a Node.js library + CLI, Python library, Express/Flask relay backends, a browser web UI, a Model Context Protocol (MCP) server for AI assistant integration, a DSK graphics overlay system, a production control layer for cameras/mixers, a bridge agent for AV hardware, server-side speech-to-text transcription, broadcast platform sync (YouTube Live scheduling and viewer stats), and a compute orchestration layer for horizontal scaling.
 
 ---
 
@@ -33,6 +33,7 @@ live-captions-yt/
 │       ├── lcyt-dsk/           # DSK graphics plugin (Playwright renderer, templates, overlays)
 │       ├── lcyt-files/         # Caption file storage plugin (local FS + S3 + WebDAV adapters)
 │       ├── lcyt-music/         # Music detection plugin (audio classification, BPM estimation)
+│       ├── lcyt-platforms/     # Broadcast platform sync (server-side OAuth, YouTube scheduling/thumbnails/stats)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
 │       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
 ├── python-packages/            # Python packages
@@ -132,6 +133,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | AI agent plugin | `packages/plugins/lcyt-agent/CLAUDE.md` |
 | Shared AI tool-schema/handler registry | `packages/lcyt-tools/CLAUDE.md` |
 | API Connectors & Variables plugin | `packages/plugins/lcyt-connectors/CLAUDE.md` |
+| Broadcast platform sync plugin | `packages/plugins/lcyt-platforms/CLAUDE.md` |
 | Named Actions plugin | `packages/plugins/lcyt-actions/CLAUDE.md` |
 | Self-hosted STT service + dataset pipeline (Python) | `python-packages/lcyt-stt/CLAUDE.md` |
 | Core library (Python) | `python-packages/lcyt/CLAUDE.md` |
@@ -211,6 +213,7 @@ Backend plugins live in `packages/plugins/` and follow this pattern:
 - Export `create*Router()` / `create*Routers()` — returns Express router(s) to mount.
 - Injected dependencies: `db` (SQLite instance), `store` (SessionStore), `auth` (JWT middleware), `relayManager` (from `lcyt-rtmp`, not inline in `lcyt-backend`).
 - Plugin packages are workspace members via the glob `packages/plugins/*` in `package.json`.
+- **Adding a new plugin? Update `.github/workflows/integration-tests.yml` in the same change.** The workspace glob above is automatic, but CI is **not** — it enumerates plugins by hand in **four** places, and a plugin missing from them has its tests run *nowhere*, silently, with CI still reporting green. The four spots are the `detect-changes` job's two `plugins=` lists (the push-to-main branch and the workflow-changed branch), the per-plugin `grep` chain that builds `PLUGINS` for PR mode, and `build-unit-matrix`'s full `PACKAGES` array. This has already bitten three plugins (`lcyt-platforms`, `lcyt-connectors`, `lcyt-actions` — see `CONSIDER.md`); replacing the lists with a glob is a pending item, so until that lands, keep them in sync by hand.
 - `lcyt-rtmp` is the canonical source for `RtmpRelayManager`, `HlsManager`, `RadioManager`, `PreviewManager`, `HlsSubsManager`, `SttManager`, `NginxManager`, and `MediaMtxClient`.
 
 See each plugin's own `CLAUDE.md` (`packages/plugins/*/CLAUDE.md`) for its specific routes, DB tables, and metacode handling.
