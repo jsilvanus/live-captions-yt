@@ -231,6 +231,26 @@ root is green with no cross-stream regressions.
 
 ## Phase 3: `ProjectSettingsPage.jsx` UI
 
+**Status: done, 2026-07-31** (dispatched to a subagent). `SummaryTab` gained a
+`TeamVisibilitySection` (owner/admin-gated) with the private/team-visible
+toggle and viewer/editor ceiling picker, PATCHing `/keys/:key/visibility`.
+`TeamTab`/`MemberRow`/`InviteMemberForm` extended to the full 5-role
+vocabulary, with `MemberRow` gaining a live role-change `<select>` (owner
+rows stay badge-only, matching the backend's own owner-exempt rule) wired to
+`PATCH /keys/:key/members/:userId`. New Vitest coverage added (14 new cases
+across `ProjectSettingsPage.test.jsx` + new `MemberRow.test.jsx`/
+`InviteMemberForm.test.jsx` files); `npm run test:components -w
+packages/lcyt-web` (499/499) and `npm run build:web` both verified green.
+**Not done:** manual dev-server/browser verification of the toggle/ceiling/
+role-select flows (not practical for the dispatched subagent) — worth doing
+before this is exercised by a real user. **Real gap found, logged, not
+fixed:** `GET /keys`'s user-scoped listing (`_userListKeys`) only returns
+projects the caller directly owns and hardcodes `myAccessLevel: 'owner'`, so
+a non-owner member has no way to see a project they've been granted access
+to via `/projects`/`/projects/:key` at all — the owner/admin-gated UI built
+here is correct but can't be end-to-end exercised by a non-owner today. See
+`CONSIDER.md`.
+
 **Mode:** Sequential (single 599-line file — low value in splitting across
 agents, real risk of merge conflict if split)
 **Depends on:** Phase 1 (needs the resolver + role-assignment API contract
