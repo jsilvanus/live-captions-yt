@@ -3,6 +3,7 @@ import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { parseMixer } from '../registry.js';
 import { buildSwitchCommand } from '../crud.js';
+import { requireTier } from '../route-access.js';
 import { isSecurityBlockError } from '../bridge-security.js';
 
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
@@ -62,6 +63,14 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
     });
   }
 
+  // Setup-tier CRUD vs. Production-tier live-control (plan_project_roles.md,
+  // decided 2026-07-26) — see route-access.js's doc comment. Fails open for
+  // the credential-less kiosk /switch request (isUnauthenticatedMixerRoute
+  // already skips `auth` for it, so req.session is never set), fails closed
+  // for a real authenticated session lacking the tier.
+  const requireSetup = requireTier(opts.deps ?? {}, 'setup');
+  const requireProduction = requireTier(opts.deps ?? {}, 'production');
+
   // -------------------------------------------------------------------------
   // Text body parser for WHIP SDP routes
   // -------------------------------------------------------------------------
@@ -110,7 +119,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // POST /production/mixers — create mixer
-  router.post('/', (req, res) => {
+  router.post('/', requireSetup, (req, res) => {
     const { name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend', outputKey = null } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
@@ -132,7 +141,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // PUT /production/mixers/:id — update mixer
-  router.put('/:id', (req, res) => {
+  router.put('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Mixer not found' });
@@ -163,7 +172,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // DELETE /production/mixers/:id — delete mixer
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Mixer not found' });
@@ -174,7 +183,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // POST /production/mixers/:id/switch/:inputNumber — switch program source
-  router.post('/:id/switch/:inputNumber', async (req, res) => {
+  router.post('/:id/switch/:inputNumber', requireProduction, async (req, res) => {
     const { id, inputNumber } = req.params;
     const input = Number(inputNumber);
     if (!Number.isInteger(input) || input < 0) {
@@ -229,8 +238,12 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
     });
   });
 
-  // POST /production/mixers/:id/test — test reachability
-  router.post('/:id/test', async (req, res) => {
+  // POST /production/mixers/:id/test — test reachability. Not explicitly
+  // named by plan_project_roles.md's mixers.js bullet, but treated the same
+  // as encoders.js's analogous POST /:id/test (which the plan does name
+  // explicitly) for internal consistency — a live reachability probe against
+  // the same class of device, not config CRUD.
+  router.post('/:id/test', requireProduction, async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Mixer not found' });
 

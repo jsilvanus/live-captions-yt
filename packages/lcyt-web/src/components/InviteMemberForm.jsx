@@ -5,7 +5,7 @@ import { useState } from 'react';
 
 export function InviteMemberForm({ backendUrl, token, apiKey, onInvited }) {
   const [email, setEmail] = useState('');
-  const [accessLevel, setAccessLevel] = useState('member');
+  const [accessLevel, setAccessLevel] = useState('editor');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -26,7 +26,7 @@ export function InviteMemberForm({ backendUrl, token, apiKey, onInvited }) {
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       setEmail('');
-      setAccessLevel('member');
+      setAccessLevel('editor');
       onInvited?.(data);
     } catch (err) {
       setError(err.message);
@@ -53,8 +53,10 @@ export function InviteMemberForm({ backendUrl, token, apiKey, onInvited }) {
           onChange={e => setAccessLevel(e.target.value)}
           style={{ width: 110 }}
         >
-          <option value="member">Member</option>
+          <option value="editor">Editor</option>
+          <option value="operator">Operator</option>
           <option value="admin">Admin</option>
+          <option value="viewer">Viewer</option>
         </select>
         <button className="btn btn--primary btn--sm" type="submit" disabled={saving}>
           {saving ? '…' : 'Invite'}

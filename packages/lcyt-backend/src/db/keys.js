@@ -25,6 +25,11 @@ export function formatKey(row) {
     embedCors: row.embed_cors ?? '*',
     publicSlug: row.public_slug ?? null,
     activeBroadcastId: row.active_broadcast_id ?? null,
+    // plan_project_roles.md (decided 2026-07-26): visibility ('restricted' = private,
+    // org membership grants zero baseline access) + the ceiling ordinary org
+    // members get on a team-visible project ('viewer'/'editor', never 'admin').
+    restricted: row.restricted === 1,
+    orgBaselineRole: row.org_baseline_role === 'editor' ? 'editor' : 'viewer',
   };
 }
 
@@ -466,10 +471,10 @@ export function anonymizeKey(db, key) {
  * Update owner and/or expires_at for a key.
  * @param {import('better-sqlite3').Database} db
  * @param {string} key
- * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, org_id?: number|null }} fields
+ * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, org_id?: number|null, restricted?: boolean, org_baseline_role?: 'viewer'|'editor' }} fields
  * @returns {boolean} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, org_id } = {}) {
+export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, org_id, restricted, org_baseline_role } = {}) {
   const parts = [];
   const params = [];
 
@@ -520,6 +525,14 @@ export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_lim
   if (org_id !== undefined) {
     parts.push('org_id = ?');
     params.push(org_id ?? null);
+  }
+  if (restricted !== undefined) {
+    parts.push('restricted = ?');
+    params.push(restricted ? 1 : 0);
+  }
+  if (org_baseline_role !== undefined) {
+    parts.push('org_baseline_role = ?');
+    params.push(org_baseline_role === 'editor' ? 'editor' : 'viewer');
   }
 
   if (parts.length === 0) return false;

@@ -15,15 +15,28 @@ import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES, sanitizeDisplaySetti
 import { viewportStreamName, parseStreamName, isViewportStream } from '../src/stream-names.js';
 import { createDskRtmpRouter } from '../src/routes/dsk-rtmp.js';
 import { upsertViewport } from '../src/db/viewports.js';
+import { createEditorAuth, editorAuthOrBearer } from '../src/middleware/editor-auth.js';
 
 let server, baseUrl, db;
 
-// Minimal auth stub: trusts an x-api-key header, sets req.session.apiKey.
+// Minimal auth stub: trusts an x-api-key header, sets req.session.apiKey and
+// req.user.userId (a real authenticated user, needed since dsk-viewports.js's
+// requireSetup gate — plan_project_roles.md, decided 2026-07-26 — now checks
+// req.user?.userId + deps.checkProjectRole('setup', ...) on every write).
 function stubAuth(req, _res, next) {
   const k = req.headers['x-api-key'];
-  if (k) req.session = { apiKey: k };
+  if (k) {
+    req.session = { apiKey: k };
+    req.user = { userId: 1 };
+  }
   next();
 }
+
+// Permissive stand-in for the composition root's real
+// checkProjectRole (hasProjectRole against project_members) — this file
+// exercises viewport CRUD/display-settings/composite behavior, not the
+// Setup-tier gate itself (see the dedicated describe block below for that).
+const permissiveDeps = { checkProjectRole: () => true };
 
 const stubBus = { addDskSubscriber() {}, removeDskSubscriber() {} };
 
@@ -46,7 +59,7 @@ before(() => new Promise(resolve => {
   const app = express();
   app.use(express.json());
   app.use('/dsk', createDskRouter(db, stubBus));
-  app.use('/dsk', createDskViewportsRouter(db, stubAuth));
+  app.use('/dsk', createDskViewportsRouter(db, stubAuth, permissiveDeps));
 
   server = createServer(app);
   server.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); });
@@ -367,6 +380,102 @@ describe('dsk-rtmp composite exclusion + chromaKey passthrough', () => {
     assert.equal(calls[0].opts.chromaKey.enabled, true);
     assert.equal(calls[0].opts.chromaKey.color, '#00B140');
     assert.equal(calls[0].opts.chromaKey.similarity, 0.25);
+  });
+});
+
+describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-26)', () => {
+  it('POST 403s when no deps.checkProjectRole is injected at all (fail closed)', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/dsk', createDskViewportsRouter(db, stubAuth)); // no deps
+    const noDepsServer = createServer(app);
+    await new Promise((resolve) => noDepsServer.listen(0, resolve));
+    const noDepsBase = `http://127.0.0.1:${noDepsServer.address().port}`;
+
+    makeKey('gate1');
+    const res = await fetch(`${noDepsBase}/dsk/gate1/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate1' },
+      body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
+    });
+    assert.equal(res.status, 403);
+    await new Promise((resolve) => noDepsServer.close(resolve));
+  });
+
+  it('POST 403s for an explicit role below setup (checkProjectRole returns false)', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/dsk', createDskViewportsRouter(db, stubAuth, { checkProjectRole: () => false }));
+    const rejectServer = createServer(app);
+    await new Promise((resolve) => rejectServer.listen(0, resolve));
+    const rejectBase = `http://127.0.0.1:${rejectServer.address().port}`;
+
+    makeKey('gate2');
+    const res = await fetch(`${rejectBase}/dsk/gate2/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate2' },
+      body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
+    });
+    assert.equal(res.status, 403);
+    await new Promise((resolve) => rejectServer.close(resolve));
+  });
+
+  it('POST 403s for a plain session token with no req.user.userId (session JWTs never satisfy Setup tier)', async () => {
+    function sessionOnlyAuth(req, _res, next) {
+      const k = req.headers['x-api-key'];
+      if (k) req.session = { apiKey: k }; // no req.user attached — legacy session token shape
+      next();
+    }
+    const app = express();
+    app.use(express.json());
+    app.use('/dsk', createDskViewportsRouter(db, sessionOnlyAuth, permissiveDeps));
+    const sessionServer = createServer(app);
+    await new Promise((resolve) => sessionServer.listen(0, resolve));
+    const sessionBase = `http://127.0.0.1:${sessionServer.address().port}`;
+
+    makeKey('gate3');
+    const res = await fetch(`${sessionBase}/dsk/gate3/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate3' },
+      body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
+    });
+    assert.equal(res.status, 403);
+    await new Promise((resolve) => sessionServer.close(resolve));
+  });
+
+  it('GET stays open regardless of the gate (read is never blocked)', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use('/dsk', createDskViewportsRouter(db, stubAuth, { checkProjectRole: () => false }));
+    const readServer = createServer(app);
+    await new Promise((resolve) => readServer.listen(0, resolve));
+    const readBase = `http://127.0.0.1:${readServer.address().port}`;
+
+    makeKey('gate4');
+    const res = await fetch(`${readBase}/dsk/gate4/viewports`, { headers: { 'x-api-key': 'gate4' } });
+    assert.equal(res.status, 200);
+    await new Promise((resolve) => readServer.close(resolve));
+  });
+
+  it('POST succeeds for real X-API-Key editor auth even with no deps/checkProjectRole at all — DskEditorPage.jsx authenticates this way, not via JWT, and must not be blanket-403d', async () => {
+    // Uses the REAL editorAuthOrBearer/createEditorAuth wiring (not stubAuth)
+    // so this actually exercises the req.session.authKind === 'apikey'
+    // discriminator set by middleware/editor-auth.js, not just a hand-rolled
+    // stand-in that happens to look similar.
+    const jwtAuth = (_req, res) => res.status(401).json({ error: 'no jwt in this test' });
+    const realCombinedAuth = editorAuthOrBearer(jwtAuth, createEditorAuth(db));
+
+    const app = express();
+    app.use(express.json());
+    app.use('/dsk', createDskViewportsRouter(db, realCombinedAuth)); // no deps at all
+    const realAuthServer = createServer(app);
+    await new Promise((resolve) => realAuthServer.listen(0, resolve));
+    const realAuthBase = `http://127.0.0.1:${realAuthServer.address().port}`;
+
+    makeKey('gate5');
+    const res = await fetch(`${realAuthBase}/dsk/gate5/viewports`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate5' },
+      body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
+    });
+    assert.equal(res.status, 201);
+    await new Promise((resolve) => realAuthServer.close(resolve));
   });
 });
 

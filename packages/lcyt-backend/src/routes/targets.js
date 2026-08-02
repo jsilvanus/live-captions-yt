@@ -18,6 +18,7 @@ import {
   getCaptionTargets, createCaptionTarget, updateCaptionTarget,
   deleteCaptionTarget, reorderCaptionTargets,
 } from '../db/caption-targets.js';
+import { requireProjectRole } from '../middleware/project-access.js';
 
 /**
  * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
@@ -26,13 +27,16 @@ import {
  */
 export function createTargetsRouter(auth, db) {
   const router = Router();
+  // Setup-tier writes (plan_project_roles.md, decided 2026-07-26) — GET stays
+  // open to any project member via requireProjectRole's own read exemption.
+  const requireSetup = requireProjectRole(db, 'setup');
 
   router.get('/', auth, (req, res) => {
     const targets = getCaptionTargets(db, req.session.apiKey);
     res.json({ targets });
   });
 
-  router.post('/', auth, (req, res) => {
+  router.post('/', auth, requireSetup, (req, res) => {
     const { id, type, enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch } = req.body || {};
     const result = createCaptionTarget(db, req.session.apiKey, { id, type, enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch });
     if (!result.ok) return res.status(400).json({ error: result.error });
@@ -40,21 +44,21 @@ export function createTargetsRouter(auth, db) {
   });
 
   // PUT /targets/reorder — registered before /:id so "reorder" isn't treated as an id
-  router.put('/reorder', auth, (req, res) => {
+  router.put('/reorder', auth, requireSetup, (req, res) => {
     const { order } = req.body || {};
     const result = reorderCaptionTargets(db, req.session.apiKey, order);
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.json({ ok: true });
   });
 
-  router.put('/:id', auth, (req, res) => {
+  router.put('/:id', auth, requireSetup, (req, res) => {
     const { enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch } = req.body || {};
     const result = updateCaptionTarget(db, req.session.apiKey, req.params.id, { enabled, streamKey, url, headers, viewerKey, iconId, iconEnabled, noBatch });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, target: result.target });
   });
 
-  router.delete('/:id', auth, (req, res) => {
+  router.delete('/:id', auth, requireSetup, (req, res) => {
     const deleted = deleteCaptionTarget(db, req.session.apiKey, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Target not found' });
     res.json({ ok: true });

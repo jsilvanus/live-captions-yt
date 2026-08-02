@@ -106,7 +106,7 @@ function makeThumbnailFilename(name) {
   return `${slugify(name || 'thumbnail')}-${Date.now()}-${randomUUID()}.png`;
 }
 
-export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics = null, settings = null) {
+export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics = null, settings = null, deps = {}) {
   const router = Router();
   const localRtmpBase = resolveDskLocalRtmp(settings);
   const dskRtmpApp = settings ? settings.get('graphics.dsk_rtmp_app') : DSK_RTMP_APP;
@@ -122,6 +122,46 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
     return true;
   }
 
+  /**
+   * Setup-tier gate (plan_project_roles.md, decided 2026-07-26) for template/
+   * thumbnail CRUD only — activate/broadcast/renderer start-stop/graphics-push
+   * are live graphics-operate actions, deliberately left ungated here (see
+   * CONSIDER.md). lcyt-dsk has no direct access to lcyt-backend's
+   * project_members table (plugin boundary), so the real check is injected
+   * from the composition root — same shape as ai-providers-project.js's
+   * requireExplicitAdmin / roles.js's requireSetup.
+   *
+   * combinedAuth (editorAuthOrBearer) has two success paths, and this gate
+   * only applies the role check to one of them:
+   *   - X-API-Key (editorAuth): proves possession of the project's raw
+   *     api_key itself — already the strongest credential this codebase
+   *     recognizes for a project (DskEditorPage.jsx, the real template editor
+   *     UI, authenticates this way, not via JWT). It never populates
+   *     req.user, and pre-dates the whole user/role system entirely, so it's
+   *     exempt from this gate rather than being blanket-403'd — that would
+   *     have silently broken DSK template editing for everyone. This mirrors
+   *     the existing X-Admin-Key-bypasses-ownership-checks pattern elsewhere
+   *     in this codebase (e.g. routes/project-members.js), just scoped to one
+   *     project's own key instead of a site-wide admin key.
+   *   - JWT Bearer (a real logged-in user, including a plain caption-session
+   *     JWT from POST /live): falls through to the real per-user role check
+   *     below — a session JWT with no req.user.userId (the common case)
+   *     still 403s here, same as every other Setup-tier route in this
+   *     codebase; it is not exempt, only raw X-API-Key possession is.
+   */
+  function requireSetup(req, res, next) {
+    // req.session.authKind === 'apikey' is set only by editorAuth
+    // (middleware/editor-auth.js) — the discriminator, not req.user's
+    // absence alone (a plain session JWT also lacks req.user and must NOT
+    // be exempt).
+    if (req.session?.authKind === 'apikey') return next();
+    const apiKey = req.session?.apiKey;
+    if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !deps.checkProjectRole('setup', apiKey, req.user.userId)) {
+      return res.status(403).json({ error: 'Explicit project admin/owner access required' });
+    }
+    next();
+  }
+
   // GET /dsk/:apikey/templates
   router.get('/:apikey/templates', combinedAuth, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
@@ -130,7 +170,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // POST /dsk/:apikey/templates  { name, template }
-  router.post('/:apikey/templates', combinedAuth, async (req, res) => {
+  router.post('/:apikey/templates', combinedAuth, requireSetup, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name, template } = req.body || {};
 
@@ -166,7 +206,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // DELETE /dsk/:apikey/templates/:id
-  router.delete('/:apikey/templates/:id', combinedAuth, (req, res) => {
+  router.delete('/:apikey/templates/:id', combinedAuth, requireSetup, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -177,7 +217,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // PUT /dsk/:apikey/templates/:id — update template name and/or JSON payload
-  router.put('/:apikey/templates/:id', combinedAuth, (req, res) => {
+  router.put('/:apikey/templates/:id', combinedAuth, requireSetup, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -316,7 +356,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // POST /dsk/:apikey/thumbnails — render a template to a cached PNG thumbnail
-  router.post('/:apikey/thumbnails', combinedAuth, thumbnailRateLimit, async (req, res) => {
+  router.post('/:apikey/thumbnails', combinedAuth, requireSetup, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name, template, templateId, width, height } = req.body || {};
     const apiKey = req.params.apikey;
@@ -376,7 +416,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // PUT /dsk/:apikey/thumbnails/:id — refresh a thumbnail from the current template
-  router.put('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, async (req, res) => {
+  router.put('/:apikey/thumbnails/:id', combinedAuth, requireSetup, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -419,7 +459,7 @@ export function createDskTemplatesRouter(db, auth, editorAuth, relayManager, dsk
   });
 
   // DELETE /dsk/:apikey/thumbnails/:id — remove a cached thumbnail
-  router.delete('/:apikey/thumbnails/:id', combinedAuth, thumbnailRateLimit, (req, res) => {
+  router.delete('/:apikey/thumbnails/:id', combinedAuth, requireSetup, thumbnailRateLimit, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });

@@ -11,8 +11,10 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { EventEmitter } from 'node:events';
-import { initDb } from '../src/db.js';
-import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { initDb, createKey } from '../src/db.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware } from '../src/middleware/project-access.js';
 import { createSttRouter } from '../src/routes/stt.js';
 import { setSttConfig, getSttConfig } from 'lcyt-rtmp';
 import { runMigrations } from '../../plugins/lcyt-rtmp/src/db.js';
@@ -48,30 +50,37 @@ function makeMockSttManager() {
 
 // ── Test setup ───────────────────────────────────────────────────────────────
 
-let server, baseUrl, db, sttManager, token;
+let server, baseUrl, db, sttManager, token, ownerToken;
 
 before(() => new Promise((resolve) => {
   db = initDb(':memory:');
   runMigrations(db);
 
-  // Create a mock API key in the DB (needed for config routes)
-  try {
-    db.prepare(`INSERT OR IGNORE INTO api_keys (api_key, label) VALUES (?, ?)`).run(API_KEY, 'test');
-  } catch {}
+  // Real API key row (needed so getKey()/getEffectiveProjectAccessLevel() —
+  // used by requireProjectRole('setup') on PUT /stt/config — can resolve it).
+  createKey(db, { key: API_KEY, owner: 'SttUser' });
 
   sttManager = makeMockSttManager();
 
   const app = express();
   app.use(express.json());
 
-  const auth = createAuthMiddleware(JWT_SECRET);
+  // Real production mounting (server.js) uses scopedAuth()/
+  // createProjectAccessMiddleware — matters because PUT /stt/config now goes
+  // through requireProjectRole('setup') (plan_project_roles.md, decided
+  // 2026-07-26), which needs a real userId. /start,/stop,/status,/events
+  // deliberately stay ungated (Production-tier operate actions).
+  const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'stt' });
   app.use('/stt', createSttRouter(auth, sttManager, db, JWT_SECRET));
 
-  // Sign a session JWT so we can use auth-protected endpoints
+  // Plain session token — used for status/start/stop/GET config, matching
+  // every real session-authenticated caption client.
   token = jwt.sign({ sessionId: 'test-session-id', apiKey: API_KEY }, JWT_SECRET);
+  // Explicit project owner — required for PUT /stt/config now.
+  const owner = createUser(db, { email: 'stt-owner@example.com', passwordHash: 'x' });
+  addMember(db, API_KEY, owner.id, 'owner');
+  ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: API_KEY }, JWT_SECRET, { expiresIn: '1h' });
 
-  // Inject req.session via auth middleware by pre-populating the sessions
-  // (easiest: override createAuthMiddleware to accept our token)
   server = createServer(app);
   server.listen(0, () => {
     baseUrl = `http://localhost:${server.address().port}`;
@@ -84,9 +93,10 @@ after(() => new Promise((resolve) => {
   server.close(resolve);
 }));
 
-// Helper
+// Helper. X-Api-Key mirrors real client behavior — see targets.test.js's
+// matching comment / CONSIDER.md.
 function bearer(tok = token) {
-  return { Authorization: `Bearer ${tok}` };
+  return { Authorization: `Bearer ${tok}`, 'X-Api-Key': API_KEY };
 }
 
 async function get(path, tok = token) {
@@ -101,7 +111,7 @@ async function post(path, body = {}, tok = token) {
   });
 }
 
-async function put(path, body = {}, tok = token) {
+async function put(path, body = {}, tok = ownerToken) {
   return fetch(`${baseUrl}${path}`, {
     method: 'PUT',
     headers: { ...bearer(tok), 'Content-Type': 'application/json' },
@@ -224,6 +234,11 @@ describe('/stt routes', () => {
     it('rejects invalid provider in config update', async () => {
       const res = await put('/stt/config', { provider: 'not_a_provider' });
       assert.equal(res.status, 400);
+    });
+
+    it('403s for a session token with no explicit project role (setup tier required)', async () => {
+      const res = await put('/stt/config', { language: 'fi-FI' }, token);
+      assert.equal(res.status, 403);
     });
   });
 

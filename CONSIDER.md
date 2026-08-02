@@ -11,6 +11,90 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
+## `lcyt-rtmp`'s ingestion/radio/stream config routes can't be gated at 'setup' tier — same auth-model blocker as `icons.js`/`lcyt-files`, whole router group affected
+
+**Where:** `packages/plugins/lcyt-rtmp/src/routes/ingestion.js` (`PATCH /config`, `POST /config/rotate`), `radio.js` (`PUT /config`), `stream.js` (`POST /`, `PUT /active`, `PUT /:slot`, `DELETE /:slot`, `DELETE /`), `packages/lcyt-backend/src/server.js`'s `createRtmpRouters(db, auth, rtmp, ...)` call (mounts `/ingestion`, `/stream`, `/stream-hls`, `/radio`, `/preview`, `/crop`, `/rtmp`, `/feed-rtmp`).
+
+**Finding:** `plan_project_roles.md`'s route list names these config routes as in-scope Setup-tier writes (same class as `targets.js`/`translation.js`, which Stream A did gate). But unlike those, the entire RTMP router group is constructed with `auth` = the module-level `const auth = createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the plain session-JWT-only middleware, not `scopedAuth()`/`createProjectAccessMiddleware`. `createAuthMiddleware` only ever sets `req.session = payload` (the raw JWT payload) and **never** sets `req.user` under any circumstances, for any token kind — there is no code path in it that could populate a real `userId`. This is the identical root cause already logged for `routes/icons.js` and `lcyt-files`' `/file/storage-config` (see that entry above) — `requireProjectRole()`/`hasProjectRole()`-style gating needs a real `userId` to resolve a role at all, so applying it here would either 403 every request unconditionally (fail-closed forever, since the auth model can never satisfy it) or require migrating this entire router group onto `scopedAuth()` first.
+
+**Skipped because:** switching `createRtmpRouters`'s auth model is a bigger, separate change than adding a role gate — it affects `/ingestion`, `/stream`, `/stream-hls`, `/radio`, `/preview`, `/crop`, `/rtmp`, and `/feed-rtmp` all at once (they share the one `auth` instance), several of which (`/rtmp`, `/feed-rtmp`, `/stream-hls`, `/preview`) are public/nginx-callback/kiosk routes that must stay working exactly as they do today. Left entirely ungated (unchanged from before this pass) rather than attempting that migration as a side effect of the Setup-tier pass. A future pass wanting this gated needs to first decide whether to thread `scopedAuth('<resource>')` through per-sub-router (risking behavior changes on the public/callback routes sharing the group) or give the config-only routes (`ingestion.js`/`radio.js`/`stream.js`) their own separate, real auth middleware instance.
+
+(Found during: Phase 2 Stream D, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## DSK live-graphics-operate routes left ungated by the Setup-tier pass — the `/graphics` page's own access tier was never decided
+
+**Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` — `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`.
+
+**Finding:** `plan_project_roles.md`'s route-mapping list names `lcyt-dsk`'s `dskTemplatesRouter`/`dskViewportsRouter` as Setup Hub's "viewports" card (**template CRUD**, **viewport CRUD**) — and those are now gated at `'setup'` tier. But the same router also exposes live graphics-operate actions on the same file: activating a template live, pushing broadcast data, starting/stopping the RTMP renderer, rendering a one-off template. These read as Production-tier (or a genuinely separate `/graphics` page tier) rather than Setup config, but `plan_project_roles.md`'s decided page model only names Setup/Assets/Production — the Graphics page (`/graphics/editor`, `/graphics/control`, `/graphics/viewports` in `lcyt-web`'s routing table) was never assigned a tier at all.
+
+**Skipped because:** guessing whether these belong to `'production'`, a new tier, or should stay wide open would be inventing policy this plan never decided. Left ungated (any project member who passes the broader `scopedAuth('dsk')` gate can still trigger them, same as before this pass) rather than guessing.
+
+(Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## DSK still authenticates via X-API-Key — `plan_authentication_refactor.md` said this was supposed to be retired, and it wasn't
+
+**Where:** `packages/plugins/lcyt-dsk/src/middleware/editor-auth.js` (`createEditorAuth`/`editorAuthOrBearer`, the `X-API-Key` path, now marked `req.session.authKind = 'apikey'`), `packages/lcyt-web/src/components/DskEditorPage.jsx` (sends `X-API-Key: <rawKey>` on its template/viewport/thumbnail fetches), `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js`/`dsk-viewports.js`'s `requireSetup()`, `docs/plans/plan_authentication_refactor.md`.
+
+**Corrected finding (2026-07-26, after user review — supersedes this entry's original framing):** this was first logged as a "deliberate decision, not an oversight" — that framing was wrong. `plan_authentication_refactor.md` (2026-07-09, header status "Implemented") **explicitly lists the DSK Editor's `editorAuthOrBearer` credential as "being replaced by project membership-based auth in the refactor"** (§Background table) — i.e. the plan's own intent was for DSK to stop accepting `X-API-Key` entirely and move onto the same project-membership JWT model as everything else. That never actually happened for the frontend: `DskEditorPage.jsx` still authenticates with `X-API-Key` today, and `docs/PLANS.md`'s own row for that plan already flags the gap in general terms ("**Not done:** UI adoption of user JWTs on project-scoped routes... the frontend still gets its bearer token via `POST /live`, not a direct user-JWT path") — DSK is a concrete, named instance of exactly that unfinished migration, not a separate design choice.
+
+**What this pass actually did, given that:** the Setup-tier gate (`plan_project_roles.md`, decided 2026-07-26) needed *some* answer for X-API-Key requests today, since blanket-403ing them would break DSK editing for everyone right now. It exempts the `editorAuth` success path (`req.session.authKind === 'apikey'`) from the new role check rather than blocking it — a stopgap that keeps today's DSK editor working, **not** a statement that X-API-Key should stay. The right fix is to finish `plan_authentication_refactor.md`'s DSK migration: move `DskEditorPage.jsx` onto project-scoped JWTs (the same `POST /auth/project-token` exchange `ProjectSettingsPage.jsx`/`useUserAuth.js` already use elsewhere), retire `editorAuthOrBearer`'s `X-API-Key` branch, and then remove the `authKind === 'apikey'` exemption from `requireSetup` entirely — at that point every DSK write goes through the same real per-user role check as every other Setup-tier route, with no bypass.
+
+**Skipped because:** actually migrating `DskEditorPage.jsx`'s auth is real frontend + backend work (issuing/refreshing project tokens from a template-editor context that doesn't necessarily have an active caption session) well beyond the scope of a role-gating pass — it's `plan_authentication_refactor.md`'s own unfinished item, not something to absorb as a side effect here.
+
+(Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26. Corrected same day after user review flagged the original "deliberate" framing as wrong.)
+
+---
+
+## `lcyt-production`'s `encoders.js` and `bridge.js` had no session/user/device auth wired in at all before this pass — now fixed, but the two routers previously had a real, wide-open gap
+
+**Where:** `packages/plugins/lcyt-production/src/routes/encoders.js`, `packages/plugins/lcyt-production/src/routes/bridge.js`, `packages/plugins/lcyt-production/src/api.js` (`createProductionRouter`).
+
+**Finding (not skipped — fixed as part of this pass, logged for the record since it's a bigger change than "add a tier check"):** `cameras.js`/`mixers.js` already had `opts.auth` wiring (from earlier plans — `plan_ingest_feeds.md`'s cross-tenant review finding, `plan_vertical_crop.md` §4), but `createEncodersRouter`/`createBridgeRouter` had no `opts` parameter at all — encoder CRUD/start/stop/test and bridge instance CRUD/command-dispatch were fully unauthenticated beyond the bridge-agent's own separate per-instance token on its two SSE/callback routes. This pass threaded `opts.auth`/`opts.deps` through both routers (optional, so existing route-level tests that construct them directly keep working unauthenticated unless they opt in) and `server.js` now always supplies both in production, closing a real pre-existing hole as a side effect of adding the Setup/Production tier split.
+
+(Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## `bridge.js`'s `GET /instances/:id/env` re-downloads a bridge instance's plaintext auth token to any project member, not just admins
+
+**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`, `GET /instances/:id/env`.
+
+**Finding:** This route regenerates and returns the bridge agent's `.env` file, which contains its plaintext per-instance auth token (the credential `bridgeManager.authenticate()` checks on the agent's own SSE/callback channel). It's a GET, so it's exempt from `requireTier()`'s write-only gating by design (reads stay open to any project member who passes the broader `scopedAuth('production')` gate — same policy as every other Setup-tier route in this pass) — but unlike template/config reads, this one discloses a live credential, not configuration. A non-admin project member (editor/operator/viewer with org-baseline access) can currently re-download it.
+
+**Skipped because:** the read/write split this whole pass implements is a blanket policy decision (`plan_project_roles.md`, decided 2026-07-26: "GET stays open to any project member") — special-casing one GET route as write-tier-gated is a real, narrow exception worth making, but doing it as a drive-by inside the Setup/Production split pass risks being inconsistent with how other credential-disclosing GETs in the codebase are (or aren't) already handled. Flagged for a dedicated look rather than a one-off fix here.
+
+(Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## `middleware/project-access.js`'s `resolveProjectId()` scavenges route `:id`/`:key` params generically, which is wrong on routers where that param isn't the project's api key
+
+**Where:** `packages/lcyt-backend/src/middleware/project-access.js` (`resolveProjectId()`, used by both `createProjectAccessMiddleware` at request-auth time and, deliberately *not* reused by, `requireProjectRole()` — see that function's own doc comment added 2026-07-26).
+
+**Finding:** `resolveProjectId()`'s candidate list includes generic `req.params?.id`/`req.params?.key` alongside `req.params?.apiKey`/`projectId` — fine for routes like `/keys/:key` where `:key` really is the project's api key, but actively wrong for a route like `PUT /targets/:id` where `:id` is a *target row's* id. When a request omits an explicit `X-Api-Key`/`X-Project-Id` header (relying solely on the JWT's own embedded `projectId`), `createProjectAccessMiddleware` still calls this scavenger first and picks up the wrong value — resolving to a garbage "project" that doesn't exist, so `getEffectiveProjectAccessLevel()` returns `null` and the request 403s with "Not a project member" even for a real, fully-authorized user. Also found and fixed alongside this: the scavenging loop itself had a genuine crash bug (`for (const candidate of candidates) { ... (candidate = candidate.trim()) ... }` — reassigning a `const` loop variable, `TypeError: Assignment to constant variable`), which this same investigation triggered for the first time via a previously-dead code path.
+
+**Skipped (the design issue, not the crash — that part *was* fixed):** every real caller in this codebase's own convention always sends an explicit `X-Api-Key` header (confirmed via the DSK/mcp-tokens routes' documented "JWT Bearer or X-API-Key" pattern), which short-circuits `resolveProjectId()` before it ever reaches the scavenging loop — so this is very likely dormant in production today, not a live bug. Fixing the scavenger's design properly (e.g. dropping the generic `:id`/`:key` candidates, or making callers opt in to which param names are safe to scavenge per-router) touches the core auth middleware used by every project-scoped route in the app — too broad a change to make as a side effect of the Setup/Assets/Production role-gating pass that found it. `test/targets.test.js` was updated to always send `X-Api-Key` (matching real client behavior) rather than depend on the scavenger.
+
+(Found during: Phase 2 Stream A, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
+## `routes/icons.js` and `lcyt-files`' `/file/storage-config` can't be gated at 'setup' tier without a broader auth-model change
+
+**Where:** `packages/lcyt-backend/src/routes/icons.js`, `packages/plugins/lcyt-files/src/routes/files.js` (the `/storage-config` GET/PUT/DELETE trio), `packages/lcyt-backend/src/server.js` (`app.use('/icons', createIconRouter(db, auth, store))`), `packages/lcyt-backend/src/routes/content.js` (`router.use('/file', createFilesRouter(db, auth, store, jwtSecret, ...))`), `docs/plans/plan_project_roles.md` Phase 2 Stream A.
+
+**Finding:** `plan_project_roles.md`'s "deliberately not touched by the interim fix" list names `icons` and "lcyt-files' storage config" alongside `targets.js`/`translation.js`/`stt.js`'s config routes as in-scope for Setup-tier gating. But both routers are mounted with the plain `createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the ephemeral session-JWT-only auth used by `/live`/`/captions`/`/mic` — not `scopedAuth()`/`createProjectAccessMiddleware`, which every other Setup-shaped route (targets, translation, stt, connectors, mcp-tokens, ai/providers) uses. The plain session middleware never populates `req.user.userId` (it only sets `req.session = { sessionId, apiKey }`), and both routers' handlers read `req.session.sessionId` + `store.get(sessionId)` directly rather than `req.auth`/`req.user`. `requireProjectRole()` (`middleware/project-access.js`) requires a real `userId` to resolve a role at all, so dropping it into either router as-is would 403 every request unconditionally, not gate it correctly.
+
+**Skipped because:** fixing it means migrating both routers off the ephemeral-session auth model onto the project-access-JWT model the other Setup routes use — a real, separate auth-plumbing change (and a check for whether anything relies on either working over a bare `/live` session with no logged-in user), not a one-line drop-in like the other routes in this same pass. Neither carries mintable credentials and both are lower risk (per the plan's own framing), so both were left ungated rather than rushed.
+
+(Found during: Phase 2 Stream A, `plan_project_roles.md`, 2026-07-26.)
+
+---
+
 ## Asset Control Assistant's tools have no dialog to drive on the Assets page
 
 **Where:** `packages/lcyt-web/src/components/AssetsPage.jsx`, `packages/lcyt-tools/src/tools/assets.js`, `docs/plans/plan_ai_roles_framework.md`
@@ -1080,6 +1164,20 @@ pass:
 
 ---
 
+## ~~`GET /keys` only lists projects a user directly owns~~ — FIXED 2026-07-31
+
+**Where:** `packages/lcyt-backend/src/routes/keys.js`'s `_userListKeys` (the handler behind `GET /keys`), `packages/lcyt-backend/src/db/project-members.js`.
+
+**Original finding (2026-07-31, Phase 3 pass):** `_userListKeys` called `getKeysByUserId(db, user.userId)`, which only returned projects the calling user directly owned, and unconditionally set `myAccessLevel: 'owner'` on every returned row — it never consulted `getEffectiveProjectAccessLevel()`. An invited project member (editor/operator/viewer/admin) or an org owner/admin relying on the org-admin override (`plan_project_roles.md`, decided 2026-07-26) had no way to see that project via `GET /keys` at all, so `ProjectSettingsPage.jsx`/`ProjectsPage.jsx` — both built exclusively from this endpoint — were only reachable by a project's direct owner. This also meant the Phase 3 owner/admin-gated UI (Team-visibility toggle/ceiling picker, per-member role-change select) had no way to be exercised end-to-end by a real non-owner.
+
+**Fix:** added `getAccessibleProjectsForUser(db, userId)` (`db/project-members.js`) — unions directly-owned projects, explicit `project_members` rows, and team-visible (`restricted = 0`) projects belonging to an org the user is a member of, computing each project's real effective level via `getEffectiveProjectAccessLevel()` (owned rows keep the cheap `'owner'` fast path, since nothing can ever outrank it). `_userListKeys` now calls this instead of `getKeysByUserId` + a hardcoded level. Covered by `packages/lcyt-backend/test/keys-accessible-listing.test.js` (explicit member, org-admin override, org-baseline ceiling, restricted-project exclusion, stranger sees nothing, no-org project unaffected).
+
+**Follow-on UI fix:** `ProjectSettingsPage.jsx`'s Danger Zone tab (delete/rename project) was previously always rendered regardless of access level, harmlessly, since only owners could ever reach the page before this fix. `DELETE`/`PATCH /keys/:key` are enforced backend-side as strict `api_keys.user_id === userId` ownership (not even project `'admin'` qualifies), so now that non-owners can reach the page, the tab is hidden unless `myAccessLevel === 'owner'` (with a fallback off the tab if the previously-selected tab is no longer visible). Covered by new cases in `ProjectSettingsPage.test.jsx`.
+
+(Originally found during: `plan_project_roles.md` Phase 3 — `ProjectSettingsPage.jsx` Team visibility + role-assignment UI, 2026-07-31. Fixed same day per explicit follow-up request.)
+
+---
+
 ## RESOLVED — YouTube broadcast privacy is now configurable (auto-start/stop still hardcoded)
 
 **Where:** `packages/plugins/lcyt-platforms/src/adapters/youtube.js`'s `createScheduled()`/`updateSchedule()`, `broadcasts.privacy_status`
@@ -1116,4 +1214,3 @@ pass:
 **Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
 
 **Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
-

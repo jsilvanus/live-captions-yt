@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { join, resolve, basename } from 'node:path';
 import * as fs from 'node:fs';
-import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey, getKeysByUserId } from '../db.js';
+import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
-import { addMember, getMemberAccessLevel, getMemberCount } from '../db/project-members.js';
+import { addMember, getMemberAccessLevel, getMemberCount, getAccessibleProjectsForUser } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
+import { hasProjectRole } from '../middleware/project-access.js';
 
 const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
 
@@ -24,7 +25,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * User routes (when loginEnabled=true, require Bearer user token):
  *   GET    /keys         — List own API keys (projects)
  *   POST   /keys         — Create a new project key for the authenticated user
- *   PATCH  /keys/:key    — Rename own project (owner field only)
+ *   PATCH  /keys/:key    — Rename own project (owner field only; project-creator only)
+ *   PATCH  /keys/:key/visibility — Set team visibility (restricted) + org-baseline
+ *                          ceiling (orgBaselineRole); explicit project admin/owner
+ *                          or org-admin override, not project-creator-only
+ *                          (plan_project_roles.md, decided 2026-07-26)
  *   DELETE /keys/:key    — Revoke own project key
  *
  * Public route (requires FREE_APIKEY_ACTIVE=1):
@@ -174,6 +179,39 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
     });
   });
 
+  // PATCH /keys/:key/visibility — set team visibility + org-baseline ceiling
+  // (plan_project_roles.md, decided 2026-07-26). Setup-tier: requires explicit
+  // project owner/admin OR an org owner/admin's unconditional override on a
+  // team-visible project — deliberately broader than PATCH /keys/:key's own
+  // project-creator-only gate above (which governs rename/org-move, not this).
+  router.patch('/:key/visibility', (req, res) => {
+    if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
+    const user = extractAndVerifyUserToken(jwtSecret, req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    const existing = getKey(db, req.params.key);
+    if (!existing) return res.status(404).json({ error: 'API key not found' });
+    if (!hasProjectRole(db, 'setup', req.params.key, user.userId)) {
+      return res.status(403).json({ error: 'Explicit project admin/owner access required' });
+    }
+
+    const { restricted, orgBaselineRole } = req.body || {};
+    const updates = {};
+    if (restricted !== undefined) updates.restricted = !!restricted;
+    if (orgBaselineRole !== undefined) {
+      if (!['viewer', 'editor'].includes(orgBaselineRole)) {
+        return res.status(400).json({ error: 'orgBaselineRole must be viewer or editor' });
+      }
+      updates.org_baseline_role = orgBaselineRole;
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'restricted and/or orgBaselineRole is required' });
+    }
+
+    updateKey(db, req.params.key, updates);
+    const updated = getKey(db, req.params.key);
+    return res.status(200).json(formatKey(updated));
+  });
+
   // DELETE /keys/:key — Revoke or permanently delete (admin or user for own keys)
   router.delete('/:key', (req, res) => {
     const hasAdminKey = !!req.headers['x-admin-key'];
@@ -214,13 +252,17 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
 function _userListKeys(db, jwtSecret, req, res) {
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  const keys = getKeysByUserId(db, user.userId);
+  // plan_project_roles.md / CONSIDER.md: not just directly-owned projects —
+  // also anything reachable via an explicit project_members row or the
+  // org-baseline/org-admin-override resolver, each with its real effective
+  // access level (not a blanket 'owner').
+  const accessible = getAccessibleProjectsForUser(db, user.userId);
   return res.status(200).json({
-    keys: keys.map(row => {
+    keys: accessible.map(({ row, myAccessLevel }) => {
       const base = formatKey(row);
       const features = [...getEnabledFeatureSet(db, row.key)].sort();
       const memberCount = getMemberCount(db, row.key);
-      return { ...base, features, memberCount, myAccessLevel: 'owner' };
+      return { ...base, features, memberCount, myAccessLevel };
     }),
   });
 }
