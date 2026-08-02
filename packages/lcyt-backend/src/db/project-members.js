@@ -22,7 +22,8 @@
  * not the thing actually gating requests.
  */
 import { getKey } from './keys.js';
-import { getOrgMembership } from './orgs.js';
+import { getKeysByUserId } from './users.js';
+import { getOrgMembership, listOrganizationsForUser, listOrganizationProjects } from './orgs.js';
 
 const ROLE_BUNDLES = {
   owner:  new Set([
@@ -286,4 +287,54 @@ export function getEffectiveProjectAccessLevel(db, apiKey, userId) {
  */
 export function getMemberCount(db, apiKey) {
   return db.prepare('SELECT COUNT(*) as n FROM project_members WHERE api_key = ?').get(apiKey)?.n ?? 0;
+}
+
+/**
+ * Every project a user can see: projects they directly own, projects they
+ * have an explicit `project_members` row on, and team-visible projects
+ * belonging to an org they're a member of (org-baseline/org-admin-override
+ * access, `getEffectiveProjectAccessLevel()`). Each row carries the real
+ * effective access level, not a hardcoded 'owner' — the gap this closes
+ * (plan_project_roles.md, CONSIDER.md): `GET /keys` previously only ever
+ * returned directly-owned projects via `getKeysByUserId()` alone, so a
+ * project member who wasn't the owner — an invited editor/operator/viewer,
+ * or an org admin relying on the org-admin override — had no way to see
+ * that project via `GET /keys` at all.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ * @returns {{ row: object, myAccessLevel: 'owner'|'admin'|'editor'|'operator'|'viewer' }[]}
+ */
+export function getAccessibleProjectsForUser(db, userId) {
+  const owned = getKeysByUserId(db, userId);
+  const seen = new Set(owned.map(row => row.key));
+  const result = owned.map(row => ({ row, myAccessLevel: 'owner' }));
+
+  // Explicit project memberships on projects the user doesn't own.
+  const memberRows = db.prepare('SELECT api_key FROM project_members WHERE user_id = ?').all(userId);
+  for (const { api_key: apiKey } of memberRows) {
+    if (seen.has(apiKey)) continue;
+    seen.add(apiKey);
+    const row = getKey(db, apiKey);
+    if (!row) continue; // stale membership row (shouldn't happen, FK cascades on key delete)
+    const level = getEffectiveProjectAccessLevel(db, apiKey, userId);
+    if (level) result.push({ row, myAccessLevel: level });
+  }
+
+  // Org-baseline access: team-visible projects belonging to an org this user
+  // is a member of, with no explicit membership row of their own.
+  for (const org of listOrganizationsForUser(db, userId)) {
+    for (const project of listOrganizationProjects(db, org.id)) {
+      if (seen.has(project.key)) continue;
+      seen.add(project.key);
+      const row = getKey(db, project.key);
+      // getEffectiveProjectAccessLevel() already zeroes out org-baseline
+      // contribution for a restricted project, but skip the resolver call
+      // entirely for the common case rather than relying on that alone.
+      if (!row || row.restricted) continue;
+      const level = getEffectiveProjectAccessLevel(db, project.key, userId);
+      if (level) result.push({ row, myAccessLevel: level });
+    }
+  }
+
+  return result;
 }

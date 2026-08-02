@@ -651,16 +651,24 @@ export function ProjectSettingsPage({ implicitKey = false } = {}) {
     );
   }
 
+  // Delete/rename (DangerZoneTab, PATCH|DELETE /keys/:key) are enforced
+  // backend-side as strict `api_keys.user_id === userId` ownership — not
+  // even project 'admin' qualifies. Now that GET /keys can return projects
+  // this user has access to without owning them, hide the tab rather than
+  // show a control that will always 403.
+  const visibleTabs = project.myAccessLevel === 'owner' ? TABS : TABS.filter(t => t !== 'Danger zone');
+  const effectiveTab = visibleTabs.includes(tab) ? tab : 'Summary';
+
   return (
     <div className="settings-page project-settings-page">
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px 0' }}>
         <h1 style={{ flex: 1, fontSize: 18, fontWeight: 600, margin: 0 }}>{project.owner}</h1>
       </div>
       <div className="settings-modal__tabs" style={{ padding: '0 20px', marginTop: 12 }}>
-        {TABS.map(t => (
+        {visibleTabs.map(t => (
           <button
             key={t}
-            className={`settings-tab${tab === t ? ' settings-tab--active' : ''}`}
+            className={`settings-tab${effectiveTab === t ? ' settings-tab--active' : ''}`}
             onClick={() => setTab(t)}
           >
             {t}
@@ -668,11 +676,11 @@ export function ProjectSettingsPage({ implicitKey = false } = {}) {
         ))}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-        {tab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} backendUrl={backendUrl} token={token} onProjectRefresh={load} />}
-        {tab === 'Features'     && <FeaturesTab project={project} backendUrl={backendUrl} token={token} />}
-        {tab === 'Team'         && <TeamTab project={project} backendUrl={backendUrl} token={token} />}
-        {tab === 'Device roles' && <DeviceRolesTab project={project} backendUrl={backendUrl} token={token} />}
-        {tab === 'Danger zone'  && (
+        {effectiveTab === 'Summary'      && <SummaryTab project={project} isActiveSession={isActiveSession} backendUrl={backendUrl} token={token} onProjectRefresh={load} />}
+        {effectiveTab === 'Features'     && <FeaturesTab project={project} backendUrl={backendUrl} token={token} />}
+        {effectiveTab === 'Team'         && <TeamTab project={project} backendUrl={backendUrl} token={token} />}
+        {effectiveTab === 'Device roles' && <DeviceRolesTab project={project} backendUrl={backendUrl} token={token} />}
+        {effectiveTab === 'Danger zone'  && (
           <DangerZoneTab
             project={project}
             backendUrl={backendUrl}

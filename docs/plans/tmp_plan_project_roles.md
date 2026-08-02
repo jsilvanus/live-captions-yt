@@ -243,13 +243,19 @@ across `ProjectSettingsPage.test.jsx` + new `MemberRow.test.jsx`/
 packages/lcyt-web` (499/499) and `npm run build:web` both verified green.
 **Not done:** manual dev-server/browser verification of the toggle/ceiling/
 role-select flows (not practical for the dispatched subagent) — worth doing
-before this is exercised by a real user. **Real gap found, logged, not
-fixed:** `GET /keys`'s user-scoped listing (`_userListKeys`) only returns
-projects the caller directly owns and hardcodes `myAccessLevel: 'owner'`, so
-a non-owner member has no way to see a project they've been granted access
-to via `/projects`/`/projects/:key` at all — the owner/admin-gated UI built
-here is correct but can't be end-to-end exercised by a non-owner today. See
-`CONSIDER.md`.
+before this is exercised by a real user. **Real gap found and fixed same
+day (2026-07-31):** `GET /keys`'s user-scoped listing (`_userListKeys`) only
+returned projects the caller directly owned and hardcoded
+`myAccessLevel: 'owner'`, so a non-owner member had no way to see a project
+they'd been granted access to via `/projects`/`/projects/:key` at all. Fixed
+via `getAccessibleProjectsForUser()` (`db/project-members.js`), which unions
+owned/explicitly-membered/org-baseline-accessible projects with each one's
+real effective level; also gated `ProjectSettingsPage.jsx`'s Danger Zone tab
+to owners only (it was previously unconditionally rendered, harmlessly,
+since only owners could ever reach the page before this fix — `DELETE`/
+`PATCH /keys/:key` are strict-ownership-only backend-side, so a non-owner
+now reaching the page would otherwise see a delete button that always
+403s). See `CONSIDER.md`.
 
 **Mode:** Sequential (single 599-line file — low value in splitting across
 agents, real risk of merge conflict if split)

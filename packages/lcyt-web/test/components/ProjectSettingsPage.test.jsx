@@ -214,6 +214,35 @@ describe('ProjectSettingsPage', () => {
     });
   });
 
+  describe('Danger zone tab visibility', () => {
+    // DELETE/PATCH /keys/:key are enforced backend-side as strict
+    // api_keys.user_id === userId ownership (not even project 'admin'
+    // qualifies) — the tab should only render for a real owner.
+    const ADMIN_PROJECT = {
+      key: 'key-dz-admin', owner: 'Admin-access project', createdAt: '2026-01-01T00:00:00Z', myAccessLevel: 'admin',
+    };
+
+    it('shows the Danger zone tab for an owner', async () => {
+      setupAuth();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: MOCK_PROJECTS }) });
+
+      renderPage(mockSession({ apiKey: MOCK_PROJECTS[0].key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Sunday service')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Danger zone' })).toBeInTheDocument();
+    });
+
+    it('hides the Danger zone tab for a non-owner (e.g. org-admin-override "admin")', async () => {
+      setupAuth();
+      global.fetch.mockResolvedValueOnce({ ok: true, json: async () => ({ keys: [ADMIN_PROJECT] }) });
+
+      renderPage(mockSession({ apiKey: ADMIN_PROJECT.key }), { implicitKey: true });
+
+      await waitFor(() => expect(screen.getByText('Admin-access project')).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: 'Danger zone' })).not.toBeInTheDocument();
+    });
+  });
+
   describe('Team tab — role changes', () => {
     it('PATCHes accessLevel when a member row select changes', async () => {
       setupAuth();

@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { join, resolve, basename } from 'node:path';
 import * as fs from 'node:fs';
-import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey, getKeysByUserId } from '../db.js';
+import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
-import { addMember, getMemberAccessLevel, getMemberCount } from '../db/project-members.js';
+import { addMember, getMemberAccessLevel, getMemberCount, getAccessibleProjectsForUser } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 import { hasProjectRole } from '../middleware/project-access.js';
@@ -252,13 +252,17 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
 function _userListKeys(db, jwtSecret, req, res) {
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  const keys = getKeysByUserId(db, user.userId);
+  // plan_project_roles.md / CONSIDER.md: not just directly-owned projects —
+  // also anything reachable via an explicit project_members row or the
+  // org-baseline/org-admin-override resolver, each with its real effective
+  // access level (not a blanket 'owner').
+  const accessible = getAccessibleProjectsForUser(db, user.userId);
   return res.status(200).json({
-    keys: keys.map(row => {
+    keys: accessible.map(({ row, myAccessLevel }) => {
       const base = formatKey(row);
       const features = [...getEnabledFeatureSet(db, row.key)].sort();
       const memberCount = getMemberCount(db, row.key);
-      return { ...base, features, memberCount, myAccessLevel: 'owner' };
+      return { ...base, features, memberCount, myAccessLevel };
     }),
   });
 }
