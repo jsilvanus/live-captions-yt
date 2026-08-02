@@ -1,0 +1,45 @@
+# security.local.yaml — optional, deployer-controlled deny-only floor for
+# this bridge instance. Copy this file to `security.local.yaml` in the same
+# directory as the bridge executable (next to `.env`) and edit it to enable.
+#
+# This file is read from local disk ONLY, by whoever has filesystem/deploy
+# access to this specific machine — it is the one layer of this bridge's
+# security model the LCYT backend cannot influence at all, even if the
+# backend itself were ever compromised. Every rule here can only ADD a
+# restriction on top of whatever the backend's own rules already say — it
+# can never grant this bridge extra permission the backend didn't already
+# give it.
+#
+# If this file is absent, nothing changes from the bridge's default
+# behavior. If it's present but malformed (bad YAML, an unknown "kind", an
+# invalid pattern, ...), the bridge fails CLOSED: every TCP/HTTP command is
+# blocked until the file is fixed or removed — a broken "last line of
+# defense" should never silently do nothing.
+#
+# Hot-reloaded: this file is watched, and edits (including creating or
+# removing it) take effect automatically — no need to restart the bridge
+# process to pick up a change.
+#
+# Two rule kinds, same pattern syntax the backend's own bridge security
+# rules use (Setup Hub → Bridges → 🔒 Security):
+#   - ip:      host / *.example.com wildcard / exact IP / CIDR, each
+#              optionally with a ":port" suffix (no suffix = any port).
+#   - command: a regular expression tested against the outgoing TCP payload.
+
+rules:
+  # Never let this bridge reach a cloud metadata endpoint, regardless of
+  # what any command says.
+  - kind: ip
+    pattern: "169.254.169.254"
+    description: "block cloud metadata endpoint"
+
+  # Example: never allow SSH into this site's internal network from here.
+  # - kind: ip
+  #   pattern: "10.0.0.0/8:22"
+  #   description: "no SSH to internal ranges"
+
+  # Example: this bridge must never issue a factory reset, no matter what
+  # the backend (or an operator) asks for.
+  # - kind: command
+  #   pattern: "^FACTORY-RESET$"
+  #   description: "never factory-reset hardware from this bridge"

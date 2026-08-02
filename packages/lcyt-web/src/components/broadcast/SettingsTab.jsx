@@ -2,11 +2,13 @@ import { useState, useMemo } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
 import { EncoderTab } from './EncoderTab.jsx';
 import { StreamTab } from './StreamTab.jsx';
-import { YouTubeTab } from './YouTubeTab.jsx';
+import { PlatformsTab } from './PlatformsTab.jsx';
 
 /**
  * SettingsTab — the Broadcast page's config sub-tabs (Encoder / YouTube /
- * Stream relay). This is the former `BroadcastModal` body, unchanged
+ * Stream relay). The YouTube sub-tab is now a signpost to the Setup Hub card
+ * and the per-broadcast panel that replaced the old inline implicit-token
+ * flow (plan_broadcast_platform_sync.md). This is the former `BroadcastModal` body, unchanged
  * internally, just re-hosted as the second tab of `BroadcastPage`. The
  * RTMP-relay ("Stream") sub-tab stays conditioned on the `rtmp` feature.
  */
@@ -42,7 +44,7 @@ export function SettingsTab() {
 
       <div className="settings-modal__body">
         {tab === 'encoder' && <EncoderTab />}
-        {tab === 'youtube' && <YouTubeTab />}
+        {tab === 'youtube' && <PlatformsTab />}
         {tab === 'stream' && showStream && <StreamTab />}
       </div>
     </div>

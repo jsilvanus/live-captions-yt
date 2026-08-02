@@ -400,6 +400,10 @@ export function initDb(dbPath) {
       youtube_broadcast_id TEXT,
       rundown_file_id      INTEGER,
       record_enabled       INTEGER NOT NULL DEFAULT 0,
+      -- Visibility this broadcast is created with on an external platform
+      -- (lcyt-platforms). Defaults to 'unlisted': a broadcast accidentally
+      -- created public is a worse failure than one accidentally unlisted.
+      privacy_status       TEXT    NOT NULL DEFAULT 'unlisted',
       archived_at          TEXT,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -466,6 +470,7 @@ export function initDb(dbPath) {
 
   const broadcastCols = new Set(db.prepare('PRAGMA table_info(broadcasts)').all().map(c => c.name));
   if (!broadcastCols.has('record_enabled')) db.exec('ALTER TABLE broadcasts ADD COLUMN record_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!broadcastCols.has('privacy_status')) db.exec("ALTER TABLE broadcasts ADD COLUMN privacy_status TEXT NOT NULL DEFAULT 'unlisted'");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS viewer_key_daily_stats (

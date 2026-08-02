@@ -254,4 +254,44 @@ describe('session-lifecycle binding', () => {
     completeBroadcast(db, b.id, {});
     assert.equal(getBroadcast(db, KEY, b.id).status, 'archived');
   });
+
+  describe('privacyStatus (plan_broadcast_platform_sync)', () => {
+    it('defaults to unlisted', () => {
+      // The safe value is the default: a broadcast accidentally created public
+      // is a worse failure than one accidentally left unlisted.
+      const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
+      assert.equal(b.privacyStatus, 'unlisted');
+    });
+
+    it('accepts an explicit value on create', () => {
+      const b = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'public' }).broadcast;
+      assert.equal(getBroadcast(db, KEY, b.id).privacyStatus, 'public');
+    });
+
+    it('rejects an unknown value on create', () => {
+      const result = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'everyone' });
+      assert.equal(result.ok, false);
+      assert.match(result.error, /Invalid privacyStatus/);
+    });
+
+    it('is updatable', () => {
+      const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
+      const updated = updateBroadcast(db, KEY, b.id, { privacyStatus: 'private' });
+      assert.equal(updated.ok, true);
+      assert.equal(updated.broadcast.privacyStatus, 'private');
+    });
+
+    it('rejects an unknown value on update without changing anything', () => {
+      const b = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'public' }).broadcast;
+      const result = updateBroadcast(db, KEY, b.id, { privacyStatus: 'nonsense' });
+      assert.equal(result.ok, false);
+      assert.equal(getBroadcast(db, KEY, b.id).privacyStatus, 'public');
+    });
+
+    it('is left alone by an unrelated update', () => {
+      const b = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'private' }).broadcast;
+      updateBroadcast(db, KEY, b.id, { title: 'renamed' });
+      assert.equal(getBroadcast(db, KEY, b.id).privacyStatus, 'private');
+    });
+  });
 });

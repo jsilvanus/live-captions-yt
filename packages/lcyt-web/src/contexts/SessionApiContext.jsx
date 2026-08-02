@@ -15,7 +15,7 @@ import { createContext, useContext } from 'react';
  *        listIcons, uploadIcon, deleteIcon,
  *        configureRelay, updateRelay, stopRelaySlot, stopRelay,
  *        getRelayStatus, getRelayHistory, setRelayActive,
- *        getYouTubeConfig, getMusicEventsHistory
+ *        getMusicEventsHistory
  */
 export const SessionApiContext = createContext(null);
 

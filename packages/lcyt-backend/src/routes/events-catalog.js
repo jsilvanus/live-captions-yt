@@ -37,6 +37,7 @@ export const EVENT_TOPIC_CATALOG = {
     { topic: 'external.*', label: 'External events', description: 'Events published by third-party integrations via POST /events. Only the external.* namespace is writable by external tokens.' },
     { topic: 'mcp.*', label: 'MCP tool events', description: 'Tool execution and staging events from the MCP endpoint (mcp.tool_executed, mcp.tool_staged).' },
     { topic: 'operator.*', label: 'Operator events', description: 'Hosted operator lifecycle and action events (operator.started, operator.stopped, operator.action_executed, operator.action_staged).' },
+    { topic: 'platform.*', label: 'Broadcast platform events', description: 'Live viewer stats and status changes for broadcasts synced to an external platform (platform.stats_updated, platform.status_changed).' },
   ],
   scopes: [
     { value: 'events:read', label: 'Stream events', description: 'Connect to GET /events/stream and receive real-time events.' },

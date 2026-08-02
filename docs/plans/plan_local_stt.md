@@ -1,7 +1,7 @@
 ---
 id: plan/local-stt
 title: "Local STT Service (`lcyt-stt`) — Self-Hosted, Trainable Finnish Speech-to-Text"
-status: draft
+status: in-progress
 summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter."
 ---
 
@@ -128,7 +128,7 @@ New package `python-packages/lcyt-stt/` (`pyproject.toml`, published nowhere —
 `lcyt_stt/dataset/` — turns crowdsource exports into immutable training snapshots.
 
 - `lcyt-stt dataset pull --base-url … --corpus-id … --out snapshots/<date>/` — authenticates against crowd-source-voice (admin JWT via env), downloads the validated CSV export + manifest, copies audio files (manifest-driven; supports both API download and direct-filesystem copy for a co-hosted deployment), verifies durations, and writes `snapshot.json`: created-at, corpus ids, recording count, total hours, content hash. Snapshots are append-only.
-- `lcyt-stt dataset build --snapshot … --out …` — converts a snapshot to a Hugging Face `datasets` audio dataset with a deterministic, seeded **speaker-disjoint** train/dev/test split (split by anonymized contributor id, not by utterance — the crowdsource export must carry a stable anonymous speaker id per row; if the current export lacks it, request it as a small addition to the export format on the crowdsource side). Text normalization: lowercase-free (Whisper is cased), strip prompt artifacts, NFC-normalize; keep Finnish orthography untouched.
+- `lcyt-stt dataset build --snapshot … --out …` — converts a snapshot to a Hugging Face `datasets` audio dataset with a deterministic, seeded **speaker-disjoint** train/dev/test split (split by anonymized contributor id, not by utterance). **Implemented 2026-07-26:** crowd-source-voice gained a `speaker_id` field for exactly this (`server/utils/speakerId.js`, a salted double-SHA-256 hash of the contributor's email — never the email itself, `null` once an account is anonymized/deleted), added to both `GET /api/export` (`format=json`) and `GET /api/export/manifest` rows. `lcyt_stt/dataset/build.py`'s `compute_split()` uses it when every row in a snapshot has one; if a snapshot predates the field (or a row's contributor was anonymized), it falls back to a seeded random utterance-level split and records `speaker_disjoint: false` in the build metadata rather than silently claiming a disjoint split it didn't actually do. Text normalization: lowercase-free (Whisper is cased), strip prompt artifacts, NFC-normalize; keep Finnish orthography untouched (`lcyt_stt/dataset/normalize.py`).
 - Storage: snapshots live on project-controlled storage (local disk or the project's S3 bucket — same bucket family `lcyt-files` already uses; plain `aws s3 sync` is sufficient, no adapter code needed).
 
 ---
@@ -180,8 +180,8 @@ New package `python-packages/lcyt-stt/` (`pyproject.toml`, published nowhere —
 
 ## Todo
 
-- [ ] Phase 1 — inference service MVP (FastAPI + faster-whisper, `/inference` + `/health`, CPU/CUDA images, compose, E2E via `WhisperHttpAdapter`)
-- [ ] Phase 2 — dataset pipeline (snapshot pull/build, speaker-disjoint split; request speaker id in crowdsource export)
+- [x] Phase 1 — inference service MVP (FastAPI + faster-whisper, `/inference` + `/health`, CPU/CUDA images, compose, E2E via `WhisperHttpAdapter`) — `python-packages/lcyt-stt/`, `docker/lcyt-stt/`. Unit tests (health states, inference shape, queue overflow) pass; the live Docker-build + real end-to-end RTMP→caption verification still needs an environment with a running Docker daemon (not available in the sandbox this was implemented in).
+- [x] Phase 2 — dataset pipeline (snapshot pull/build, speaker-disjoint split; speaker id added to crowdsource export) — `lcyt_stt/dataset/`. `pull.py` validates `corpus.type == 'text'` (rejects `music`), re-checks the 0.5–30s duration gate defensively (crowd-source-voice's server never re-validates it), and records provenance in `snapshot.json`. `build.py`'s split is speaker-disjoint via the new `speaker_id` field, with a logged, explicitly-flagged fallback when it's absent. Unit tests mock the crowd-source-voice HTTP client; no live-server smoke test in CI (documented as a manual operator step in the package README).
 - [ ] Phase 3 — training pipeline (config-driven fine-tune, CT2 conversion, versioned artifacts)
 - [ ] Phase 4 — eval harness (held-out + real-service sets, promotion gate) — build before first paid training run
 - [ ] Phase 5 — model management endpoints, `lcyt` provider alias, Setup Hub health surfacing, runbook

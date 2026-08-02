@@ -44,7 +44,6 @@ export function useProductionData() {
   const connected = !!session?.connected;
   const getRelayStatus   = session?.getRelayStatus;
   const setRelayActiveFn = session?.setRelayActive;
-  const getYouTubeConfig = session?.getYouTubeConfig;
   const startStt = session?.startStt;
   const stopStt  = session?.stopStt;
   const getSttStatus = session?.getSttStatus;
@@ -423,7 +422,6 @@ export function useProductionData() {
       sendChat, addCueRule, setBroadcastStatus, togglePoll,
     },
     youtube: {
-      getConfig: getYouTubeConfig,
       setRelayActive: setRelayActiveFn,
     },
   };
