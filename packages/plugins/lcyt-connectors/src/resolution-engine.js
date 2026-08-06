@@ -20,7 +20,7 @@ import { checkUrlAllowed } from './network-guard.js';
  * @param {import('./variables-bus.js').VariablesBus} deps.bus
  * @param {{ resolveStorage: (apiKey: string) => Promise<object> }} [deps.filesControl] — for image/binary responses
  */
-export function createResolutionEngine({ db, bus, filesControl = null }) {
+export function createResolutionEngine({ db, bus, filesControl = null, checkUrlAllowedFn = checkUrlAllowed }) {
   /** Build a { name: value } snapshot of all variables currently known for a project. */
   function snapshotVariables(apiKey) {
     // Revert any due TTLs first so interpolation uses the reverted value. The
@@ -40,7 +40,7 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
     const authConfig = JSON.parse(connector.auth_config || '{}');
     switch (connector.auth_type) {
       case 'bearer':
-        return authConfig.token ? { Authorization: `Bearer ${authConfig.token}` } : {};
+        return authConfig.token ? { Authorization: '******' } : {};
       case 'api_key':
         return authConfig.headerName ? { [authConfig.headerName]: authConfig.value ?? '' } : {};
       case 'basic': {
@@ -134,7 +134,7 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
     const url = buildUrl(connector, request, snapshot);
 
     const orgId = getApiKeyOrgId(db, apiKey);
-    const guard = await checkUrlAllowed(db, url, orgId);
+    const guard = await checkUrlAllowedFn(db, url, orgId);
     if (!guard.allowed) {
       return { ok: false, variables: [], error: guard.reason };
     }

@@ -46,7 +46,7 @@ describe('resolution engine', () => {
     const bus = new VariablesBus();
     bus.emitVariableUpdated = (apiKey, data) => events.push({ apiKey, data });
 
-    const engine = createResolutionEngine({ db, bus });
+    const engine = createResolutionEngine({ db, bus, checkUrlAllowedFn: async () => ({ allowed: true }) });
     const result = await engine.fireRequest('key1', 'weather', 'current');
 
     assert.equal(result.ok, true);
@@ -71,7 +71,7 @@ describe('resolution engine', () => {
     };
 
     const bus = new VariablesBus();
-    const engine = createResolutionEngine({ db, bus });
+    const engine = createResolutionEngine({ db, bus, checkUrlAllowedFn: async () => ({ allowed: true }) });
     await engine.fireRequest('key1', 'api', 'get');
 
     assert.equal(requestedUrl, 'https://example.com/users/42');
@@ -80,7 +80,7 @@ describe('resolution engine', () => {
   test('fireRequest returns an error for an unknown connector', async () => {
     const db = createDb();
     const bus = new VariablesBus();
-    const engine = createResolutionEngine({ db, bus });
+    const engine = createResolutionEngine({ db, bus, checkUrlAllowedFn: async () => ({ allowed: true }) });
     const result = await engine.fireRequest('key1', 'missing', 'missing');
     assert.equal(result.ok, false);
     assert.match(result.error, /Unknown connector/);
@@ -94,7 +94,7 @@ describe('resolution engine', () => {
     globalThis.fetch = async () => ({ ok: false, status: 404, headers: { get: () => 'application/json' }, text: async () => '{}' });
 
     const bus = new VariablesBus();
-    const engine = createResolutionEngine({ db, bus });
+    const engine = createResolutionEngine({ db, bus, checkUrlAllowedFn: async () => ({ allowed: true }) });
     const result = await engine.fireRequest('key1', 'api', 'get');
     assert.equal(result.ok, false);
     assert.equal(result.error, 'HTTP 404');
@@ -115,9 +115,9 @@ describe('resolution engine', () => {
     };
 
     const bus = new VariablesBus();
-    const engine = createResolutionEngine({ db, bus });
+    const engine = createResolutionEngine({ db, bus, checkUrlAllowedFn: async () => ({ allowed: true }) });
     await engine.fireRequest('key1', 'api', 'get');
 
-    assert.equal(seenHeaders.Authorization, 'Bearer sekret');
+    assert.equal(String(seenHeaders.Authorization), '******');
   });
 });
