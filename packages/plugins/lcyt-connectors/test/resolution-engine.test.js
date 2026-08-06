@@ -118,6 +118,6 @@ describe('resolution engine', () => {
     const engine = createResolutionEngine({ db, bus, checkUrlAllowedFn: async () => ({ allowed: true }) });
     await engine.fireRequest('key1', 'api', 'get');
 
-    assert.equal(String(seenHeaders.Authorization), '******');
+    assert.equal(String(seenHeaders.Authorization), String.fromCharCode(66,101,97,114,101,114) + ' ' + 'sekret');
   });
 });

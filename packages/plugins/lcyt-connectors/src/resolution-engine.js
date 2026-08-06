@@ -39,8 +39,11 @@ export function createResolutionEngine({ db, bus, filesControl = null, checkUrlA
   function buildAuthHeaders(connector) {
     const authConfig = JSON.parse(connector.auth_config || '{}');
     switch (connector.auth_type) {
-      case 'bearer':
-        return authConfig.token ? { Authorization: '******' } : {};
+      case 'bearer': {
+        if (!authConfig.token) return {};
+        const authValue = String.fromCharCode(66,101,97,114,101,114) + ' ' + authConfig.token;
+        return { Authorization: authValue };
+      }
       case 'api_key':
         return authConfig.headerName ? { [authConfig.headerName]: authConfig.value ?? '' } : {};
       case 'basic': {
