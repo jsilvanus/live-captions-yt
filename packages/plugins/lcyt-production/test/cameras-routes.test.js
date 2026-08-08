@@ -78,14 +78,25 @@ function startApp(registry, mediamtxClient = null, opts = {}) {
 
 // Stand-in for scopedAuth('production') — real auth middleware resolves a
 // session/user-project/device JWT or lcytmcp_ token down to req.session.apiKey
-// (see project-access.js); tests only need that end result, keyed off a
-// plain header so each test can act as a different project.
+// and (for a real user/project JWT) req.user.userId (see project-access.js);
+// tests only need that end result, keyed off a plain header so each test can
+// act as a different project. req.user.userId is fixed at 1 for every
+// request — good enough for a stand-in whose real authorization decision is
+// delegated to the `deps.checkProjectRole` stub below, not to this function.
 function fakeAuth(req, res, next) {
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) return res.status(401).json({ error: 'missing api key' });
   req.session = { apiKey };
+  req.user = { userId: 1 };
   next();
 }
+
+// Permissive stand-in for the composition root's real checkProjectRole
+// (hasProjectRole against project_members) — this file's existing describe
+// blocks exercise CRUD/ownership/production-follow-notification behavior,
+// not the Setup/Production tier gate itself (see the dedicated describe
+// block near the end of this file for that).
+const permissiveDeps = { checkProjectRole: () => true };
 
 before(() => {
   db = new Database(':memory:');
@@ -235,14 +246,14 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
 
   it('with auth configured, CRUD routes require it (401 without credentials)', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const res = await fetch(`${baseUrl}/production/cameras`);
     assert.equal(res.status, 401);
   });
 
   it('owner can read/update/delete their own camera', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const id = insertCamera({ owner_api_key: 'proj-a' });
 
     const getRes = await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'proj-a' } });
@@ -257,7 +268,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
 
   it("a different project cannot read, update, or delete another project's owned camera (404, not leaked)", async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const id = insertCamera({ owner_api_key: 'proj-a' });
 
     const getRes = await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'proj-b' } });
@@ -275,7 +286,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
 
   it("GET / filters out other projects' owned cameras but keeps unowned (legacy) ones visible", async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const ownedId = insertCamera({ owner_api_key: 'proj-a', name: 'Owned by A' });
     const otherOwnedId = insertCamera({ owner_api_key: 'proj-b', name: 'Owned by B' });
     const legacyId = insertCamera({ owner_api_key: null, name: 'Legacy unowned' });
@@ -289,7 +300,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
 
   it('POST / stamps the creating project as owner_api_key', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const res = await fetch(`${baseUrl}/production/cameras`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'New Cam' }),
@@ -305,7 +316,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
 
   it('WHIP routes remain unauthenticated even when auth is configured', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const id = insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
     // No x-api-key header at all — a real kiosk page sends none of these routes any auth.
     const res = await fetch(`${baseUrl}/production/cameras/${id}/whip-url`);
@@ -314,7 +325,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
 
   it('thumbnail-serving routes remain unauthenticated even when auth is configured', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    await startApp(makeRegistryStub(), null, { auth: fakeAuth });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const id = insertCamera({ owner_api_key: 'proj-a', camera_key: 'cam-key-thumb' });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail`);
     assert.notEqual(res.status, 401);
@@ -345,7 +356,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     // match a row bound through the real UI.
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
-    await startApp(registry, null, { auth: fakeAuth });
+    await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
     const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
@@ -358,7 +369,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
   it('direct recall of a VISCA preset notifies with presetNumber, not array index or the raw preset id', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
-    await startApp(registry, null, { auth: fakeAuth });
+    await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
     const id = insertCamera({
       control_type: 'visca-ip',
       control_config: { presets: [
@@ -386,7 +397,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     const app = express();
     app.use(express.json());
     app.use('/production/cameras', createCamerasRouter(
-      db, registry, bridgeManager, { cameraThumbnail: { thumbnailsDir }, auth: fakeAuth },
+      db, registry, bridgeManager, { cameraThumbnail: { thumbnailsDir }, auth: fakeAuth, deps: permissiveDeps },
     ));
     await new Promise((resolve) => {
       server = createServer(app);
@@ -441,7 +452,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
   it('no notification when the preset trigger fails (unknown camera)', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
-    await startApp(registry, null, { auth: fakeAuth });
+    await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
 
     const res = await fetch(`${baseUrl}/production/cameras/does-not-exist/preset/wide`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -459,5 +470,81 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, { method: 'POST' });
     assert.equal(res.status, 200);
     assert.deepEqual(registry.notified, [{ apiKey: null, cameraId: id, preset: 0 }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Setup/Production tier gate (plan_project_roles.md, decided 2026-07-26)
+// ---------------------------------------------------------------------------
+
+describe('Setup/Production tier gate', () => {
+  it('POST / (create) 403s when no deps.checkProjectRole is injected at all (fail closed)', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth }); // no deps
+    const res = await fetch(`${baseUrl}/production/cameras`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Cam' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('POST / (create) 403s when checkProjectRole rejects the role', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: { checkProjectRole: () => false } });
+    const res = await fetch(`${baseUrl}/production/cameras`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Cam' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
+  it('POST / (create) succeeds and requests the setup tier when checkProjectRole allows it', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const seen = [];
+    await startApp(makeRegistryStub(), null, {
+      auth: fakeAuth,
+      deps: { checkProjectRole: (tier, apiKey, userId) => { seen.push({ tier, apiKey, userId }); return true; } },
+    });
+    const res = await fetch(`${baseUrl}/production/cameras`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Cam' }),
+    });
+    assert.equal(res.status, 201);
+    assert.deepEqual(seen, [{ tier: 'setup', apiKey: 'proj-a', userId: 1 }]);
+  });
+
+  it('POST /:id/preset/:presetId (live control) 403s when checkProjectRole rejects the role, and requests the production tier', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    const seen = [];
+    await startApp(makeRegistryStub(), null, {
+      auth: fakeAuth,
+      deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } },
+    });
+    const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
+    const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a' },
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(seen, ['production']);
+  });
+
+  it('GET / stays open regardless of the gate (read is never blocked)', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: { checkProjectRole: () => false } });
+    const res = await fetch(`${baseUrl}/production/cameras`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(res.status, 200);
+  });
+
+  it('a credential-less kiosk-style request without opts.auth having run stays fail-open (no session set at all)', async () => {
+    // Not the WHIP carve-out specifically — this asserts the gate's own
+    // no-session fail-open behavior directly, independent of which routes
+    // happen to carve auth out.
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { deps: { checkProjectRole: () => false } }); // no auth opt at all
+    const res = await fetch(`${baseUrl}/production/cameras`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Cam' }),
+    });
+    assert.equal(res.status, 201, 'no auth configured at all → historical fully-open behavior preserved');
   });
 });

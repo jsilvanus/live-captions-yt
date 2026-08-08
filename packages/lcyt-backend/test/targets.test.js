@@ -9,23 +9,36 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
-import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware } from '../src/middleware/project-access.js';
 import { createTargetsRouter } from '../src/routes/targets.js';
 
 const JWT_SECRET = 'test-targets-secret';
 
-let server, baseUrl, db, apiKey, token;
+// Real production mounting (content.js) uses scopedAuth()/
+// createProjectAccessMiddleware, not the plain session-only auth — matters
+// here because PUT/DELETE now go through requireProjectRole('setup')
+// (plan_project_roles.md, decided 2026-07-26), which needs a real userId.
+let server, baseUrl, db, apiKey, token, ownerToken;
 
 before(() => new Promise((resolve) => {
   db = initDb(':memory:');
-  const auth = createAuthMiddleware(JWT_SECRET);
+  const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'target' });
   const app = express();
   app.use(express.json());
   app.use('/targets', createTargetsRouter(auth, db));
 
   const k = createKey(db, { owner: 'TargetsUser' });
   apiKey = k.key;
+  // Plain session token — no explicit owner needed for read, matches every
+  // real session-authenticated client (no requireProjectRole write access).
   token = jwt.sign({ sessionId: 'targets-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
+  // Explicit project owner — the token every write (POST/PUT/DELETE) test
+  // below uses, since those now require 'setup' tier.
+  const owner = createUser(db, { email: 'targets-owner@example.com', passwordHash: 'x' });
+  addMember(db, apiKey, owner.id, 'owner');
+  ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
   server.listen(0, () => {
@@ -39,21 +52,28 @@ after(() => new Promise((resolve) => {
   server.close(resolve);
 }));
 
-function bearer(tok = token) {
-  return { Authorization: `Bearer ${tok}` };
+// X-Api-Key mirrors how real clients always call project-scoped routes
+// (see e.g. the DSK/mcp-tokens routes' own "JWT Bearer or X-API-Key"
+// convention) — relying solely on the JWT's embedded projectId hits a real,
+// separate resolveProjectId() param-scavenging fragility on any :id-shaped
+// route (see CONSIDER.md), out of scope to fix here.
+function bearer(tok = token, key = apiKey) {
+  return { Authorization: `Bearer ${tok}`, 'X-Api-Key': key };
 }
 
 async function get(path = '/targets') {
   return fetch(`${baseUrl}${path}`, { headers: bearer() });
 }
-async function post(path, body) {
-  return fetch(`${baseUrl}${path}`, { method: 'POST', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+// Writes now require 'setup' tier (plan_project_roles.md) — default to the
+// explicit-owner token; individual tests can still pass a different token.
+async function post(path, body, tok = ownerToken) {
+  return fetch(`${baseUrl}${path}`, { method: 'POST', headers: { ...bearer(tok), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
-async function put(path, body) {
-  return fetch(`${baseUrl}${path}`, { method: 'PUT', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+async function put(path, body, tok = ownerToken) {
+  return fetch(`${baseUrl}${path}`, { method: 'PUT', headers: { ...bearer(tok), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 }
-async function del(path) {
-  return fetch(`${baseUrl}${path}`, { method: 'DELETE', headers: bearer() });
+async function del(path, tok = ownerToken) {
+  return fetch(`${baseUrl}${path}`, { method: 'DELETE', headers: bearer(tok) });
 }
 
 describe('/targets', () => {
@@ -67,6 +87,11 @@ describe('/targets', () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.deepEqual(body.targets, []);
+  });
+
+  it('POST /targets 403s for a session token with no explicit project role (setup tier required)', async () => {
+    const res = await post('/targets', { type: 'youtube', streamKey: 'nope' }, token);
+    assert.equal(res.status, 403);
   });
 
   it('POST /targets creates a youtube target', async () => {
@@ -168,7 +193,7 @@ describe('/targets', () => {
   it('targets are scoped per api_key', async () => {
     const otherKey = createKey(db, { owner: 'OtherProject' });
     const otherToken = jwt.sign({ sessionId: 'other-session', apiKey: otherKey.key }, JWT_SECRET, { expiresIn: '1h' });
-    const res = await fetch(`${baseUrl}/targets`, { headers: bearer(otherToken) });
+    const res = await fetch(`${baseUrl}/targets`, { headers: bearer(otherToken, otherKey.key) });
     const body = await res.json();
     assert.deepEqual(body.targets, []);
   });

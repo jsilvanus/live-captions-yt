@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import { parseCamera } from '../registry.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
+import { requireTier } from '../route-access.js';
 import { isSecurityBlockError } from '../bridge-security.js';
 
 // 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
@@ -48,6 +49,14 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       return auth(req, res, next);
     });
   }
+
+  // Setup-tier CRUD vs. Production-tier live-control (plan_project_roles.md,
+  // decided 2026-07-26) — see route-access.js's doc comment for the fail-open-
+  // on-no-session / fail-closed-once-authenticated semantics this relies on.
+  // POST /:id/thumbnail/capture and the perception/start|stop routes are
+  // deliberately left ungated — genuinely ambiguous tier, see CONSIDER.md.
+  const requireSetup = requireTier(opts.deps ?? {}, 'setup');
+  const requireProduction = requireTier(opts.deps ?? {}, 'production');
 
   /**
    * Build the computed thumbnailUrl field for a parsed camera row.
@@ -136,7 +145,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // POST /production/cameras — create camera
-  router.post('/', (req, res) => {
+  router.post('/', requireSetup, (req, res) => {
     const {
       name, mixerInput, mixerId = null, controlType = 'none', controlConfig = {},
       sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
@@ -169,7 +178,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // PUT /production/cameras/:id — update camera
-  router.put('/:id', (req, res) => {
+  router.put('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
     if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
@@ -214,7 +223,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // DELETE /production/cameras/:id — delete camera
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
     if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
@@ -258,7 +267,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.get('/:id/thumbnail.jpg', serveThumbnail);
 
   // POST /production/cameras/:id/preset/:presetId — trigger preset
-  router.post('/:id/preset/:presetId', async (req, res) => {
+  router.post('/:id/preset/:presetId', requireProduction, async (req, res) => {
     const { id, presetId } = req.params;
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });

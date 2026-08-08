@@ -1,16 +1,29 @@
 /**
  * Project membership helpers.
  *
- * Access levels: 'owner' | 'admin' | 'member'
- * - owner:  full access; sole holder of delete-project right; only one per project
- * - admin:  full access except cannot delete project
- * - member: captioner by default; admin grants additional permissions
+ * Access levels: 'owner' | 'admin' | 'editor' | 'operator' | 'viewer'
+ * (plan_project_roles.md, decided 2026-07-26 — replaces the old 'member'
+ * value, migrated to 'editor' in schema.js):
+ * - owner:    full access; sole holder of delete-project right; only one per project
+ * - admin:    full access except cannot delete project; the only tier that can
+ *             write in Setup (see requireProjectRole('setup') in middleware/
+ *             project-access.js)
+ * - editor:   can write in Assets (uploads, cue rules); no Setup access
+ * - operator: full live-operate/Production rights (camera/mixer switching,
+ *             PTZ preset recall); no Setup or Assets-write access by itself
+ * - viewer:   read-only everywhere; sees Assets and produced files, not Setup
  *
- * Permission overrides are stored in project_member_permissions as delta
- * on top of the role bundle (granted=1 adds, granted=0 explicitly revokes).
+ * This access_level ladder is the source of truth for the page-scoped Setup/
+ * Assets/Production gates. The ROLE_BUNDLES below are a separate, older,
+ * granular permission-code overlay (project_member_permissions deltas) that
+ * predates that ladder and has no live route enforcement anywhere in this
+ * codebase today (`memberHasPermission` has zero call sites outside this
+ * file) — kept only for the project-members list UI's informational display,
+ * not the thing actually gating requests.
  */
 import { getKey } from './keys.js';
-import { getOrgMembership } from './orgs.js';
+import { getKeysByUserId } from './users.js';
+import { getOrgMembership, listOrganizationsForUser, listOrganizationProjects } from './orgs.js';
 
 const ROLE_BUNDLES = {
   owner:  new Set([
@@ -23,7 +36,9 @@ const ROLE_BUNDLES = {
     'production-operator', 'stream-manager', 'stt-operator', 'planner',
     'stats-viewer', 'device-manager', 'member-manager', 'settings-manager',
   ]),
-  member: new Set(['captioner']),
+  editor: new Set(['captioner', 'file-manager', 'graphics-editor', 'planner', 'stats-viewer']),
+  operator: new Set(['captioner', 'production-operator', 'stream-manager', 'stt-operator', 'graphics-broadcaster', 'planner', 'stats-viewer']),
+  viewer: new Set(['stats-viewer']),
 };
 
 /**
@@ -31,11 +46,11 @@ const ROLE_BUNDLES = {
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {number} userId
- * @param {'owner'|'admin'|'member'} accessLevel
+ * @param {'owner'|'admin'|'editor'|'operator'|'viewer'} accessLevel
  * @param {number|null} [invitedBy]
  * @returns {{ id: number, api_key: string, user_id: number, access_level: string, joined_at: string }}
  */
-export function addMember(db, apiKey, userId, accessLevel = 'member', invitedBy = null) {
+export function addMember(db, apiKey, userId, accessLevel = 'editor', invitedBy = null) {
   db.prepare(`
     INSERT INTO project_members (api_key, user_id, access_level, invited_by)
     VALUES (?, ?, ?, ?)
@@ -207,37 +222,49 @@ export function getMemberAccessLevel(db, apiKey, userId) {
  * org-membership baseline with explicit project membership. Returns the
  * higher of the two, or null if the user has neither.
  *
- * Org membership contributes a flat project-baseline of 'member' regardless
- * of which of the 5 org roles (owner/admin/editor/operator/viewer, see
- * `ROLE_ORDER` in routes/orgs.js) the user holds there — org roles do not
- * cascade into a higher project baseline. That cascade (e.g. org owner ->
- * project admin) is explicitly deferred; see plan_team_org_backend.md's
- * "Future extension (not in scope now)" section.
+ * plan_project_roles.md (decided 2026-07-26) replaces the old flat 'member'
+ * baseline with two org-membership cases:
+ *
+ * - **Org-admin override**: if the user's org role (org_members.role — its
+ *   own separate owner/admin/editor/operator/viewer vocabulary, see
+ *   `ROLE_ORDER` in routes/orgs.js) is 'owner' or 'admin', they resolve to
+ *   project 'admin' unconditionally on a team-visible project — this is on
+ *   top of the ceiling below, not gated by it.
+ * - **Ordinary org member**: any other org role resolves to the project's
+ *   configurable ceiling, `api_keys.org_baseline_role` ('viewer' or 'editor',
+ *   default 'viewer') — never 'admin'. The ceiling is one dial per project,
+ *   not a role-to-role mapping — an org 'operator'/'editor' still only gets
+ *   the ceiling here unless explicitly invited into this project.
+ *
+ * Either way, the higher of (explicit project role, resolved org baseline)
+ * wins, per PROJECT_ROLE_ORDER.
  *
  * A project with `restricted = 1` gets zero org-baseline contribution even
- * when the user is a real org member — only explicit project_members rows
- * grant access on a restricted project. A project with no org_id behaves
- * exactly like `getMemberAccessLevel()` (no org to draw a baseline from).
+ * when the user is a real org member (including org owners/admins — the
+ * override only applies when NOT restricted) — only explicit project_members
+ * rows grant access on a restricted/private project. A project with no
+ * org_id behaves exactly like `getMemberAccessLevel()` (no org to draw a
+ * baseline from).
  *
  * This resolver is for day-to-day *operational* access only. Irreversible/
  * ownership-only actions (transfer ownership, delete project, revoke a key)
  * must keep calling `getMemberAccessLevel()` directly so an org-wide
- * baseline of 'member' can never escalate into a destructive right.
+ * baseline can never escalate into a destructive right.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {string} apiKey
  * @param {number} userId
- * @returns {'owner'|'admin'|'member'|null}
+ * @returns {'owner'|'admin'|'editor'|'operator'|'viewer'|null}
  */
-export const PROJECT_ROLE_ORDER = { member: 1, admin: 2, owner: 3 };
+export const PROJECT_ROLE_ORDER = { viewer: 1, editor: 2, operator: 3, admin: 4, owner: 5 };
 
 export function getEffectiveProjectAccessLevel(db, apiKey, userId) {
   const explicit = getMemberAccessLevel(db, apiKey, userId);
-  // 'owner'/'admin' already beats (or ties) anything an org baseline could
-  // ever contribute ('member') — skip the getKey()/getOrgMembership() lookups
-  // entirely for the common case (this runs on every authenticated request
-  // via middleware/project-access.js).
-  if (explicit === 'owner' || explicit === 'admin') return explicit;
+  // 'owner' already beats anything an org baseline could ever contribute
+  // (the org-admin override tops out at project 'admin') — skip the
+  // getKey()/getOrgMembership() lookups entirely for that common case (this
+  // runs on every authenticated request via middleware/project-access.js).
+  if (explicit === 'owner') return explicit;
 
   const project = getKey(db, apiKey);
   if (!project?.org_id || project.restricted) return explicit;
@@ -245,7 +272,9 @@ export function getEffectiveProjectAccessLevel(db, apiKey, userId) {
   const membership = getOrgMembership(db, project.org_id, userId);
   if (!membership) return explicit;
 
-  const orgBaseline = 'member';
+  const orgBaseline = (membership.role === 'owner' || membership.role === 'admin')
+    ? 'admin'
+    : (project.org_baseline_role === 'editor' ? 'editor' : 'viewer');
   if (!explicit) return orgBaseline;
   return PROJECT_ROLE_ORDER[explicit] >= PROJECT_ROLE_ORDER[orgBaseline] ? explicit : orgBaseline;
 }
@@ -258,4 +287,54 @@ export function getEffectiveProjectAccessLevel(db, apiKey, userId) {
  */
 export function getMemberCount(db, apiKey) {
   return db.prepare('SELECT COUNT(*) as n FROM project_members WHERE api_key = ?').get(apiKey)?.n ?? 0;
+}
+
+/**
+ * Every project a user can see: projects they directly own, projects they
+ * have an explicit `project_members` row on, and team-visible projects
+ * belonging to an org they're a member of (org-baseline/org-admin-override
+ * access, `getEffectiveProjectAccessLevel()`). Each row carries the real
+ * effective access level, not a hardcoded 'owner' — the gap this closes
+ * (plan_project_roles.md, CONSIDER.md): `GET /keys` previously only ever
+ * returned directly-owned projects via `getKeysByUserId()` alone, so a
+ * project member who wasn't the owner — an invited editor/operator/viewer,
+ * or an org admin relying on the org-admin override — had no way to see
+ * that project via `GET /keys` at all.
+ * @param {import('better-sqlite3').Database} db
+ * @param {number} userId
+ * @returns {{ row: object, myAccessLevel: 'owner'|'admin'|'editor'|'operator'|'viewer' }[]}
+ */
+export function getAccessibleProjectsForUser(db, userId) {
+  const owned = getKeysByUserId(db, userId);
+  const seen = new Set(owned.map(row => row.key));
+  const result = owned.map(row => ({ row, myAccessLevel: 'owner' }));
+
+  // Explicit project memberships on projects the user doesn't own.
+  const memberRows = db.prepare('SELECT api_key FROM project_members WHERE user_id = ?').all(userId);
+  for (const { api_key: apiKey } of memberRows) {
+    if (seen.has(apiKey)) continue;
+    seen.add(apiKey);
+    const row = getKey(db, apiKey);
+    if (!row) continue; // stale membership row (shouldn't happen, FK cascades on key delete)
+    const level = getEffectiveProjectAccessLevel(db, apiKey, userId);
+    if (level) result.push({ row, myAccessLevel: level });
+  }
+
+  // Org-baseline access: team-visible projects belonging to an org this user
+  // is a member of, with no explicit membership row of their own.
+  for (const org of listOrganizationsForUser(db, userId)) {
+    for (const project of listOrganizationProjects(db, org.id)) {
+      if (seen.has(project.key)) continue;
+      seen.add(project.key);
+      const row = getKey(db, project.key);
+      // getEffectiveProjectAccessLevel() already zeroes out org-baseline
+      // contribution for a restricted project, but skip the resolver call
+      // entirely for the common case rather than relying on that alone.
+      if (!row || row.restricted) continue;
+      const level = getEffectiveProjectAccessLevel(db, project.key, userId);
+      if (level) result.push({ row, myAccessLevel: level });
+    }
+  }
+
+  return result;
 }

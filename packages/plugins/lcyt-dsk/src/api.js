@@ -67,21 +67,24 @@ export async function initDskControl(db, dskBus, relayManager, { metrics = null,
  * @param {object} dskBus  — DskBus instance
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager
- * @param {{ metrics?: object, settings?: { get: (key: string) => * } }} [opts] —
+ * @param {{ metrics?: object, settings?: { get: (key: string) => * }, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts] —
  *   optional backend metrics handle (plan_metering_audit §3.2:
- *   dsk.template_activations / dsk.broadcasts) and lcyt-backend's
- *   SettingsService (plan_env_to_ui_settings.md, duck-typed)
+ *   dsk.template_activations / dsk.broadcasts), lcyt-backend's
+ *   SettingsService (plan_env_to_ui_settings.md, duck-typed), and the
+ *   Setup-tier role check injected from the composition root
+ *   (plan_project_roles.md, decided 2026-07-26 — lcyt-dsk has no direct
+ *   access to lcyt-backend's project_members table)
  * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
-export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null, settings = null } = {}) {
+export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null, settings = null, deps = {} } = {}) {
   const editorAuth = createEditorAuth(db);
   return {
     /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, dskBus),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics, settings),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics, settings, deps),
     /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
-    dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth)),
+    dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth), deps),
     /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */
     imagesRouter: createImagesRouter(db, editorAuthOrBearer(auth, editorAuth), settings),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */

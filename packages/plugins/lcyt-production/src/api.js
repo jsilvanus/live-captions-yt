@@ -72,6 +72,7 @@ export async function initProductionControl(db, { settings = null } = {}) {
  * @param {import('express').RequestHandler} [opts.auth]  Session/user/device auth middleware (createProjectAccessMiddleware) applied to the camera CRUD routes (plan_ingest_feeds.md's cross-tenant review finding), the mixer routes (plan_vertical_crop.md §4 — a mixer switch needs the acting session's apiKey to report to registry.onProgramChanged()), the bridge instance/command/security-rules routes, and the encoder routes; WHIP/thumbnail/sources kiosk routes and the bridge-agent's own /commands, /status, and .../security-rules/for-agent endpoints stay unauthenticated (those authenticate via a per-bridge token instead — see routes/bridge.js's isUnauthenticatedBridgeRoute()). Previously bridge and encoder routes received no auth at all regardless of this option — that gap is now closed. Omit to keep this router's historical fully-open behavior (e.g. existing route-level tests).
  * @param {ReturnType<typeof createPerceptionManager>} [opts.perceptionManager]  fps30 tracker job dispatch (plan_video_perception.md Phase 2) — omit to 503 the /cameras/:id/perception/* routes (e.g. tests, or a deployment with no ORCHESTRATOR_URL/WORKER_DAEMON_URL configured)
  * @param {import('../../../lcyt-backend/src/settings/service.js').SettingsService} [opts.settings]  Settings service for resolving configuration
+ * @param {{ checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean }} [opts.deps]  Setup/Production tier role check injected from the composition root (plan_project_roles.md, decided 2026-07-26) — see route-access.js. Threaded into all four sub-routers.
  * @returns {import('express').Router}
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
@@ -79,6 +80,7 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   const mediamtxClient = opts.mediamtxClient ?? null;
   const metrics = opts.metrics ?? null;
   const settings = opts.settings ?? null;
+  const deps = opts.deps ?? {};
 
   // Compute camera preview base URL from settings or environment
   const previewBaseUrl = settings ? (settings.get('production.camera_preview_base_url') || `http://localhost:${process.env.PORT || 3000}`) : DEFAULT_PREVIEW_BASE_URL;
@@ -98,10 +100,10 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
     next();
   });
 
-  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: { ...opts.cameraThumbnail, previewBaseUrl }, auth: opts.auth, perceptionManager: opts.perceptionManager }));
-  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, auth: opts.auth }));
-  router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl, { auth: opts.auth }));
-  router.use('/encoders', createEncodersRouter(db, bridgeManager, { auth: opts.auth }));
+  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: { ...opts.cameraThumbnail, previewBaseUrl }, auth: opts.auth, perceptionManager: opts.perceptionManager, deps }));
+  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, auth: opts.auth, deps }));
+  router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl, { auth: opts.auth, deps }));
+  router.use('/encoders', createEncodersRouter(db, bridgeManager, { auth: opts.auth, deps }));
 
   return router;
 }

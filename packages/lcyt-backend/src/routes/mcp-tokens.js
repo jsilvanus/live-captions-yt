@@ -16,33 +16,17 @@
 
 import { Router } from 'express';
 import { createMcpToken, listMcpTokens, updateMcpToken, revokeMcpToken } from '../db/mcp-tokens.js';
-import { getMemberAccessLevel } from '../db/project-members.js';
-
-const EXPLICIT_ADMIN_LEVELS = new Set(['owner', 'admin']);
+import { requireProjectRole } from '../middleware/project-access.js';
 
 /**
  * A personal MCP access token is a durable, exportable credential — minting
- * or revoking one is a Setup-tier action, so org-baseline access (granted
- * automatically to any org member via getEffectiveProjectAccessLevel()) is
- * not enough; it requires an explicit project_members owner/admin row for
- * the authenticated user. GET (listing) stays reachable to anyone who
- * already passed the broader project-access gate.
+ * or revoking one is a Setup-tier action. requireProjectRole(db, 'setup')
+ * requires either an explicit project_members owner/admin row, or an org
+ * owner/admin's unconditional override on a team-visible project
+ * (plan_project_roles.md, decided 2026-07-26) — the ordinary org-baseline
+ * viewer/editor ceiling never satisfies this tier. GET (listing) stays
+ * reachable to anyone who already passed the broader project-access gate.
  */
-function requireExplicitAdmin(db) {
-  return (req, res, next) => {
-    const projectId = req.auth?.projectId || resolveProjectId(req);
-    // No projectId at all is the route handler's own 400 to raise, not this
-    // gate's 403 — let it through unchanged.
-    if (!projectId) return next();
-    const userId = req.user?.userId;
-    const level = userId ? getMemberAccessLevel(db, projectId, userId) : null;
-    if (!level || !EXPLICIT_ADMIN_LEVELS.has(level)) {
-      return res.status(403).json({ error: 'Explicit project owner/admin access required' });
-    }
-    next();
-  };
-}
-
 function resolveProjectId(req) {
   const header = req.headers['x-project-id'] || req.headers['x-api-key'];
   if (typeof header === 'string' && header.trim()) return header.trim();
@@ -61,7 +45,17 @@ function resolveProjectId(req) {
 export function createExternalTokensRouter(db, auth) {
   const router = Router();
   router.use(auth);
-  const explicitAdmin = requireExplicitAdmin(db);
+  // This router's auth is the plain user-JWT middleware (createUserAuthMiddleware),
+  // not scopedAuth()/createProjectAccessMiddleware — it never sets req.auth.projectId
+  // itself, project context always comes from X-Project-Id/X-Api-Key (or body/query)
+  // instead, per this file's own docblock. requireProjectRole() expects that
+  // resolution already done by the time it runs, so do it here first.
+  router.use((req, res, next) => {
+    req.auth = req.auth || {};
+    if (!req.auth.projectId) req.auth.projectId = resolveProjectId(req);
+    next();
+  });
+  const explicitAdmin = requireProjectRole(db, 'setup');
 
   router.post('/', explicitAdmin, (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);

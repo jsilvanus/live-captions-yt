@@ -56,7 +56,7 @@ after(() => new Promise((resolve) => {
 describe('project access middleware', () => {
   it('accepts a project-scoped user token with an explicit project id', async () => {
     const token = jwt.sign(
-      { kind: 'project', type: 'user', userId: 1, email: 'project-access@example.com', projectId: projectKey, projectRole: 'member' },
+      { kind: 'project', type: 'user', userId: 1, email: 'project-access@example.com', projectId: projectKey, projectRole: 'editor' },
       JWT_SECRET,
       { expiresIn: '1h' },
     );
@@ -67,7 +67,7 @@ describe('project access middleware', () => {
     const body = await res.json();
     assert.equal(body.auth.kind, 'project');
     assert.equal(body.auth.projectId, projectKey);
-    assert.equal(body.auth.projectRole, 'member');
+    assert.equal(body.auth.projectRole, 'editor');
   });
 
   it('accepts an external token and records its project and scope metadata', async () => {

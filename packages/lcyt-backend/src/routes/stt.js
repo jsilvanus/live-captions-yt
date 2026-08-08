@@ -28,6 +28,7 @@ import { Router } from 'express';
 import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from 'lcyt-rtmp';
 import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 import { getMetricsInstance } from '../metrics/index.js';
+import { requireProjectRole } from '../middleware/project-access.js';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
 const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
@@ -174,7 +175,12 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── PUT /stt/config ────────────────────────────────────────────────────────
 
-  router.put('/config', auth, (req, res) => {
+  // Setup-tier: STT provider/language/threshold config is a Setup Hub card
+  // (plan_project_roles.md, decided 2026-07-26). /start, /stop, /status,
+  // /events, and /config/source-language (a live fast-switch, not config)
+  // deliberately stay ungated — those are Production-tier operate actions,
+  // out of scope for this pass.
+  router.put('/config', auth, requireProjectRole(db, 'setup'), (req, res) => {
     const { apiKey } = req.session;
     const { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = req.body || {};
 
@@ -210,7 +216,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── POST /stt/source-languages ─────────────────────────────────────────────
 
-  router.post('/source-languages', auth, (req, res) => {
+  router.post('/source-languages', auth, requireProjectRole(db, 'setup'), (req, res) => {
     const { apiKey } = req.session;
     const { lang, label, sortOrder } = req.body || {};
 
@@ -227,7 +233,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── PUT /stt/source-languages/:id ──────────────────────────────────────────
 
-  router.put('/source-languages/:id', auth, (req, res) => {
+  router.put('/source-languages/:id', auth, requireProjectRole(db, 'setup'), (req, res) => {
     const { apiKey } = req.session;
     const { id } = req.params;
     const { label, sortOrder } = req.body || {};
@@ -241,7 +247,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── DELETE /stt/source-languages/:id ───────────────────────────────────────
 
-  router.delete('/source-languages/:id', auth, (req, res) => {
+  router.delete('/source-languages/:id', auth, requireProjectRole(db, 'setup'), (req, res) => {
     const { apiKey } = req.session;
     const { id } = req.params;
 

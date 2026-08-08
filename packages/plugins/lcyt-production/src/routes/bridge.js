@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { requireTier } from '../route-access.js';
 import {
   listBridgeSecurityRules, createBridgeSecurityRule, getBridgeSecurityRule, deleteBridgeSecurityRule,
 } from '../db.js';
@@ -50,8 +51,12 @@ function commandRateLimit(req, res, next) {
 // Routes that must stay unauthenticated even after opts.auth is supplied —
 // these are hit by the bridge *agent* process, not a logged-in user, and
 // already authenticate via bridgeManager.authenticate(token)/X-Bridge-Token
-// (a bridge instance's own secret, unrelated to a user session). Mirrors
-// routes/cameras.js's isUnauthenticatedCameraRoute() carve-out.
+// (a bridge instance's own secret, unrelated to a user session). There is no
+// req.user for the bridge binary to carry, so opts.auth (human project-access
+// middleware) must never run on these — and per-route Setup/Production tier
+// gating (plan_project_roles.md, decided 2026-07-26) never applies to them
+// either, same reasoning. Mirrors routes/cameras.js's
+// isUnauthenticatedCameraRoute() carve-out.
 function isUnauthenticatedBridgeRoute(path) {
   return /^\/commands(\/|$)/.test(path)
     || /^\/status(\/|$)/.test(path)
@@ -62,12 +67,17 @@ function isUnauthenticatedBridgeRoute(path) {
  * @param {import('better-sqlite3').Database} db
  * @param {import('../bridge-manager.js').BridgeManager} bridgeManager
  * @param {string} [publicUrl]  Backend's public URL, used when generating .env files
- * @param {object} [opts]
- * @param {import('express').RequestHandler} [opts.auth]  Session/user/device
- *   auth middleware (createProjectAccessMiddleware), applied to every route
- *   except the bridge-agent-facing ones (see isUnauthenticatedBridgeRoute).
- *   Omit to keep this router's historical fully-open behavior (e.g. existing
- *   route-level tests that construct it directly).
+ * @param {{ auth?: import('express').RequestHandler, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts]
+ *   `opts.auth` (real project-access middleware) was previously never wired
+ *   into this router at all — instance CRUD + command dispatch were fully
+ *   unauthenticated beyond the bridge-agent's own token auth on
+ *   /commands|/status|.../security-rules/for-agent (closed alongside the
+ *   bridge security-layer work). Applied to every route except those three
+ *   (see isUnauthenticatedBridgeRoute). `opts.deps` (plan_project_roles.md,
+ *   decided 2026-07-26) additionally splits Setup-tier instance/rule CRUD
+ *   from Production-tier command dispatch on top of that base auth — see
+ *   route-access.js's doc comment. Both optional/opt-in, same pattern as
+ *   cameras.js/mixers.js; server.js always supplies both in production.
  */
 export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {}) {
   const auth = opts.auth ?? null;
@@ -79,6 +89,18 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
       return auth(req, res, next);
     });
   }
+
+  // Setup-tier instance/security-rule CRUD vs. Production-tier command
+  // dispatch (plan_project_roles.md, decided 2026-07-26) — see
+  // route-access.js's doc comment. GET /instances/:id/env (re-download the
+  // bridge's plaintext auth token) is deliberately NOT gated here — it's a
+  // GET, and per this whole system's own read/write split (requireTier /
+  // requireProjectRole both exempt GET/HEAD/OPTIONS unconditionally), reads
+  // stay open to anyone who already passed opts.auth. That is a real,
+  // separate credential-disclosure gap this pass surfaced but does not fix
+  // — see CONSIDER.md.
+  const requireSetup = requireTier(opts.deps ?? {}, 'setup');
+  const requireProduction = requireTier(opts.deps ?? {}, 'production');
 
   // ── SSE stream: bridge agent connects here ────────────────────────────────
 
@@ -142,7 +164,7 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
 
   // POST /production/bridge/instances — create a bridge instance
   // Returns { id, name, envContent } where envContent is the pre-filled .env
-  router.post('/instances', (req, res) => {
+  router.post('/instances', requireSetup, (req, res) => {
     const { name } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
@@ -159,7 +181,7 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   });
 
   // DELETE /production/bridge/instances/:id — delete a bridge instance
-  router.delete('/instances/:id', (req, res) => {
+  router.delete('/instances/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
@@ -193,7 +215,7 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   // POST /production/bridge/instances/:id/command — send a typed command to the bridge
   // Body: { type: 'tcp_send', host, port, payload }
   //     | { type: 'http_request', method?, url, headers?, body? }
-  router.post('/instances/:id/command', commandRateLimit, async (req, res) => {
+  router.post('/instances/:id/command', commandRateLimit, requireProduction, async (req, res) => {
     const { id } = req.params;
 
     const { type, ...rest } = req.body ?? {};
@@ -242,7 +264,7 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
 
   // POST /production/bridge/instances/:id/security-rules
   // Body: { ruleKind: 'ip'|'command', ruleType: 'allow'|'deny', pattern, description? }
-  router.post('/instances/:id/security-rules', (req, res) => {
+  router.post('/instances/:id/security-rules', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT id FROM prod_bridge_instances WHERE id = ?').get(id);
     if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
@@ -259,7 +281,7 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   });
 
   // DELETE /production/bridge/instances/:id/security-rules/:ruleId
-  router.delete('/instances/:id/security-rules/:ruleId', (req, res) => {
+  router.delete('/instances/:id/security-rules/:ruleId', requireSetup, (req, res) => {
     const { id, ruleId } = req.params;
     const rule = getBridgeSecurityRule(db, ruleId);
     if (!rule || rule.bridge_instance_id !== id) return res.status(404).json({ error: 'Unknown rule' });

@@ -126,7 +126,7 @@ function _listMembers(db, req, res) {
 }
 
 function _inviteMember(db, actingUser, req, res) {
-  const { email, accessLevel = 'member', permissions = [] } = req.body || {};
+  const { email, accessLevel = 'editor', permissions = [] } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email is required' });
 
   const targetUser = getUserByEmail(db, email);
@@ -136,9 +136,9 @@ function _inviteMember(db, actingUser, req, res) {
   const existing = getMember(db, req.params.key, targetUser.id);
   if (existing) return res.status(409).json({ error: 'User is already a member of this project' });
 
-  const validLevels = ['admin', 'member'];
+  const validLevels = ['admin', 'editor', 'operator', 'viewer'];
   if (!validLevels.includes(accessLevel)) {
-    return res.status(400).json({ error: 'accessLevel must be admin or member' });
+    return res.status(400).json({ error: 'accessLevel must be admin, editor, operator, or viewer' });
   }
 
   const member = addMember(db, req.params.key, targetUser.id, accessLevel, actingUser?.userId ?? null);
@@ -169,8 +169,8 @@ function _updateMember(db, req, res) {
   const { accessLevel, permissions } = req.body || {};
 
   if (accessLevel !== undefined) {
-    if (!['admin', 'member'].includes(accessLevel)) {
-      return res.status(400).json({ error: 'accessLevel must be admin or member (cannot set owner this way)' });
+    if (!['admin', 'editor', 'operator', 'viewer'].includes(accessLevel)) {
+      return res.status(400).json({ error: 'accessLevel must be admin, editor, operator, or viewer (cannot set owner this way)' });
     }
     if (member.access_level === 'owner') {
       return res.status(400).json({ error: 'Cannot change access level of owner; use transfer-ownership' });
