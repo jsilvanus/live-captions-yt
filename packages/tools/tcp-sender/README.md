@@ -58,7 +58,12 @@ Type a command and press Enter. The status (connecting/connected/sent/reply) red
 # Wait longer before giving up on a command with no reply at all,
 # and/or lengthen the quiet period used to decide a reply has finished
 TIMEOUT_MS=5000 REPL_IDLE_MS=500 node sender.js 192.168.1.50 6500 --repl --persistent
+
+# Accumulate each step on the line instead of overwriting it
+node sender.js 192.168.1.50 6500 --repl --append
 ```
+
+By default each step (connecting/connected/sent/reply) replaces the last on the line. With `--append`, each step is instead appended, separated by ` → `, so the whole exchange stays visible: `[sender] connecting... → [sender] connected → [sender] → "ROLAND:CUSTOM:QIS;" → [sender] Roland reply: QIS:1`.
 
 ## Building standalone executables
 

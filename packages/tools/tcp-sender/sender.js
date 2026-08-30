@@ -20,10 +20,13 @@
  * own fresh connection (closed once its reply settles); --persistent
  * keeps one connection open for the whole REPL session instead,
  * reconnecting lazily the next time a command is sent after a drop.
+ * --append changes the line itself from overwrite-in-place to
+ * accumulating: each step (connecting/connected/sent/reply) is appended
+ * to the line separated by " → " instead of replacing what was there.
  *
  * Usage:
  *   node sender.js <host> <port> <command>
- *   node sender.js <host> <port> --repl [--persistent]
+ *   node sender.js <host> <port> --repl [--persistent] [--append]
  *
  * Environment variables:
  *   TIMEOUT_MS    How long to wait for a response before closing (default: 2000)
@@ -38,6 +41,7 @@
  *   node sender.js 192.168.1.50 6500 "CAM1:PRESET:3;"
  *   TIMEOUT_MS=5000 node sender.js 192.168.1.50 6500 "CAM1:MOVE:UP;"
  *   node sender.js 192.168.1.50 6500 --repl --persistent
+ *   node sender.js 192.168.1.50 6500 --repl --append
  */
 
 import { createConnection } from 'node:net';
@@ -49,19 +53,20 @@ const [host, portArg, ...commandParts] = args.filter((a) => !a.startsWith('--'))
 const port = Number(portArg);
 const replMode = flags.has('--repl');
 const persistent = flags.has('--persistent');
+const appendMode = flags.has('--append');
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS ?? 2000);
 const REPL_IDLE_MS = Number(process.env.REPL_IDLE_MS ?? 300);
 
 if (!host || !Number.isInteger(port) || port <= 0 || port > 65535 || (!replMode && commandParts.length === 0)) {
   console.error('Usage: node sender.js <host> <port> <command>');
-  console.error('       node sender.js <host> <port> --repl [--persistent]');
+  console.error('       node sender.js <host> <port> --repl [--persistent] [--append]');
   console.error('Example: node sender.js 127.0.0.1 9999 "CAM1:PRESET:3;"');
   console.error('Example: node sender.js 192.168.1.50 6500 --repl --persistent');
   process.exit(1);
 }
 
 if (replMode) {
-  runRepl({ host, port, persistent });
+  runRepl({ host, port, persistent, appendMode });
 } else {
   runOnce({ host, port, command: commandParts.join(' ') });
 }
@@ -104,17 +109,27 @@ function runOnce({ host, port, command }) {
 // REPL mode
 // ---------------------------------------------------------------------------
 
-function runRepl({ host, port, persistent }) {
+function runRepl({ host, port, persistent, appendMode }) {
   const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: '> ' });
   let socket = null; // only tracked/reused when persistent
 
-  // Redraws the current status on one line in place, overwriting whatever
-  // was there before (connecting → connected → sent → reply, in turn).
-  function render(text) {
-    process.stdout.write(`\r\x1b[K${text}`);
+  // Builds a renderer for one command's exchange: in overwrite mode each
+  // call replaces the line (connecting → connected → sent → reply, in
+  // turn); in --append mode each call is instead appended to the line,
+  // separated by " → ", so the whole exchange stays visible.
+  function makeRenderer() {
+    const parts = [];
+    return function render(text) {
+      if (appendMode) {
+        parts.push(text);
+        process.stdout.write(`\r\x1b[K${parts.join(' → ')}`);
+      } else {
+        process.stdout.write(`\r\x1b[K${text}`);
+      }
+    };
   }
 
-  function connect() {
+  function connect(render) {
     return new Promise((resolve, reject) => {
       render('[sender] connecting...');
       const sock = createConnection({ host, port });
@@ -132,9 +147,9 @@ function runRepl({ host, port, persistent }) {
     });
   }
 
-  async function getSocket() {
+  async function getSocket(render) {
     if (persistent && socket && !socket.destroyed) return socket;
-    const sock = await connect();
+    const sock = await connect(render);
     if (persistent) socket = sock;
     return sock;
   }
@@ -147,9 +162,10 @@ function runRepl({ host, port, persistent }) {
     if (!command) { rl.prompt(); return; }
     if (command === 'exit' || command === 'quit') { rl.close(); return; }
 
+    const render = makeRenderer();
     let sock;
     try {
-      sock = await getSocket();
+      sock = await getSocket(render);
     } catch (err) {
       render(`[sender] Error: ${err.message}`);
       process.stdout.write('\n');
