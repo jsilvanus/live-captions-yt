@@ -8,6 +8,10 @@
  * targets (the tcp-echo-server, or real AMX/Roland hardware) without
  * spinning up the full bridge agent or lcyt-web UI.
  *
+ * A NetLinx bridge reply to a query-style Roland command (e.g.
+ * "ROLAND:CUSTOM:QIS;") comes back as "ROLAND:REPLY:<text>;" — this is
+ * additionally parsed out and printed on its own line.
+ *
  * Usage:
  *   node sender.js <host> <port> <command>
  *
@@ -40,7 +44,12 @@ const socket = createConnection({ host, port }, () => {
 });
 
 socket.on('data', (chunk) => {
-  console.log(`[sender] ← ${JSON.stringify(chunk.toString())}`);
+  const text = chunk.toString();
+  console.log(`[sender] ← ${JSON.stringify(text)}`);
+  const rolandReply = /ROLAND:REPLY:(.+?);/.exec(text);
+  if (rolandReply) {
+    console.log(`[sender] Roland reply: ${rolandReply[1]}`);
+  }
 });
 
 socket.on('error', (err) => {

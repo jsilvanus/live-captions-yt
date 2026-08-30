@@ -25,6 +25,8 @@ TIMEOUT_MS=5000 node sender.js 192.168.1.50 6500 "CAM1:MOVE:UP;"
 
 Quote the command if it contains spaces or shell-special characters (`;`, `$`, `'`, `"`).
 
+A NetLinx bridge reply to a query-style Roland command (e.g. `ROLAND:CUSTOM:QIS;`) comes back over the socket as `ROLAND:REPLY:<text>;` (e.g. `ROLAND:REPLY:QIS:1;`); `sender.js` parses this out and prints it as its own `[sender] Roland reply: ...` line in addition to the raw echo.
+
 ## Testing round-trip with the echo server
 
 ```bash
