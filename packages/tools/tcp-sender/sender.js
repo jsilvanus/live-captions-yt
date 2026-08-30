@@ -10,7 +10,8 @@
  *
  * A NetLinx bridge reply to a query-style Roland command (e.g.
  * "ROLAND:CUSTOM:QIS;") comes back as "ROLAND:REPLY:<text>;" — this is
- * additionally parsed out and printed on its own line.
+ * additionally parsed out and printed on its own line. --append (see
+ * below) turns that into one accumulated line instead.
  *
  * --repl starts an interactive mode instead of sending a single command:
  * type a command, press Enter, and the status (connecting/sent/reply)
@@ -20,12 +21,15 @@
  * own fresh connection (closed once its reply settles); --persistent
  * keeps one connection open for the whole REPL session instead,
  * reconnecting lazily the next time a command is sent after a drop.
- * --append changes the line itself from overwrite-in-place to
- * accumulating: each step (connecting/connected/sent/reply) is appended
- * to the line separated by " → " instead of replacing what was there.
+ * --append works in both modes: instead of one console.log per step,
+ * each step (connected/sent/reply/closed) is appended to a single line
+ * separated by " → ", redrawn in place until the exchange finishes, at
+ * which point a newline is committed. In --repl mode it also changes
+ * the per-command line from overwrite-in-place to this accumulating
+ * style.
  *
  * Usage:
- *   node sender.js <host> <port> <command>
+ *   node sender.js <host> <port> <command> [--append]
  *   node sender.js <host> <port> --repl [--persistent] [--append]
  *
  * Environment variables:
@@ -68,26 +72,36 @@ if (!host || !Number.isInteger(port) || port <= 0 || port > 65535 || (!replMode 
 if (replMode) {
   runRepl({ host, port, persistent, appendMode });
 } else {
-  runOnce({ host, port, command: commandParts.join(' ') });
+  runOnce({ host, port, command: commandParts.join(' '), appendMode });
 }
 
 // ---------------------------------------------------------------------------
 // Single-shot mode
 // ---------------------------------------------------------------------------
 
-function runOnce({ host, port, command }) {
+function runOnce({ host, port, command, appendMode }) {
+  // Default: one console.log per step (unchanged from before --append
+  // existed). --append instead redraws a single accumulated line,
+  // separated by " → ", committing a newline once the socket closes.
+  const parts = [];
+  function render(text) {
+    if (!appendMode) { console.log(text); return; }
+    parts.push(text);
+    process.stdout.write(`\r\x1b[K${parts.join(' → ')}`);
+  }
+
   const socket = createConnection({ host, port }, () => {
-    console.log(`[sender] Connected to ${host}:${port}`);
-    console.log(`[sender] → ${JSON.stringify(command)}`);
+    render(`[sender] Connected to ${host}:${port}`);
+    render(`[sender] → ${JSON.stringify(command)}`);
     socket.write(command);
   });
 
   socket.on('data', (chunk) => {
     const text = chunk.toString();
-    console.log(`[sender] ← ${JSON.stringify(text)}`);
+    render(`[sender] ← ${JSON.stringify(text)}`);
     const rolandReply = /ROLAND:REPLY:(.+?);/.exec(text);
     if (rolandReply) {
-      console.log(`[sender] Roland reply: ${rolandReply[1]}`);
+      render(`[sender] Roland reply: ${rolandReply[1]}`);
     }
   });
 
@@ -97,7 +111,8 @@ function runOnce({ host, port, command }) {
   });
 
   socket.on('close', () => {
-    console.log('[sender] Connection closed');
+    render('[sender] Connection closed');
+    if (appendMode) process.stdout.write('\n');
   });
 
   setTimeout(() => {

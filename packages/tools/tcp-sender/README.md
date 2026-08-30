@@ -27,6 +27,12 @@ Quote the command if it contains spaces or shell-special characters (`;`, `$`, `
 
 A NetLinx bridge reply to a query-style Roland command (e.g. `ROLAND:CUSTOM:QIS;`) comes back over the socket as `ROLAND:REPLY:<text>;` (e.g. `ROLAND:REPLY:QIS:1;`); `sender.js` parses this out and prints it as its own `[sender] Roland reply: ...` line in addition to the raw echo.
 
+Pass `--append` to accumulate the whole exchange onto one redrawn line (separated by ` → `) instead of one line per step, committing a final newline once the connection closes:
+
+```bash
+node sender.js 192.168.1.50 6500 --append "ROLAND:CUSTOM:QIS;"
+```
+
 ## Testing round-trip with the echo server
 
 ```bash
