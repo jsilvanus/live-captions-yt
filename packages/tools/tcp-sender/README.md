@@ -39,6 +39,27 @@ node packages/tools/tcp-sender/sender.js 127.0.0.1 9999 "PING"
 
 The sender should print the connection, the outgoing payload, and the echoed response back from the server.
 
+## REPL mode
+
+For sending several commands in a row without re-running the tool each time:
+
+```bash
+# Fresh connection per command (default)
+node sender.js 192.168.1.50 6500 --repl
+
+# One connection kept open for the whole session, reconnected lazily
+# on the next command if it drops
+node sender.js 192.168.1.50 6500 --repl --persistent
+```
+
+Type a command and press Enter. The status (connecting/connected/sent/reply) redraws in place on one line as it happens, settling once no more data has arrived for `REPL_IDLE_MS` (default 300ms) — then a newline is committed and the prompt returns for the next command. Type `exit` or `quit` to leave.
+
+```bash
+# Wait longer before giving up on a command with no reply at all,
+# and/or lengthen the quiet period used to decide a reply has finished
+TIMEOUT_MS=5000 REPL_IDLE_MS=500 node sender.js 192.168.1.50 6500 --repl --persistent
+```
+
 ## Building standalone executables
 
 The sender can be compiled into self-contained executables that run without Node.js installed,

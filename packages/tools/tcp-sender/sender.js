@@ -12,55 +12,190 @@
  * "ROLAND:CUSTOM:QIS;") comes back as "ROLAND:REPLY:<text>;" — this is
  * additionally parsed out and printed on its own line.
  *
+ * --repl starts an interactive mode instead of sending a single command:
+ * type a command, press Enter, and the status (connecting/sent/reply)
+ * redraws in place on one line as it happens, settling once no more data
+ * has arrived for REPL_IDLE_MS — then a newline is committed and the
+ * prompt returns for the next command. By default each command gets its
+ * own fresh connection (closed once its reply settles); --persistent
+ * keeps one connection open for the whole REPL session instead,
+ * reconnecting lazily the next time a command is sent after a drop.
+ *
  * Usage:
  *   node sender.js <host> <port> <command>
+ *   node sender.js <host> <port> --repl [--persistent]
  *
  * Environment variables:
- *   TIMEOUT_MS   How long to wait for a response before closing (default: 2000)
+ *   TIMEOUT_MS    How long to wait for a response before closing (default: 2000)
+ *                 In --repl mode: how long to wait for the *first* byte of
+ *                 a reply before giving up on that command.
+ *   REPL_IDLE_MS  --repl mode only: how long to wait after the *last*
+ *                 received byte before treating the reply as finished
+ *                 (default: 300)
  *
  * Examples:
  *   node sender.js 127.0.0.1 9999 PING
  *   node sender.js 192.168.1.50 6500 "CAM1:PRESET:3;"
  *   TIMEOUT_MS=5000 node sender.js 192.168.1.50 6500 "CAM1:MOVE:UP;"
+ *   node sender.js 192.168.1.50 6500 --repl --persistent
  */
 
 import { createConnection } from 'node:net';
+import { createInterface } from 'node:readline';
 
-const [, , host, portArg, ...commandParts] = process.argv;
+const args = process.argv.slice(2);
+const flags = new Set(args.filter((a) => a.startsWith('--')));
+const [host, portArg, ...commandParts] = args.filter((a) => !a.startsWith('--'));
 const port = Number(portArg);
-const command = commandParts.join(' ');
+const replMode = flags.has('--repl');
+const persistent = flags.has('--persistent');
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS ?? 2000);
+const REPL_IDLE_MS = Number(process.env.REPL_IDLE_MS ?? 300);
 
-if (!host || !Number.isInteger(port) || port <= 0 || port > 65535 || !command) {
+if (!host || !Number.isInteger(port) || port <= 0 || port > 65535 || (!replMode && commandParts.length === 0)) {
   console.error('Usage: node sender.js <host> <port> <command>');
+  console.error('       node sender.js <host> <port> --repl [--persistent]');
   console.error('Example: node sender.js 127.0.0.1 9999 "CAM1:PRESET:3;"');
+  console.error('Example: node sender.js 192.168.1.50 6500 --repl --persistent');
   process.exit(1);
 }
 
-const socket = createConnection({ host, port }, () => {
-  console.log(`[sender] Connected to ${host}:${port}`);
-  console.log(`[sender] → ${JSON.stringify(command)}`);
-  socket.write(command);
-});
+if (replMode) {
+  runRepl({ host, port, persistent });
+} else {
+  runOnce({ host, port, command: commandParts.join(' ') });
+}
 
-socket.on('data', (chunk) => {
-  const text = chunk.toString();
-  console.log(`[sender] ← ${JSON.stringify(text)}`);
-  const rolandReply = /ROLAND:REPLY:(.+?);/.exec(text);
-  if (rolandReply) {
-    console.log(`[sender] Roland reply: ${rolandReply[1]}`);
+// ---------------------------------------------------------------------------
+// Single-shot mode
+// ---------------------------------------------------------------------------
+
+function runOnce({ host, port, command }) {
+  const socket = createConnection({ host, port }, () => {
+    console.log(`[sender] Connected to ${host}:${port}`);
+    console.log(`[sender] → ${JSON.stringify(command)}`);
+    socket.write(command);
+  });
+
+  socket.on('data', (chunk) => {
+    const text = chunk.toString();
+    console.log(`[sender] ← ${JSON.stringify(text)}`);
+    const rolandReply = /ROLAND:REPLY:(.+?);/.exec(text);
+    if (rolandReply) {
+      console.log(`[sender] Roland reply: ${rolandReply[1]}`);
+    }
+  });
+
+  socket.on('error', (err) => {
+    console.error(`[sender] Error: ${err.message}`);
+    process.exitCode = 1;
+  });
+
+  socket.on('close', () => {
+    console.log('[sender] Connection closed');
+  });
+
+  setTimeout(() => {
+    socket.end();
+  }, TIMEOUT_MS);
+}
+
+// ---------------------------------------------------------------------------
+// REPL mode
+// ---------------------------------------------------------------------------
+
+function runRepl({ host, port, persistent }) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout, prompt: '> ' });
+  let socket = null; // only tracked/reused when persistent
+
+  // Redraws the current status on one line in place, overwriting whatever
+  // was there before (connecting → connected → sent → reply, in turn).
+  function render(text) {
+    process.stdout.write(`\r\x1b[K${text}`);
   }
-});
 
-socket.on('error', (err) => {
-  console.error(`[sender] Error: ${err.message}`);
-  process.exitCode = 1;
-});
+  function connect() {
+    return new Promise((resolve, reject) => {
+      render('[sender] connecting...');
+      const sock = createConnection({ host, port });
+      sock.once('connect', () => { render('[sender] connected'); resolve(sock); });
+      sock.once('error', reject);
+      if (persistent) {
+        sock.on('close', () => {
+          if (socket === sock) {
+            socket = null;
+            process.stdout.write('\n[sender] Disconnected — will reconnect on next command\n');
+            rl.prompt();
+          }
+        });
+      }
+    });
+  }
 
-socket.on('close', () => {
-  console.log('[sender] Connection closed');
-});
+  async function getSocket() {
+    if (persistent && socket && !socket.destroyed) return socket;
+    const sock = await connect();
+    if (persistent) socket = sock;
+    return sock;
+  }
 
-setTimeout(() => {
-  socket.end();
-}, TIMEOUT_MS);
+  console.log(`[sender] REPL mode — ${persistent ? 'persistent' : 'per-command'} connection to ${host}:${port}. Type a command and press Enter ("exit" to quit).`);
+  rl.prompt();
+
+  rl.on('line', async (line) => {
+    const command = line.trim();
+    if (!command) { rl.prompt(); return; }
+    if (command === 'exit' || command === 'quit') { rl.close(); return; }
+
+    let sock;
+    try {
+      sock = await getSocket();
+    } catch (err) {
+      render(`[sender] Error: ${err.message}`);
+      process.stdout.write('\n');
+      rl.prompt();
+      return;
+    }
+
+    let idleTimer = null;
+    let done = false;
+
+    const finalize = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(idleTimer);
+      sock.removeListener('data', onData);
+      sock.removeListener('error', onError);
+      process.stdout.write('\n');
+      if (!persistent) sock.end();
+      rl.prompt();
+    };
+
+    const onData = (chunk) => {
+      const text = chunk.toString();
+      const rolandReply = /ROLAND:REPLY:(.+?);/.exec(text);
+      render(rolandReply ? `[sender] Roland reply: ${rolandReply[1]}` : `[sender] ← ${JSON.stringify(text)}`);
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(finalize, REPL_IDLE_MS);
+    };
+
+    const onError = (err) => {
+      render(`[sender] Error: ${err.message}`);
+      finalize();
+    };
+
+    sock.on('data', onData);
+    sock.on('error', onError);
+
+    render(`[sender] → ${JSON.stringify(command)}`);
+    sock.write(command);
+
+    // Nothing received at all — give up after TIMEOUT_MS.
+    idleTimer = setTimeout(finalize, TIMEOUT_MS);
+  });
+
+  rl.on('close', () => {
+    if (socket) socket.destroy();
+    process.exit(0);
+  });
+}
