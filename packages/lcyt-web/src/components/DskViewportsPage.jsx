@@ -13,6 +13,12 @@ export function DskViewportsPage() {
   const params    = new URLSearchParams(window.location.search);
   const serverUrl = (session?.backendUrl || params.get('server') || window.location.origin).replace(/\/$/, '');
   const apiKey    = session?.apiKey || params.get('apikey') || '';
+  // Project-scoped JWT with a real userId — same mechanism DskEditorPage.jsx/
+  // ProductionCamerasPage.jsx use, needed because viewport CRUD writes go
+  // through requireSetup()'s per-user Setup-tier role check
+  // (plan_authentication_refactor.md retired the X-API-Key credential this
+  // page used to send).
+  const projectToken = params.get('token') || session?.projectAccessToken || '';
 
   const [viewports, setViewports]       = useState([]);     // user-defined
   const [selected, setSelected]         = useState(null);   // viewport name or 'landscape'
@@ -31,11 +37,11 @@ export function DskViewportsPage() {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}),
         ...(opts.headers || {}),
       },
     }),
-  [serverUrl, apiKey]);
+  [serverUrl, projectToken]);
 
   function flash(text) {
     setMsg(text);

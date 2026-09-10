@@ -174,6 +174,13 @@ export function DskEditorPage() {
   const params    = new URLSearchParams(window.location.search);
   const apiKey    = session?.apiKey || params.get('apikey') || '';
   const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
+  // Project-scoped JWT with a real userId — same mechanism ProductionCamerasPage.jsx/
+  // ProductionMixersPage.jsx/etc. use for their authenticated fetches, set on
+  // req.session/req.user by the backend's project-access middleware so DSK's
+  // Setup-tier role check (requireSetup() in dsk-templates.js/dsk-viewports.js)
+  // can actually apply here. session.getSessionToken() (the plain per-session
+  // JWT from POST /live) is deliberately NOT used here — it carries no userId.
+  const projectToken = params.get('token') || session?.projectAccessToken || '';
 
   const [templates, setTemplates]     = useState([]);
   const [selectedId, setSelectedId]   = useState(null);   // backend template id
@@ -348,19 +355,18 @@ export function DskEditorPage() {
 
   // ── API ──────────────────────────────────────────────────────────────────
 
-  // NOTE: still X-API-Key, not a project-scoped JWT. plan_authentication_refactor.md
-  // (2026-07-09) explicitly intended to retire this in favor of project-membership
-  // auth (see its Background table), but the frontend migration never happened —
-  // this is that unfinished item, not a deliberate design choice. It also means
-  // DSK template/viewport writes bypass plan_project_roles.md's per-user Setup-tier
-  // role check entirely (see requireSetup()'s authKind === 'apikey' exemption in
-  // lcyt-dsk/src/routes/dsk-templates.js and dsk-viewports.js). Migrating this to
-  // POST /auth/project-token (same exchange useUserAuth.js/ProjectSettingsPage.jsx
-  // already use) would let that role check actually apply here too. See CONSIDER.md.
+  // Project-membership JWT auth (plan_authentication_refactor.md) — the raw
+  // X-API-Key credential this editor used to send has been retired; the
+  // backend's DSK routes now accept JWT Bearer only (editor-auth.js), which
+  // also lets requireSetup()'s per-user Setup-tier role check apply here.
   function apiFetch(path, opts = {}) {
     return fetch(`${serverUrl}${path}`, {
       ...opts,
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey, ...(opts.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}),
+        ...(opts.headers || {}),
+      },
     });
   }
 
@@ -984,7 +990,9 @@ export function DskEditorPage() {
   }
 
   // ── Media Library ────────────────────────────────────────────────────────
-  // Also still X-API-Key, not a project-scoped JWT — see apiFetch()'s note above.
+  // Project-membership JWT auth — see apiFetch()'s note above. Not routed
+  // through apiFetch itself since its 'Content-Type: application/json'
+  // default would clobber this upload's multipart FormData body.
 
   async function uploadImage(file, shorthand) {
     setImgUploading(true); setImgUploadErr('');
@@ -994,7 +1002,7 @@ export function DskEditorPage() {
       fd.append('shorthand', shorthand);
       const res = await fetch(`${serverUrl}/images`, {
         method: 'POST',
-        headers: { 'X-API-Key': apiKey },
+        headers: { ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}) },
         body: fd,
       });
       if (!res.ok) { const txt = await res.text(); throw new Error(txt); }
@@ -1008,7 +1016,7 @@ export function DskEditorPage() {
     try {
       await fetch(`${serverUrl}/images/${id}`, {
         method: 'DELETE',
-        headers: { 'X-API-Key': apiKey },
+        headers: { ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}) },
       });
       await loadImages();
     } catch {}

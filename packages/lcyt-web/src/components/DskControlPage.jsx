@@ -1,7 +1,8 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { templateSlug } from '../lib/formatting.js';
+import { readPersistedSessionConfig } from '../lib/projectSession.js';
 import { DskBroadcastAssetPanel } from './DskBroadcastAssetPanel.jsx';
 
 /**
@@ -13,7 +14,22 @@ import { DskBroadcastAssetPanel } from './DskBroadcastAssetPanel.jsx';
  * Allows activating a template in the Playwright renderer and injecting
  * live data (name, title etc.) without reloading the renderer page.
  *
- * Auth: X-API-Key header (no live caption session required).
+ * Auth: sidebar mode (/graphics/control) sends the caption-session Bearer
+ * JWT (plan_authentication_refactor.md — the raw X-API-Key credential this
+ * page used to send was retired along with DskEditorPage.jsx's). Standalone
+ * mode (/dsk-control/:key) has no SessionContext at all — it's rendered with
+ * no <AppProviders> wrapper (main.jsx's getStandalonePage()) — so it can't
+ * get a token from React context. It falls back to reading the same
+ * localStorage-persisted project session every other already-logged-in page
+ * writes (lib/projectSession.js's readPersistedSessionConfig(), set by
+ * activateProject() when a project is entered from /projects) — this is the
+ * intended "same login, opened in another tab/screen" usage this standalone
+ * page exists for, not a fresh no-login credential. Only used when the
+ * persisted session's apiKey matches this page's own :key — a different
+ * project's leftover token must never be sent here. This page's routes
+ * (activate/broadcast/renderer start-stop) aren't Setup-tier gated (see
+ * CONSIDER.md), so the broader project-membership check any valid project
+ * token satisfies is enough; no admin/owner role is required.
  */
 
 const btnStyle = {
@@ -88,9 +104,21 @@ export function DskControlPage() {
   const apiKey = session?.apiKey
     || (window.location.pathname.startsWith('/dsk-control/') ? (pathParts[2] || '') : '');
   const params = new URLSearchParams(window.location.search);
-  const serverUrl = (session?.backendUrl || params.get('server') || '').replace(/\/$/, '');
-  // /broadcasts routes need a Bearer JWT — only available in sidebar mode
-  const sessionToken = session?.getSessionToken?.() || null;
+
+  // Standalone mode has no SessionContext — fall back to the same
+  // localStorage-persisted session every other logged-in page reads, but
+  // only when it's for *this* project (a leftover token for a different
+  // project must never be sent here).
+  const persisted = useMemo(() => (session ? null : readPersistedSessionConfig()), [session]);
+  const persistedMatchesThisProject = Boolean(persisted?.apiKey && persisted.apiKey === apiKey && persisted.projectAccessToken);
+
+  const serverUrl = (session?.backendUrl || persisted?.backendUrl || params.get('server') || '').replace(/\/$/, '');
+  // /broadcasts routes need a Bearer JWT — sidebar mode has a caption-session
+  // token; standalone mode uses the persisted project-access token instead
+  // (there is no /live session to speak of in a bare standalone tab).
+  const sessionToken = session?.getSessionToken?.()
+    || (persistedMatchesThisProject ? persisted.projectAccessToken : null);
+  const standaloneNeedsLogin = isStandalone && Boolean(apiKey) && !persistedMatchesThisProject;
 
   const [templates, setTemplates]         = useState([]);  // { id, name, updated_at, templateJson? }
   const [activeIds, setActiveIds]         = useState([]);  // selected template ids (multi-select)
@@ -112,7 +140,7 @@ export function DskControlPage() {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         ...(opts.headers || {}),
       },
     });
@@ -335,6 +363,14 @@ export function DskControlPage() {
         {session
           ? 'Connect to a backend first (click Connect in the top bar).'
           : 'Missing API key in URL path or ?server= parameter.'}
+      </div>
+    );
+  }
+
+  if (standaloneNeedsLogin) {
+    return (
+      <div style={{ padding: 32, color: 'var(--color-text-muted, #888)', fontFamily: 'sans-serif', fontSize: 16 }}>
+        Log in to this project in another tab first (open it from <strong>Projects</strong> and click <strong>Enter</strong>), then reload this page — this standalone control panel reuses that login rather than a separate credential.
       </div>
     );
   }

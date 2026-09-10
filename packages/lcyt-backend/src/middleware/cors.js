@@ -5,7 +5,7 @@ const CORS_METHODS = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
  * Dynamic CORS middleware.
  *
  * - POST /live and GET /health: permissive — any origin may call (API key is the real gate)
- * - /dsk/* and /images: permissive — authenticated by X-API-Key or Bearer JWT, not session domain
+ * - /dsk/* and /images: permissive — authenticated by Bearer JWT, not session domain
  * - /events with ?token=: permissive — authenticated by token, origin is not the security gate
  * - /keys routes: permissive CORS — user project CRUD uses Bearer JWT from the browser; admin key is protected by the route handler
  * - All other routes: look up sessions by domain; allow only registered origins
@@ -54,7 +54,7 @@ export function createCorsMiddleware(store) {
       // /auth/*: login/register happen before any session exists, so there is no
       // session domain to match against yet — the password/JWT is the real gate
       path.startsWith('/auth') ||
-      // DSK routes: authenticated by X-API-Key or Bearer JWT, not by session domain
+      // DSK routes: authenticated by Bearer JWT, not by session domain
       path.startsWith('/dsk') ||
       path.startsWith('/images') ||
       // /events with ?token= is token-authenticated; origin is not the security gate

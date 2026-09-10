@@ -19,6 +19,10 @@ export function ViewportsSection() {
   const session = useSessionContext();
   const backendUrl = session?.backendUrl;
   const apiKey = session?.apiKey;
+  // Project-scoped JWT with a real userId — viewport writes go through
+  // requireSetup()'s per-user Setup-tier role check (plan_authentication_refactor.md
+  // retired the X-API-Key credential this section used to send).
+  const projectToken = session?.projectAccessToken;
 
   const [viewports, setViewports] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -30,8 +34,12 @@ export function ViewportsSection() {
 
   const apiFetch = useCallback((path, opts = {}) => fetch(`${backendUrl}${path}`, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey, ...(opts.headers || {}) },
-  }), [backendUrl, apiKey]);
+    headers: {
+      'Content-Type': 'application/json',
+      ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}),
+      ...(opts.headers || {}),
+    },
+  }), [backendUrl, projectToken]);
 
   const load = useCallback(async () => {
     if (!backendUrl || !apiKey) return;

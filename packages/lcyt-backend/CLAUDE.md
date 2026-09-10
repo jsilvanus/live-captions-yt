@@ -178,18 +178,18 @@ GET/POST/DELETE /crop/source-map[/:id]  — production-follow mapping CRUD (Bear
 GET  /dsk/:apikey/images           — list DSK overlay images for an API key (public)
 GET  /dsk/:apikey/events           — SSE stream of graphics events for DSK page (public)
 GET  /dsk/:slugOrKey/viewports/public — list public viewport definitions + projectSlug (public; segment resolves public slug then raw api key)
-GET/POST/PUT/DELETE /dsk/:apikey/templates — DSK template CRUD (JWT Bearer or X-API-Key)
-POST /dsk/:apikey/templates/:id/activate   — activate a template in renderer (JWT Bearer or X-API-Key)
-POST /dsk/:apikey/template         — render a one-off template (JWT Bearer or X-API-Key)
-POST /dsk/:apikey/broadcast        — push live data to renderer without reload (JWT Bearer or X-API-Key)
-GET  /dsk/:apikey/renderer/status  — renderer running state (JWT Bearer or X-API-Key)
-POST /dsk/:apikey/renderer/start   — start RTMP capture for a key (JWT Bearer or X-API-Key)
-POST /dsk/:apikey/renderer/stop    — stop RTMP capture for a key (JWT Bearer or X-API-Key)
-GET/POST/PUT/DELETE /dsk/:apikey/viewports — viewport CRUD (JWT Bearer or X-API-Key)
+GET/POST/PUT/DELETE /dsk/:apikey/templates — DSK template CRUD (Bearer token)
+POST /dsk/:apikey/templates/:id/activate   — activate a template in renderer (Bearer token)
+POST /dsk/:apikey/template         — render a one-off template (Bearer token)
+POST /dsk/:apikey/broadcast        — push live data to renderer without reload (Bearer token)
+GET  /dsk/:apikey/renderer/status  — renderer running state (Bearer token)
+POST /dsk/:apikey/renderer/start   — start RTMP capture for a key (Bearer token)
+POST /dsk/:apikey/renderer/stop    — stop RTMP capture for a key (Bearer token)
+GET/POST/PUT/DELETE /dsk/:apikey/viewports — viewport CRUD (Bearer token)
 POST /dsk-rtmp/on_publish          — nginx-rtmp on_publish callback for DSK RTMP
 POST /dsk-rtmp/on_publish_done     — nginx-rtmp on_publish_done callback for DSK RTMP
 
-GET/POST/PUT/DELETE /images/:id — image upload/management for DSK overlays (JWT Bearer or X-API-Key)
+GET/POST/PUT/DELETE /images/:id — image upload/management for DSK overlays (Bearer token)
 GET  /platforms           — list connected broadcast-platform accounts for the project, masked; several per platform is normal (Bearer token)
 GET  /platforms/:platform/oauth/start    — begin server-side OAuth; returns { url } to navigate to (Bearer token)
 GET  /platforms/:platform/oauth/callback — provider redirect target; PUBLIC by necessity, bound to a project solely by the signed `state` param
@@ -477,9 +477,8 @@ PUT    /admin/orgs/:id/feature-overrides/:code     — set an org-level override
 1. **Session JWT Bearer** (`Authorization: Bearer <token>`) — session-level; payload `{ sessionId, apiKey }`. Used for `/live`, `/captions`, `/sync`, `/events`, `/stats`, `/file`, `/mic`.
 2. **User JWT Bearer** (`Authorization: Bearer <token>`) — user-level; payload `{ type: 'user', userId, email }`. Used for `/auth/me`, `/auth/change-password`, user-owned `/keys` routes. 30-day TTL.
 3. **Admin API key** (`X-Admin-Key` header) — server-level; for `/keys` admin routes. Uses constant-time comparison.
-4. **DSK Editor API key** (`X-API-Key` header) — API key auth for DSK template management and image routes (no live session required). Falls through to JWT Bearer if header absent (`editorAuthOrBearer` middleware).
-5. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain` where `streamKey` defaults to `''` in target-array mode.
-6. **Project-access middleware** (`middleware/project-access.js`, `createProjectAccessMiddleware(db, jwtSecret, { requiredScope, jwtOnly })`) gates the project-scoped routers. `req.auth` = `{ kind, projectId, projectRole, scopes?, … }`. **A token's access = its scopes** (session/user/project/device JWTs and full-access/NULL-scope external tokens have full delegation and bypass scope checks; scoped external tokens are limited):
+4. Sessions are ephemeral (in-memory). Session ID = SHA-256 of `apiKey:streamKey:domain` where `streamKey` defaults to `''` in target-array mode.
+5. **Project-access middleware** (`middleware/project-access.js`, `createProjectAccessMiddleware(db, jwtSecret, { requiredScope, jwtOnly })`) gates the project-scoped routers. `req.auth` = `{ kind, projectId, projectRole, scopes?, … }`. **A token's access = its scopes** (session/user/project/device JWTs and full-access/NULL-scope external tokens have full delegation and bypass scope checks; scoped external tokens are limited):
    - **REST routers** (DSK, connectors/variables/actions, roles, cues, STT/targets/translation, ai/agent, mcp-tokens) are mounted with `scopedAuth('<resource>')` — a colon-less `requiredScope` is checked as `<resource>:<verb>` with the verb inferred from the HTTP method (`GET`→`read`, else `write`). So a scoped external token needs e.g. `variable:read` to `GET /variables`, `dsk:write` to mutate DSK. Event scopes and REST scopes are **independent** — a `dsk.*` topic scope grants no REST access.
    - **Unified event stream** `GET /events/stream` — external tokens gated on exact `requiredScope: 'events:read'`, topics narrowed by `tokenAllowsTopic`. `GET /events/topics` is public.
    - **Legacy per-plugin SSE** now only includes `/stt/events` (JWT-only). Variables and role events are consumed via `/events/stream`.

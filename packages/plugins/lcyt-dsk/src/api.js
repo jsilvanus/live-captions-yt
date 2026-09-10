@@ -31,7 +31,6 @@ import { createDskTemplatesRouter } from './routes/dsk-templates.js';
 import { createDskViewportsRouter } from './routes/dsk-viewports.js';
 import { createImagesRouter } from './routes/images.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
-import { createEditorAuth, editorAuthOrBearer } from './middleware/editor-auth.js';
 export { deleteAllImages, listImages, getImageByKey, updateImageSettings, deleteImage, safeApiKey } from './db/images.js';
 
 /**
@@ -77,16 +76,15 @@ export async function initDskControl(db, dskBus, relayManager, { metrics = null,
  * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
 export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null, settings = null, deps = {} } = {}) {
-  const editorAuth = createEditorAuth(db);
   return {
     /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, dskBus),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, editorAuth, relayManager, dskBus, metrics, settings, deps),
-    /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer or X-API-Key editor auth) */
-    dskViewportsRouter: createDskViewportsRouter(db, editorAuthOrBearer(auth, editorAuth), deps),
-    /** Mount at /images — authenticated upload (JWT or X-API-Key); public serve; viewport settings */
-    imagesRouter: createImagesRouter(db, editorAuthOrBearer(auth, editorAuth), settings),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics, settings, deps),
+    /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer) */
+    dskViewportsRouter: createDskViewportsRouter(db, auth, deps),
+    /** Mount at /images — authenticated upload (JWT Bearer); public serve; viewport settings */
+    imagesRouter: createImagesRouter(db, auth, settings),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */
     dskRtmpRouter: createDskRtmpRouter(db, relayManager, settings),
   };
