@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { createAuthWithBypass } from '../auth-bypass.js';
 import { requireTier } from '../route-access.js';
 import {
   listBridgeSecurityRules, createBridgeSecurityRule, getBridgeSecurityRule, deleteBridgeSecurityRule,
@@ -83,12 +84,8 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   const auth = opts.auth ?? null;
   const router = Router();
 
-  if (auth) {
-    router.use((req, res, next) => {
-      if (isUnauthenticatedBridgeRoute(req.path)) return next();
-      return auth(req, res, next);
-    });
-  }
+  const authMiddleware = createAuthWithBypass(auth, req => isUnauthenticatedBridgeRoute(req.path));
+  if (authMiddleware) router.use(authMiddleware);
 
   // Setup-tier instance/security-rule CRUD vs. Production-tier command
   // dispatch (plan_project_roles.md, decided 2026-07-26) — see

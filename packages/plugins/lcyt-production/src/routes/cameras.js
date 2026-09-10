@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseCamera } from '../registry.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
 import { requireTier } from '../route-access.js';
@@ -43,12 +44,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   const auth = opts.auth ?? null;
   const router = Router();
 
-  if (auth) {
-    router.use((req, res, next) => {
-      if (isUnauthenticatedCameraRoute(req.path)) return next();
-      return auth(req, res, next);
-    });
-  }
+  const authMiddleware = createAuthWithBypass(auth, req => isUnauthenticatedCameraRoute(req.path));
+  if (authMiddleware) router.use(authMiddleware);
 
   // Setup-tier CRUD vs. Production-tier live-control (plan_project_roles.md,
   // decided 2026-07-26) — see route-access.js's doc comment for the fail-open-

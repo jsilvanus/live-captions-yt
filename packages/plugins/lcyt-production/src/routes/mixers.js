@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
+import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseMixer } from '../registry.js';
 import { buildSwitchCommand } from '../crud.js';
 import { requireTier } from '../route-access.js';
@@ -56,12 +57,8 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   const auth = opts.auth ?? null;
   const router = Router();
 
-  if (auth) {
-    router.use((req, res, next) => {
-      if (isUnauthenticatedMixerRoute(req)) return next();
-      return auth(req, res, next);
-    });
-  }
+  const authMiddleware = createAuthWithBypass(auth, isUnauthenticatedMixerRoute);
+  if (authMiddleware) router.use(authMiddleware);
 
   // Setup-tier CRUD vs. Production-tier live-control (plan_project_roles.md,
   // decided 2026-07-26) — see route-access.js's doc comment. Fails open for

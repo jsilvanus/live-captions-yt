@@ -1150,17 +1150,15 @@ pass:
 
 ---
 
-## Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time
+## ~~Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time~~ — RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()` (which additionally takes `req`, not `path`, and is a *conditional* bypass via `hasAuthCredentials(req)`, not a blanket one)
 
-**Finding:** Three routers now each independently implement "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function. `routes/bridge.js`'s own comment acknowledges the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper (e.g. a `createAuthWithBypass(auth, matcher)` middleware factory). The three copies aren't even structurally aligned — `mixers.js`'s version has a different signature and conditional semantics from the other two — so there's no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`."
+**Original finding:** Three routers now each independently implement "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function. `routes/bridge.js`'s own comment acknowledges the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper (e.g. a `createAuthWithBypass(auth, matcher)` middleware factory). The three copies aren't even structurally aligned — `mixers.js`'s version has a different signature and conditional semantics from the other two — so there's no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`."
 
-**Why skipped:** Extracting a shared bypass-middleware factory is a real, reasonable simplification, but touching three already-shipped, already-tested routers' auth wiring in the same pass that just closed a real auth gap on two of them felt like more risk than the current, narrow scope (bridge TCP command / IP security) warranted — a regression in this factoring would reopen exactly the kind of hole this pass exists to close. Better done as its own deliberate, focused refactor with its own review pass.
+**Resolved 2026-09-10:** Added `packages/plugins/lcyt-production/src/auth-bypass.js` exporting `createAuthWithBypass(auth, matcher)` exactly as recommended below — returns `null` when `auth` is falsy (preserving each router's existing `if (authMiddleware) router.use(...)` opt-in pattern), otherwise wraps `auth` so any request `matcher(req)` matches skips it. All three routers now call it, passing their existing matcher function unchanged (`isUnauthenticatedBridgeRoute`/`isUnauthenticatedCameraRoute`/`isUnauthenticatedMixerRoute` kept their own signatures and logic — only the duplicated router-level wiring boilerplate was extracted, not the genuinely-different per-router matching rules). Zero behavior change: 272/272 tests in `packages/plugins/lcyt-production` pass unmodified.
 
-**Recommendation:** If a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
-
-(Found during: code-review pass on the bridge security layer, 2026-07-26.)
+(Found during: code-review pass on the bridge security layer, 2026-07-26. Resolved same-area follow-up, 2026-09-10.)
 
 ---
 
