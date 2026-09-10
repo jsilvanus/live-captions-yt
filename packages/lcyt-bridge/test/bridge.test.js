@@ -532,6 +532,62 @@ describe('Bridge — _handleCommand() model_call', () => {
     assert.match(status.error, /requires an endpoint/);
     bridge.destroy();
   });
+
+  it('passes redirect: "error" to both the sourceUrl fetch and the endpoint POST', async () => {
+    const bridge = makeBridge();
+    mockFetch(bridge);
+
+    const fetchCalls = [];
+    global.fetch = async (url, init) => {
+      fetchCalls.push({ url, init });
+      if (url.includes('/preview/')) {
+        return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('img') };
+      }
+      return { ok: true, status: 200, text: async () => '{}' };
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call',
+      requestId: 'mc-5',
+      sourceUrl: 'http://backend.test/preview/key1/incoming.jpg',
+      endpoint: 'http://ollama:11434/api/generate',
+      model: 'llava',
+      prompt: 'x',
+    }));
+
+    assert.equal(fetchCalls.length, 2);
+    assert.equal(fetchCalls[0].init.redirect, 'error', 'sourceUrl fetch');
+    assert.equal(fetchCalls[1].init.redirect, 'error', 'endpoint POST');
+    bridge.destroy();
+  });
+
+  it('a redirect from either the sourceUrl or the endpoint is rejected, not followed, and surfaces as a normal { ok: false } command failure', async () => {
+    const bridge = makeBridge();
+    const statusCalls = mockFetch(bridge);
+
+    // Endpoint 3xx's — mirrors undici's real redirect: 'error' rejection.
+    global.fetch = async (url, init) => {
+      if (init.redirect === 'error') throw new TypeError('fetch failed');
+      return { ok: true, status: 302 };
+    };
+
+    const errEvent = new Promise(r => bridge.once('command:error', r));
+    await bridge._handleCommand(JSON.stringify({
+      type: 'model_call',
+      requestId: 'mc-6',
+      endpoint: 'http://ollama:11434/api/generate', // allowed host that 302s elsewhere
+      model: 'llava',
+      prompt: 'x',
+    }));
+
+    const status = statusCalls.find(c => c.requestId === 'mc-6');
+    assert.ok(status, 'should have posted a status — not an unhandled rejection/crash');
+    assert.equal(status.ok, false);
+    assert.match(status.error, /fetch failed/);
+    const evt = await errEvent;
+    assert.equal(evt.type, 'model_call');
+    bridge.destroy();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -778,6 +834,56 @@ describe('Bridge — _handleCommand() http_request', () => {
     const evt = await errEvent;
     assert.equal(evt.type, 'http_request');
     assert.ok(evt.error.includes('timeout'));
+    bridge.destroy();
+  });
+
+  it('_httpRequest passes redirect: "error" to fetch() — never transparently follows a redirect', async () => {
+    const bridge = makeBridge();
+    bridge.destroy(); // not starting SSE
+
+    const fetchCalls = [];
+    const origFetch = global.fetch;
+    global.fetch = async (url, init) => {
+      fetchCalls.push({ url, init });
+      return { ok: true, status: 200, text: async () => '{}' };
+    };
+
+    await bridge._httpRequest({ method: 'GET', url: 'http://10.0.0.5/Monarch/sdk/status', headers: {} });
+
+    global.fetch = origFetch;
+
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].init.redirect, 'error');
+  });
+
+  it('a redirect response from the target is rejected rather than followed, and surfaces as a normal { ok: false } command failure', async () => {
+    const bridge = makeBridge();
+    const statusCalls = mockFetch(bridge);
+
+    // Mirrors undici's real behavior for redirect: 'error' — fetch() itself
+    // rejects the moment a 3xx response comes back, instead of resolving
+    // with a redirect Response the caller could otherwise follow.
+    global.fetch = async (url, init) => {
+      if (init.redirect === 'error') {
+        throw new TypeError('fetch failed'); // undici: "unexpected redirect"
+      }
+      return { ok: true, status: 302 };
+    };
+
+    const errEvent = new Promise(r => bridge.once('command:error', r));
+    await bridge._handleCommand(JSON.stringify({
+      type: 'http_request',
+      requestId: 'req-http-redirect',
+      method: 'GET',
+      url: 'http://10.0.0.5/Monarch/sdk/status', // allowed host that 302s elsewhere
+    }));
+
+    const call = statusCalls.find(c => c.requestId === 'req-http-redirect');
+    assert.ok(call, 'should have posted a status — not an unhandled rejection/crash');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /fetch failed/);
+    const evt = await errEvent;
+    assert.equal(evt.type, 'http_request');
     bridge.destroy();
   });
 

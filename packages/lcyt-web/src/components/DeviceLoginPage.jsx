@@ -87,14 +87,30 @@ export function DeviceLoginPage() {
     if (!connectedRole) return;
     const base = server.replace(/\/$/, '');
     switch (connectedRole.roleType) {
-      case 'camera':
-        window.location.href = `/production/camera/${connectedRole.apiKey}`;
-        break;
+      // NOTE: no 'camera' case here (deliberately, see below) — only 'mixer'
+      // has a real per-device destination.
+      //
+      // `/production/camera/:key` (CameraStreamPage.jsx) needs a real
+      // cameraId (`prod_cameras.id`), but a device role carries no such
+      // binding anywhere in the data model: `POST /auth/device-login`
+      // (packages/lcyt-backend/src/routes/device-roles.js) never returns one
+      // — its response is { token, apiKey, roleId, roleType, name,
+      // permissions } — and `project_device_roles` (packages/lcyt-backend/
+      // src/db/device-roles.js) has no camera_id/cameraId column; its
+      // generic `config` JSON blob is never populated with one by any
+      // existing UI (CreateDeviceRoleForm.jsx only ever sends
+      // { roleType, name }). So a 'camera' role has no specific camera to
+      // resolve to — this redirect target was conceptually wrong from the
+      // start, not just built from the wrong id field. Until a real
+      // per-device camera binding is added to the data model, fall through
+      // to the same project-preloaded captioning UI 'mic'/'custom' already
+      // use below, which only needs the apiKey this login response does
+      // provide.
       case 'mixer':
         window.location.href = `/production/lcyt-mixer/${connectedRole.apiKey}`;
         break;
       default:
-        // For mic and custom: go to the main captioning UI pre-loaded with this project
+        // For camera, mic and custom: go to the main captioning UI pre-loaded with this project
         try {
           const existing = JSON.parse(localStorage.getItem(KEYS.session?.config || 'lcyt-session-config') || '{}');
           localStorage.setItem(KEYS.session?.config || 'lcyt-session-config', JSON.stringify({
@@ -161,7 +177,9 @@ export function DeviceLoginPage() {
             onClick={handleNavigate}
             style={{ width: '100%', padding: '12px', fontSize: 15 }}
           >
-            Go to {connectedRole.roleType === 'camera' ? 'camera view' : connectedRole.roleType === 'mixer' ? 'mixer' : 'captioning'}
+            {/* 'camera' falls through to the captioning-UI label too — see the
+                no-camera-binding note in handleNavigate() above. */}
+            Go to {connectedRole.roleType === 'mixer' ? 'mixer' : 'captioning'}
           </button>
         </div>
       </div>
