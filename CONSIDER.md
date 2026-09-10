@@ -1066,7 +1066,7 @@ pass:
 
 ---
 
-## Org-baseline access reaches every scopedAuth router, not just the 6 tested — interim fix + follow-up plan
+## ~~Org-baseline access reaches every scopedAuth router, not just the 6 tested~~ — interim fix + follow-up plan, RESOLVED
 
 **Where:** `packages/lcyt-backend/src/middleware/project-access.js`, `packages/lcyt-backend/src/routes/mcp-tokens.js`, `packages/plugins/lcyt-agent/src/routes/ai-providers-project.js`, `docs/plans/plan_project_roles.md` (new)
 
@@ -1074,9 +1074,9 @@ pass:
 
 **Resolution:** discussed with the project owner, who specified a fuller target model (per-project visibility private/team, a configurable org-baseline ceiling of viewer/editor — never admin — a unified owner/admin/editor/viewer role vocabulary, and page-scoped write gates: Setup=explicit-admin-only, Assets=editor+, Production=still-undecided). Building that full model was explicitly scoped OUT of this PR (still evolving — the Production/operator question is open) in favor of a narrow, well-tested interim fix: `POST /mcp-tokens`/`PATCH`/`DELETE` and `POST/PUT/DELETE /ai/providers` now require **explicit** `project_members` owner/admin (`getMemberAccessLevel`, not the org-baseline-inclusive resolver) regardless of the broader gate. `GET` on both stays on the broad gate.
 
-**Left open, tracked in `docs/plans/plan_project_roles.md`:** ~~every other Setup-shaped route still has only the broad org-baseline gate~~ — mostly closed since. `lcyt-dsk`'s template/viewport routers, `targets`/`translation`/`stt config` were gated in the 2026-07-26–07-31 phase plan; `lcyt-production`'s camera/mixer/encoder/bridge CRUD got the (by-then-decided) `operator` tier the same pass. `lcyt-rtmp`'s egress/ingestion/radio config and `icons`/`storage` were the two pieces that phase plan explicitly deferred on an auth-model blocker (ephemeral-session-only middleware, no resolvable `userId`) — both migrated onto `scopedAuth()`/`requireProjectRole('setup')` 2026-09-10, see this file's own resolved entry for the recipe. **Still genuinely open:** `lcyt-connectors` (also credential-bearing, same risk class as `ai/providers` — never touched by any of the above passes).
+**Left open at the time, tracked in `docs/plans/plan_project_roles.md` — now closed:** `lcyt-dsk`'s template/viewport routers, `lcyt-connectors`, `targets`/`translation`/`stt config` were all gated in the 2026-07-26 phase plan (commit `c083332`, "Phase 2 Streams A+C: Setup-tier gates on targets/translation/stt/connectors/roles" — `/connectors` specifically got `scopedAuth('connector')` + `requireProjectRole(db, 'setup')` in `server.js`, same shape as everything else here); `lcyt-production`'s camera/mixer/encoder/bridge CRUD got the (by-then-decided) `operator` tier the same pass. `lcyt-rtmp`'s egress/ingestion/radio config and `icons`/`storage` were the two pieces that phase plan explicitly deferred on a separate auth-model blocker (ephemeral-session-only middleware, no resolvable `userId`) — both migrated onto `scopedAuth()`/`requireProjectRole('setup')` 2026-09-10, see this file's own resolved entry for that migration's recipe. Every route this entry named is now gated; nothing outstanding from this specific finding.
 
-(Found during: `/code-review` pass on PR #289, 2026-07-20 — design conversation follow-up.)
+(Found during: `/code-review` pass on PR #289, 2026-07-20 — design conversation follow-up. Fully resolved as of 2026-09-10.)
 
 ---
 
