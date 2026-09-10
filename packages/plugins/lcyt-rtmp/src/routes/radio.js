@@ -162,7 +162,7 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager, meta = {}) {
  * @param {import('express').RequestHandler} [auth]  Session JWT Bearer middleware — required for GET/PUT /config
  * @returns {Router}
  */
-export function createRadioRouter(db, radioManager, sttManager = null, auth = null, metrics = null) {
+export function createRadioRouter(db, radioManager, sttManager = null, auth = null, metrics = null, requireSetup = (req, res, next) => next()) {
   const router = Router();
 
   // ── GET/PUT /radio/config — self-service Web Radio metadata (session Bearer) ──
@@ -171,7 +171,10 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
   // per-project counterpart to the public GET /radio/:key/info.
   function requireAuthConfigured(req, res, next) {
     if (!auth) return res.status(501).json({ error: 'Radio config is not available on this deployment' });
-    return auth(req, res, next);
+    return auth(req, res, (err) => {
+      if (err) return next(err);
+      requireSetup(req, res, next);
+    });
   }
 
   router.get('/config', requireAuthConfigured, (req, res) => {

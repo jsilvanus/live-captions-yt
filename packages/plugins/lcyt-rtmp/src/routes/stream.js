@@ -21,9 +21,11 @@ import logger from 'lcyt/logger';
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {string} allowedRtmpDomains
+ * @param {import('express').RequestHandler} [requireSetup]  Setup-tier write gate (plan_project_roles.md); no-op passthrough when omitted (e.g. tests constructing this router directly)
  * @returns {Router}
  */
-export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
+export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, requireSetup = (req, res, next) => next()) {
   const router = Router();
 
   // Build domain allowlist. null = wildcard (all domains allowed).
@@ -33,10 +35,16 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains) {
 
   // Apply auth + domain check to every route in this router.
   router.use(auth);
+  router.use(requireSetup);
   router.use(function requireRtmpDomain(req, res, next) {
     if (!rtmpDomainList) return next();
     const domain = req.session?.domain;
-    if (!domain || !rtmpDomainList.includes(domain)) {
+    // Only legacy /live-session JWTs carry a domain at all — a project-scoped
+    // user/device/external token (e.g. Setup Hub's Egress card) never has one,
+    // so it isn't this legacy per-domain throttle's concern to begin with.
+    // Still enforced exactly as before for anything that DOES carry a domain.
+    if (domain == null) return next();
+    if (!rtmpDomainList.includes(domain)) {
       return res.status(403).json({ error: 'RTMP relay not available for this domain' });
     }
     next();

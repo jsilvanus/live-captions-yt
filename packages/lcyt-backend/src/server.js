@@ -576,7 +576,11 @@ app.use(createCorsMiddleware(store));
 
 // Mount /icons BEFORE the global JSON body parser so uploads can use the
 // router-local 400kb parser without hitting the global 64kb limit first.
-app.use('/icons', createIconRouter(db, auth, store));
+// Setup-tier writes (plan_project_roles.md) — GET stays open to any project
+// member via requireProjectRole's own read exemption. No longer depends on a
+// live /live session (previously store.get(sessionId); only ever used
+// session.apiKey — see CONSIDER.md).
+app.use('/icons', createIconRouter(db, scopedAuth('icon'), undefined, requireProjectRole(db, 'setup')));
 
 // JSON body parser — 64KB limit prevents abuse
 // NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
@@ -841,8 +845,16 @@ function gatedRouter(getEnabled) {
 }
 {
   const rtmpGate = gatedRouter(() => settings.get('media.rtmp_relay_active'));
+  // Config-only sub-routers (ingestion/stream/radio-config/crop) get the
+  // project-access gate + Setup-tier write check, same recipe as targets.js/
+  // translation.js/stt.js — the public/callback sub-routers below never
+  // consume `auth` at all, so they're unaffected (plan_project_roles.md;
+  // previously left ungated, see CONSIDER.md).
   const { rtmpRouter, feedRtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
-    createRtmpRouters(db, auth, rtmp, { allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings });
+    createRtmpRouters(db, scopedAuth('rtmp'), rtmp, {
+      allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
+      requireSetup: requireProjectRole(db, 'setup'),
+    });
   app.use('/rtmp',       rtmpGate(rtmpRouter));
   app.use('/feed-rtmp',  rtmpGate(feedRtmpRouter));
   app.use('/ingestion',  rtmpGate(ingestionRouter));

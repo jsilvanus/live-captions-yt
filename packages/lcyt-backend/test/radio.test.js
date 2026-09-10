@@ -9,6 +9,9 @@ import jwt from 'jsonwebtoken';
 import { initDb, createKey, updateKey } from '../src/db.js';
 import { runMigrations } from 'lcyt-rtmp/src/db.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
 
 function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
 import { isRadioEnabled, getRadioConfig, setRadioConfig } from 'lcyt-rtmp/src/db.js';
@@ -508,19 +511,26 @@ describe('GET /radio/:key/info', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET/PUT /radio/config', () => {
-  let db, server, manager, apiKey, token;
+  let db, server, manager, apiKey, token, ownerToken;
 
   before(async () => {
     db = initTestDb();
     manager = new RadioManager();
-    const auth = createAuthMiddleware(JWT_SECRET);
+    // Real production mounting (server.js) uses scopedAuth('rtmp')/
+    // createProjectAccessMiddleware + requireProjectRole('setup'), not the
+    // plain session-only auth — matters here because PUT now needs a real
+    // userId with explicit owner/admin (plan_project_roles.md).
+    const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'rtmp' });
     const app = express();
     app.use(express.json());
-    app.use('/radio', createRadioRouter(db, manager, null, auth));
+    app.use('/radio', createRadioRouter(db, manager, null, auth, null, requireProjectRole(db, 'setup')));
 
     const k = createKey(db, { owner: 'RadioConfigUser', radio_enabled: true });
     apiKey = k.key;
     token = jwt.sign({ sessionId: 'radio-config-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
+    const owner = createUser(db, { email: 'radio-owner@example.com', passwordHash: 'x' });
+    addMember(db, apiKey, owner.id, 'owner');
+    ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
@@ -532,7 +542,7 @@ describe('GET/PUT /radio/config', () => {
     db.close();
   }));
 
-  function bearer(tok = token) {
+  function bearer(tok = ownerToken) {
     return { Authorization: `Bearer ${tok}` };
   }
 
@@ -549,6 +559,15 @@ describe('GET/PUT /radio/config', () => {
   it('GET /radio/config rejects missing auth', async () => {
     const res = await fetch(`${baseUrl(server)}/radio/config`);
     assert.strictEqual(res.status, 401);
+  });
+
+  it('PUT /radio/config 403s for a session token with no explicit project role (setup tier required)', async () => {
+    const res = await fetch(`${baseUrl(server)}/radio/config`, {
+      method: 'PUT',
+      headers: { ...bearer(token), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'Nope' }),
+    });
+    assert.strictEqual(res.status, 403);
   });
 
   it('PUT /radio/config creates/updates metadata and returns the full config directly', async () => {

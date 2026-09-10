@@ -22,6 +22,7 @@ import { createVideosRouter } from './videos.js';
 import { createTranslationRouter } from './translation.js';
 import { createBridgeDownloadRouter } from './bridge-download.js';
 import { createFilesRouter } from 'lcyt-files';
+import { requireProjectRole } from '../middleware/project-access.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -39,7 +40,12 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   const scoped = (resource) => (makeScopedAuth ? makeScopedAuth(resource) : auth);
   router.use('/stats',           createStatsRouter(db, auth, store, { resolveStorage, settings }));
   router.use('/usage',           createUsageRouter(db, settings));
-  router.use('/file',            createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache));
+  // storage-config is Setup-tier (plan_project_roles.md) — GET stays open to
+  // any project member via requireProjectRole's own read exemption; every
+  // other /file route (list/create/update/delete) keeps working unchanged
+  // under the same scoped auth, reading apiKey off req.session directly
+  // instead of resolving a live /live session (see CONSIDER.md).
+  router.use('/file',            createFilesRouter(db, scoped('file'), store, jwtSecret, resolveStorage, invalidateStorageCache, requireProjectRole(db, 'setup')));
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret, settings));

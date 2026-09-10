@@ -63,14 +63,16 @@ function buildIngestUrl(app, streamName, settings = null) {
 
 /**
  * @param {import('better-sqlite3').Database} db
- * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
+ * @param {import('express').RequestHandler} auth  Project-access Bearer middleware
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @param {{ get: (key: string) => * }} [settings]  lcyt-backend's SettingsService (plan_env_to_ui_settings.md)
+ * @param {import('express').RequestHandler} [requireSetup]  Setup-tier write gate (plan_project_roles.md); no-op passthrough when omitted (e.g. tests constructing this router directly)
  * @returns {import('express').Router}
  */
-export function createIngestionRouter(db, auth, relayManager, settings = null) {
+export function createIngestionRouter(db, auth, relayManager, settings = null, requireSetup = (req, res, next) => next()) {
   const router = Router();
   router.use(auth);
+  router.use(requireSetup);
 
   function buildConfig(apiKey) {
     const keyRow = getKey(db, apiKey) || {};

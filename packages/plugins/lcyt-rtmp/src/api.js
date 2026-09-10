@@ -204,9 +204,9 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  * Mount the returned routers only when RTMP relay is active.
  *
  * @param {import('better-sqlite3').Database} db
- * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
+ * @param {import('express').RequestHandler} auth  Project-access Bearer middleware — applied to the config-only sub-routers (ingestion/stream/radio-config/crop); the public/callback sub-routers (rtmp, feed-rtmp, stream-hls, preview) never consume it
  * @param {{ relayManager: RtmpRelayManager, hlsManager: HlsManager, radioManager: RadioManager, previewManager: PreviewManager }} managers
- * @param {{ allowedRtmpDomains?: string, metrics?: object, settings?: object }} [opts]
+ * @param {{ allowedRtmpDomains?: string, metrics?: object, settings?: object, requireSetup?: import('express').RequestHandler }} [opts]  requireSetup gates config-only writes at the Setup tier (plan_project_roles.md); defaults to a no-op passthrough
  * @returns {{
  *   rtmpRouter: import('express').Router,
  *   feedRtmpRouter: import('express').Router,
@@ -217,15 +217,15 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null, settings = null } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null, settings = null, requireSetup = (req, res, next) => next() } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager, settings),
     feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
-    ingestionRouter: createIngestionRouter(db, auth, relayManager, settings),
-    streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains),
+    ingestionRouter: createIngestionRouter(db, auth, relayManager, settings, requireSetup),
+    streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains, requireSetup),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),
-    radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics),
+    radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics, requireSetup),
     previewRouter:   createPreviewRouter(previewManager),
-    cropRouter:      createCropRouter(db, auth, cropManager, relayManager),
+    cropRouter:      createCropRouter(db, auth, cropManager, relayManager, requireSetup),
   };
 }

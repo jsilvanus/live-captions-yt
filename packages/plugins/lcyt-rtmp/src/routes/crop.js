@@ -40,14 +40,16 @@ function hasCropFeature(db, apiKey) {
 
 /**
  * @param {import('better-sqlite3').Database} db
- * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
+ * @param {import('express').RequestHandler} auth  Project-access Bearer middleware
  * @param {import('../crop-manager.js').CropManager} cropManager
  * @param {import('../rtmp-manager.js').RtmpRelayManager} [relayManager]  For isPublishing()
+ * @param {import('express').RequestHandler} [requireSetup]  Setup-tier write gate (plan_project_roles.md); no-op passthrough when omitted (e.g. tests constructing this router directly)
  * @returns {Router}
  */
-export function createCropRouter(db, auth, cropManager, relayManager = null) {
+export function createCropRouter(db, auth, cropManager, relayManager = null, requireSetup = (req, res, next) => next()) {
   const router = Router();
   router.use(auth);
+  router.use(requireSetup);
 
   router.use((req, res, next) => {
     if (isFeatureGateEnforced() && !hasCropFeature(db, req.session.apiKey)) {

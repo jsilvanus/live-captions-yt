@@ -14,7 +14,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
 import { runMigrations } from 'lcyt-rtmp/src/db.js';
-import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
 import { createIngestionRouter } from 'lcyt-rtmp/src/routes/ingestion.js';
 import { RtmpRelayManager } from 'lcyt-rtmp/src/rtmp-manager.js';
 
@@ -27,10 +29,14 @@ let server, baseUrl, db, relayManager;
 before(() => new Promise((resolve) => {
   db = initTestDb();
   relayManager = new RtmpRelayManager();
-  const auth = createAuthMiddleware(JWT_SECRET);
+  // Real production mounting (server.js) uses scopedAuth('rtmp')/
+  // createProjectAccessMiddleware + requireProjectRole('setup'), not the
+  // plain session-only auth — matters here because PATCH/rotate now need a
+  // real userId with explicit owner/admin (plan_project_roles.md).
+  const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'rtmp' });
   const app = express();
   app.use(express.json());
-  app.use('/ingestion', createIngestionRouter(db, auth, relayManager));
+  app.use('/ingestion', createIngestionRouter(db, auth, relayManager, null, requireProjectRole(db, 'setup')));
   server = createServer(app);
   server.listen(0, () => {
     baseUrl = `http://localhost:${server.address().port}`;
@@ -55,26 +61,36 @@ function tokenFor(apiKey) {
   return jwt.sign({ sessionId: 'ingest-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
 }
 
-function bearer(tok) {
-  return { Authorization: `Bearer ${tok}` };
+// Writes now require explicit 'setup' tier (owner/admin) — mint a fresh
+// owner-of-this-key user token, mirroring targets.test.js's pattern.
+let _ownerSeq = 0;
+function ownerTokenFor(apiKey) {
+  _ownerSeq += 1;
+  const owner = createUser(db, { email: `ingest-owner-${_ownerSeq}-${apiKey}@example.com`, passwordHash: 'x' });
+  addMember(db, apiKey, owner.id, 'owner');
+  return jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
+}
+
+function bearer(tok, apiKey) {
+  return { Authorization: `Bearer ${tok}`, 'X-Api-Key': apiKey };
 }
 
 async function get(apiKey) {
-  return fetch(`${baseUrl}/ingestion/config`, { headers: bearer(tokenFor(apiKey)) });
+  return fetch(`${baseUrl}/ingestion/config`, { headers: bearer(tokenFor(apiKey), apiKey) });
 }
 
-async function patch(apiKey, body) {
+async function patch(apiKey, body, tok = ownerTokenFor(apiKey)) {
   return fetch(`${baseUrl}/ingestion/config`, {
     method: 'PATCH',
-    headers: { ...bearer(tokenFor(apiKey)), 'Content-Type': 'application/json' },
+    headers: { ...bearer(tok, apiKey), 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 }
 
-async function rotate(apiKey) {
+async function rotate(apiKey, tok = ownerTokenFor(apiKey)) {
   return fetch(`${baseUrl}/ingestion/config/rotate`, {
     method: 'POST',
-    headers: bearer(tokenFor(apiKey)),
+    headers: bearer(tok, apiKey),
   });
 }
 
@@ -146,6 +162,12 @@ describe('GET /ingestion/config', () => {
 });
 
 describe('PATCH /ingestion/config', () => {
+  it('403s for a session token with no explicit project role (setup tier required)', async () => {
+    const k = createKey(db, { owner: 'NoRole' });
+    const res = await patch(k.key, { video: { enabled: true } }, tokenFor(k.key));
+    assert.equal(res.status, 403);
+  });
+
   it('flips video.enabled (relay_allowed) and returns the updated nested shape', async () => {
     const k = createKey(db, { owner: 'ToggleVideo' });
     const res = await patch(k.key, { video: { enabled: true } });
@@ -216,6 +238,12 @@ describe('POST /ingestion/config/rotate', () => {
   it('rejects missing auth', async () => {
     const res = await fetch(`${baseUrl}/ingestion/config/rotate`, { method: 'POST' });
     assert.equal(res.status, 401);
+  });
+
+  it('403s for a session token with no explicit project role (setup tier required)', async () => {
+    const k = createKey(db, { owner: 'NoRoleRotate' });
+    const res = await rotate(k.key, tokenFor(k.key));
+    assert.equal(res.status, 403);
   });
 
   it('generates a new streamKey distinct from the api_key and persists it', async () => {
