@@ -130,6 +130,25 @@ describe('bridge router — auth wiring', () => {
     assert.equal(res.status, 401);
   });
 
+  it('opts.auth configured: GET /instances/:id/env additionally requires the setup tier (not just membership)', async () => {
+    // Unlike every other GET in this router, this one re-downloads the
+    // bridge's plaintext auth token — a non-admin project member who passes
+    // opts.auth must still be rejected. See CONSIDER.md.
+    const { id } = insertInstance();
+    await startApp({ auth: fakeAuth, deps: { checkProjectRole: () => false } });
+    const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/env`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(res.status, 403);
+  });
+
+  it('GET /instances/:id/env succeeds for a real admin/owner', async () => {
+    const { id } = insertInstance();
+    await startApp({ auth: fakeAuth, deps: permissiveDeps });
+    const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/env`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(res.status, 200);
+    const body = await res.text();
+    assert.match(body, /BRIDGE_TOKEN/);
+  });
+
   it('opts.auth configured: security-rules CRUD requires it', async () => {
     const { id } = insertInstance();
     await startApp({ auth: fakeAuth });

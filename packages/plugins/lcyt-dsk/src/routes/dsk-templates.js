@@ -122,9 +122,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
   /**
    * Setup-tier gate (plan_project_roles.md, decided 2026-07-26) for template/
-   * thumbnail CRUD only — activate/broadcast/renderer start-stop/graphics-push
-   * are live graphics-operate actions, deliberately left ungated here (see
-   * CONSIDER.md). lcyt-dsk has no direct access to lcyt-backend's
+   * thumbnail CRUD. lcyt-dsk has no direct access to lcyt-backend's
    * project_members table (plugin boundary), so the real check is injected
    * from the composition root — same shape as ai-providers-project.js's
    * requireExplicitAdmin / roles.js's requireSetup.
@@ -140,6 +138,39 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     const apiKey = req.session?.apiKey;
     if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !deps.checkProjectRole('setup', apiKey, req.user.userId)) {
       return res.status(403).json({ error: 'Explicit project admin/owner access required' });
+    }
+    next();
+  }
+
+  /**
+   * Production-tier gate for the live graphics-operate actions on this same
+   * router (activate/template-alias/broadcast/graphics-push/renderer
+   * start-stop) — CONSIDER.md flagged these as left ungated because the
+   * `/graphics` page's own access tier was never decided; this assigns them
+   * to 'production', mirroring lcyt-production's identical CRUD-vs-live-
+   * control split for cameras/mixers/encoders/bridge (same three-tier model,
+   * `route-access.js`'s `'setup'|'assets'|'production'`).
+   *
+   * Unlike requireSetup() above, this deliberately fails OPEN when
+   * req.user.userId is absent rather than 403ing — DskControlPage.jsx
+   * (/graphics/control and /dsk-control/:key) is these routes' only real
+   * caller, and its sidebar mode authenticates with a plain caption-session
+   * JWT (session.getSessionToken()) that carries no per-user identity at
+   * all (no login-based project_members role to resolve, including in
+   * minimal-mode deployments with no user accounts). That token already
+   * proved it holds this project's own credential via `auth` — same tier of
+   * trust a plain caption-sending session already has over the live
+   * broadcast. Once a real per-user project-access JWT IS present (e.g.
+   * DskControlPage.jsx's standalone mode, which reuses the persisted
+   * project-access token from an already-logged-in tab), this fails CLOSED
+   * exactly like requireSetup(): editor/viewer-role team members can no
+   * longer trigger these actions, only operator+.
+   */
+  function requireProduction(req, res, next) {
+    const apiKey = req.session?.apiKey;
+    if (!req.user?.userId) return next();
+    if (typeof deps.checkProjectRole !== 'function' || !deps.checkProjectRole('production', apiKey, req.user.userId)) {
+      return res.status(403).json({ error: 'Explicit project operator+ access required' });
     }
     next();
   }
@@ -233,7 +264,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   });
 
   // POST /dsk/:apikey/templates/:id/activate — load template into Playwright renderer
-  router.post('/:apikey/templates/:id/activate', auth, async (req, res) => {
+  router.post('/:apikey/templates/:id/activate', auth, requireProduction, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -250,7 +281,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
   // POST /dsk/:apikey/template — activate template by id (convenience alias for /templates/:id/activate)
   // Body: { id: number }
-  router.post('/:apikey/template', auth, async (req, res) => {
+  router.post('/:apikey/template', auth, requireProduction, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.body?.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'id must be a number' });
@@ -270,7 +301,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   // Body: { templateIds?: number[], updates?: [{ selector, text }, ...] }
   //   or: { selector: string, text: string }  (single-item shorthand, no templateIds)
   //   or: { templateIds: number[] }            (template-push only, no text updates)
-  router.post('/:apikey/broadcast', auth, async (req, res) => {
+  router.post('/:apikey/broadcast', auth, requireProduction, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { updates, selector, text, templateId, templateIds } = req.body || {};
 
@@ -462,7 +493,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   // POST /dsk/:apikey/renderer/start — begin Playwright capture loop → ffmpeg → RTMP
   // Also calls relayManager.setDskRtmpSource() directly so the ffmpeg overlay compositing
   // picks up the Playwright stream immediately without waiting for nginx on_publish.
-  router.post('/:apikey/renderer/start', auth, async (req, res) => {
+  router.post('/:apikey/renderer/start', auth, requireProduction, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
     const viewport = req.body?.viewport;
@@ -509,7 +540,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   // POST /dsk/:apikey/graphics — manually push a 'graphics' SSE event to all client-side overlay
   // subscribers, updating which image shorthands are visible on /dsk/:key pages.
   // Body: { default?: string[], viewports?: { [name]: string[] } }
-  router.post('/:apikey/graphics', auth, (req, res) => {
+  router.post('/:apikey/graphics', auth, requireProduction, (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { default: defaultNames, viewports } = req.body || {};
 
@@ -528,7 +559,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
   // POST /dsk/:apikey/renderer/stop — tear down capture loop and ffmpeg
   // Also clears the DSK RTMP source in relayManager so the relay reverts to copy mode.
-  router.post('/:apikey/renderer/stop', auth, async (req, res) => {
+  router.post('/:apikey/renderer/stop', auth, requireProduction, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const apiKey = req.params.apikey;
     const viewport = req.body?.viewport;

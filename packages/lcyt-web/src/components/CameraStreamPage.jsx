@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { resolveKioskConnection } from '../lib/deviceSession.js';
 
 const STUN_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -11,13 +12,13 @@ function getCameraIdFromPath() {
   return parts[3] ?? null;
 }
 
-function getBackendUrl() {
-  return localStorage.getItem('lcyt_backend_url') ?? '';
-}
-
 export function CameraStreamPage() {
   const cameraId = getCameraIdFromPath();
-  const backendUrl = getBackendUrl();
+  // A device-role JWT logged in via /device-login in this same tab
+  // (sessionStorage['lcyt-device']) is sent as Authorization: Bearer when
+  // present, so the backend's canAccessCamera() ownership check applies
+  // instead of the fully-open bare-capability-URL fallback.
+  const { backendUrl, authHeaders } = useMemo(() => resolveKioskConnection('lcyt_backend_url'), []);
 
   const [cameraInfo, setCameraInfo]   = useState(null);
   const [error, setError]             = useState(null);
@@ -43,11 +44,11 @@ export function CameraStreamPage() {
       return;
     }
 
-    fetch(`${backendUrl}/production/cameras/${cameraId}/whip-url`)
+    fetch(`${backendUrl}/production/cameras/${cameraId}/whip-url`, { headers: authHeaders })
       .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error ?? 'Failed to load camera info')))
       .then(info => setCameraInfo(info))
       .catch(err => setError(String(err)));
-  }, [cameraId, backendUrl]);
+  }, [cameraId, backendUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
   // Request camera / microphone
@@ -127,7 +128,7 @@ export function CameraStreamPage() {
 
       const res = await fetch(whipUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/sdp' },
+        headers: { 'Content-Type': 'application/sdp', ...authHeaders },
         body: sdpOffer,
       });
 
@@ -154,10 +155,10 @@ export function CameraStreamPage() {
     }
     // Tell backend to kick the publisher
     if (cameraInfo) {
-      fetch(`${backendUrl}${cameraInfo.whipUrl}`, { method: 'DELETE' }).catch(() => {});
+      fetch(`${backendUrl}${cameraInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
     }
     setState('media_ready');
-  }, [cameraInfo, backendUrl]);
+  }, [cameraInfo, backendUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function stopStream() {
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
@@ -166,7 +167,7 @@ export function CameraStreamPage() {
       streamRef.current = null;
     }
     if (cameraInfo) {
-      fetch(`${getBackendUrl()}${cameraInfo.whipUrl}`, { method: 'DELETE' }).catch(() => {});
+      fetch(`${backendUrl}${cameraInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
     }
   }
 

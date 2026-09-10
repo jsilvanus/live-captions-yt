@@ -132,6 +132,25 @@ describe('mixers router — auth wiring', () => {
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
     assert.notEqual(res.status, 401);
   });
+
+  it('a device-role JWT (or any other credential) on /sources or /whip-url is enforced for ownership, not skipped', async () => {
+    // LcytMixerPage.jsx now optionally sends a device-role token as
+    // Authorization: Bearer — once a credential IS present, this must go
+    // through auth() and be subject to canAccessMixer() like any other
+    // credentialed request, not silently bypass ownership.
+    const id = insertMixer({ type: 'lcyt', owner_api_key: 'proj-a' });
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+
+    const ownSources = await fetch(`${baseUrl}/production/mixers/${id}/sources`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(ownSources.status, 200);
+    const foreignSources = await fetch(`${baseUrl}/production/mixers/${id}/sources`, { headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(foreignSources.status, 404);
+
+    const ownWhipUrl = await fetch(`${baseUrl}/production/mixers/${id}/whip-url`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.notEqual(ownWhipUrl.status, 404);
+    const foreignWhipUrl = await fetch(`${baseUrl}/production/mixers/${id}/whip-url`, { headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(foreignWhipUrl.status, 404);
+  });
 });
 
 describe('POST /:id/switch/:inputNumber — production-follow notification', () => {

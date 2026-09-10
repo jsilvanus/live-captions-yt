@@ -11,15 +11,15 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
-## DSK live-graphics-operate routes left ungated by the Setup-tier pass — the `/graphics` page's own access tier was never decided
+## ~~DSK live-graphics-operate routes left ungated by the Setup-tier pass — the `/graphics` page's own access tier was never decided~~ — RESOLVED 2026-09-10
 
-**Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` — `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`.
+**Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` — `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`. Also `packages/lcyt-web/src/components/DskControlPage.jsx`, `packages/plugins/lcyt-dsk/test/dsk-templates-routes.test.js` (new).
 
-**Finding:** `plan_project_roles.md`'s route-mapping list names `lcyt-dsk`'s `dskTemplatesRouter`/`dskViewportsRouter` as Setup Hub's "viewports" card (**template CRUD**, **viewport CRUD**) — and those are now gated at `'setup'` tier. But the same router also exposes live graphics-operate actions on the same file: activating a template live, pushing broadcast data, starting/stopping the RTMP renderer, rendering a one-off template. These read as Production-tier (or a genuinely separate `/graphics` page tier) rather than Setup config, but `plan_project_roles.md`'s decided page model only names Setup/Assets/Production — the Graphics page (`/graphics/editor`, `/graphics/control`, `/graphics/viewports` in `lcyt-web`'s routing table) was never assigned a tier at all.
+**Original finding:** `plan_project_roles.md`'s route-mapping list names `lcyt-dsk`'s `dskTemplatesRouter`/`dskViewportsRouter` as Setup Hub's "viewports" card (**template CRUD**, **viewport CRUD**) — and those are now gated at `'setup'` tier. But the same router also exposes live graphics-operate actions on the same file: activating a template live, pushing broadcast data, starting/stopping the RTMP renderer, rendering a one-off template. These read as Production-tier (or a genuinely separate `/graphics` page tier) rather than Setup config, but `plan_project_roles.md`'s decided page model only names Setup/Assets/Production — the Graphics page (`/graphics/editor`, `/graphics/control`, `/graphics/viewports` in `lcyt-web`'s routing table) was never assigned a tier at all.
 
-**Skipped because:** guessing whether these belong to `'production'`, a new tier, or should stay wide open would be inventing policy this plan never decided. Left ungated (any project member who passes the broader `scopedAuth('dsk')` gate can still trigger them, same as before this pass) rather than guessing.
+**Resolved:** assigned these six routes to the `'production'` tier — the same three-tier model (`route-access.js`'s `'setup'|'assets'|'production'`) already used for `lcyt-production`'s CRUD-vs-live-control split on cameras/mixers/encoders/bridge, not a new tier. A new local `requireProduction()` gate in `dsk-templates.js` (alongside the existing `requireSetup()`) applies it. The key wrinkle a naive copy of `requireSetup()` would have broken: `DskControlPage.jsx` (`/graphics/control` sidebar mode) is these routes' only real caller today, and it authenticates with a plain caption-session JWT (`session.getSessionToken()`) that carries no `req.user.userId` at all — there is no login-based `project_members` role to resolve for it, including in minimal-mode deployments with no user accounts. `requireSetup()`'s fail-**closed**-without-a-userId behavior would have 403'd every request from that page. `requireProduction()` instead fails **open** in that specific case (already-established precedent — mirrors `lcyt-production`'s `route-access.js` failing open when `req.session?.apiKey` is entirely absent) and only fails closed once a real per-user project-access JWT is present — which is exactly `DskControlPage.jsx`'s *standalone* mode (`/dsk-control/:key`, which reuses an already-logged-in tab's persisted `projectAccessToken`): a viewer/editor-role team member opening that page in a second tab can no longer trigger activate/broadcast/renderer-control, only operator+. Net effect: closes the real gap (a login-based non-operator team member misusing production controls) with zero regression to the session-token-based control-panel flow that predates per-user roles. New route-level test file `dsk-templates-routes.test.js` covers both branches (session-only auth fails open; real-user auth is checked against `'production'` and can be rejected/accepted).
 
-(Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26.)
+(Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
@@ -47,15 +47,15 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
-## `bridge.js`'s `GET /instances/:id/env` re-downloads a bridge instance's plaintext auth token to any project member, not just admins
+## ~~`bridge.js`'s `GET /instances/:id/env` re-downloads a bridge instance's plaintext auth token to any project member, not just admins~~ — RESOLVED 2026-09-10
 
-**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`, `GET /instances/:id/env`.
+**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`, `GET /instances/:id/env`, `packages/plugins/lcyt-production/test/bridge-routes.test.js`.
 
-**Finding:** This route regenerates and returns the bridge agent's `.env` file, which contains its plaintext per-instance auth token (the credential `bridgeManager.authenticate()` checks on the agent's own SSE/callback channel). It's a GET, so it's exempt from `requireTier()`'s write-only gating by design (reads stay open to any project member who passes the broader `scopedAuth('production')` gate — same policy as every other Setup-tier route in this pass) — but unlike template/config reads, this one discloses a live credential, not configuration. A non-admin project member (editor/operator/viewer with org-baseline access) can currently re-download it.
+**Original finding:** This route regenerates and returns the bridge agent's `.env` file, which contains its plaintext per-instance auth token (the credential `bridgeManager.authenticate()` checks on the agent's own SSE/callback channel). It's a GET, and every other GET in this router is left open to any project member who passes the broader `scopedAuth('production')` gate (same blanket policy as every other Setup-tier route, `plan_project_roles.md`, decided 2026-07-26: "GET stays open to any project member") — but unlike template/config reads, this one discloses a live credential, not configuration. A non-admin project member (editor/operator/viewer with org-baseline access) could re-download it.
 
-**Skipped because:** the read/write split this whole pass implements is a blanket policy decision (`plan_project_roles.md`, decided 2026-07-26: "GET stays open to any project member") — special-casing one GET route as write-tier-gated is a real, narrow exception worth making, but doing it as a drive-by inside the Setup/Production split pass risks being inconsistent with how other credential-disclosing GETs in the codebase are (or aren't) already handled. Flagged for a dedicated look rather than a one-off fix here.
+**Resolved:** took the dedicated look the finding asked for and made the narrow exception: `requireSetup` (already a local const in this file, built from `requireTier()`) is now applied directly to this one route, despite it being a GET — `requireTier()` has no built-in method exemption of its own (unlike `lcyt-backend`'s `requireProjectRole()`); the "GETs stay open" behavior everywhere else in this router is simply that no route ever attaches the gate to a GET, not an automatic bypass baked into `requireTier()` — so attaching it here enforces admin/owner on this one read exactly as intended, with no ripple effect on any other route. New tests confirm a non-admin project member now 403s and a real admin/owner still succeeds.
 
-(Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26.)
+(Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
@@ -724,52 +724,72 @@ result in this pass. Fixing #2 is smaller — wire the same `feedCameras` fetch
 into `RelayPanel.jsx`/`StreamTab.jsx` and pass it through — and is the more
 likely next step; noted here so it isn't lost.
 
-## `/production/cameras` WHIP + kiosk pages remain unauthenticated even after the cross-tenant `sourceCameraId` auth fix
+## ~~`/production/cameras` WHIP + kiosk pages remain unauthenticated even after the cross-tenant `sourceCameraId` auth fix~~ — RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/routes/cameras.js`
-(`isUnauthenticatedCameraRoute()`), `packages/lcyt-web/src/components/CameraStreamPage.jsx`,
-`packages/lcyt-web/src/components/LcytMixerPage.jsx`, `packages/lcyt-web/src/components/DeviceLoginPage.jsx`
+(`isUnauthenticatedCameraRoute()`), `packages/plugins/lcyt-production/src/routes/mixers.js`
+(`isUnauthenticatedMixerRoute()`), `packages/lcyt-web/src/components/CameraStreamPage.jsx`,
+`packages/lcyt-web/src/components/LcytMixerPage.jsx`, `packages/lcyt-web/src/components/DeviceLoginPage.jsx`,
+`packages/lcyt-web/src/lib/deviceSession.js` (new).
 
-**Finding:** Fixing the cross-tenant `sourceCameraId` finding (a project
+**Original finding:** Fixing the cross-tenant `sourceCameraId` finding (a project
 could reference any other project's camera via a relay slot) required real
 auth on the camera CRUD routes — `owner_api_key` + `canAccessCamera()` +
 `opts.auth` wired to `scopedAuth('production')` in `server.js`. But
 `CameraStreamPage.jsx` and `LcytMixerPage.jsx` are capability-URL kiosk pages
 (a dedicated device opens a bare URL and pushes its webcam / drives the
-mixer — no login flow at all) that send no Authorization header of any kind.
-Blanket-applying auth would break them, so `isUnauthenticatedCameraRoute()`
-carves out `/whip`, `/whip-url`, and the thumbnail-serving routes explicitly,
-leaving them exactly as open as before this pass. A real device-role JWT
-mechanism already exists (`DeviceLoginPage.jsx` → `POST
+mixer — no login flow at all) that sent no Authorization header of any kind.
+Blanket-applying auth would have broken them, so `isUnauthenticatedCameraRoute()`
+carved out `/whip`, `/whip-url`, and the thumbnail-serving routes
+unconditionally, leaving them exactly as open as before that pass. A real
+device-role JWT mechanism already existed (`DeviceLoginPage.jsx` → `POST
 /auth/device-login` → `routes/device-roles.js`'s `deviceLoginHandler`,
 issuing a `{kind:'device', type:'device', apiKey, projectId, deviceRole,
 roleId, permissions}` token fully compatible with
-`createProjectAccessMiddleware`) but neither kiosk page reads or sends it —
-it's stored in `sessionStorage['lcyt-device']` and never used again.
+`createProjectAccessMiddleware`) but neither kiosk page read or sent it —
+it just sat in `sessionStorage['lcyt-device']`, unused.
 
-**Also found in the same area — RESOLVED 2026-09-10:**
-`DeviceLoginPage.jsx` used to redirect to `/production/camera/${apiKey}`
-(passing the *project's apiKey* as `CameraStreamPage.jsx`'s `:key` route
-param, which it actually treats as a raw `cameraId` — two different values).
-Investigation confirmed no per-device camera binding exists anywhere in the
-data model (`deviceLoginHandler`'s response carries no camera id;
-`project_device_roles` has no such column, and no UI ever populates one), so
-a camera-specific destination isn't buildable today. The redirect now falls
-back to the same project-preloaded captioning UI the `mic`/`custom` device
-roles already use. The WHIP/kiosk device-JWT wiring itself (the paragraph
-above) is unchanged — still a documented gap, not built.
+**Resolved:** wired the existing device-role JWT into both kiosk pages via a
+new shared `lib/deviceSession.js` (`readDeviceSession()` +
+`resolveKioskConnection()`): each page now resolves its backend URL (an
+explicit `?server=` param, then the persisted device session's own
+`backendUrl`, then the page's pre-existing `lcyt_backend_url` localStorage
+override) and sends `Authorization: Bearer <token>` on every WHIP/sources/
+switch request when a device session is present. On the backend,
+`isUnauthenticatedCameraRoute()`/`isUnauthenticatedMixerRoute()` were changed
+from an *unconditional* carve-out for `/whip`/`/whip-url`/`/sources` to a
+*conditional* one — exactly mirroring the pre-existing pattern
+`isUnauthenticatedMixerRoute()`'s `/switch` route already used
+(`hasAuthCredentials(req)`-gated): a request with no credentials at all
+stays exactly as open as before (no regression for any deployment with no
+device roles configured), while a credentialed request — a device-role JWT
+or a full project-access JWT alike — now goes through `auth()` normally and
+is subject to `canAccessCamera()`/`canAccessMixer()` ownership checks, which
+were added to the WHIP/sources handlers themselves (previously only the CRUD
+routes and, for mixers, `/switch` enforced ownership at all). Route-level
+tests added to `cameras-routes.test.js`/`mixers-routes.test.js` confirm a
+credentialed cross-tenant request now 404s while the credential-less kiosk
+path is unaffected.
 
-**Why skipped:** wiring the device-role JWT into two kiosk pages that
-currently have zero auth UI is a real feature addition (reading the token
-from `sessionStorage`, sending it as `Authorization: Bearer`, handling
-expiry/re-login), not a natural extension of the CRUD-route auth fix — and
-fixing the `DeviceLoginPage.jsx` route-param mismatch first would be a
-prerequisite so the redirect even lands on the right camera. Scoped the
-cross-tenant fix to CRUD routes only (list/get/create/update/delete/preset/
-thumbnail-capture) and left WHIP/kiosk auth as this follow-up.
+**Also found and fixed in the same area:** `DeviceLoginPage.jsx`'s 'mixer'
+role redirected straight to `/production/lcyt-mixer/${connectedRole.apiKey}`
+— passing the *project's apiKey* as `LcytMixerPage.jsx`'s `:key` route param,
+which it actually treats as a raw `mixerId` — the identical apiKey-vs-id
+mismatch already found and fixed for the 'camera' role's redirect on
+2026-09-10 (see the historical note below), just not caught for 'mixer' at
+the same time. Same root cause (no per-device camera/mixer binding exists
+anywhere in the data model — `deviceLoginHandler`'s response carries no such
+id, `project_device_roles`'s generic `config` blob is never populated with
+one), so the fix is the same: the 'mixer' case is removed and every role
+type now falls through to the same project-preloaded captioning UI.
+
+*(Historical note, preserved from the original entry: `DeviceLoginPage.jsx`
+used to redirect 'camera' role logins to `/production/camera/${apiKey}` with
+the identical apiKey-vs-cameraId mismatch — found and fixed 2026-09-10,
+before the WHIP/kiosk auth wiring above was tackled.)*
 
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
-plan_ingest_feeds.md, 2026-07-19.)
+plan_ingest_feeds.md, 2026-07-19. Resolved 2026-09-10.)
 
 ## ~~`prod_mixers` has no `owner_api_key`/ownership scoping, unlike `prod_cameras`~~ — RESOLVED 2026-09-10
 
@@ -1150,17 +1170,19 @@ pass:
 
 ---
 
-## Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time
+## Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third — as of 2026-09-10, a fourth — time
 
-**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()` (which additionally takes `req`, not `path`, and is a *conditional* bypass via `hasAuthCredentials(req)`, not a blanket one)
+**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()` (takes `req`, not `path` — a *conditional* bypass via `hasAuthCredentials(req)`, not a blanket one), and (both now the same conditional shape as mixers.js) `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()` + its own copy of `hasAuthCredentials(req)`.
 
-**Finding:** Three routers now each independently implement "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function. `routes/bridge.js`'s own comment acknowledges the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper (e.g. a `createAuthWithBypass(auth, matcher)` middleware factory). The three copies aren't even structurally aligned — `mixers.js`'s version has a different signature and conditional semantics from the other two — so there's no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`."
+**Finding:** Three routers each independently implement "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function. `routes/bridge.js`'s own comment acknowledges the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper (e.g. a `createAuthWithBypass(auth, matcher)` middleware factory). The three copies aren't even structurally aligned — `mixers.js`'s version has a different signature and conditional semantics from the other two — so there's no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`."
 
 **Why skipped:** Extracting a shared bypass-middleware factory is a real, reasonable simplification, but touching three already-shipped, already-tested routers' auth wiring in the same pass that just closed a real auth gap on two of them felt like more risk than the current, narrow scope (bridge TCP command / IP security) warranted — a regression in this factoring would reopen exactly the kind of hole this pass exists to close. Better done as its own deliberate, focused refactor with its own review pass.
 
-**Recommendation:** If a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
+**Recommendation (originally):** if a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
 
-(Found during: code-review pass on the bridge security layer, 2026-07-26.)
+**2026-09-10 update — the predicted trigger happened, still not extracted:** wiring the device-role JWT into `CameraStreamPage.jsx`/`LcytMixerPage.jsx` (the WHIP/kiosk auth follow-up, see the resolved entry above) required `cameras.js`'s carve-out to become conditional exactly like `mixers.js`'s already-existing one — which meant copying `mixers.js`'s `hasAuthCredentials(req)` into `cameras.js` verbatim as a fourth copy of this exact helper, rather than extracting it. Still deliberately not extracted here, for the same reason as the original finding (auth-wiring changes on already-shipped routers deserve their own focused pass, not a drive-by inside an unrelated feature addition) — and because this whole carve-out-pattern question is already in scope for the separate interactive session spawned the same day to redesign the auth/token model more broadly (`session_01YFnwezASC2YB4P2mDfsvuE`, briefed on this exact finding). `cameras.js` and `mixers.js`'s copies are now at least structurally identical (both conditional, both take `req`); `bridge.js`'s remains the odd one out (unconditional, takes `path`) since none of its three carve-out routes (`/commands`, `/status`, `/security-rules/for-agent`) have any credentialed/uncredentialed distinction to make — they're always bridge-agent-token-authed, never a human session.
+
+(Found during: code-review pass on the bridge security layer, 2026-07-26. Updated 2026-09-10 — still open.)
 
 ---
 

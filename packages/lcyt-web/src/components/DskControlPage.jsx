@@ -27,9 +27,13 @@ import { DskBroadcastAssetPanel } from './DskBroadcastAssetPanel.jsx';
  * page exists for, not a fresh no-login credential. Only used when the
  * persisted session's apiKey matches this page's own :key — a different
  * project's leftover token must never be sent here. This page's routes
- * (activate/broadcast/renderer start-stop) aren't Setup-tier gated (see
- * CONSIDER.md), so the broader project-membership check any valid project
- * token satisfies is enough; no admin/owner role is required.
+ * (activate/broadcast/renderer start-stop) are gated at the 'production'
+ * tier (operator+), not 'setup' — see dsk-templates.js's requireProduction().
+ * That check fails open for a plain caption-session JWT (sidebar mode has no
+ * per-user identity to resolve a role for), so sidebar mode is unaffected;
+ * standalone mode's persisted project-access token IS a real per-user JWT,
+ * so a viewer/editor-role team member opening this page in a second tab now
+ * needs operator+ to actually trigger these actions.
  */
 
 const btnStyle = {

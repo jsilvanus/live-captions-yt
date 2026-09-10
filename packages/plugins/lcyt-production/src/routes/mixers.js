@@ -23,23 +23,28 @@ function hasAuthCredentials(req) {
 
 // Routes that must stay unauthenticated even after opts.auth is supplied:
 // LcytMixerPage.jsx (the LCYT software-mixer output page) is a capability-URL
-// kiosk page with no login flow — it plain-`fetch()`s /sources and
-// /whip-url with no Authorization header, then posts/patches/deletes /whip
-// for the WebRTC session itself. Mirrors routes/cameras.js's
-// isUnauthenticatedCameraRoute().
+// kiosk page with no login flow of its own — but it now optionally sends the
+// device-role JWT from sessionStorage['lcyt-device'] (DeviceLoginPage.jsx) as
+// Authorization: Bearer when one is present, on /sources, /whip-url,
+// /switch, and the WHIP session routes alike. Mirrors
+// routes/cameras.js's isUnauthenticatedCameraRoute().
 //
-// /switch/:inputNumber is a special case: the SAME kiosk page also POSTs it
-// with no credentials at all (to cut its own program source), but the real
-// operator workspace UI hits the identical route WITH an Authorization
-// header and needs auth to run normally so production-follow gets a real
-// apiKey (plan_vertical_crop.md §4) — an unconditional bypass here would
-// silently break production-follow for every switch, not just the kiosk's.
-// So /switch only skips auth when the request carries no credentials at all;
-// a credentialed request still goes through auth() as normal.
+// All four route groups here are the SAME shape as /switch's pre-existing
+// special case: the kiosk page (or its operator-workspace counterpart, for
+// /switch) may hit them WITH an Authorization header and needs auth to run
+// normally — for /switch, so production-follow gets a real apiKey
+// (plan_vertical_crop.md §4); for /sources/whip-url/whip, so
+// canAccessMixer() below can enforce cross-tenant ownership once a real
+// credential is present. An unconditional bypass would silently break both.
+// So every one of these routes only skips auth when the request carries no
+// credentials at all; a credentialed request still goes through auth() as
+// normal, and a bare capability URL with no device login stays exactly as
+// open as before this pass.
 function isUnauthenticatedMixerRoute(req) {
   const path = req.path;
-  if (/\/whip(-url)?(\/|$)/.test(path) || /\/sources$/.test(path)) return true;
-  if (/\/switch\/[^/]+$/.test(path)) return !hasAuthCredentials(req);
+  if (/\/whip(-url)?(\/|$)/.test(path) || /\/sources$/.test(path) || /\/switch\/[^/]+$/.test(path)) {
+    return !hasAuthCredentials(req);
+  }
   return false;
 }
 
@@ -336,7 +341,11 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // GET /production/mixers/:id/sources — camera sources for this mixer
   router.get('/:id/sources', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    // A credential-less kiosk request never sets req.session (see
+    // isUnauthenticatedMixerRoute() above), so canAccessMixer() correctly
+    // fails open for it; a device-role JWT scoped to a different project is
+    // rejected same as any other cross-tenant mixer read.
+    if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
     if (row.type !== 'lcyt') {
       return res.status(400).json({ error: 'Sources endpoint is only available for LCYT software mixers' });
     }
@@ -369,7 +378,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // GET /production/mixers/:id/whip-url — WHIP proxy info for LCYT mixer output
   router.get('/:id/whip-url', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
     if (row.type !== 'lcyt') {
       return res.status(400).json({ error: 'WHIP output is only available for LCYT software mixers' });
     }
@@ -388,7 +397,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // POST /production/mixers/:id/whip — proxy SDP offer to MediaMTX WHIP endpoint
   router.post('/:id/whip', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
     if (row.type !== 'lcyt') return res.status(400).json({ error: 'Mixer is not an LCYT software mixer' });
     if (!row.output_key) return res.status(400).json({ error: 'Mixer has no output_key configured' });
     if (!mediamtxClient) {
@@ -427,7 +436,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // PATCH /production/mixers/:id/whip — proxy trickle ICE candidates
   router.patch('/:id/whip', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
-    if (!row || !row.output_key || !mediamtxClient) return res.status(204).end();
+    if (!row || !canAccessMixer(row, req) || !row.output_key || !mediamtxClient) return res.status(204).end();
 
     const body = req.rawBody ?? '';
     const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(row.output_key)}/whip`;
@@ -446,7 +455,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // DELETE /production/mixers/:id/whip — terminate WHIP session (kick publisher)
   router.delete('/:id/whip', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
-    if (!row || !row.output_key || !mediamtxClient) return res.status(204).end();
+    if (!row || !canAccessMixer(row, req) || !row.output_key || !mediamtxClient) return res.status(204).end();
 
     try { await mediamtxClient.kickPath(row.output_key); } catch { /* ignore */ }
     res.status(204).end();
