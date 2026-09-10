@@ -110,6 +110,16 @@ describe('mcp-tokens db helpers', () => {
     assert.equal(relabeled.active, true);
   });
 
+  it('createMcpToken normalizes a bare or comma-joined scopes string to a JSON array at write time', () => {
+    const { id: bareId } = createMcpToken(db, apiKey, { label: 'Bare scope', scopes: 'dsk:read' });
+    const bareRow = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(bareId);
+    assert.deepEqual(JSON.parse(bareRow.scopes), ['dsk:read']);
+
+    const { id: csvId } = createMcpToken(db, apiKey, { label: 'CSV scopes', scopes: 'dsk:read, events:read' });
+    const csvRow = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(csvId);
+    assert.deepEqual(JSON.parse(csvRow.scopes), ['dsk:read', 'events:read']);
+  });
+
   it('listMcpTokens never includes hash or raw token, and excludes revoked rows', () => {
     const { id: revokedId } = createMcpToken(db, apiKey, { label: 'To exclude' });
     revokeMcpToken(db, apiKey, revokedId);

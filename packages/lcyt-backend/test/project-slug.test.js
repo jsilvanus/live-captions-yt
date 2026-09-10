@@ -98,6 +98,19 @@ describe('GET /keys/:key/slug', () => {
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, { headers: authed(outsider) });
     assert.equal(res.status, 403);
   });
+
+  it('accepts a user token via ?token= query param or the lcyt_identity cookie, not just an Authorization header', async () => {
+    const proj = makeProject();
+    const token = makeToken(owner);
+
+    const viaQuery = await fetch(`${baseUrl}/keys/${proj.key}/slug?token=${token}`);
+    assert.equal(viaQuery.status, 200);
+
+    const viaCookie = await fetch(`${baseUrl}/keys/${proj.key}/slug`, {
+      headers: { cookie: `lcyt_identity=${token}` },
+    });
+    assert.equal(viaCookie.status, 200);
+  });
 });
 
 describe('PUT /keys/:key/slug', () => {

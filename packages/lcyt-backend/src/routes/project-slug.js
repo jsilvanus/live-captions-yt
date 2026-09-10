@@ -10,7 +10,6 @@
  */
 
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
 import {
   getKey,
   getRequiredSlugPrefix,
@@ -19,16 +18,7 @@ import {
 } from '../db/keys.js';
 import { getEffectiveProjectAccessLevel } from '../db/project-members.js';
 import { adminMiddleware } from '../middleware/admin.js';
-
-function verifyUserToken(jwtSecret, req) {
-  const header = req.headers.authorization;
-  if (!header?.startsWith('Bearer ')) return null;
-  try {
-    const payload = jwt.verify(header.slice(7), jwtSecret);
-    if (payload.type !== 'user') return null;
-    return { userId: payload.userId, email: payload.email };
-  } catch { return null; }
-}
+import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -51,7 +41,7 @@ export function createProjectSlugRouter(db, { loginEnabled = false, jwtSecret = 
       });
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
-    const user = verifyUserToken(jwtSecret, req);
+    const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
     const row = getKey(db, req.params.key);

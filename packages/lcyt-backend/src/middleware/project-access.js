@@ -41,15 +41,40 @@ function normalizeProjectRole(projectRole) {
   return validRoles.has(projectRole) ? projectRole : 'viewer';
 }
 
+/**
+ * Classify a verified JWT payload into one of the middleware's non-external
+ * token kinds. Precedence matters and mirrors what issuance actually
+ * produces: device tokens are checked first (so a device payload's `apiKey`
+ * field can't be mistaken for a legacy session token below), then legacy
+ * session shape (`{ sessionId, apiKey }`, no `type`/`kind` at all — predates
+ * this whole scheme, `routes/live.js` still issues these), then user/project
+ * tokens (`issueProjectToken()` already writes both `type: 'user'` and
+ * `kind: 'user'|'project'` at issuance — the extra `kind === 'identity'`
+ * check is back-compat for an older payload shape). Returns `null` for
+ * anything unrecognized (→ 401 'Invalid token type').
+ * @param {object} payload  a verified (not yet classified) JWT payload
+ * @returns {'device'|'session'|'user'|null}
+ */
+function classifyToken(payload) {
+  if (!payload) return null;
+  if (payload.type === 'device' || payload.kind === 'device') return 'device';
+  if (payload.sessionId || payload.apiKey) return 'session';
+  if (payload.type === 'user' || payload.kind === 'identity' || payload.kind === 'user' || payload.kind === 'project') return 'user';
+  return null;
+}
+
 function attachProjectContext(req, authInfo) {
   req.user = req.user || {};
   req.auth = authInfo;
   req.project = {
     projectId: authInfo.projectId,
-    // Informational only — session/external/device token kinds don't carry a
-    // real per-user project role, so this label is display-only. Anything
-    // that needs to actually *gate* a write must call requireProjectRole()
-    // (middleware/project-access.js), which recomputes from userId, not this.
+    // Informational/display only — NOT an authorization gate. session/
+    // external/device token kinds don't carry a real per-user project role,
+    // so this label must never be branched on to allow/deny a write. Any
+    // route that needs to actually *gate* a write must call
+    // requireProjectRole()/hasProjectRole() below, which always recomputes
+    // from (apiKey, userId) via getEffectiveProjectAccessLevel() rather than
+    // trusting this field.
     projectRole: authInfo.projectRole || authInfo.deviceRole || 'viewer',
     activeBroadcastId: authInfo.activeBroadcastId ?? null,
   };
@@ -123,14 +148,9 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
 
     try {
       const payload = jwt.verify(token, jwtSecret);
-      // Legacy session tokens are plain { sessionId, apiKey } with no type/kind field.
-      // Device tokens also carry apiKey (for projectId resolution) but declare an
-      // explicit type/kind — they must fall through to the device branch below,
-      // not be swallowed here (this previously made every device token resolve
-      // as kind:'session', so deviceRole/roleId/permissions were never attached
-      // and the Item 4 active-role check below never ran).
-      const isDeviceToken = payload?.type === 'device' || payload?.kind === 'device';
-      if (payload && !isDeviceToken && (payload.sessionId || payload.apiKey)) {
+      const kind = classifyToken(payload);
+
+      if (kind === 'session') {
         return handleTokenAuth(req, res, next, {
           kind: 'session',
           projectId: projectId || payload.projectId || payload.apiKey,
@@ -142,7 +162,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         });
       }
 
-      if (payload.type === 'user' || payload.kind === 'identity' || payload.kind === 'user' || payload.kind === 'project') {
+      if (kind === 'user') {
         const user = normalizeUserPayload(payload);
         if (!user.userId) {
           return res.status(401).json({ error: 'Invalid token payload' });
@@ -168,7 +188,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         });
       }
 
-      if (payload.type === 'device' || payload.kind === 'device') {
+      if (kind === 'device') {
         // Device JWTs carry a 1h TTL, but a deactivated/expired role must revoke
         // access immediately rather than waiting for the token to expire
         // (Item 4 — Phase 4, plan_userprojects.md). roleId is only present on
@@ -177,14 +197,20 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         if (payload.roleId != null && !isDeviceRoleActive(db, payload.roleId)) {
           return res.status(401).json({ error: 'Device role is inactive or expired' });
         }
+        // normalizeUserPayload() rather than inline field extraction — device
+        // tokens carry no userId/email/siteRole today, but this keeps the
+        // fallback chains (payload.sub/user_id/id, isAdmin→siteRole) applied
+        // uniformly with the external/user branches instead of a fourth,
+        // narrower copy.
+        const device = normalizeUserPayload(payload);
         return handleTokenAuth(req, res, next, {
           kind: 'device',
           projectId: projectId || payload.projectId || payload.apiKey,
           deviceRole: payload.deviceRole || payload.role || null,
           projectRole: payload.projectRole || null,
-          userId: payload.userId || null,
-          email: payload.email || null,
-          siteRole: payload.siteRole || null,
+          userId: device.userId,
+          email: device.email,
+          siteRole: device.siteRole,
           scopes: payload.scopes || null,
           roleId: payload.roleId || null,
         });

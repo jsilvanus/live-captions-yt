@@ -18,12 +18,28 @@ function hashToken(rawToken) {
   return createHash('sha256').update(rawToken).digest('hex');
 }
 
+/**
+ * Serialize a scopes input to canonical JSON for storage. Always emits a
+ * JSON array string (or null for empty/full-access) — a bare or
+ * comma-joined string input (e.g. `"dsk:read"` or `"dsk:read,events:read"`)
+ * is normalized into an array rather than stored as-is, so every *new* row
+ * is unambiguous JSON. `parseScopes()` below still tolerates a raw
+ * non-JSON string on read, for any row written before this normalization
+ * existed — this only stops the ambiguity from growing.
+ */
 function serializeScopes(scopes) {
   if (Array.isArray(scopes)) {
     return JSON.stringify(scopes.filter(Boolean));
   }
   if (typeof scopes === 'string' && scopes.trim()) {
-    return scopes.trim();
+    const trimmed = scopes.trim();
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return JSON.stringify(parsed.filter(Boolean));
+    } catch {
+      // Not JSON — fall through to comma/bare-string normalization below.
+    }
+    return JSON.stringify(trimmed.split(',').map((entry) => entry.trim()).filter(Boolean));
   }
   return null;
 }
