@@ -184,4 +184,14 @@ describe('mixer CRUD', () => {
     assert.equal(updateMixer(db, registry, 'no-such-id', { name: 'X' }).status, 404);
     assert.equal(deleteMixer(db, registry, 'no-such-id').status, 404);
   });
+
+  it('createMixer stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', () => {
+    const db = makeDb();
+    const registry = makeRegistryStub();
+    const owned = createMixer(db, registry, { name: 'Owned', type: 'lcyt', ownerApiKey: 'proj-a' });
+    assert.equal(owned.mixer.isOwned, true);
+
+    const legacy = createMixer(db, registry, { name: 'Legacy', type: 'lcyt' });
+    assert.equal(legacy.mixer.isOwned, false);
+  });
 });

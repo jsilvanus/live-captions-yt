@@ -81,6 +81,13 @@ function attachProjectContext(req, authInfo) {
   req.session = req.session || {};
   req.session.apiKey = authInfo.projectId;
   req.session.projectId = authInfo.projectId;
+  // Legacy session JWTs (POST /live) carry a `domain` field some routes
+  // (lcyt-rtmp's requireRtmpDomain) still gate on — preserve it through this
+  // back-compat shim so those routes keep working unchanged once mounted
+  // behind this middleware instead of the plain session-only one. Absent for
+  // every other token kind (user/device/external) — those callers were never
+  // domain-scoped to begin with.
+  if (authInfo.domain != null) req.session.domain = authInfo.domain;
   if (authInfo.userId != null) {
     req.user.userId = authInfo.userId;
     req.user.email = authInfo.email;
@@ -155,6 +162,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           kind: 'session',
           projectId: projectId || payload.projectId || payload.apiKey,
           sessionId: payload.sessionId || null,
+          domain: payload.domain ?? null,
           projectRole: 'member',
           userId: null,
           email: null,

@@ -12,7 +12,9 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
 import { runMigrations } from 'lcyt-rtmp/src/db.js';
-import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
 import { createStreamRouter } from 'lcyt-rtmp/src/routes/stream.js';
 
 const JWT_SECRET = 'test-stream-secret';
@@ -69,11 +71,15 @@ before(() => new Promise((resolve) => {
 
   mockRelay = makeMockRelayManager();
 
-  const auth = createAuthMiddleware(JWT_SECRET);
+  // Real production mounting (server.js) uses scopedAuth('rtmp')/
+  // createProjectAccessMiddleware + requireProjectRole('setup'), not the
+  // plain session-only auth — matters here because writes now need a real
+  // userId with explicit owner/admin (plan_project_roles.md).
+  const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'rtmp' });
   const app = express();
   app.use(express.json());
   // allowedRtmpDomains = '*' → no domain restriction
-  app.use('/stream', createStreamRouter(db, auth, mockRelay, '*'));
+  app.use('/stream', createStreamRouter(db, auth, mockRelay, '*', requireProjectRole(db, 'setup')));
 
   server = createServer(app);
   server.listen(0, () => {
@@ -81,9 +87,12 @@ before(() => new Promise((resolve) => {
     resolve();
   });
 
-  // Build a JWT for the test API key (session token format)
+  // Explicit project owner — authToken used for every request in this file
+  // (GET and write) below, same as a real logged-in admin using Setup Hub.
+  const owner = createUser(db, { email: 'stream-owner@example.com', passwordHash: 'x' });
+  addMember(db, TEST_API_KEY, owner.id, 'owner');
   authToken = jwt.sign(
-    { sessionId: 'sess-stream-001', apiKey: TEST_API_KEY, domain: 'https://test.com' },
+    { type: 'user', userId: owner.id, email: owner.email, projectId: TEST_API_KEY },
     JWT_SECRET,
   );
 }));
@@ -160,6 +169,19 @@ describe('/stream — relay_allowed check', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /stream — create relay slot', () => {
+  it('403s for a session token with no explicit project role (setup tier required)', async () => {
+    const sessionToken = jwt.sign(
+      { sessionId: 'sess-no-role', apiKey: TEST_API_KEY, domain: 'https://test.com' },
+      JWT_SECRET,
+    );
+    const res = await fetch(`${baseUrl}/stream`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${sessionToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://example.com/live/key' }),
+    });
+    assert.equal(res.status, 403);
+  });
+
   it('returns 400 for missing targetUrl', async () => {
     const res = await streamFetch('/', {
       method: 'POST',

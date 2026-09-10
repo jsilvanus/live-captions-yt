@@ -90,12 +90,12 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   // Setup-tier instance/security-rule CRUD vs. Production-tier command
   // dispatch (plan_project_roles.md, decided 2026-07-26) — see
   // route-access.js's doc comment. GET /instances/:id/env (re-download the
-  // bridge's plaintext auth token) is deliberately NOT gated here — it's a
-  // GET, and per this whole system's own read/write split (requireTier /
-  // requireProjectRole both exempt GET/HEAD/OPTIONS unconditionally), reads
-  // stay open to anyone who already passed opts.auth. That is a real,
-  // separate credential-disclosure gap this pass surfaced but does not fix
-  // — see CONSIDER.md.
+  // bridge's plaintext auth token) is the one deliberate exception to this
+  // whole system's "reads stay open to any project member" policy: unlike
+  // template/config reads, this GET discloses a live credential, so it's
+  // explicitly gated at 'setup' below instead of being left open like every
+  // other GET in this router (see CONSIDER.md for why this needed a
+  // dedicated look rather than a drive-by fix).
   const requireSetup = requireTier(opts.deps ?? {}, 'setup');
   const requireProduction = requireTier(opts.deps ?? {}, 'production');
 
@@ -231,8 +231,11 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
     }
   });
 
-  // GET /production/bridge/instances/:id/env — re-download the .env file
-  router.get('/instances/:id/env', (req, res) => {
+  // GET /production/bridge/instances/:id/env — re-download the .env file.
+  // Gated at 'setup' (admin/owner) despite being a GET — it re-discloses the
+  // bridge instance's plaintext auth token, not mere configuration, so the
+  // usual "any project member can read" policy doesn't apply here.
+  router.get('/instances/:id/env', requireSetup, (req, res) => {
     const row = db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Bridge instance not found' });
 

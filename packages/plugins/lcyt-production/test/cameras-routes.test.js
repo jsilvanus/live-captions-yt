@@ -323,6 +323,22 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
     assert.notEqual(res.status, 401);
   });
 
+  it('a device-role JWT (or any other credential) on WHIP routes is enforced for ownership, not skipped', async () => {
+    // CameraStreamPage.jsx now optionally sends a device-role token as
+    // Authorization: Bearer — once a credential IS present, this must go
+    // through auth() and be subject to canAccessCamera() like any other
+    // credentialed request, not silently bypass ownership.
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const id = insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
+
+    const own = await fetch(`${baseUrl}/production/cameras/${id}/whip-url`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(own.status, 200);
+
+    const foreign = await fetch(`${baseUrl}/production/cameras/${id}/whip-url`, { headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(foreign.status, 404);
+  });
+
   it('thumbnail-serving routes remain unauthenticated even when auth is configured', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });

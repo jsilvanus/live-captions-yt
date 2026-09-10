@@ -391,6 +391,67 @@ describe('Bridge — atem_switch command handling', () => {
     assert.equal(errors[0].type, 'atem_switch');
   });
 
+  // Regression coverage for the atem_switch port-threading fix: the command
+  // dispatched to this bridge now carries a real `port` field (previously
+  // absent), so a port-qualified security rule can actually match it here
+  // too — mirrors packages/plugins/lcyt-production/test/bridge-manager.test.js's
+  // equivalent backend-side coverage.
+  it('blocks an atem_switch matching a port-qualified deny IP rule', async () => {
+    const { Bridge } = await import('../src/bridge.js');
+    const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '192.168.1.10:9910' }], commandRules: [] });
+
+    const statusPosts = [];
+    bridge._postStatus = async (body) => { statusPosts.push(body); };
+    const switched = [];
+    bridge._atemPool = {
+      switch: async (host, meIndex, inputNumber) => { switched.push({ host, meIndex, inputNumber }); },
+      status: () => [],
+      destroy: () => {},
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'atem_switch',
+      requestId: 'req-port-1',
+      host: '192.168.1.10',
+      port: 9910,
+      meIndex: 0,
+      inputNumber: 3,
+    }));
+
+    assert.equal(switched.length, 0, 'AtemPool must never be reached for a blocked command');
+    assert.equal(statusPosts.length, 1);
+    assert.equal(statusPosts[0].ok, false);
+    assert.match(statusPosts[0].error, /Blocked by local bridge security policy/);
+  });
+
+  it('does not block an atem_switch whose port does not match a port-qualified deny IP rule', async () => {
+    const { Bridge } = await import('../src/bridge.js');
+    const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '192.168.1.10:9910' }], commandRules: [] });
+
+    const statusPosts = [];
+    bridge._postStatus = async (body) => { statusPosts.push(body); };
+    const switched = [];
+    bridge._atemPool = {
+      switch: async (host, meIndex, inputNumber) => { switched.push({ host, meIndex, inputNumber }); },
+      status: () => [],
+      destroy: () => {},
+    };
+
+    await bridge._handleCommand(JSON.stringify({
+      type: 'atem_switch',
+      requestId: 'req-port-2',
+      host: '192.168.1.10',
+      port: 19910,
+      meIndex: 0,
+      inputNumber: 3,
+    }));
+
+    assert.equal(switched.length, 1, 'a different port is not covered by the rule, so the command should dispatch');
+    assert.equal(statusPosts[0].ok, true);
+  });
+
   it('does not reach unknown-type handler for atem_switch', async () => {
     const { Bridge } = await import('../src/bridge.js');
     const bridge = new Bridge({ backendUrl: 'http://test', token: 'tok' });

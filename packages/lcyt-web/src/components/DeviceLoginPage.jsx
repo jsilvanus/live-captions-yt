@@ -86,25 +86,35 @@ export function DeviceLoginPage() {
   function handleNavigate() {
     if (!connectedRole) return;
     const base = server.replace(/\/$/, '');
-    switch (connectedRole.roleType) {
-      case 'camera':
-        window.location.href = `/production/camera/${connectedRole.apiKey}`;
-        break;
-      case 'mixer':
-        window.location.href = `/production/lcyt-mixer/${connectedRole.apiKey}`;
-        break;
-      default:
-        // For mic and custom: go to the main captioning UI pre-loaded with this project
-        try {
-          const existing = JSON.parse(localStorage.getItem(KEYS.session?.config || 'lcyt-session-config') || '{}');
-          localStorage.setItem(KEYS.session?.config || 'lcyt-session-config', JSON.stringify({
-            ...existing,
-            backendUrl: base,
-            apiKey: connectedRole.apiKey,
-          }));
-        } catch {}
-        window.location.href = '/';
-    }
+    // No case here for 'camera' OR 'mixer' — neither has a real per-device
+    // destination to resolve to. `/production/camera/:key`
+    // (CameraStreamPage.jsx) and `/production/lcyt-mixer/:key`
+    // (LcytMixerPage.jsx) each need a real cameraId/mixerId, but a device
+    // role carries no such binding anywhere in the data model: `POST
+    // /auth/device-login` (packages/lcyt-backend/src/routes/device-roles.js)
+    // never returns one — its response is { token, apiKey, roleId, roleType,
+    // name, permissions } — and `project_device_roles`
+    // (packages/lcyt-backend/src/db/device-roles.js) has no
+    // camera_id/mixer_id column; its generic `config` JSON blob is never
+    // populated with one by any existing UI (CreateDeviceRoleForm.jsx only
+    // ever sends { roleType, name }). This used to redirect a 'mixer' role
+    // to `/production/lcyt-mixer/${connectedRole.apiKey}` — passing the
+    // *project's* apiKey as the route's :key param, which LcytMixerPage.jsx
+    // actually treats as a raw mixerId (the same apiKey-vs-id mismatch
+    // already found and fixed for 'camera' below) — so it never landed on a
+    // real mixer. Until a real per-device camera/mixer binding is added to
+    // the data model, fall through to the same project-preloaded captioning
+    // UI 'mic'/'custom' already use, which only needs the apiKey this login
+    // response does provide.
+    try {
+      const existing = JSON.parse(localStorage.getItem(KEYS.session?.config || 'lcyt-session-config') || '{}');
+      localStorage.setItem(KEYS.session?.config || 'lcyt-session-config', JSON.stringify({
+        ...existing,
+        backendUrl: base,
+        apiKey: connectedRole.apiKey,
+      }));
+    } catch {}
+    window.location.href = '/';
   }
 
   const container = {
@@ -161,7 +171,9 @@ export function DeviceLoginPage() {
             onClick={handleNavigate}
             style={{ width: '100%', padding: '12px', fontSize: 15 }}
           >
-            Go to {connectedRole.roleType === 'camera' ? 'camera view' : connectedRole.roleType === 'mixer' ? 'mixer' : 'captioning'}
+            {/* Every role type falls through to the same captioning UI — see
+                the no-camera/mixer-binding note in handleNavigate() above. */}
+            Go to captioning
           </button>
         </div>
       </div>

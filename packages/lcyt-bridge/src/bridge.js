@@ -229,6 +229,11 @@ export class Bridge extends EventEmitter {
         this.emit('command:error', { host, port, error: err.message });
       }
     } else if (cmd.type === 'atem_switch') {
+      // cmd.port is present (packages/plugins/lcyt-production's atem.js
+      // adapter's getSwitchCommand()) so _resolveIpTargets()/_checkSecurity()
+      // above can match a port-qualified security rule; AtemPool itself
+      // still dials atem-connection's own default port (9910) — its pooled
+      // UDP connection is unrelated to this security-check concern.
       const { requestId, host, meIndex = 0, inputNumber } = cmd;
       try {
         await this._atemPool.switch(host, meIndex, inputNumber);
@@ -383,6 +388,16 @@ export class Bridge extends EventEmitter {
     const init = {
       method: method.toUpperCase(),
       headers: { ...headers },
+      // Never transparently follow a redirect: the IP allow/deny check (both
+      // the backend's authoritative one and this bridge's own local
+      // defense-in-depth layer) only ever validates this pre-redirect host.
+      // A 3xx response would otherwise land the real outbound request on
+      // whatever host `Location` names, unchecked. `'error'` makes fetch()
+      // reject the moment a redirect comes back, before it's followed; the
+      // caller's existing try/catch turns that into a normal { ok: false }
+      // command-failure result. Per-hop re-validation was considered and
+      // rejected as more work than this pass justifies (CONSIDER.md).
+      redirect: 'error',
     };
     if (body !== undefined && body !== null) {
       if (typeof body === 'object' && !Array.isArray(body)) {
@@ -412,7 +427,9 @@ export class Bridge extends EventEmitter {
 
     let images;
     if (sourceUrl) {
-      const imgRes = await fetch(sourceUrl);
+      // redirect: 'error' — see _httpRequest() above; sourceUrl is just as
+      // operator-configured/attacker-influenceable as the endpoint below.
+      const imgRes = await fetch(sourceUrl, { redirect: 'error' });
       if (!imgRes.ok) throw new Error(`Source fetch failed: ${imgRes.status}`);
       const buf = Buffer.from(await imgRes.arrayBuffer());
       images = [buf.toString('base64')];
@@ -430,6 +447,7 @@ export class Bridge extends EventEmitter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
+      redirect: 'error', // see _httpRequest() above
     });
     const text = await response.text().catch(() => '');
     let parsed;

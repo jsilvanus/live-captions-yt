@@ -7,6 +7,7 @@ function makeSession(overrides = {}) {
     apiKey: 'proj-1',
     backendUrl: 'https://api.test',
     listImages: vi.fn().mockResolvedValue({ images: [{ shorthand: 'logo' }, { shorthand: 'banner' }] }),
+    getSessionToken: vi.fn(() => 'sess-tok'),
     ...overrides,
   };
 }
@@ -37,7 +38,7 @@ describe('useDskMetacodeSources', () => {
     expect(session.listImages).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledWith(
       'https://api.test/dsk/proj-1/viewports',
-      { headers: { 'X-API-Key': 'proj-1' } }
+      { headers: { Authorization: 'Bearer sess-tok' } }
     );
   });
 

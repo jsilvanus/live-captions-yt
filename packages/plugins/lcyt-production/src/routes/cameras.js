@@ -18,18 +18,41 @@ const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
 // relay slots — see rtmp-manager.js's per-group try/catch).
 const CAMERA_KEY_RE = /^[A-Za-z0-9_-]+$/;
 
+// Whether a request carries anything auth() would recognise as a credential
+// (Authorization header, x-api-key, a query-string token, or an auth
+// cookie) — mirrors middleware/project-access.js's extractAuthToken() plus
+// the x-api-key project-id hint it also reads. Mirrors routes/mixers.js's
+// identical helper (see CONSIDER.md's note on this carve-out pattern being
+// hand-rolled per-router rather than shared).
+function hasAuthCredentials(req) {
+  if (req.headers.authorization) return true;
+  if (req.headers['x-api-key']) return true;
+  if (req.query?.token) return true;
+  const cookie = req.headers.cookie || '';
+  if (/(?:^|;\s*)(lcyt_project|lcyt_identity)=/.test(cookie)) return true;
+  return false;
+}
+
 // Routes that must stay unauthenticated even after opts.auth is supplied:
 // - /whip, /whip-url: CameraStreamPage.jsx is a capability-URL kiosk page
-//   with no login flow (a dedicated device opens a bare URL and pushes its
-//   webcam) — see plan_ingest_feeds.md's code-review follow-up in
-//   CONSIDER.md for wiring these into the existing (currently-unused)
-//   device-role JWT mechanism instead, out of scope here.
+//   with no login flow of its own — but it now optionally sends the
+//   device-role JWT from sessionStorage['lcyt-device'] (DeviceLoginPage.jsx)
+//   as Authorization: Bearer when one is present. So this carve-out, like
+//   mixers.js's /switch, only applies when the request carries no
+//   credentials at all — a credentialed request goes through auth() as
+//   normal (and canAccessCamera() below then enforces ownership), while a
+//   bare capability URL with no device login stays exactly as open as
+//   before this pass (no regression for deployments with no device roles
+//   configured yet).
 // - /thumbnail, /thumbnail.jpg: served as plain <img src> tags in the
 //   production console (panes/index.jsx) — browsers don't attach
 //   Authorization headers to image requests, so gating these would just
-//   break every camera thumbnail tile.
-function isUnauthenticatedCameraRoute(path) {
-  return /\/whip(-url)?(\/|$)/.test(path) || /\/thumbnail(\.jpg)?$/.test(path);
+//   break every camera thumbnail tile. Stays unconditionally open.
+function isUnauthenticatedCameraRoute(req) {
+  const path = req.path;
+  if (/\/thumbnail(\.jpg)?$/.test(path)) return true;
+  if (/\/whip(-url)?(\/|$)/.test(path)) return !hasAuthCredentials(req);
+  return false;
 }
 
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {
@@ -44,7 +67,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   const auth = opts.auth ?? null;
   const router = Router();
 
-  const authMiddleware = createAuthWithBypass(auth, req => isUnauthenticatedCameraRoute(req.path));
+  const authMiddleware = createAuthWithBypass(auth, isUnauthenticatedCameraRoute);
   if (authMiddleware) router.use(authMiddleware);
 
   // Setup-tier CRUD vs. Production-tier live-control (plan_project_roles.md,
@@ -372,7 +395,11 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // GET /production/cameras/:id/whip-url — WHIP proxy info for a browser camera
   router.get('/:id/whip-url', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Camera not found' });
+    // A credential-less kiosk request never sets req.session (see
+    // isUnauthenticatedCameraRoute() above), so canAccessCamera() correctly
+    // fails open for it; a device-role JWT scoped to a different project is
+    // rejected same as any other cross-tenant camera read.
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     if (!BROWSER_CAMERA_TYPES.has(row.control_type)) {
       return res.status(400).json({ error: 'Camera is not a browser camera (webcam or mobile)' });
@@ -399,7 +426,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // POST /production/cameras/:id/whip — proxy SDP offer to MediaMTX WHIP endpoint
   router.post('/:id/whip', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Camera not found' });
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     if (!BROWSER_CAMERA_TYPES.has(row.control_type)) {
       return res.status(400).json({ error: 'Camera is not a browser camera' });
     }
@@ -442,7 +469,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // PATCH /production/cameras/:id/whip — proxy trickle ICE candidates to MediaMTX
   router.patch('/:id/whip', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Camera not found' });
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     if (!row.camera_key || !mediamtxClient) return res.status(204).end();
 
     const body = req.rawBody ?? '';
@@ -462,7 +489,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // DELETE /production/cameras/:id/whip — terminate WHIP session (kick publisher)
   router.delete('/:id/whip', async (req, res) => {
     const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
-    if (!row || !row.camera_key || !mediamtxClient) return res.status(204).end();
+    if (!row || !canAccessCamera(row, req) || !row.camera_key || !mediamtxClient) return res.status(204).end();
 
     try { await mediamtxClient.kickPath(row.camera_key); } catch { /* ignore */ }
     res.status(204).end();

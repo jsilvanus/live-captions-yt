@@ -10,6 +10,9 @@ import { SessionStore } from '../src/store.js';
 import { createFilesRouter } from 'lcyt-files';
 import { createLocalAdapter } from 'lcyt-files/src/adapters/local.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
+import { createUser } from '../src/db/users.js';
+import { addMember } from '../src/db/project-members.js';
+import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
 
 const JWT_SECRET = 'test-files-secret';
 
@@ -116,6 +119,49 @@ async function registerTestFile(session, { content = 'Hello caption', lang = 'or
 }
 
 // ---------------------------------------------------------------------------
+// POST /file — create a file, attributing it to the acting session
+// ---------------------------------------------------------------------------
+
+describe('POST /file', () => {
+  it('attributes the created file to the token session_id when mounted behind the legacy plain session middleware', async () => {
+    // This suite mounts createFilesRouter behind createAuthMiddleware (see
+    // `before()` above) — the legacy plain session-JWT middleware, which
+    // sets req.session to the raw JWT payload and never populates req.auth
+    // at all. registerCaptionFile()'s sessionId must still resolve from
+    // req.session.sessionId in that case, not silently attribute the write
+    // to no session (a regression a Copilot review caught: the handler
+    // previously read only req.auth?.sessionId).
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const res = await fetch(`${baseUrl}/file`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'hello', filename: 'post-file-test.txt' }),
+    });
+    assert.strictEqual(res.status, 201);
+    const body = await res.json();
+    try {
+      const row = db.prepare('SELECT session_id FROM caption_files WHERE id = ?').get(body.file.id);
+      assert.strictEqual(row.session_id, session.sessionId);
+    } finally {
+      // GET /file below relies on a clean caption_files table per apiKey —
+      // remove the row this test creates so it doesn't leak into later
+      // list-count assertions regardless of describe-block ordering.
+      db.prepare('DELETE FROM caption_files WHERE id = ?').run(body.file.id);
+    }
+  });
+
+  it('returns 401 with no Authorization header', async () => {
+    const res = await fetch(`${baseUrl}/file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'hello' }),
+    });
+    assert.strictEqual(res.status, 401);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /file — list files
 // ---------------------------------------------------------------------------
 
@@ -134,14 +180,22 @@ describe('GET /file', () => {
     assert.strictEqual(res.status, 401);
   });
 
-  it('should return 404 when session not found', async () => {
+  // GET /file (list) reads apiKey directly off the JWT payload — it was never
+  // actually load-bearing that the token's sessionId reference a *live*
+  // /live session (see CONSIDER.md's icons.js/lcyt-files entry), so a
+  // never-created sessionId no longer 404s here. This is a deliberate
+  // behavior change from before the plan_project_roles.md Setup-tier
+  // migration: only the token-based GET /file/:id download route (below)
+  // still resolves through the live session store, since it independently
+  // verifies its own raw JWT rather than going through `auth`.
+  it('lists files for a valid apiKey even when the token references no live session', async () => {
     const token = makeToken('nonexistent-session');
     const res = await fetch(`${baseUrl}/file`, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await res.json();
-    assert.strictEqual(res.status, 404);
-    assert.ok(data.error);
+    assert.strictEqual(res.status, 200);
+    assert.ok(Array.isArray(data.files));
   });
 
   it('should return an empty files array when no files exist', async () => {
@@ -444,15 +498,22 @@ describe('DELETE /file/:id', () => {
     assert.ok(data.error.includes('Invalid file id'));
   });
 
-  it('should return 404 when session is not found', async () => {
-    const token = makeToken('missing-session-id');
-    const res = await fetch(`${baseUrl}/file/1`, {
+  // DELETE no longer checks live-session existence (see the GET /file
+  // comment above) — a token whose sessionId was never created via
+  // store.create() can still delete a real file it's authorized for
+  // (matching apiKey), proof the dependency really was incidental.
+  it('deletes a real file even when the token references no live session', async () => {
+    const liveSession = createMockSession();
+    const id = await registerTestFile(liveSession, { content: 'Delete me too' });
+
+    const deadToken = makeToken('this-session-id-was-never-created');
+    const res = await fetch(`${baseUrl}/file/${id}`, {
       method: 'DELETE',
-      headers: { 'Authorization': `Bearer ${token}` }
+      headers: { 'Authorization': `Bearer ${deadToken}` }
     });
     const data = await res.json();
-    assert.strictEqual(res.status, 404);
-    assert.ok(data.error);
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(data.ok, true);
   });
 
   it('should return 404 for unknown file id', async () => {
@@ -490,5 +551,118 @@ describe('DELETE /file/:id', () => {
     const listData = await listRes.json();
     const ids = listData.files.map(f => f.id);
     assert.ok(!ids.includes(id), 'Deleted file should not appear in list');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET/PUT/DELETE /file/storage-config
+// ---------------------------------------------------------------------------
+//
+// Real production mounting (content.js) uses scopedAuth('file')/
+// createProjectAccessMiddleware + requireProjectRole('setup'), not the plain
+// session-only auth used above — matters here because PUT/DELETE now need a
+// real userId with explicit owner/admin (plan_project_roles.md). Previously
+// couldn't be gated at all without this migration (see CONSIDER.md). A
+// separate server instance, since the rest of this file deliberately tests
+// the plain-auth-mounted shape.
+
+describe('GET/PUT/DELETE /file/storage-config', () => {
+  const CONFIG_API_KEY = 'storage-config-test-key';
+  let cfgDb, cfgServer, cfgBaseUrl, sessionToken, ownerToken;
+
+  before(async () => {
+    cfgDb = initDb(':memory:');
+    createKey(cfgDb, { key: CONFIG_API_KEY, owner: 'ConfigUser' });
+
+    const auth = createProjectAccessMiddleware(cfgDb, JWT_SECRET, { requiredScope: 'file' });
+    const app = express();
+    app.use(express.json({ limit: '64kb' }));
+    app.use('/file', createFilesRouter(cfgDb, auth, null, JWT_SECRET, async () => null, () => {}, requireProjectRole(cfgDb, 'setup')));
+
+    sessionToken = jwt.sign({ sessionId: 'cfg-session', apiKey: CONFIG_API_KEY }, JWT_SECRET);
+    const owner = createUser(cfgDb, { email: 'storage-config-owner@example.com', passwordHash: 'x' });
+    addMember(cfgDb, CONFIG_API_KEY, owner.id, 'owner');
+    ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: CONFIG_API_KEY }, JWT_SECRET, { expiresIn: '1h' });
+
+    await new Promise((resolve) => {
+      cfgServer = createServer(app);
+      cfgServer.listen(0, () => {
+        cfgBaseUrl = `http://localhost:${cfgServer.address().port}`;
+        resolve();
+      });
+    });
+  });
+
+  after(() => new Promise((resolve) => {
+    cfgDb.close();
+    cfgServer.close(resolve);
+  }));
+
+  function bearer(tok) {
+    return { Authorization: `Bearer ${tok}`, 'X-Api-Key': CONFIG_API_KEY };
+  }
+
+  it('GET returns default (no config) for a fresh key, with just a session token', async () => {
+    const res = await fetch(`${cfgBaseUrl}/file/storage-config`, { headers: bearer(sessionToken) });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.storageMode, 'default');
+    assert.strictEqual(body.config, null);
+  });
+
+  it('PUT 403s for a session token with no explicit project role (setup tier required)', async () => {
+    const res = await fetch(`${cfgBaseUrl}/file/storage-config`, {
+      method: 'PUT',
+      headers: { ...bearer(sessionToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucket: 'my-bucket' }),
+    });
+    assert.strictEqual(res.status, 403);
+  });
+
+  it('PUT 403s (feature not granted) for an owner without the files-custom-bucket feature', async () => {
+    const res = await fetch(`${cfgBaseUrl}/file/storage-config`, {
+      method: 'PUT',
+      headers: { ...bearer(ownerToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucket: 'my-bucket' }),
+    });
+    assert.strictEqual(res.status, 403);
+    const body = await res.json();
+    assert.ok(body.error.toLowerCase().includes('custom storage'));
+  });
+
+  it('PUT sets S3 config once the files-custom-bucket feature is granted; GET reflects it masked', async () => {
+    cfgDb.prepare(
+      `INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'files-custom-bucket', 1)`
+    ).run(CONFIG_API_KEY);
+
+    const put = await fetch(`${cfgBaseUrl}/file/storage-config`, {
+      method: 'PUT',
+      headers: { ...bearer(ownerToken), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucket: 'my-bucket', region: 'us-east-1', access_key_id: 'ak', secret_access_key: 'shh' }),
+    });
+    assert.strictEqual(put.status, 200);
+    assert.strictEqual((await put.json()).ok, true);
+
+    // GET stays open to any project member (read-exempt) even without setup tier.
+    const get = await fetch(`${cfgBaseUrl}/file/storage-config`, { headers: bearer(sessionToken) });
+    assert.strictEqual(get.status, 200);
+    const body = await get.json();
+    assert.strictEqual(body.storageMode, 'custom-s3');
+    assert.strictEqual(body.config.bucket, 'my-bucket');
+  });
+
+  it('DELETE 403s for a session token with no explicit project role (setup tier required)', async () => {
+    const res = await fetch(`${cfgBaseUrl}/file/storage-config`, { method: 'DELETE', headers: bearer(sessionToken) });
+    assert.strictEqual(res.status, 403);
+  });
+
+  it('DELETE reverts to default for an explicit owner', async () => {
+    const res = await fetch(`${cfgBaseUrl}/file/storage-config`, { method: 'DELETE', headers: bearer(ownerToken) });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual((await res.json()).ok, true);
+
+    const get = await fetch(`${cfgBaseUrl}/file/storage-config`, { headers: bearer(sessionToken) });
+    const body = await get.json();
+    assert.strictEqual(body.storageMode, 'default');
   });
 });

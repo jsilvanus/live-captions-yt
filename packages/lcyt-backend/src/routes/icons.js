@@ -67,12 +67,12 @@ const iconRateLimit = rateLimit({
  * Factory for the /icons router.
  *
  * @param {import('better-sqlite3').Database} db
- * @param {import('../middleware/auth.js').AuthMiddleware} auth
- * @param {import('../store.js').SessionStore} store
+ * @param {import('express').RequestHandler} auth  Project-access Bearer middleware
  * @param {string} [baseDir] - Override the icons base directory (for tests).
+ * @param {import('express').RequestHandler} [requireSetup]  Setup-tier write gate (plan_project_roles.md); no-op passthrough when omitted (e.g. tests constructing this router directly)
  * @returns {Router}
  */
-export function createIconRouter(db, auth, store, baseDir) {
+export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, next) => next()) {
   const ICONS_DIR = resolve(baseDir || process.env.ICONS_DIR || '/data/icons');
   const router = Router();
 
@@ -88,11 +88,9 @@ export function createIconRouter(db, auth, store, baseDir) {
     iconRateLimit,
     express.json({ limit: '400kb' }),
     auth,
+    requireSetup,
     (req, res) => {
-      const { sessionId } = req.session;
-      const session = store.get(sessionId);
-      if (!session) return res.status(404).json({ error: 'Session not found' });
-
+      const apiKey = req.session.apiKey;
       const { filename, mimeType, data } = req.body ?? {};
 
       if (!filename || typeof filename !== 'string') {
@@ -135,7 +133,7 @@ export function createIconRouter(db, auth, store, baseDir) {
       }
 
       const ext = mimeType === 'image/svg+xml' ? '.svg' : '.png';
-      const safeKey = iconKeySegment(session.apiKey);
+      const safeKey = iconKeySegment(apiKey);
       const diskFilename = `${randomUUID()}${ext}`;
       const dir = join(ICONS_DIR, safeKey);
 
@@ -148,7 +146,7 @@ export function createIconRouter(db, auth, store, baseDir) {
       }
 
       const id = registerIcon(db, {
-        apiKey: session.apiKey,
+        apiKey,
         filename: basename(filename).slice(0, 255),
         diskFilename,
         mimeType,
@@ -167,11 +165,7 @@ export function createIconRouter(db, auth, store, baseDir) {
 
   // ── GET /icons — list icons for the authenticated key ──────────────────────
   router.get('/', iconRateLimit, auth, (req, res) => {
-    const { sessionId } = req.session;
-    const session = store.get(sessionId);
-    if (!session) return res.status(404).json({ error: 'Session not found' });
-
-    const icons = listIcons(db, session.apiKey).map(row => ({
+    const icons = listIcons(db, req.session.apiKey).map(row => ({
       id: row.id,
       filename: row.filename,
       mimeType: row.mime_type,
@@ -201,20 +195,17 @@ export function createIconRouter(db, auth, store, baseDir) {
   });
 
   // ── DELETE /icons/:id — delete icon (auth required) ────────────────────────
-  router.delete('/:id', iconRateLimit, auth, (req, res) => {
-    const { sessionId } = req.session;
-    const session = store.get(sessionId);
-    if (!session) return res.status(404).json({ error: 'Session not found' });
-
+  router.delete('/:id', iconRateLimit, auth, requireSetup, (req, res) => {
+    const apiKey = req.session.apiKey;
     const id = parseInt(req.params.id, 10);
     if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
 
     const row = getIcon(db, id);
-    if (!row || row.api_key !== session.apiKey) {
+    if (!row || row.api_key !== apiKey) {
       return res.status(404).json({ error: 'Icon not found' });
     }
 
-    const deleted = deleteIcon(db, id, session.apiKey);
+    const deleted = deleteIcon(db, id, apiKey);
     if (!deleted) return res.status(404).json({ error: 'Icon not found' });
 
     // Best-effort disk cleanup

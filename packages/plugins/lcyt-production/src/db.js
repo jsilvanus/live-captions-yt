@@ -117,8 +117,10 @@ export function runMigrations(db) {
   // in-process crud.js path with no ownerApiKey supplied — those stay in the
   // pre-existing open/legacy bucket rather than becoming inaccessible.
   // No FK to api_keys (cross-plugin, mirrors the rest of this file's
-  // no-hard-dependency convention) and no project scoping on prod_mixers/
-  // prod_encoders yet — out of scope here, see CONSIDER.md.
+  // no-hard-dependency convention). prod_mixers gets the identical
+  // owner_api_key column below (mirroring this fix onto the same gap found
+  // there); prod_encoders has no project scoping yet — out of scope here,
+  // see CONSIDER.md.
   const cameraCols4 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
   if (!cameraCols4.includes('owner_api_key')) {
     db.exec('ALTER TABLE prod_cameras ADD COLUMN owner_api_key TEXT');
@@ -139,6 +141,20 @@ export function runMigrations(db) {
   const cameraCols7 = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
   if (!cameraCols7.includes('overlap_links')) {
     db.exec("ALTER TABLE prod_cameras ADD COLUMN overlap_links TEXT NOT NULL DEFAULT '[]'");
+  }
+
+  // owner_api_key: the project (api_keys.key) that created this mixer, set
+  // automatically the same way prod_cameras.owner_api_key is (see that
+  // column's comment above, plan_ingest_feeds.md's cross-tenant review
+  // finding) — mirrored onto prod_mixers because the identical gap exists
+  // here: prod_mixers had no project/tenant column at all, so one project's
+  // session could read/update/delete/switch any other project's mixer.
+  // NULL for any mixer created before this column existed, or via the
+  // in-process crud.js path with no ownerApiKey supplied — those stay in the
+  // pre-existing open/legacy bucket rather than becoming inaccessible.
+  const mixerCols3 = db.prepare("PRAGMA table_info(prod_mixers)").all().map(c => c.name);
+  if (!mixerCols3.includes('owner_api_key')) {
+    db.exec('ALTER TABLE prod_mixers ADD COLUMN owner_api_key TEXT');
   }
 
   // mixer_id: which prod_mixers row mixer_input refers to. Nullable — NULL

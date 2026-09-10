@@ -116,7 +116,7 @@ export class BridgeManager {
    * Send a command to the bridge and await its status response.
    *
    * If `command.type` is set, the command object is sent as-is (with `requestId`
-   * added). This allows typed commands such as `{ type: 'atem_switch', host, meIndex, inputNumber }`.
+   * added). This allows typed commands such as `{ type: 'atem_switch', host, port, meIndex, inputNumber }`.
    *
    * If `command.type` is absent, falls back to the legacy `tcp_send` shape for
    * backward compatibility: `{ type: 'tcp_send', host, port, payload }`.

@@ -203,6 +203,58 @@ describe('/crop/source-map', () => {
   });
 });
 
+describe('requireSetup wiring (plan_project_roles.md)', () => {
+  // The real role-resolution logic (requireProjectRole) is lcyt-backend's own
+  // concern, fully tested there (access-resolver.test.js/project-access.test.js).
+  // This only proves createCropRouter actually threads its 5th `requireSetup`
+  // param in after `auth` and before the route handlers, and that a rejecting
+  // gate blocks writes but not reads — the same read/write split every other
+  // Setup-tier router relies on.
+  let gateDb, gateServer, gateBaseUrl, calls;
+
+  before(async () => {
+    gateDb = new Database(':memory:');
+    runCropMigrations(gateDb);
+    gateDb.exec(`CREATE TABLE project_features (api_key TEXT, feature_code TEXT, enabled INTEGER)`);
+    calls = [];
+    const auth = (req, res, next) => { calls.push('auth'); req.session = { apiKey: KEY }; next(); };
+    const requireSetup = (req, res, next) => {
+      calls.push('requireSetup');
+      if (req.method === 'GET') return next();
+      return res.status(403).json({ error: 'Explicit project admin/owner access required' });
+    };
+    const app = express();
+    app.use(express.json());
+    app.use('/crop', createCropRouter(gateDb, auth, makeMockCropManager(), null, requireSetup));
+    await new Promise(resolve => {
+      gateServer = createServer(app).listen(0, '127.0.0.1', () => {
+        gateBaseUrl = `http://127.0.0.1:${gateServer.address().port}`;
+        resolve();
+      });
+    });
+  });
+
+  after(() => new Promise(r => gateServer.close(() => { gateDb.close(); r(); })));
+
+  test('GET passes through requireSetup', async () => {
+    calls.length = 0;
+    const res = await fetch(`${gateBaseUrl}/crop/config`);
+    assert.equal(res.status, 200);
+    assert.deepEqual(calls, ['auth', 'requireSetup']);
+  });
+
+  test('PUT is blocked by a rejecting requireSetup, after auth has already run', async () => {
+    calls.length = 0;
+    const res = await fetch(`${gateBaseUrl}/crop/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aspect: '9:16' }),
+    });
+    assert.equal(res.status, 403);
+    assert.deepEqual(calls, ['auth', 'requireSetup']);
+  });
+});
+
 describe('feature gate', () => {
   test("403 when FEATURE_GATE_ENFORCE=1 and 'crop' is not enabled; passes when granted", async () => {
     const orig = process.env.FEATURE_GATE_ENFORCE;

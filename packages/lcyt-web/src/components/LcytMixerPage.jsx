@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { resolveKioskConnection } from '../lib/deviceSession.js';
 
 const STUN_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -15,13 +16,14 @@ function getMixerIdFromPath() {
   return parts[3] ?? null;
 }
 
-function getBackendUrl() {
-  return localStorage.getItem('lcyt_backend_url') ?? '';
-}
-
 export function LcytMixerPage() {
-  const mixerId    = getMixerIdFromPath();
-  const backendUrl = getBackendUrl();
+  const mixerId = getMixerIdFromPath();
+  // A device-role JWT logged in via /device-login in this same tab
+  // (sessionStorage['lcyt-device']) is sent as Authorization: Bearer when
+  // present, so the backend's canAccessMixer() ownership check applies
+  // instead of the fully-open bare-capability-URL fallback, and mixer
+  // switches get attributed to a real project for production-follow.
+  const { backendUrl, authHeaders } = useMemo(() => resolveKioskConnection('lcyt_backend_url'), []);
 
   const [mixerInfo, setMixerInfo]       = useState(null);
   const [sources, setSources]           = useState([]);
@@ -52,15 +54,15 @@ export function LcytMixerPage() {
     }
 
     Promise.all([
-      fetch(`${backendUrl}/production/mixers/${mixerId}/sources`).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
-      fetch(`${backendUrl}/production/mixers/${mixerId}/whip-url`).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
+      fetch(`${backendUrl}/production/mixers/${mixerId}/sources`, { headers: authHeaders }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
+      fetch(`${backendUrl}/production/mixers/${mixerId}/whip-url`, { headers: authHeaders }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
     ])
       .then(([srcs, whipInfo]) => {
         setSources(srcs);
         setMixerInfo(whipInfo);
       })
       .catch(err => setError(String(err)));
-  }, [mixerId, backendUrl]);
+  }, [mixerId, backendUrl]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
   // Thumbnail polling
@@ -264,7 +266,7 @@ export function LcytMixerPage() {
       const whipUrl = `${backendUrl}${mixerInfo.whipUrl}`;
       const res = await fetch(whipUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/sdp' },
+        headers: { 'Content-Type': 'application/sdp', ...authHeaders },
         body: pc.localDescription.sdp,
       });
 
@@ -289,10 +291,10 @@ export function LcytMixerPage() {
     stopDrawLoop();
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
     if (mixerInfo) {
-      fetch(`${backendUrl}${mixerInfo.whipUrl}`, { method: 'DELETE' }).catch(() => {});
+      fetch(`${backendUrl}${mixerInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
     }
     setOutputState('idle');
-  }, [mixerInfo, backendUrl, stopDrawLoop]);
+  }, [mixerInfo, backendUrl, stopDrawLoop]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
   // Source cut
@@ -302,9 +304,9 @@ export function LcytMixerPage() {
     const src = sources[idx];
     if (!src) return;
     // Notify backend about the switch
-    fetch(`${backendUrl}/production/mixers/${mixerId}/switch/${src.mixerInput}`, { method: 'POST' })
+    fetch(`${backendUrl}/production/mixers/${mixerId}/switch/${src.mixerInput}`, { method: 'POST', headers: authHeaders })
       .catch(() => {});
-  }, [sources, backendUrl, mixerId]);
+  }, [sources, backendUrl, mixerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------------------
   // Cleanup
@@ -314,7 +316,7 @@ export function LcytMixerPage() {
       stopDrawLoop();
       if (pcRef.current) pcRef.current.close();
       if (mixerInfo) {
-        fetch(`${getBackendUrl()}${mixerInfo.whipUrl}`, { method: 'DELETE' }).catch(() => {});
+        fetch(`${backendUrl}${mixerInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
       }
       for (const hls of Object.values(hlsRefs.current)) hls.destroy();
       if (audioCtxRef.current) audioCtxRef.current.close();

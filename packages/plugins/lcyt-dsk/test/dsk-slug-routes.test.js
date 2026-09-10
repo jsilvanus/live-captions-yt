@@ -15,7 +15,6 @@ import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES, sanitizeDisplaySetti
 import { viewportStreamName, parseStreamName, isViewportStream } from '../src/stream-names.js';
 import { createDskRtmpRouter } from '../src/routes/dsk-rtmp.js';
 import { upsertViewport } from '../src/db/viewports.js';
-import { createEditorAuth, editorAuthOrBearer } from '../src/middleware/editor-auth.js';
 
 let server, baseUrl, db;
 
@@ -454,28 +453,26 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
     await new Promise((resolve) => readServer.close(resolve));
   });
 
-  it('POST succeeds for real X-API-Key editor auth even with no deps/checkProjectRole at all — DskEditorPage.jsx authenticates this way, not via JWT, and must not be blanket-403d', async () => {
-    // Uses the REAL editorAuthOrBearer/createEditorAuth wiring (not stubAuth)
-    // so this actually exercises the req.session.authKind === 'apikey'
-    // discriminator set by middleware/editor-auth.js, not just a hand-rolled
-    // stand-in that happens to look similar.
-    const jwtAuth = (_req, res) => res.status(401).json({ error: 'no jwt in this test' });
-    const realCombinedAuth = editorAuthOrBearer(jwtAuth, createEditorAuth(db));
-
+  it('POST 403s even with a real userId when checkProjectRole is not injected (no more X-API-Key exemption — DskEditorPage.jsx now authenticates via project-scoped JWT like every other page, and gets no special treatment here)', async () => {
+    function realUserAuth(req, _res, next) {
+      const k = req.headers['x-api-key'];
+      if (k) { req.session = { apiKey: k }; req.user = { userId: 1 }; }
+      next();
+    }
     const app = express();
     app.use(express.json());
-    app.use('/dsk', createDskViewportsRouter(db, realCombinedAuth)); // no deps at all
-    const realAuthServer = createServer(app);
-    await new Promise((resolve) => realAuthServer.listen(0, resolve));
-    const realAuthBase = `http://127.0.0.1:${realAuthServer.address().port}`;
+    app.use('/dsk', createDskViewportsRouter(db, realUserAuth)); // no deps at all
+    const noDepsServer = createServer(app);
+    await new Promise((resolve) => noDepsServer.listen(0, resolve));
+    const noDepsBase = `http://127.0.0.1:${noDepsServer.address().port}`;
 
     makeKey('gate5');
-    const res = await fetch(`${realAuthBase}/dsk/gate5/viewports`, {
+    const res = await fetch(`${noDepsBase}/dsk/gate5/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate5' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
     });
-    assert.equal(res.status, 201);
-    await new Promise((resolve) => realAuthServer.close(resolve));
+    assert.equal(res.status, 403);
+    await new Promise((resolve) => noDepsServer.close(resolve));
   });
 });
 
