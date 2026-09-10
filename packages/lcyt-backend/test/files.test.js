@@ -119,6 +119,49 @@ async function registerTestFile(session, { content = 'Hello caption', lang = 'or
 }
 
 // ---------------------------------------------------------------------------
+// POST /file — create a file, attributing it to the acting session
+// ---------------------------------------------------------------------------
+
+describe('POST /file', () => {
+  it('attributes the created file to the token session_id when mounted behind the legacy plain session middleware', async () => {
+    // This suite mounts createFilesRouter behind createAuthMiddleware (see
+    // `before()` above) — the legacy plain session-JWT middleware, which
+    // sets req.session to the raw JWT payload and never populates req.auth
+    // at all. registerCaptionFile()'s sessionId must still resolve from
+    // req.session.sessionId in that case, not silently attribute the write
+    // to no session (a regression a Copilot review caught: the handler
+    // previously read only req.auth?.sessionId).
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    const res = await fetch(`${baseUrl}/file`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'hello', filename: 'post-file-test.txt' }),
+    });
+    assert.strictEqual(res.status, 201);
+    const body = await res.json();
+    try {
+      const row = db.prepare('SELECT session_id FROM caption_files WHERE id = ?').get(body.file.id);
+      assert.strictEqual(row.session_id, session.sessionId);
+    } finally {
+      // GET /file below relies on a clean caption_files table per apiKey —
+      // remove the row this test creates so it doesn't leak into later
+      // list-count assertions regardless of describe-block ordering.
+      db.prepare('DELETE FROM caption_files WHERE id = ?').run(body.file.id);
+    }
+  });
+
+  it('returns 401 with no Authorization header', async () => {
+    const res = await fetch(`${baseUrl}/file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'hello' }),
+    });
+    assert.strictEqual(res.status, 401);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /file — list files
 // ---------------------------------------------------------------------------
 

@@ -74,11 +74,28 @@ describe('resolveKioskConnection()', () => {
     assert.deepEqual(authHeaders, { Authorization: 'Bearer tok-123' });
   });
 
-  it('an explicit ?server= param wins over everything else', () => {
+  it('an explicit ?server= param wins over everything else for backendUrl', () => {
     _sessionStore['lcyt-device'] = JSON.stringify({ token: 'tok-123', backendUrl: 'https://device.example.com' });
     globalThis.window.location.search = '?server=' + encodeURIComponent('https://explicit.example.com');
     const { backendUrl } = resolveKioskConnection('lcyt_backend_url');
     assert.equal(backendUrl, 'https://explicit.example.com');
+  });
+
+  it('never sends the device token to a ?server= origin that differs from the device session (no token exfiltration to an arbitrary/crafted URL)', () => {
+    _sessionStore['lcyt-device'] = JSON.stringify({ token: 'tok-123', backendUrl: 'https://device.example.com' });
+    globalThis.window.location.search = '?server=' + encodeURIComponent('https://evil.example.com');
+    const { backendUrl, authHeaders, device } = resolveKioskConnection('lcyt_backend_url');
+    assert.equal(backendUrl, 'https://evil.example.com');
+    assert.deepEqual(authHeaders, {}, 'Authorization header must be withheld for a mismatched ?server= origin');
+    assert.equal(device, null);
+  });
+
+  it('still attaches the token when ?server= happens to name the same origin as the device session (trailing slash ignored)', () => {
+    _sessionStore['lcyt-device'] = JSON.stringify({ token: 'tok-123', backendUrl: 'https://device.example.com' });
+    globalThis.window.location.search = '?server=' + encodeURIComponent('https://device.example.com/');
+    const { backendUrl, authHeaders } = resolveKioskConnection('lcyt_backend_url');
+    assert.equal(backendUrl, 'https://device.example.com/');
+    assert.deepEqual(authHeaders, { Authorization: 'Bearer tok-123' });
   });
 
   it('returns an empty backendUrl and no auth header when nothing is configured', () => {

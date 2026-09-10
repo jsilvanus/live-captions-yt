@@ -223,13 +223,17 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
 
       const id = registerCaptionFile(db, {
         apiKey,
-        // req.auth.sessionId (not req.session.sessionId, which the
-        // project-access middleware's back-compat shim never sets) — only
-        // present for a live-session-authenticated request (legacy plain
-        // session JWT); a project-scoped JWT (e.g. Setup Hub) has no live
-        // session to attribute this write to, same as any other
-        // out-of-session file write.
-        sessionId: req.auth?.sessionId ?? null,
+        // req.auth.sessionId is set by the project-access middleware for a
+        // live-session-authenticated request (legacy plain session JWT); a
+        // project-scoped JWT (e.g. Setup Hub) has no live session to
+        // attribute this write to, same as any other out-of-session file
+        // write. Falls back to req.session?.sessionId for a router mounted
+        // directly behind the older plain session-only middleware (which
+        // sets req.session to the raw JWT payload and never populates
+        // req.auth at all) — that field is never present under the
+        // project-access middleware's own back-compat shim, so this branch
+        // only ever fires for that other mount, never double-resolving.
+        sessionId: req.auth?.sessionId ?? req.session?.sessionId ?? null,
         filename: storageKey,
         lang: lang ?? null,
         format,
