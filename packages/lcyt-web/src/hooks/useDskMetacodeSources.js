@@ -23,10 +23,11 @@ export function useDskMetacodeSources({ session }) {
     if (loadedForKeyRef.current === apiKey || loadingRef.current) return;
     loadingRef.current = true;
     try {
+      const token = session?.getSessionToken?.();
       const [imagesResult, viewportsResult] = await Promise.allSettled([
         session.listImages?.() ?? Promise.resolve({ images: [] }),
         fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/viewports`, {
-          headers: { 'X-API-Key': apiKey },
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
         }).then(r => (r.ok ? r.json() : { viewports: [] })),
       ]);
 

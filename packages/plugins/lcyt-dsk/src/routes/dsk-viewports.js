@@ -40,17 +40,14 @@ export function createDskViewportsRouter(db, auth, deps = {}) {
 
   /**
    * Setup-tier gate (plan_project_roles.md, decided 2026-07-26) — same shape
-   * as dsk-templates.js's requireSetup (see its doc comment): X-API-Key auth
-   * is exempt — it already proves possession of the project's raw api_key,
-   * the strongest credential this codebase recognizes for a project, and
-   * pre-dates the user/role system entirely. A plain JWT with no
-   * req.user.userId (e.g. a caption-session token) is NOT exempt — only the
-   * X-API-Key path specifically bypasses this — recognized by
-   * req.session.authKind === 'apikey', set only by editorAuth
-   * (middleware/editor-auth.js), not by req.user's absence alone.
+   * as dsk-templates.js's requireSetup (see its doc comment). `auth` is
+   * always a JWT Bearer check (the X-API-Key editor-auth path was retired by
+   * plan_authentication_refactor.md), so this unconditionally applies the
+   * real per-user role check: a plain JWT with no req.user.userId (e.g. a
+   * caption-session token) still 403s here, same as every other Setup-tier
+   * route in this codebase.
    */
   function requireSetup(req, res, next) {
-    if (req.session?.authKind === 'apikey') return next(); // X-API-Key path — see doc comment above
     const apiKey = req.session?.apiKey;
     if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !deps.checkProjectRole('setup', apiKey, req.user.userId)) {
       return res.status(403).json({ error: 'Explicit project admin/owner access required' });

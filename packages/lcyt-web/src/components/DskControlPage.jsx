@@ -13,7 +13,12 @@ import { DskBroadcastAssetPanel } from './DskBroadcastAssetPanel.jsx';
  * Allows activating a template in the Playwright renderer and injecting
  * live data (name, title etc.) without reloading the renderer page.
  *
- * Auth: X-API-Key header (no live caption session required).
+ * Auth: sidebar mode (/graphics/control) sends the caption-session Bearer
+ * JWT (plan_authentication_refactor.md — the raw X-API-Key credential this
+ * page used to send was retired along with DskEditorPage.jsx's). Standalone
+ * mode (/dsk-control/:key) has no SessionContext at all and so has no way to
+ * obtain a JWT — see CONSIDER.md: that no-login path is left broken by this
+ * migration pending a product decision on whether/how it should authenticate.
  */
 
 const btnStyle = {
@@ -112,7 +117,7 @@ export function DskControlPage() {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         ...(opts.headers || {}),
       },
     });
