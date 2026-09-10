@@ -52,7 +52,12 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // it in production. Previously this router received no auth at all, so
   // req.session.apiKey was never available here — needed now so a mixer
   // switch can report which project's session performed it to
-  // registry.onProgramChanged() (plan_vertical_crop.md §4 production-follow).
+  // registry.onProgramChanged() (plan_vertical_crop.md §4 production-follow)
+  // and so canAccessMixer() below can gate a mixer to its owning project
+  // (mirrors routes/cameras.js's canAccessCamera() — prod_mixers had no
+  // project/tenant column at all until now, the identical gap
+  // plan_ingest_feeds.md's cross-tenant review finding closed on
+  // prod_cameras).
   const auth = opts.auth ?? null;
   const router = Router();
 
@@ -70,6 +75,24 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // for a real authenticated session lacking the tier.
   const requireSetup = requireTier(opts.deps ?? {}, 'setup');
   const requireProduction = requireTier(opts.deps ?? {}, 'production');
+
+  /**
+   * Ownership check: a mixer with an owner_api_key set is only visible/
+   * writable to the session that owns it; a mixer with no owner (created
+   * before this column existed, or via crud.js with no ownerApiKey) stays in
+   * the pre-existing open/legacy bucket. When no auth middleware is wired in
+   * at all (req.session is undefined), every mixer is treated as accessible
+   * — matches this router's previous fully-open behavior in that config.
+   * Mirrors routes/cameras.js's canAccessCamera() exactly (plan_ingest_feeds.md
+   * cross-tenant review finding, applied to prod_mixers).
+   * @param {{owner_api_key: string|null}} row  raw DB row (pre-parseMixer)
+   * @param {import('express').Request} req
+   * @returns {boolean}
+   */
+  function canAccessMixer(row, req) {
+    if (!req.session?.apiKey) return true;
+    return row.owner_api_key == null || row.owner_api_key === req.session.apiKey;
+  }
 
   // -------------------------------------------------------------------------
   // Text body parser for WHIP SDP routes
@@ -90,11 +113,14 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
     },
   );
 
-  // GET /production/mixers — list all mixers with connection status
-  router.get('/', (_req, res) => {
+  // GET /production/mixers — list all mixers with connection status.
+  // Filtered to the caller's own + legacy/unowned mixers (mirrors
+  // routes/cameras.js's GET / — only takes effect once auth is wired in).
+  router.get('/', (req, res) => {
     const rows = db
       .prepare('SELECT * FROM prod_mixers ORDER BY created_at')
       .all()
+      .filter(row => canAccessMixer(row, req))
       .map(row => {
         const mixer = parseMixer(row);
         return {
@@ -109,7 +135,9 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // GET /production/mixers/:id — single mixer
   router.get('/:id', (req, res) => {
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
-    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    // 404 (not 403) for a foreign mixer — don't confirm its existence to a
+    // caller who doesn't own it.
+    if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
     const mixer = parseMixer(row);
     res.json({
       ...mixer,
@@ -128,10 +156,15 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       return res.status(400).json({ error: `type must be one of: ${MIXER_TYPES.join(', ')}` });
     }
     const id = randomUUID();
+    // Stamped from the now-real auth context when available; null (the
+    // pre-existing open/legacy behavior) when this router is used without
+    // auth wired in (e.g. existing route-level tests) — mirrors
+    // routes/cameras.js's POST / handler exactly.
+    const ownerApiKey = req.session?.apiKey ?? null;
     db.prepare(`
-      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey);
+      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key, owner_api_key)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey, ownerApiKey);
 
     const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
     registry.reloadMixer(id).catch(err =>
@@ -144,7 +177,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   router.put('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ error: 'Mixer not found' });
+    if (!existing || !canAccessMixer(existing, req)) return res.status(404).json({ error: 'Mixer not found' });
 
     const {
       name             = existing.name,
@@ -175,7 +208,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   router.delete('/:id', requireSetup, (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
-    if (!existing) return res.status(404).json({ error: 'Mixer not found' });
+    if (!existing || !canAccessMixer(existing, req)) return res.status(404).json({ error: 'Mixer not found' });
 
     db.prepare('DELETE FROM prod_mixers WHERE id = ?').run(id);
     registry.removeMixer(id).catch(() => {});
@@ -190,7 +223,11 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       return res.status(400).json({ error: 'inputNumber must be a non-negative integer' });
     }
     const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
-    if (!row) return res.status(404).json({ error: 'Mixer not found' });
+    // A credential-less kiosk /switch request never sets req.session (see
+    // isUnauthenticatedMixerRoute() above), so canAccessMixer() correctly
+    // fails open for it — this gate only ever bites a *credentialed* session
+    // switching a mixer it doesn't own.
+    if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
 
     try {
       const mixer = parseMixer(row);
