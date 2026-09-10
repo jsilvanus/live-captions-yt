@@ -506,52 +506,49 @@ stats-attribution miss the extraction also surfaced and fixed. The old
 
 ---
 
-## Auth Middleware: 10 Altitude Issues Require Unified Token & Access-Control Model
+## Auth Middleware: 10 Altitude Issues Require Unified Token & Access-Control Model — mostly RESOLVED 2026-09-10
 
 **Where:** `packages/lcyt-backend/src/middleware/project-access.js` and related route/DB files
 
-**Findings:** `/simplify` review surfaced 10 interrelated altitude issues in the auth refactor (PR #252):
+**Original findings:** `/simplify` review surfaced 10 interrelated altitude issues in the auth refactor (PR #252). A 2026-09-10 repo-study pass re-verified each against the current code (issuance sites, `req.auth` usage repo-wide, the `test/project-access.test.js` contract) before touching anything, since this middleware gates nearly every route in the app (1161 backend tests as of that date, not the 368 this entry originally cited). Status per finding:
 
-1. **Fragile token-type detection** — Token type is inferred from prefix (`lcytmcp_`) + payload field introspection (`payload.kind`, `payload.type`, etc.) across 4 token branches rather than from a canonical JWT field. Runtime derivation vs. issuance-time validation.
+1. ✅ **Fragile token-type detection** — issuance already wrote both `type` (coarse `'user'|'device'`) and `kind` (fine `'user'|'project'|'device'`) at issuance (`routes/auth.js`'s `issueProjectToken()`, `routes/device-roles.js`'s device-login handler); verification just repeated the same OR-chains inline in 3 places. Extracted `classifyToken(payload)` — one pure function, same precedence as before (device → session-shape → user-shape → reject), no behavior change. `test/project-access.test.js`'s `body.auth.kind` assertions (`'project'`/`'external'`/`'device'`) still pass unchanged.
 
-2. **Overly exhaustive project ID resolution** — `resolveProjectId()` searches ~15 locations (headers, route params, body, query) instead of enforcing a single convention (e.g., always `X-Project-Id` header for scoped endpoints, hierarchical route param for others).
+2. **Overly exhaustive project ID resolution** — still open. `resolveProjectId()`'s ~15-location scavenging is real, but several routes' specific behavior depends on exactly this search order (see `requireProjectRole()`'s own comment about `:id` param collisions on routes like `PUT /targets/:id`, where `:id` means something else entirely). Narrowing this needs a per-route audit of what each route actually sends — a separate, larger pass.
 
-3. **Four duplicate resolve+validate+attach patterns** — External/session/user/device token branches each repeat: resolve projectId → check not-null → call accessLevel check → attach context → next(). Fixed with `handleTokenAuth()` factory (commit `8581b2c`), but only locally — the underlying polymorphism remains.
+3. ✅ (partially) **Four duplicate resolve+validate+attach patterns** — `handleTokenAuth()`/`attachProjectContext()` (already extracted before this pass) cover the shared attach step. One live duplicate this pass found that the original finding didn't name: `routes/project-slug.js` had its own local `verifyUserToken()`, narrower than the shared `middleware/user-auth.js`'s `extractAndVerifyUserToken()` (no cookie/`?token=` fallback). Swapped to the shared helper — `lcyt_identity` cookie and `?token=` now work on slug routes like everywhere else (new test in `test/project-slug.test.js`).
 
-4. **Scope checking only on external tokens** — `requiredScope` validation lives only in the external-token branch, but user/project/device tokens also carry scopes. Inconsistent enforcement.
+4. **Scope checking only on external tokens** — confirmed real, but it's a functional gap, not a dedup: `POST /auth/project-token` accepts a client-supplied `scopes` array and bakes it into the issued JWT, but nothing in `project-access.js` ever enforces it for user/project/device token kinds (only `tokenHasScope()` on the external branch). Turning on enforcement now is a product decision (what caller ever sets this? is silent-full-access the intended fallback today?), not a mechanical fix — left alone.
 
-5. **Session tokens bypass membership verification** — Only user tokens call `getMemberAccessLevel()`; session/external/device tokens are accepted unconditionally. Different access-control standards per token type.
+5. **Session tokens bypass membership verification** — by design for 2 of the 3, not a bug: session tokens (`routes/live.js`) are self-scoped to the one apiKey minted at `/live`, external tokens are pre-scoped to a project at `POST /mcp-tokens` creation time by a member (the membership check already happened once, upstream). Device tokens are the one asymmetric case (checks `isDeviceRoleActive()` but never rechecks the project itself) — see the new revoked-key entry below, which subsumes this more broadly.
 
-6. **Scattered access-control concerns** — Membership checks happen in middleware, routes, and DB modules independently. Routes re-implement token extraction (`verifyUserToken` duplicated in 4 files — partially fixed in commits `e028e06`/`482b83b`, but keys.js patterns remain) instead of trusting middleware.
+6. ✅ Same as #3 above — the `project-slug.js` duplicate was the live instance of this.
 
-7. **Inconsistent request context attachment** — `req.user`, `req.auth`, `req.project`, `req.session` are conditionally set depending on token type. No guaranteed shape across all flows.
+7. ✅ **Inconsistent request context attachment** — already resolved before this pass, not by it: `attachProjectContext()` sets `req.auth`/`req.project`/`req.session`/`req.user` with the same guaranteed shape across all 4 branches (verified: 69 usages of `req.auth` across 13 files, all assuming this shape). This finding was stale. Tightened the `req.project.projectRole` doc comment to state plainly it's display-only, never a gate — the actual residual risk here was a comment easy to misread, not a missing shape.
 
-8. **Ad-hoc scope serialization** — `serializeScopes()` / `parseScopes()` try JSON.parse with CSV fallback, applied at every read/verification. Suggests scopes aren't normalized at issuance time.
+8. ✅ (partially) **Ad-hoc scope serialization** — real, but narrower than described: only `db/mcp-tokens.js`'s DB-stored external-token scopes have the JSON/CSV ambiguity (a JWT payload can't have it — it's JSON by construction). `serializeScopes()` now always normalizes to a canonical JSON array at write time (a bare string or comma list gets split/converted instead of stored raw); `parseScopes()`'s CSV-fallback stays for reading back any pre-existing non-JSON row. New test in `test/mcp-tokens.test.js`.
 
-9. **`normalizeUserPayload()` defined but inconsistently used** — Reusable, but `project-access.js` extracts fields inline instead of calling it, and it's not called by device-token branch.
+9. ✅ **`normalizeUserPayload()` defined but inconsistently used** — device branch now calls it instead of extracting `userId`/`email`/`siteRole` inline. Confirmed behavior-neutral for real device tokens (which carry none of those fields today, so both paths already resolved to `null`).
 
-10. **Device-roles router re-implements auth** — `verifyUserToken()` (now using shared `extractAndVerifyUserToken()` after commit `482b83b`) was duplicated in routes instead of relying on middleware to attach context.
+10. ✅ **Device-roles router re-implements auth** — already resolved before this pass (grep confirms `routes/device-roles.js` uses the shared `extractAndVerifyUserToken()` at all 7 of its call sites); the entry's own note said this was fixed by commit `482b83b`.
 
-**Root cause:** The middleware adds **polymorphism at the middleware layer** (4 token types) without first refactoring the **underlying domain model** (token structure, access-control gate, request context shape). Result: each branch has its own special cases + defensive logic, and routes don't trust the middleware to do auth consistently.
+**New, broader finding surfaced by this pass** (not one of the original 10 — see its own entry below): `getEffectiveProjectAccessLevel()`/`getMemberAccessLevel()` never check `api_keys.active`, so a revoked project key doesn't invalidate an already-issued JWT of *any* kind, not just session/device. Left out of this pass — different, broader risk profile than the 10 findings above.
 
-**What fixed:** Commits `e028e06`, `8581b2c`, `482b83b` addressed the **local reuse/simplification issues**:
-- Consolidated `resolveProjectId` loops (29 lines saved)
-- Extracted `handleTokenAuth()` factory (32 lines saved)
-- Unified user-token extraction helper (33 lines saved)
-- Removed dead code + optimized scope parsing (4 lines saved)
+**What's genuinely still open:** #2 (`resolveProjectId()` scavenging) and #4 (uniform scope enforcement) — both are real product/architecture decisions, not mechanical fixes, exactly as the original entry said. Everything else above was either already stale (shape, dedup) or closeable as a same-behavior refactor plus 2 small, test-covered fixes (device normalizeUserPayload, scope serialization). 1163/1163 backend tests pass after this pass (2 new).
 
-**What remains:** The **altitude issues** (10 findings) all point to the same architectural gap: token payloads, membership-check gate, and request context need to be unified *first*, before adding polymorphism. Doing so now would require:
+(Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11. Re-studied and partially resolved 2026-09-10.)
 
-- Redesign all 4 token payloads to have canonical field names (`type` instead of `kind`, etc.)
-- Extract a single membership-check gate that applies after token verification, regardless of type
-- Define a consistent request context object (`req.auth` or `req.context`) with guaranteed shape
-- Establish canonical scope format (e.g., always JSON array in DB), normalized at token creation
+---
 
-These are **design-level changes**, not local refactorings. Worth revisiting after this pass ships, with explicit product/architecture alignment on the unified model.
+## `getEffectiveProjectAccessLevel()` never checks `api_keys.active` — a revoked project key doesn't invalidate live JWTs of any kind
 
-**Why skipped:** Fixing the altitude issues would mean re-architecting 4 token types + unifying access control across 3+ layers (middleware/routes/DB), then re-testing all auth flows (368 backend tests exist; many would need assertion updates). Out of scope for a focused `/simplify` pass. This pass delivered measurable local cleanup (98 lines saved, 5 reusable helpers extracted), leaving the broader unification for a future architectural pass with its own scope and test coverage.
+**Where:** `packages/lcyt-backend/src/db/project-members.js` (`getMemberAccessLevel()`, `getEffectiveProjectAccessLevel()`), `packages/lcyt-backend/src/middleware/project-access.js`
 
-(Found during: `/simplify` review on auth-refactor-plan (PR #252), 2026-07-11.)
+**Finding:** `validateApiKey()` (`db/keys.js`) checks `api_keys.active`/`revoked_at` and is the gate for the raw-API-key flow, but the JWT-based `createProjectAccessMiddleware()` gate never calls it — `getEffectiveProjectAccessLevel()`/`getMemberAccessLevel()` only ever look at `project_members`/`api_keys.user_id`, never `active`. So revoking a project's key (`DELETE /keys/:key` → `active = 0`) doesn't invalidate any already-issued session/user/project/device JWT for that project; each keeps working until its own TTL expires (2h for session/project tokens, 1h for device, 30d for the user-level token — though a user token alone can't reach a project route without a resolvable projectId). This affects every token kind, not just the 3 the "10 Altitude Issues" entry above flagged (session/external/device) — user/project tokens are equally unchecked.
+
+**Why skipped:** broader and differently-risky than a mechanical dedup — adding this check could unexpectedly lock out a live session on a project that looks revoked-but-still-cached somewhere, and needs its own reasoning about where in the request path it belongs (every branch? only at issuance via `POST /auth/project-token`? both?) and what error shape callers should expect. Surfaced during the 2026-09-10 auth-middleware repo-study pass; not folded into that pass's scope.
+
+(Found during: repo-study pass on the "Auth Middleware: 10 Altitude Issues" entry, 2026-09-10.)
 
 ---
 
@@ -1170,19 +1167,15 @@ pass:
 
 ---
 
-## Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third — as of 2026-09-10, a fourth — time
+## ~~Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time~~ — RESOLVED 2026-09-10
 
-**Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()` (takes `req`, not `path` — a *conditional* bypass via `hasAuthCredentials(req)`, not a blanket one), and (both now the same conditional shape as mixers.js) `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()` + its own copy of `hasAuthCredentials(req)`.
+**Where:** `packages/plugins/lcyt-production/src/auth-bypass.js` (new), `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()`, `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()` + its own copy of `hasAuthCredentials(req)`.
 
-**Finding:** Three routers each independently implement "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function. `routes/bridge.js`'s own comment acknowledges the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper (e.g. a `createAuthWithBypass(auth, matcher)` middleware factory). The three copies aren't even structurally aligned — `mixers.js`'s version has a different signature and conditional semantics from the other two — so there's no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`."
+**Original finding:** Three routers each independently implemented "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function, wired up with hand-copied `if (auth) { router.use((req,res,next) => matcher(req) ? next() : auth(req,res,next)) }` boilerplate. `routes/bridge.js`'s own comment acknowledged the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper. The three copies weren't even structurally aligned — `mixers.js`'s matcher took `req` and was conditional via `hasAuthCredentials(req)`; `cameras.js`'s and `bridge.js`'s took a bare `path` and were unconditional — so there was no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`." A predicted trigger for finally extracting a shared helper ("if a fourth router ever needs this carve-out") arrived the same day from an unrelated angle: wiring the device-role JWT into `CameraStreamPage.jsx`/`LcytMixerPage.jsx` (the WHIP/kiosk auth follow-up, see the resolved entry above) required `cameras.js`'s carve-out to become conditional exactly like `mixers.js`'s, which meant either extracting `hasAuthCredentials()` or copying it a second time.
 
-**Why skipped:** Extracting a shared bypass-middleware factory is a real, reasonable simplification, but touching three already-shipped, already-tested routers' auth wiring in the same pass that just closed a real auth gap on two of them felt like more risk than the current, narrow scope (bridge TCP command / IP security) warranted — a regression in this factoring would reopen exactly the kind of hole this pass exists to close. Better done as its own deliberate, focused refactor with its own review pass.
+**Resolved:** two independent fixes landed the same day and were merged together. (1) Added `auth-bypass.js` exporting `createAuthWithBypass(auth, matcher)` — returns `null` when `auth` is falsy (preserving each router's `if (authMiddleware) router.use(...)` opt-in pattern), otherwise wraps `auth` so any request `matcher(req)` matches skips it; all three routers now call it instead of hand-rolling the wrapper. (2) `cameras.js`'s matcher was brought in line with `mixers.js`'s shape — `isUnauthenticatedCameraRoute(req)` now takes `req` and its `/whip`/`/whip-url` carve-out is conditional via its own `hasAuthCredentials(req)` copy (thumbnail routes stay unconditionally open — browsers never attach `Authorization` to `<img src>`). Net effect: the router-level wiring boilerplate is unified across all three routers (one shared factory, not three copies); the *matcher* functions themselves are deliberately still separate per router (genuinely different rules: `bridge.js`'s three carve-out routes are always bridge-agent-token-authed with no credentialed/uncredentialed distinction to make, so it stays unconditional and keyed on `path`; `cameras.js`/`mixers.js` are now both conditional and keyed on `req`, but `hasAuthCredentials()` itself is still a small copy in each — a fifth+ router needing it is the next natural trigger to share that one helper too, same recommendation as the sibling "URL→host:port" duplication entry above). `packages/plugins/lcyt-production` test suite: 287/287 (2 new cross-tenant/device-token tests added for `cameras.js`'s newly-conditional carve-out).
 
-**Recommendation (originally):** if a fourth router ever needs this same "bridge-token/device-token authenticated, bypass opts.auth" carve-out, that's the natural trigger to extract a shared helper instead of writing a fourth copy.
-
-**2026-09-10 update — the predicted trigger happened, still not extracted:** wiring the device-role JWT into `CameraStreamPage.jsx`/`LcytMixerPage.jsx` (the WHIP/kiosk auth follow-up, see the resolved entry above) required `cameras.js`'s carve-out to become conditional exactly like `mixers.js`'s already-existing one — which meant copying `mixers.js`'s `hasAuthCredentials(req)` into `cameras.js` verbatim as a fourth copy of this exact helper, rather than extracting it. Still deliberately not extracted here, for the same reason as the original finding (auth-wiring changes on already-shipped routers deserve their own focused pass, not a drive-by inside an unrelated feature addition) — and because this whole carve-out-pattern question is already in scope for the separate interactive session spawned the same day to redesign the auth/token model more broadly (`session_01YFnwezASC2YB4P2mDfsvuE`, briefed on this exact finding). `cameras.js` and `mixers.js`'s copies are now at least structurally identical (both conditional, both take `req`); `bridge.js`'s remains the odd one out (unconditional, takes `path`) since none of its three carve-out routes (`/commands`, `/status`, `/security-rules/for-agent`) have any credentialed/uncredentialed distinction to make — they're always bridge-agent-token-authed, never a human session.
-
-(Found during: code-review pass on the bridge security layer, 2026-07-26. Updated 2026-09-10 — still open.)
+(Found during: code-review pass on the bridge security layer, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
